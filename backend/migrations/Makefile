@@ -1,8 +1,11 @@
 FLYWAY_IMAGE=flyway/flyway:11
+GO ?= $(shell command -v go 2>/dev/null || echo /Users/Denis/sdk/go1.26.3/bin/go)
+GOCACHE ?= $(abspath ../../.tmp/go-build-cache)
 
 .PHONY: build
 build:
-	@GOWORK=off go build -trimpath -v -o . ./...
+	@mkdir -p "$(GOCACHE)"
+	@GOWORK=off GOCACHE="$(GOCACHE)" $(GO) build -trimpath -v -o . ./...
 
 .PHONY: add-migration
 add-migration: build

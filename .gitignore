@@ -5,6 +5,7 @@
 *.so
 *.dylib
 /bin/
+backend/bin/
 
 # Test binary, built with `go test -c`
 *.test
@@ -31,5 +32,5 @@
 # macOS
 .DS_Store
 
-# temparary files
+# temporary files
 .tmp
