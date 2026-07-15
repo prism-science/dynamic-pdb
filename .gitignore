@@ -1,0 +1,35 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Local scratch
+/.tmp-data/
+
+# env files
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# Editor swap/backup
+*~
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# temparary files
+.tmp
