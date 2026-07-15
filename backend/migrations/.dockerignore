@@ -1,0 +1,8 @@
+flyway.env
+internal/
+*.go
+go.mod
+go.sum
+Makefile
+.gitignore
+migrations

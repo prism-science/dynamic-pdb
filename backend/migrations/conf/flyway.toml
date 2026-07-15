@@ -1,0 +1,7 @@
+[flyway]
+outOfOrder = true
+
+[environments.local]
+user = "postgres"
+password = "password"
+url = "jdbc:postgresql://localhost:5432/ext_be_local?sslmode=disable&timezone=UTC"
