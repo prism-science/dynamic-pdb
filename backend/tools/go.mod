@@ -1,4 +1,4 @@
-module ext-be/tools
+module dynamic-pdb/backend/tools
 
 go 1.26
 

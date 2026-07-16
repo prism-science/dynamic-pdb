@@ -1,0 +1,30 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# env files
+.env
+
+# Generated code
+*.gen.go
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store

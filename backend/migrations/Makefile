@@ -1,6 +1,7 @@
 FLYWAY_IMAGE=flyway/flyway:11
 GO ?= $(shell command -v go 2>/dev/null || echo /Users/Denis/sdk/go1.26.3/bin/go)
 GOCACHE ?= $(abspath ../../.tmp/go-build-cache)
+DOCKER_INTERACTIVE_MODE ?= $(shell test -t 0 && echo -it)
 
 .PHONY: build
 build:
@@ -17,9 +18,6 @@ template: build
 
 .PHONY: migrate-local
 migrate-local: build
-ifndef GITHUB_WORKSPACE
-	$(eval DOCKER_INTERACTIVE_MODE='-it')
-endif
 	./migrations migrate-params local
 	@docker run ${DOCKER_INTERACTIVE_MODE} --rm --network host \
 		-v "${CURDIR}"/db:/flyway/sql/db \

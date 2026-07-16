@@ -4,4 +4,4 @@ outOfOrder = true
 [environments.local]
 user = "postgres"
 password = "password"
-url = "jdbc:postgresql://localhost:5432/ext_be_local?sslmode=disable&timezone=UTC"
+url = "jdbc:postgresql://localhost:35432/dynamic_pdb_local?sslmode=disable&timezone=UTC"

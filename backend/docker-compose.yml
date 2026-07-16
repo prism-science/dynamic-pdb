@@ -1,3 +1,5 @@
+name: dynamic-pdb
+
 services:
   postgres:
     # currently it's the latest version of Postgres supported by AWS Aurora
@@ -7,7 +9,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "35432:5432"
     healthcheck:
       test: ["CMD", "psql", "-U", "postgres", "-l"]
       interval: 1s

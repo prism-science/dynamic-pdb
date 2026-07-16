@@ -1,0 +1,164 @@
+openapi: 3.0.3
+info:
+  title: dynamic-pdb backend API
+  version: 0.0.0
+
+paths:
+  /livez:
+    get:
+      operationId: livez
+      responses:
+        "200":
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+
+  /readyz:
+    get:
+      operationId: readyz
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+        "503":
+          description: Service is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResponse"
+
+  /v1/auth/github/exchange:
+    post:
+      operationId: exchangeGithubToken
+      summary: Exchange a GitHub access token for a backend JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitHubExchangeRequest"
+      responses:
+        "200":
+          description: JWT issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: GitHub access token is invalid or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: GitHub account does not belong to any allowed organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/auth/github/code/exchange:
+    post:
+      operationId: exchangeGithubCode
+      summary: Exchange a GitHub authorization code for a backend JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitHubCodeExchangeRequest"
+      responses:
+        "200":
+          description: JWT issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: GitHub authorization code is invalid or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: GitHub account does not belong to any allowed organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    ProbeResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    GitHubExchangeRequest:
+      type: object
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+
+    GitHubCodeExchangeRequest:
+      type: object
+      required: [code, redirect_uri]
+      properties:
+        code:
+          type: string
+        redirect_uri:
+          type: string
+
+    TokenResponse:
+      type: object
+      required: [token_type, access_token, expires_at, name, email, login]
+      properties:
+        token_type:
+          type: string
+          enum: [Bearer]
+        access_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        name:
+          type: string
+        email:
+          type: string
+        login:
+          type: string
