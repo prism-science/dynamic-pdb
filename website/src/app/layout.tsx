@@ -2,16 +2,21 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import AppHeader from "./components/AppHeader";
 
 export const metadata: Metadata = {
   title: "dynamic-pdb",
-  description: "A small starting point for dynamic PDB workflows.",
+  description: "Dynamic PDB workflows.",
+  icons: { icon: "/dynamic-pdb-mark.svg" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppHeader />
+        <div className="appContent">{children}</div>
+      </body>
     </html>
   );
 }
