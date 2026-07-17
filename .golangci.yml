@@ -1,0 +1,42 @@
+# golangci-lint configuration (v2 schema).
+# Run with: make lint   (see Makefile)
+version: "2"
+
+linters:
+  # Keep the standard default-on set (errcheck, govet, ineffassign,
+  # staticcheck, unused) and add a curated "recommended" set on top.
+  default: standard
+  disable:
+    - unused       # do not flag unused functions/vars/types/fields
+  enable:
+    - revive       # style / best-practice rules (golint successor)
+    - gosec        # security-focused checks
+    - gocritic     # opinionated correctness & style diagnostics
+    - misspell     # commonly misspelled English words in comments/strings
+    - unconvert    # unnecessary type conversions
+    - bodyclose    # checks that HTTP response bodies are closed
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Test files: relax security and error-checking noise.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  # Report every finding rather than golangci-lint's default truncation
+  # (max-same-issues: 3 / max-issues-per-linter: 50), so CI shows the full set.
+  max-issues-per-linter: 0
+  max-same-issues: 0

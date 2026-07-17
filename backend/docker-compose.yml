@@ -1,0 +1,17 @@
+name: dynamic-pdb
+
+services:
+  postgres:
+    # currently it's the latest version of Postgres supported by AWS Aurora
+    image: postgres:17
+    environment:
+      POSTGRES_DB: dynamic_pdb_local
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "35432:5432"
+    healthcheck:
+      test: ["CMD", "psql", "-U", "postgres", "-l"]
+      interval: 1s
+      timeout: 3s
+      retries: 10

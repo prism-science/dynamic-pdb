@@ -1,0 +1,22 @@
+auth:
+  allowed_orgs:
+    - Astera-org
+    - diff-use
+  github:
+    client_id: local-github-client-id
+    client_secret: local-github-client-secret
+  jwt:
+    secret: sample-secret
+    issuer: dynamic-pdb-backend
+    ttl: 720h
+db:
+  host: localhost
+  port: 35432
+  name: dynamic_pdb_local
+  username: postgres
+  password: password
+  connection_params: sslmode=disable
+  max_open_connections: 20
+  max_idle_connections: 10
+  max_connection_idle_time: 5m
+  max_connection_lifetime: 30m

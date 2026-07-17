@@ -1,0 +1,121 @@
+.page {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 40px 24px 96px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shell {
+  width: min(var(--content-max), 100%);
+  min-height: 320px;
+  margin: 0 auto;
+}
+
+.signInWrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 48px 24px;
+}
+
+.signInCard {
+  width: min(440px, 100%);
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.signInBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.signInLogo {
+  display: block;
+  width: 64px;
+  height: 64px;
+}
+
+.signInWordmark {
+  font-family: var(--font-mono);
+  font-size: 2.5rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.signInKicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.githubButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 46px;
+  margin-top: 24px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: var(--text);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.githubButton:hover {
+  background: #000;
+}
+
+.githubButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border: 1px solid var(--danger-border);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.alertIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 24px 14px 64px;
+  }
+
+  .signInCard {
+    padding: 24px;
+  }
+}

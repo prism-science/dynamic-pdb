@@ -1,0 +1,22 @@
+auth:
+  allowed_orgs:
+    - Astera-org
+    - diff-use
+  github:
+    client_id: "Ov23liitTHmLOI9ZAVc6"
+    client_secret: ""
+  jwt:
+    secret: ""
+    issuer: dynamic-pdb-backend
+    ttl: 720h
+db:
+  host: ""
+  port: 5432
+  name: ""
+  username: ""
+  password: ""
+  connection_params: sslmode=require
+  max_open_connections: 20
+  max_idle_connections: 10
+  max_connection_idle_time: 5m
+  max_connection_lifetime: 30m
