@@ -13,6 +13,7 @@ import (
 
 type DB struct {
 	Users    *UsersRepository
+	Entries  *EntriesRepository
 	Entities *EntitiesRepository
 
 	sqlx      *sqlx.DB
@@ -54,6 +55,7 @@ func NewDB(cfg Config) (*DB, error) {
 	queriers := DefaultQuerierProvider
 	return &DB{
 		Users:     NewUsersRepository(sqlxDB, queriers),
+		Entries:   NewEntriesRepository(sqlxDB, queriers),
 		Entities:  NewEntitiesRepository(sqlxDB, queriers),
 		sqlx:      sqlxDB,
 		txManager: txManager,

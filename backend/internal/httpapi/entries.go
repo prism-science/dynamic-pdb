@@ -12,6 +12,66 @@ import (
 	domainmodels "dynamic-pdb/backend/internal/models"
 )
 
+func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
+	filters, err := entryFiltersFromParams(params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entry filters")
+		return
+	}
+
+	entries, err := s.database.Entries.List(r.Context(), filters)
+	if err != nil {
+		slog.Error("list entries failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
+		return
+	}
+
+	items := make([]Entry, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, entryResponseFromModel(entry))
+	}
+
+	writeJSON(w, http.StatusOK, EntryListResponse{Items: items})
+}
+
+func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+	entry, err := s.database.Entries.Get(r.Context(), entryID)
+	if errors.Is(err, db.ErrEntryNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get entry failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, entryResponseFromModel(*entry))
+}
+
+func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
+	if params.Limit != nil && *params.Limit < 0 {
+		return db.EntryFilters{}, errors.New("limit must be non-negative")
+	}
+	if params.Offset != nil && *params.Offset < 0 {
+		return db.EntryFilters{}, errors.New("offset must be non-negative")
+	}
+
+	return db.EntryFilters{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	}, nil
+}
+
+func entryResponseFromModel(entry domainmodels.Entry) Entry {
+	return Entry{
+		Id:        entry.ID,
+		Name:      entry.Name,
+		CreatedAt: entry.CreatedAt,
+		UpdatedAt: entry.UpdatedAt,
+	}
+}
+
 func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListEntitiesParams) {
 	filters, err := entityFiltersFromParams(entryID, params)
 	if err != nil {
