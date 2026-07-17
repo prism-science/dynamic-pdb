@@ -1,20 +1,22 @@
 CREATE TABLE entries (
-    id         uuid PRIMARY KEY,
-    name       text NOT NULL,
+    id                  uuid PRIMARY KEY,
+    name                text NOT NULL,
+    thumbnail_image_url text,
 
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE experiments (
-    id         uuid PRIMARY KEY,
-    entry_id   uuid NOT NULL
+    id                  uuid PRIMARY KEY,
+    entry_id            uuid NOT NULL
         REFERENCES entries(id) ON DELETE CASCADE,
 
-    name       text NOT NULL,
+    name                text NOT NULL,
+    thumbnail_image_url text,
 
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE entities (

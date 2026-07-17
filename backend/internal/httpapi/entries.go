@@ -65,10 +65,74 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 
 func entryResponseFromModel(entry domainmodels.Entry) Entry {
 	return Entry{
-		Id:        entry.ID,
-		Name:      entry.Name,
-		CreatedAt: entry.CreatedAt,
-		UpdatedAt: entry.UpdatedAt,
+		Id:                entry.ID,
+		Name:              entry.Name,
+		ThumbnailImageUrl: entry.ThumbnailImageURL,
+		CreatedAt:         entry.CreatedAt,
+		UpdatedAt:         entry.UpdatedAt,
+	}
+}
+
+func (s *Server) ListExperiments(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListExperimentsParams) {
+	filters, err := experimentFiltersFromParams(entryID, params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid experiment filters")
+		return
+	}
+
+	experiments, err := s.database.Experiments.List(r.Context(), filters)
+	if err != nil {
+		slog.Error("list experiments failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list experiments")
+		return
+	}
+
+	items := make([]Experiment, 0, len(experiments))
+	for _, experiment := range experiments {
+		items = append(items, experimentResponseFromModel(experiment))
+	}
+
+	writeJSON(w, http.StatusOK, ExperimentListResponse{Items: items})
+}
+
+func (s *Server) GetExperiment(w http.ResponseWriter, r *http.Request, entryID, experimentID uuid.UUID) {
+	experiment, err := s.database.Experiments.Get(r.Context(), entryID, experimentID)
+	if errors.Is(err, db.ErrExperimentNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "experiment not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get experiment failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get experiment")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, experimentResponseFromModel(*experiment))
+}
+
+func experimentFiltersFromParams(entryID uuid.UUID, params ListExperimentsParams) (db.ExperimentFilters, error) {
+	if params.Limit != nil && *params.Limit < 0 {
+		return db.ExperimentFilters{}, errors.New("limit must be non-negative")
+	}
+	if params.Offset != nil && *params.Offset < 0 {
+		return db.ExperimentFilters{}, errors.New("offset must be non-negative")
+	}
+
+	return db.ExperimentFilters{
+		EntryID: &entryID,
+		Limit:   params.Limit,
+		Offset:  params.Offset,
+	}, nil
+}
+
+func experimentResponseFromModel(experiment domainmodels.Experiment) Experiment {
+	return Experiment{
+		Id:                experiment.ID,
+		EntryId:           experiment.EntryID,
+		Name:              experiment.Name,
+		ThumbnailImageUrl: experiment.ThumbnailImageURL,
+		CreatedAt:         experiment.CreatedAt,
+		UpdatedAt:         experiment.UpdatedAt,
 	}
 }
 

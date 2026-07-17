@@ -179,6 +179,95 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/entries/{entry_id}/experiments:
+    get:
+      operationId: listExperiments
+      summary: List experiments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID to filter by.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: Maximum number of experiments to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: offset
+          in: query
+          description: Number of experiments to skip.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Experiments found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentListResponse"
+        "400":
+          description: Invalid filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/entries/{entry_id}/experiments/{experiment_id}:
+    get:
+      operationId: getExperiment
+      summary: Get experiment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: experiment_id
+          in: path
+          description: Experiment ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Experiment found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Experiment"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Experiment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /v1/entries/{entry_id}/entities:
     get:
       operationId: listEntities
@@ -331,6 +420,40 @@ components:
           format: uuid
         name:
           type: string
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ExperimentListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Experiment"
+
+    Experiment:
+      type: object
+      required: [id, entry_id, name, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entry_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        thumbnail_image_url:
+          type: string
+          nullable: true
         created_at:
           type: string
           format: date-time

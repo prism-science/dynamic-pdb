@@ -6,8 +6,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type Entry struct {
+type Experiment struct {
 	ID                uuid.UUID
+	EntryID           uuid.UUID
 	Name              string
 	ThumbnailImageURL *string
 	CreatedAt         time.Time
