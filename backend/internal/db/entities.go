@@ -194,6 +194,12 @@ func entityPayloadFromStorage(entityType models.EntityType, data []byte) (any, e
 	}
 
 	switch entityType {
+	case models.EntityTypeData:
+		var payload models.DataPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, fmt.Errorf("unmarshal data payload: %w", err)
+		}
+		return &payload, nil
 	case models.EntityTypeModel:
 		var payload models.ModelPayload
 		if err := json.Unmarshal(data, &payload); err != nil {
@@ -204,6 +210,12 @@ func entityPayloadFromStorage(entityType models.EntityType, data []byte) (any, e
 		var payload models.MetricsPayload
 		if err := json.Unmarshal(data, &payload); err != nil {
 			return nil, fmt.Errorf("unmarshal metrics payload: %w", err)
+		}
+		return &payload, nil
+	case models.EntityTypeProgram:
+		var payload models.ProgramPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, fmt.Errorf("unmarshal program payload: %w", err)
 		}
 		return &payload, nil
 	default:

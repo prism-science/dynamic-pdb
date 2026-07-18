@@ -62,6 +62,60 @@ func Test_should_decode_model_payload_when_entity_from_row_called(t *testing.T) 
 	assert.Equal(t, "s3://dynamic-pdb/models/qfit.cif", payload.FileURL)
 }
 
+func Test_should_decode_data_payload_when_entity_from_row_called(t *testing.T) {
+	// given
+	entityID := uuid.New()
+	entryID := uuid.New()
+	now := time.Now().UTC()
+	row := entityRow{
+		ID:        entityID,
+		EntryID:   entryID,
+		Type:      string(models.EntityTypeData),
+		Name:      "reflections",
+		Payload:   []byte(`{"file_url":"s3://dynamic-pdb/data/reflections.mtz"}`),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	// when
+	entity, err := entityFromRow(&row)
+
+	// then
+	require.NoError(t, err)
+
+	payload, err := entity.Data()
+	require.NoError(t, err)
+	assert.Equal(t, "s3://dynamic-pdb/data/reflections.mtz", payload.FileURL)
+}
+
+func Test_should_decode_program_payload_when_entity_from_row_called(t *testing.T) {
+	// given
+	entityID := uuid.New()
+	entryID := uuid.New()
+	now := time.Now().UTC()
+	row := entityRow{
+		ID:        entityID,
+		EntryID:   entryID,
+		Type:      string(models.EntityTypeProgram),
+		Name:      "qFit",
+		Payload:   []byte(`{"name":"qFit","version":"4.0.0","description":"Multiconformer model builder"}`),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	// when
+	entity, err := entityFromRow(&row)
+
+	// then
+	require.NoError(t, err)
+
+	payload, err := entity.Program()
+	require.NoError(t, err)
+	assert.Equal(t, "qFit", payload.Name)
+	assert.Equal(t, "4.0.0", payload.Version)
+	assert.Equal(t, "Multiconformer model builder", payload.Description)
+}
+
 func Test_should_build_query_with_optional_filters_when_entity_list_query_called(t *testing.T) {
 	// given
 	entryID := uuid.New()

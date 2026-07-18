@@ -219,6 +219,16 @@ func entityResponseFromModel(entity domainmodels.Entity) (Entity, error) {
 func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload, error) {
 	var payload Entity_Payload
 	switch entity.Type {
+	case domainmodels.EntityTypeData:
+		dataPayload, err := entity.Data()
+		if err != nil {
+			return Entity_Payload{}, fmt.Errorf("get data payload: %w", err)
+		}
+		if err := payload.FromDataPayload(DataPayload{
+			FileUrl: dataPayload.FileURL,
+		}); err != nil {
+			return Entity_Payload{}, fmt.Errorf("build data payload response: %w", err)
+		}
 	case domainmodels.EntityTypeModel:
 		modelPayload, err := entity.Model()
 		if err != nil {
@@ -241,6 +251,18 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 			Rscc:  metricsPayload.RSCC,
 		}); err != nil {
 			return Entity_Payload{}, fmt.Errorf("build metrics payload response: %w", err)
+		}
+	case domainmodels.EntityTypeProgram:
+		programPayload, err := entity.Program()
+		if err != nil {
+			return Entity_Payload{}, fmt.Errorf("get program payload: %w", err)
+		}
+		if err := payload.FromProgramPayload(ProgramPayload{
+			Description: programPayload.Description,
+			Name:        programPayload.Name,
+			Version:     programPayload.Version,
+		}); err != nil {
+			return Entity_Payload{}, fmt.Errorf("build program payload response: %w", err)
 		}
 	default:
 		return Entity_Payload{}, fmt.Errorf("%w: %s", domainmodels.ErrUnexpectedEntityType, entity.Type)

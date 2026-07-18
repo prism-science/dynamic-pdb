@@ -25,8 +25,10 @@ const (
 type EntityType string
 
 const (
+	EntityTypeData    EntityType = "data"
 	EntityTypeMetrics EntityType = "metrics"
 	EntityTypeModel   EntityType = "model"
+	EntityTypeProgram EntityType = "program"
 )
 
 type Entity struct {
@@ -74,5 +76,41 @@ func (e Entity) Metrics() (*MetricsPayload, error) {
 		return &payload, nil
 	default:
 		return nil, fmt.Errorf("%w: metrics payload has type %T", ErrInvalidEntityPayload, e.Payload)
+	}
+}
+
+func (e Entity) Data() (*DataPayload, error) {
+	if e.Type != EntityTypeData {
+		return nil, fmt.Errorf("%w: expected %s, got %s", ErrUnexpectedEntityType, EntityTypeData, e.Type)
+	}
+
+	switch payload := e.Payload.(type) {
+	case *DataPayload:
+		if payload == nil {
+			return nil, fmt.Errorf("%w: data payload is nil", ErrInvalidEntityPayload)
+		}
+		return payload, nil
+	case DataPayload:
+		return &payload, nil
+	default:
+		return nil, fmt.Errorf("%w: data payload has type %T", ErrInvalidEntityPayload, e.Payload)
+	}
+}
+
+func (e Entity) Program() (*ProgramPayload, error) {
+	if e.Type != EntityTypeProgram {
+		return nil, fmt.Errorf("%w: expected %s, got %s", ErrUnexpectedEntityType, EntityTypeProgram, e.Type)
+	}
+
+	switch payload := e.Payload.(type) {
+	case *ProgramPayload:
+		if payload == nil {
+			return nil, fmt.Errorf("%w: program payload is nil", ErrInvalidEntityPayload)
+		}
+		return payload, nil
+	case ProgramPayload:
+		return &payload, nil
+	default:
+		return nil, fmt.Errorf("%w: program payload has type %T", ErrInvalidEntityPayload, e.Payload)
 	}
 }

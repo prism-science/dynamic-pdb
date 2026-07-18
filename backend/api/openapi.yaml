@@ -463,7 +463,7 @@ components:
 
     EntityType:
       type: string
-      enum: [model, metrics]
+      enum: [data, metrics, model, program]
 
     EntityLevel:
       type: string
@@ -502,8 +502,10 @@ components:
           type: string
         payload:
           oneOf:
+            - $ref: "#/components/schemas/DataPayload"
             - $ref: "#/components/schemas/ModelPayload"
             - $ref: "#/components/schemas/MetricsPayload"
+            - $ref: "#/components/schemas/ProgramPayload"
         created_at:
           type: string
           format: date-time
@@ -516,6 +518,24 @@ components:
       required: [file_url]
       properties:
         file_url:
+          type: string
+
+    DataPayload:
+      type: object
+      required: [file_url]
+      properties:
+        file_url:
+          type: string
+
+    ProgramPayload:
+      type: object
+      required: [name, version, description]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        description:
           type: string
 
     MetricsPayload:
