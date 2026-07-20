@@ -477,7 +477,7 @@ components:
 
     EntityRelationType:
       type: string
-      enum: [processed_from, generated_from, refined_from, evaluates]
+      enum: [input_to, output_of, metrics_for]
 
     EntityListResponse:
       type: object
@@ -557,6 +557,12 @@ components:
       properties:
         file_url:
           type: string
+        size:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
 
     DataPayload:
       type: object
@@ -564,6 +570,14 @@ components:
       properties:
         file_url:
           type: string
+        type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
 
     ProgramPayload:
       type: object
@@ -589,14 +603,5 @@ components:
           type: number
           format: double
         cc:
-          type: number
-          format: double
-        clashscore:
-          type: number
-          format: double
-        ramachandran_outlier_percent:
-          type: number
-          format: double
-        side_chain_outlier_percent:
           type: number
           format: double

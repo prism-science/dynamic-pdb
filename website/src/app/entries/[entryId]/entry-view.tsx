@@ -13,7 +13,6 @@ import type {
   MetricsPayload,
   ModelPayload,
   ProgramPayload,
-  RelationType,
 } from "@/lib/api/entries";
 import SequenceView from "@/app/components/SequenceView";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
@@ -23,24 +22,11 @@ import styles from "./entry-page.module.css";
 
 export const entityLevels: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 
-const derivationRelations: RelationType[] = [
-  "processed_from",
-  "generated_from",
-  "refined_from",
-];
-
-// ---------------------------------------------------------------------------
-// Provenance index — resolves the entity_relations graph into per-entity views.
-// ---------------------------------------------------------------------------
-
 export type Provenance = {
-  index: Map<string, Entity>;
-  /** Program entity that produced `entityId`, if any. */
-  programOf: (entityId: string) => Entity | null;
-  /** Non-program inputs `entityId` was derived from. */
-  inputsOf: (entityId: string) => Entity[];
-  /** Metrics entities that evaluate `entityId`. */
-  metricsOf: (entityId: string) => Entity[];
+	index: Map<string, Entity>;
+	programOf: (entityId: string) => Entity | null;
+	inputsOf: (entityId: string) => Entity[];
+	metricsOf: (entityId: string) => Entity[];
 };
 
 export function buildProvenance(
@@ -49,31 +35,32 @@ export function buildProvenance(
 ): Provenance {
   const index = new Map(entities.map((entity) => [entity.id, entity]));
 
+  const outputProgramsOf = (entityId: string) =>
+    relations
+      .filter(
+        (relation) =>
+          relation.source_entity_id === entityId &&
+          relation.relation_type === "output_of",
+      )
+      .map((relation) => index.get(relation.target_entity_id))
+      .filter((entity): entity is Entity => entity?.type === "program");
+
   const programOf = (entityId: string) => {
-    for (const relation of relations) {
-      if (
-        relation.source_entity_id === entityId &&
-        derivationRelations.includes(relation.relation_type)
-      ) {
-        const target = index.get(relation.target_entity_id);
-        if (target?.type === "program") {
-          return target;
-        }
-      }
-    }
-    return null;
+    return outputProgramsOf(entityId)[0] ?? null;
   };
 
   const inputsOf = (entityId: string) => {
+    const programs = outputProgramsOf(entityId);
+    const programIds = new Set(programs.map((program) => program.id));
     const inputs: Entity[] = [];
     for (const relation of relations) {
       if (
-        relation.source_entity_id === entityId &&
-        derivationRelations.includes(relation.relation_type)
+        relation.relation_type === "input_to" &&
+        programIds.has(relation.target_entity_id)
       ) {
-        const target = index.get(relation.target_entity_id);
-        if (target && target.type !== "program") {
-          inputs.push(target);
+        const source = index.get(relation.source_entity_id);
+        if (source && source.type !== "program" && source.id !== entityId) {
+          inputs.push(source);
         }
       }
     }
@@ -84,7 +71,7 @@ export function buildProvenance(
     const metrics: Entity[] = [];
     for (const relation of relations) {
       if (
-        relation.relation_type === "evaluates" &&
+        relation.relation_type === "metrics_for" &&
         relation.target_entity_id === entityId
       ) {
         const source = index.get(relation.source_entity_id);
@@ -99,11 +86,6 @@ export function buildProvenance(
   return { index, programOf, inputsOf, metricsOf };
 }
 
-// ---------------------------------------------------------------------------
-// Small building blocks
-// ---------------------------------------------------------------------------
-
-// Shared "no image" placeholder used wherever a thumbnail/preview is missing.
 export function ImagePlaceholderIcon({ size = 26 }: { size?: number }) {
   return (
     <svg
@@ -173,10 +155,6 @@ export function SectionHeader({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Entity card — file + how it was made + inputs (+ metrics for models).
-// ---------------------------------------------------------------------------
-
 export function EntityCard({
   entity,
   provenance,
@@ -190,8 +168,10 @@ export function EntityCard({
   const metrics =
     entity.type === "model" ? provenance.metricsOf(entity.id) : [];
   const filePayload = getFilePayload(entity);
-  const subtype = filePayload?.type;
-  const sizeLabel = formatSize(filePayload?.size);
+  const dataPayload =
+    entity.type === "data" ? (filePayload as DataPayload | null) : null;
+  const subtype = dataPayload?.type;
+  const sizeLabel = formatSize(dataPayload?.size);
 
   return (
     <article className={styles.entityCard}>
@@ -264,8 +244,8 @@ export function EntityCard({
         </div>
       ) : null}
 
-      {subtype === "fasta" && filePayload?.metadata ? (
-        <SequenceView metadata={filePayload.metadata as FastaMetadata} />
+      {subtype === "fasta" && dataPayload?.metadata ? (
+        <SequenceView metadata={dataPayload.metadata as FastaMetadata} />
       ) : null}
     </article>
   );
@@ -275,7 +255,6 @@ const modelMetricTiles: { key: keyof MetricsPayload; label: string }[] = [
   { key: "r_free", label: "R-free" },
   { key: "r_work", label: "R-work" },
   { key: "rscc", label: "RSCC" },
-  { key: "clashscore", label: "Clash" },
 ];
 
 export function ModelCard({
@@ -290,7 +269,7 @@ export function ModelCard({
   const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
   const previewURL =
     typeof meta.preview_image_url === "string" ? meta.preview_image_url : null;
-  const structureKind = detectStructureKind(payload?.type ?? fileURL ?? undefined);
+  const structureKind = detectStructureKind(fileURL ?? undefined);
 
   const merged: MetricsPayload = {};
   for (const metric of provenance.metricsOf(entity.id)) {
@@ -380,10 +359,6 @@ export function EntityCardList({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Experiment cards with thumbnail previews.
-// ---------------------------------------------------------------------------
-
 export function ExperimentList({
   entryId,
   entities,
@@ -422,10 +397,6 @@ export function ExperimentList({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Model comparison — metrics side by side, best value per column highlighted.
-// ---------------------------------------------------------------------------
-
 type MetricColumn = {
   key: keyof MetricsPayload;
   label: string;
@@ -437,9 +408,6 @@ const metricColumns: MetricColumn[] = [
   { key: "r_free", label: "Rfree", better: "lower" },
   { key: "cc", label: "CC", better: "higher" },
   { key: "rscc", label: "RSCC", better: "higher" },
-  { key: "clashscore", label: "Clashscore", better: "lower" },
-  { key: "ramachandran_outlier_percent", label: "Rama %", better: "lower" },
-  { key: "side_chain_outlier_percent", label: "Sidechain %", better: "lower" },
 ];
 
 export function ModelComparison({
@@ -526,10 +494,6 @@ export function ModelComparison({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 export function getLevelZeroEntities(entities: Entity[]) {
   return entities.filter((entity) => entity.level === "L0");

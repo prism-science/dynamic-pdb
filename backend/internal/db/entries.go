@@ -33,9 +33,9 @@ func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *Entries
 }
 
 func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*models.Entry, error) {
-	query := `insert into entries(id, name, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :name, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, name, thumbnail_image_url, created_at, updated_at`
+	query := `insert into entries(id, name, description, thumbnail_image_url, created_at, updated_at)
+			  values (:id, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
+			  returning id, name, description, thumbnail_image_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -47,6 +47,7 @@ func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*mo
 	if err := stmt.GetContext(ctx, &row, map[string]any{
 		"id":                  entry.ID,
 		"name":                entry.Name,
+		"description":         nullableString(entry.Description),
 		"thumbnail_image_url": nullableString(entry.ThumbnailImageURL),
 		"created_at":          entry.CreatedAt,
 		"updated_at":          entry.UpdatedAt,
@@ -58,7 +59,7 @@ func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*mo
 }
 
 func (r *EntriesRepository) Get(ctx context.Context, id uuid.UUID) (*models.Entry, error) {
-	query := `select id, name, thumbnail_image_url, created_at, updated_at
+	query := `select id, name, description, thumbnail_image_url, created_at, updated_at
 			  from entries
 			  where id = $1`
 
@@ -115,7 +116,7 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	}
 
 	args := map[string]any{}
-	query := `select id, name, thumbnail_image_url, created_at, updated_at
+	query := `select id, name, description, thumbnail_image_url, created_at, updated_at
 			  from entries
 			  order by created_at asc, id asc`
 
@@ -135,6 +136,7 @@ func entryFromRow(row *entryRow) *models.Entry {
 	return &models.Entry{
 		ID:                row.ID,
 		Name:              row.Name,
+		Description:       stringPtrFromNull(row.Description),
 		ThumbnailImageURL: stringPtrFromNull(row.ThumbnailImageURL),
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
@@ -158,6 +160,7 @@ func stringPtrFromNull(value sql.NullString) *string {
 type entryRow struct {
 	ID                uuid.UUID      `db:"id"`
 	Name              string         `db:"name"`
+	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`

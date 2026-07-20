@@ -33,9 +33,6 @@ export type FastaMetadata = {
   sequence?: string;
 };
 
-// Payloads for data/model are passed through the API verbatim, so metadata is
-// open-ended and grows per file type. `type` is the concrete data subtype
-// (fasta, mtz, pdb, ...); `metadata` carries the parsed, per-type detail.
 export type DataPayload = {
   file_url: string;
   type?: string;
@@ -45,7 +42,6 @@ export type DataPayload = {
 
 export type ModelPayload = {
   file_url: string;
-  type?: string;
   size?: number;
   metadata?: Record<string, unknown>;
 };
@@ -55,9 +51,6 @@ export type MetricsPayload = {
   r_work?: number;
   rscc?: number;
   cc?: number;
-  clashscore?: number;
-  ramachandran_outlier_percent?: number;
-  side_chain_outlier_percent?: number;
 };
 
 export type ProgramPayload = {
@@ -85,10 +78,9 @@ export type Entity = {
 };
 
 export type RelationType =
-  | "processed_from"
-  | "generated_from"
-  | "refined_from"
-  | "evaluates";
+  | "input_to"
+  | "output_of"
+  | "metrics_for";
 
 export type EntityRelation = {
   id: string;
@@ -101,6 +93,11 @@ export type EntityRelation = {
 
 type ListResponse<T> = {
   items: T[];
+};
+
+type EntityListResponse = {
+  items: Entity[];
+  relations: EntityRelation[];
 };
 
 export type EntryPageData = {
@@ -137,24 +134,23 @@ export async function getEntryPageData(
   entryId: string = demoEntryId,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, experiments, entities, relations] = await Promise.all([
+  const [entry, experiments, entityGraph] = await Promise.all([
     fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
     fetchBackend<ListResponse<Experiment>>(
       `/v1/entries/${encodedEntryId}/experiments`,
       token,
     ),
-    fetchBackend<ListResponse<Entity>>(
+    fetchBackend<EntityListResponse>(
       `/v1/entries/${encodedEntryId}/entities`,
       token,
     ),
-    listRelations(token, entryId),
   ]);
 
   return {
     entry,
     experiments: experiments.items,
-    entities: entities.items,
-    relations,
+    entities: entityGraph.items,
+    relations: entityGraph.relations,
   };
 }
 
@@ -165,20 +161,19 @@ export async function getExperimentPageData(
 ): Promise<ExperimentPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
   const encodedExperimentId = encodeURIComponent(experimentId);
-  const [entry, experiment, entities, relations] = await Promise.all([
+  const [entry, experiment, entityGraph] = await Promise.all([
     fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
     fetchBackend<Experiment>(
       `/v1/entries/${encodedEntryId}/experiments/${encodedExperimentId}`,
       token,
     ),
-    fetchBackend<ListResponse<Entity>>(
+    fetchBackend<EntityListResponse>(
       `/v1/entries/${encodedEntryId}/entities`,
       token,
     ),
-    listRelations(token, entryId),
   ]);
 
-  const scopedEntities = entities.items.filter(
+  const scopedEntities = entityGraph.items.filter(
     (entity) =>
       entity.experiment_id === experiment.id ||
       (entity.experiment_id === null && entity.level === "L0"),
@@ -189,7 +184,7 @@ export async function getExperimentPageData(
     entry,
     experiment,
     entities: scopedEntities,
-    relations: relations.filter(
+    relations: entityGraph.relations.filter(
       (relation) =>
         scopedIds.has(relation.source_entity_id) ||
         scopedIds.has(relation.target_entity_id),
@@ -202,38 +197,16 @@ export type EntryGraph = {
   relations: EntityRelation[];
 };
 
-// Full provenance graph for an entry: every entity plus every relation.
 export async function getEntryGraph(
   token: string,
   entryId: string,
 ): Promise<EntryGraph> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entities, relations] = await Promise.all([
-    fetchBackend<ListResponse<Entity>>(
-      `/v1/entries/${encodedEntryId}/entities`,
-      token,
-    ),
-    listRelations(token, entryId),
-  ]);
-  return { entities: entities.items, relations };
-}
-
-// listRelations degrades gracefully: if the backend build predates the
-// provenance endpoint (or it is otherwise unavailable), we return no edges
-// rather than failing the whole page.
-async function listRelations(
-  token: string,
-  entryId: string,
-): Promise<EntityRelation[]> {
-  try {
-    const response = await fetchBackend<ListResponse<EntityRelation>>(
-      `/v1/entries/${encodeURIComponent(entryId)}/relations`,
-      token,
-    );
-    return response.items;
-  } catch {
-    return [];
-  }
+  const entityGraph = await fetchBackend<EntityListResponse>(
+    `/v1/entries/${encodedEntryId}/entities`,
+    token,
+  );
+  return { entities: entityGraph.items, relations: entityGraph.relations };
 }
 
 async function fetchBackend<T>(path: string, token: string): Promise<T> {

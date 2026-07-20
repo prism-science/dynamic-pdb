@@ -14,10 +14,15 @@ func Test_should_return_entry_when_entry_from_row_called(t *testing.T) {
 	// given
 	id := uuid.New()
 	now := time.Now().UTC()
+	description := "Entry description"
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/4rug.png"
 	row := entryRow{
 		ID:   id,
 		Name: "4RUG",
+		Description: sql.NullString{
+			String: description,
+			Valid:  true,
+		},
 		ThumbnailImageURL: sql.NullString{
 			String: thumbnailImageURL,
 			Valid:  true,
@@ -32,6 +37,8 @@ func Test_should_return_entry_when_entry_from_row_called(t *testing.T) {
 	// then
 	assert.Equal(t, id, entry.ID)
 	assert.Equal(t, "4RUG", entry.Name)
+	require.NotNil(t, entry.Description)
+	assert.Equal(t, description, *entry.Description)
 	require.NotNil(t, entry.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *entry.ThumbnailImageURL)
 	assert.Equal(t, now, entry.CreatedAt)

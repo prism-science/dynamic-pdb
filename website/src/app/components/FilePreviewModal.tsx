@@ -24,9 +24,6 @@ const METRIC_LABELS: { key: keyof MetricsPayload; label: string }[] = [
   { key: "r_free", label: "R-free" },
   { key: "cc", label: "CC" },
   { key: "rscc", label: "RSCC" },
-  { key: "clashscore", label: "Clashscore" },
-  { key: "ramachandran_outlier_percent", label: "Ramachandran outliers %" },
-  { key: "side_chain_outlier_percent", label: "Side-chain outliers %" },
 ];
 
 const metricFormatter = new Intl.NumberFormat("en-US", {
