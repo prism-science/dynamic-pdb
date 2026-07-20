@@ -1,0 +1,26 @@
+.page {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 28px 24px 88px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shell {
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.title {
+  margin: 0 0 22px;
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+@media (max-width: 680px) {
+  .page {
+    padding: 22px 14px 64px;
+  }
+}

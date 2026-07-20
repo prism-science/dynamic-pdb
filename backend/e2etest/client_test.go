@@ -11,11 +11,37 @@ import (
 
 func postJSON(t *testing.T, path string, body any) *http.Response {
 	t.Helper()
+	return postJSONWithToken(t, path, body, "")
+}
+
+func postJSONWithToken(t *testing.T, path string, body any, token string) *http.Response {
+	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
-	resp, err := http.Post(testServer.URL+path, "application/json", &buf)
+
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+path, &buf)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+func getWithToken(t *testing.T, path string, token string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+path, nil)
+	require.NoError(t, err)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	return resp
 }

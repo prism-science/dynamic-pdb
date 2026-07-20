@@ -108,8 +108,7 @@ paths:
     get:
       operationId: listEntries
       summary: List entries
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: limit
           in: query
@@ -134,6 +133,26 @@ paths:
                 $ref: "#/components/schemas/EntryListResponse"
         "400":
           description: Invalid filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createEntry
+      summary: Create entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEntryRequest"
+      responses:
+        "201":
+          description: Entry created.
+        "400":
+          description: Invalid request.
           content:
             application/json:
               schema:
@@ -226,7 +245,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /v1/entries/{entry_id}/experiments/{experiment_id}:
     get:
       operationId: getExperiment
@@ -411,6 +429,28 @@ components:
           items:
             $ref: "#/components/schemas/Entry"
 
+    CreateEntryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateEntityRequest"
+        experiments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateExperimentRequest"
+
     Entry:
       type: object
       required: [id, name, created_at, updated_at]
@@ -441,6 +481,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Experiment"
+
+    CreateExperimentRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateEntityRequest"
+        relations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateEntityRelationRequest"
 
     Experiment:
       type: object
@@ -478,6 +540,42 @@ components:
     EntityRelationType:
       type: string
       enum: [input_to, output_of, metrics_for]
+
+    CreateEntityRequest:
+      type: object
+      required: [id, type, name, payload]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/EntityType"
+        level:
+          allOf:
+            - $ref: "#/components/schemas/EntityLevel"
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+        payload:
+          oneOf:
+            - $ref: "#/components/schemas/DataPayload"
+            - $ref: "#/components/schemas/ModelPayload"
+            - $ref: "#/components/schemas/MetricsPayload"
+            - $ref: "#/components/schemas/ProgramPayload"
+
+    CreateEntityRelationRequest:
+      type: object
+      required: [source_entity_id, target_entity_id, relation_type]
+      properties:
+        source_entity_id:
+          type: string
+          format: uuid
+        target_entity_id:
+          type: string
+          format: uuid
+        relation_type:
+          $ref: "#/components/schemas/EntityRelationType"
 
     EntityListResponse:
       type: object
