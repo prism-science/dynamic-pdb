@@ -254,6 +254,7 @@ export function EntityCard({
 const modelMetricTiles: { key: keyof MetricsPayload; label: string }[] = [
   { key: "r_free", label: "R-free" },
   { key: "r_work", label: "R-work" },
+  { key: "cc", label: "CC" },
   { key: "rscc", label: "RSCC" },
 ];
 
