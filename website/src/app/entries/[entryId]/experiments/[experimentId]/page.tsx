@@ -34,10 +34,15 @@ export default async function ExperimentPage({
   const returnTo = `/entries/${entryId}/experiments/${experimentId}`;
 
   if (!session) {
-    redirect(`/auth/github/login?return_to=${encodeURIComponent(returnTo)}`);
+    redirect(loginRedirectPath(returnTo));
   }
 
-  const data = await loadExperimentPage(session.token, entryId, experimentId);
+  const data = await loadExperimentPage(
+    session.token,
+    entryId,
+    experimentId,
+    returnTo,
+  );
   const provenance = buildProvenance(data.entities, data.relations);
 
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
@@ -93,13 +98,25 @@ async function loadExperimentPage(
   token: string,
   entryId: string,
   experimentId: string,
+  returnTo: string,
 ): Promise<ExperimentPageData> {
   try {
     return await getExperimentPageData(token, entryId, experimentId);
   } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      redirect(loginRedirectPath(returnTo));
+    }
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();
     }
     throw error;
   }
+}
+
+function loginRedirectPath(returnTo: string): string {
+  const encodedReturnTo = encodeURIComponent(returnTo);
+  if (process.env.NODE_ENV !== "production") {
+    return `/auth/local-demo?return_to=${encodedReturnTo}`;
+  }
+  return `/auth/github/login?return_to=${encodedReturnTo}`;
 }

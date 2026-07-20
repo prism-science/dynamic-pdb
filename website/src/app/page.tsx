@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 import { ApiRequestError, listEntries } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
@@ -60,11 +61,22 @@ async function loadEntries(token: string) {
   try {
     return await listEntries(token);
   } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      redirect(loginRedirectPath("/"));
+    }
     if (error instanceof ApiRequestError) {
       return [];
     }
     throw error;
   }
+}
+
+function loginRedirectPath(returnTo: string): string {
+  const encodedReturnTo = encodeURIComponent(returnTo);
+  if (process.env.NODE_ENV !== "production") {
+    return `/auth/local-demo?return_to=${encodedReturnTo}`;
+  }
+  return `/auth/github/login?return_to=${encodedReturnTo}`;
 }
 
 function Alert({ children }: { children: ReactNode }) {
