@@ -15,11 +15,16 @@ func Test_should_return_experiment_when_experiment_from_row_called(t *testing.T)
 	id := uuid.New()
 	entryID := uuid.New()
 	now := time.Now().UTC()
+	description := "Refined coordinate model with electron-density support"
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/experiment.png"
 	row := experimentRow{
 		ID:      id,
 		EntryID: entryID,
 		Name:    "qFit run",
+		Description: sql.NullString{
+			String: description,
+			Valid:  true,
+		},
 		ThumbnailImageURL: sql.NullString{
 			String: thumbnailImageURL,
 			Valid:  true,
@@ -35,6 +40,8 @@ func Test_should_return_experiment_when_experiment_from_row_called(t *testing.T)
 	assert.Equal(t, id, experiment.ID)
 	assert.Equal(t, entryID, experiment.EntryID)
 	assert.Equal(t, "qFit run", experiment.Name)
+	require.NotNil(t, experiment.Description)
+	assert.Equal(t, description, *experiment.Description)
 	require.NotNil(t, experiment.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *experiment.ThumbnailImageURL)
 	assert.Equal(t, now, experiment.CreatedAt)

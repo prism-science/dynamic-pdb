@@ -88,6 +88,39 @@ func Test_should_decode_data_payload_when_entity_from_row_called(t *testing.T) {
 	assert.Equal(t, "s3://dynamic-pdb/data/reflections.mtz", payload.FileURL)
 }
 
+func Test_should_decode_data_payload_metadata_when_entity_from_row_called(t *testing.T) {
+	// given
+	entityID := uuid.New()
+	entryID := uuid.New()
+	now := time.Now().UTC()
+	row := entityRow{
+		ID:      entityID,
+		EntryID: entryID,
+		Type:    string(models.EntityTypeData),
+		Name:    "fasta",
+		Payload: []byte(
+			`{"file_url":"https://www.rcsb.org/fasta/entry/5GY3/download","type":"fasta","size":385,"metadata":{"length":310,"chains":1}}`,
+		),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	// when
+	entity, err := entityFromRow(&row)
+
+	// then
+	require.NoError(t, err)
+
+	payload, err := entity.Data()
+	require.NoError(t, err)
+	assert.Equal(t, "https://www.rcsb.org/fasta/entry/5GY3/download", payload.FileURL)
+	assert.Equal(t, "fasta", payload.Type)
+	require.NotNil(t, payload.Size)
+	assert.Equal(t, int64(385), *payload.Size)
+	assert.Equal(t, float64(310), payload.Metadata["length"])
+	assert.Equal(t, float64(1), payload.Metadata["chains"])
+}
+
 func Test_should_decode_program_payload_when_entity_from_row_called(t *testing.T) {
 	// given
 	entityID := uuid.New()

@@ -31,6 +31,14 @@ const (
 	EntityTypeProgram EntityType = "program"
 )
 
+type RelationType string
+
+const (
+	RelationInputTo    RelationType = "input_to"
+	RelationOutputOf   RelationType = "output_of"
+	RelationMetricsFor RelationType = "metrics_for"
+)
+
 type Entity struct {
 	ID           uuid.UUID
 	EntryID      uuid.UUID
@@ -41,6 +49,15 @@ type Entity struct {
 	Payload      any
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+type EntityRelation struct {
+	ID             uuid.UUID
+	SourceEntityID uuid.UUID
+	TargetEntityID uuid.UUID
+	RelationType   RelationType
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (e Entity) Model() (*ModelPayload, error) {

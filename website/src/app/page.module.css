@@ -1,14 +1,13 @@
 .page {
   flex: 1 1 auto;
   width: 100%;
-  padding: 40px 24px 96px;
+  padding: 42px 24px 80px;
   background: var(--bg);
   color: var(--text);
 }
 
-.shell {
-  width: min(var(--content-max), 100%);
-  min-height: 320px;
+.entriesShell {
+  width: min(1120px, 100%);
   margin: 0 auto;
 }
 
@@ -69,9 +68,9 @@
   width: 100%;
   height: 46px;
   margin-top: 24px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: var(--text);
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: #fff;
   font: inherit;
   font-size: 14px;
@@ -83,7 +82,7 @@
 }
 
 .githubButton:hover {
-  background: #000;
+  background: var(--accent-hover);
 }
 
 .githubButton:focus-visible {

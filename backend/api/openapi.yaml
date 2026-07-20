@@ -420,6 +420,9 @@ components:
           format: uuid
         name:
           type: string
+        description:
+          type: string
+          nullable: true
         thumbnail_image_url:
           type: string
           nullable: true
@@ -451,6 +454,9 @@ components:
           format: uuid
         name:
           type: string
+        description:
+          type: string
+          nullable: true
         thumbnail_image_url:
           type: string
           nullable: true
@@ -469,14 +475,24 @@ components:
       type: string
       enum: [L0, L1, L2, L3]
 
+    EntityRelationType:
+      type: string
+      enum: [input_to, output_of, metrics_for]
+
     EntityListResponse:
       type: object
-      required: [items]
+      required: [items, relations]
       properties:
         items:
           type: array
+          description: Entities matching the requested filters.
           items:
             $ref: "#/components/schemas/Entity"
+        relations:
+          type: array
+          description: Entity relations for the entry provenance graph.
+          items:
+            $ref: "#/components/schemas/EntityRelation"
 
     Entity:
       type: object
@@ -513,12 +529,40 @@ components:
           type: string
           format: date-time
 
+    EntityRelation:
+      type: object
+      required: [id, source_entity_id, target_entity_id, relation_type, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_entity_id:
+          type: string
+          format: uuid
+        target_entity_id:
+          type: string
+          format: uuid
+        relation_type:
+          $ref: "#/components/schemas/EntityRelationType"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
     ModelPayload:
       type: object
       required: [file_url]
       properties:
         file_url:
           type: string
+        size:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
 
     DataPayload:
       type: object
@@ -526,6 +570,14 @@ components:
       properties:
         file_url:
           type: string
+        type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
 
     ProgramPayload:
       type: object

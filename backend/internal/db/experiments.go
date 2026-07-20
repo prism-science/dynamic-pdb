@@ -34,9 +34,9 @@ func NewExperimentsRepository(database *sqlx.DB, queriers *QuerierProvider) *Exp
 }
 
 func (r *ExperimentsRepository) Create(ctx context.Context, experiment models.Experiment) (*models.Experiment, error) {
-	query := `insert into experiments(id, entry_id, name, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :entry_id, :name, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, entry_id, name, thumbnail_image_url, created_at, updated_at`
+	query := `insert into experiments(id, entry_id, name, description, thumbnail_image_url, created_at, updated_at)
+			  values (:id, :entry_id, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
+			  returning id, entry_id, name, description, thumbnail_image_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -49,6 +49,7 @@ func (r *ExperimentsRepository) Create(ctx context.Context, experiment models.Ex
 		"id":                  experiment.ID,
 		"entry_id":            experiment.EntryID,
 		"name":                experiment.Name,
+		"description":         nullableString(experiment.Description),
 		"thumbnail_image_url": nullableString(experiment.ThumbnailImageURL),
 		"created_at":          experiment.CreatedAt,
 		"updated_at":          experiment.UpdatedAt,
@@ -60,7 +61,7 @@ func (r *ExperimentsRepository) Create(ctx context.Context, experiment models.Ex
 }
 
 func (r *ExperimentsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*models.Experiment, error) {
-	query := `select id, entry_id, name, thumbnail_image_url, created_at, updated_at
+	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
 			  from experiments
 			  where entry_id = $1 and id = $2`
 
@@ -123,7 +124,7 @@ func experimentListQuery(filters ExperimentFilters) (string, map[string]any, err
 		args["entry_id"] = *filters.EntryID
 	}
 
-	query := `select id, entry_id, name, thumbnail_image_url, created_at, updated_at
+	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
 			  from experiments`
 	if len(conditions) > 0 {
 		query += "\nwhere " + conditions[0]
@@ -147,6 +148,7 @@ func experimentFromRow(row *experimentRow) *models.Experiment {
 		ID:                row.ID,
 		EntryID:           row.EntryID,
 		Name:              row.Name,
+		Description:       stringPtrFromNull(row.Description),
 		ThumbnailImageURL: stringPtrFromNull(row.ThumbnailImageURL),
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
@@ -157,6 +159,7 @@ type experimentRow struct {
 	ID                uuid.UUID      `db:"id"`
 	EntryID           uuid.UUID      `db:"entry_id"`
 	Name              string         `db:"name"`
+	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`

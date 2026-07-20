@@ -1,11 +1,16 @@
 package models
 
 type ModelPayload struct {
-	FileURL string `json:"file_url,omitempty"`
+	FileURL  string         `json:"file_url,omitempty"`
+	Size     *int64         `json:"size,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type DataPayload struct {
-	FileURL string `json:"file_url,omitempty"`
+	FileURL  string         `json:"file_url,omitempty"`
+	Type     string         `json:"type,omitempty"`
+	Size     *int64         `json:"size,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type ProgramPayload struct {

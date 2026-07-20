@@ -67,6 +67,7 @@ func entryResponseFromModel(entry domainmodels.Entry) Entry {
 	return Entry{
 		Id:                entry.ID,
 		Name:              entry.Name,
+		Description:       entry.Description,
 		ThumbnailImageUrl: entry.ThumbnailImageURL,
 		CreatedAt:         entry.CreatedAt,
 		UpdatedAt:         entry.UpdatedAt,
@@ -130,6 +131,7 @@ func experimentResponseFromModel(experiment domainmodels.Experiment) Experiment 
 		Id:                experiment.ID,
 		EntryId:           experiment.EntryID,
 		Name:              experiment.Name,
+		Description:       experiment.Description,
 		ThumbnailImageUrl: experiment.ThumbnailImageURL,
 		CreatedAt:         experiment.CreatedAt,
 		UpdatedAt:         experiment.UpdatedAt,
@@ -161,7 +163,22 @@ func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uu
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, EntityListResponse{Items: items})
+	relations, err := s.database.EntityRelations.List(r.Context(), entryID)
+	if err != nil {
+		slog.Error("list entity relations failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entity relations")
+		return
+	}
+
+	relationItems := make([]EntityRelation, 0, len(relations))
+	for _, relation := range relations {
+		relationItems = append(relationItems, entityRelationResponseFromModel(relation))
+	}
+
+	writeJSON(w, http.StatusOK, EntityListResponse{
+		Items:     items,
+		Relations: relationItems,
+	})
 }
 
 func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.EntityFilters, error) {
@@ -225,7 +242,10 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 			return Entity_Payload{}, fmt.Errorf("get data payload: %w", err)
 		}
 		if err := payload.FromDataPayload(DataPayload{
-			FileUrl: dataPayload.FileURL,
+			FileUrl:  dataPayload.FileURL,
+			Metadata: entityPayloadMetadataResponseFromModel(dataPayload.Metadata),
+			Size:     dataPayload.Size,
+			Type:     stringPtrFromNonEmpty(dataPayload.Type),
 		}); err != nil {
 			return Entity_Payload{}, fmt.Errorf("build data payload response: %w", err)
 		}
@@ -235,7 +255,9 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 			return Entity_Payload{}, fmt.Errorf("get model payload: %w", err)
 		}
 		if err := payload.FromModelPayload(ModelPayload{
-			FileUrl: modelPayload.FileURL,
+			FileUrl:  modelPayload.FileURL,
+			Metadata: entityPayloadMetadataResponseFromModel(modelPayload.Metadata),
+			Size:     modelPayload.Size,
 		}); err != nil {
 			return Entity_Payload{}, fmt.Errorf("build model payload response: %w", err)
 		}
@@ -271,10 +293,36 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 	return payload, nil
 }
 
+func entityPayloadMetadataResponseFromModel(metadata map[string]any) *map[string]interface{} {
+	if metadata == nil {
+		return nil
+	}
+	responseMetadata := map[string]interface{}(metadata)
+	return &responseMetadata
+}
+
+func stringPtrFromNonEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func entityLevelResponseFromModel(level *domainmodels.EntityLevel) *EntityLevel {
 	if level == nil {
 		return nil
 	}
 	responseLevel := EntityLevel(*level)
 	return &responseLevel
+}
+
+func entityRelationResponseFromModel(relation domainmodels.EntityRelation) EntityRelation {
+	return EntityRelation{
+		Id:             relation.ID,
+		SourceEntityId: relation.SourceEntityID,
+		TargetEntityId: relation.TargetEntityID,
+		RelationType:   EntityRelationType(relation.RelationType),
+		CreatedAt:      relation.CreatedAt,
+		UpdatedAt:      relation.UpdatedAt,
+	}
 }

@@ -1,6 +1,7 @@
 CREATE TABLE entries (
     id                  uuid PRIMARY KEY,
     name                text NOT NULL,
+    description         text,
     thumbnail_image_url text,
 
     created_at          timestamptz NOT NULL DEFAULT now(),
@@ -13,6 +14,7 @@ CREATE TABLE experiments (
         REFERENCES entries(id) ON DELETE CASCADE,
 
     name                text NOT NULL,
+    description         text,
     thumbnail_image_url text,
 
     created_at          timestamptz NOT NULL DEFAULT now(),
