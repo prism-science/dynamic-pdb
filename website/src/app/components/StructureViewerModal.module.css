@@ -1,0 +1,154 @@
+/* Ported from ext: thumbnail button + centered overlay modal. */
+
+.structureThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.structureThumb:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.structureThumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.structureThumbLabel {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chartOverlayBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(28, 25, 23, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.floatingCloseButton {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(214, 211, 209, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: 0 10px 30px rgba(28, 25, 23, 0.18);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.floatingCloseButton:hover {
+  background: var(--surface);
+  color: var(--text);
+  transform: scale(1.04);
+}
+
+.floatingCloseButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ring), 0 10px 30px rgba(28, 25, 23, 0.18);
+}
+
+.chartOverlayCard {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 16px 20px 20px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgba(28, 25, 23, 0.28);
+}
+
+.structureOverlayCard {
+  width: min(1360px, 100%);
+}
+
+.chartOverlayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.chartOverlayTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.closeButton {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.closeButton:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .chartOverlayBackdrop {
+    padding: 12px;
+  }
+
+  .floatingCloseButton {
+    top: 12px;
+    right: 12px;
+  }
+
+  .structureOverlayCard {
+    max-height: calc(100vh - 24px);
+  }
+}

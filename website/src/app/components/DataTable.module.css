@@ -1,0 +1,149 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.column {
+  min-width: 0;
+  padding: 14px;
+}
+
+.column + .column {
+  border-left: 1px solid var(--border);
+}
+
+.columnHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.levelBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--lvl-soft);
+  color: var(--lvl);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.levelTitle {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cells {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cells::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cells::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.cells {
+  scrollbar-width: thin;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--lvl);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.cell:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgba(59, 166, 241, 0.1);
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cellType {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cellType[data-type="model"] {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.cellType[data-type="metrics"] {
+  background: var(--l3-soft);
+  color: var(--l3);
+}
+
+.cellName {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.emptyCell {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .column:nth-child(3),
+  .column:nth-child(4) {
+    border-top: 1px solid var(--border);
+  }
+
+  .column:nth-child(odd) {
+    border-left: 0;
+  }
+}

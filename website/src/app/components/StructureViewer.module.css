@@ -1,0 +1,94 @@
+.structureViewer {
+  width: 100%;
+}
+
+.structureCanvas {
+  position: relative;
+  width: 100%;
+  height: min(78vh, 780px);
+  min-height: 560px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border, #e4e7ec);
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+
+.structureCanvas :global(.msp-plugin) {
+  border-radius: inherit;
+}
+
+.structureCanvas :global(.msp-viewport) {
+  background: var(--surface, #fff);
+}
+
+.structureControls {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+
+.structureControlButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border, #e4e7ec);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, #fff);
+  color: var(--text-secondary, #475467);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(16, 24, 40, 0.06));
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.structureControlButton:hover {
+  border-color: var(--accent, #175cd3);
+  background: var(--accent-soft, #eff4ff);
+  color: var(--accent, #175cd3);
+}
+
+.structureControlButton:focus-visible {
+  outline: none;
+  border-color: var(--accent, #175cd3);
+  box-shadow: var(--ring, 0 0 0 3px rgba(23, 92, 211, 0.16));
+}
+
+.structureControlButtonActive {
+  border-color: var(--accent, #175cd3);
+  background: var(--accent, #175cd3);
+  color: #fff;
+}
+
+.structureControlButtonActive:hover {
+  background: var(--accent-hover, #1849b3);
+  color: #fff;
+}
+
+.structurePlaceholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--text-muted, #667085);
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .structureCanvas {
+    height: calc(100vh - 128px);
+    min-height: 420px;
+  }
+}

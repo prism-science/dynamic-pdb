@@ -1,8 +1,14 @@
+import type { ReactNode } from "react";
+
+import { ApiRequestError, listEntries } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import AuthBrand from "./components/AuthBrand";
+import EntriesBrowser from "./components/EntriesBrowser";
 import LoginButton from "./components/LoginButton";
 
 import styles from "./page.module.css";
+
+export const dynamic = "force-dynamic";
 
 type SearchParamValue = string | string[] | undefined;
 
@@ -39,14 +45,29 @@ export default async function Home({ searchParams }: HomeProps) {
     );
   }
 
+  const entries = await loadEntries(session.token);
+
   return (
-    <main className={styles.page} aria-label="dynamic-pdb workspace">
-      <div className={styles.shell} />
+    <main className={styles.page} aria-label="dynamic-pdb entries">
+      <section className={styles.entriesShell}>
+        <EntriesBrowser entries={entries} />
+      </section>
     </main>
   );
 }
 
-function Alert({ children }: { children: React.ReactNode }) {
+async function loadEntries(token: string) {
+  try {
+    return await listEntries(token);
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function Alert({ children }: { children: ReactNode }) {
   return (
     <p className={styles.alert}>
       <svg

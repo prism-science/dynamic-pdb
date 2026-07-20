@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import "molstar/build/viewer/molstar.css";
 import "./globals.css";
 import AppHeader from "./components/AppHeader";
 
