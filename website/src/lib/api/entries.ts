@@ -124,9 +124,71 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function listEntries(token: string): Promise<Entry[]> {
+export async function listEntries(token?: string): Promise<Entry[]> {
   const response = await fetchBackend<ListResponse<Entry>>("/v1/entries", token);
   return response.items;
+}
+
+export type CreateEntityInput = {
+  id: string;
+  type: EntityType;
+  level?: EntityLevel | null;
+  name: string;
+  payload: Record<string, unknown>;
+};
+
+export type CreateEntityRelationInput = {
+  source_entity_id: string;
+  target_entity_id: string;
+  relation_type: string;
+};
+
+export type CreateExperimentInput = {
+  name: string;
+  description?: string | null;
+  thumbnail_image_url?: string | null;
+  entities?: CreateEntityInput[];
+  relations?: CreateEntityRelationInput[];
+};
+
+export type CreateEntryInput = {
+  name: string;
+  description?: string | null;
+  thumbnail_image_url?: string | null;
+  entities?: CreateEntityInput[];
+  experiments?: CreateExperimentInput[];
+};
+
+export async function createEntry(
+  token: string,
+  input: CreateEntryInput,
+): Promise<void> {
+  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/v1/entries`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    throw new ApiRequestError(
+      error instanceof Error
+        ? `Backend request failed: ${error.message}`
+        : "Backend request failed",
+    );
+  }
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `Backend responded with ${response.status}`,
+      response.status,
+    );
+  }
 }
 
 export async function getEntryPageData(
@@ -209,17 +271,19 @@ export async function getEntryGraph(
   return { entities: entityGraph.items, relations: entityGraph.relations };
 }
 
-async function fetchBackend<T>(path: string, token: string): Promise<T> {
+async function fetchBackend<T>(path: string, token?: string): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
     });
   } catch (error) {
     throw new ApiRequestError(

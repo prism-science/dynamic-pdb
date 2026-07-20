@@ -16,12 +16,16 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  opacity: 0.55;
   transition:
+    opacity 120ms ease,
     border-color 120ms ease,
     color 120ms ease;
 }
 
-.copy:hover {
+.copy:hover,
+.copy:focus-visible {
+  opacity: 1;
   border-color: var(--accent);
   color: var(--accent-hover);
 }

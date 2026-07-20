@@ -23,6 +23,33 @@ func NewEntityRelationsRepository(database *sqlx.DB, queriers *QuerierProvider) 
 	}
 }
 
+func (r *EntityRelationsRepository) Create(ctx context.Context, relation models.EntityRelation) (*models.EntityRelation, error) {
+	query := `insert into entity_relations(id, source_entity_id, target_entity_id, relation_type, created_at, updated_at)
+			  values (:id, :source_entity_id, :target_entity_id, :relation_type, :created_at, :updated_at)
+			  returning id, source_entity_id, target_entity_id, relation_type, created_at, updated_at`
+
+	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	var row entityRelationRow
+	if err := stmt.GetContext(ctx, &row, map[string]any{
+		"id":               relation.ID,
+		"source_entity_id": relation.SourceEntityID,
+		"target_entity_id": relation.TargetEntityID,
+		"relation_type":    string(relation.RelationType),
+		"created_at":       relation.CreatedAt,
+		"updated_at":       relation.UpdatedAt,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to insert entity relation: %w", err)
+	}
+
+	created := entityRelationFromRow(&row)
+	return &created, nil
+}
+
 func (r *EntityRelationsRepository) List(ctx context.Context, entryID uuid.UUID) ([]models.EntityRelation, error) {
 	query := `select er.id, er.source_entity_id, er.target_entity_id, er.relation_type,
 				 er.created_at, er.updated_at

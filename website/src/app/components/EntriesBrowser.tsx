@@ -18,7 +18,13 @@ function formatDate(value: string): string | null {
   return Number.isNaN(parsed.getTime()) ? null : dateFormatter.format(parsed);
 }
 
-export default function EntriesBrowser({ entries }: { entries: Entry[] }) {
+export default function EntriesBrowser({
+  entries,
+  canCreate = false,
+}: {
+  entries: Entry[];
+  canCreate?: boolean;
+}) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -36,6 +42,14 @@ export default function EntriesBrowser({ entries }: { entries: Entry[] }) {
     <div className={styles.wrap}>
       <header className={styles.head}>
         <h1 className={styles.title}>Proteins</h1>
+        {canCreate ? (
+          <Link className={styles.addButton} href="/entries/new">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New entry
+          </Link>
+        ) : null}
       </header>
 
       <div className={styles.searchRow}>

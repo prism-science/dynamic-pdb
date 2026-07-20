@@ -64,6 +64,9 @@ export default function FilePreviewModal({
   const kind = detectStructureKind(payload.type ?? url ?? undefined);
   const isFasta = payload.type === "fasta";
   const isMetrics = entity.type === "metrics";
+  const isImage =
+    payload.type === "image" ||
+    (url != null && /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(url));
   const wide = kind != null && !isMetrics && !isFasta;
 
   return createPortal(
@@ -99,6 +102,9 @@ export default function FilePreviewModal({
             <MetricsView payload={entity.payload as MetricsPayload} />
           ) : isFasta && payload.metadata ? (
             <SequenceView metadata={payload.metadata as FastaMetadata} />
+          ) : isImage && url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className={styles.previewImg} src={url} alt={entity.name} />
           ) : kind && url ? (
             <StructureViewer url={url} kind={kind} />
           ) : (
