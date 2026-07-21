@@ -111,7 +111,6 @@ export default async function EntryPage({ params }: EntryRouteProps) {
                 <h2 className={styles.contentHeading}>Models</h2>
                 <ExperimentList
                   entryId={data.entry.id}
-                  entities={data.entities}
                   experiments={data.experiments}
                 />
               </section>

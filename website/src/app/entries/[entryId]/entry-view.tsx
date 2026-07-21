@@ -7,7 +7,6 @@ import type {
   EntityLevel,
   EntityRelation,
   EntityType,
-  Entry,
   Experiment,
   FastaMetadata,
   MetricsPayload,
@@ -116,16 +115,21 @@ export function EntryHero({
   eyebrow,
   description,
   meta = [],
+  action,
 }: {
   title: string;
   eyebrow?: string;
   description?: string | null;
   meta?: string[];
+  action?: ReactNode;
 }) {
   return (
     <header className={styles.hero}>
       {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
-      <h1>{title}</h1>
+      <div className={styles.heroTitleRow}>
+        <h1>{title}</h1>
+        {action ? <div className={styles.heroAction}>{action}</div> : null}
+      </div>
       {description?.trim() ? (
         <p className={styles.description}>{description}</p>
       ) : null}
@@ -172,6 +176,7 @@ export function EntityCard({
     entity.type === "data" ? (filePayload as DataPayload | null) : null;
   const subtype = dataPayload?.type;
   const sizeLabel = formatSize(dataPayload?.size);
+  const authorFacts = getEntityAuthorFacts(entity);
 
   return (
     <article className={styles.entityCard}>
@@ -207,7 +212,7 @@ export function EntityCard({
         ) : null}
       </div>
 
-      {program || inputs.length > 0 ? (
+      {program || inputs.length > 0 || authorFacts.length > 0 ? (
         <dl className={styles.provenance}>
           {program ? (
             <div className={styles.provenanceRow}>
@@ -228,6 +233,12 @@ export function EntityCard({
               </dd>
             </div>
           ) : null}
+          {authorFacts.map((fact) => (
+            <div key={fact.label} className={styles.provenanceRow}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
         </dl>
       ) : null}
 
@@ -251,11 +262,48 @@ export function EntityCard({
   );
 }
 
-const modelMetricTiles: { key: keyof MetricsPayload; label: string }[] = [
-  { key: "r_free", label: "R-free" },
-  { key: "r_work", label: "R-work" },
-  { key: "cc", label: "CC" },
-  { key: "rscc", label: "RSCC" },
+type MetricStatus = "good" | "warn" | "bad";
+
+type MetricSpec = {
+  key: keyof MetricsPayload;
+  label: string;
+  direction: "lower" | "higher";
+  scaleMax: number;
+  status: (value: number) => MetricStatus;
+};
+
+// Direction, scale, and quality thresholds are fixed properties of each
+// crystallographic metric (R-factors: lower is better; correlation
+// coefficients: higher is better), not stored in the payload.
+const modelMetricTiles: MetricSpec[] = [
+  {
+    key: "r_work",
+    label: "R-work",
+    direction: "lower",
+    scaleMax: 0.4,
+    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
+  },
+  {
+    key: "r_free",
+    label: "R-free",
+    direction: "lower",
+    scaleMax: 0.4,
+    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
+  },
+  {
+    key: "rscc",
+    label: "RSCC",
+    direction: "higher",
+    scaleMax: 1,
+    status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
+  },
+  {
+    key: "cc",
+    label: "CC",
+    direction: "higher",
+    scaleMax: 1,
+    status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
+  },
 ];
 
 export function ModelCard({
@@ -268,8 +316,7 @@ export function ModelCard({
   const fileURL = getEntityFileURL(entity);
   const payload = getFilePayload(entity);
   const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
-  const previewURL =
-    typeof meta.preview_image_url === "string" ? meta.preview_image_url : null;
+  const previewURL = getModelPreviewURL(entity, meta, fileURL);
   const structureKind = detectStructureKind(fileURL ?? undefined);
 
   const merged: MetricsPayload = {};
@@ -279,6 +326,8 @@ export function ModelCard({
   const tiles = modelMetricTiles.filter(
     (tile) => typeof merged[tile.key] === "number",
   );
+  const program = provenance.programOf(entity.id);
+  const authorFacts = getEntityAuthorFacts(entity);
 
   return (
     <article className={styles.modelCard}>
@@ -297,38 +346,50 @@ export function ModelCard({
       </div>
 
       <div className={styles.modelBody}>
-        <div className={styles.modelHead}>
-          <span className={styles.modelName}>{entity.name}</span>
-          {fileURL ? (
-            <a
-              className={styles.modelFileLink}
-              href={fileURL}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {getFileName(fileURL)}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path
-                  d="M4.5 2h5.5v5.5M10 2 4 8M8 7v3H2V4h3"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </a>
-          ) : null}
-        </div>
-
-        {tiles.length > 0 ? (
-          <dl className={styles.metricList}>
-            {tiles.map((tile) => (
-              <div key={tile.key} className={styles.metricRow}>
-                <dt>{tile.label}</dt>
-                <dd>{metricFormatter.format(merged[tile.key] as number)}</dd>
+        {program || authorFacts.length > 0 ? (
+          <dl className={styles.modelProvenance}>
+            {program ? (
+              <div className={styles.modelProvenanceRow}>
+                <dt>Made with</dt>
+                <dd>{formatProgram(program)}</dd>
+              </div>
+            ) : null}
+            {authorFacts.map((fact) => (
+              <div key={fact.label} className={styles.modelProvenanceRow}>
+                <dt>{fact.label}</dt>
+                <dd>{fact.value}</dd>
               </div>
             ))}
           </dl>
+        ) : null}
+
+        {tiles.length > 0 ? (
+          <section className={styles.validation}>
+            <div className={styles.metricGrid}>
+              {tiles.map((tile) => {
+                const value = merged[tile.key] as number;
+                const fill = Math.max(0, Math.min(1, value / tile.scaleMax));
+                return (
+                  <div key={tile.key} className={styles.metricTile}>
+                    <div className={styles.metricLabel}>{tile.label}</div>
+                    <div className={styles.metricValue}>
+                      {metricFormatter.format(value)}
+                    </div>
+                    <div className={styles.metricBar}>
+                      <span
+                        className={styles.metricBarFill}
+                        data-status={tile.status(value)}
+                        style={{ width: `${fill * 100}%` }}
+                      />
+                    </div>
+                    <div className={styles.metricHint}>
+                      {tile.direction === "lower" ? "↓ better" : "↑ better"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         ) : null}
       </div>
     </article>
@@ -362,11 +423,9 @@ export function EntityCardList({
 
 export function ExperimentList({
   entryId,
-  entities,
   experiments,
 }: {
   entryId: string;
-  entities: Entity[];
   experiments: Experiment[];
 }) {
   if (experiments.length === 0) {
@@ -550,6 +609,72 @@ function formatProgram(program: Entity): string {
     return payload.version ? `${payload.name} ${payload.version}` : payload.name;
   }
   return program.name;
+}
+
+function getEntityAuthorFacts(entity: Entity): { label: string; value: string }[] {
+  if (entity.type !== "data" && entity.type !== "model") {
+    return [];
+  }
+
+  const payload = entity.payload as DataPayload | ModelPayload;
+  const authors = Array.isArray(payload.authors)
+    ? payload.authors.map((author) => author.trim()).filter(Boolean)
+    : [];
+  const institution =
+    typeof payload.affiliation === "string"
+      ? payload.affiliation.trim()
+      : "";
+  const facts: { label: string; value: string }[] = [];
+
+  if (authors.length > 0) {
+    facts.push({ label: "Authors", value: authors.join(", ") });
+  }
+  if (institution) {
+    facts.push({ label: "Affiliation", value: institution });
+  }
+
+  return facts;
+}
+
+function getModelPreviewURL(
+  entity: Entity,
+  meta: Record<string, unknown>,
+  fileURL: string | null,
+): string | null {
+  const explicit =
+    typeof meta.preview_image_url === "string"
+      ? meta.preview_image_url.trim()
+      : "";
+  if (explicit) {
+    return explicit;
+  }
+
+  const pdbID = getPdbID(meta, fileURL, entity.name);
+  if (!pdbID) {
+    return null;
+  }
+
+  const lower = pdbID.toLowerCase();
+  const shard = lower.slice(1, 3);
+  return `https://cdn.rcsb.org/images/structures/${shard}/${lower}/${lower}_model-1.jpeg`;
+}
+
+function getPdbID(
+  meta: Record<string, unknown>,
+  fileURL: string | null,
+  name: string,
+): string | null {
+  const candidates = [meta.pdb_id, fileURL, name];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const match = candidate.match(/\b[0-9][A-Za-z0-9]{3}\b/);
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+  return null;
 }
 
 function metricEntries(payload: MetricsPayload) {

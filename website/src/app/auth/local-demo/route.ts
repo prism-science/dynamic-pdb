@@ -2,7 +2,11 @@ import { createHmac } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { demoUserId } from "@/lib/api/entries";
-import { sanitizeReturnTo, setAuthCookies } from "@/lib/auth/session";
+import {
+  getPublicOrigin,
+  sanitizeReturnTo,
+  setAuthCookies,
+} from "@/lib/auth/session";
 
 const demoLogin = "local-demo-user";
 const demoName = "Local Demo User";
@@ -16,7 +20,9 @@ export function GET(request: NextRequest) {
   const returnTo = sanitizeReturnTo(request.nextUrl.searchParams.get("return_to"));
   const expiresAt = new Date(Date.now() + tokenTTLSeconds * 1000);
   const token = issueDemoToken(expiresAt);
-  const response = NextResponse.redirect(new URL(returnTo, request.url));
+  const response = NextResponse.redirect(
+    new URL(returnTo, getPublicOrigin(request)),
+  );
 
   setAuthCookies(response, request, {
     accessToken: token,

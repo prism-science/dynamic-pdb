@@ -32,6 +32,7 @@ func Test_should_decode_model_payload_when_entity_from_row_called(t *testing.T) 
 	entryID := uuid.New()
 	level := models.EntityLevelL2
 	now := time.Now().UTC()
+	affiliation := "Department of Chemistry, Boston University"
 	row := entityRow{
 		ID:           entityID,
 		EntryID:      entryID,
@@ -41,8 +42,10 @@ func Test_should_decode_model_payload_when_entity_from_row_called(t *testing.T) 
 			String: string(level),
 			Valid:  true,
 		},
-		Name:      "qFit model",
-		Payload:   []byte(`{"file_url":"s3://dynamic-pdb/models/qfit.cif"}`),
+		Name: "qFit model",
+		Payload: []byte(
+			`{"file_url":"s3://dynamic-pdb/models/qfit.cif","authors":["Hendrickson, W.A.","Teeter, M.M."],"affiliation":"Department of Chemistry, Boston University"}`,
+		),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -60,6 +63,9 @@ func Test_should_decode_model_payload_when_entity_from_row_called(t *testing.T) 
 	payload, err := entity.Model()
 	require.NoError(t, err)
 	assert.Equal(t, "s3://dynamic-pdb/models/qfit.cif", payload.FileURL)
+	assert.Equal(t, []string{"Hendrickson, W.A.", "Teeter, M.M."}, payload.Authors)
+	require.NotNil(t, payload.Affiliation)
+	assert.Equal(t, affiliation, *payload.Affiliation)
 }
 
 func Test_should_decode_data_payload_when_entity_from_row_called(t *testing.T) {

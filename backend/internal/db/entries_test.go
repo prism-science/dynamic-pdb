@@ -67,6 +67,24 @@ func Test_should_build_query_with_pagination_when_entry_list_query_called(t *tes
 	assert.Equal(t, offset, args["offset"])
 }
 
+func Test_should_build_query_with_search_when_entry_list_query_called(t *testing.T) {
+	// given
+	filters := EntryFilters{
+		Query: "crambin model",
+	}
+
+	// when
+	sql, args, err := entryListQuery(filters)
+
+	// then
+	require.NoError(t, err)
+	assert.Contains(t, sql, "where")
+	assert.Contains(t, sql, "from entry_search_index idx")
+	assert.Contains(t, sql, "idx.entry_id = entries.id")
+	assert.Contains(t, sql, "idx.search_tsv @@ plainto_tsquery('simple', :search_query)")
+	assert.Equal(t, "crambin model", args["search_query"])
+}
+
 func Test_should_return_error_when_entry_list_query_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1

@@ -1,10 +1,8 @@
-"use client";
-
 import Link from "next/link";
-import { useMemo, useState } from "react";
 
 import type { Entry } from "@/lib/api/entries";
 
+import EntriesSearchForm from "./EntriesSearchForm";
 import styles from "./EntriesBrowser.module.css";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -21,23 +19,12 @@ function formatDate(value: string): string | null {
 export default function EntriesBrowser({
   entries,
   canCreate = false,
+  query = "",
 }: {
   entries: Entry[];
   canCreate?: boolean;
+  query?: string;
 }) {
-  const [query, setQuery] = useState("");
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      return entries;
-    }
-    return entries.filter((entry) => {
-      const haystack = `${entry.name} ${entry.description ?? ""} ${entry.id}`;
-      return haystack.toLowerCase().includes(q);
-    });
-  }, [entries, query]);
-
   return (
     <div className={styles.wrap}>
       <header className={styles.head}>
@@ -52,36 +39,11 @@ export default function EntriesBrowser({
         ) : null}
       </header>
 
-      <div className={styles.searchRow}>
-        <svg
-          className={styles.searchIcon}
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
-          <path
-            d="m11 11 3 3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-        <input
-          className={styles.search}
-          type="search"
-          placeholder="Search by name, description, etc."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Search"
-        />
-      </div>
+      <EntriesSearchForm query={query} />
 
-      {filtered.length > 0 ? (
+      {entries.length > 0 ? (
         <ul className={styles.grid}>
-          {filtered.map((entry) => {
+          {entries.map((entry) => {
             const updated = formatDate(entry.updated_at);
             return (
               <li key={entry.id}>
@@ -117,9 +79,7 @@ export default function EntriesBrowser({
         </ul>
       ) : (
         <p className={styles.empty}>
-          {entries.length === 0
-            ? "No entries found."
-            : `No entries match "${query}".`}
+          {query ? `No entries match "${query}".` : "No entries found."}
         </p>
       )}
     </div>

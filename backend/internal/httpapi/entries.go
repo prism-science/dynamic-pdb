@@ -90,9 +90,15 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 		return db.EntryFilters{}, errors.New("offset must be non-negative")
 	}
 
+	search := ""
+	if params.Query != nil {
+		search = strings.TrimSpace(*params.Query)
+	}
+
 	return db.EntryFilters{
 		Limit:  params.Limit,
 		Offset: params.Offset,
+		Query:  search,
 	}, nil
 }
 
@@ -121,6 +127,9 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 		})
 		if err != nil {
 			return fmt.Errorf("create entry: %w", err)
+		}
+		if err := s.database.EntrySearch.IndexEntry(ctx, *entry); err != nil {
+			return fmt.Errorf("index entry search: %w", err)
 		}
 
 		entryEntityIDs := make(map[uuid.UUID]struct{})
@@ -177,6 +186,9 @@ func (s *Server) createExperimentGraph(
 	if err != nil {
 		return fmt.Errorf("create experiment: %w", err)
 	}
+	if err := s.database.EntrySearch.IndexExperiment(ctx, *experiment); err != nil {
+		return fmt.Errorf("index experiment search: %w", err)
+	}
 
 	experimentEntityIDs := make(map[uuid.UUID]struct{})
 	if req.Entities != nil {
@@ -222,6 +234,7 @@ func (s *Server) createEntity(
 		return uuid.Nil, invalidCreateEntryRequest("entity name is required")
 	}
 
+	entityType := domainmodels.EntityType(req.Type)
 	payload, err := entityPayloadFromCreateRequest(req)
 	if err != nil {
 		return uuid.Nil, err
@@ -231,7 +244,7 @@ func (s *Server) createEntity(
 		ID:           entityID,
 		EntryID:      entry.ID,
 		ExperimentID: experimentID,
-		Type:         domainmodels.EntityType(req.Type),
+		Type:         entityType,
 		Level:        entityLevelFromRequest(req.Level),
 		Name:         name,
 		Payload:      payload,
@@ -240,6 +253,9 @@ func (s *Server) createEntity(
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create entity: %w", err)
+	}
+	if err := s.database.EntrySearch.IndexEntity(ctx, *entity); err != nil {
+		return uuid.Nil, fmt.Errorf("index entity search: %w", err)
 	}
 
 	return entity.ID, nil
@@ -292,10 +308,12 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 			return nil, fmt.Errorf("decode data payload: %w", err)
 		}
 		return &domainmodels.DataPayload{
-			FileURL:  payload.FileUrl,
-			Type:     stringFromPtr(payload.Type),
-			Size:     payload.Size,
-			Metadata: metadataFromRequest(payload.Metadata),
+			FileURL:     payload.FileUrl,
+			Type:        stringFromPtr(payload.Type),
+			Authors:     authorsFromRequest(payload.Authors),
+			Affiliation: trimmedStringPtr(payload.Affiliation),
+			Size:        payload.Size,
+			Metadata:    metadataFromRequest(payload.Metadata),
 		}, nil
 	case domainmodels.EntityTypeModel:
 		payload, err := req.Payload.AsModelPayload()
@@ -303,9 +321,11 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 			return nil, fmt.Errorf("decode model payload: %w", err)
 		}
 		return &domainmodels.ModelPayload{
-			FileURL:  payload.FileUrl,
-			Size:     payload.Size,
-			Metadata: metadataFromRequest(payload.Metadata),
+			FileURL:     payload.FileUrl,
+			Authors:     authorsFromRequest(payload.Authors),
+			Affiliation: trimmedStringPtr(payload.Affiliation),
+			Size:        payload.Size,
+			Metadata:    metadataFromRequest(payload.Metadata),
 		}, nil
 	case domainmodels.EntityTypeMetrics:
 		payload, err := req.Payload.AsMetricsPayload()
@@ -360,6 +380,32 @@ func stringFromPtr(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func authorsFromRequest(authors *[]string) []string {
+	if authors == nil {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(*authors))
+	for _, author := range *authors {
+		trimmed := strings.TrimSpace(author)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return normalized
+}
+
+func trimmedStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func metadataFromRequest(metadata *map[string]interface{}) map[string]any {
@@ -541,10 +587,12 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 			return Entity_Payload{}, fmt.Errorf("get data payload: %w", err)
 		}
 		if err := payload.FromDataPayload(DataPayload{
-			FileUrl:  dataPayload.FileURL,
-			Metadata: entityPayloadMetadataResponseFromModel(dataPayload.Metadata),
-			Size:     dataPayload.Size,
-			Type:     stringPtrFromNonEmpty(dataPayload.Type),
+			FileUrl:     dataPayload.FileURL,
+			Authors:     stringSlicePtrFromNonEmpty(dataPayload.Authors),
+			Affiliation: dataPayload.Affiliation,
+			Metadata:    entityPayloadMetadataResponseFromModel(dataPayload.Metadata),
+			Size:        dataPayload.Size,
+			Type:        stringPtrFromNonEmpty(dataPayload.Type),
 		}); err != nil {
 			return Entity_Payload{}, fmt.Errorf("build data payload response: %w", err)
 		}
@@ -554,9 +602,11 @@ func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload,
 			return Entity_Payload{}, fmt.Errorf("get model payload: %w", err)
 		}
 		if err := payload.FromModelPayload(ModelPayload{
-			FileUrl:  modelPayload.FileURL,
-			Metadata: entityPayloadMetadataResponseFromModel(modelPayload.Metadata),
-			Size:     modelPayload.Size,
+			FileUrl:     modelPayload.FileURL,
+			Authors:     stringSlicePtrFromNonEmpty(modelPayload.Authors),
+			Affiliation: modelPayload.Affiliation,
+			Metadata:    entityPayloadMetadataResponseFromModel(modelPayload.Metadata),
+			Size:        modelPayload.Size,
 		}); err != nil {
 			return Entity_Payload{}, fmt.Errorf("build model payload response: %w", err)
 		}
@@ -602,6 +652,13 @@ func entityPayloadMetadataResponseFromModel(metadata map[string]any) *map[string
 
 func stringPtrFromNonEmpty(value string) *string {
 	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func stringSlicePtrFromNonEmpty(value []string) *[]string {
+	if len(value) == 0 {
 		return nil
 	}
 	return &value
