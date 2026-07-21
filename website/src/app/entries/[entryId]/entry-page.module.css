@@ -207,6 +207,43 @@
   border-bottom: 1px solid var(--border);
 }
 
+.heroTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heroAction {
+  flex-shrink: 0;
+}
+
+.heroDownload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.heroDownload:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
 .eyebrow {
   margin: 0 0 9px;
   color: var(--accent-hover);
@@ -375,62 +412,133 @@
   font-weight: 600;
 }
 
-.modelFileLink {
+.modelDownload {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin-left: auto;
-  color: var(--accent-hover);
-  font-family: var(--font-mono);
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
 }
 
-.modelFileLink:hover {
-  text-decoration: underline;
+.modelDownload:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  background: var(--accent-soft);
 }
 
-.metricList {
-  margin: 14px 0 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.metricRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 0;
+.validation {
+  margin-top: 14px;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
-.metricRow:first-child {
-  border-top: 0;
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
 }
 
-.metricRow dt {
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
+.metricTile {
+  min-width: 0;
 }
 
-.metricRow dd {
-  margin: 0;
-  color: var(--text);
+.metricLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.metricValue {
+  margin: 3px 0 7px;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+}
+
+.metricBar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.metricBarFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.metricBarFill[data-status="good"] {
+  background: var(--success-fg);
+}
+
+.metricBarFill[data-status="warn"] {
+  background: var(--warning-fg);
+}
+
+.metricBarFill[data-status="bad"] {
+  background: var(--danger-fg);
+}
+
+.metricHint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+  }
 }
 
 .modelProvenance {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.modelProvenanceRow {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.modelProvenanceRow dt {
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.modelProvenanceRow dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 560px) {

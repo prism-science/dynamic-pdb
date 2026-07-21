@@ -14,6 +14,7 @@ import SequenceView from "@/app/components/SequenceView";
 import {
   buildProvenance,
   EntryHero,
+  getEntityFileURL,
   ModelCard,
   SectionHeader,
 } from "../../entry-view";
@@ -46,6 +47,7 @@ export default async function ExperimentPage({
   const provenance = buildProvenance(data.entities, data.relations);
 
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
+  const modelFileURL = model ? getEntityFileURL(model) : null;
 
   let sequence: FastaMetadata | null = null;
   for (const entity of data.entities) {
@@ -70,7 +72,25 @@ export default async function ExperimentPage({
           ]}
         />
 
-        <EntryHero title={data.experiment.name} />
+        <EntryHero
+          title={data.experiment.name}
+          action={
+            modelFileURL ? (
+              <a
+                className={styles.heroDownload}
+                href={modelFileURL}
+                download
+                rel="noreferrer"
+                target="_blank"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+                </svg>
+                Download
+              </a>
+            ) : null
+          }
+        />
 
         {model ? (
           <ModelCard entity={model} provenance={provenance} />

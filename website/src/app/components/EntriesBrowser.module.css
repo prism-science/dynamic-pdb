@@ -61,6 +61,10 @@
 
 .searchRow {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 20px;
 }
 
@@ -92,6 +96,32 @@
 .search:focus-visible {
   outline: none;
   border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.searchButton {
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.searchButton:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.searchButton:focus-visible {
+  outline: none;
   box-shadow: var(--ring);
 }
 
@@ -174,6 +204,7 @@
 .cardMeta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
@@ -197,6 +228,25 @@
   font-weight: 600;
 }
 
+.cardDepositor,
+.cardInstitute {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cardDepositor {
+  color: var(--text-secondary);
+}
+
+.cardInstitute {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .empty {
   margin: 0;
   padding: 40px 16px;
@@ -211,6 +261,10 @@
 @media (max-width: 720px) {
   .title {
     font-size: 26px;
+  }
+
+  .searchRow {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .card {

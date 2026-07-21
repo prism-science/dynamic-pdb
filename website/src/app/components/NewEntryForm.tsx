@@ -18,6 +18,8 @@ type ParsedFile = {
   size: number;
   type: string;
   level: EntityLevel;
+  authors: string;
+  affiliation: string;
   metadata?: Record<string, unknown>;
   preview?: string;
   url: string;
@@ -190,6 +192,9 @@ export default function NewEntryForm() {
           onLevel={(id, level) =>
             setFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
           }
+          onPatch={(id, patch) =>
+            setFiles((p) => p.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+          }
         />
       </section>
 
@@ -286,6 +291,13 @@ export default function NewEntryForm() {
                       ),
                     })
                   }
+                  onPatch={(id, patch) =>
+                    updateExperiment(exp.id, {
+                      files: exp.files.map((f) =>
+                        f.id === id ? { ...f, ...patch } : f,
+                      ),
+                    })
+                  }
                 />
 
                 <span className={styles.subLabel}>Metrics</span>
@@ -320,11 +332,13 @@ function FilesEditor({
   onAdd,
   onRemove,
   onLevel,
+  onPatch,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
   onRemove: (id: string) => void;
   onLevel: (id: string, level: EntityLevel) => void;
+  onPatch: (id: string, patch: Partial<ParsedFile>) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -344,7 +358,7 @@ function FilesEditor({
         onClick={() => inputRef.current?.click()}
       >
         <UploadIcon />
-        Add data
+        Add data/model
         <span className={styles.fileDropHint}>FASTA, PDB, mmCIF, maps, logs…</span>
       </button>
       <input
@@ -364,6 +378,8 @@ function FilesEditor({
                 <span className={styles.fileMeta}>
                   <span className={styles.fileName}>{file.name}</span>
                   <span className={styles.fileSub}>
+                    {fileEntityType(file)}
+                    {" · "}
                     {formatSize(file.size)}
                     {typeof file.metadata?.length === "number"
                       ? ` · ${file.metadata.length} residues`
@@ -392,6 +408,35 @@ function FilesEditor({
                 >
                   ×
                 </button>
+              </div>
+
+              <div className={styles.fileDepositorGrid}>
+                <label className={styles.fileDepositorField}>
+                  <span>Deposited by</span>
+                  <textarea
+                    className={styles.textarea}
+                    value={file.authors}
+                    onChange={(event) =>
+                      onPatch(file.id, { authors: event.target.value })
+                    }
+                    placeholder={"Hendrickson, W.A.\nTeeter, M.M."}
+                    rows={2}
+                  />
+                </label>
+                <label className={styles.fileDepositorField}>
+                  <span>Affiliation</span>
+                  <input
+                    className={styles.input}
+                    value={file.affiliation}
+                    onChange={(event) =>
+                      onPatch(file.id, {
+                        affiliation: event.target.value,
+                      })
+                    }
+                    placeholder="Department of Chemistry, Boston University"
+                    autoComplete="organization"
+                  />
+                </label>
               </div>
 
               {file.type === "image" && file.preview ? (
@@ -475,18 +520,42 @@ function MetricsEditor({
 }
 
 function toEntity(file: ParsedFile) {
+  const entityType = fileEntityType(file);
+  const payload: Record<string, unknown> = {
+    file_url: file.url,
+    size: file.size,
+    ...(file.metadata ? { metadata: file.metadata } : {}),
+  };
+  if (entityType === "data") {
+    payload.type = file.type;
+  }
+  const authors = authorsTextToList(file.authors);
+  if (authors.length > 0) {
+    payload.authors = authors;
+  }
+  const affiliation = file.affiliation.trim();
+  if (affiliation) {
+    payload.affiliation = affiliation;
+  }
+
   return {
     id: file.id,
-    type: "data" as const,
+    type: entityType,
     level: file.level,
     name: file.name,
-    payload: {
-      file_url: file.url,
-      type: file.type,
-      size: file.size,
-      ...(file.metadata ? { metadata: file.metadata } : {}),
-    },
+    payload,
   };
+}
+
+function fileEntityType(file: ParsedFile): "data" | "model" {
+  return file.type === "pdb" || file.type === "mmcif" ? "model" : "data";
+}
+
+function authorsTextToList(text: string): string[] {
+  return text
+    .split(/\r?\n|;/)
+    .map((author) => author.trim())
+    .filter(Boolean);
 }
 
 // Restrict metric input to a single decimal number. Commas are treated as the
@@ -528,6 +597,8 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
     size: file.size,
     type,
     level,
+    authors: "",
+    affiliation: "",
     url: randomUrl(file.name),
   };
   if (type === "fasta") {

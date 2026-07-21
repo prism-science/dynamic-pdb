@@ -36,12 +36,16 @@ export type FastaMetadata = {
 export type DataPayload = {
   file_url: string;
   type?: string;
+  authors?: string[];
+  affiliation?: string | null;
   size?: number;
   metadata?: Record<string, unknown>;
 };
 
 export type ModelPayload = {
   file_url: string;
+  authors?: string[];
+  affiliation?: string | null;
   size?: number;
   metadata?: Record<string, unknown>;
 };
@@ -124,8 +128,21 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function listEntries(token?: string): Promise<Entry[]> {
-  const response = await fetchBackend<ListResponse<Entry>>("/v1/entries", token);
+export async function listEntries(
+  token?: string,
+  opts?: { query?: string | null },
+): Promise<Entry[]> {
+  const params = new URLSearchParams();
+  const query = opts?.query?.trim();
+  if (query) {
+    params.set("query", query);
+  }
+
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const response = await fetchBackend<ListResponse<Entry>>(
+    `/v1/entries${suffix}`,
+    token,
+  );
   return response.items;
 }
 
