@@ -176,7 +176,7 @@ export function EntityCard({
     entity.type === "data" ? (filePayload as DataPayload | null) : null;
   const subtype = dataPayload?.type;
   const sizeLabel = formatSize(dataPayload?.size);
-  const depositionFacts = getEntityDepositionFacts(entity);
+  const authorFacts = getEntityAuthorFacts(entity);
 
   return (
     <article className={styles.entityCard}>
@@ -212,7 +212,7 @@ export function EntityCard({
         ) : null}
       </div>
 
-      {program || inputs.length > 0 || depositionFacts.length > 0 ? (
+      {program || inputs.length > 0 || authorFacts.length > 0 ? (
         <dl className={styles.provenance}>
           {program ? (
             <div className={styles.provenanceRow}>
@@ -233,7 +233,7 @@ export function EntityCard({
               </dd>
             </div>
           ) : null}
-          {depositionFacts.map((fact) => (
+          {authorFacts.map((fact) => (
             <div key={fact.label} className={styles.provenanceRow}>
               <dt>{fact.label}</dt>
               <dd>{fact.value}</dd>
@@ -327,7 +327,7 @@ export function ModelCard({
     (tile) => typeof merged[tile.key] === "number",
   );
   const program = provenance.programOf(entity.id);
-  const depositionFacts = getEntityDepositionFacts(entity);
+  const authorFacts = getEntityAuthorFacts(entity);
 
   return (
     <article className={styles.modelCard}>
@@ -346,7 +346,7 @@ export function ModelCard({
       </div>
 
       <div className={styles.modelBody}>
-        {program || depositionFacts.length > 0 ? (
+        {program || authorFacts.length > 0 ? (
           <dl className={styles.modelProvenance}>
             {program ? (
               <div className={styles.modelProvenanceRow}>
@@ -354,7 +354,7 @@ export function ModelCard({
                 <dd>{formatProgram(program)}</dd>
               </div>
             ) : null}
-            {depositionFacts.map((fact) => (
+            {authorFacts.map((fact) => (
               <div key={fact.label} className={styles.modelProvenanceRow}>
                 <dt>{fact.label}</dt>
                 <dd>{fact.value}</dd>
@@ -611,7 +611,7 @@ function formatProgram(program: Entity): string {
   return program.name;
 }
 
-function getEntityDepositionFacts(entity: Entity): { label: string; value: string }[] {
+function getEntityAuthorFacts(entity: Entity): { label: string; value: string }[] {
   if (entity.type !== "data" && entity.type !== "model") {
     return [];
   }
@@ -627,7 +627,7 @@ function getEntityDepositionFacts(entity: Entity): { label: string; value: strin
   const facts: { label: string; value: string }[] = [];
 
   if (authors.length > 0) {
-    facts.push({ label: "Deposited by", value: authors.join(", ") });
+    facts.push({ label: "Authors", value: authors.join(", ") });
   }
   if (institution) {
     facts.push({ label: "Affiliation", value: institution });

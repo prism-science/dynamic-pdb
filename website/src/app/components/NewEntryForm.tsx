@@ -412,7 +412,7 @@ function FilesEditor({
 
               <div className={styles.fileDepositorGrid}>
                 <label className={styles.fileDepositorField}>
-                  <span>Deposited by</span>
+                  <span>Authors</span>
                   <textarea
                     className={styles.textarea}
                     value={file.authors}
