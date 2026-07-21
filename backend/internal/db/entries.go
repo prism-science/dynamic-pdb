@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ type EntriesRepository struct {
 type EntryFilters struct {
 	Limit  *int
 	Offset *int
+	Query  string
 }
 
 func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntriesRepository {
@@ -117,8 +119,14 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 
 	args := map[string]any{}
 	query := `select id, name, description, thumbnail_image_url, created_at, updated_at
-			  from entries
-			  order by created_at asc, id asc`
+			  from entries`
+
+	if queryText := strings.TrimSpace(filters.Query); queryText != "" {
+		query += "\nwhere " + entrySearchCondition()
+		args["search_query"] = queryText
+	}
+
+	query += "\norder by created_at asc, id asc"
 
 	if filters.Limit != nil {
 		query += "\nlimit :limit"
@@ -130,6 +138,15 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	}
 
 	return query, args, nil
+}
+
+func entrySearchCondition() string {
+	return `exists (
+		select 1
+		from entry_search_index idx
+		where idx.entry_id = entries.id
+		  and idx.search_tsv @@ plainto_tsquery('simple', :search_query)
+	)`
 }
 
 func entryFromRow(row *entryRow) *models.Entry {

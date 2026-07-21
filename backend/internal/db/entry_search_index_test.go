@@ -109,7 +109,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 func assertEntrySearchContains(t *testing.T, ctx context.Context, query string, entryID uuid.UUID) {
 	t.Helper()
 
-	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Search: query})
+	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Query: query})
 	require.NoError(t, err)
 	assert.True(t, entryListContainsID(entries, entryID))
 }
@@ -117,7 +117,7 @@ func assertEntrySearchContains(t *testing.T, ctx context.Context, query string, 
 func assertEntrySearchDoesNotContain(t *testing.T, ctx context.Context, query string, entryID uuid.UUID) {
 	t.Helper()
 
-	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Search: query})
+	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Query: query})
 	require.NoError(t, err)
 	assert.False(t, entryListContainsID(entries, entryID))
 }
