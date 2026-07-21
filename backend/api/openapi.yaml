@@ -124,6 +124,12 @@ paths:
           schema:
             type: integer
             minimum: 0
+        - name: query
+          in: query
+          description: Text to search across entries, experiments, entities, and entity payloads.
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Entries found.
@@ -655,6 +661,15 @@ components:
       properties:
         file_url:
           type: string
+        authors:
+          type: array
+          description: Names of the people or systems associated with this model.
+          items:
+            type: string
+        affiliation:
+          type: string
+          description: Primary organization, lab, department, or institution associated with this model.
+          nullable: true
         size:
           type: integer
           format: int64
@@ -670,6 +685,15 @@ components:
           type: string
         type:
           type: string
+        authors:
+          type: array
+          description: Names of the people or systems associated with this data file.
+          items:
+            type: string
+        affiliation:
+          type: string
+          description: Primary organization, lab, department, or institution associated with this data file.
+          nullable: true
         size:
           type: integer
           format: int64
