@@ -320,7 +320,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeData:
 		payload, err := req.Payload.AsDataPayload()
 		if err != nil {
-			return nil, fmt.Errorf("decode data payload: %w", err)
+			return nil, invalidCreateEntryPayloadRequest("decode data payload", err)
 		}
 		return &domainmodels.DataPayload{
 			FileURL:     payload.FileUrl,
@@ -333,7 +333,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeModel:
 		payload, err := req.Payload.AsModelPayload()
 		if err != nil {
-			return nil, fmt.Errorf("decode model payload: %w", err)
+			return nil, invalidCreateEntryPayloadRequest("decode model payload", err)
 		}
 		return &domainmodels.ModelPayload{
 			FileURL:     payload.FileUrl,
@@ -345,7 +345,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeMetrics:
 		payload, err := req.Payload.AsMetricsPayload()
 		if err != nil {
-			return nil, fmt.Errorf("decode metrics payload: %w", err)
+			return nil, invalidCreateEntryPayloadRequest("decode metrics payload", err)
 		}
 		return &domainmodels.MetricsPayload{
 			RFree: payload.RFree,
@@ -356,7 +356,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeProgram:
 		payload, err := req.Payload.AsProgramPayload()
 		if err != nil {
-			return nil, fmt.Errorf("decode program payload: %w", err)
+			return nil, invalidCreateEntryPayloadRequest("decode program payload", err)
 		}
 		return &domainmodels.ProgramPayload{
 			Name:        payload.Name,
@@ -432,6 +432,10 @@ func metadataFromRequest(metadata *map[string]interface{}) map[string]any {
 
 func invalidCreateEntryRequest(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", errInvalidCreateEntryRequest, fmt.Sprintf(format, args...))
+}
+
+func invalidCreateEntryPayloadRequest(description string, err error) error {
+	return fmt.Errorf("%s: %w", description, invalidCreateEntryRequest("%v", err))
 }
 
 func (s *Server) ListExperiments(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListExperimentsParams) {

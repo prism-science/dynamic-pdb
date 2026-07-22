@@ -1,6 +1,7 @@
 package s3
 
 type BucketConfig struct {
+	Endpoint        string `mapstructure:"endpoint"`
 	Region          string `mapstructure:"region"`
 	Bucket          string `mapstructure:"bucket"`
 	AccessKeyID     string `mapstructure:"access_key_id"`

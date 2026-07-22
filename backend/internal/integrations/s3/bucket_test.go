@@ -10,18 +10,6 @@ import (
 	"dynamic-pdb/backend/internal/integrations/s3"
 )
 
-func newTestBucket(t *testing.T) *s3.RemoteBucket {
-	t.Helper()
-	bucket, err := s3.NewBucket(context.Background(), s3.BucketConfig{
-		Region:          "us-east-1",
-		Bucket:          "dynamic-pdb",
-		AccessKeyID:     "AKIAEXAMPLE",
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-	})
-	require.NoError(t, err)
-	return bucket
-}
-
 func Test_should_reject_missing_bucket_config_when_new_bucket_called(t *testing.T) {
 	// given
 	cfg := s3.BucketConfig{Region: "us-east-1"}
