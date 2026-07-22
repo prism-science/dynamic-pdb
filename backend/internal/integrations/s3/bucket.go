@@ -53,7 +53,15 @@ func NewBucket(ctx context.Context, cfg BucketConfig) (*RemoteBucket, error) {
 		awsCfg.Credentials = credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")
 	}
 
-	client := awss3.NewFromConfig(awsCfg)
+	clientOptions := []func(*awss3.Options){}
+	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
+		clientOptions = append(clientOptions, func(opts *awss3.Options) {
+			opts.BaseEndpoint = aws.String(endpoint)
+			opts.UsePathStyle = true
+		})
+	}
+
+	client := awss3.NewFromConfig(awsCfg, clientOptions...)
 	return &RemoteBucket{
 		config:    cfg,
 		client:    client,

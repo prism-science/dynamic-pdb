@@ -159,6 +159,109 @@ func (s *AuthSuite) Test_should_return_403_when_github_code_exchange_user_not_in
 	s.Equal(http.StatusForbidden, resp.StatusCode)
 }
 
+func (s *AuthSuite) Test_should_map_github_code_exchange_errors_to_http_responses() {
+	tests := []struct {
+		name       string
+		code       string
+		err        error
+		statusCode int
+		errorCode  string
+	}{
+		{
+			name:       "access denied",
+			code:       "denied-code",
+			err:        github.ErrAccessDenied,
+			statusCode: http.StatusUnauthorized,
+			errorCode:  "GITHUB_ACCESS_DENIED",
+		},
+		{
+			name:       "redirect uri mismatch",
+			code:       "redirect-mismatch-code",
+			err:        github.ErrRedirectURIMismatch,
+			statusCode: http.StatusBadRequest,
+			errorCode:  "INVALID_REDIRECT_URI",
+		},
+		{
+			name:       "oauth not configured",
+			code:       "oauth-missing-code",
+			err:        github.ErrOAuthNotConfigured,
+			statusCode: http.StatusInternalServerError,
+			errorCode:  "INTERNAL_ERROR",
+		},
+		{
+			name:       "incorrect credentials",
+			code:       "bad-client-code",
+			err:        github.ErrIncorrectClientCredentials,
+			statusCode: http.StatusInternalServerError,
+			errorCode:  "INTERNAL_ERROR",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// given
+			githubClient.On("ExchangeCode", mock.Anything, tt.code, "https://example.com/auth/github/callback").
+				Return("", tt.err)
+
+			// when
+			resp := ExchangeGithubCode(s.T(), tt.code, "https://example.com/auth/github/callback")
+			defer resp.Body.Close()
+
+			// then
+			s.Equal(tt.statusCode, resp.StatusCode)
+
+			var body httpapi.Error
+			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+			s.Equal(tt.errorCode, body.Code)
+		})
+	}
+}
+
+func (s *AuthSuite) Test_should_return_500_when_github_user_or_org_lookup_fails() {
+	tests := []struct {
+		name        string
+		accessToken string
+		mockCalls   func()
+	}{
+		{
+			name:        "get user fails",
+			accessToken: "get-user-fails",
+			mockCalls: func() {
+				githubClient.On("GetUser", mock.Anything, "get-user-fails").
+					Return(github.User{}, assertableError("get user failed"))
+			},
+		},
+		{
+			name:        "list orgs fails",
+			accessToken: "list-orgs-fails",
+			mockCalls: func() {
+				githubClient.On("GetUser", mock.Anything, "list-orgs-fails").
+					Return(github.User{ID: 42, Login: "octocat"}, nil)
+				githubClient.On("ListOrgs", mock.Anything, "list-orgs-fails").
+					Return([]github.Organization{}, assertableError("list orgs failed"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// given
+			tt.mockCalls()
+
+			// when
+			resp := ExchangeGithubToken(s.T(), tt.accessToken)
+			defer resp.Body.Close()
+
+			// then
+			s.Equal(http.StatusInternalServerError, resp.StatusCode)
+
+			var body httpapi.Error
+			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+			s.Equal("INTERNAL_ERROR", body.Code)
+		})
+	}
+}
+
 func subjectOf(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	defer resp.Body.Close()
@@ -169,4 +272,10 @@ func subjectOf(t *testing.T, resp *http.Response) string {
 	}, jwt.WithValidMethods([]string{"HS256"}))
 	require.NoError(t, err)
 	return parsed.Claims.(*jwt.RegisteredClaims).Subject
+}
+
+type assertableError string
+
+func (e assertableError) Error() string {
+	return string(e)
 }

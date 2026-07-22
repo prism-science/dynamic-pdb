@@ -23,11 +23,11 @@ import SequenceView from "./SequenceView";
 
 import styles from "./NewEntryForm.module.css";
 
-type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
+export type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
 
-type FileSource = "upload" | "url";
+export type FileSource = "upload" | "url";
 
-type ParsedFile = {
+export type ParsedFile = {
   id: string;
   file?: File;
   source: FileSource;
@@ -45,12 +45,12 @@ type ParsedFile = {
   uploadError: string | null;
 };
 
-type MetricDraft = {
+export type MetricDraft = {
   id: string;
   values: Record<string, string>;
 };
 
-type ExperimentDraft = {
+export type ExperimentDraft = {
   id: string;
   name: string;
   description: string;
@@ -1105,7 +1105,7 @@ function MetricsEditor({
   );
 }
 
-function toEntity(file: ParsedFile) {
+export function toEntity(file: ParsedFile) {
   const entityType = fileEntityType(file);
   const payload: Record<string, unknown> = {
     file_url: file.url,
@@ -1133,11 +1133,11 @@ function toEntity(file: ParsedFile) {
   };
 }
 
-function fileEntityType(file: ParsedFile): "data" | "model" {
+export function fileEntityType(file: ParsedFile): "data" | "model" {
   return file.type === "pdb" || file.type === "mmcif" ? "model" : "data";
 }
 
-function authorsTextToList(text: string): string[] {
+export function authorsTextToList(text: string): string[] {
   return text
     .split(/\r?\n|;/)
     .map((author) => author.trim())
@@ -1147,7 +1147,7 @@ function authorsTextToList(text: string): string[] {
 // Restrict metric input to a single decimal number. Commas are treated as the
 // decimal separator and normalized to a dot, so "0,205" and "0.205" both store
 // as "0.205"; anything non-numeric is dropped as you type.
-function sanitizeNumeric(raw: string): string {
+export function sanitizeNumeric(raw: string): string {
   let s = raw.replace(/,/g, ".").replace(/[^0-9.\-]/g, "");
   const firstDot = s.indexOf(".");
   if (firstDot !== -1) {
@@ -1157,7 +1157,7 @@ function sanitizeNumeric(raw: string): string {
   return s;
 }
 
-function toMetricEntity(metric: MetricDraft) {
+export function toMetricEntity(metric: MetricDraft) {
   const payload: Record<string, number> = {};
   for (const field of METRIC_FIELDS) {
     const raw = metric.values[field.key];
@@ -1175,7 +1175,7 @@ function toMetricEntity(metric: MetricDraft) {
   };
 }
 
-async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
+export async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
   const type = detectType(file.name);
   const base: ParsedFile = {
     id: crypto.randomUUID(),
@@ -1208,7 +1208,7 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
 // Builds a file entry from an external URL. Nothing is uploaded — the link is
 // stored as-is; a small, known-format file is fetched client-side (best effort)
 // to build a preview. CORS failures are swallowed and just skip the preview.
-async function parseUrlFile(
+export async function parseUrlFile(
   rawUrl: string,
   level: EntityLevel,
 ): Promise<ParsedFile | null> {
@@ -1255,7 +1255,7 @@ async function parseUrlFile(
   return base;
 }
 
-function fileNameFromUrl(url: string): string {
+export function fileNameFromUrl(url: string): string {
   try {
     const parsed = new URL(url);
     const last = parsed.pathname.split("/").filter(Boolean).pop();
@@ -1265,7 +1265,7 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-function isValidHttpUrl(value: string): boolean {
+export function isValidHttpUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -1308,7 +1308,7 @@ function uploadErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Upload failed.";
 }
 
-function uploadStatusText(status: UploadStatus, error: string | null): string {
+export function uploadStatusText(status: UploadStatus, error: string | null): string {
   if (status === "uploading") {
     return "Uploading...";
   }
@@ -1321,7 +1321,7 @@ function uploadStatusText(status: UploadStatus, error: string | null): string {
   return "";
 }
 
-function uploadsReady(
+export function uploadsReady(
   files: ParsedFile[],
   experiments: ExperimentDraft[],
   thumbFile: File | null,
@@ -1346,7 +1346,7 @@ function uploadsReady(
  * Draft persistence (localStorage)
  * ------------------------------------------------------------------ */
 
-type StoredFile = {
+export type StoredFile = {
   id: string;
   source: FileSource;
   name: string;
@@ -1360,7 +1360,7 @@ type StoredFile = {
   url: string;
 };
 
-type StoredExperiment = {
+export type StoredExperiment = {
   id: string;
   name: string;
   description: string;
@@ -1370,7 +1370,7 @@ type StoredExperiment = {
   metrics: MetricDraft[];
 };
 
-type StoredDraft = {
+export type StoredDraft = {
   version: number;
   entryId: string;
   name: string;
@@ -1382,15 +1382,15 @@ type StoredDraft = {
   experiments: StoredExperiment[];
 };
 
-function isPersistable(file: ParsedFile): boolean {
+export function isPersistable(file: ParsedFile): boolean {
   return file.uploadStatus === "uploaded" && Boolean(file.url);
 }
 
-function httpOnly(value: string | null | undefined): string | undefined {
+export function httpOnly(value: string | null | undefined): string | undefined {
   return value && /^https?:/i.test(value) ? value : undefined;
 }
 
-function fileToDraft(file: ParsedFile): StoredFile {
+export function fileToDraft(file: ParsedFile): StoredFile {
   return {
     id: file.id,
     source: file.source,
@@ -1406,7 +1406,7 @@ function fileToDraft(file: ParsedFile): StoredFile {
   };
 }
 
-function fileFromDraft(file: StoredFile): ParsedFile {
+export function fileFromDraft(file: StoredFile): ParsedFile {
   return {
     id: file.id,
     source: file.source,
@@ -1425,7 +1425,7 @@ function fileFromDraft(file: StoredFile): ParsedFile {
   };
 }
 
-function experimentToDraft(exp: ExperimentDraft): StoredExperiment {
+export function experimentToDraft(exp: ExperimentDraft): StoredExperiment {
   return {
     id: exp.id,
     name: exp.name,
@@ -1437,7 +1437,7 @@ function experimentToDraft(exp: ExperimentDraft): StoredExperiment {
   };
 }
 
-function experimentFromDraft(exp: StoredExperiment): ExperimentDraft {
+export function experimentFromDraft(exp: StoredExperiment): ExperimentDraft {
   return {
     id: exp.id,
     name: exp.name,
@@ -1454,7 +1454,7 @@ function experimentFromDraft(exp: StoredExperiment): ExperimentDraft {
   };
 }
 
-function draftHasContent(draft: StoredDraft): boolean {
+export function draftHasContent(draft: StoredDraft): boolean {
   return (
     draft.name.trim().length > 0 ||
     draft.description.trim().length > 0 ||
@@ -1464,7 +1464,7 @@ function draftHasContent(draft: StoredDraft): boolean {
   );
 }
 
-function readStoredDraft(): StoredDraft | null {
+export function readStoredDraft(): StoredDraft | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -1487,7 +1487,7 @@ function readStoredDraft(): StoredDraft | null {
   }
 }
 
-function writeStoredDraft(draft: StoredDraft): void {
+export function writeStoredDraft(draft: StoredDraft): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -1498,7 +1498,7 @@ function writeStoredDraft(draft: StoredDraft): void {
   }
 }
 
-function clearStoredDraft(): void {
+export function clearStoredDraft(): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -1509,7 +1509,7 @@ function clearStoredDraft(): void {
   }
 }
 
-function detectType(filename: string): string {
+export function detectType(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
     fasta: "fasta",
@@ -1537,7 +1537,7 @@ function detectType(filename: string): string {
   return map[ext] ?? ext ?? "file";
 }
 
-function parseFasta(text: string): Record<string, unknown> {
+export function parseFasta(text: string): Record<string, unknown> {
   const lines = text.split(/\r?\n/);
   let chains = 0;
   let sequence = "";
@@ -1552,7 +1552,7 @@ function parseFasta(text: string): Record<string, unknown> {
   return { chains: chains || 1, length: sequence.length, sequence };
 }
 
-function formatSize(size: number): string {
+export function formatSize(size: number): string {
   if (size <= 0) {
     return "0 B";
   }

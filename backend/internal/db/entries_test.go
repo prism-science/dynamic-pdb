@@ -1,99 +1,91 @@
-package db
+package db_test
 
 import (
-	"database/sql"
+	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/models"
 )
 
-func Test_should_return_entry_when_entry_from_row_called(t *testing.T) {
+func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_called(t *testing.T) {
 	// given
-	id := uuid.New()
 	now := time.Now().UTC()
-	description := "Entry description"
-	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/4rug.png"
-	row := entryRow{
-		ID:   id,
-		Name: "4RUG",
-		Description: sql.NullString{
-			String: description,
-			Valid:  true,
-		},
-		ThumbnailImageURL: sql.NullString{
-			String: thumbnailImageURL,
-			Valid:  true,
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
+	description := "Entry description " + uuid.NewString()
+	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
+	entry := models.Entry{
+		ID:                uuid.New(),
+		Name:              "entry-" + uuid.NewString(),
+		Description:       &description,
+		ThumbnailImageURL: &thumbnailImageURL,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	// when
-	entry := entryFromRow(&row)
+	created, err := testDB.Entries.Create(context.Background(), entry)
+	require.NoError(t, err)
+	got, err := testDB.Entries.Get(context.Background(), created.ID)
 
 	// then
-	assert.Equal(t, id, entry.ID)
-	assert.Equal(t, "4RUG", entry.Name)
-	require.NotNil(t, entry.Description)
-	assert.Equal(t, description, *entry.Description)
-	require.NotNil(t, entry.ThumbnailImageURL)
-	assert.Equal(t, thumbnailImageURL, *entry.ThumbnailImageURL)
-	assert.Equal(t, now, entry.CreatedAt)
-	assert.Equal(t, now, entry.UpdatedAt)
+	require.NoError(t, err)
+	assert.Equal(t, entry.ID, got.ID)
+	assert.Equal(t, entry.Name, got.Name)
+	require.NotNil(t, got.Description)
+	assert.Equal(t, description, *got.Description)
+	require.NotNil(t, got.ThumbnailImageURL)
+	assert.Equal(t, thumbnailImageURL, *got.ThumbnailImageURL)
+	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
+	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
 }
 
-func Test_should_build_query_with_pagination_when_entry_list_query_called(t *testing.T) {
+func Test_should_return_not_found_when_entries_get_misses(t *testing.T) {
+	// given / when
+	_, err := testDB.Entries.Get(context.Background(), uuid.New())
+
+	// then
+	require.ErrorIs(t, err, db.ErrEntryNotFound)
+}
+
+func Test_should_list_entries_matching_search_with_pagination_when_entries_list_called(t *testing.T) {
 	// given
-	limit := 50
-	offset := 100
-	filters := EntryFilters{
+	ctx := context.Background()
+	token := "entrytoken" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	now := time.Now().UTC()
+	first := createDBTestEntry(t, "first "+token, now)
+	second := createDBTestEntry(t, "second "+token, now.Add(time.Second))
+	unmatched := createDBTestEntry(t, "unmatched "+uuid.NewString(), now.Add(2*time.Second))
+	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *first))
+	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *second))
+	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *unmatched))
+	limit := 1
+	offset := 1
+
+	// when
+	got, err := testDB.Entries.List(ctx, db.EntryFilters{
+		Query:  token,
 		Limit:  &limit,
 		Offset: &offset,
-	}
-
-	// when
-	query, args, err := entryListQuery(filters)
+	})
 
 	// then
 	require.NoError(t, err)
-	assert.Contains(t, query, "from entries")
-	assert.Contains(t, query, "order by created_at asc, id asc")
-	assert.Contains(t, query, "limit :limit")
-	assert.Contains(t, query, "offset :offset")
-	assert.Equal(t, limit, args["limit"])
-	assert.Equal(t, offset, args["offset"])
+	require.Len(t, got, 1)
+	assert.Equal(t, second.ID, got[0].ID)
 }
 
-func Test_should_build_query_with_search_when_entry_list_query_called(t *testing.T) {
-	// given
-	filters := EntryFilters{
-		Query: "crambin model",
-	}
-
-	// when
-	sql, args, err := entryListQuery(filters)
-
-	// then
-	require.NoError(t, err)
-	assert.Contains(t, sql, "where")
-	assert.Contains(t, sql, "from entry_search_index idx")
-	assert.Contains(t, sql, "idx.entry_id = entries.id")
-	assert.Contains(t, sql, "idx.search_tsv @@ plainto_tsquery('simple', :search_query)")
-	assert.Equal(t, "crambin model", args["search_query"])
-}
-
-func Test_should_return_error_when_entry_list_query_called_with_negative_limit(t *testing.T) {
+func Test_should_return_error_when_entries_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
-	filters := EntryFilters{
-		Limit: &limit,
-	}
 
 	// when
-	_, _, err := entryListQuery(filters)
+	_, err := testDB.Entries.List(context.Background(), db.EntryFilters{Limit: &limit})
 
 	// then
 	require.Error(t, err)

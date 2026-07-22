@@ -32,6 +32,7 @@ db:
   password: password
   connection_params: sslmode=disable
 s3:
+  endpoint: http://localhost:9000
   region: us-west-2
   bucket: dynamic-pdb-test
   access_key_id: file-access-key
@@ -72,6 +73,7 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 	assert.Equal(t, "dynamic-pdb-test", cfg.Auth.JWT.Issuer)
 	assert.Equal(t, 24*time.Hour, cfg.Auth.JWT.TTL)
 	assert.Equal(t, "dynamic_pdb_local", cfg.DB.Name)
+	assert.Equal(t, "http://localhost:9000", cfg.S3.Endpoint)
 	assert.Equal(t, "us-west-2", cfg.S3.Region)
 	assert.Equal(t, "dynamic-pdb-test", cfg.S3.Bucket)
 }

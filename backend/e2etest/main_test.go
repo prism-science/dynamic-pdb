@@ -2,7 +2,6 @@ package e2etest
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -16,11 +15,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	e2es3 "dynamic-pdb/backend/e2etest/s3"
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
-	"dynamic-pdb/backend/internal/integrations/s3"
+	storage "dynamic-pdb/backend/internal/integrations/s3"
 )
 
 const (
@@ -32,6 +32,7 @@ const (
 var (
 	testServer   *httptest.Server
 	githubClient *MockGitHubClient
+	s3Stub       *e2es3.StubServer
 )
 
 type MockGitHubClient struct {
@@ -55,6 +56,7 @@ func (m *MockGitHubClient) ListOrgs(ctx context.Context, accessToken string) ([]
 
 func TestMain(m *testing.M) {
 	githubClient = &MockGitHubClient{}
+	s3Stub = e2es3.NewStubServer()
 
 	database, err := db.NewDB(db.Config{
 		Host:             "localhost",
@@ -78,7 +80,17 @@ func TestMain(m *testing.M) {
 	}
 
 	jwt := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL)
-	server := httpapi.NewServer(githubClient, stubUploadBucket{}, authConfig, jwt, database)
+	fileUploadBucket, err := storage.NewBucket(context.Background(), storage.BucketConfig{
+		Endpoint:        s3Stub.URL(),
+		Region:          "us-east-1",
+		Bucket:          "dynamic-pdb",
+		AccessKeyID:     "AKIAEXAMPLE",
+		SecretAccessKey: "secret",
+	})
+	if err != nil {
+		log.Fatalf("e2etest: create s3 bucket: %v", err)
+	}
+	server := httpapi.NewServer(githubClient, fileUploadBucket, authConfig, jwt, database)
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())
@@ -93,34 +105,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	testServer.Close()
+	s3Stub.Close()
 	database.Close()
 	os.Exit(code)
-}
-
-type stubUploadBucket struct{}
-
-func (stubUploadBucket) PresignMultipartUpload(_ context.Context, file s3.FileUpload) (s3.MultipartUploadGrant, error) {
-	key, err := s3.ObjectKey(file)
-	if err != nil {
-		return s3.MultipartUploadGrant{}, fmt.Errorf("build stub upload key: %w", err)
-	}
-	return s3.MultipartUploadGrant{
-		Key:       key,
-		UploadID:  "upload-id",
-		ObjectURL: "s3://dynamic-pdb/" + key,
-		PartSize:  64 * 1024 * 1024,
-		Parts: []s3.PresignedPart{
-			{PartNumber: 1, URL: "https://storage.example.test/" + key + "?part=1"},
-		},
-	}, nil
-}
-
-func (stubUploadBucket) CompleteMultipartUpload(_ context.Context, _, _ string, _ []s3.CompletedPart) error {
-	return nil
-}
-
-func (stubUploadBucket) AbortMultipartUpload(_ context.Context, _, _ string) error {
-	return nil
 }
 
 func corsMiddleware() func(http.Handler) http.Handler {
@@ -158,6 +145,7 @@ type baseSuite struct {
 func (s *baseSuite) SetupTest() {
 	githubClient.ExpectedCalls = nil
 	githubClient.Calls = nil
+	s3Stub.Reset()
 }
 
 func (s *baseSuite) TearDownTest() {

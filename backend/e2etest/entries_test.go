@@ -305,6 +305,292 @@ func (s *EntriesSuite) Test_should_return_401_when_create_entry_called_without_t
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
+func (s *EntriesSuite) Test_should_return_entry_when_get_entry_called() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-get-token")
+	entryID := uuid.New()
+	description := "Entry loaded by id"
+	thumbnailURL := "https://example.com/entry-get.png"
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":                  entryID,
+		"name":                "entry-get-" + uuid.NewString(),
+		"description":         description,
+		"thumbnail_image_url": thumbnailURL,
+	}, token)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	var body httpapi.Entry
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal(entryID, uuid.UUID(body.Id))
+	s.Require().NotNil(body.Description)
+	s.Equal(description, *body.Description)
+	s.Require().NotNil(body.ThumbnailImageUrl)
+	s.Equal(thumbnailURL, *body.ThumbnailImageUrl)
+}
+
+func (s *EntriesSuite) Test_should_return_404_when_get_entry_misses() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-missing-token")
+
+	// when
+	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString(), token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+
+	var body httpapi.Error
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal("NOT_FOUND", body.Code)
+}
+
+func (s *EntriesSuite) Test_should_return_experiment_when_get_experiment_called() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "experiment-get-token")
+	entryID := uuid.New()
+	experimentID := uuid.New()
+	description := "Experiment loaded by id"
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-with-experiment-" + uuid.NewString(),
+		"experiments": []map[string]any{
+			{
+				"id":          experimentID,
+				"name":        "model loaded by id",
+				"description": description,
+			},
+		},
+	}, token)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/experiments/"+experimentID.String(), token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	var body httpapi.Experiment
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal(experimentID, uuid.UUID(body.Id))
+	s.Equal(entryID, uuid.UUID(body.EntryId))
+	s.Require().NotNil(body.Description)
+	s.Equal(description, *body.Description)
+}
+
+func (s *EntriesSuite) Test_should_return_404_when_get_experiment_misses() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "experiment-missing-token")
+
+	// when
+	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/experiments/"+uuid.NewString(), token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+
+	var body httpapi.Error
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal("NOT_FOUND", body.Code)
+}
+
+func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-validation-token")
+
+	tests := []struct {
+		name    string
+		request func() map[string]any
+		message string
+	}{
+		{
+			name: "nil entry id",
+			request: func() map[string]any {
+				return map[string]any{
+					"id":   uuid.Nil,
+					"name": "invalid nil id",
+				}
+			},
+			message: "entry id is required",
+		},
+		{
+			name: "duplicate entry entity id",
+			request: func() map[string]any {
+				entityID := uuid.New()
+				return map[string]any{
+					"name": "duplicate entry entity",
+					"entities": []map[string]any{
+						dataEntityRequest(entityID, "first duplicate entity"),
+						dataEntityRequest(entityID, "second duplicate entity"),
+					},
+				}
+			},
+			message: "duplicate entity id",
+		},
+		{
+			name: "duplicate entity id across entry and experiment",
+			request: func() map[string]any {
+				entityID := uuid.New()
+				return map[string]any{
+					"name":     "duplicate graph entity",
+					"entities": []map[string]any{dataEntityRequest(entityID, "entry entity")},
+					"experiments": []map[string]any{
+						{
+							"name":     "model one",
+							"entities": []map[string]any{modelEntityRequest(entityID, "experiment entity")},
+						},
+					},
+				}
+			},
+			message: "duplicate entity id",
+		},
+		{
+			name: "empty experiment name",
+			request: func() map[string]any {
+				return map[string]any{
+					"name": "empty experiment",
+					"experiments": []map[string]any{
+						{"name": "   "},
+					},
+				}
+			},
+			message: "experiment name is required",
+		},
+		{
+			name: "empty entity name",
+			request: func() map[string]any {
+				return map[string]any{
+					"name":     "empty entity",
+					"entities": []map[string]any{dataEntityRequest(uuid.New(), "   ")},
+				}
+			},
+			message: "entity name is required",
+		},
+		{
+			name: "invalid metrics payload",
+			request: func() map[string]any {
+				return map[string]any{
+					"name": "invalid metrics payload",
+					"experiments": []map[string]any{
+						{
+							"name": "model with invalid metrics",
+							"entities": []map[string]any{
+								{
+									"id":      uuid.New(),
+									"type":    "metrics",
+									"level":   "L3",
+									"name":    "bad metrics",
+									"payload": map[string]any{"r_free": "not-a-number"},
+								},
+							},
+						},
+					},
+				}
+			},
+			message: "decode metrics payload",
+		},
+		{
+			name: "unexpected entity type",
+			request: func() map[string]any {
+				return map[string]any{
+					"name": "unexpected entity type",
+					"entities": []map[string]any{
+						{
+							"id":      uuid.New(),
+							"type":    "unknown",
+							"name":    "unknown entity",
+							"payload": map[string]any{},
+						},
+					},
+				}
+			},
+			message: "unexpected entity type",
+		},
+		{
+			name: "relation self reference",
+			request: func() map[string]any {
+				entityID := uuid.New()
+				return map[string]any{
+					"name": "self relation",
+					"experiments": []map[string]any{
+						{
+							"name":     "model with self relation",
+							"entities": []map[string]any{modelEntityRequest(entityID, "self related model")},
+							"relations": []map[string]any{
+								{
+									"source_entity_id": entityID,
+									"target_entity_id": entityID,
+									"relation_type":    "output_of",
+								},
+							},
+						},
+					},
+				}
+			},
+			message: "must be different",
+		},
+		{
+			name: "relation source missing",
+			request: func() map[string]any {
+				targetID := uuid.New()
+				return map[string]any{
+					"name": "missing relation source",
+					"experiments": []map[string]any{
+						{
+							"name":     "model with missing relation source",
+							"entities": []map[string]any{modelEntityRequest(targetID, "target model")},
+							"relations": []map[string]any{
+								{
+									"source_entity_id": uuid.New(),
+									"target_entity_id": targetID,
+									"relation_type":    "output_of",
+								},
+							},
+						},
+					},
+				}
+			},
+			message: "relation source entity was not created",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// when
+			resp := postJSONWithToken(s.T(), "/v1/entries", tt.request(), token)
+			defer resp.Body.Close()
+
+			// then
+			s.Equal(http.StatusBadRequest, resp.StatusCode)
+
+			var body httpapi.Error
+			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+			s.Equal("BAD_REQUEST", body.Code)
+			s.Contains(body.Message, tt.message)
+		})
+	}
+}
+
+func issueEntryTokenForTest(t *testing.T, accessToken string) string {
+	t.Helper()
+
+	githubClient.On("GetUser", mock.Anything, accessToken).
+		Return(github.User{ID: 8000, Login: accessToken, Name: "Entry Test", Email: accessToken + "@example.com"}, nil)
+	githubClient.On("ListOrgs", mock.Anything, accessToken).
+		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
+
+	return issueTokenForTest(t, accessToken).AccessToken
+}
+
 func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenResponse {
 	t.Helper()
 	resp := ExchangeGithubToken(t, accessToken)
@@ -394,4 +680,29 @@ func entityByID(entities []httpapi.Entity, id uuid.UUID) *httpapi.Entity {
 		}
 	}
 	return nil
+}
+
+func dataEntityRequest(id uuid.UUID, name string) map[string]any {
+	return map[string]any{
+		"id":    id,
+		"type":  "data",
+		"level": "L0",
+		"name":  name,
+		"payload": map[string]any{
+			"file_url": "s3://dynamic-pdb/test/" + id.String() + ".fasta",
+			"type":     "fasta",
+		},
+	}
+}
+
+func modelEntityRequest(id uuid.UUID, name string) map[string]any {
+	return map[string]any{
+		"id":    id,
+		"type":  "model",
+		"level": "L2",
+		"name":  name,
+		"payload": map[string]any{
+			"file_url": "s3://dynamic-pdb/test/" + id.String() + ".cif",
+		},
+	}
 }
