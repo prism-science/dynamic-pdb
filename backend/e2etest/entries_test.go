@@ -141,13 +141,13 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NoError(json.NewDecoder(entriesResp.Body).Decode(&entriesBody))
 	entry := entryByName(entriesBody.Items, name)
 	s.Require().NotNil(entry)
-	s.NotEqual(uuid.Nil, uuid.UUID(entry.Id))
+	s.NotEqual(uuid.Nil, entry.Id)
 	s.Require().NotNil(entry.Description)
 	s.Equal(description, *entry.Description)
 	s.Require().NotNil(entry.ThumbnailImageUrl)
 	s.Equal(thumbnailImageURL, *entry.ThumbnailImageUrl)
 
-	entryPath := "/v1/entries/" + uuid.UUID(entry.Id).String()
+	entryPath := "/v1/entries/" + entry.Id.String()
 	modelsResp := getWithToken(s.T(), entryPath+"/models", tokenResponse.AccessToken)
 	defer modelsResp.Body.Close()
 	s.Equal(http.StatusOK, modelsResp.StatusCode)
@@ -329,7 +329,7 @@ func (s *EntriesSuite) Test_should_return_entry_when_get_entry_called() {
 
 	var body httpapi.Entry
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(entryID, uuid.UUID(body.Id))
+	s.Equal(entryID, body.Id)
 	s.Require().NotNil(body.Description)
 	s.Equal(description, *body.Description)
 	s.Require().NotNil(body.ThumbnailImageUrl)
@@ -381,8 +381,8 @@ func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
 
 	var body httpapi.Model
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(modelID, uuid.UUID(body.Id))
-	s.Equal(entryID, uuid.UUID(body.EntryId))
+	s.Equal(modelID, body.Id)
+	s.Equal(entryID, body.EntryId)
 	s.Require().NotNil(body.Description)
 	s.Equal(description, *body.Description)
 }
@@ -675,7 +675,7 @@ func entryByName(entries []httpapi.Entry, name string) *httpapi.Entry {
 
 func entityByID(entities []httpapi.Entity, id uuid.UUID) *httpapi.Entity {
 	for i := range entities {
-		if uuid.UUID(entities[i].Id) == id {
+		if entities[i].Id == id {
 			return &entities[i]
 		}
 	}

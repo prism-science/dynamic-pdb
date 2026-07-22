@@ -117,7 +117,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 	now := time.Now().UTC()
 	entryID := uuid.New()
 	if req.Id != nil {
-		entryID = uuid.UUID(*req.Id)
+		entryID = *req.Id
 		if entryID == uuid.Nil {
 			return invalidCreateEntryRequest("entry id is required")
 		}
@@ -143,7 +143,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 		createdEntityIDs := make(map[uuid.UUID]struct{})
 		if req.Entities != nil {
 			for _, entityRequest := range *req.Entities {
-				entityID := uuid.UUID(entityRequest.Id)
+				entityID := entityRequest.Id
 				if _, exists := createdEntityIDs[entityID]; exists {
 					return invalidCreateEntryRequest("duplicate entity id: %s", entityID)
 				}
@@ -183,7 +183,7 @@ func (s *Server) createModelGraph(
 
 	modelID := uuid.New()
 	if req.Id != nil {
-		modelID = uuid.UUID(*req.Id)
+		modelID = *req.Id
 		if modelID == uuid.Nil {
 			return invalidCreateEntryRequest("model id is required")
 		}
@@ -208,7 +208,7 @@ func (s *Server) createModelGraph(
 	modelEntityIDs := make(map[uuid.UUID]struct{})
 	if req.Entities != nil {
 		for _, entityRequest := range *req.Entities {
-			entityID := uuid.UUID(entityRequest.Id)
+			entityID := entityRequest.Id
 			if _, exists := createdEntityIDs[entityID]; exists {
 				return invalidCreateEntryRequest("duplicate entity id: %s", entityID)
 			}
@@ -239,7 +239,7 @@ func (s *Server) createEntity(
 	req CreateEntityRequest,
 	now time.Time,
 ) (uuid.UUID, error) {
-	entityID := uuid.UUID(req.Id)
+	entityID := req.Id
 	if entityID == uuid.Nil {
 		return uuid.Nil, invalidCreateEntryRequest("entity id is required")
 	}
@@ -283,8 +283,8 @@ func (s *Server) createEntityRelation(
 	req CreateEntityRelationRequest,
 	now time.Time,
 ) error {
-	sourceEntityID := uuid.UUID(req.SourceEntityId)
-	targetEntityID := uuid.UUID(req.TargetEntityId)
+	sourceEntityID := req.SourceEntityId
+	targetEntityID := req.TargetEntityId
 	if sourceEntityID == uuid.Nil {
 		return invalidCreateEntryRequest("relation source_entity_id is required")
 	}
@@ -559,7 +559,7 @@ func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.E
 		Offset:  params.Offset,
 	}
 	if params.ModelId != nil {
-		modelID := uuid.UUID(*params.ModelId)
+		modelID := *params.ModelId
 		filters.ModelID = &modelID
 	}
 	if params.Types != nil {
@@ -665,7 +665,7 @@ func entityPayloadMetadataResponseFromModel(metadata map[string]any) *map[string
 	if metadata == nil {
 		return nil
 	}
-	responseMetadata := map[string]interface{}(metadata)
+	responseMetadata := metadata
 	return &responseMetadata
 }
 

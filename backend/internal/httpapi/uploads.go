@@ -26,19 +26,19 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entryID := uuid.UUID(req.EntryId)
+	entryID := req.EntryId
 	if entryID == uuid.Nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entry_id is required")
 		return
 	}
-	entityID := uuid.UUID(req.EntityId)
+	entityID := req.EntityId
 	if entityID == uuid.Nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entity_id is required")
 		return
 	}
 	modelID := ""
 	if req.ModelId != nil {
-		parsedModelID := uuid.UUID(*req.ModelId)
+		parsedModelID := *req.ModelId
 		if parsedModelID == uuid.Nil {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "model_id is invalid")
 			return
