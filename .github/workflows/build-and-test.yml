@@ -1,0 +1,222 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: build-and-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BACKEND_COVERAGE_THRESHOLD: "45"
+  WEBSITE_COVERAGE_THRESHOLD: "45"
+  GOLANGCI_LINT_VERSION: "v2.11"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - id: filter
+        uses: dorny/paths-filter@v4.0.1
+        with:
+          filters: |
+            backend:
+              - ".github/workflows/build-and-test.yml"
+              - ".golangci.yml"
+              - "Makefile"
+              - "go.work"
+              - "go.work.sum"
+              - "backend/**"
+            website:
+              - ".github/workflows/build-and-test.yml"
+              - "website/**"
+
+  backend-build:
+    name: Backend build
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            backend/migrations/go.sum
+
+      - name: Build backend
+        run: make -C backend build
+
+      - name: Build migrations
+        run: make -C backend/migrations build
+
+  backend-test:
+    name: Backend test
+    needs:
+      - changes
+      - backend-build
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: dynamic_pdb_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 35432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dynamic_pdb_local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            backend/migrations/go.sum
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: backend
+
+      - name: Apply database migrations
+        run: make -C backend migrate-local
+
+      - name: Test backend with coverage
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -covermode=atomic -coverprofile=coverage.out
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ { gsub("%", "", $3); print $3 }')"
+          awk \
+            -v coverage="${total}" \
+            -v threshold="${BACKEND_COVERAGE_THRESHOLD}" \
+            'BEGIN {
+              if (coverage + 0 < threshold + 0) {
+                printf("backend coverage %.2f%% is below %.2f%%\n", coverage, threshold)
+                exit 1
+              }
+              printf("backend coverage %.2f%% meets %.2f%% threshold\n", coverage, threshold)
+            }'
+
+      - name: Test migrations
+        working-directory: backend/migrations
+        run: GOWORK=off go test ./... -count=1
+
+  website-build:
+    name: Website build
+    needs: changes
+    if: needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build website
+        working-directory: website
+        run: npm run build
+
+  website-test:
+    name: Website test
+    needs:
+      - changes
+      - website-build
+    if: needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: website
+        run: npm run typecheck
+
+      - name: Test website with coverage
+        working-directory: website
+        run: |
+          set -euo pipefail
+          node \
+            --experimental-test-coverage \
+            --test \
+            --test-coverage-lines="${WEBSITE_COVERAGE_THRESHOLD}" \
+            test/*.test.cjs
+
+  ci-status:
+    name: CI status
+    needs:
+      - changes
+      - backend-build
+      - backend-test
+      - website-build
+      - website-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required jobs
+        run: |
+          set -euo pipefail
+          for result in \
+            "${{ needs.changes.result }}" \
+            "${{ needs.backend-build.result }}" \
+            "${{ needs.backend-test.result }}" \
+            "${{ needs.website-build.result }}" \
+            "${{ needs.website-test.result }}"
+          do
+            case "${result}" in
+              success|skipped)
+                ;;
+              *)
+                echo "CI failed because a required job finished with result: ${result}"
+                exit 1
+                ;;
+            esac
+          done
