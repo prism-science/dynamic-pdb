@@ -10,7 +10,7 @@ const { authTokenCookieName } = require("../src/lib/auth/session.ts");
 
 test("should return 401 when upload proxy has no auth session", async () => {
   nextHeaders.__setCookieValues({});
-  const request = new NextRequest("https://app.example/api/files", {
+  const request = new NextRequest("https://app.example/files", {
     method: "POST",
     body: "{}",
   });
@@ -37,7 +37,7 @@ test("should forward upload control request with bearer token and content type",
         headers: { "content-type": "application/json" },
       });
     };
-    const request = new NextRequest("https://app.example/api/files", {
+    const request = new NextRequest("https://app.example/files", {
       method: "POST",
       headers: { "content-type": "application/vnd.dynamic-pdb+json" },
       body: JSON.stringify({ filename: "model.cif" }),
@@ -64,7 +64,7 @@ test("should return 204 when backend upload control endpoint returns 204", async
   try {
     nextHeaders.__setCookieValues({ [authTokenCookieName]: "jwt-token" });
     global.fetch = async () => new Response(null, { status: 204 });
-    const request = new NextRequest("https://app.example/api/files/abort", {
+    const request = new NextRequest("https://app.example/files/abort", {
       method: "POST",
       body: JSON.stringify({ key: "key", upload_id: "upload-id" }),
     });
@@ -86,7 +86,7 @@ test("should return 502 when backend upload control endpoint is unreachable", as
     global.fetch = async () => {
       throw new Error("network down");
     };
-    const request = new NextRequest("https://app.example/api/files", {
+    const request = new NextRequest("https://app.example/files", {
       method: "POST",
       body: "{}",
     });

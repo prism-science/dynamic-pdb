@@ -1,0 +1,62 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dynamic-pdb-migrations-{{ .Release.Revision }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    app.kubernetes.io/name: dynamic-pdb-migrations
+    app.kubernetes.io/component: migrations
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-failed
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "dynamic-pdb.labels" . | nindent 8 }}
+        app.kubernetes.io/name: dynamic-pdb-migrations
+        app.kubernetes.io/component: migrations
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway
+          image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.tag }}"
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          args:
+            - "-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=require"
+            - "-user=$(DB_USERNAME)"
+            - "-password=$(DB_PASSWORD)"
+            - migrate
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: database
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: password
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+{{- end }}

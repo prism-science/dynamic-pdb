@@ -1,0 +1,11 @@
+# Strips the `/api` prefix before requests hit the backend Service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dynamic-pdb-strip-api-prefix
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+spec:
+  stripPrefix:
+    prefixes:
+      - /api

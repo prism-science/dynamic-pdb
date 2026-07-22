@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-pdb-website
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.website.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.website.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dynamic-pdb.website.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dynamic-pdb.labels" . | nindent 8 }}
+        {{- include "dynamic-pdb.website.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: website
+          image: "{{ .Values.website.image.repository }}:{{ .Values.website.image.tag }}"
+          imagePullPolicy: {{ .Values.website.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.website.service.port }}
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_BASE_URL
+              value: {{ .Values.website.publicApiBaseUrl | quote }}
+            - name: APP_BASE_URL
+              value: {{ .Values.website.appBaseUrl | quote }}
+            - name: GITHUB_CLIENT_ID
+              value: {{ .Values.website.auth.githubClientId | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.website.resources | nindent 12 }}

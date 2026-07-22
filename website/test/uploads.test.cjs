@@ -147,15 +147,15 @@ function installUploadFakes({
   FakeXMLHttpRequest.instances = [];
   global.XMLHttpRequest = FakeXMLHttpRequest;
   global.fetch = async (path, init) => {
-    if (path === "/api/files") {
+    if (path === "/files") {
       calls.create = JSON.parse(init.body);
       return jsonResponse(grant);
     }
-    if (path === "/api/files/complete") {
+    if (path === "/files/complete") {
       calls.complete = JSON.parse(init.body);
       return jsonResponse(completeBody, { status: completeStatus });
     }
-    if (path === "/api/files/abort") {
+    if (path === "/files/abort") {
       calls.abort = JSON.parse(init.body);
       return new Response(null, { status: 204 });
     }

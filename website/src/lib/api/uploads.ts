@@ -30,7 +30,7 @@ export async function uploadFileToObjectStorage(
   context: FileUploadContext,
   onProgress?: UploadProgress,
 ): Promise<string> {
-  const grant = await postJSON<FileUploadGrant>("/api/files", {
+  const grant = await postJSON<FileUploadGrant>("/files", {
     entry_id: context.entryId,
     model_id: context.modelId ?? null,
     entity_id: context.entityId,
@@ -61,7 +61,7 @@ export async function uploadFileToObjectStorage(
       completed.push({ part_number: part.part_number, etag });
     }
 
-    await postJSON("/api/files/complete", {
+    await postJSON("/files/complete", {
       key: grant.key,
       upload_id: grant.upload_id,
       parts: completed,
@@ -120,7 +120,7 @@ function putPartWithProgress(
 
 async function abortFileUpload(grant: FileUploadGrant): Promise<void> {
   try {
-    await postJSON("/api/files/abort", {
+    await postJSON("/files/abort", {
       key: grant.key,
       upload_id: grant.upload_id,
     });

@@ -116,6 +116,7 @@ func serve(ctx context.Context, httpServer *http.Server) error {
 
 func corsMiddleware(env string) func(http.Handler) http.Handler {
 	allowedOrigins := []string{
+		"https://dynamicpdb.com",
 		"https://unrevealable-fleshily-brigitte.ngrok-free.dev",
 	}
 	if env == "local" {
