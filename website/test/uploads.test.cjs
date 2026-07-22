@@ -27,7 +27,7 @@ test("should upload all granted parts and complete upload", async () => {
 
     const objectURL = await uploadFileToObjectStorage(
       new File(["abcdef"], "data.bin"),
-      { entryId: "entry", experimentId: null, entityId: "entity" },
+      { entryId: "entry", modelId: null, entityId: "entity" },
       (fraction) => progress.push(fraction),
     );
 
@@ -62,7 +62,7 @@ test("should abort upload and keep original error when object storage omits etag
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
           entryId: "entry",
-          experimentId: null,
+          modelId: null,
           entityId: "entity",
         }),
       /Object storage did not return ETag/,
@@ -94,7 +94,7 @@ test("should abort upload when complete endpoint fails", async () => {
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
           entryId: "entry",
-          experimentId: null,
+          modelId: null,
           entityId: "entity",
         }),
       /complete failed/,
@@ -123,7 +123,7 @@ test("should reject invalid upload grant without aborting", async () => {
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
           entryId: "entry",
-          experimentId: null,
+          modelId: null,
           entityId: "entity",
         }),
       /invalid file upload grant/,

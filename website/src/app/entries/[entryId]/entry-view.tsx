@@ -7,7 +7,7 @@ import type {
   EntityLevel,
   EntityRelation,
   EntityType,
-  Experiment,
+  Model,
   FastaMetadata,
   MetricsPayload,
   ModelPayload,
@@ -421,35 +421,35 @@ export function EntityCardList({
   );
 }
 
-export function ExperimentList({
+export function ModelList({
   entryId,
-  experiments,
+  models,
 }: {
   entryId: string;
-  experiments: Experiment[];
+  models: Model[];
 }) {
-  if (experiments.length === 0) {
+  if (models.length === 0) {
     return <p className={styles.emptyState}>No models.</p>;
   }
 
   return (
-    <div className={styles.experimentGrid}>
-      {experiments.map((experiment) => (
+    <div className={styles.modelGrid}>
+      {models.map((model) => (
         <Link
-          key={experiment.id}
-          className={styles.experimentCard}
-          href={`/entries/${entryId}/experiments/${experiment.id}`}
+          key={model.id}
+          className={styles.modelListCard}
+          href={`/entries/${entryId}/models/${model.id}`}
         >
-          <span className={styles.thumb} data-empty={experiment.thumbnail_image_url ? undefined : "true"}>
-            {experiment.thumbnail_image_url ? (
+          <span className={styles.thumb} data-empty={model.thumbnail_image_url ? undefined : "true"}>
+            {model.thumbnail_image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={experiment.thumbnail_image_url} alt="" loading="lazy" />
+              <img src={model.thumbnail_image_url} alt="" loading="lazy" />
             ) : (
               <ImagePlaceholderIcon />
             )}
           </span>
-          <span className={styles.experimentBody}>
-            <span className={styles.experimentName}>{experiment.name}</span>
+          <span className={styles.modelListBody}>
+            <span className={styles.modelListName}>{model.name}</span>
           </span>
         </Link>
       ))}

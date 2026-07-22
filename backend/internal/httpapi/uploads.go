@@ -36,19 +36,19 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entity_id is required")
 		return
 	}
-	experimentID := ""
-	if req.ExperimentId != nil {
-		parsedExperimentID := uuid.UUID(*req.ExperimentId)
-		if parsedExperimentID == uuid.Nil {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "experiment_id is invalid")
+	modelID := ""
+	if req.ModelId != nil {
+		parsedModelID := uuid.UUID(*req.ModelId)
+		if parsedModelID == uuid.Nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "model_id is invalid")
 			return
 		}
-		experimentID = parsedExperimentID.String()
+		modelID = parsedModelID.String()
 	}
 
 	fileUpload := s3.FileUpload{
 		EntryID:          entryID.String(),
-		ExperimentID:     experimentID,
+		ModelID:          modelID,
 		EntityID:         entityID.String(),
 		OriginalFilename: req.Filename,
 		Size:             req.Size,
@@ -60,7 +60,7 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 
 	grant, err := s.fileUploadBucket.PresignMultipartUpload(r.Context(), fileUpload)
 	if err != nil {
-		slog.Error("presign file upload failed", "err", err, "entry_id", entryID, "experiment_id", experimentID, "entity_id", entityID)
+		slog.Error("presign file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "entity_id", entityID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to presign file upload")
 		return
 	}

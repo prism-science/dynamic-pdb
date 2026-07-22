@@ -24,10 +24,10 @@ func createDBTestEntry(t *testing.T, name string, createdAt time.Time) *models.E
 	return entry
 }
 
-func createDBTestExperiment(t *testing.T, entryID uuid.UUID, name string, createdAt time.Time) *models.Experiment {
+func createDBTestModel(t *testing.T, entryID uuid.UUID, name string, createdAt time.Time) *models.Model {
 	t.Helper()
 
-	experiment, err := testDB.Experiments.Create(context.Background(), models.Experiment{
+	model, err := testDB.Models.Create(context.Background(), models.Model{
 		ID:        uuid.New(),
 		EntryID:   entryID,
 		Name:      name + "-" + uuid.NewString(),
@@ -35,13 +35,13 @@ func createDBTestExperiment(t *testing.T, entryID uuid.UUID, name string, create
 		UpdatedAt: createdAt,
 	})
 	require.NoError(t, err)
-	return experiment
+	return model
 }
 
 func createDBTestEntity(
 	t *testing.T,
 	entryID uuid.UUID,
-	experimentID *uuid.UUID,
+	modelID *uuid.UUID,
 	entityType models.EntityType,
 	level *models.EntityLevel,
 	name string,
@@ -50,15 +50,15 @@ func createDBTestEntity(
 
 	now := time.Now().UTC()
 	entity, err := testDB.Entities.Create(context.Background(), models.Entity{
-		ID:           uuid.New(),
-		EntryID:      entryID,
-		ExperimentID: experimentID,
-		Type:         entityType,
-		Level:        level,
-		Name:         name + "-" + uuid.NewString(),
-		Payload:      dbTestPayload(entityType),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:        uuid.New(),
+		EntryID:   entryID,
+		ModelID:   modelID,
+		Type:      entityType,
+		Level:     level,
+		Name:      name + "-" + uuid.NewString(),
+		Payload:   dbTestPayload(entityType),
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	require.NoError(t, err)
 	return entity

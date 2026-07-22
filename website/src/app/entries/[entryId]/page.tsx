@@ -11,7 +11,7 @@ import { getAuthSession } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SequenceView from "@/app/components/SequenceView";
-import { ExperimentList, ImagePlaceholderIcon } from "./entry-view";
+import { ModelList, ImagePlaceholderIcon } from "./entry-view";
 
 import styles from "./entry-page.module.css";
 
@@ -53,7 +53,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
 
   const hasSequence = sequence !== null;
   const hasFiles = files.length > 0;
-  const hasExperiments = data.experiments.length > 0;
+  const hasModels = data.models.length > 0;
 
   return (
     <main className={styles.page} aria-label={`${data.entry.name} entry`}>
@@ -106,12 +106,12 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               </section>
             ) : null}
 
-            {hasExperiments ? (
-              <section id="experiments" className={styles.contentSection}>
+            {hasModels ? (
+              <section id="models" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Models</h2>
-                <ExperimentList
+                <ModelList
                   entryId={data.entry.id}
-                  experiments={data.experiments}
+                  models={data.models}
                 />
               </section>
             ) : null}

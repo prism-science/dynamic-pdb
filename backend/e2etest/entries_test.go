@@ -65,7 +65,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 				},
 			},
 		},
-		"experiments": []map[string]any{
+		"models": []map[string]any{
 			{
 				"name":                "X-ray refinement",
 				"description":         "Refinement against crystallographic density",
@@ -148,16 +148,16 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Equal(thumbnailImageURL, *entry.ThumbnailImageUrl)
 
 	entryPath := "/v1/entries/" + uuid.UUID(entry.Id).String()
-	experimentsResp := getWithToken(s.T(), entryPath+"/experiments", tokenResponse.AccessToken)
-	defer experimentsResp.Body.Close()
-	s.Equal(http.StatusOK, experimentsResp.StatusCode)
+	modelsResp := getWithToken(s.T(), entryPath+"/models", tokenResponse.AccessToken)
+	defer modelsResp.Body.Close()
+	s.Equal(http.StatusOK, modelsResp.StatusCode)
 
-	var experimentsBody httpapi.ExperimentListResponse
-	s.Require().NoError(json.NewDecoder(experimentsResp.Body).Decode(&experimentsBody))
-	s.Len(experimentsBody.Items, 1)
-	s.Equal("X-ray refinement", experimentsBody.Items[0].Name)
-	s.Require().NotNil(experimentsBody.Items[0].Description)
-	s.Equal("Refinement against crystallographic density", *experimentsBody.Items[0].Description)
+	var modelsBody httpapi.ModelListResponse
+	s.Require().NoError(json.NewDecoder(modelsResp.Body).Decode(&modelsBody))
+	s.Len(modelsBody.Items, 1)
+	s.Equal("X-ray refinement", modelsBody.Items[0].Name)
+	s.Require().NotNil(modelsBody.Items[0].Description)
+	s.Equal("Refinement against crystallographic density", *modelsBody.Items[0].Description)
 
 	entitiesResp := getWithToken(s.T(), entryPath+"/entities", tokenResponse.AccessToken)
 	defer entitiesResp.Body.Close()
@@ -225,7 +225,7 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"name":        "entry " + searchToken,
 		"description": "Searchable entry for nested graph tests",
-		"experiments": []map[string]any{
+		"models": []map[string]any{
 			{
 				"name":        "qFit refinement",
 				"description": "Refinement against crystallographic density",
@@ -252,8 +252,8 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	textSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(searchToken), "")
 	defer textSearchResp.Body.Close()
 
-	experimentSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("qFit"), "")
-	defer experimentSearchResp.Body.Close()
+	modelSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("qFit"), "")
+	defer modelSearchResp.Body.Close()
 
 	entitySearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("model"), "")
 	defer entitySearchResp.Body.Close()
@@ -266,7 +266,7 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 
 	// then
 	s.Equal(http.StatusOK, textSearchResp.StatusCode)
-	s.Equal(http.StatusOK, experimentSearchResp.StatusCode)
+	s.Equal(http.StatusOK, modelSearchResp.StatusCode)
 	s.Equal(http.StatusOK, entitySearchResp.StatusCode)
 	s.Equal(http.StatusOK, affiliationSearchResp.StatusCode)
 	s.Equal(http.StatusOK, missingResp.StatusCode)
@@ -275,9 +275,9 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	s.Require().NoError(json.NewDecoder(textSearchResp.Body).Decode(&textSearchBody))
 	s.Require().NotNil(entryByName(textSearchBody.Items, "entry "+searchToken))
 
-	var experimentSearchBody httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(experimentSearchResp.Body).Decode(&experimentSearchBody))
-	s.Require().NotNil(entryByName(experimentSearchBody.Items, "entry "+searchToken))
+	var modelSearchBody httpapi.EntryListResponse
+	s.Require().NoError(json.NewDecoder(modelSearchResp.Body).Decode(&modelSearchBody))
+	s.Require().NotNil(entryByName(modelSearchBody.Items, "entry "+searchToken))
 
 	var entitySearchBody httpapi.EntryListResponse
 	s.Require().NoError(json.NewDecoder(entitySearchResp.Body).Decode(&entitySearchBody))
@@ -352,18 +352,18 @@ func (s *EntriesSuite) Test_should_return_404_when_get_entry_misses() {
 	s.Equal("NOT_FOUND", body.Code)
 }
 
-func (s *EntriesSuite) Test_should_return_experiment_when_get_experiment_called() {
+func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "experiment-get-token")
+	token := issueEntryTokenForTest(s.T(), "model-get-token")
 	entryID := uuid.New()
-	experimentID := uuid.New()
-	description := "Experiment loaded by id"
+	modelID := uuid.New()
+	description := "Model loaded by id"
 	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"id":   entryID,
-		"name": "entry-with-experiment-" + uuid.NewString(),
-		"experiments": []map[string]any{
+		"name": "entry-with-model-" + uuid.NewString(),
+		"models": []map[string]any{
 			{
-				"id":          experimentID,
+				"id":          modelID,
 				"name":        "model loaded by id",
 				"description": description,
 			},
@@ -373,26 +373,26 @@ func (s *EntriesSuite) Test_should_return_experiment_when_get_experiment_called(
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/experiments/"+experimentID.String(), token)
+	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
 	defer resp.Body.Close()
 
 	// then
 	s.Equal(http.StatusOK, resp.StatusCode)
 
-	var body httpapi.Experiment
+	var body httpapi.Model
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(experimentID, uuid.UUID(body.Id))
+	s.Equal(modelID, uuid.UUID(body.Id))
 	s.Equal(entryID, uuid.UUID(body.EntryId))
 	s.Require().NotNil(body.Description)
 	s.Equal(description, *body.Description)
 }
 
-func (s *EntriesSuite) Test_should_return_404_when_get_experiment_misses() {
+func (s *EntriesSuite) Test_should_return_404_when_get_model_misses() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "experiment-missing-token")
+	token := issueEntryTokenForTest(s.T(), "model-missing-token")
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/experiments/"+uuid.NewString(), token)
+	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models/"+uuid.NewString(), token)
 	defer resp.Body.Close()
 
 	// then
@@ -437,16 +437,16 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 			message: "duplicate entity id",
 		},
 		{
-			name: "duplicate entity id across entry and experiment",
+			name: "duplicate entity id across entry and model",
 			request: func() map[string]any {
 				entityID := uuid.New()
 				return map[string]any{
 					"name":     "duplicate graph entity",
 					"entities": []map[string]any{dataEntityRequest(entityID, "entry entity")},
-					"experiments": []map[string]any{
+					"models": []map[string]any{
 						{
 							"name":     "model one",
-							"entities": []map[string]any{modelEntityRequest(entityID, "experiment entity")},
+							"entities": []map[string]any{modelEntityRequest(entityID, "model entity")},
 						},
 					},
 				}
@@ -454,16 +454,16 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 			message: "duplicate entity id",
 		},
 		{
-			name: "empty experiment name",
+			name: "empty model name",
 			request: func() map[string]any {
 				return map[string]any{
-					"name": "empty experiment",
-					"experiments": []map[string]any{
+					"name": "empty model",
+					"models": []map[string]any{
 						{"name": "   "},
 					},
 				}
 			},
-			message: "experiment name is required",
+			message: "model name is required",
 		},
 		{
 			name: "empty entity name",
@@ -480,7 +480,7 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 			request: func() map[string]any {
 				return map[string]any{
 					"name": "invalid metrics payload",
-					"experiments": []map[string]any{
+					"models": []map[string]any{
 						{
 							"name": "model with invalid metrics",
 							"entities": []map[string]any{
@@ -521,7 +521,7 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 				entityID := uuid.New()
 				return map[string]any{
 					"name": "self relation",
-					"experiments": []map[string]any{
+					"models": []map[string]any{
 						{
 							"name":     "model with self relation",
 							"entities": []map[string]any{modelEntityRequest(entityID, "self related model")},
@@ -544,7 +544,7 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 				targetID := uuid.New()
 				return map[string]any{
 					"name": "missing relation source",
-					"experiments": []map[string]any{
+					"models": []map[string]any{
 						{
 							"name":     "model with missing relation source",
 							"entities": []map[string]any{modelEntityRequest(targetID, "target model")},

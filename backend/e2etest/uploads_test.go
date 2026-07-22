@@ -30,11 +30,11 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 
 	// when
 	createResp := postJSONWithToken(s.T(), "/v1/files", map[string]any{
-		"entry_id":      entryID,
-		"entity_id":     entityID,
-		"experiment_id": nil,
-		"filename":      "model.cif",
-		"size":          fileSize,
+		"entry_id":  entryID,
+		"entity_id": entityID,
+		"model_id":  nil,
+		"filename":  "model.cif",
+		"size":      fileSize,
 	}, token)
 	defer createResp.Body.Close()
 

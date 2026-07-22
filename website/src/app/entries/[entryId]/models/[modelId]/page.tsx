@@ -3,9 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import {
   ApiRequestError,
   type DataPayload,
-  type ExperimentPageData,
+  type ModelPageData,
   type FastaMetadata,
-  getExperimentPageData,
+  getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
@@ -23,25 +23,25 @@ import styles from "../../entry-page.module.css";
 
 export const dynamic = "force-dynamic";
 
-type ExperimentRouteProps = {
-  params: Promise<{ entryId: string; experimentId: string }>;
+type ModelRouteProps = {
+  params: Promise<{ entryId: string; modelId: string }>;
 };
 
-export default async function ExperimentPage({
+export default async function ModelPage({
   params,
-}: ExperimentRouteProps) {
-  const { entryId, experimentId } = await params;
+}: ModelRouteProps) {
+  const { entryId, modelId } = await params;
   const session = await getAuthSession();
-  const returnTo = `/entries/${entryId}/experiments/${experimentId}`;
+  const returnTo = `/entries/${entryId}/models/${modelId}`;
 
   if (!session) {
     redirect(loginRedirectPath(returnTo));
   }
 
-  const data = await loadExperimentPage(
+  const data = await loadModelPage(
     session.token,
     entryId,
-    experimentId,
+    modelId,
     returnTo,
   );
   const provenance = buildProvenance(data.entities, data.relations);
@@ -61,19 +61,19 @@ export default async function ExperimentPage({
   return (
     <main
       className={styles.page}
-      aria-label={`${data.entry.name} experiment ${data.experiment.name}`}
+      aria-label={`${data.entry.name} model ${data.model.name}`}
     >
       <section className={styles.shell}>
         <Breadcrumbs
           items={[
             { label: "Entries", href: "/" },
             { label: data.entry.name, href: `/entries/${data.entry.id}` },
-            { label: data.experiment.name },
+            { label: data.model.name },
           ]}
         />
 
         <EntryHero
-          title={data.experiment.name}
+          title={data.model.name}
           action={
             modelFileURL ? (
               <a
@@ -99,13 +99,13 @@ export default async function ExperimentPage({
         )}
 
         {sequence ? (
-          <section className={styles.experimentsBlock}>
+          <section className={styles.modelsBlock}>
             <SectionHeader title="Sequence" />
             <SequenceView metadata={sequence} />
           </section>
         ) : null}
 
-        <section className={styles.experimentsBlock}>
+        <section className={styles.modelsBlock}>
           <SectionHeader title="Data" />
           <DataTable entities={data.entities} />
         </section>
@@ -114,14 +114,14 @@ export default async function ExperimentPage({
   );
 }
 
-async function loadExperimentPage(
+async function loadModelPage(
   token: string,
   entryId: string,
-  experimentId: string,
+  modelId: string,
   returnTo: string,
-): Promise<ExperimentPageData> {
+): Promise<ModelPageData> {
   try {
-    return await getExperimentPageData(token, entryId, experimentId);
+    return await getModelPageData(token, entryId, modelId);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 401) {
       redirect(loginRedirectPath(returnTo));

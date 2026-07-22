@@ -16,16 +16,16 @@ import (
 func Test_should_create_and_list_model_entity_payload_when_entities_repository_called(t *testing.T) {
 	// given
 	entry := createDBTestEntry(t, "model-entity-entry", time.Now().UTC())
-	experiment := createDBTestExperiment(t, entry.ID, "model experiment", time.Now().UTC())
+	model := createDBTestModel(t, entry.ID, "model model", time.Now().UTC())
 	level := models.EntityLevelL2
 	affiliation := "Department of Chemistry, Boston University"
 	entity := models.Entity{
-		ID:           uuid.New(),
-		EntryID:      entry.ID,
-		ExperimentID: &experiment.ID,
-		Type:         models.EntityTypeModel,
-		Level:        &level,
-		Name:         "qFit model " + uuid.NewString(),
+		ID:      uuid.New(),
+		EntryID: entry.ID,
+		ModelID: &model.ID,
+		Type:    models.EntityTypeModel,
+		Level:   &level,
+		Name:    "qFit model " + uuid.NewString(),
 		Payload: models.ModelPayload{
 			FileURL:     "s3://dynamic-pdb/models/qfit.cif",
 			Authors:     []string{"Hendrickson, W.A.", "Teeter, M.M."},
@@ -43,8 +43,8 @@ func Test_should_create_and_list_model_entity_payload_when_entities_repository_c
 	// then
 	assert.Equal(t, created.ID, got.ID)
 	assert.Equal(t, entry.ID, got.EntryID)
-	require.NotNil(t, got.ExperimentID)
-	assert.Equal(t, experiment.ID, *got.ExperimentID)
+	require.NotNil(t, got.ModelID)
+	assert.Equal(t, model.ID, *got.ModelID)
 	require.NotNil(t, got.Level)
 	assert.Equal(t, level, *got.Level)
 	payload, err := got.Model()
@@ -125,31 +125,31 @@ func Test_should_create_and_list_program_entity_payload_when_entities_repository
 	assert.Equal(t, "Multiconformer model builder", payload.Description)
 }
 
-func Test_should_list_entities_matching_entry_experiment_type_and_level_filters(t *testing.T) {
+func Test_should_list_entities_matching_entry_model_type_and_level_filters(t *testing.T) {
 	// given
 	entry := createDBTestEntry(t, "list-entities-entry", time.Now().UTC())
 	otherEntry := createDBTestEntry(t, "list-entities-other-entry", time.Now().UTC())
-	experiment := createDBTestExperiment(t, entry.ID, "filtered experiment", time.Now().UTC())
-	otherExperiment := createDBTestExperiment(t, entry.ID, "other experiment", time.Now().UTC().Add(time.Second))
-	foreignExperiment := createDBTestExperiment(t, otherEntry.ID, "foreign experiment", time.Now().UTC())
+	model := createDBTestModel(t, entry.ID, "filtered model", time.Now().UTC())
+	otherModel := createDBTestModel(t, entry.ID, "other model", time.Now().UTC().Add(time.Second))
+	foreignModel := createDBTestModel(t, otherEntry.ID, "foreign model", time.Now().UTC())
 	levelL0 := models.EntityLevelL0
 	levelL2 := models.EntityLevelL2
 	levelL3 := models.EntityLevelL3
 
 	_ = createDBTestEntity(t, entry.ID, nil, models.EntityTypeData, &levelL0, "entry data")
-	matching := createDBTestEntity(t, entry.ID, &experiment.ID, models.EntityTypeModel, &levelL2, "matching model")
-	_ = createDBTestEntity(t, entry.ID, &experiment.ID, models.EntityTypeMetrics, &levelL3, "wrong type")
-	_ = createDBTestEntity(t, entry.ID, &otherExperiment.ID, models.EntityTypeModel, &levelL2, "wrong experiment")
-	_ = createDBTestEntity(t, otherEntry.ID, &foreignExperiment.ID, models.EntityTypeModel, &levelL2, "wrong entry")
+	matching := createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeModel, &levelL2, "matching model")
+	_ = createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeMetrics, &levelL3, "wrong type")
+	_ = createDBTestEntity(t, entry.ID, &otherModel.ID, models.EntityTypeModel, &levelL2, "wrong model")
+	_ = createDBTestEntity(t, otherEntry.ID, &foreignModel.ID, models.EntityTypeModel, &levelL2, "wrong entry")
 	types := []models.EntityType{models.EntityTypeModel}
 	levels := []models.EntityLevel{models.EntityLevelL2}
 
 	// when
 	got, err := testDB.Entities.List(context.Background(), db.EntityFilters{
-		EntryID:      &entry.ID,
-		ExperimentID: &experiment.ID,
-		Types:        types,
-		Levels:       levels,
+		EntryID: &entry.ID,
+		ModelID: &model.ID,
+		Types:   types,
+		Levels:  levels,
 	})
 
 	// then

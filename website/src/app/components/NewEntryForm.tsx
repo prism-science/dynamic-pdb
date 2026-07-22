@@ -50,7 +50,7 @@ export type MetricDraft = {
   values: Record<string, string>;
 };
 
-export type ExperimentDraft = {
+export type ModelDraft = {
   id: string;
   name: string;
   description: string;
@@ -89,7 +89,7 @@ export default function NewEntryForm() {
   const [thumbUploadStatus, setThumbUploadStatus] = useState<UploadStatus>("idle");
   const [thumbUploadError, setThumbUploadError] = useState<string | null>(null);
   const [files, setFiles] = useState<ParsedFile[]>([]);
-  const [experiments, setExperiments] = useState<ExperimentDraft[]>([]);
+  const [models, setModels] = useState<ModelDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,14 +123,14 @@ export default function NewEntryForm() {
       thumbPreview: httpOnly(thumbPreview),
       thumbUploadStatus: thumbUrl ? "uploaded" : "idle",
       files: files.filter(isPersistable).map(fileToDraft),
-      experiments: experiments.map(experimentToDraft),
+      models: models.map(modelToDraft),
     };
     if (draftHasContent(draft)) {
       writeStoredDraft(draft);
     } else {
       clearStoredDraft();
     }
-  }, [storageReady, entryId, name, description, thumbUrl, thumbPreview, files, experiments]);
+  }, [storageReady, entryId, name, description, thumbUrl, thumbPreview, files, models]);
 
   const continueDraft = () => {
     const draft = draftPrompt;
@@ -145,7 +145,7 @@ export default function NewEntryForm() {
     setThumbUploadStatus(draft.thumbUrl ? "uploaded" : "idle");
     setThumbProgress(draft.thumbUrl ? 1 : 0);
     setFiles(draft.files.map(fileFromDraft));
-    setExperiments(draft.experiments.map(experimentFromDraft));
+    setModels(draft.models.map(modelFromDraft));
     setDraftPrompt(null);
     setStorageReady(true);
   };
@@ -169,7 +169,7 @@ export default function NewEntryForm() {
     setThumbUploadStatus("idle");
     setThumbUploadError(null);
     setFiles([]);
-    setExperiments([]);
+    setModels([]);
     setError(null);
   };
 
@@ -193,7 +193,7 @@ export default function NewEntryForm() {
     const parsed = await Promise.all(list.map((file) => parseFile(file, "L0")));
     setFiles((prev) => [...prev, ...parsed]);
     parsed.forEach((file) => {
-      void uploadParsedFileNow(file, { entryId, experimentId: null }, patchEntryFile);
+      void uploadParsedFileNow(file, { entryId, modelId: null }, patchEntryFile);
     });
   };
 
@@ -205,8 +205,8 @@ export default function NewEntryForm() {
     setFiles((prev) => [...prev, parsed]);
   };
 
-  const addExperiment = () => {
-    setExperiments((prev) => [
+  const addModel = () => {
+    setModels((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
@@ -225,14 +225,14 @@ export default function NewEntryForm() {
     ]);
   };
 
-  const updateExperiment = (id: string, patch: Partial<ExperimentDraft>) => {
-    setExperiments((prev) =>
-      prev.map((exp) => (exp.id === id ? { ...exp, ...patch } : exp)),
+  const updateModel = (id: string, patch: Partial<ModelDraft>) => {
+    setModels((prev) =>
+      prev.map((modelDraft) => (modelDraft.id === id ? { ...modelDraft, ...patch } : modelDraft)),
     );
   };
 
-  const removeExperiment = (id: string) => {
-    setExperiments((prev) => prev.filter((exp) => exp.id !== id));
+  const removeModel = (id: string) => {
+    setModels((prev) => prev.filter((modelDraft) => modelDraft.id !== id));
   };
 
   const patchEntryFile = (id: string, patch: Partial<ParsedFile>) => {
@@ -241,21 +241,21 @@ export default function NewEntryForm() {
     );
   };
 
-  const patchExperimentFile = (
-    experimentId: string,
+  const patchModelFile = (
+    modelId: string,
     fileId: string,
     patch: Partial<ParsedFile>,
   ) => {
-    setExperiments((prev) =>
-      prev.map((exp) =>
-        exp.id === experimentId
+    setModels((prev) =>
+      prev.map((modelDraft) =>
+        modelDraft.id === modelId
           ? {
-              ...exp,
-              files: exp.files.map((file) =>
+              ...modelDraft,
+              files: modelDraft.files.map((file) =>
                 file.id === fileId ? { ...file, ...patch } : file,
               ),
             }
-          : exp,
+          : modelDraft,
       ),
     );
   };
@@ -264,7 +264,7 @@ export default function NewEntryForm() {
     try {
       const url = await uploadFileToObjectStorage(
         file,
-        { entryId, experimentId: null, entityId: fileId },
+        { entryId, modelId: null, entityId: fileId },
         (fraction) => {
           if (activeThumbFileId.current === fileId) {
             setThumbProgress(fraction);
@@ -287,23 +287,23 @@ export default function NewEntryForm() {
     }
   };
 
-  const uploadExperimentThumbnail = async (
-    experimentId: string,
+  const uploadModelThumbnail = async (
+    modelId: string,
     file: File,
     fileId: string,
   ) => {
-    const setThumbState = (patch: Partial<ExperimentDraft>) =>
-      setExperiments((prev) =>
-        prev.map((exp) =>
-          exp.id === experimentId && exp.thumbFileId === fileId
-            ? { ...exp, ...patch }
-            : exp,
+    const setThumbState = (patch: Partial<ModelDraft>) =>
+      setModels((prev) =>
+        prev.map((modelDraft) =>
+          modelDraft.id === modelId && modelDraft.thumbFileId === fileId
+            ? { ...modelDraft, ...patch }
+            : modelDraft,
         ),
       );
     try {
       const url = await uploadFileToObjectStorage(
         file,
-        { entryId, experimentId, entityId: fileId },
+        { entryId, modelId, entityId: fileId },
         (fraction) => setThumbState({ thumbProgress: fraction }),
       );
       setThumbState({
@@ -323,24 +323,24 @@ export default function NewEntryForm() {
   const hasPendingUploads =
     thumbUploadStatus === "uploading" ||
     files.some((file) => file.uploadStatus === "uploading") ||
-    experiments.some(
-      (exp) =>
-        exp.thumbUploadStatus === "uploading" ||
-        exp.files.some((file) => file.uploadStatus === "uploading"),
+    models.some(
+      (modelDraft) =>
+        modelDraft.thumbUploadStatus === "uploading" ||
+        modelDraft.files.some((file) => file.uploadStatus === "uploading"),
     );
 
   const hasFailedUploads =
     thumbUploadStatus === "failed" ||
     files.some((file) => file.uploadStatus === "failed") ||
-    experiments.some(
-      (exp) =>
-        exp.thumbUploadStatus === "failed" ||
-        exp.files.some((file) => file.uploadStatus === "failed"),
+    models.some(
+      (modelDraft) =>
+        modelDraft.thumbUploadStatus === "failed" ||
+        modelDraft.files.some((file) => file.uploadStatus === "failed"),
     );
 
   const canSubmit =
     name.trim().length > 0 &&
-    experiments.every((exp) => exp.name.trim().length > 0) &&
+    models.every((modelDraft) => modelDraft.name.trim().length > 0) &&
     !hasPendingUploads &&
     !hasFailedUploads &&
     !submitting;
@@ -354,7 +354,7 @@ export default function NewEntryForm() {
     setError(null);
 
     try {
-      if (!uploadsReady(files, experiments, thumbFile, thumbUrl)) {
+      if (!uploadsReady(files, models, thumbFile, thumbUrl)) {
         setError("Wait until all files are uploaded.");
         setSubmitting(false);
         return;
@@ -366,12 +366,12 @@ export default function NewEntryForm() {
         description: description.trim() || null,
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),
-        experiments: experiments.map((exp) => ({
-          id: exp.id,
-          name: exp.name.trim(),
-          description: exp.description.trim() || null,
-          thumbnail_image_url: exp.thumbUrl,
-          entities: [...exp.files.map(toEntity), ...exp.metrics.map(toMetricEntity)],
+        models: models.map((modelDraft) => ({
+          id: modelDraft.id,
+          name: modelDraft.name.trim(),
+          description: modelDraft.description.trim() || null,
+          thumbnail_image_url: modelDraft.thumbUrl,
+          entities: [...modelDraft.files.map(toEntity), ...modelDraft.metrics.map(toMetricEntity)],
         })),
       };
 
@@ -479,26 +479,26 @@ export default function NewEntryForm() {
       </section>
 
       <section className={styles.field}>
-        <div className={styles.expHead}>
+        <div className={styles.modelDraftHead}>
           <span className={styles.label}>Models</span>
-          <button type="button" className={styles.addExp} onClick={addExperiment}>
+          <button type="button" className={styles.addModel} onClick={addModel}>
             <PlusIcon />
             Add model
           </button>
         </div>
 
-        {experiments.length === 0 ? (
-          <p className={styles.expEmpty}>No models yet.</p>
+        {models.length === 0 ? (
+          <p className={styles.modelDraftEmpty}>No models yet.</p>
         ) : (
-          <div className={styles.expList}>
-            {experiments.map((exp, index) => (
-              <div key={exp.id} className={styles.expCard}>
-                <div className={styles.expCardHead}>
-                  <span className={styles.expIndex}>#{index + 1}</span>
+          <div className={styles.modelDraftList}>
+            {models.map((modelDraft, index) => (
+              <div key={modelDraft.id} className={styles.modelDraftCard}>
+                <div className={styles.modelDraftCardHead}>
+                  <span className={styles.modelDraftIndex}>#{index + 1}</span>
                   <button
                     type="button"
                     className={styles.remove}
-                    onClick={() => removeExperiment(exp.id)}
+                    onClick={() => removeModel(modelDraft.id)}
                     aria-label="Remove model"
                   >
                     ×
@@ -506,35 +506,35 @@ export default function NewEntryForm() {
                 </div>
                 <input
                   className={styles.input}
-                  value={exp.name}
+                  value={modelDraft.name}
                   onChange={(event) =>
-                    updateExperiment(exp.id, { name: event.target.value })
+                    updateModel(modelDraft.id, { name: event.target.value })
                   }
                   placeholder="e.g. Refined structure (REFMAC)"
                   autoComplete="off"
                 />
                 <input
                   className={styles.input}
-                  value={exp.description}
+                  value={modelDraft.description}
                   onChange={(event) =>
-                    updateExperiment(exp.id, { description: event.target.value })
+                    updateModel(modelDraft.id, { description: event.target.value })
                   }
                   placeholder="Optional — e.g. molecular replacement, then restrained refinement"
                   autoComplete="off"
                 />
                 <label className={styles.thumbDrop}>
-                  {exp.thumbPreview ? (
+                  {modelDraft.thumbPreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img className={styles.thumbImg} src={exp.thumbPreview} alt="" />
+                    <img className={styles.thumbImg} src={modelDraft.thumbPreview} alt="" />
                   ) : (
                     <span className={styles.thumbHint}>
                       <UploadIcon />
                       Preview image
                     </span>
                   )}
-                  {exp.thumbUploadStatus === "uploading" ? (
+                  {modelDraft.thumbUploadStatus === "uploading" ? (
                     <span className={styles.thumbOverlay}>
-                      <ProgressBar value={exp.thumbProgress} />
+                      <ProgressBar value={modelDraft.thumbProgress} />
                     </span>
                   ) : null}
                   <input
@@ -547,7 +547,7 @@ export default function NewEntryForm() {
                         return;
                       }
                       const nextThumbFileId = crypto.randomUUID();
-                      updateExperiment(exp.id, {
+                      updateModel(modelDraft.id, {
                         thumbFileId: nextThumbFileId,
                         thumbFile: file,
                         thumbPreview: URL.createObjectURL(file),
@@ -556,32 +556,32 @@ export default function NewEntryForm() {
                         thumbUploadStatus: "uploading",
                         thumbUploadError: null,
                       });
-                      void uploadExperimentThumbnail(
-                        exp.id,
+                      void uploadModelThumbnail(
+                        modelDraft.id,
                         file,
                         nextThumbFileId,
                       );
                     }}
                   />
                 </label>
-                {exp.thumbUploadStatus === "failed" ? (
+                {modelDraft.thumbUploadStatus === "failed" ? (
                   <span className={styles.uploadStatus} data-state="failed">
                     {uploadStatusText(
-                      exp.thumbUploadStatus,
-                      exp.thumbUploadError,
+                      modelDraft.thumbUploadStatus,
+                      modelDraft.thumbUploadError,
                     )}
                   </span>
                 ) : null}
                 <span className={styles.subLabel}>Data</span>
                 <FilesEditor
-                  files={exp.files}
+                  files={modelDraft.files}
                   onAdd={async (list) => {
                     const parsed = await Promise.all(
                       list.map((file) => parseFile(file, "L2")),
                     );
-                    setExperiments((prev) =>
+                    setModels((prev) =>
                       prev.map((current) =>
-                        current.id === exp.id
+                        current.id === modelDraft.id
                           ? { ...current, files: [...current.files, ...parsed] }
                           : current,
                       ),
@@ -589,9 +589,9 @@ export default function NewEntryForm() {
                     parsed.forEach((file) => {
                       void uploadParsedFileNow(
                         file,
-                        { entryId, experimentId: exp.id },
+                        { entryId, modelId: modelDraft.id },
                         (fileId, patch) =>
-                          patchExperimentFile(exp.id, fileId, patch),
+                          patchModelFile(modelDraft.id, fileId, patch),
                       );
                     });
                   }}
@@ -600,29 +600,29 @@ export default function NewEntryForm() {
                     if (!parsed) {
                       return;
                     }
-                    setExperiments((prev) =>
+                    setModels((prev) =>
                       prev.map((current) =>
-                        current.id === exp.id
+                        current.id === modelDraft.id
                           ? { ...current, files: [...current.files, parsed] }
                           : current,
                       ),
                     );
                   }}
                   onRemove={(id) =>
-                    updateExperiment(exp.id, {
-                      files: exp.files.filter((f) => f.id !== id),
+                    updateModel(modelDraft.id, {
+                      files: modelDraft.files.filter((f) => f.id !== id),
                     })
                   }
                   onLevel={(id, level) =>
-                    updateExperiment(exp.id, {
-                      files: exp.files.map((f) =>
+                    updateModel(modelDraft.id, {
+                      files: modelDraft.files.map((f) =>
                         f.id === id ? { ...f, level } : f,
                       ),
                     })
                   }
                   onPatch={(id, patch) =>
-                    updateExperiment(exp.id, {
-                      files: exp.files.map((f) =>
+                    updateModel(modelDraft.id, {
+                      files: modelDraft.files.map((f) =>
                         f.id === id ? { ...f, ...patch } : f,
                       ),
                     })
@@ -631,9 +631,9 @@ export default function NewEntryForm() {
 
                 <span className={styles.subLabel}>Metrics</span>
                 <MetricsEditor
-                  metrics={exp.metrics}
+                  metrics={modelDraft.metrics}
                   setMetrics={(next) =>
-                    updateExperiment(exp.id, { metrics: next })
+                    updateModel(modelDraft.id, { metrics: next })
                   }
                 />
               </div>
@@ -676,7 +676,7 @@ function DraftRestorePrompt({
 }) {
   const fileCount =
     draft.files.length +
-    draft.experiments.reduce((sum, exp) => sum + exp.files.length, 0);
+    draft.models.reduce((sum, modelDraft) => sum + modelDraft.files.length, 0);
   const parts: string[] = [];
   if (draft.name.trim()) {
     parts.push(`“${draft.name.trim()}”`);
@@ -684,9 +684,9 @@ function DraftRestorePrompt({
   if (fileCount > 0) {
     parts.push(`${fileCount} uploaded file${fileCount === 1 ? "" : "s"}`);
   }
-  if (draft.experiments.length > 0) {
+  if (draft.models.length > 0) {
     parts.push(
-      `${draft.experiments.length} model${draft.experiments.length === 1 ? "" : "s"}`,
+      `${draft.models.length} model${draft.models.length === 1 ? "" : "s"}`,
     );
   }
   const summary = parts.length > 0 ? parts.join(" · ") : "an unfinished entry";
@@ -1274,7 +1274,7 @@ export function isValidHttpUrl(value: string): boolean {
   }
 }
 
-type FileUploadLocation = Pick<FileUploadContext, "entryId" | "experimentId">;
+type FileUploadLocation = Pick<FileUploadContext, "entryId" | "modelId">;
 
 async function uploadParsedFileNow(
   file: ParsedFile,
@@ -1323,7 +1323,7 @@ export function uploadStatusText(status: UploadStatus, error: string | null): st
 
 export function uploadsReady(
   files: ParsedFile[],
-  experiments: ExperimentDraft[],
+  models: ModelDraft[],
   thumbFile: File | null,
   thumbUrl: string | null,
 ): boolean {
@@ -1333,10 +1333,10 @@ export function uploadsReady(
   if (files.some((file) => file.uploadStatus !== "uploaded" || !file.url)) {
     return false;
   }
-  return experiments.every(
-    (exp) =>
-      (!exp.thumbFile || Boolean(exp.thumbUrl)) &&
-      exp.files.every(
+  return models.every(
+    (modelDraft) =>
+      (!modelDraft.thumbFile || Boolean(modelDraft.thumbUrl)) &&
+      modelDraft.files.every(
         (file) => file.uploadStatus === "uploaded" && Boolean(file.url),
       ),
   );
@@ -1360,7 +1360,7 @@ export type StoredFile = {
   url: string;
 };
 
-export type StoredExperiment = {
+export type StoredModel = {
   id: string;
   name: string;
   description: string;
@@ -1379,7 +1379,7 @@ export type StoredDraft = {
   thumbPreview?: string;
   thumbUploadStatus: UploadStatus;
   files: StoredFile[];
-  experiments: StoredExperiment[];
+  models: StoredModel[];
 };
 
 export function isPersistable(file: ParsedFile): boolean {
@@ -1425,32 +1425,32 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
   };
 }
 
-export function experimentToDraft(exp: ExperimentDraft): StoredExperiment {
+export function modelToDraft(modelDraft: ModelDraft): StoredModel {
   return {
-    id: exp.id,
-    name: exp.name,
-    description: exp.description,
-    thumbUrl: exp.thumbUrl,
-    thumbPreview: httpOnly(exp.thumbPreview),
-    files: exp.files.filter(isPersistable).map(fileToDraft),
-    metrics: exp.metrics,
+    id: modelDraft.id,
+    name: modelDraft.name,
+    description: modelDraft.description,
+    thumbUrl: modelDraft.thumbUrl,
+    thumbPreview: httpOnly(modelDraft.thumbPreview),
+    files: modelDraft.files.filter(isPersistable).map(fileToDraft),
+    metrics: modelDraft.metrics,
   };
 }
 
-export function experimentFromDraft(exp: StoredExperiment): ExperimentDraft {
+export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
   return {
-    id: exp.id,
-    name: exp.name,
-    description: exp.description,
+    id: modelDraft.id,
+    name: modelDraft.name,
+    description: modelDraft.description,
     thumbFileId: crypto.randomUUID(),
     thumbFile: null,
-    thumbPreview: exp.thumbPreview ?? null,
-    thumbUrl: exp.thumbUrl,
-    thumbProgress: exp.thumbUrl ? 1 : 0,
-    thumbUploadStatus: exp.thumbUrl ? "uploaded" : "idle",
+    thumbPreview: modelDraft.thumbPreview ?? null,
+    thumbUrl: modelDraft.thumbUrl,
+    thumbProgress: modelDraft.thumbUrl ? 1 : 0,
+    thumbUploadStatus: modelDraft.thumbUrl ? "uploaded" : "idle",
     thumbUploadError: null,
-    files: exp.files.map(fileFromDraft),
-    metrics: exp.metrics,
+    files: modelDraft.files.map(fileFromDraft),
+    metrics: modelDraft.metrics,
   };
 }
 
@@ -1460,7 +1460,7 @@ export function draftHasContent(draft: StoredDraft): boolean {
     draft.description.trim().length > 0 ||
     Boolean(draft.thumbUrl) ||
     draft.files.length > 0 ||
-    draft.experiments.length > 0
+    draft.models.length > 0
   );
 }
 
@@ -1478,8 +1478,8 @@ export function readStoredDraft(): StoredDraft | null {
       return null;
     }
     parsed.files = Array.isArray(parsed.files) ? parsed.files : [];
-    parsed.experiments = Array.isArray(parsed.experiments)
-      ? parsed.experiments
+    parsed.models = Array.isArray(parsed.models)
+      ? parsed.models
       : [];
     return parsed;
   } catch {

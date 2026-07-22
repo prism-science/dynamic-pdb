@@ -156,9 +156,9 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 			}
 		}
 
-		if req.Experiments != nil {
-			for _, experimentRequest := range *req.Experiments {
-				if err := s.createExperimentGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, experimentRequest, now); err != nil {
+		if req.Models != nil {
+			for _, modelRequest := range *req.Models {
+				if err := s.createModelGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, modelRequest, now); err != nil {
 					return err
 				}
 			}
@@ -168,29 +168,29 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 	})
 }
 
-func (s *Server) createExperimentGraph(
+func (s *Server) createModelGraph(
 	ctx context.Context,
 	entry domainmodels.Entry,
 	entryEntityIDs map[uuid.UUID]struct{},
 	createdEntityIDs map[uuid.UUID]struct{},
-	req CreateExperimentRequest,
+	req CreateModelRequest,
 	now time.Time,
 ) error {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return invalidCreateEntryRequest("experiment name is required")
+		return invalidCreateEntryRequest("model name is required")
 	}
 
-	experimentID := uuid.New()
+	modelID := uuid.New()
 	if req.Id != nil {
-		experimentID = uuid.UUID(*req.Id)
-		if experimentID == uuid.Nil {
-			return invalidCreateEntryRequest("experiment id is required")
+		modelID = uuid.UUID(*req.Id)
+		if modelID == uuid.Nil {
+			return invalidCreateEntryRequest("model id is required")
 		}
 	}
 
-	experiment, err := s.database.Experiments.Create(ctx, domainmodels.Experiment{
-		ID:                experimentID,
+	model, err := s.database.Models.Create(ctx, domainmodels.Model{
+		ID:                modelID,
 		EntryID:           entry.ID,
 		Name:              name,
 		Description:       req.Description,
@@ -199,31 +199,31 @@ func (s *Server) createExperimentGraph(
 		UpdatedAt:         now,
 	})
 	if err != nil {
-		return fmt.Errorf("create experiment: %w", err)
+		return fmt.Errorf("create model: %w", err)
 	}
-	if err := s.database.EntrySearch.IndexExperiment(ctx, *experiment); err != nil {
-		return fmt.Errorf("index experiment search: %w", err)
+	if err := s.database.EntrySearch.IndexModel(ctx, *model); err != nil {
+		return fmt.Errorf("index model search: %w", err)
 	}
 
-	experimentEntityIDs := make(map[uuid.UUID]struct{})
+	modelEntityIDs := make(map[uuid.UUID]struct{})
 	if req.Entities != nil {
 		for _, entityRequest := range *req.Entities {
 			entityID := uuid.UUID(entityRequest.Id)
 			if _, exists := createdEntityIDs[entityID]; exists {
 				return invalidCreateEntryRequest("duplicate entity id: %s", entityID)
 			}
-			entityID, err := s.createEntity(ctx, entry, &experiment.ID, entityRequest, now)
+			entityID, err := s.createEntity(ctx, entry, &model.ID, entityRequest, now)
 			if err != nil {
 				return err
 			}
 			createdEntityIDs[entityID] = struct{}{}
-			experimentEntityIDs[entityID] = struct{}{}
+			modelEntityIDs[entityID] = struct{}{}
 		}
 	}
 
 	if req.Relations != nil {
 		for _, relationRequest := range *req.Relations {
-			if err := s.createEntityRelation(ctx, entryEntityIDs, experimentEntityIDs, relationRequest, now); err != nil {
+			if err := s.createEntityRelation(ctx, entryEntityIDs, modelEntityIDs, relationRequest, now); err != nil {
 				return err
 			}
 		}
@@ -235,7 +235,7 @@ func (s *Server) createExperimentGraph(
 func (s *Server) createEntity(
 	ctx context.Context,
 	entry domainmodels.Entry,
-	experimentID *uuid.UUID,
+	modelID *uuid.UUID,
 	req CreateEntityRequest,
 	now time.Time,
 ) (uuid.UUID, error) {
@@ -256,15 +256,15 @@ func (s *Server) createEntity(
 	}
 
 	entity, err := s.database.Entities.Create(ctx, domainmodels.Entity{
-		ID:           entityID,
-		EntryID:      entry.ID,
-		ExperimentID: experimentID,
-		Type:         entityType,
-		Level:        entityLevelFromRequest(req.Level),
-		Name:         name,
-		Payload:      payload,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:        entityID,
+		EntryID:   entry.ID,
+		ModelID:   modelID,
+		Type:      entityType,
+		Level:     entityLevelFromRequest(req.Level),
+		Name:      name,
+		Payload:   payload,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create entity: %w", err)
@@ -279,7 +279,7 @@ func (s *Server) createEntity(
 func (s *Server) createEntityRelation(
 	ctx context.Context,
 	entryEntityIDs map[uuid.UUID]struct{},
-	experimentEntityIDs map[uuid.UUID]struct{},
+	modelEntityIDs map[uuid.UUID]struct{},
 	req CreateEntityRelationRequest,
 	now time.Time,
 ) error {
@@ -294,10 +294,10 @@ func (s *Server) createEntityRelation(
 	if sourceEntityID == targetEntityID {
 		return invalidCreateEntryRequest("relation source_entity_id and target_entity_id must be different")
 	}
-	if !entityIDBelongsToExperimentGraph(sourceEntityID, entryEntityIDs, experimentEntityIDs) {
+	if !entityIDBelongsToModelGraph(sourceEntityID, entryEntityIDs, modelEntityIDs) {
 		return invalidCreateEntryRequest("relation source entity was not created in this entry request: %s", sourceEntityID)
 	}
-	if !entityIDBelongsToExperimentGraph(targetEntityID, entryEntityIDs, experimentEntityIDs) {
+	if !entityIDBelongsToModelGraph(targetEntityID, entryEntityIDs, modelEntityIDs) {
 		return invalidCreateEntryRequest("relation target entity was not created in this entry request: %s", targetEntityID)
 	}
 
@@ -376,15 +376,15 @@ func entityLevelFromRequest(level *EntityLevel) *domainmodels.EntityLevel {
 	return &domainLevel
 }
 
-func entityIDBelongsToExperimentGraph(
+func entityIDBelongsToModelGraph(
 	entityID uuid.UUID,
 	entryEntityIDs map[uuid.UUID]struct{},
-	experimentEntityIDs map[uuid.UUID]struct{},
+	modelEntityIDs map[uuid.UUID]struct{},
 ) bool {
 	if _, exists := entryEntityIDs[entityID]; exists {
 		return true
 	}
-	if _, exists := experimentEntityIDs[entityID]; exists {
+	if _, exists := modelEntityIDs[entityID]; exists {
 		return true
 	}
 	return false
@@ -438,67 +438,67 @@ func invalidCreateEntryPayloadRequest(description string, err error) error {
 	return fmt.Errorf("%s: %w", description, invalidCreateEntryRequest("%v", err))
 }
 
-func (s *Server) ListExperiments(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListExperimentsParams) {
-	filters, err := experimentFiltersFromParams(entryID, params)
+func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
+	filters, err := modelFiltersFromParams(entryID, params)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid experiment filters")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
 		return
 	}
 
-	experiments, err := s.database.Experiments.List(r.Context(), filters)
+	models, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list experiments failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list experiments")
+		slog.Error("list models failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
 
-	items := make([]Experiment, 0, len(experiments))
-	for _, experiment := range experiments {
-		items = append(items, experimentResponseFromModel(experiment))
+	items := make([]Model, 0, len(models))
+	for _, model := range models {
+		items = append(items, modelResponseFromModel(model))
 	}
 
-	writeJSON(w, http.StatusOK, ExperimentListResponse{Items: items})
+	writeJSON(w, http.StatusOK, ModelListResponse{Items: items})
 }
 
-func (s *Server) GetExperiment(w http.ResponseWriter, r *http.Request, entryID, experimentID uuid.UUID) {
-	experiment, err := s.database.Experiments.Get(r.Context(), entryID, experimentID)
-	if errors.Is(err, db.ErrExperimentNotFound) {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "experiment not found")
+func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+	model, err := s.database.Models.Get(r.Context(), entryID, modelID)
+	if errors.Is(err, db.ErrModelNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
 	}
 	if err != nil {
-		slog.Error("get experiment failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get experiment")
+		slog.Error("get model failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, experimentResponseFromModel(*experiment))
+	writeJSON(w, http.StatusOK, modelResponseFromModel(*model))
 }
 
-func experimentFiltersFromParams(entryID uuid.UUID, params ListExperimentsParams) (db.ExperimentFilters, error) {
+func modelFiltersFromParams(entryID uuid.UUID, params ListModelsParams) (db.ModelFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
-		return db.ExperimentFilters{}, errors.New("limit must be non-negative")
+		return db.ModelFilters{}, errors.New("limit must be non-negative")
 	}
 	if params.Offset != nil && *params.Offset < 0 {
-		return db.ExperimentFilters{}, errors.New("offset must be non-negative")
+		return db.ModelFilters{}, errors.New("offset must be non-negative")
 	}
 
-	return db.ExperimentFilters{
+	return db.ModelFilters{
 		EntryID: &entryID,
 		Limit:   params.Limit,
 		Offset:  params.Offset,
 	}, nil
 }
 
-func experimentResponseFromModel(experiment domainmodels.Experiment) Experiment {
-	return Experiment{
-		Id:                experiment.ID,
-		EntryId:           experiment.EntryID,
-		Name:              experiment.Name,
-		Description:       experiment.Description,
-		ThumbnailImageUrl: experiment.ThumbnailImageURL,
-		CreatedAt:         experiment.CreatedAt,
-		UpdatedAt:         experiment.UpdatedAt,
+func modelResponseFromModel(model domainmodels.Model) Model {
+	return Model{
+		Id:                model.ID,
+		EntryId:           model.EntryID,
+		Name:              model.Name,
+		Description:       model.Description,
+		ThumbnailImageUrl: model.ThumbnailImageURL,
+		CreatedAt:         model.CreatedAt,
+		UpdatedAt:         model.UpdatedAt,
 	}
 }
 
@@ -558,9 +558,9 @@ func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.E
 		Limit:   params.Limit,
 		Offset:  params.Offset,
 	}
-	if params.ExperimentId != nil {
-		experimentID := uuid.UUID(*params.ExperimentId)
-		filters.ExperimentID = &experimentID
+	if params.ModelId != nil {
+		modelID := uuid.UUID(*params.ModelId)
+		filters.ModelID = &modelID
 	}
 	if params.Types != nil {
 		filters.Types = make([]domainmodels.EntityType, 0, len(*params.Types))
@@ -585,15 +585,15 @@ func entityResponseFromModel(entity domainmodels.Entity) (Entity, error) {
 	}
 
 	return Entity{
-		Id:           entity.ID,
-		EntryId:      entity.EntryID,
-		ExperimentId: entity.ExperimentID,
-		Type:         EntityType(entity.Type),
-		Level:        entityLevelResponseFromModel(entity.Level),
-		Name:         entity.Name,
-		Payload:      payload,
-		CreatedAt:    entity.CreatedAt,
-		UpdatedAt:    entity.UpdatedAt,
+		Id:        entity.ID,
+		EntryId:   entity.EntryID,
+		ModelId:   entity.ModelID,
+		Type:      EntityType(entity.Type),
+		Level:     entityLevelResponseFromModel(entity.Level),
+		Name:      entity.Name,
+		Payload:   payload,
+		CreatedAt: entity.CreatedAt,
+		UpdatedAt: entity.UpdatedAt,
 	}, nil
 }
 

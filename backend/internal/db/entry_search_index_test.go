@@ -20,7 +20,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	now := time.Now().UTC()
 	token := strings.ReplaceAll(uuid.NewString(), "-", "")
 	entryToken := "entrytoken" + token
-	experimentToken := "experimenttoken" + token
+	modelToken := "modeltoken" + token
 	firstEntityToken := "firstentitytoken" + token
 	secondEntityToken := "secondentitytoken" + token
 
@@ -32,21 +32,21 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	experiment, err := testDB.Experiments.Create(ctx, models.Experiment{
+	model, err := testDB.Models.Create(ctx, models.Model{
 		ID:        uuid.New(),
 		EntryID:   entry.ID,
-		Name:      "experiment " + experimentToken,
+		Name:      "model " + modelToken,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
 	require.NoError(t, err)
 
 	firstEntity, err := testDB.Entities.Create(ctx, models.Entity{
-		ID:           uuid.New(),
-		EntryID:      entry.ID,
-		ExperimentID: &experiment.ID,
-		Type:         models.EntityTypeData,
-		Name:         "first data file " + firstEntityToken,
+		ID:      uuid.New(),
+		EntryID: entry.ID,
+		ModelID: &model.ID,
+		Type:    models.EntityTypeData,
+		Name:    "first data file " + firstEntityToken,
 		Payload: models.DataPayload{
 			FileURL: "s3://dynamic-pdb/test/first.fasta",
 			Type:    "fasta",
@@ -57,11 +57,11 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	require.NoError(t, err)
 
 	secondEntity, err := testDB.Entities.Create(ctx, models.Entity{
-		ID:           uuid.New(),
-		EntryID:      entry.ID,
-		ExperimentID: &experiment.ID,
-		Type:         models.EntityTypeData,
-		Name:         "second data file " + secondEntityToken,
+		ID:      uuid.New(),
+		EntryID: entry.ID,
+		ModelID: &model.ID,
+		Type:    models.EntityTypeData,
+		Name:    "second data file " + secondEntityToken,
 		Payload: models.DataPayload{
 			FileURL: "s3://dynamic-pdb/test/second.fasta",
 			Type:    "fasta",
@@ -77,16 +77,16 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assertEntrySearchContains(t, ctx, entryToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, experimentToken, entry.ID)
+	assertEntrySearchDoesNotContain(t, ctx, modelToken, entry.ID)
 	assertEntrySearchDoesNotContain(t, ctx, firstEntityToken, entry.ID)
 	assertEntrySearchDoesNotContain(t, ctx, secondEntityToken, entry.ID)
 
 	// when
-	err = testDB.EntrySearch.IndexExperiment(ctx, *experiment)
+	err = testDB.EntrySearch.IndexModel(ctx, *model)
 
 	// then
 	require.NoError(t, err)
-	assertEntrySearchContains(t, ctx, experimentToken, entry.ID)
+	assertEntrySearchContains(t, ctx, modelToken, entry.ID)
 	assertEntrySearchDoesNotContain(t, ctx, firstEntityToken, entry.ID)
 	assertEntrySearchDoesNotContain(t, ctx, secondEntityToken, entry.ID)
 

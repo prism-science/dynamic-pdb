@@ -6,7 +6,7 @@ const test = require("node:test");
 const {
   ApiRequestError,
   createEntry,
-  getExperimentPageData,
+  getModelPageData,
   listEntries,
 } = require("../src/lib/api/entries.ts");
 
@@ -54,7 +54,7 @@ test("should throw ApiRequestError with status when create entry fails", async (
   }
 });
 
-test("should scope experiment page data to experiment entities and L0 baseline entities", async () => {
+test("should scope model page data to model entities and L0 baseline entities", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -67,18 +67,18 @@ test("should scope experiment page data to experiment entities and L0 baseline e
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
     };
-    const experiment = {
-      id: "experiment-1",
+    const model = {
+      id: "model-1",
       entry_id: "entry-1",
-      name: "Experiment",
+      name: "Model",
       description: null,
       thumbnail_image_url: null,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
     };
     const baseline = entity("baseline", null, "data", "L0");
-    const model = entity("model", "experiment-1", "model", "L2");
-    const otherModel = entity("other-model", "experiment-2", "model", "L2");
+    const modelEntity = entity("model", "model-1", "model", "L2");
+    const otherModel = entity("other-model", "model-2", "model", "L2");
     const relations = [
       relation("r1", "baseline", "model", "input_to"),
       relation("r2", "other-model", "baseline", "input_to"),
@@ -89,16 +89,16 @@ test("should scope experiment page data to experiment entities and L0 baseline e
       if (path === "/v1/entries/entry-1") {
         return jsonResponse(entry);
       }
-      if (path === "/v1/entries/entry-1/experiments/experiment-1") {
-        return jsonResponse(experiment);
+      if (path === "/v1/entries/entry-1/models/model-1") {
+        return jsonResponse(model);
       }
       if (path === "/v1/entries/entry-1/entities") {
-        return jsonResponse({ items: [baseline, model, otherModel], relations });
+        return jsonResponse({ items: [baseline, modelEntity, otherModel], relations });
       }
       throw new Error(`unexpected fetch ${url}`);
     };
 
-    const data = await getExperimentPageData("token-123", "entry-1", "experiment-1");
+    const data = await getModelPageData("token-123", "entry-1", "model-1");
 
     assert.deepEqual(
       data.entities.map((item) => item.id),
@@ -114,11 +114,11 @@ test("should scope experiment page data to experiment entities and L0 baseline e
   }
 });
 
-function entity(id, experimentId, type, level) {
+function entity(id, modelId, type, level) {
   return {
     id,
     entry_id: "entry-1",
-    experiment_id: experimentId,
+    model_id: modelId,
     type,
     level,
     name: id,

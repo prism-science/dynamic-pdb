@@ -24,7 +24,7 @@ CREATE TABLE entries (
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE experiments (
+CREATE TABLE models (
     id                  uuid PRIMARY KEY,
     entry_id            uuid NOT NULL
         REFERENCES entries(id) ON DELETE CASCADE,
@@ -41,8 +41,8 @@ CREATE TABLE entities (
     id            uuid PRIMARY KEY,
     entry_id      uuid NOT NULL
         REFERENCES entries(id) ON DELETE CASCADE,
-    experiment_id uuid
-        REFERENCES experiments(id) ON DELETE CASCADE,
+    model_id uuid
+        REFERENCES models(id) ON DELETE CASCADE,
 
     type          text NOT NULL,
     level         text,
@@ -88,14 +88,14 @@ CREATE TABLE entry_search_index (
     PRIMARY KEY (entry_id, model_type, model_id)
 );
 
-CREATE INDEX experiments_entry_id_idx
-    ON experiments(entry_id);
+CREATE INDEX models_entry_id_idx
+    ON models(entry_id);
 
 CREATE INDEX entities_entry_id_idx
     ON entities(entry_id);
 
-CREATE INDEX entities_experiment_id_idx
-    ON entities(experiment_id);
+CREATE INDEX entities_model_id_idx
+    ON entities(model_id);
 
 CREATE INDEX entity_relations_source_idx
     ON entity_relations(source_entity_id);

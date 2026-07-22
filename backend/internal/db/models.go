@@ -13,28 +13,28 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-var ErrExperimentNotFound = errors.New("db: experiment not found")
+var ErrModelNotFound = errors.New("db: model not found")
 
-type ExperimentsRepository struct {
+type ModelsRepository struct {
 	db       *sqlx.DB
 	queriers *QuerierProvider
 }
 
-type ExperimentFilters struct {
+type ModelFilters struct {
 	EntryID *uuid.UUID
 	Limit   *int
 	Offset  *int
 }
 
-func NewExperimentsRepository(database *sqlx.DB, queriers *QuerierProvider) *ExperimentsRepository {
-	return &ExperimentsRepository{
+func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
+	return &ModelsRepository{
 		db:       database,
 		queriers: queriers,
 	}
 }
 
-func (r *ExperimentsRepository) Create(ctx context.Context, experiment models.Experiment) (*models.Experiment, error) {
-	query := `insert into experiments(id, entry_id, name, description, thumbnail_image_url, created_at, updated_at)
+func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*models.Model, error) {
+	query := `insert into models(id, entry_id, name, description, thumbnail_image_url, created_at, updated_at)
 			  values (:id, :entry_id, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
 			  returning id, entry_id, name, description, thumbnail_image_url, created_at, updated_at`
 
@@ -44,42 +44,42 @@ func (r *ExperimentsRepository) Create(ctx context.Context, experiment models.Ex
 	}
 	defer stmt.Close()
 
-	var row experimentRow
+	var row modelRow
 	if err := stmt.GetContext(ctx, &row, map[string]any{
-		"id":                  experiment.ID,
-		"entry_id":            experiment.EntryID,
-		"name":                experiment.Name,
-		"description":         nullableString(experiment.Description),
-		"thumbnail_image_url": nullableString(experiment.ThumbnailImageURL),
-		"created_at":          experiment.CreatedAt,
-		"updated_at":          experiment.UpdatedAt,
+		"id":                  model.ID,
+		"entry_id":            model.EntryID,
+		"name":                model.Name,
+		"description":         nullableString(model.Description),
+		"thumbnail_image_url": nullableString(model.ThumbnailImageURL),
+		"created_at":          model.CreatedAt,
+		"updated_at":          model.UpdatedAt,
 	}); err != nil {
-		return nil, fmt.Errorf("failed to insert experiment: %w", err)
+		return nil, fmt.Errorf("failed to insert model: %w", err)
 	}
 
-	return experimentFromRow(&row), nil
+	return modelFromRow(&row), nil
 }
 
-func (r *ExperimentsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*models.Experiment, error) {
+func (r *ModelsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*models.Model, error) {
 	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
-			  from experiments
+			  from models
 			  where entry_id = $1 and id = $2`
 
-	var row experimentRow
+	var row modelRow
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, entryID, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrExperimentNotFound
+			return nil, ErrModelNotFound
 		}
-		return nil, fmt.Errorf("failed to get experiment: %w", err)
+		return nil, fmt.Errorf("failed to get model: %w", err)
 	}
 
-	return experimentFromRow(&row), nil
+	return modelFromRow(&row), nil
 }
 
-func (r *ExperimentsRepository) List(ctx context.Context, filters ExperimentFilters) ([]models.Experiment, error) {
-	query, args, err := experimentListQuery(filters)
+func (r *ModelsRepository) List(ctx context.Context, filters ModelFilters) ([]models.Model, error) {
+	query, args, err := modelListQuery(filters)
 	if err != nil {
-		return nil, fmt.Errorf("build experiment list query: %w", err)
+		return nil, fmt.Errorf("build model list query: %w", err)
 	}
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
@@ -90,26 +90,26 @@ func (r *ExperimentsRepository) List(ctx context.Context, filters ExperimentFilt
 
 	rows, err := stmt.QueryxContext(ctx, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list experiments: %w", err)
+		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
 	defer rows.Close()
 
-	experiments := make([]models.Experiment, 0)
+	models := make([]models.Model, 0)
 	for rows.Next() {
-		var row experimentRow
+		var row modelRow
 		if err := rows.StructScan(&row); err != nil {
-			return nil, fmt.Errorf("scan experiment row: %w", err)
+			return nil, fmt.Errorf("scan model row: %w", err)
 		}
-		experiments = append(experiments, *experimentFromRow(&row))
+		models = append(models, *modelFromRow(&row))
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate experiment rows: %w", err)
+		return nil, fmt.Errorf("iterate model rows: %w", err)
 	}
 
-	return experiments, nil
+	return models, nil
 }
 
-func experimentListQuery(filters ExperimentFilters) (string, map[string]any, error) {
+func modelListQuery(filters ModelFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
 	}
@@ -125,7 +125,7 @@ func experimentListQuery(filters ExperimentFilters) (string, map[string]any, err
 	}
 
 	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
-			  from experiments`
+			  from models`
 	if len(conditions) > 0 {
 		query += "\nwhere " + conditions[0]
 	}
@@ -143,8 +143,8 @@ func experimentListQuery(filters ExperimentFilters) (string, map[string]any, err
 	return query, args, nil
 }
 
-func experimentFromRow(row *experimentRow) *models.Experiment {
-	return &models.Experiment{
+func modelFromRow(row *modelRow) *models.Model {
+	return &models.Model{
 		ID:                row.ID,
 		EntryID:           row.EntryID,
 		Name:              row.Name,
@@ -155,7 +155,7 @@ func experimentFromRow(row *experimentRow) *models.Experiment {
 	}
 }
 
-type experimentRow struct {
+type modelRow struct {
 	ID                uuid.UUID      `db:"id"`
 	EntryID           uuid.UUID      `db:"entry_id"`
 	Name              string         `db:"name"`
