@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - "**"
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: build-and-test-${{ github.workflow }}-${{ github.ref }}
@@ -63,6 +61,13 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             backend/migrations/go.sum
+            backend/tools/go.sum
+
+      - name: Install codegen tools
+        run: make -C backend install-tools
+
+      - name: Generate backend code
+        run: PATH="$(go env GOPATH)/bin:${PATH}" make -C backend generate
 
       - name: Build backend
         run: make -C backend build
@@ -101,6 +106,13 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             backend/migrations/go.sum
+            backend/tools/go.sum
+
+      - name: Install codegen tools
+        run: make -C backend install-tools
+
+      - name: Generate backend code
+        run: PATH="$(go env GOPATH)/bin:${PATH}" make -C backend generate
 
       - name: Lint
         uses: golangci/golangci-lint-action@v9
@@ -189,34 +201,3 @@ jobs:
             --test \
             --test-coverage-lines="${WEBSITE_COVERAGE_THRESHOLD}" \
             test/*.test.cjs
-
-  ci-status:
-    name: CI status
-    needs:
-      - changes
-      - backend-build
-      - backend-test
-      - website-build
-      - website-test
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check required jobs
-        run: |
-          set -euo pipefail
-          for result in \
-            "${{ needs.changes.result }}" \
-            "${{ needs.backend-build.result }}" \
-            "${{ needs.backend-test.result }}" \
-            "${{ needs.website-build.result }}" \
-            "${{ needs.website-test.result }}"
-          do
-            case "${result}" in
-              success|skipped)
-                ;;
-              *)
-                echo "CI failed because a required job finished with result: ${result}"
-                exit 1
-                ;;
-            esac
-          done
