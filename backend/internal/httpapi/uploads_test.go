@@ -99,13 +99,13 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 			},
 		},
 		{
-			name: "nil experiment id pointer",
+			name: "nil model id pointer",
 			body: map[string]any{
-				"entry_id":      uuid.New(),
-				"entity_id":     uuid.New(),
-				"experiment_id": uuid.Nil,
-				"filename":      "model.cif",
-				"size":          1,
+				"entry_id":  uuid.New(),
+				"entity_id": uuid.New(),
+				"model_id":  uuid.Nil,
+				"filename":  "model.cif",
+				"size":      1,
 			},
 		},
 	}

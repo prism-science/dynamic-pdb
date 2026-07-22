@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 import styles from "./AppHeader.module.css";
 import LoginButton from "./LoginButton";
@@ -14,12 +13,6 @@ export type HeaderUser = {
 };
 
 export default function HeaderBar({ user }: { user: HeaderUser | null }) {
-  const pathname = usePathname();
-
-  if (!user && pathname === "/") {
-    return null;
-  }
-
   return (
     <header className={styles.header}>
       <div className={styles.inner}>

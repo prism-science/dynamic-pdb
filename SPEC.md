@@ -2,18 +2,18 @@
 
 ## Overview
 
-Dynamic PDB is a scientific data registry for structural biology. It connects experimental measurements, processed datasets, structural models, and model-quality metrics into a single traceable workflow.
+Dynamic PDB is a scientific data registry for structural biology. It connects source measurements, processed datasets, structural models, and model-quality metrics into a single traceable workflow.
 
-Unlike a traditional structure archive, Dynamic PDB allows the same experimental dataset to be reprocessed and interpreted by multiple algorithms over time. Researchers can see how each model was produced and how well it explains the underlying experimental data.
+Unlike a traditional structure archive, Dynamic PDB allows the same source dataset to be reprocessed and interpreted by multiple algorithms over time. Researchers can see how each model was produced and how well it explains the underlying measurement data.
 
 ## Purpose
 
 The project provides a central place to:
 
-* register experimental datasets;
+* register source datasets;
 * store processed data and structural models;
 * track input-to-output relationships;
-* compare multiple models against the same experiment;
+* compare multiple structural models against the same source data;
 * preserve software, parameters, and logs required to reproduce a result;
 * rerun improved algorithms on existing datasets.
 
@@ -21,13 +21,13 @@ The project provides a central place to:
 
 ### Entry
 
-An Entry represents one baseline experimental dataset.
+An Entry represents one baseline source dataset.
 
 The baseline is the least-processed data available, such as raw diffraction images or an existing MTZ file. If the baseline dataset changes, a new Entry is created.
 
-### Experiment
+### Model
 
-An Experiment groups related processing or modeling work inside an Entry, for example:
+A Model groups related processing or modeling work inside an Entry, for example:
 
 * diffraction-data processing;
 * refinement;
@@ -40,7 +40,7 @@ An Experiment groups related processing or modeling work inside an Entry, for ex
 
 An Entity is an individual data object stored in the system.
 
-Every Entity belongs to an Entry and may also belong to an Experiment.
+Every Entity belongs to an Entry and may also belong to a Model.
 
 ### Entity Relation
 
@@ -59,7 +59,7 @@ This creates a graph showing exactly which inputs produced each output.
 
 Dynamic PDB uses the L0–L3 data maturity model.
 
-### L0 — Raw experimental data
+### L0 — Raw source data
 
 Original instrument output.
 
@@ -71,7 +71,7 @@ raw diffraction images
 cryo-EM particles
 ```
 
-### L1 — Processed experimental data
+### L1 — Processed source data
 
 Measurements extracted or reconstructed from raw data.
 
@@ -85,7 +85,7 @@ NXS diffuse-scattering maps
 
 ### L2 — Structural models
 
-Atomic interpretations of the experimental data.
+Atomic interpretations of the source data.
 
 Examples:
 
@@ -100,7 +100,7 @@ MD ensembles and trajectories
 
 ### L3 — Model-to-data evaluations
 
-Measurements of how well a model explains experimental data.
+Measurements of how well a model explains source data.
 
 Examples:
 
@@ -114,7 +114,7 @@ Ramachandran outlier percentage
 Side-chain outlier percentage
 ```
 
-The proposal explicitly requires model geometry metrics and experimental-fit metrics to be stored for structural models.
+The proposal explicitly requires model geometry metrics and source-fit metrics to be stored for structural models.
 
 ## Typical workflow
 
@@ -137,10 +137,10 @@ Sampleworks / qFit / refinement / MD
         ↓
 New structural models
         ↓
-Comparison against the original experimental data
+Comparison against the original source data
 ```
 
-The system must support multiple processed datasets and multiple models derived from the same baseline experiment.
+The system must support multiple processed datasets and multiple models derived from the same baseline source data.
 
 ## Stored files
 
@@ -173,14 +173,14 @@ Supporting files preserve the exact algorithm, parameters, inputs, and outputs u
 
 ```text
 entries
-experiments
+models
 entities
 entity_relations
 ```
 
 ```text
 Entry
-├── Experiments
+├── Models
 ├── Entities
 └── Entity Relations
 ```
@@ -194,10 +194,10 @@ The `entity_relations` table forms the provenance graph connecting input data, p
 Dynamic PDB provides a living view of structural biology data:
 
 ```text
-experimental data
+source data
 → processing history
 → structural interpretations
 → measurable model quality
 ```
 
-Instead of publishing one final structure and leaving it unchanged, researchers can continuously add improved models and compare them against the same experimental evidence.
+Instead of publishing one final structure and leaving it unchanged, researchers can continuously add improved models and compare them against the same source evidence.

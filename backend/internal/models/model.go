@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type Experiment struct {
+type Model struct {
 	ID                uuid.UUID
 	EntryID           uuid.UUID
 	Name              string

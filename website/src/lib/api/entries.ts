@@ -14,7 +14,7 @@ export type Entry = {
   updated_at: string;
 };
 
-export type Experiment = {
+export type Model = {
   id: string;
   entry_id: string;
   name: string;
@@ -72,7 +72,7 @@ export type EntityPayload =
 export type Entity = {
   id: string;
   entry_id: string;
-  experiment_id: string | null;
+  model_id: string | null;
   type: EntityType;
   level: EntityLevel | null;
   name: string;
@@ -106,14 +106,14 @@ type EntityListResponse = {
 
 export type EntryPageData = {
   entry: Entry;
-  experiments: Experiment[];
+  models: Model[];
   entities: Entity[];
   relations: EntityRelation[];
 };
 
-export type ExperimentPageData = {
+export type ModelPageData = {
   entry: Entry;
-  experiment: Experiment;
+  model: Model;
   entities: Entity[];
   relations: EntityRelation[];
 };
@@ -160,7 +160,7 @@ export type CreateEntityRelationInput = {
   relation_type: string;
 };
 
-export type CreateExperimentInput = {
+export type CreateModelInput = {
   id?: string;
   name: string;
   description?: string | null;
@@ -175,7 +175,7 @@ export type CreateEntryInput = {
   description?: string | null;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
-  experiments?: CreateExperimentInput[];
+  models?: CreateModelInput[];
 };
 
 export async function createEntry(
@@ -215,10 +215,10 @@ export async function getEntryPageData(
   entryId: string = demoEntryId,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, experiments, entityGraph] = await Promise.all([
+  const [entry, models, entityGraph] = await Promise.all([
     fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
-    fetchBackend<ListResponse<Experiment>>(
-      `/v1/entries/${encodedEntryId}/experiments`,
+    fetchBackend<ListResponse<Model>>(
+      `/v1/entries/${encodedEntryId}/models`,
       token,
     ),
     fetchBackend<EntityListResponse>(
@@ -229,23 +229,23 @@ export async function getEntryPageData(
 
   return {
     entry,
-    experiments: experiments.items,
+    models: models.items,
     entities: entityGraph.items,
     relations: entityGraph.relations,
   };
 }
 
-export async function getExperimentPageData(
+export async function getModelPageData(
   token: string,
   entryId: string,
-  experimentId: string,
-): Promise<ExperimentPageData> {
+  modelId: string,
+): Promise<ModelPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const encodedExperimentId = encodeURIComponent(experimentId);
-  const [entry, experiment, entityGraph] = await Promise.all([
+  const encodedModelId = encodeURIComponent(modelId);
+  const [entry, model, entityGraph] = await Promise.all([
     fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
-    fetchBackend<Experiment>(
-      `/v1/entries/${encodedEntryId}/experiments/${encodedExperimentId}`,
+    fetchBackend<Model>(
+      `/v1/entries/${encodedEntryId}/models/${encodedModelId}`,
       token,
     ),
     fetchBackend<EntityListResponse>(
@@ -256,14 +256,14 @@ export async function getExperimentPageData(
 
   const scopedEntities = entityGraph.items.filter(
     (entity) =>
-      entity.experiment_id === experiment.id ||
-      (entity.experiment_id === null && entity.level === "L0"),
+      entity.model_id === model.id ||
+      (entity.model_id === null && entity.level === "L0"),
   );
   const scopedIds = new Set(scopedEntities.map((entity) => entity.id));
 
   return {
     entry,
-    experiment,
+    model,
     entities: scopedEntities,
     relations: entityGraph.relations.filter(
       (relation) =>

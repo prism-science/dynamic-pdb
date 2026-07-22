@@ -7,8 +7,8 @@ const {
   authorsTextToList,
   detectType,
   draftHasContent,
-  experimentFromDraft,
-  experimentToDraft,
+  modelFromDraft,
+  modelToDraft,
   fileEntityType,
   fileFromDraft,
   fileNameFromUrl,
@@ -127,9 +127,9 @@ test("should parse URL files and skip unsafe URLs", async () => {
 test("should decide upload readiness from file and thumbnail states", () => {
   const uploaded = parsedFile({ id: "uploaded", url: "s3://dynamic-pdb/file.cif" });
   const pending = parsedFile({ id: "pending", url: "", uploadStatus: "uploading" });
-  const experiment = {
-    id: "experiment-1",
-    name: "Experiment",
+  const model = {
+    id: "model-1",
+    name: "Model",
     description: "",
     thumbFileId: "thumb-1",
     thumbFile: null,
@@ -144,9 +144,9 @@ test("should decide upload readiness from file and thumbnail states", () => {
 
   assert.equal(isPersistable(uploaded), true);
   assert.equal(isPersistable(pending), false);
-  assert.equal(uploadsReady([uploaded], [experiment], null, null), true);
+  assert.equal(uploadsReady([uploaded], [model], null, null), true);
   assert.equal(uploadsReady([pending], [], null, null), false);
-  assert.equal(uploadsReady([uploaded], [experiment], new File(["x"], "thumb.png"), null), false);
+  assert.equal(uploadsReady([uploaded], [model], new File(["x"], "thumb.png"), null), false);
 });
 
 test("should serialize and restore persisted draft files safely", () => {
@@ -156,9 +156,9 @@ test("should serialize and restore persisted draft files safely", () => {
     preview: "blob:local-preview",
     metadata: { length: 42 },
   });
-  const experiment = {
-    id: "experiment-1",
-    name: "Experiment",
+  const model = {
+    id: "model-1",
+    name: "Model",
     description: "Description",
     thumbFileId: "thumb-1",
     thumbFile: null,
@@ -172,18 +172,18 @@ test("should serialize and restore persisted draft files safely", () => {
   };
 
   const storedFile = fileToDraft(file);
-  const storedExperiment = experimentToDraft(experiment);
+  const storedModel = modelToDraft(model);
   const restoredFile = fileFromDraft(storedFile);
-  const restoredExperiment = experimentFromDraft(storedExperiment);
+  const restoredModel = modelFromDraft(storedModel);
 
   assert.equal(httpOnly("blob:local-preview"), undefined);
   assert.equal(httpOnly("https://example.com/thumb.png"), "https://example.com/thumb.png");
   assert.equal(storedFile.preview, undefined);
   assert.equal(restoredFile.uploadStatus, "uploaded");
   assert.equal(restoredFile.progress, 1);
-  assert.equal(storedExperiment.thumbPreview, "https://example.com/thumb.png");
-  assert.equal(restoredExperiment.thumbUploadStatus, "uploaded");
-  assert.deepEqual(restoredExperiment.metrics, experiment.metrics);
+  assert.equal(storedModel.thumbPreview, "https://example.com/thumb.png");
+  assert.equal(restoredModel.thumbUploadStatus, "uploaded");
+  assert.deepEqual(restoredModel.metrics, model.metrics);
   assert.equal(
     draftHasContent({
       version: 1,
@@ -193,7 +193,7 @@ test("should serialize and restore persisted draft files safely", () => {
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
-      experiments: [],
+      models: [],
     }),
     false,
   );
@@ -206,7 +206,7 @@ test("should serialize and restore persisted draft files safely", () => {
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
-      experiments: [],
+      models: [],
     }),
     true,
   );

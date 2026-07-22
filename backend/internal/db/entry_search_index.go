@@ -28,9 +28,9 @@ type entrySearchIndexRow struct {
 const (
 	maxEntrySearchTextChars = 128 * 1024
 
-	entrySearchModelTypeEntry      = "entry"
-	entrySearchModelTypeExperiment = "experiment"
-	entrySearchModelTypeEntity     = "entity"
+	entrySearchModelTypeEntry  = "entry"
+	entrySearchModelTypeModel  = "model"
+	entrySearchModelTypeEntity = "entity"
 )
 
 func NewEntrySearchIndexRepository(database *sqlx.DB, queriers *QuerierProvider) *EntrySearchIndexRepository {
@@ -50,13 +50,13 @@ func (r *EntrySearchIndexRepository) IndexEntry(ctx context.Context, entry model
 	})
 }
 
-func (r *EntrySearchIndexRepository) IndexExperiment(ctx context.Context, experiment models.Experiment) error {
+func (r *EntrySearchIndexRepository) IndexModel(ctx context.Context, model models.Model) error {
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
-		EntryID:    experiment.EntryID,
-		ModelType:  entrySearchModelTypeExperiment,
-		ModelID:    experiment.ID.String(),
+		EntryID:    model.EntryID,
+		ModelType:  entrySearchModelTypeModel,
+		ModelID:    model.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(experiment.ID.String(), experiment.Name, stringFromPtr(experiment.Description), stringFromPtr(experiment.ThumbnailImageURL)),
+		SearchText: searchTextFromParts(model.ID.String(), model.Name, stringFromPtr(model.Description), stringFromPtr(model.ThumbnailImageURL)),
 	})
 }
 
@@ -68,7 +68,7 @@ func (r *EntrySearchIndexRepository) IndexEntity(ctx context.Context, entity mod
 
 	parts := []string{
 		entity.ID.String(),
-		uuidPtrString(entity.ExperimentID),
+		uuidPtrString(entity.ModelID),
 		string(entity.Type),
 		entityLevelPtrString(entity.Level),
 		entity.Name,

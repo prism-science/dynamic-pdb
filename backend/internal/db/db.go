@@ -15,7 +15,7 @@ type DB struct {
 	Users           *UsersRepository
 	Entries         *EntriesRepository
 	EntrySearch     *EntrySearchIndexRepository
-	Experiments     *ExperimentsRepository
+	Models          *ModelsRepository
 	Entities        *EntitiesRepository
 	EntityRelations *EntityRelationsRepository
 
@@ -60,7 +60,7 @@ func NewDB(cfg Config) (*DB, error) {
 		Users:           NewUsersRepository(sqlxDB, queriers),
 		Entries:         NewEntriesRepository(sqlxDB, queriers),
 		EntrySearch:     NewEntrySearchIndexRepository(sqlxDB, queriers),
-		Experiments:     NewExperimentsRepository(sqlxDB, queriers),
+		Models:          NewModelsRepository(sqlxDB, queriers),
 		Entities:        NewEntitiesRepository(sqlxDB, queriers),
 		EntityRelations: NewEntityRelationsRepository(sqlxDB, queriers),
 		sqlx:            sqlxDB,

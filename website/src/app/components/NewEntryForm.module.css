@@ -576,15 +576,15 @@
   cursor: default;
 }
 
-/* Experiments */
-.expHead {
+/* Models */
+.modelDraftHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.addExp {
+.addModel {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -601,13 +601,13 @@
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
-.addExp:hover {
+.addModel:hover {
   border-color: var(--accent);
   color: var(--accent-hover);
   background: var(--accent-soft);
 }
 
-.expEmpty {
+.modelDraftEmpty {
   margin: 0;
   padding: 14px;
   border: 1px dashed var(--border-strong);
@@ -618,13 +618,13 @@
   text-align: center;
 }
 
-.expList {
+.modelDraftList {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.expCard {
+.modelDraftCard {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -634,13 +634,13 @@
   background: var(--surface-muted);
 }
 
-.expCardHead {
+.modelDraftCardHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.expIndex {
+.modelDraftIndex {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 12px;
