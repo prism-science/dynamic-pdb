@@ -76,37 +76,37 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assertEntrySearchContains(t, ctx, entryToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, modelToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, firstEntityToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, secondEntityToken, entry.ID)
+	assertEntrySearchContains(ctx, t, entryToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, modelToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, firstEntityToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
 
 	// when
 	err = testDB.EntrySearch.IndexModel(ctx, *model)
 
 	// then
 	require.NoError(t, err)
-	assertEntrySearchContains(t, ctx, modelToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, firstEntityToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, secondEntityToken, entry.ID)
+	assertEntrySearchContains(ctx, t, modelToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, firstEntityToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
 
 	// when
 	err = testDB.EntrySearch.IndexEntity(ctx, *firstEntity)
 
 	// then
 	require.NoError(t, err)
-	assertEntrySearchContains(t, ctx, firstEntityToken, entry.ID)
-	assertEntrySearchDoesNotContain(t, ctx, secondEntityToken, entry.ID)
+	assertEntrySearchContains(ctx, t, firstEntityToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
 
 	// when
 	err = testDB.EntrySearch.IndexEntity(ctx, *secondEntity)
 
 	// then
 	require.NoError(t, err)
-	assertEntrySearchContains(t, ctx, secondEntityToken, entry.ID)
+	assertEntrySearchContains(ctx, t, secondEntityToken, entry.ID)
 }
 
-func assertEntrySearchContains(t *testing.T, ctx context.Context, query string, entryID uuid.UUID) {
+func assertEntrySearchContains(ctx context.Context, t *testing.T, query string, entryID uuid.UUID) {
 	t.Helper()
 
 	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Query: query})
@@ -114,7 +114,7 @@ func assertEntrySearchContains(t *testing.T, ctx context.Context, query string, 
 	assert.True(t, entryListContainsID(entries, entryID))
 }
 
-func assertEntrySearchDoesNotContain(t *testing.T, ctx context.Context, query string, entryID uuid.UUID) {
+func assertEntrySearchDoesNotContain(ctx context.Context, t *testing.T, query string, entryID uuid.UUID) {
 	t.Helper()
 
 	entries, err := testDB.Entries.List(ctx, db.EntryFilters{Query: query})

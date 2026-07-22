@@ -31,7 +31,7 @@ func run() int {
 	if env == "" {
 		env = "local"
 	}
-	slog.Info("loading config", "env", env)
+	slog.Info("loading config")
 
 	cfg, err := config.ReadFromFile(env)
 	if err != nil {
