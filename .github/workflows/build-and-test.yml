@@ -46,43 +46,12 @@ jobs:
               - ".github/workflows/build-and-test.yml"
               - "website/**"
 
-  backend-build:
-    name: Backend build
+  backend:
+    name: Backend
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: |
-            backend/go.sum
-            backend/migrations/go.sum
-            backend/tools/go.sum
-
-      - name: Install codegen tools
-        run: make -C backend install-tools
-
-      - name: Generate backend code
-        run: PATH="$(go env GOPATH)/bin:${PATH}" make -C backend generate
-
-      - name: Build backend
-        run: make -C backend build
-
-      - name: Build migrations
-        run: make -C backend/migrations build
-
-  backend-test:
-    name: Backend test
-    needs:
-      - changes
-      - backend-build
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17
@@ -120,6 +89,12 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: backend
 
+      - name: Build backend
+        run: make -C backend build
+
+      - name: Build migrations
+        run: make -C backend/migrations build
+
       - name: Apply database migrations
         run: make -C backend migrate-local
 
@@ -144,37 +119,12 @@ jobs:
         working-directory: backend/migrations
         run: GOWORK=off go test ./... -count=1
 
-  website-build:
-    name: Website build
+  website:
+    name: Website
     needs: changes
     if: needs.changes.outputs.website == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - name: Install dependencies
-        working-directory: website
-        run: npm ci
-
-      - name: Build website
-        working-directory: website
-        run: npm run build
-
-  website-test:
-    name: Website test
-    needs:
-      - changes
-      - website-build
-    if: needs.changes.outputs.website == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -201,3 +151,7 @@ jobs:
             --test \
             --test-coverage-lines="${WEBSITE_COVERAGE_THRESHOLD}" \
             test/*.test.cjs
+
+      - name: Build website
+        working-directory: website
+        run: npm run build
