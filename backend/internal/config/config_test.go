@@ -31,6 +31,11 @@ db:
   username: postgres
   password: password
   connection_params: sslmode=disable
+s3:
+  region: us-west-2
+  bucket: dynamic-pdb-test
+  access_key_id: file-access-key
+  secret_access_key: file-secret-key
 `
 
 func writeSampleConfig(t *testing.T) string {
@@ -67,6 +72,8 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 	assert.Equal(t, "dynamic-pdb-test", cfg.Auth.JWT.Issuer)
 	assert.Equal(t, 24*time.Hour, cfg.Auth.JWT.TTL)
 	assert.Equal(t, "dynamic_pdb_local", cfg.DB.Name)
+	assert.Equal(t, "us-west-2", cfg.S3.Region)
+	assert.Equal(t, "dynamic-pdb-test", cfg.S3.Bucket)
 }
 
 func Test_should_override_jwt_secret_from_env_var(t *testing.T) {
@@ -93,6 +100,19 @@ func Test_should_override_github_client_secret_from_env_var(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, "env-github-secret", cfg.Auth.GitHub.ClientSecret)
+}
+
+func Test_should_override_s3_bucket_from_env_var(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_S3_BUCKET", "env-bucket")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "env-bucket", cfg.S3.Bucket)
 }
 
 func Test_should_reject_config_when_auth_secrets_are_missing(t *testing.T) {
@@ -181,6 +201,7 @@ func Test_should_read_repository_local_config(t *testing.T) {
 	assert.Equal(t, "local-github-client-secret", cfg.Auth.GitHub.ClientSecret)
 	assert.Equal(t, "sample-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "dynamic_pdb_local", cfg.DB.Name)
+	assert.Equal(t, "dynamic-pdb", cfg.S3.Bucket)
 }
 
 func Test_should_reject_repository_production_config_without_auth_secret_env_vars(t *testing.T) {

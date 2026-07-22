@@ -104,6 +104,105 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/files:
+    post:
+      operationId: createFileUpload
+      summary: Create a file upload and presign its parts
+      description: >
+        Creates a multipart upload and returns a presigned PUT URL for every
+        part. The client uploads each part, then calls the complete endpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFileUploadRequest"
+      responses:
+        "200":
+          description: File upload created; presigned part URLs returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileUploadGrantResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/files/complete:
+    post:
+      operationId: completeFileUpload
+      summary: Complete a file upload
+      description: >
+        Assembles the uploaded parts into the final object. The client sends the
+        part number and ETag returned by each part upload.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteFileUploadRequest"
+      responses:
+        "200":
+          description: File upload completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteFileUploadResponse"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/files/abort:
+    post:
+      operationId: abortFileUpload
+      summary: Abort a file upload
+      description: Cancels an in-progress file upload and discards any parts already uploaded.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbortFileUploadRequest"
+      responses:
+        "204":
+          description: File upload aborted.
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /v1/entries:
     get:
       operationId: listEntries
@@ -391,6 +490,112 @@ components:
         status:
           type: string
 
+    CreateFileUploadRequest:
+      type: object
+      required: [entry_id, entity_id, filename, size]
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+          description: Entry identifier that owns this file.
+        experiment_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Experiment identifier for experiment-level files; null for entry-level files.
+        entity_id:
+          type: string
+          format: uuid
+          description: Entity identifier this file belongs to.
+        filename:
+          type: string
+          minLength: 1
+          description: Original filename to keep as the final object key suffix.
+        size:
+          type: integer
+          format: int64
+          description: Total size in bytes of the file to upload.
+
+    FileUploadGrantResponse:
+      type: object
+      required: [key, upload_id, object_url, part_size, parts]
+      properties:
+        key:
+          type: string
+          description: Object key the assembled file will be stored under.
+        upload_id:
+          type: string
+          description: Identifier of the initiated multipart upload; echoed back on complete and abort.
+        object_url:
+          type: string
+          description: Stable object reference to store with the entry payload.
+        part_size:
+          type: integer
+          format: int64
+          description: Size in bytes of every part except the last; the client must slice the file at this boundary.
+        parts:
+          type: array
+          description: Presigned PUT targets, one per part, in ascending part-number order.
+          items:
+            $ref: "#/components/schemas/FileUploadPart"
+
+    FileUploadPart:
+      type: object
+      required: [part_number, url]
+      properties:
+        part_number:
+          type: integer
+          description: 1-based index of this part.
+        url:
+          type: string
+          description: Presigned URL the client PUTs this part's bytes to.
+
+    CompleteFileUploadRequest:
+      type: object
+      required: [key, upload_id, parts]
+      properties:
+        key:
+          type: string
+          description: Object key returned by the initiate call.
+        upload_id:
+          type: string
+          description: Upload identifier returned by the initiate call.
+        parts:
+          type: array
+          description: The uploaded parts, each with the ETag object storage returned for it.
+          items:
+            $ref: "#/components/schemas/CompletedFileUploadPart"
+
+    CompletedFileUploadPart:
+      type: object
+      required: [part_number, etag]
+      properties:
+        part_number:
+          type: integer
+          description: 1-based index of the part.
+        etag:
+          type: string
+          description: ETag returned in the response header when the part was uploaded.
+
+    CompleteFileUploadResponse:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          description: Object key the completed file is stored under.
+
+    AbortFileUploadRequest:
+      type: object
+      required: [key, upload_id]
+      properties:
+        key:
+          type: string
+          description: Object key returned by the initiate call.
+        upload_id:
+          type: string
+          description: Upload identifier returned by the initiate call.
+
     GitHubExchangeRequest:
       type: object
       required: [access_token]
@@ -439,6 +644,9 @@ components:
       type: object
       required: [name]
       properties:
+        id:
+          type: string
+          format: uuid
         name:
           type: string
           minLength: 1
@@ -492,6 +700,9 @@ components:
       type: object
       required: [name]
       properties:
+        id:
+          type: string
+          format: uuid
         name:
           type: string
           minLength: 1

@@ -19,6 +19,7 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
+	"dynamic-pdb/backend/internal/integrations/s3"
 )
 
 func main() {
@@ -54,7 +55,12 @@ func run() int {
 		github.WithOAuthClientID(cfg.Auth.GitHub.ClientID),
 		github.WithOAuthClientSecret(cfg.Auth.GitHub.ClientSecret),
 	)
-	srv := httpapi.NewServer(githubClient, cfg.Auth, jwt, database)
+	fileUploadBucket, err := s3.NewBucket(context.Background(), cfg.S3)
+	if err != nil {
+		slog.Error("file upload bucket init failed", "err", err)
+		return 1
+	}
+	srv := httpapi.NewServer(githubClient, fileUploadBucket, cfg.Auth, jwt, database)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
