@@ -13,27 +13,31 @@ import (
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/integrations/github"
+	"dynamic-pdb/backend/internal/integrations/s3"
 	"dynamic-pdb/backend/internal/types"
 )
 
 type Server struct {
-	githubClient github.Client
-	authConfig   auth.Config
-	jwt          *auth.JWT
-	database     *db.DB
+	githubClient     github.Client
+	fileUploadBucket s3.Bucket
+	authConfig       auth.Config
+	jwt              *auth.JWT
+	database         *db.DB
 }
 
 func NewServer(
 	githubClient github.Client,
+	fileUploadBucket s3.Bucket,
 	authConfig auth.Config,
 	jwt *auth.JWT,
 	database *db.DB,
 ) *Server {
 	return &Server{
-		githubClient: githubClient,
-		authConfig:   authConfig,
-		jwt:          jwt,
-		database:     database,
+		githubClient:     githubClient,
+		fileUploadBucket: fileUploadBucket,
+		authConfig:       authConfig,
+		jwt:              jwt,
+		database:         database,
 	}
 }
 

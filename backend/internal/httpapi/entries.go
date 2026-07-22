@@ -115,10 +115,17 @@ func entryResponseFromModel(entry domainmodels.Entry) Entry {
 
 func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string) error {
 	now := time.Now().UTC()
+	entryID := uuid.New()
+	if req.Id != nil {
+		entryID = uuid.UUID(*req.Id)
+		if entryID == uuid.Nil {
+			return invalidCreateEntryRequest("entry id is required")
+		}
+	}
 
 	return s.database.Do(ctx, func(ctx context.Context) error {
 		entry, err := s.database.Entries.Create(ctx, domainmodels.Entry{
-			ID:                uuid.New(),
+			ID:                entryID,
 			Name:              name,
 			Description:       req.Description,
 			ThumbnailImageURL: req.ThumbnailImageUrl,
@@ -174,8 +181,16 @@ func (s *Server) createExperimentGraph(
 		return invalidCreateEntryRequest("experiment name is required")
 	}
 
+	experimentID := uuid.New()
+	if req.Id != nil {
+		experimentID = uuid.UUID(*req.Id)
+		if experimentID == uuid.Nil {
+			return invalidCreateEntryRequest("experiment id is required")
+		}
+	}
+
 	experiment, err := s.database.Experiments.Create(ctx, domainmodels.Experiment{
-		ID:                uuid.New(),
+		ID:                experimentID,
 		EntryID:           entry.ID,
 		Name:              name,
 		Description:       req.Description,

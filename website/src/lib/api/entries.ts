@@ -161,6 +161,7 @@ export type CreateEntityRelationInput = {
 };
 
 export type CreateExperimentInput = {
+  id?: string;
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
@@ -169,6 +170,7 @@ export type CreateExperimentInput = {
 };
 
 export type CreateEntryInput = {
+  id?: string;
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;

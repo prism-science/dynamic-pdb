@@ -7,6 +7,10 @@ import type {
   EntityLevel,
   FastaMetadata,
 } from "@/lib/api/entries";
+import {
+  uploadFileToObjectStorage,
+  type FileUploadContext,
+} from "@/lib/api/uploads";
 import { createEntryAction } from "@/app/entries/new/actions";
 import SequenceView from "./SequenceView";
 
@@ -14,6 +18,7 @@ import styles from "./NewEntryForm.module.css";
 
 type ParsedFile = {
   id: string;
+  file: File;
   name: string;
   size: number;
   type: string;
@@ -34,7 +39,8 @@ type ExperimentDraft = {
   id: string;
   name: string;
   description: string;
-  thumbName: string | null;
+  thumbFileId: string;
+  thumbFile: File | null;
   thumbPreview: string | null;
   files: ParsedFile[];
   metrics: MetricDraft[];
@@ -50,9 +56,11 @@ const METRIC_FIELDS: { key: string; label: string }[] = [
 ];
 
 export default function NewEntryForm() {
+  const [entryId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [thumbName, setThumbName] = useState<string | null>(null);
+  const [thumbFileId, setThumbFileId] = useState(() => crypto.randomUUID());
+  const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [experiments, setExperiments] = useState<ExperimentDraft[]>([]);
@@ -64,7 +72,8 @@ export default function NewEntryForm() {
     if (!file) {
       return;
     }
-    setThumbName(file.name);
+    setThumbFileId(crypto.randomUUID());
+    setThumbFile(file);
     setThumbPreview(URL.createObjectURL(file));
   };
 
@@ -80,7 +89,8 @@ export default function NewEntryForm() {
         id: crypto.randomUUID(),
         name: "",
         description: "",
-        thumbName: null,
+        thumbFileId: crypto.randomUUID(),
+        thumbFile: null,
         thumbPreview: null,
         files: [],
         metrics: [],
@@ -111,22 +121,61 @@ export default function NewEntryForm() {
     setSubmitting(true);
     setError(null);
 
-    const input: CreateEntryInput = {
-      name: name.trim(),
-      description: description.trim() || null,
-      thumbnail_image_url: thumbName ? randomUrl(thumbName) : null,
-      entities: files.map(toEntity),
-      experiments: experiments.map((exp) => ({
-        name: exp.name.trim(),
-        description: exp.description.trim() || null,
-        thumbnail_image_url: exp.thumbName ? randomUrl(exp.thumbName) : null,
-        entities: [...exp.files.map(toEntity), ...exp.metrics.map(toMetricEntity)],
-      })),
-    };
+    try {
+      const entryThumbnailURL = thumbFile
+        ? await uploadFileToObjectStorage(thumbFile, {
+            entryId,
+            experimentId: null,
+            entityId: thumbFileId,
+          })
+        : null;
+      const uploadedFiles = await Promise.all(
+        files.map((file) =>
+          uploadParsedFile(file, { entryId, experimentId: null }),
+        ),
+      );
+      const uploadedExperiments = await Promise.all(
+        experiments.map(async (exp) => ({
+          ...exp,
+          thumbnailURL: exp.thumbFile
+            ? await uploadFileToObjectStorage(exp.thumbFile, {
+                entryId,
+                experimentId: exp.id,
+                entityId: exp.thumbFileId,
+              })
+            : null,
+          files: await Promise.all(
+            exp.files.map((file) =>
+              uploadParsedFile(file, { entryId, experimentId: exp.id }),
+            ),
+          ),
+        })),
+      );
 
-    const result = await createEntryAction(input);
-    if (result?.error) {
-      setError(result.error);
+      const input: CreateEntryInput = {
+        id: entryId,
+        name: name.trim(),
+        description: description.trim() || null,
+        thumbnail_image_url: entryThumbnailURL,
+        entities: uploadedFiles.map(toEntity),
+        experiments: uploadedExperiments.map((exp) => ({
+          id: exp.id,
+          name: exp.name.trim(),
+          description: exp.description.trim() || null,
+          thumbnail_image_url: exp.thumbnailURL,
+          entities: [...exp.files.map(toEntity), ...exp.metrics.map(toMetricEntity)],
+        })),
+      };
+
+      const result = await createEntryAction(input);
+      if (result?.error) {
+        setError(result.error);
+        setSubmitting(false);
+      }
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Failed to upload files.",
+      );
       setSubmitting(false);
     }
     // On success the action redirects to "/".
@@ -262,7 +311,8 @@ export default function NewEntryForm() {
                         return;
                       }
                       updateExperiment(exp.id, {
-                        thumbName: file.name,
+                        thumbFileId: crypto.randomUUID(),
+                        thumbFile: file,
                         thumbPreview: URL.createObjectURL(file),
                       });
                     }}
@@ -593,13 +643,14 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
   const type = detectType(file.name);
   const base: ParsedFile = {
     id: crypto.randomUUID(),
+    file,
     name: file.name,
     size: file.size,
     type,
     level,
     authors: "",
     affiliation: "",
-    url: randomUrl(file.name),
+    url: "",
   };
   if (type === "fasta") {
     try {
@@ -612,6 +663,22 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
     base.preview = URL.createObjectURL(file);
   }
   return base;
+}
+
+type FileUploadLocation = Pick<FileUploadContext, "entryId" | "experimentId">;
+
+async function uploadParsedFile(
+  file: ParsedFile,
+  location: FileUploadLocation,
+): Promise<ParsedFile> {
+  return {
+    ...file,
+    url: await uploadFileToObjectStorage(file.file, {
+      ...location,
+      entityId: file.id,
+      filename: file.name,
+    }),
+  };
 }
 
 function detectType(filename: string): string {
@@ -655,10 +722,6 @@ function parseFasta(text: string): Record<string, unknown> {
   }
   sequence = sequence.replace(/\s+/g, "").toUpperCase();
   return { chains: chains || 1, length: sequence.length, sequence };
-}
-
-function randomUrl(filename: string): string {
-  return `https://files.example.org/uploads/${crypto.randomUUID()}/${encodeURIComponent(filename)}`;
 }
 
 function formatSize(size: number): string {
