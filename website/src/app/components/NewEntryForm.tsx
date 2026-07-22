@@ -465,6 +465,7 @@ export default function NewEntryForm() {
         <span className={styles.label}>Baseline data</span>
         <FilesEditor
           files={files}
+          lockLevel
           onAdd={addEntryFiles}
           onAddUrl={addEntryUrl}
           onRemove={(id) => setFiles((p) => p.filter((f) => f.id !== id))}
@@ -726,6 +727,7 @@ function FilesEditor({
   onRemove,
   onLevel,
   onPatch,
+  lockLevel = false,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -733,6 +735,7 @@ function FilesEditor({
   onRemove: (id: string) => void;
   onLevel: (id: string, level: EntityLevel) => void;
   onPatch: (id: string, patch: Partial<ParsedFile>) => void;
+  lockLevel?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -881,20 +884,30 @@ function FilesEditor({
                           : ""}
                       </span>
                     </span>
-                    <select
-                      className={styles.levelSelect}
-                      value={file.level}
-                      onChange={(event) =>
-                        onLevel(file.id, event.target.value as EntityLevel)
-                      }
-                      aria-label="Level"
-                    >
-                      {LEVELS.map((level) => (
-                        <option key={level} value={level}>
-                          {level}
-                        </option>
-                      ))}
-                    </select>
+                    {lockLevel ? (
+                      <span
+                        className={styles.levelBadge}
+                        data-level={file.level}
+                        title="Baseline data is always level L0"
+                      >
+                        {file.level}
+                      </span>
+                    ) : (
+                      <select
+                        className={styles.levelSelect}
+                        value={file.level}
+                        onChange={(event) =>
+                          onLevel(file.id, event.target.value as EntityLevel)
+                        }
+                        aria-label="Level"
+                      >
+                        {LEVELS.map((level) => (
+                          <option key={level} value={level}>
+                            {level}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       type="button"
                       className={styles.remove}

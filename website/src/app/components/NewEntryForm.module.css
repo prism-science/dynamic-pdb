@@ -561,6 +561,21 @@
   font-family: var(--font-mono);
 }
 
+.levelBadge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--lvl-soft, var(--surface-muted));
+  color: var(--lvl, var(--text-secondary));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: default;
+}
+
 /* Experiments */
 .expHead {
   display: flex;
