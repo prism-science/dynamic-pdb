@@ -16,6 +16,8 @@ import SequenceView from "./SequenceView";
 
 import styles from "./NewEntryForm.module.css";
 
+type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
+
 type ParsedFile = {
   id: string;
   file: File;
@@ -28,6 +30,8 @@ type ParsedFile = {
   metadata?: Record<string, unknown>;
   preview?: string;
   url: string;
+  uploadStatus: UploadStatus;
+  uploadError: string | null;
 };
 
 type MetricDraft = {
@@ -42,6 +46,9 @@ type ExperimentDraft = {
   thumbFileId: string;
   thumbFile: File | null;
   thumbPreview: string | null;
+  thumbUrl: string | null;
+  thumbUploadStatus: UploadStatus;
+  thumbUploadError: string | null;
   files: ParsedFile[];
   metrics: MetricDraft[];
 };
@@ -59,9 +66,12 @@ export default function NewEntryForm() {
   const [entryId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [thumbFileId, setThumbFileId] = useState(() => crypto.randomUUID());
+  const activeThumbFileId = useRef<string | null>(null);
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [thumbUploadStatus, setThumbUploadStatus] = useState<UploadStatus>("idle");
+  const [thumbUploadError, setThumbUploadError] = useState<string | null>(null);
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [experiments, setExperiments] = useState<ExperimentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -72,14 +82,22 @@ export default function NewEntryForm() {
     if (!file) {
       return;
     }
-    setThumbFileId(crypto.randomUUID());
+    const nextThumbFileId = crypto.randomUUID();
+    activeThumbFileId.current = nextThumbFileId;
     setThumbFile(file);
     setThumbPreview(URL.createObjectURL(file));
+    setThumbUrl(null);
+    setThumbUploadStatus("uploading");
+    setThumbUploadError(null);
+    void uploadEntryThumbnail(file, nextThumbFileId);
   };
 
   const addEntryFiles = async (list: File[]) => {
     const parsed = await Promise.all(list.map((file) => parseFile(file, "L0")));
     setFiles((prev) => [...prev, ...parsed]);
+    parsed.forEach((file) => {
+      void uploadParsedFileNow(file, { entryId, experimentId: null }, patchEntryFile);
+    });
   };
 
   const addExperiment = () => {
@@ -92,6 +110,9 @@ export default function NewEntryForm() {
         thumbFileId: crypto.randomUUID(),
         thumbFile: null,
         thumbPreview: null,
+        thumbUrl: null,
+        thumbUploadStatus: "idle",
+        thumbUploadError: null,
         files: [],
         metrics: [],
       },
@@ -108,9 +129,114 @@ export default function NewEntryForm() {
     setExperiments((prev) => prev.filter((exp) => exp.id !== id));
   };
 
+  const patchEntryFile = (id: string, patch: Partial<ParsedFile>) => {
+    setFiles((prev) =>
+      prev.map((file) => (file.id === id ? { ...file, ...patch } : file)),
+    );
+  };
+
+  const patchExperimentFile = (
+    experimentId: string,
+    fileId: string,
+    patch: Partial<ParsedFile>,
+  ) => {
+    setExperiments((prev) =>
+      prev.map((exp) =>
+        exp.id === experimentId
+          ? {
+              ...exp,
+              files: exp.files.map((file) =>
+                file.id === fileId ? { ...file, ...patch } : file,
+              ),
+            }
+          : exp,
+      ),
+    );
+  };
+
+  const uploadEntryThumbnail = async (file: File, fileId: string) => {
+    try {
+      const url = await uploadFileToObjectStorage(file, {
+        entryId,
+        experimentId: null,
+        entityId: fileId,
+      });
+      if (activeThumbFileId.current !== fileId) {
+        return;
+      }
+      setThumbUrl(url);
+      setThumbUploadStatus("uploaded");
+      setThumbUploadError(null);
+    } catch (error) {
+      if (activeThumbFileId.current !== fileId) {
+        return;
+      }
+      setThumbUploadStatus("failed");
+      setThumbUploadError(uploadErrorMessage(error));
+    }
+  };
+
+  const uploadExperimentThumbnail = async (
+    experimentId: string,
+    file: File,
+    fileId: string,
+  ) => {
+    try {
+      const url = await uploadFileToObjectStorage(file, {
+        entryId,
+        experimentId,
+        entityId: fileId,
+      });
+      setExperiments((prev) =>
+        prev.map((exp) =>
+          exp.id === experimentId && exp.thumbFileId === fileId
+            ? {
+                ...exp,
+                thumbUrl: url,
+                thumbUploadStatus: "uploaded",
+                thumbUploadError: null,
+              }
+            : exp,
+        ),
+      );
+    } catch (error) {
+      setExperiments((prev) =>
+        prev.map((exp) =>
+          exp.id === experimentId && exp.thumbFileId === fileId
+            ? {
+                ...exp,
+                thumbUploadStatus: "failed",
+                thumbUploadError: uploadErrorMessage(error),
+              }
+            : exp,
+        ),
+      );
+    }
+  };
+
+  const hasPendingUploads =
+    thumbUploadStatus === "uploading" ||
+    files.some((file) => file.uploadStatus === "uploading") ||
+    experiments.some(
+      (exp) =>
+        exp.thumbUploadStatus === "uploading" ||
+        exp.files.some((file) => file.uploadStatus === "uploading"),
+    );
+
+  const hasFailedUploads =
+    thumbUploadStatus === "failed" ||
+    files.some((file) => file.uploadStatus === "failed") ||
+    experiments.some(
+      (exp) =>
+        exp.thumbUploadStatus === "failed" ||
+        exp.files.some((file) => file.uploadStatus === "failed"),
+    );
+
   const canSubmit =
     name.trim().length > 0 &&
     experiments.every((exp) => exp.name.trim().length > 0) &&
+    !hasPendingUploads &&
+    !hasFailedUploads &&
     !submitting;
 
   const submit = async (event: FormEvent) => {
@@ -122,47 +248,23 @@ export default function NewEntryForm() {
     setError(null);
 
     try {
-      const entryThumbnailURL = thumbFile
-        ? await uploadFileToObjectStorage(thumbFile, {
-            entryId,
-            experimentId: null,
-            entityId: thumbFileId,
-          })
-        : null;
-      const uploadedFiles = await Promise.all(
-        files.map((file) =>
-          uploadParsedFile(file, { entryId, experimentId: null }),
-        ),
-      );
-      const uploadedExperiments = await Promise.all(
-        experiments.map(async (exp) => ({
-          ...exp,
-          thumbnailURL: exp.thumbFile
-            ? await uploadFileToObjectStorage(exp.thumbFile, {
-                entryId,
-                experimentId: exp.id,
-                entityId: exp.thumbFileId,
-              })
-            : null,
-          files: await Promise.all(
-            exp.files.map((file) =>
-              uploadParsedFile(file, { entryId, experimentId: exp.id }),
-            ),
-          ),
-        })),
-      );
+      if (!uploadsReady(files, experiments, thumbFile, thumbUrl)) {
+        setError("Wait until all files are uploaded.");
+        setSubmitting(false);
+        return;
+      }
 
       const input: CreateEntryInput = {
         id: entryId,
         name: name.trim(),
         description: description.trim() || null,
-        thumbnail_image_url: entryThumbnailURL,
-        entities: uploadedFiles.map(toEntity),
-        experiments: uploadedExperiments.map((exp) => ({
+        thumbnail_image_url: thumbUrl,
+        entities: files.map(toEntity),
+        experiments: experiments.map((exp) => ({
           id: exp.id,
           name: exp.name.trim(),
           description: exp.description.trim() || null,
-          thumbnail_image_url: exp.thumbnailURL,
+          thumbnail_image_url: exp.thumbUrl,
           entities: [...exp.files.map(toEntity), ...exp.metrics.map(toMetricEntity)],
         })),
       };
@@ -230,6 +332,14 @@ export default function NewEntryForm() {
             onChange={onThumb}
           />
         </label>
+        {thumbUploadStatus !== "idle" ? (
+          <span
+            className={styles.uploadStatus}
+            data-state={thumbUploadStatus}
+          >
+            {uploadStatusText(thumbUploadStatus, thumbUploadError)}
+          </span>
+        ) : null}
       </section>
 
       <section className={styles.field}>
@@ -310,14 +420,34 @@ export default function NewEntryForm() {
                       if (!file) {
                         return;
                       }
+                      const nextThumbFileId = crypto.randomUUID();
                       updateExperiment(exp.id, {
-                        thumbFileId: crypto.randomUUID(),
+                        thumbFileId: nextThumbFileId,
                         thumbFile: file,
                         thumbPreview: URL.createObjectURL(file),
+                        thumbUrl: null,
+                        thumbUploadStatus: "uploading",
+                        thumbUploadError: null,
                       });
+                      void uploadExperimentThumbnail(
+                        exp.id,
+                        file,
+                        nextThumbFileId,
+                      );
                     }}
                   />
                 </label>
+                {exp.thumbUploadStatus !== "idle" ? (
+                  <span
+                    className={styles.uploadStatus}
+                    data-state={exp.thumbUploadStatus}
+                  >
+                    {uploadStatusText(
+                      exp.thumbUploadStatus,
+                      exp.thumbUploadError,
+                    )}
+                  </span>
+                ) : null}
                 <span className={styles.subLabel}>Data</span>
                 <FilesEditor
                   files={exp.files}
@@ -325,8 +455,20 @@ export default function NewEntryForm() {
                     const parsed = await Promise.all(
                       list.map((file) => parseFile(file, "L2")),
                     );
-                    updateExperiment(exp.id, {
-                      files: [...exp.files, ...parsed],
+                    setExperiments((prev) =>
+                      prev.map((current) =>
+                        current.id === exp.id
+                          ? { ...current, files: [...current.files, ...parsed] }
+                          : current,
+                      ),
+                    );
+                    parsed.forEach((file) => {
+                      void uploadParsedFileNow(
+                        file,
+                        { entryId, experimentId: exp.id },
+                        (fileId, patch) =>
+                          patchExperimentFile(exp.id, fileId, patch),
+                      );
                     });
                   }}
                   onRemove={(id) =>
@@ -370,7 +512,11 @@ export default function NewEntryForm() {
           Cancel
         </a>
         <button type="submit" className={styles.primary} disabled={!canSubmit}>
-          {submitting ? "Creating…" : "Create entry"}
+          {submitting
+            ? "Creating…"
+            : hasPendingUploads
+              ? "Uploading…"
+              : "Create entry"}
         </button>
       </div>
     </form>
@@ -434,6 +580,12 @@ function FilesEditor({
                     {typeof file.metadata?.length === "number"
                       ? ` · ${file.metadata.length} residues`
                       : ""}
+                  </span>
+                  <span
+                    className={styles.fileUploadStatus}
+                    data-state={file.uploadStatus}
+                  >
+                    {uploadStatusText(file.uploadStatus, file.uploadError)}
                   </span>
                 </span>
                 <select
@@ -651,6 +803,8 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
     authors: "",
     affiliation: "",
     url: "",
+    uploadStatus: "uploading",
+    uploadError: null,
   };
   if (type === "fasta") {
     try {
@@ -667,18 +821,66 @@ async function parseFile(file: File, level: EntityLevel): Promise<ParsedFile> {
 
 type FileUploadLocation = Pick<FileUploadContext, "entryId" | "experimentId">;
 
-async function uploadParsedFile(
+async function uploadParsedFileNow(
   file: ParsedFile,
   location: FileUploadLocation,
-): Promise<ParsedFile> {
-  return {
-    ...file,
-    url: await uploadFileToObjectStorage(file.file, {
+  patchFile: (id: string, patch: Partial<ParsedFile>) => void,
+): Promise<void> {
+  try {
+    const url = await uploadFileToObjectStorage(file.file, {
       ...location,
       entityId: file.id,
       filename: file.name,
-    }),
-  };
+    });
+    patchFile(file.id, {
+      url,
+      uploadStatus: "uploaded",
+      uploadError: null,
+    });
+  } catch (error) {
+    patchFile(file.id, {
+      uploadStatus: "failed",
+      uploadError: uploadErrorMessage(error),
+    });
+  }
+}
+
+function uploadErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Upload failed.";
+}
+
+function uploadStatusText(status: UploadStatus, error: string | null): string {
+  if (status === "uploading") {
+    return "Uploading...";
+  }
+  if (status === "uploaded") {
+    return "Uploaded";
+  }
+  if (status === "failed") {
+    return error ? `Upload failed: ${error}` : "Upload failed";
+  }
+  return "";
+}
+
+function uploadsReady(
+  files: ParsedFile[],
+  experiments: ExperimentDraft[],
+  thumbFile: File | null,
+  thumbUrl: string | null,
+): boolean {
+  if (thumbFile && !thumbUrl) {
+    return false;
+  }
+  if (files.some((file) => file.uploadStatus !== "uploaded" || !file.url)) {
+    return false;
+  }
+  return experiments.every(
+    (exp) =>
+      (!exp.thumbFile || Boolean(exp.thumbUrl)) &&
+      exp.files.every(
+        (file) => file.uploadStatus === "uploaded" && Boolean(file.url),
+      ),
+  );
 }
 
 function detectType(filename: string): string {

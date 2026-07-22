@@ -93,6 +93,23 @@
   font-family: var(--font-mono);
 }
 
+.uploadStatus,
+.fileUploadStatus {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.uploadStatus[data-state="uploaded"],
+.fileUploadStatus[data-state="uploaded"] {
+  color: var(--success-fg, var(--text-secondary));
+}
+
+.uploadStatus[data-state="failed"],
+.fileUploadStatus[data-state="failed"] {
+  color: var(--danger-fg);
+}
+
 /* Files */
 .fileDrop {
   display: inline-flex;
@@ -222,6 +239,10 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.fileUploadStatus {
+  overflow-wrap: anywhere;
 }
 
 .remove {

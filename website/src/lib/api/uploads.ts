@@ -41,10 +41,19 @@ export async function uploadFileToObjectStorage(
     for (const part of grant.parts) {
       const start = (part.part_number - 1) * grant.part_size;
       const end = Math.min(start + grant.part_size, file.size);
-      const response = await fetch(part.url, {
-        method: "PUT",
-        body: file.slice(start, end),
-      });
+      let response: Response;
+      try {
+        response = await fetch(part.url, {
+          method: "PUT",
+          body: file.slice(start, end),
+        });
+      } catch (error) {
+        throw new Error(
+          `Browser could not upload part ${part.part_number} of ${file.name} to object storage. Check S3 bucket CORS for PUT and ETag. ${
+            error instanceof Error ? error.message : "Upload request failed."
+          }`,
+        );
+      }
       if (!response.ok) {
         throw new Error(
           `Object storage rejected part ${part.part_number} of ${file.name}: ${await responseError(response)}`,

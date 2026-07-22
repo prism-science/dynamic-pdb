@@ -11,8 +11,6 @@ import (
 	"dynamic-pdb/backend/internal/integrations/s3"
 )
 
-const entryLevelUploadSegment = "entry"
-
 func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 	var req CreateFileUploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -38,7 +36,7 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entity_id is required")
 		return
 	}
-	experimentID := entryLevelUploadSegment
+	experimentID := ""
 	if req.ExperimentId != nil {
 		parsedExperimentID := uuid.UUID(*req.ExperimentId)
 		if parsedExperimentID == uuid.Nil {

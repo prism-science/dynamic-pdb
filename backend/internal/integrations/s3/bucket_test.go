@@ -73,7 +73,24 @@ func Test_should_grow_part_size_to_stay_under_part_cap_when_file_very_large(t *t
 	assert.Zero(t, partSize%(1024*1024))
 }
 
-func Test_should_build_object_key_from_file_identity_when_file_upload_requested(t *testing.T) {
+func Test_should_build_entry_object_key_when_file_has_no_experiment(t *testing.T) {
+	// given
+	file := s3.FileUpload{
+		EntryID:          "entry-id",
+		EntityID:         "entity-id",
+		OriginalFilename: "model.cif",
+		Size:             100,
+	}
+
+	// when
+	key, err := s3.ObjectKey(file)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry-id/entities/entity-id/model.cif", key)
+}
+
+func Test_should_build_model_object_key_when_file_has_experiment(t *testing.T) {
 	// given
 	file := s3.FileUpload{
 		EntryID:          "entry-id",
@@ -88,7 +105,7 @@ func Test_should_build_object_key_from_file_identity_when_file_upload_requested(
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry-id/entities/experiment-id/entity-id/model.cif", key)
+	assert.Equal(t, "entry-id/models/experiment-id/entities/entity-id/model.cif", key)
 }
 
 func Test_should_strip_path_from_original_filename_when_building_object_key(t *testing.T) {
@@ -106,7 +123,7 @@ func Test_should_strip_path_from_original_filename_when_building_object_key(t *t
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry-id/entities/experiment-id/entity-id/model.cif", key)
+	assert.Equal(t, "entry-id/models/experiment-id/entities/entity-id/model.cif", key)
 }
 
 func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.T) {
