@@ -105,10 +105,6 @@ func ObjectKey(file FileUpload) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("entry id segment: %w", err)
 	}
-	experimentID, err := requiredKeySegment("experiment_id", file.ExperimentID)
-	if err != nil {
-		return "", fmt.Errorf("experiment id segment: %w", err)
-	}
 	entityID, err := requiredKeySegment("entity_id", file.EntityID)
 	if err != nil {
 		return "", fmt.Errorf("entity id segment: %w", err)
@@ -117,7 +113,15 @@ func ObjectKey(file FileUpload) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("original filename: %w", err)
 	}
-	return path.Join(entryID, "entities", experimentID, entityID, filename), nil
+	experimentID := strings.TrimSpace(file.ExperimentID)
+	if experimentID == "" {
+		return path.Join(entryID, "entities", entityID, filename), nil
+	}
+	experimentID, err = requiredKeySegment("experiment_id", experimentID)
+	if err != nil {
+		return "", fmt.Errorf("experiment id segment: %w", err)
+	}
+	return path.Join(entryID, "models", experimentID, "entities", entityID, filename), nil
 }
 
 func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUpload) (MultipartUploadGrant, error) {

@@ -23,9 +23,12 @@ type CompletedFileUploadPart = {
   etag: string;
 };
 
+export type UploadProgress = (fraction: number) => void;
+
 export async function uploadFileToObjectStorage(
   file: File,
   context: FileUploadContext,
+  onProgress?: UploadProgress,
 ): Promise<string> {
   const grant = await postJSON<FileUploadGrant>("/api/files", {
     entry_id: context.entryId,
@@ -36,33 +39,25 @@ export async function uploadFileToObjectStorage(
   });
   validateFileUploadGrant(grant);
 
+  const totalBytes = file.size > 0 ? file.size : 1;
+  let uploadedBytes = 0;
   const completed: CompletedFileUploadPart[] = [];
   try {
     for (const part of grant.parts) {
       const start = (part.part_number - 1) * grant.part_size;
       const end = Math.min(start + grant.part_size, file.size);
-      let response: Response;
-      try {
-        response = await fetch(part.url, {
-          method: "PUT",
-          body: file.slice(start, end),
-        });
-      } catch (error) {
-        throw new Error(
-          `Browser could not upload part ${part.part_number} of ${file.name} to object storage. Check S3 bucket CORS for PUT and ETag. ${
-            error instanceof Error ? error.message : "Upload request failed."
-          }`,
-        );
-      }
-      if (!response.ok) {
-        throw new Error(
-          `Object storage rejected part ${part.part_number} of ${file.name}: ${await responseError(response)}`,
-        );
-      }
-      const etag = response.headers.get("ETag");
-      if (!etag) {
-        throw new Error(`Object storage did not return ETag for ${file.name}.`);
-      }
+      const partBytes = end - start;
+      const etag = await putPartWithProgress(
+        part.url,
+        file.slice(start, end),
+        part.part_number,
+        file.name,
+        (loaded) => {
+          onProgress?.(Math.min(1, (uploadedBytes + loaded) / totalBytes));
+        },
+      );
+      uploadedBytes += partBytes;
+      onProgress?.(Math.min(1, uploadedBytes / totalBytes));
       completed.push({ part_number: part.part_number, etag });
     }
 
@@ -71,11 +66,56 @@ export async function uploadFileToObjectStorage(
       upload_id: grant.upload_id,
       parts: completed,
     });
+    onProgress?.(1);
     return grant.object_url;
   } catch (error) {
     await abortFileUpload(grant);
     throw error;
   }
+}
+
+// Uploads a single part via XMLHttpRequest so we can surface byte-level
+// progress (fetch() gives no upload progress events). Resolves with the ETag.
+function putPartWithProgress(
+  url: string,
+  body: Blob,
+  partNumber: number,
+  filename: string,
+  onProgress: (loadedBytes: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(event.loaded);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const etag = xhr.getResponseHeader("ETag");
+        if (!etag) {
+          reject(new Error(`Object storage did not return ETag for ${filename}.`));
+          return;
+        }
+        resolve(etag);
+        return;
+      }
+      reject(
+        new Error(
+          `Object storage rejected part ${partNumber} of ${filename}: HTTP ${xhr.status} ${xhr.responseText}`.trim(),
+        ),
+      );
+    };
+    xhr.onerror = () => {
+      reject(
+        new Error(
+          `Browser could not upload part ${partNumber} of ${filename} to object storage. Check S3 bucket CORS for PUT and ETag.`,
+        ),
+      );
+    };
+    xhr.send(body);
+  });
 }
 
 async function abortFileUpload(grant: FileUploadGrant): Promise<void> {
