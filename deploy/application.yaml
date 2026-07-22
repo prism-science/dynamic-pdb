@@ -1,0 +1,23 @@
+# ArgoCD Application that tracks the dynamic-pdb chart on main and auto-deploys
+# changes. Apply once with:
+#   kubectl apply -f deploy/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dynamic-pdb
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: dynamic-pdb
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Astera-org/dynamic-pdb
+    targetRevision: main
+    path: deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ext
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

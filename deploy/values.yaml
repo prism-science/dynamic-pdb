@@ -1,0 +1,61 @@
+host: dynamicpdb.com
+
+backend:
+  image:
+    repository: harbor.astera.sh/library/dynamic-pdb-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    port: 8080
+  dbSecretName: dynamic-pdb
+  appSecretName: dynamic-pdb-backend
+  s3SecretName: dynamic-pdb-s3-data
+  auth:
+    githubClientId: Ov23liitTHmLOI9ZAVc6
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+website:
+  image:
+    repository: harbor.astera.sh/library/dynamic-pdb-website
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    port: 3000
+  appBaseUrl: https://dynamicpdb.com
+  publicApiBaseUrl: https://dynamicpdb.com/api
+  auth:
+    githubClientId: Ov23liitTHmLOI9ZAVc6
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+migrations:
+  enabled: true
+  image:
+    repository: harbor.astera.sh/library/dynamic-pdb-migrations
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure

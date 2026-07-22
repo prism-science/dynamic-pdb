@@ -52,14 +52,8 @@ test("should derive secure request from forwarded proto before next url", () => 
 });
 
 test("should derive public origin from config or forwarded headers", () => {
-  const previousPublicOrigin = process.env.PUBLIC_APP_ORIGIN;
   const previousAppBaseURL = process.env.APP_BASE_URL;
   try {
-    process.env.PUBLIC_APP_ORIGIN = "https://configured.example/";
-    delete process.env.APP_BASE_URL;
-    assert.equal(getPublicOrigin(fakeRequest("http://ignored.example")), "https://configured.example");
-
-    delete process.env.PUBLIC_APP_ORIGIN;
     process.env.APP_BASE_URL = "https://base.example/";
     assert.equal(getPublicOrigin(fakeRequest("http://ignored.example")), "https://base.example");
 
@@ -74,7 +68,6 @@ test("should derive public origin from config or forwarded headers", () => {
       "https://public.example",
     );
   } finally {
-    restoreEnv("PUBLIC_APP_ORIGIN", previousPublicOrigin);
     restoreEnv("APP_BASE_URL", previousAppBaseURL);
   }
 });

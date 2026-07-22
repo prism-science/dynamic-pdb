@@ -94,8 +94,7 @@ export function isSecureRequest(request: NextRequest): boolean {
 }
 
 export function getPublicOrigin(request: NextRequest): string {
-  const configuredOrigin =
-    process.env.PUBLIC_APP_ORIGIN || process.env.APP_BASE_URL;
+  const configuredOrigin = process.env.APP_BASE_URL;
   if (configuredOrigin) {
     return configuredOrigin.replace(/\/+$/, "");
   }

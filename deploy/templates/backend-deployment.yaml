@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-pdb-backend
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.backend.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dynamic-pdb.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dynamic-pdb.labels" . | nindent 8 }}
+        {{- include "dynamic-pdb.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: server
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ .Values.backend.s3SecretName }}
+          env:
+            - name: DYNAMIC_PDB_ENV
+              value: production
+            - name: DYNAMIC_PDB_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: host
+            - name: DYNAMIC_PDB_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: port
+            - name: DYNAMIC_PDB_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: database
+            - name: DYNAMIC_PDB_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: username
+            - name: DYNAMIC_PDB_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.dbSecretName }}
+                  key: password
+            - name: DYNAMIC_PDB_AUTH_GITHUB_CLIENT_ID
+              value: {{ .Values.backend.auth.githubClientId | quote }}
+            - name: DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.appSecretName }}
+                  key: github-client-secret
+            - name: DYNAMIC_PDB_AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.appSecretName }}
+                  key: jwt-secret
+            - name: DYNAMIC_PDB_S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.s3SecretName }}
+                  key: AWS_REGION
+            - name: DYNAMIC_PDB_S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.s3SecretName }}
+                  key: S3_BUCKET
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
