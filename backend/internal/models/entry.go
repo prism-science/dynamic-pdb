@@ -8,6 +8,7 @@ import (
 
 type Entry struct {
 	ID                uuid.UUID
+	CreatedBy         uuid.UUID
 	Name              string
 	Description       *string
 	ThumbnailImageURL *string

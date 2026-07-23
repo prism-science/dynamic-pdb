@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type {
@@ -7,7 +6,6 @@ import type {
   EntityLevel,
   EntityRelation,
   EntityType,
-  Model,
   FastaMetadata,
   MetricsPayload,
   ModelPayload,
@@ -417,42 +415,6 @@ export function EntityCardList({
           <EntityCard key={entity.id} entity={entity} provenance={provenance} />
         ),
       )}
-    </div>
-  );
-}
-
-export function ModelList({
-  entryId,
-  models,
-}: {
-  entryId: string;
-  models: Model[];
-}) {
-  if (models.length === 0) {
-    return <p className={styles.emptyState}>No models.</p>;
-  }
-
-  return (
-    <div className={styles.modelGrid}>
-      {models.map((model) => (
-        <Link
-          key={model.id}
-          className={styles.modelListCard}
-          href={`/entries/${entryId}/models/${model.id}`}
-        >
-          <span className={styles.thumb} data-empty={model.thumbnail_image_url ? undefined : "true"}>
-            {model.thumbnail_image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={model.thumbnail_image_url} alt="" loading="lazy" />
-            ) : (
-              <ImagePlaceholderIcon />
-            )}
-          </span>
-          <span className={styles.modelListBody}>
-            <span className={styles.modelListName}>{model.name}</span>
-          </span>
-        </Link>
-      ))}
     </div>
   );
 }

@@ -19,9 +19,11 @@ func Test_should_return_model_with_optional_fields_when_models_create_and_get_ca
 	now := time.Now().UTC()
 	description := "Refined coordinate model with electron-density support " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
+	createdBy := createDBTestUser(t)
 	model := models.Model{
 		ID:                uuid.New(),
 		EntryID:           entry.ID,
+		CreatedBy:         createdBy,
 		Name:              "qFit run " + uuid.NewString(),
 		Description:       &description,
 		ThumbnailImageURL: &thumbnailImageURL,
@@ -38,6 +40,7 @@ func Test_should_return_model_with_optional_fields_when_models_create_and_get_ca
 	require.NoError(t, err)
 	assert.Equal(t, model.ID, got.ID)
 	assert.Equal(t, entry.ID, got.EntryID)
+	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, model.Name, got.Name)
 	require.NotNil(t, got.Description)
 	assert.Equal(t, description, *got.Description)

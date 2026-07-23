@@ -11,7 +11,8 @@ import { getAuthSession } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SequenceView from "@/app/components/SequenceView";
-import { ModelList, ImagePlaceholderIcon } from "./entry-view";
+import SortableModelList from "@/app/components/SortableModelList";
+import { ImagePlaceholderIcon } from "./entry-view";
 
 import styles from "./entry-page.module.css";
 
@@ -109,9 +110,11 @@ export default async function EntryPage({ params }: EntryRouteProps) {
             {hasModels ? (
               <section id="models" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Models</h2>
-                <ModelList
+                <SortableModelList
                   entryId={data.entry.id}
                   models={data.models}
+                  entities={data.entities}
+                  relations={data.relations}
                 />
               </section>
             ) : null}

@@ -7,6 +7,7 @@ export const demoUserId = "3b696db1-f943-4e44-b271-8cbdd36e7fc1";
 
 export type Entry = {
   id: string;
+  created_by: string;
   name: string;
   description: string | null;
   thumbnail_image_url: string | null;
@@ -17,6 +18,7 @@ export type Entry = {
 export type Model = {
   id: string;
   entry_id: string;
+  created_by: string;
   name: string;
   description: string | null;
   thumbnail_image_url: string | null;
