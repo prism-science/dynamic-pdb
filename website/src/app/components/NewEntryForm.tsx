@@ -422,6 +422,9 @@ export default function NewEntryForm() {
           onChange={(event) => setName(event.target.value)}
           placeholder="e.g. Hen egg-white lysozyme"
           autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
         />
       </section>
 
@@ -1198,6 +1201,9 @@ function ProgramEditor({
                 onChange={(event) => patch({ name: event.target.value })}
                 placeholder="e.g. phenix.refine"
                 autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </label>
             <label className={styles.metricField}>
@@ -1208,9 +1214,12 @@ function ProgramEditor({
                 onChange={(event) => patch({ version: event.target.value })}
                 placeholder="e.g. 1.21.2"
                 autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
               />
             </label>
-            <label className={styles.metricField}>
+            <label className={`${styles.metricField} ${styles.programDescription}`}>
               <span>Description</span>
               <textarea
                 className={styles.textarea}
