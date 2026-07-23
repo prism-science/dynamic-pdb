@@ -704,183 +704,213 @@
 }
 
 /* --------------------------------------------------------------------- */
-/* Sortable model list                                                   */
+/* Sortable model table                                                  */
 /* --------------------------------------------------------------------- */
 
-.sortToolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.sortLabel {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.sortSelect {
-  height: 34px;
-  padding: 0 30px 0 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+.modelTableWrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
   background: var(--surface);
-  color: var(--text);
+}
+
+.modelTable {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
+}
+
+.modelTableModelHead,
+.modelTableMetricHead {
+  padding: 0;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
   font-weight: 600;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.sortSelect:hover {
-  border-color: var(--accent);
+.modelTableModelHead {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 12px;
 }
 
-.sortSelect:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.modelTableMetricHead {
+  text-align: right;
 }
 
-.sortDirection {
+.modelTableMetricHead[data-active="true"] {
+  background: var(--accent-soft);
+}
+
+.modelTableSortButton {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-muted);
+  justify-content: flex-end;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: none;
   cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: color 120ms ease;
 }
 
-.sortDirection:hover {
-  border-color: var(--accent);
+.modelTableSortButton:hover {
   color: var(--accent-hover);
 }
 
-.sortDirection:focus-visible {
+.modelTableMetricHead[data-active="true"] .modelTableSortButton {
+  color: var(--accent-hover);
+}
+
+.modelTableSortButton:focus-visible {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
 }
 
-.modelRows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.modelTableArrow {
+  font-size: 11px;
+  line-height: 1;
 }
 
-.modelRow {
+.modelTableMetricHead:not([data-active="true"]) .modelTableArrow {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.modelTableRow {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 120ms ease;
+}
+
+.modelTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.modelTableRow:hover {
+  background: var(--surface-muted);
+}
+
+.modelTableRow:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.modelTableModelCell {
+  padding: 10px 14px;
+  vertical-align: middle;
+}
+
+.modelTableModelInner {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text);
-  text-decoration: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+  gap: 12px;
 }
 
-.modelRow:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-.modelRowThumb {
+.modelTableThumb {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   overflow: hidden;
   border-radius: var(--radius);
   background: var(--surface-muted);
   color: var(--text-muted);
 }
 
-.modelRowThumb img {
+.modelTableThumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.modelRowThumb[data-empty="true"] {
+.modelTableThumb[data-empty="true"] {
   border: 1px dashed var(--border-strong);
 }
 
-.modelRowMain {
+.modelTableNameBlock {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  flex: 1;
 }
 
-.modelRowName {
+.modelTableName {
   color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-decoration: none;
 }
 
-.modelRowDate {
+.modelTableName:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.modelTableName:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.modelTableDate {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.modelTableMetricCell {
+  padding: 10px 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.modelTableMetricCell[data-active="true"] {
+  background: var(--accent-soft);
+}
+
+.modelTableMetricCell[data-status="good"] {
+  color: var(--success-fg);
+}
+
+.modelTableMetricCell[data-status="warn"] {
+  color: var(--warning-fg);
+}
+
+.modelTableMetricCell[data-status="bad"] {
+  color: var(--danger-fg);
+}
+
+.modelTableMetricValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
   font-weight: 600;
 }
 
-.modelRowMetrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-  max-width: 320px;
+.modelTableBestDot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.modelRowMetric {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
-}
-
-.modelRowMetric[data-active="true"] {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-}
-
-.modelRowMetricLabel {
-  opacity: 0.85;
-}
-
-.modelRowMetricValue {
-  font-weight: 700;
-}
-
-.modelRowChevron {
-  flex-shrink: 0;
+.modelTableEmpty {
   color: var(--text-muted);
 }
 
@@ -1073,18 +1103,12 @@
     grid-template-columns: 1fr;
   }
 
-  .modelRow {
-    flex-wrap: wrap;
+  .modelTableWrap {
+    overflow-x: auto;
   }
 
-  .modelRowMetrics {
-    max-width: none;
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .modelRowChevron {
-    display: none;
+  .modelTable {
+    min-width: 520px;
   }
 
   .provenanceRow {
