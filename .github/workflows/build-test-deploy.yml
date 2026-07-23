@@ -27,8 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-      backend_image: ${{ steps.filter.outputs.backend_image }}
-      migrations: ${{ steps.filter.outputs.migrations }}
       website: ${{ steps.filter.outputs.website }}
     steps:
       - uses: actions/checkout@v4
@@ -46,13 +44,6 @@ jobs:
               - "go.work"
               - "go.work.sum"
               - "backend/**"
-            backend_image:
-              - ".github/workflows/build-test-deploy.yml"
-              - "backend/**"
-              - "!backend/migrations/**"
-            migrations:
-              - ".github/workflows/build-test-deploy.yml"
-              - "backend/migrations/**"
             website:
               - ".github/workflows/build-test-deploy.yml"
               - "website/**"
@@ -167,14 +158,20 @@ jobs:
         working-directory: website
         run: npm run build
 
-  backend-image:
-    name: Build and push backend image
+  deploy-images:
+    name: Build and push deploy images
     needs:
       - changes
       - backend
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.backend_image == 'true'
+      - website
+    if: |
+      always() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
+      (needs.website.result == 'success' || needs.website.result == 'skipped')
     runs-on: astera-sh-builder
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -197,26 +194,6 @@ jobs:
             -t "${IMAGE}:latest" \
             -f backend/Dockerfile backend
 
-  migrations-image:
-    name: Build and push migrations image
-    needs:
-      - changes
-      - backend
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.migrations == 'true'
-    runs-on: astera-sh-builder
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Harbor
-        env:
-          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-        run: echo "${HARBOR_PASSWORD}" | docker login ${{ env.REGISTRY }} -u "${HARBOR_USERNAME}" --password-stdin
-
-      - name: Set up Docker Buildx
-        run: docker buildx create --use --name ci-builder || docker buildx use ci-builder
-
       - name: Build and push migrations image
         run: |
           set -euo pipefail
@@ -227,26 +204,6 @@ jobs:
             -t "${IMAGE}:latest" \
             -f backend/migrations/Dockerfile backend/migrations
 
-  website-image:
-    name: Build and push website image
-    needs:
-      - changes
-      - website
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.website == 'true'
-    runs-on: astera-sh-builder
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Harbor
-        env:
-          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-        run: echo "${HARBOR_PASSWORD}" | docker login ${{ env.REGISTRY }} -u "${HARBOR_USERNAME}" --password-stdin
-
-      - name: Set up Docker Buildx
-        run: docker buildx create --use --name ci-builder || docker buildx use ci-builder
-
       - name: Build and push website image
         run: |
           set -euo pipefail
@@ -256,70 +213,3 @@ jobs:
             -t "${IMAGE}:sha-${SHA}" \
             -t "${IMAGE}:latest" \
             -f website/Dockerfile website
-
-  bump-tags:
-    name: Bump image tags
-    needs:
-      - changes
-      - backend-image
-      - migrations-image
-      - website-image
-    if: |
-      always() &&
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      (needs.backend-image.result == 'success' ||
-       needs.migrations-image.result == 'success' ||
-       needs.website-image.result == 'success')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Bump image tags in values.yaml
-        env:
-          BACKEND_BUILT: ${{ needs.backend-image.result }}
-          MIGRATIONS_BUILT: ${{ needs.migrations-image.result }}
-          WEBSITE_BUILT: ${{ needs.website-image.result }}
-        run: |
-          set -euo pipefail
-          SHA="sha-${{ github.sha }}"
-          BUMPED=()
-          bump_tag() {
-            section="$1"
-            tmp="$(mktemp)"
-            awk -v section="${section}" -v tag="${SHA}" '
-              $0 == section ":" { in_section = 1; print; next }
-              in_section && /^[^[:space:]]/ { in_section = 0 }
-              in_section && $0 ~ /^    tag:/ { sub(/tag:.*/, "tag: " tag) }
-              { print }
-            ' deploy/values.yaml > "${tmp}"
-            mv "${tmp}" deploy/values.yaml
-          }
-          if [ "$BACKEND_BUILT" = "success" ]; then
-            bump_tag backend
-            BUMPED+=("backend")
-          fi
-          if [ "$MIGRATIONS_BUILT" = "success" ]; then
-            bump_tag migrations
-            BUMPED+=("migrations")
-          fi
-          if [ "$WEBSITE_BUILT" = "success" ]; then
-            bump_tag website
-            BUMPED+=("website")
-          fi
-          echo "bumped=${BUMPED[*]}" >> "$GITHUB_ENV"
-
-      - name: Commit and push
-        run: |
-          set -euo pipefail
-          if git diff --quiet deploy/values.yaml; then
-            echo "No image-tag changes to commit"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deploy/values.yaml
-          git commit -m "ci: bump ${bumped} image tag(s) to sha-${{ github.sha }} [skip ci]"
-          git pull --rebase origin main
-          git push origin HEAD:main

@@ -1,0 +1,55 @@
+# ArgoCD ApplicationSet that deploys dynamic-pdb from main without CI writing
+# image-tag commits back to git. Apply once with:
+#   kubectl apply -f deploy/appset.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dynamic-pdb
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: dynamic-pdb
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - plugin:
+        configMapRef:
+          name: branch-head-plugin
+        input:
+          parameters:
+            repo: Astera-org/dynamic-pdb
+            branch: main
+        requeueAfterSeconds: 600
+  template:
+    metadata:
+      name: dynamic-pdb
+      labels:
+        app.kubernetes.io/part-of: dynamic-pdb
+      annotations:
+        app.astera.sh/url: https://dynamicpdb.com
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Astera-org/dynamic-pdb
+        targetRevision: "{{ .sha }}"
+        path: deploy
+        helm:
+          valuesObject:
+            backend:
+              image:
+                tag: "sha-{{ .sha }}"
+            website:
+              image:
+                tag: "sha-{{ .sha }}"
+            migrations:
+              image:
+                tag: "sha-{{ .sha }}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: ext
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
