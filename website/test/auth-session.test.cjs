@@ -78,7 +78,7 @@ test("should read github oauth defaults and env overrides", () => {
   try {
     delete process.env.GITHUB_CLIENT_ID;
     delete process.env.GITHUB_SCOPE;
-    assert.equal(getGithubClientId(), "Ov23liY99dAfuJ1i2fgv");
+    assert.equal(getGithubClientId(), "Ov23liRjWaMI9Ur5X57e");
     assert.equal(getGithubScope(), "read:org");
 
     process.env.GITHUB_CLIENT_ID = "client-id";

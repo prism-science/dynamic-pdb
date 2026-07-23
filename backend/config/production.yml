@@ -3,7 +3,7 @@ auth:
     - Astera-org
     - diff-use
   github:
-    client_id: "Ov23liitTHmLOI9ZAVc6"
+    client_id: "Ov23liRjWaMI9Ur5X57e"
     client_secret: ""
   jwt:
     secret: ""

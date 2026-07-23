@@ -12,7 +12,7 @@ backend:
   appSecretName: dynamic-pdb-backend
   s3SecretName: dynamic-pdb-s3-data
   auth:
-    githubClientId: Ov23liitTHmLOI9ZAVc6
+    githubClientId: Ov23liRjWaMI9Ur5X57e
   resources:
     requests:
       cpu: 250m
@@ -32,7 +32,7 @@ website:
   appBaseUrl: https://dynamicpdb.com
   publicApiBaseUrl: https://dynamicpdb.com/api
   auth:
-    githubClientId: Ov23liitTHmLOI9ZAVc6
+    githubClientId: Ov23liRjWaMI9Ur5X57e
   resources:
     requests:
       cpu: 250m

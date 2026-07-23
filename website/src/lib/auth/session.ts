@@ -3,7 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import type { NextRequest, NextResponse } from "next/server";
 
-const defaultGithubClientId = "Ov23liY99dAfuJ1i2fgv";
+const defaultGithubClientId = "Ov23liRjWaMI9Ur5X57e";
 const defaultGithubScope = "read:org";
 const authCookiePath = "/";
 const oauthStateMaxAgeSeconds = 10 * 60;
