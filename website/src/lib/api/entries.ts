@@ -292,6 +292,55 @@ export async function getEntryGraph(
   return { entities: entityGraph.items, relations: entityGraph.relations };
 }
 
+export async function deleteEntry(
+  token: string,
+  entryId: string,
+): Promise<void> {
+  await deleteBackend(`/v1/entries/${encodeURIComponent(entryId)}`, token);
+}
+
+export async function deleteModel(
+  token: string,
+  entryId: string,
+  modelId: string,
+): Promise<void> {
+  await deleteBackend(
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+      modelId,
+    )}`,
+    token,
+  );
+}
+
+async function deleteBackend(path: string, token: string): Promise<void> {
+  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: "DELETE",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (error) {
+    throw new ApiRequestError(
+      error instanceof Error
+        ? `Backend request failed: ${error.message}`
+        : "Backend request failed",
+    );
+  }
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `Backend responded with ${response.status}`,
+      response.status,
+    );
+  }
+}
+
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
 

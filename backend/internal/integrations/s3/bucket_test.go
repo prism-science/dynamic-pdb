@@ -1,4 +1,4 @@
-package s3_test
+package s3
 
 import (
 	"context"
@@ -6,16 +6,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"dynamic-pdb/backend/internal/integrations/s3"
 )
 
 func Test_should_reject_missing_bucket_config_when_new_bucket_called(t *testing.T) {
 	// given
-	cfg := s3.BucketConfig{Region: "us-east-1"}
+	cfg := BucketConfig{Region: "us-east-1"}
 
 	// when
-	_, err := s3.NewBucket(context.Background(), cfg)
+	_, err := NewBucket(context.Background(), cfg)
 
 	// then
 	require.Error(t, err)
@@ -27,7 +25,7 @@ func Test_should_use_min_part_size_and_single_part_when_file_small(t *testing.T)
 	size := int64(100)
 
 	// when
-	partSize, partCount := s3.PartPlan(size)
+	partSize, partCount := PartPlan(size)
 
 	// then
 	assert.Equal(t, int64(64*1024*1024), partSize)
@@ -39,7 +37,7 @@ func Test_should_split_into_multiple_parts_when_file_exceeds_part_size(t *testin
 	size := int64(64*1024*1024)*2 + 1
 
 	// when
-	partSize, partCount := s3.PartPlan(size)
+	partSize, partCount := PartPlan(size)
 
 	// then
 	assert.Equal(t, int64(64*1024*1024), partSize)
@@ -51,7 +49,7 @@ func Test_should_grow_part_size_to_stay_under_part_cap_when_file_very_large(t *t
 	size := int64(5) * 1024 * 1024 * 1024 * 1024
 
 	// when
-	partSize, partCount := s3.PartPlan(size)
+	partSize, partCount := PartPlan(size)
 
 	// then
 	assert.LessOrEqual(t, partCount, 10000)
@@ -63,7 +61,7 @@ func Test_should_grow_part_size_to_stay_under_part_cap_when_file_very_large(t *t
 
 func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
 	// given
-	file := s3.FileUpload{
+	file := FileUpload{
 		EntryID:          "entry-id",
 		EntityID:         "entity-id",
 		OriginalFilename: "model.cif",
@@ -71,7 +69,7 @@ func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
 	}
 
 	// when
-	key, err := s3.ObjectKey(file)
+	key, err := ObjectKey(file)
 
 	// then
 	require.NoError(t, err)
@@ -80,7 +78,7 @@ func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
 
 func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 	// given
-	file := s3.FileUpload{
+	file := FileUpload{
 		EntryID:          "entry-id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
@@ -89,7 +87,7 @@ func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 	}
 
 	// when
-	key, err := s3.ObjectKey(file)
+	key, err := ObjectKey(file)
 
 	// then
 	require.NoError(t, err)
@@ -98,7 +96,7 @@ func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 
 func Test_should_strip_path_from_original_filename_when_building_object_key(t *testing.T) {
 	// given
-	file := s3.FileUpload{
+	file := FileUpload{
 		EntryID:          "entry-id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
@@ -107,7 +105,7 @@ func Test_should_strip_path_from_original_filename_when_building_object_key(t *t
 	}
 
 	// when
-	key, err := s3.ObjectKey(file)
+	key, err := ObjectKey(file)
 
 	// then
 	require.NoError(t, err)
@@ -116,7 +114,7 @@ func Test_should_strip_path_from_original_filename_when_building_object_key(t *t
 
 func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.T) {
 	// given
-	file := s3.FileUpload{
+	file := FileUpload{
 		EntryID:          "entry/id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
@@ -125,9 +123,64 @@ func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.
 	}
 
 	// when
-	_, err := s3.ObjectKey(file)
+	_, err := ObjectKey(file)
 
 	// then
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "entry_id is invalid")
+}
+
+func Test_should_build_full_aws_object_url_when_endpoint_is_not_configured(t *testing.T) {
+	// given
+	bucket := &RemoteBucket{
+		config: BucketConfig{
+			Region: "us-west-1",
+			Bucket: "dynamic-pdb-data",
+		},
+	}
+
+	// when
+	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/model.cif",
+		objectURL,
+	)
+}
+
+func Test_should_build_full_endpoint_object_url_when_endpoint_is_configured(t *testing.T) {
+	// given
+	bucket := &RemoteBucket{
+		config: BucketConfig{
+			Endpoint: "https://storage.example/root",
+			Region:   "us-east-1",
+			Bucket:   "dynamic-pdb",
+		},
+	}
+
+	// when
+	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"https://storage.example/root/dynamic-pdb/entry/entities/entity/model.cif",
+		objectURL,
+	)
+}
+
+func Test_should_detect_object_content_type_from_filename(t *testing.T) {
+	// given
+
+	// when
+	imageContentType := objectContentType("preview.jpeg")
+	unknownContentType := objectContentType("model.unknown-extension")
+
+	// then
+	assert.Equal(t, "image/jpeg", imageContentType)
+	assert.Equal(t, "application/octet-stream", unknownContentType)
 }

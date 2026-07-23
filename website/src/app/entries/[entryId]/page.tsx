@@ -7,7 +7,7 @@ import {
   type FastaMetadata,
   getEntryPageData,
 } from "@/lib/api/entries";
-import { getAuthSession } from "@/lib/auth/session";
+import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SequenceView from "@/app/components/SequenceView";
@@ -32,6 +32,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
   }
 
   const data = await loadEntryPage(session.token, entryId, returnTo);
+  const currentUserId = userIdFromToken(session.token);
   const sequence = getFastaMetadata(data);
 
   const vitals: string[] = [];
@@ -115,6 +116,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
                   models={data.models}
                   entities={data.entities}
                   relations={data.relations}
+                  currentUserId={currentUserId}
                 />
               </section>
             ) : null}

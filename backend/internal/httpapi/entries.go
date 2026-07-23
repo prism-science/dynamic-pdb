@@ -87,6 +87,28 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 	writeJSON(w, http.StatusOK, entryResponseFromModel(*entry))
 }
 
+func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	if err := s.database.Entries.Delete(r.Context(), entryID, user.ID); errors.Is(err, db.ErrEntryNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+		return
+	} else if errors.Is(err, db.ErrEntryOwnershipMismatch) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the entry creator can delete it")
+		return
+	} else if err != nil {
+		slog.Error("delete entry failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete entry")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
 		return db.EntryFilters{}, errors.New("limit must be non-negative")
@@ -482,6 +504,28 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 	}
 
 	writeJSON(w, http.StatusOK, modelResponseFromModel(*model))
+}
+
+func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	if err := s.database.Models.Delete(r.Context(), entryID, modelID, user.ID); errors.Is(err, db.ErrModelNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
+		return
+	} else if errors.Is(err, db.ErrModelOwnershipMismatch) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the model creator can delete it")
+		return
+	} else if err != nil {
+		slog.Error("delete model failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete model")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func modelFiltersFromParams(entryID uuid.UUID, params ListModelsParams) (db.ModelFilters, error) {

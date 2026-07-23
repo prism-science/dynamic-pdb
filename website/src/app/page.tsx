@@ -1,5 +1,5 @@
 import { ApiRequestError, listEntries } from "@/lib/api/entries";
-import { getAuthSession } from "@/lib/auth/session";
+import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
 import EntriesBrowser from "./components/EntriesBrowser";
 
 import styles from "./page.module.css";
@@ -16,7 +16,10 @@ export default async function Home({ searchParams }: HomeProps) {
   const session = await getAuthSession();
   const resolvedSearchParams = (await searchParams) ?? {};
   const query = firstQueryValue(resolvedSearchParams.query)?.trim() ?? "";
-  const entries = await loadEntries(session?.token, query);
+  const [entries, currentUserId] = await Promise.all([
+    loadEntries(session?.token, query),
+    getCurrentUserId(),
+  ]);
 
   return (
     <main className={styles.page} aria-label="dynamic-pdb entries">
@@ -25,6 +28,7 @@ export default async function Home({ searchParams }: HomeProps) {
           entries={entries}
           canCreate={session != null}
           query={query}
+          currentUserId={currentUserId}
         />
       </section>
     </main>

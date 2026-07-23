@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
+	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -141,10 +143,15 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUplo
 	if err != nil {
 		return MultipartUploadGrant{}, fmt.Errorf("s3: build object key: %w", err)
 	}
+	objectURL, err := b.objectURL(key)
+	if err != nil {
+		return MultipartUploadGrant{}, fmt.Errorf("s3: build object url: %w", err)
+	}
 
 	created, err := b.client.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
-		Bucket: aws.String(b.config.Bucket),
-		Key:    aws.String(key),
+		Bucket:      aws.String(b.config.Bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(objectContentType(file.OriginalFilename)),
 	})
 	if err != nil {
 		return MultipartUploadGrant{}, fmt.Errorf("s3: create multipart upload: %w", err)
@@ -177,7 +184,7 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUplo
 	return MultipartUploadGrant{
 		Key:       key,
 		UploadID:  uploadID,
-		ObjectURL: b.objectURL(key),
+		ObjectURL: objectURL,
 		PartSize:  partSize,
 		Parts:     parts,
 	}, nil
@@ -220,8 +227,35 @@ func (b *RemoteBucket) AbortMultipartUpload(ctx context.Context, key, uploadID s
 	return nil
 }
 
-func (b *RemoteBucket) objectURL(key string) string {
-	return "s3://" + b.config.Bucket + "/" + strings.TrimPrefix(key, "/")
+func objectContentType(filename string) string {
+	if contentType := mime.TypeByExtension(path.Ext(filename)); contentType != "" {
+		return contentType
+	}
+	return "application/octet-stream"
+}
+
+func (b *RemoteBucket) objectURL(key string) (string, error) {
+	trimmedKey := strings.TrimPrefix(key, "/")
+	if endpoint := strings.TrimSpace(b.config.Endpoint); endpoint != "" {
+		parsed, err := url.Parse(endpoint)
+		if err != nil {
+			return "", fmt.Errorf("parse endpoint: %w", err)
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			return "", errors.New("endpoint must include scheme and host")
+		}
+		parsed.Path = path.Join(parsed.Path, b.config.Bucket, trimmedKey)
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String(), nil
+	}
+
+	parsed := url.URL{
+		Scheme: "https",
+		Host:   fmt.Sprintf("%s.s3.%s.amazonaws.com", b.config.Bucket, b.config.Region),
+		Path:   "/" + trimmedKey,
+	}
+	return parsed.String(), nil
 }
 
 func requiredKeySegment(name, value string) (string, error) {

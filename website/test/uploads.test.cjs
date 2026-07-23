@@ -10,7 +10,7 @@ test("should upload all granted parts and complete upload", async () => {
     grant: {
       key: "entry/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "s3://dynamic-pdb/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
       part_size: 3,
       parts: [
         { part_number: 1, url: "https://storage.example/part-1" },
@@ -31,7 +31,7 @@ test("should upload all granted parts and complete upload", async () => {
       (fraction) => progress.push(fraction),
     );
 
-    assert.equal(objectURL, "s3://dynamic-pdb/entry/entities/entity/data.bin");
+    assert.equal(objectURL, "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin");
     assert.deepEqual(FakeXMLHttpRequest.instances.map((xhr) => xhr.url), [
       "https://storage.example/part-1",
       "https://storage.example/part-2",
@@ -51,7 +51,7 @@ test("should abort upload and keep original error when object storage omits etag
     grant: {
       key: "entry/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "s3://dynamic-pdb/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
       part_size: 6,
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
@@ -81,7 +81,7 @@ test("should abort upload when complete endpoint fails", async () => {
     grant: {
       key: "entry/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "s3://dynamic-pdb/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
       part_size: 6,
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
@@ -113,7 +113,7 @@ test("should reject invalid upload grant without aborting", async () => {
     grant: {
       key: "",
       upload_id: "upload-id",
-      object_url: "s3://dynamic-pdb/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
       part_size: 0,
       parts: [],
     },

@@ -13,7 +13,10 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-var ErrModelNotFound = errors.New("db: model not found")
+var (
+	ErrModelNotFound          = errors.New("db: model not found")
+	ErrModelOwnershipMismatch = errors.New("db: model ownership mismatch")
+)
 
 type ModelsRepository struct {
 	db       *sqlx.DB
@@ -75,6 +78,85 @@ func (r *ModelsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*mod
 	}
 
 	return modelFromRow(&row), nil
+}
+
+func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid.UUID) error {
+	query := `with target_model as (
+			    select id, entry_id, created_by
+			    from models
+			    where entry_id = $1 and id = $2
+			  ),
+			  authorized_model as (
+			    select id, entry_id
+			    from target_model
+			    where created_by = $3
+			  ),
+			  target_entities as (
+			    select entities.id
+			    from entities
+			    join authorized_model on authorized_model.id = entities.model_id
+			     and authorized_model.entry_id = entities.entry_id
+			  ),
+			  deleted_relations as (
+			    delete from entity_relations
+			    where source_entity_id in (select id from target_entities)
+			       or target_entity_id in (select id from target_entities)
+			    returning id
+			  ),
+			  deleted_search as (
+			    delete from entry_search_index
+			    using authorized_model
+			    where entry_search_index.entry_id = authorized_model.entry_id
+			      and (
+			        (entry_search_index.model_type = $4 and entry_search_index.model_id = authorized_model.id::text)
+			        or (
+			          entry_search_index.model_type = $5
+			          and entry_search_index.model_id in (select id::text from target_entities)
+			        )
+			      )
+			      and (select count(*) from deleted_relations) >= 0
+			    returning entry_search_index.entry_id
+			  ),
+			  deleted_entities as (
+			    delete from entities
+			    using authorized_model
+			    where entities.entry_id = authorized_model.entry_id
+			      and entities.model_id = authorized_model.id
+			      and (select count(*) from deleted_search) >= 0
+			    returning entities.id
+			  ),
+			  deleted_model as (
+			    delete from models
+			    using authorized_model
+			    where models.entry_id = authorized_model.entry_id
+			      and models.id = authorized_model.id
+			      and (select count(*) from deleted_entities) >= 0
+			    returning models.id
+			  )
+			  select
+			    (select count(*) from target_model) as matched_count,
+			    (select count(*) from deleted_model) as deleted_count`
+
+	var result deleteResult
+	if err := r.queriers.Querier(ctx, r.db).GetContext(
+		ctx,
+		&result,
+		query,
+		entryID,
+		id,
+		ownerID,
+		entrySearchModelTypeModel,
+		entrySearchModelTypeEntity,
+	); err != nil {
+		return fmt.Errorf("failed to delete model graph: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return ErrModelNotFound
+	}
+	if result.DeletedCount == 0 {
+		return ErrModelOwnershipMismatch
+	}
+	return nil
 }
 
 func (r *ModelsRepository) List(ctx context.Context, filters ModelFilters) ([]models.Model, error) {

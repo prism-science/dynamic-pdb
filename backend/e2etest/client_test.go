@@ -46,6 +46,19 @@ func getWithToken(t *testing.T, path string, token string) *http.Response {
 	return resp
 }
 
+func deleteWithToken(t *testing.T, path string, token string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, testServer.URL+path, nil)
+	require.NoError(t, err)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
 func ExchangeGithubToken(t *testing.T, accessToken string) *http.Response {
 	t.Helper()
 	return postJSON(t, "/v1/auth/github/exchange", map[string]string{"access_token": accessToken})

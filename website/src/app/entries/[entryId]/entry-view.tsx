@@ -307,14 +307,16 @@ const modelMetricTiles: MetricSpec[] = [
 export function ModelCard({
   entity,
   provenance,
+  thumbnailImageURL,
 }: {
   entity: Entity;
   provenance: Provenance;
+  thumbnailImageURL?: string | null;
 }) {
   const fileURL = getEntityFileURL(entity);
   const payload = getFilePayload(entity);
   const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
-  const previewURL = getModelPreviewURL(entity, meta, fileURL);
+  const previewURL = thumbnailImageURL?.trim() || getModelPreviewURL(meta);
   const structureKind = detectStructureKind(fileURL ?? undefined);
 
   const merged: MetricsPayload = {};
@@ -598,43 +600,13 @@ function getEntityAuthorFacts(entity: Entity): { label: string; value: string }[
   return facts;
 }
 
-function getModelPreviewURL(
-  entity: Entity,
-  meta: Record<string, unknown>,
-  fileURL: string | null,
-): string | null {
+function getModelPreviewURL(meta: Record<string, unknown>): string | null {
   const explicit =
     typeof meta.preview_image_url === "string"
       ? meta.preview_image_url.trim()
       : "";
   if (explicit) {
     return explicit;
-  }
-
-  const pdbID = getPdbID(meta, fileURL, entity.name);
-  if (!pdbID) {
-    return null;
-  }
-
-  const lower = pdbID.toLowerCase();
-  const shard = lower.slice(1, 3);
-  return `https://cdn.rcsb.org/images/structures/${shard}/${lower}/${lower}_model-1.jpeg`;
-}
-
-function getPdbID(
-  meta: Record<string, unknown>,
-  fileURL: string | null,
-  name: string,
-): string | null {
-  const candidates = [meta.pdb_id, fileURL, name];
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") {
-      continue;
-    }
-    const match = candidate.match(/\b[0-9][A-Za-z0-9]{3}\b/);
-    if (match) {
-      return match[0].toUpperCase();
-    }
   }
   return null;
 }

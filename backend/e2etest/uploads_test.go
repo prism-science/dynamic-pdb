@@ -45,7 +45,7 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grant))
 	s.Equal(entryID.String()+"/entities/"+entityID.String()+"/model.cif", grant.Key)
 	s.Equal("upload-id", grant.UploadId)
-	s.Equal("s3://dynamic-pdb/"+grant.Key, grant.ObjectUrl)
+	s.Equal(s3Stub.URL()+"/dynamic-pdb/"+grant.Key, grant.ObjectUrl)
 	s.Equal(int64(64*1024*1024), grant.PartSize)
 	s.Len(grant.Parts, 2)
 	s.Equal(1, grant.Parts[0].PartNumber)

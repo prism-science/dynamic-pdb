@@ -45,6 +45,35 @@ export async function getAuthSession(): Promise<AuthSession | null> {
   };
 }
 
+/**
+ * Read the current user's id (the JWT `sub` claim) from the session token.
+ *
+ * The backend verifies the token signature on every request; here we only need
+ * the subject to decide which cards belong to the signed-in user, so we decode
+ * the payload without re-verifying.
+ */
+export async function getCurrentUserId(): Promise<string | null> {
+  const session = await getAuthSession();
+  if (!session) {
+    return null;
+  }
+  return userIdFromToken(session.token);
+}
+
+export function userIdFromToken(token: string): string | null {
+  const payload = token.split(".")[1];
+  if (!payload) {
+    return null;
+  }
+  try {
+    const json = Buffer.from(payload, "base64url").toString("utf8");
+    const claims = JSON.parse(json) as { sub?: unknown };
+    return typeof claims.sub === "string" ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getGithubClientId(): string {
   return process.env.GITHUB_CLIENT_ID ?? defaultGithubClientId;
 }
