@@ -46,10 +46,8 @@ spec:
                 tag: "sha-{{ .sha }}"
       destination:
         server: https://kubernetes.default.svc
-        namespace: ext
+        namespace: dynamicpdb
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
-        syncOptions:
-          - CreateNamespace=true

@@ -4,19 +4,20 @@ This chart deploys the Dynamic PDB backend, website, and Flyway migrations.
 
 ## Namespace and secrets
 
-Create the runtime secrets in the Kubernetes namespace targeted by the ArgoCD
+This chart deploys into the `dynamicpdb` Kubernetes namespace. The namespace is
+owned by `astera-k3s`; apply the infra change before syncing the ArgoCD
 ApplicationSet.
 
 Required secrets:
 
-- `dynamic-pdb`: created by `astera-k3s`, with `host`, `port`, `database`, `username`, `password`, and `url`.
-- `dynamic-pdb-s3-data`: created by `astera-k3s`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_BUCKET`.
-- `dynamic-pdb-backend`: create manually or from infra, with `jwt-secret` and `github-client-secret`.
+- `dynamic-pdb`: created by `astera-k3s` in `dynamicpdb`, with `host`, `port`, `database`, `username`, `password`, and `url`.
+- `dynamic-pdb-s3-data`: created by `astera-k3s` in `dynamicpdb`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_BUCKET`.
+- `dynamic-pdb-backend`: create manually in `dynamicpdb`, with `jwt-secret` and `github-client-secret`.
 
 Example app secret:
 
 ```sh
-kubectl -n <namespace> create secret generic dynamic-pdb-backend \
+kubectl -n dynamicpdb create secret generic dynamic-pdb-backend \
   --from-literal=jwt-secret="$(openssl rand -hex 32)" \
   --from-literal=github-client-secret="<github-oauth-client-secret>"
 ```
