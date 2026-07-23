@@ -914,6 +914,19 @@
   color: var(--text-muted);
 }
 
+.modelTableActionHead {
+  width: 48px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.modelTableActionCell {
+  width: 48px;
+  padding: 10px 14px 10px 4px;
+  text-align: right;
+  vertical-align: middle;
+}
+
 /* --------------------------------------------------------------------- */
 /* Model cards with thumbnails                                      */
 /* --------------------------------------------------------------------- */

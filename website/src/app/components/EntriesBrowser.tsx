@@ -1,7 +1,9 @@
 import Link from "next/link";
 
 import type { Entry } from "@/lib/api/entries";
+import { deleteEntryAction } from "@/app/actions/delete";
 
+import DeleteButton from "./DeleteButton";
 import EntriesSearchForm from "./EntriesSearchForm";
 import styles from "./EntriesBrowser.module.css";
 
@@ -20,10 +22,12 @@ export default function EntriesBrowser({
   entries,
   canCreate = false,
   query = "",
+  currentUserId = null,
 }: {
   entries: Entry[];
   canCreate?: boolean;
   query?: string;
+  currentUserId?: string | null;
 }) {
   return (
     <div className={styles.wrap}>
@@ -45,8 +49,14 @@ export default function EntriesBrowser({
         <ul className={styles.grid}>
           {entries.map((entry) => {
             const updated = formatDate(entry.updated_at);
+            const canDelete =
+              currentUserId != null && entry.created_by === currentUserId;
             return (
-              <li key={entry.id}>
+              <li
+                key={entry.id}
+                className={styles.cardItem}
+                data-has-delete={canDelete ? "true" : undefined}
+              >
                 <Link className={styles.card} href={`/entries/${entry.id}`}>
                   <span
                     className={styles.thumb}
@@ -73,6 +83,15 @@ export default function EntriesBrowser({
                     ) : null}
                   </span>
                 </Link>
+                {canDelete ? (
+                  <div className={styles.cardDelete}>
+                    <DeleteButton
+                      action={deleteEntryAction.bind(null, entry.id)}
+                      itemName={entry.name}
+                      itemKind="entry"
+                    />
+                  </div>
+                ) : null}
               </li>
             );
           })}

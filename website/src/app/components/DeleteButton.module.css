@@ -1,0 +1,51 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.button:hover {
+  color: var(--danger-fg);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.button:focus-visible {
+  outline: none;
+  color: var(--danger-fg);
+  border-color: var(--danger-border);
+  box-shadow: 0 0 0 3px var(--danger-bg);
+}
+
+.button:disabled {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.button[data-error="true"] {
+  color: var(--danger-fg);
+  border-color: var(--danger-border);
+}
+
+.spinner {
+  animation: deleteSpin 700ms linear infinite;
+}
+
+@keyframes deleteSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

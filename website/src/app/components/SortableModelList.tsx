@@ -10,7 +10,9 @@ import type {
   MetricsPayload,
   Model,
 } from "@/lib/api/entries";
+import { deleteModelAction } from "@/app/actions/delete";
 
+import DeleteButton from "./DeleteButton";
 import styles from "@/app/entries/[entryId]/entry-page.module.css";
 
 type MetricKey = keyof MetricsPayload;
@@ -116,13 +118,19 @@ export default function SortableModelList({
   models,
   entities,
   relations,
+  currentUserId = null,
 }: {
   entryId: string;
   models: Model[];
   entities: Entity[];
   relations: EntityRelation[];
+  currentUserId?: string | null;
 }) {
   const router = useRouter();
+
+  const showActions =
+    currentUserId != null &&
+    models.some((model) => model.created_by === currentUserId);
 
   const metricsByModelId = useMemo(
     () => buildModelMetrics(entities, relations),
@@ -242,6 +250,13 @@ export default function SortableModelList({
                 </th>
               );
             })}
+            {showActions ? (
+              <th
+                scope="col"
+                className={styles.modelTableActionHead}
+                aria-label="Actions"
+              />
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -329,6 +344,18 @@ export default function SortableModelList({
                     </td>
                   );
                 })}
+                {showActions ? (
+                  <td className={styles.modelTableActionCell}>
+                    {currentUserId != null &&
+                    model.created_by === currentUserId ? (
+                      <DeleteButton
+                        action={() => deleteModelAction(entryId, model.id)}
+                        itemName={model.name}
+                        itemKind="model"
+                      />
+                    ) : null}
+                  </td>
+                ) : null}
               </tr>
             );
           })}
