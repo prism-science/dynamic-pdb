@@ -5,9 +5,12 @@ const test = require("node:test");
 
 const {
   authorsTextToList,
+  buildCreateModelInput,
+  canAddModelFiles,
   detectType,
   draftHasContent,
   modelFromDraft,
+  modelValidationMessage,
   modelToDraft,
   fileEntityType,
   fileFromDraft,
@@ -20,9 +23,11 @@ const {
   parseFasta,
   parseFile,
   parseUrlFile,
+  programValidationMessage,
   sanitizeNumeric,
   toEntity,
   toMetricEntity,
+  toProgramEntity,
   uploadStatusText,
   uploadsReady,
 } = require("../src/app/components/NewEntryForm.tsx");
@@ -78,6 +83,108 @@ test("should convert files and metrics into create entry entities", () => {
     name: "Metrics",
     payload: { r_free: 0.231, cc: 0.98 },
   });
+});
+
+test("should build explicit graph relations for model metrics and program", () => {
+  const modelFile = parsedFile({
+    id: "model-entity-1",
+    type: "mmcif",
+    level: "L1",
+    url: "s3://dynamic-pdb/model.cif",
+  });
+  const densityFile = parsedFile({
+    id: "density-1",
+    name: "density.ccp4",
+    type: "ccp4",
+    level: "L1",
+    url: "s3://dynamic-pdb/density.ccp4",
+  });
+  const modelDraft = modelDraftFixture({
+    id: "model-1",
+    name: " Refined model ",
+    description: " Description ",
+    files: [modelFile, densityFile],
+    metrics: [{ id: "metrics-1", values: { r_free: "0.231", cc: "0.98" } }],
+    program: {
+      id: "program-1",
+      name: " phenix.refine ",
+      version: " 1.21.2 ",
+      description: " Refinement run ",
+    },
+  });
+
+  const input = buildCreateModelInput(modelDraft);
+
+  assert.equal(input.name, "Refined model");
+  assert.equal(input.description, "Description");
+  assert.deepEqual(input.entities.map((entity) => [entity.id, entity.type, entity.level]), [
+    ["model-entity-1", "model", "L2"],
+    ["density-1", "data", "L1"],
+    ["metrics-1", "metrics", "L3"],
+    ["program-1", "program", null],
+  ]);
+  assert.deepEqual(input.relations, [
+    {
+      source_entity_id: "metrics-1",
+      target_entity_id: "model-entity-1",
+      relation_type: "metrics_for",
+    },
+    {
+      source_entity_id: "density-1",
+      target_entity_id: "program-1",
+      relation_type: "input_to",
+    },
+    {
+      source_entity_id: "model-entity-1",
+      target_entity_id: "program-1",
+      relation_type: "output_of",
+    },
+  ]);
+});
+
+test("should validate the single model entity and complete program contract", () => {
+  const modelFile = parsedFile({ id: "model-1", type: "mmcif" });
+  const otherModelFile = parsedFile({ id: "model-2", type: "pdb" });
+  const dataFile = parsedFile({ id: "data-1", type: "ccp4" });
+
+  assert.equal(canAddModelFiles([modelFile], [dataFile]), true);
+  assert.equal(canAddModelFiles([modelFile], [otherModelFile]), false);
+  assert.equal(
+    modelValidationMessage(modelDraftFixture({ files: [] })),
+    "Add exactly one PDB/mmCIF model file.",
+  );
+  assert.equal(
+    modelValidationMessage(modelDraftFixture({ files: [modelFile, otherModelFile] })),
+    "Keep only one PDB/mmCIF model file.",
+  );
+  assert.equal(
+    programValidationMessage({
+      id: "program-1",
+      name: "phenix.refine",
+      version: "",
+      description: "Refinement",
+    }),
+    "Fill program name, version, and description or remove the program.",
+  );
+  assert.deepEqual(
+    toProgramEntity({
+      id: "program-1",
+      name: " phenix.refine ",
+      version: " 1.21.2 ",
+      description: " Refinement ",
+    }),
+    {
+      id: "program-1",
+      type: "program",
+      level: null,
+      name: "phenix.refine",
+      payload: {
+        name: "phenix.refine",
+        version: "1.21.2",
+        description: "Refinement",
+      },
+    },
+  );
 });
 
 test("should normalize author and numeric inputs", () => {
@@ -140,6 +247,7 @@ test("should decide upload readiness from file and thumbnail states", () => {
     thumbUploadError: null,
     files: [uploaded],
     metrics: [],
+    program: null,
   };
 
   assert.equal(isPersistable(uploaded), true);
@@ -169,6 +277,12 @@ test("should serialize and restore persisted draft files safely", () => {
     thumbUploadError: null,
     files: [file],
     metrics: [{ id: "metrics-1", values: { cc: "0.9" } }],
+    program: {
+      id: "program-1",
+      name: "phenix.refine",
+      version: "1.21.2",
+      description: "Refinement",
+    },
   };
 
   const storedFile = fileToDraft(file);
@@ -184,6 +298,7 @@ test("should serialize and restore persisted draft files safely", () => {
   assert.equal(storedModel.thumbPreview, "https://example.com/thumb.png");
   assert.equal(restoredModel.thumbUploadStatus, "uploaded");
   assert.deepEqual(restoredModel.metrics, model.metrics);
+  assert.deepEqual(restoredModel.program, model.program);
   assert.equal(
     draftHasContent({
       version: 1,
@@ -233,6 +348,25 @@ function parsedFile(overrides = {}) {
     progress: 1,
     uploadStatus: "uploaded",
     uploadError: null,
+    ...overrides,
+  };
+}
+
+function modelDraftFixture(overrides = {}) {
+  return {
+    id: "model-1",
+    name: "Model",
+    description: "",
+    thumbFileId: "thumb-1",
+    thumbFile: null,
+    thumbPreview: null,
+    thumbUrl: null,
+    thumbProgress: 0,
+    thumbUploadStatus: "idle",
+    thumbUploadError: null,
+    files: [parsedFile({ id: "model-file-1", type: "mmcif" })],
+    metrics: [],
+    program: null,
     ...overrides,
   };
 }

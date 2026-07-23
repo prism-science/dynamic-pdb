@@ -10,7 +10,10 @@ import {
 } from "react";
 
 import type {
+  CreateEntityInput,
   CreateEntryInput,
+  CreateEntityRelationInput,
+  CreateModelInput,
   EntityLevel,
   FastaMetadata,
 } from "@/lib/api/entries";
@@ -50,6 +53,13 @@ export type MetricDraft = {
   values: Record<string, string>;
 };
 
+export type ProgramDraft = {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+};
+
 export type ModelDraft = {
   id: string;
   name: string;
@@ -63,6 +73,7 @@ export type ModelDraft = {
   thumbUploadError: string | null;
   files: ParsedFile[];
   metrics: MetricDraft[];
+  program: ProgramDraft | null;
 };
 
 const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];
@@ -221,6 +232,7 @@ export default function NewEntryForm() {
         thumbUploadError: null,
         files: [],
         metrics: [],
+        program: null,
       },
     ]);
   };
@@ -340,7 +352,10 @@ export default function NewEntryForm() {
 
   const canSubmit =
     name.trim().length > 0 &&
-    models.every((modelDraft) => modelDraft.name.trim().length > 0) &&
+    models.every(
+      (modelDraft) =>
+        modelDraft.name.trim().length > 0 && !modelValidationMessage(modelDraft),
+    ) &&
     !hasPendingUploads &&
     !hasFailedUploads &&
     !submitting;
@@ -366,13 +381,7 @@ export default function NewEntryForm() {
         description: description.trim() || null,
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),
-        models: models.map((modelDraft) => ({
-          id: modelDraft.id,
-          name: modelDraft.name.trim(),
-          description: modelDraft.description.trim() || null,
-          thumbnail_image_url: modelDraft.thumbUrl,
-          entities: [...modelDraft.files.map(toEntity), ...modelDraft.metrics.map(toMetricEntity)],
-        })),
+        models: models.map(buildCreateModelInput),
       };
 
       // The server action redirects on success, so clear the saved draft up
@@ -493,6 +502,12 @@ export default function NewEntryForm() {
           <div className={styles.modelDraftList}>
             {models.map((modelDraft, index) => (
               <div key={modelDraft.id} className={styles.modelDraftCard}>
+                {(() => {
+                  const validationMessage = modelValidationMessage(modelDraft);
+                  return validationMessage ? (
+                    <p className={styles.inlineError}>{validationMessage}</p>
+                  ) : null;
+                })()}
                 <div className={styles.modelDraftCardHead}>
                   <span className={styles.modelDraftIndex}>#{index + 1}</span>
                   <button
@@ -575,10 +590,16 @@ export default function NewEntryForm() {
                 <span className={styles.subLabel}>Data</span>
                 <FilesEditor
                   files={modelDraft.files}
+                  lockModelLevel
                   onAdd={async (list) => {
                     const parsed = await Promise.all(
-                      list.map((file) => parseFile(file, "L2")),
+                      list.map((file) => parseModelFile(file)),
                     );
+                    if (!canAddModelFiles(modelDraft.files, parsed)) {
+                      setError("Each model must contain exactly one PDB/mmCIF model file.");
+                      return;
+                    }
+                    setError(null);
                     setModels((prev) =>
                       prev.map((current) =>
                         current.id === modelDraft.id
@@ -596,10 +617,15 @@ export default function NewEntryForm() {
                     });
                   }}
                   onAddUrl={async (rawUrl) => {
-                    const parsed = await parseUrlFile(rawUrl, "L2");
+                    const parsed = await parseModelUrlFile(rawUrl);
                     if (!parsed) {
                       return;
                     }
+                    if (!canAddModelFiles(modelDraft.files, [parsed])) {
+                      setError("Each model must contain exactly one PDB/mmCIF model file.");
+                      return;
+                    }
+                    setError(null);
                     setModels((prev) =>
                       prev.map((current) =>
                         current.id === modelDraft.id
@@ -616,7 +642,7 @@ export default function NewEntryForm() {
                   onLevel={(id, level) =>
                     updateModel(modelDraft.id, {
                       files: modelDraft.files.map((f) =>
-                        f.id === id ? { ...f, level } : f,
+                        f.id === id ? setFileLevel(f, level) : f,
                       ),
                     })
                   }
@@ -634,6 +660,14 @@ export default function NewEntryForm() {
                   metrics={modelDraft.metrics}
                   setMetrics={(next) =>
                     updateModel(modelDraft.id, { metrics: next })
+                  }
+                />
+
+                <span className={styles.subLabel}>Program</span>
+                <ProgramEditor
+                  program={modelDraft.program}
+                  setProgram={(next) =>
+                    updateModel(modelDraft.id, { program: next })
                   }
                 />
               </div>
@@ -728,6 +762,7 @@ function FilesEditor({
   onLevel,
   onPatch,
   lockLevel = false,
+  lockModelLevel = false,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -736,6 +771,7 @@ function FilesEditor({
   onLevel: (id: string, level: EntityLevel) => void;
   onPatch: (id: string, patch: Partial<ParsedFile>) => void;
   lockLevel?: boolean;
+  lockModelLevel?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -823,91 +859,42 @@ function FilesEditor({
         <ul className={styles.fileList}>
           {files.map((file) => (
             <li key={file.id} className={styles.fileItem}>
-              {file.uploadStatus === "uploading" ? (
-                <div className={styles.uploadingRow}>
-                  <span className={styles.fileType}>{file.type}</span>
-                  <div className={styles.uploadingMeta}>
-                    <span className={styles.fileName}>{file.name}</span>
-                    <ProgressBar value={file.progress} />
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.remove}
-                    onClick={() => onRemove(file.id)}
-                    aria-label={`Cancel ${file.name}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : file.uploadStatus === "failed" ? (
-                <div className={styles.fileRow}>
-                  <span className={styles.fileType} data-failed="true">
-                    {file.type}
-                  </span>
-                  <span className={styles.fileMeta}>
-                    <span className={styles.fileName}>{file.name}</span>
-                    <span
-                      className={styles.fileUploadStatus}
-                      data-state="failed"
-                    >
-                      {uploadStatusText(file.uploadStatus, file.uploadError)}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.remove}
-                    onClick={() => onRemove(file.id)}
-                    aria-label={`Remove ${file.name}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className={styles.fileRow}>
+              {(() => {
+                const modelLevelLocked = lockModelLevel && isModelFile(file);
+                const levelLocked = lockLevel || modelLevelLocked;
+                const lockedLevelTitle = modelLevelLocked
+                  ? "Model files are always level L2"
+                  : "Baseline data is always level L0";
+                return file.uploadStatus === "uploading" ? (
+                  <div className={styles.uploadingRow}>
                     <span className={styles.fileType}>{file.type}</span>
+                    <div className={styles.uploadingMeta}>
+                      <span className={styles.fileName}>{file.name}</span>
+                      <ProgressBar value={file.progress} />
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.remove}
+                      onClick={() => onRemove(file.id)}
+                      aria-label={`Cancel ${file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : file.uploadStatus === "failed" ? (
+                  <div className={styles.fileRow}>
+                    <span className={styles.fileType} data-failed="true">
+                      {file.type}
+                    </span>
                     <span className={styles.fileMeta}>
-                      <span className={styles.fileNameRow}>
-                        <span className={styles.fileName}>{file.name}</span>
-                        {file.source === "url" ? (
-                          <span className={styles.sourceBadge}>
-                            <LinkIcon />
-                            link
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className={styles.fileSub}>
-                        {fileEntityType(file)}
-                        {file.size > 0 ? ` · ${formatSize(file.size)}` : ""}
-                        {typeof file.metadata?.length === "number"
-                          ? ` · ${file.metadata.length} residues`
-                          : ""}
+                      <span className={styles.fileName}>{file.name}</span>
+                      <span
+                        className={styles.fileUploadStatus}
+                        data-state="failed"
+                      >
+                        {uploadStatusText(file.uploadStatus, file.uploadError)}
                       </span>
                     </span>
-                    {lockLevel ? (
-                      <span
-                        className={styles.levelBadge}
-                        data-level={file.level}
-                        title="Baseline data is always level L0"
-                      >
-                        {file.level}
-                      </span>
-                    ) : (
-                      <select
-                        className={styles.levelSelect}
-                        value={file.level}
-                        onChange={(event) =>
-                          onLevel(file.id, event.target.value as EntityLevel)
-                        }
-                        aria-label="Level"
-                      >
-                        {LEVELS.map((level) => (
-                          <option key={level} value={level}>
-                            {level}
-                          </option>
-                        ))}
-                      </select>
-                    )}
                     <button
                       type="button"
                       className={styles.remove}
@@ -917,49 +904,105 @@ function FilesEditor({
                       ×
                     </button>
                   </div>
+                ) : (
+                  <>
+                    <div className={styles.fileRow}>
+                      <span className={styles.fileType}>{file.type}</span>
+                      <span className={styles.fileMeta}>
+                        <span className={styles.fileNameRow}>
+                          <span className={styles.fileName}>{file.name}</span>
+                          {file.source === "url" ? (
+                            <span className={styles.sourceBadge}>
+                              <LinkIcon />
+                              link
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className={styles.fileSub}>
+                          {fileEntityType(file)}
+                          {file.size > 0 ? ` · ${formatSize(file.size)}` : ""}
+                          {typeof file.metadata?.length === "number"
+                            ? ` · ${file.metadata.length} residues`
+                            : ""}
+                        </span>
+                      </span>
+                      {levelLocked ? (
+                        <span
+                          className={styles.levelBadge}
+                          data-level={modelLevelLocked ? "L2" : file.level}
+                          title={lockedLevelTitle}
+                        >
+                          {modelLevelLocked ? "L2" : file.level}
+                        </span>
+                      ) : (
+                        <select
+                          className={styles.levelSelect}
+                          value={file.level}
+                          onChange={(event) =>
+                            onLevel(file.id, event.target.value as EntityLevel)
+                          }
+                          aria-label="Level"
+                        >
+                          {LEVELS.map((level) => (
+                            <option key={level} value={level}>
+                              {level}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.remove}
+                        onClick={() => onRemove(file.id)}
+                        aria-label={`Remove ${file.name}`}
+                      >
+                        ×
+                      </button>
+                    </div>
 
-                  <div className={styles.depositBlock}>
-                    <div className={styles.depositField}>
-                      <span className={styles.depositLabel}>Authors</span>
-                      <AuthorsInput
-                        value={file.authors}
-                        onChange={(next) =>
-                          onPatch(file.id, { authors: next })
-                        }
-                      />
+                    <div className={styles.depositBlock}>
+                      <div className={styles.depositField}>
+                        <span className={styles.depositLabel}>Authors</span>
+                        <AuthorsInput
+                          value={file.authors}
+                          onChange={(next) =>
+                            onPatch(file.id, { authors: next })
+                          }
+                        />
+                      </div>
+                      <div className={styles.depositField}>
+                        <span className={styles.depositLabel}>Affiliation</span>
+                        <input
+                          className={styles.input}
+                          value={file.affiliation}
+                          onChange={(event) =>
+                            onPatch(file.id, {
+                              affiliation: event.target.value,
+                            })
+                          }
+                          placeholder="e.g. Department of Chemistry, Boston University"
+                          autoComplete="organization"
+                        />
+                      </div>
                     </div>
-                    <div className={styles.depositField}>
-                      <span className={styles.depositLabel}>Affiliation</span>
-                      <input
-                        className={styles.input}
-                        value={file.affiliation}
-                        onChange={(event) =>
-                          onPatch(file.id, {
-                            affiliation: event.target.value,
-                          })
-                        }
-                        placeholder="e.g. Department of Chemistry, Boston University"
-                        autoComplete="organization"
-                      />
-                    </div>
-                  </div>
 
-                  {file.type === "image" && file.preview ? (
-                    <div className={styles.filePreview}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        className={styles.filePreviewImg}
-                        src={file.preview}
-                        alt=""
-                      />
-                    </div>
-                  ) : file.type === "fasta" && file.metadata ? (
-                    <div className={styles.filePreview}>
-                      <SequenceView metadata={file.metadata as FastaMetadata} />
-                    </div>
-                  ) : null}
-                </>
-              )}
+                    {file.type === "image" && file.preview ? (
+                      <div className={styles.filePreview}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          className={styles.filePreviewImg}
+                          src={file.preview}
+                          alt=""
+                        />
+                      </div>
+                    ) : file.type === "fasta" && file.metadata ? (
+                      <div className={styles.filePreview}>
+                        <SequenceView metadata={file.metadata as FastaMetadata} />
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -1105,6 +1148,87 @@ function MetricsEditor({
   );
 }
 
+function ProgramEditor({
+  program,
+  setProgram,
+}: {
+  program: ProgramDraft | null;
+  setProgram: (next: ProgramDraft | null) => void;
+}) {
+  const add = () =>
+    setProgram({
+      id: crypto.randomUUID(),
+      name: "",
+      version: "",
+      description: "",
+    });
+  const patch = (next: Partial<ProgramDraft>) => {
+    if (!program) {
+      return;
+    }
+    setProgram({ ...program, ...next });
+  };
+
+  return (
+    <div className={styles.filesEditor}>
+      {!program ? (
+        <button type="button" className={styles.fileDrop} onClick={add}>
+          <PlusIcon />
+          Add program
+        </button>
+      ) : (
+        <div className={styles.metricCard}>
+          <div className={styles.metricTop}>
+            <span className={styles.programTag}>Program</span>
+            <button
+              type="button"
+              className={styles.remove}
+              onClick={() => setProgram(null)}
+              aria-label="Remove program"
+            >
+              ×
+            </button>
+          </div>
+          <div className={styles.programGrid}>
+            <label className={styles.metricField}>
+              <span>Name</span>
+              <input
+                className={styles.input}
+                value={program.name}
+                onChange={(event) => patch({ name: event.target.value })}
+                placeholder="e.g. phenix.refine"
+                autoComplete="off"
+              />
+            </label>
+            <label className={styles.metricField}>
+              <span>Version</span>
+              <input
+                className={styles.input}
+                value={program.version}
+                onChange={(event) => patch({ version: event.target.value })}
+                placeholder="e.g. 1.21.2"
+                autoComplete="off"
+              />
+            </label>
+            <label className={styles.metricField}>
+              <span>Description</span>
+              <textarea
+                className={styles.textarea}
+                value={program.description}
+                onChange={(event) =>
+                  patch({ description: event.target.value })
+                }
+                placeholder="e.g. Reciprocal-space refinement against processed reflections"
+                rows={2}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function toEntity(file: ParsedFile) {
   const entityType = fileEntityType(file);
   const payload: Record<string, unknown> = {
@@ -1127,14 +1251,137 @@ export function toEntity(file: ParsedFile) {
   return {
     id: file.id,
     type: entityType,
-    level: file.level,
+    level: entityType === "model" ? "L2" : file.level,
     name: file.name,
     payload,
   };
 }
 
+export function buildCreateModelInput(modelDraft: ModelDraft): CreateModelInput {
+  const modelEntityFiles = modelDraft.files.filter(isModelFile);
+  if (modelEntityFiles.length !== 1) {
+    throw new Error("Each model must contain exactly one PDB/mmCIF model file.");
+  }
+  const programMessage = programValidationMessage(modelDraft.program);
+  if (programMessage) {
+    throw new Error(programMessage);
+  }
+
+  const fileEntities = modelDraft.files.map(toEntity);
+  const metricsEntities = modelDraft.metrics.map(toMetricEntity);
+  const programEntity = modelDraft.program
+    ? toProgramEntity(modelDraft.program)
+    : null;
+  const entities: CreateEntityInput[] = [
+    ...fileEntities,
+    ...metricsEntities,
+    ...(programEntity ? [programEntity] : []),
+  ];
+  const canonicalModelEntity = fileEntities.find(
+    (entity) => entity.id === modelEntityFiles[0].id,
+  );
+  if (!canonicalModelEntity) {
+    throw new Error("Each model must contain exactly one PDB/mmCIF model file.");
+  }
+
+  const relations: CreateEntityRelationInput[] = metricsEntities.map(
+    (metricEntity) => ({
+      source_entity_id: metricEntity.id,
+      target_entity_id: canonicalModelEntity.id,
+      relation_type: "metrics_for",
+    }),
+  );
+  if (programEntity) {
+    for (const entity of fileEntities) {
+      if (entity.type === "data") {
+        relations.push({
+          source_entity_id: entity.id,
+          target_entity_id: programEntity.id,
+          relation_type: "input_to",
+        });
+      }
+    }
+    relations.push({
+      source_entity_id: canonicalModelEntity.id,
+      target_entity_id: programEntity.id,
+      relation_type: "output_of",
+    });
+  }
+
+  return {
+    id: modelDraft.id,
+    name: modelDraft.name.trim(),
+    description: modelDraft.description.trim() || null,
+    thumbnail_image_url: modelDraft.thumbUrl,
+    entities,
+    relations,
+  };
+}
+
+export function modelValidationMessage(modelDraft: ModelDraft): string | null {
+  const modelEntityCount = modelDraft.files.filter(isModelFile).length;
+  if (modelEntityCount === 0) {
+    return "Add exactly one PDB/mmCIF model file.";
+  }
+  if (modelEntityCount > 1) {
+    return "Keep only one PDB/mmCIF model file.";
+  }
+  return programValidationMessage(modelDraft.program);
+}
+
+export function programValidationMessage(program: ProgramDraft | null): string | null {
+  if (!program) {
+    return null;
+  }
+  if (
+    !program.name.trim() ||
+    !program.version.trim() ||
+    !program.description.trim()
+  ) {
+    return "Fill program name, version, and description or remove the program.";
+  }
+  return null;
+}
+
+export function toProgramEntity(program: ProgramDraft): CreateEntityInput {
+  const name = program.name.trim();
+  return {
+    id: program.id,
+    type: "program",
+    level: null,
+    name,
+    payload: {
+      name,
+      version: program.version.trim(),
+      description: program.description.trim(),
+    },
+  };
+}
+
 export function fileEntityType(file: ParsedFile): "data" | "model" {
   return file.type === "pdb" || file.type === "mmcif" ? "model" : "data";
+}
+
+export function isModelFile(file: ParsedFile): boolean {
+  return fileEntityType(file) === "model";
+}
+
+export function canAddModelFiles(
+  currentFiles: ParsedFile[],
+  nextFiles: ParsedFile[],
+): boolean {
+  return (
+    currentFiles.filter(isModelFile).length +
+      nextFiles.filter(isModelFile).length <=
+    1
+  );
+}
+
+export function setFileLevel(file: ParsedFile, level: EntityLevel): ParsedFile {
+  return {
+    ...file,
+    level: isModelFile(file) ? "L2" : level,
+  };
 }
 
 export function authorsTextToList(text: string): string[] {
@@ -1205,6 +1452,10 @@ export async function parseFile(file: File, level: EntityLevel): Promise<ParsedF
   return base;
 }
 
+export async function parseModelFile(file: File): Promise<ParsedFile> {
+  return normalizeModelLevel(await parseFile(file, "L2"));
+}
+
 // Builds a file entry from an external URL. Nothing is uploaded — the link is
 // stored as-is; a small, known-format file is fetched client-side (best effort)
 // to build a preview. CORS failures are swallowed and just skip the preview.
@@ -1253,6 +1504,17 @@ export async function parseUrlFile(
     // Network/CORS error — keep the link without a preview.
   }
   return base;
+}
+
+export async function parseModelUrlFile(
+  rawUrl: string,
+): Promise<ParsedFile | null> {
+  const parsed = await parseUrlFile(rawUrl, "L2");
+  return parsed ? normalizeModelLevel(parsed) : null;
+}
+
+export function normalizeModelLevel(file: ParsedFile): ParsedFile {
+  return isModelFile(file) ? { ...file, level: "L2" } : file;
 }
 
 export function fileNameFromUrl(url: string): string {
@@ -1368,6 +1630,7 @@ export type StoredModel = {
   thumbPreview?: string;
   files: StoredFile[];
   metrics: MetricDraft[];
+  program?: ProgramDraft | null;
 };
 
 export type StoredDraft = {
@@ -1434,6 +1697,7 @@ export function modelToDraft(modelDraft: ModelDraft): StoredModel {
     thumbPreview: httpOnly(modelDraft.thumbPreview),
     files: modelDraft.files.filter(isPersistable).map(fileToDraft),
     metrics: modelDraft.metrics,
+    program: modelDraft.program,
   };
 }
 
@@ -1449,8 +1713,9 @@ export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
     thumbProgress: modelDraft.thumbUrl ? 1 : 0,
     thumbUploadStatus: modelDraft.thumbUrl ? "uploaded" : "idle",
     thumbUploadError: null,
-    files: modelDraft.files.map(fileFromDraft),
+    files: modelDraft.files.map(fileFromDraft).map(normalizeModelLevel),
     metrics: modelDraft.metrics,
+    program: modelDraft.program ?? null,
   };
 }
 
