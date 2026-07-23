@@ -93,7 +93,11 @@ export default async function ModelPage({
         />
 
         {model ? (
-          <ModelCard entity={model} provenance={provenance} />
+          <ModelCard
+            entity={model}
+            provenance={provenance}
+            thumbnailImageURL={data.model.thumbnail_image_url}
+          />
         ) : (
           <p className={styles.emptyState}>No model produced yet.</p>
         )}
