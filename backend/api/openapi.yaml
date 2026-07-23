@@ -667,9 +667,12 @@ components:
 
     Entry:
       type: object
-      required: [id, name, created_at, updated_at]
+      required: [id, created_by, name, created_at, updated_at]
       properties:
         id:
+          type: string
+          format: uuid
+        created_by:
           type: string
           format: uuid
         name:
@@ -723,12 +726,15 @@ components:
 
     Model:
       type: object
-      required: [id, entry_id, name, created_at, updated_at]
+      required: [id, entry_id, created_by, name, created_at, updated_at]
       properties:
         id:
           type: string
           format: uuid
         entry_id:
+          type: string
+          format: uuid
+        created_by:
           type: string
           format: uuid
         name:

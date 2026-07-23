@@ -35,9 +35,9 @@ func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *Entries
 }
 
 func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*models.Entry, error) {
-	query := `insert into entries(id, name, description, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, name, description, thumbnail_image_url, created_at, updated_at`
+	query := `insert into entries(id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
+			  values (:id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
+			  returning id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -48,6 +48,7 @@ func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*mo
 	var row entryRow
 	if err := stmt.GetContext(ctx, &row, map[string]any{
 		"id":                  entry.ID,
+		"created_by":          entry.CreatedBy,
 		"name":                entry.Name,
 		"description":         nullableString(entry.Description),
 		"thumbnail_image_url": nullableString(entry.ThumbnailImageURL),
@@ -61,7 +62,7 @@ func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*mo
 }
 
 func (r *EntriesRepository) Get(ctx context.Context, id uuid.UUID) (*models.Entry, error) {
-	query := `select id, name, description, thumbnail_image_url, created_at, updated_at
+	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from entries
 			  where id = $1`
 
@@ -118,7 +119,7 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	}
 
 	args := map[string]any{}
-	query := `select id, name, description, thumbnail_image_url, created_at, updated_at
+	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from entries`
 
 	if queryText := strings.TrimSpace(filters.Query); queryText != "" {
@@ -152,6 +153,7 @@ func entrySearchCondition() string {
 func entryFromRow(row *entryRow) *models.Entry {
 	return &models.Entry{
 		ID:                row.ID,
+		CreatedBy:         row.CreatedBy,
 		Name:              row.Name,
 		Description:       stringPtrFromNull(row.Description),
 		ThumbnailImageURL: stringPtrFromNull(row.ThumbnailImageURL),
@@ -176,6 +178,7 @@ func stringPtrFromNull(value sql.NullString) *string {
 
 type entryRow struct {
 	ID                uuid.UUID      `db:"id"`
+	CreatedBy         uuid.UUID      `db:"created_by"`
 	Name              string         `db:"name"`
 	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`

@@ -19,8 +19,10 @@ func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_c
 	now := time.Now().UTC()
 	description := "Entry description " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
+	createdBy := createDBTestUser(t)
 	entry := models.Entry{
 		ID:                uuid.New(),
+		CreatedBy:         createdBy,
 		Name:              "entry-" + uuid.NewString(),
 		Description:       &description,
 		ThumbnailImageURL: &thumbnailImageURL,
@@ -36,6 +38,7 @@ func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_c
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, entry.ID, got.ID)
+	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, entry.Name, got.Name)
 	require.NotNil(t, got.Description)
 	assert.Equal(t, description, *got.Description)

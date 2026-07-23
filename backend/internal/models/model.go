@@ -9,6 +9,7 @@ import (
 type Model struct {
 	ID                uuid.UUID
 	EntryID           uuid.UUID
+	CreatedBy         uuid.UUID
 	Name              string
 	Description       *string
 	ThumbnailImageURL *string

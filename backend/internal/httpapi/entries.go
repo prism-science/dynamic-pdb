@@ -52,8 +52,13 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entry name is required")
 		return
 	}
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
 
-	err := s.createEntryGraph(r.Context(), req, name)
+	err := s.createEntryGraph(r.Context(), req, name, user.ID)
 	if errors.Is(err, errInvalidCreateEntryRequest) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
@@ -105,6 +110,7 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 func entryResponseFromModel(entry domainmodels.Entry) Entry {
 	return Entry{
 		Id:                entry.ID,
+		CreatedBy:         entry.CreatedBy,
 		Name:              entry.Name,
 		Description:       entry.Description,
 		ThumbnailImageUrl: entry.ThumbnailImageURL,
@@ -113,7 +119,7 @@ func entryResponseFromModel(entry domainmodels.Entry) Entry {
 	}
 }
 
-func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string) error {
+func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string, createdBy uuid.UUID) error {
 	now := time.Now().UTC()
 	entryID := uuid.New()
 	if req.Id != nil {
@@ -126,6 +132,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 	return s.database.Do(ctx, func(ctx context.Context) error {
 		entry, err := s.database.Entries.Create(ctx, domainmodels.Entry{
 			ID:                entryID,
+			CreatedBy:         createdBy,
 			Name:              name,
 			Description:       req.Description,
 			ThumbnailImageURL: req.ThumbnailImageUrl,
@@ -158,7 +165,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 
 		if req.Models != nil {
 			for _, modelRequest := range *req.Models {
-				if err := s.createModelGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, modelRequest, now); err != nil {
+				if err := s.createModelGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, modelRequest, now, createdBy); err != nil {
 					return err
 				}
 			}
@@ -175,6 +182,7 @@ func (s *Server) createModelGraph(
 	createdEntityIDs map[uuid.UUID]struct{},
 	req CreateModelRequest,
 	now time.Time,
+	createdBy uuid.UUID,
 ) error {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -192,6 +200,7 @@ func (s *Server) createModelGraph(
 	model, err := s.database.Models.Create(ctx, domainmodels.Model{
 		ID:                modelID,
 		EntryID:           entry.ID,
+		CreatedBy:         createdBy,
 		Name:              name,
 		Description:       req.Description,
 		ThumbnailImageURL: req.ThumbnailImageUrl,
@@ -494,6 +503,7 @@ func modelResponseFromModel(model domainmodels.Model) Model {
 	return Model{
 		Id:                model.ID,
 		EntryId:           model.EntryID,
+		CreatedBy:         model.CreatedBy,
 		Name:              model.Name,
 		Description:       model.Description,
 		ThumbnailImageUrl: model.ThumbnailImageURL,

@@ -34,9 +34,9 @@ func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRe
 }
 
 func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*models.Model, error) {
-	query := `insert into models(id, entry_id, name, description, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :entry_id, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, entry_id, name, description, thumbnail_image_url, created_at, updated_at`
+	query := `insert into models(id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
+			  values (:id, :entry_id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
+			  returning id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -48,6 +48,7 @@ func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*mod
 	if err := stmt.GetContext(ctx, &row, map[string]any{
 		"id":                  model.ID,
 		"entry_id":            model.EntryID,
+		"created_by":          model.CreatedBy,
 		"name":                model.Name,
 		"description":         nullableString(model.Description),
 		"thumbnail_image_url": nullableString(model.ThumbnailImageURL),
@@ -61,7 +62,7 @@ func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*mod
 }
 
 func (r *ModelsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*models.Model, error) {
-	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
+	query := `select id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from models
 			  where entry_id = $1 and id = $2`
 
@@ -124,7 +125,7 @@ func modelListQuery(filters ModelFilters) (string, map[string]any, error) {
 		args["entry_id"] = *filters.EntryID
 	}
 
-	query := `select id, entry_id, name, description, thumbnail_image_url, created_at, updated_at
+	query := `select id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from models`
 	if len(conditions) > 0 {
 		query += "\nwhere " + conditions[0]
@@ -147,6 +148,7 @@ func modelFromRow(row *modelRow) *models.Model {
 	return &models.Model{
 		ID:                row.ID,
 		EntryID:           row.EntryID,
+		CreatedBy:         row.CreatedBy,
 		Name:              row.Name,
 		Description:       stringPtrFromNull(row.Description),
 		ThumbnailImageURL: stringPtrFromNull(row.ThumbnailImageURL),
@@ -158,6 +160,7 @@ func modelFromRow(row *modelRow) *models.Model {
 type modelRow struct {
 	ID                uuid.UUID      `db:"id"`
 	EntryID           uuid.UUID      `db:"entry_id"`
+	CreatedBy         uuid.UUID      `db:"created_by"`
 	Name              string         `db:"name"`
 	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`

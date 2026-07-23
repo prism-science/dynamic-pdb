@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
 )
@@ -34,6 +35,8 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
 
 	tokenResponse := issueTokenForTest(s.T(), "gh-token")
+	creatorID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(tokenResponse.AccessToken)
+	s.Require().NoError(err)
 	description := "Created from UI"
 	authors := []string{"Fermi, G.", "Perutz, M.F."}
 	affiliation := "MRC Laboratory of Molecular Biology, Cambridge"
@@ -142,6 +145,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	entry := entryByName(entriesBody.Items, name)
 	s.Require().NotNil(entry)
 	s.NotEqual(uuid.Nil, entry.Id)
+	s.Equal(creatorID, entry.CreatedBy)
 	s.Require().NotNil(entry.Description)
 	s.Equal(description, *entry.Description)
 	s.Require().NotNil(entry.ThumbnailImageUrl)
@@ -156,6 +160,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NoError(json.NewDecoder(modelsResp.Body).Decode(&modelsBody))
 	s.Len(modelsBody.Items, 1)
 	s.Equal("X-ray refinement", modelsBody.Items[0].Name)
+	s.Equal(creatorID, modelsBody.Items[0].CreatedBy)
 	s.Require().NotNil(modelsBody.Items[0].Description)
 	s.Equal("Refinement against crystallographic density", *modelsBody.Items[0].Description)
 

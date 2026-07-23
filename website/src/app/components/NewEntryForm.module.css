@@ -525,10 +525,34 @@
   font-weight: 700;
 }
 
+.programTag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
+}
+
+.programGrid {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 0.5fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.programDescription {
+  grid-column: 1 / -1;
 }
 
 .metricField {
@@ -645,6 +669,13 @@
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
+}
+
+.inlineError {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .error {
@@ -833,6 +864,10 @@
   }
 
   .depositBlock {
+    grid-template-columns: 1fr;
+  }
+
+  .programGrid {
     grid-template-columns: 1fr;
   }
 }

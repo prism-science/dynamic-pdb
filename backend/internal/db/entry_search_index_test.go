@@ -23,9 +23,11 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	modelToken := "modeltoken" + token
 	firstEntityToken := "firstentitytoken" + token
 	secondEntityToken := "secondentitytoken" + token
+	createdBy := createDBTestUser(t)
 
 	entry, err := testDB.Entries.Create(ctx, models.Entry{
 		ID:        uuid.New(),
+		CreatedBy: createdBy,
 		Name:      "entry " + entryToken,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -35,6 +37,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	model, err := testDB.Models.Create(ctx, models.Model{
 		ID:        uuid.New(),
 		EntryID:   entry.ID,
+		CreatedBy: createdBy,
 		Name:      "model " + modelToken,
 		CreatedAt: now,
 		UpdatedAt: now,

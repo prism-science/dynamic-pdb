@@ -704,6 +704,217 @@
 }
 
 /* --------------------------------------------------------------------- */
+/* Sortable model table                                                  */
+/* --------------------------------------------------------------------- */
+
+.modelTableWrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.modelTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.modelTableModelHead,
+.modelTableMetricHead {
+  padding: 0;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.modelTableModelHead {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+.modelTableMetricHead {
+  text-align: right;
+}
+
+.modelTableMetricHead[data-active="true"] {
+  background: var(--accent-soft);
+}
+
+.modelTableSortButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: color 120ms ease;
+}
+
+.modelTableSortButton:hover {
+  color: var(--accent-hover);
+}
+
+.modelTableMetricHead[data-active="true"] .modelTableSortButton {
+  color: var(--accent-hover);
+}
+
+.modelTableSortButton:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.modelTableArrow {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.modelTableMetricHead:not([data-active="true"]) .modelTableArrow {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.modelTableRow {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 120ms ease;
+}
+
+.modelTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.modelTableRow:hover {
+  background: var(--surface-muted);
+}
+
+.modelTableRow:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.modelTableModelCell {
+  padding: 10px 14px;
+  vertical-align: middle;
+}
+
+.modelTableModelInner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modelTableThumb {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.modelTableThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modelTableThumb[data-empty="true"] {
+  border: 1px dashed var(--border-strong);
+}
+
+.modelTableNameBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.modelTableName {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.modelTableName:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.modelTableName:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.modelTableDate {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.modelTableMetricCell {
+  padding: 10px 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.modelTableMetricCell[data-active="true"] {
+  background: var(--accent-soft);
+}
+
+.modelTableMetricCell[data-status="good"] {
+  color: var(--success-fg);
+}
+
+.modelTableMetricCell[data-status="warn"] {
+  color: var(--warning-fg);
+}
+
+.modelTableMetricCell[data-status="bad"] {
+  color: var(--danger-fg);
+}
+
+.modelTableMetricValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.modelTableBestDot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.modelTableEmpty {
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------- */
 /* Model cards with thumbnails                                      */
 /* --------------------------------------------------------------------- */
 
@@ -890,6 +1101,14 @@
 
   .modelGrid {
     grid-template-columns: 1fr;
+  }
+
+  .modelTableWrap {
+    overflow-x: auto;
+  }
+
+  .modelTable {
+    min-width: 520px;
   }
 
   .provenanceRow {

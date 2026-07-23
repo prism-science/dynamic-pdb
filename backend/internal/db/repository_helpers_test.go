@@ -8,14 +8,37 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/types"
 )
+
+func createDBTestUser(t *testing.T) uuid.UUID {
+	t.Helper()
+
+	now := time.Now().UTC()
+	user, err := testDB.Users.Create(context.Background(), auth.User{
+		ID: uuid.New(),
+		ExternalRef: types.ExternalRef{
+			Source: "test",
+			Value:  uuid.NewString(),
+		},
+		Email:       "user-" + uuid.NewString() + "@example.com",
+		DisplayName: "DB Test User",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	require.NoError(t, err)
+	return user.ID
+}
 
 func createDBTestEntry(t *testing.T, name string, createdAt time.Time) *models.Entry {
 	t.Helper()
 
+	createdBy := createDBTestUser(t)
 	entry, err := testDB.Entries.Create(context.Background(), models.Entry{
 		ID:        uuid.New(),
+		CreatedBy: createdBy,
 		Name:      name + "-" + uuid.NewString(),
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
@@ -27,9 +50,11 @@ func createDBTestEntry(t *testing.T, name string, createdAt time.Time) *models.E
 func createDBTestModel(t *testing.T, entryID uuid.UUID, name string, createdAt time.Time) *models.Model {
 	t.Helper()
 
+	createdBy := createDBTestUser(t)
 	model, err := testDB.Models.Create(context.Background(), models.Model{
 		ID:        uuid.New(),
 		EntryID:   entryID,
+		CreatedBy: createdBy,
 		Name:      name + "-" + uuid.NewString(),
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
