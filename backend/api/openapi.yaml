@@ -302,6 +302,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteEntry
+      summary: Delete entry
+      description: Deletes an entry and all nested models, entities, relations, and search rows. Only the entry creator can delete it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Entry deleted.
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not the entry creator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models:
     get:
@@ -380,6 +415,48 @@ paths:
                 $ref: "#/components/schemas/Model"
         "401":
           description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteModel
+      summary: Delete model
+      description: Deletes one model and its nested entities, relations, and search rows. Only the model creator can delete it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: model_id
+          in: path
+          description: Model ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Model deleted.
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not the model creator.
           content:
             application/json:
               schema:

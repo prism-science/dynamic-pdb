@@ -14,7 +14,10 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-var ErrEntryNotFound = errors.New("db: entry not found")
+var (
+	ErrEntryNotFound          = errors.New("db: entry not found")
+	ErrEntryOwnershipMismatch = errors.New("db: entry ownership mismatch")
+)
 
 type EntriesRepository struct {
 	db       *sqlx.DB
@@ -75,6 +78,73 @@ func (r *EntriesRepository) Get(ctx context.Context, id uuid.UUID) (*models.Entr
 	}
 
 	return entryFromRow(&row), nil
+}
+
+func (r *EntriesRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
+	query := `with target_entry as (
+			    select id, created_by
+			    from entries
+			    where id = $1
+			  ),
+			  authorized_entry as (
+			    select id
+			    from target_entry
+			    where created_by = $2
+			  ),
+			  target_entities as (
+			    select entities.id
+			    from entities
+			    join authorized_entry on authorized_entry.id = entities.entry_id
+			  ),
+			  deleted_relations as (
+			    delete from entity_relations
+			    where source_entity_id in (select id from target_entities)
+			       or target_entity_id in (select id from target_entities)
+			    returning id
+			  ),
+			  deleted_search as (
+			    delete from entry_search_index
+			    using authorized_entry
+			    where entry_search_index.entry_id = authorized_entry.id
+			      and (select count(*) from deleted_relations) >= 0
+			    returning entry_search_index.entry_id
+			  ),
+			  deleted_entities as (
+			    delete from entities
+			    using authorized_entry
+			    where entities.entry_id = authorized_entry.id
+			      and (select count(*) from deleted_search) >= 0
+			    returning entities.id
+			  ),
+			  deleted_models as (
+			    delete from models
+			    using authorized_entry
+			    where models.entry_id = authorized_entry.id
+			      and (select count(*) from deleted_entities) >= 0
+			    returning models.id
+			  ),
+			  deleted_entry as (
+			    delete from entries
+			    using authorized_entry
+			    where entries.id = authorized_entry.id
+			      and (select count(*) from deleted_models) >= 0
+			    returning entries.id
+			  )
+			  select
+			    (select count(*) from target_entry) as matched_count,
+			    (select count(*) from deleted_entry) as deleted_count`
+
+	var result deleteResult
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &result, query, id, ownerID); err != nil {
+		return fmt.Errorf("failed to delete entry graph: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return ErrEntryNotFound
+	}
+	if result.DeletedCount == 0 {
+		return ErrEntryOwnershipMismatch
+	}
+	return nil
 }
 
 func (r *EntriesRepository) List(ctx context.Context, filters EntryFilters) ([]models.Entry, error) {
@@ -184,4 +254,9 @@ type entryRow struct {
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`
+}
+
+type deleteResult struct {
+	MatchedCount int64 `db:"matched_count"`
+	DeletedCount int64 `db:"deleted_count"`
 }

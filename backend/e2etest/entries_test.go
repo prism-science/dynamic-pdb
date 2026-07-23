@@ -408,6 +408,159 @@ func (s *EntriesSuite) Test_should_return_404_when_get_model_misses() {
 	s.Equal("NOT_FOUND", body.Code)
 }
 
+func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-delete-owner-token")
+	entryID := uuid.New()
+	modelID := uuid.New()
+	modelEntityID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-delete-owner-" + uuid.NewString(),
+		"models": []map[string]any{
+			{
+				"id":   modelID,
+				"name": "model removed with entry",
+				"entities": []map[string]any{
+					modelEntityRequest(modelEntityID, "model entity removed with entry"),
+				},
+			},
+		},
+	}, token)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	defer deleteResp.Body.Close()
+
+	// then
+	s.Equal(http.StatusNoContent, deleteResp.StatusCode)
+	body, err := io.ReadAll(deleteResp.Body)
+	s.Require().NoError(err)
+	s.Empty(body)
+
+	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	defer getEntryResp.Body.Close()
+	s.Equal(http.StatusNotFound, getEntryResp.StatusCode)
+
+	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	defer getModelResp.Body.Close()
+	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
+}
+
+func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_entry() {
+	// given
+	ownerToken := issueEntryTokenForTest(s.T(), "entry-delete-forbidden-owner")
+	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-delete-forbidden-other", 8101)
+	entryID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-delete-forbidden-" + uuid.NewString(),
+	}, ownerToken)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), otherToken)
+	defer deleteResp.Body.Close()
+
+	// then
+	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
+
+	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), ownerToken)
+	defer getEntryResp.Body.Close()
+	s.Equal(http.StatusOK, getEntryResp.StatusCode)
+}
+
+func (s *EntriesSuite) Test_should_delete_model_when_caller_is_creator() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "model-delete-owner-token")
+	entryID := uuid.New()
+	modelID := uuid.New()
+	modelEntityID := uuid.New()
+	searchToken := "modeldelete" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	entryName := "entry-kept-after-model-delete-" + uuid.NewString()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": entryName,
+		"models": []map[string]any{
+			{
+				"id":   modelID,
+				"name": "model " + searchToken,
+				"entities": []map[string]any{
+					modelEntityRequest(modelEntityID, "entity "+searchToken),
+				},
+			},
+		},
+	}, token)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	defer deleteResp.Body.Close()
+
+	// then
+	s.Equal(http.StatusNoContent, deleteResp.StatusCode)
+	body, err := io.ReadAll(deleteResp.Body)
+	s.Require().NoError(err)
+	s.Empty(body)
+
+	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	defer getEntryResp.Body.Close()
+	s.Equal(http.StatusOK, getEntryResp.StatusCode)
+
+	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	defer getModelResp.Body.Close()
+	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
+
+	entitiesResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/entities", token)
+	defer entitiesResp.Body.Close()
+	s.Equal(http.StatusOK, entitiesResp.StatusCode)
+	var entitiesBody httpapi.EntityListResponse
+	s.Require().NoError(json.NewDecoder(entitiesResp.Body).Decode(&entitiesBody))
+	s.Nil(entityByID(entitiesBody.Items, modelEntityID))
+
+	searchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(searchToken), "")
+	defer searchResp.Body.Close()
+	s.Equal(http.StatusOK, searchResp.StatusCode)
+	var searchBody httpapi.EntryListResponse
+	s.Require().NoError(json.NewDecoder(searchResp.Body).Decode(&searchBody))
+	s.Nil(entryByName(searchBody.Items, entryName))
+}
+
+func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_model() {
+	// given
+	ownerToken := issueEntryTokenForTest(s.T(), "model-delete-forbidden-owner")
+	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-delete-forbidden-other", 8102)
+	entryID := uuid.New()
+	modelID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-with-forbidden-model-delete-" + uuid.NewString(),
+		"models": []map[string]any{
+			{
+				"id":   modelID,
+				"name": "model kept after forbidden delete",
+			},
+		},
+	}, ownerToken)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// when
+	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), otherToken)
+	defer deleteResp.Body.Close()
+
+	// then
+	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
+
+	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), ownerToken)
+	defer getModelResp.Body.Close()
+	s.Equal(http.StatusOK, getModelResp.StatusCode)
+}
+
 func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid() {
 	// given
 	token := issueEntryTokenForTest(s.T(), "entry-validation-token")
@@ -588,8 +741,14 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 func issueEntryTokenForTest(t *testing.T, accessToken string) string {
 	t.Helper()
 
+	return issueEntryTokenForGitHubIDForTest(t, accessToken, 8000)
+}
+
+func issueEntryTokenForGitHubIDForTest(t *testing.T, accessToken string, githubID int64) string {
+	t.Helper()
+
 	githubClient.On("GetUser", mock.Anything, accessToken).
-		Return(github.User{ID: 8000, Login: accessToken, Name: "Entry Test", Email: accessToken + "@example.com"}, nil)
+		Return(github.User{ID: githubID, Login: accessToken, Name: "Entry Test", Email: accessToken + "@example.com"}, nil)
 	githubClient.On("ListOrgs", mock.Anything, accessToken).
 		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
 
