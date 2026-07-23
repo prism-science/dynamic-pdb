@@ -173,7 +173,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 200px;
+  width: 128px;
   height: 128px;
   overflow: hidden;
   border-radius: var(--radius);
