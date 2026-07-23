@@ -5,7 +5,7 @@ This chart deploys the Dynamic PDB backend, website, and Flyway migrations.
 ## Namespace and secrets
 
 Create the runtime secrets in the Kubernetes namespace targeted by the ArgoCD
-Application.
+ApplicationSet.
 
 Required secrets:
 
@@ -26,11 +26,13 @@ kubectl -n <namespace> create secret generic dynamic-pdb-backend \
 Apply once:
 
 ```sh
-kubectl apply -f deploy/application.yaml
+kubectl apply -f deploy/appset.yaml
 ```
 
-The GitHub Actions workflow builds and pushes `sha-<commit>` image tags on
-`main`, then bumps `deploy/values.yaml`. ArgoCD deploys that values change.
+The GitHub Actions workflow builds and pushes backend, migrations, and website
+images as `sha-<commit>` on `main`. The ApplicationSet resolves the current
+`main` SHA and deploys the chart with those image tags, so CI does not commit
+image-tag changes back to git.
 
 ## Infrastructure prerequisites
 
@@ -43,6 +45,6 @@ The GitHub Actions workflow builds and pushes `sha-<commit>` image tags on
 The `dynamic-pdb-data` bucket also needs S3 CORS for browser multipart uploads:
 
 - allowed origin: `https://dynamicpdb.com`
-- allowed methods: `PUT`
+- allowed methods: `GET`, `HEAD`, `PUT`
 - allowed headers: `*`
 - exposed headers: `ETag`
