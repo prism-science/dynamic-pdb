@@ -13,7 +13,7 @@ import type {
 } from "@/lib/api/entries";
 import SequenceView from "@/app/components/SequenceView";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
-import { detectStructureKind } from "@/lib/structureKind";
+import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 
 import styles from "./entry-page.module.css";
 
@@ -308,10 +308,12 @@ export function ModelCard({
   entity,
   provenance,
   thumbnailImageURL,
+  maps,
 }: {
   entity: Entity;
   provenance: Provenance;
   thumbnailImageURL?: string | null;
+  maps?: StructureMap[];
 }) {
   const fileURL = getEntityFileURL(entity);
   const payload = getFilePayload(entity);
@@ -341,7 +343,12 @@ export function ModelCard({
           )}
         </div>
         {structureKind && fileURL ? (
-          <StructureViewerModal url={fileURL} kind={structureKind} name={entity.name} />
+          <StructureViewerModal
+            url={fileURL}
+            kind={structureKind}
+            name={entity.name}
+            maps={maps}
+          />
         ) : null}
       </div>
 

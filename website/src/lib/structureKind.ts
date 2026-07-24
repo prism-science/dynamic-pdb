@@ -1,5 +1,12 @@
 export type StructureKind = "pdb" | "mmcif" | "ccp4";
 
+// An electron-density map layer (currently always an MTZ reflection file)
+// rendered on top of a base structure in the viewer.
+export type StructureMap = {
+  url: string;
+  name: string;
+};
+
 // Pure helper (no "use client") so server components can call it directly.
 export function detectStructureKind(
   type: string | undefined,

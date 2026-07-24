@@ -2,9 +2,6 @@ import "server-only";
 
 import { getApiBaseUrl } from "./baseUrl";
 
-export const demoEntryId = "d1a642ca-cbe0-4210-8108-2d1222e28984";
-export const demoUserId = "3b696db1-f943-4e44-b271-8cbdd36e7fc1";
-
 export type Entry = {
   id: string;
   created_by: string;
@@ -213,8 +210,8 @@ export async function createEntry(
 }
 
 export async function getEntryPageData(
-  token: string,
-  entryId: string = demoEntryId,
+  token: string | undefined,
+  entryId: string,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
   const [entry, models, entityGraph] = await Promise.all([
@@ -238,7 +235,7 @@ export async function getEntryPageData(
 }
 
 export async function getModelPageData(
-  token: string,
+  token: string | undefined,
   entryId: string,
   modelId: string,
 ): Promise<ModelPageData> {
@@ -281,7 +278,7 @@ export type EntryGraph = {
 };
 
 export async function getEntryGraph(
-  token: string,
+  token: string | undefined,
   entryId: string,
 ): Promise<EntryGraph> {
   const encodedEntryId = encodeURIComponent(entryId);
