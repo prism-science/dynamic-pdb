@@ -152,7 +152,15 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Equal(thumbnailImageURL, *entry.ThumbnailImageUrl)
 
 	entryPath := "/v1/entries/" + entry.Id.String()
-	modelsResp := getWithToken(s.T(), entryPath+"/models", tokenResponse.AccessToken)
+
+	entryResp := getWithToken(s.T(), entryPath, "")
+	defer entryResp.Body.Close()
+	s.Equal(http.StatusOK, entryResp.StatusCode)
+	var entryBody httpapi.Entry
+	s.Require().NoError(json.NewDecoder(entryResp.Body).Decode(&entryBody))
+	s.Equal(entry.Id, entryBody.Id)
+
+	modelsResp := getWithToken(s.T(), entryPath+"/models", "")
 	defer modelsResp.Body.Close()
 	s.Equal(http.StatusOK, modelsResp.StatusCode)
 
@@ -164,7 +172,14 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NotNil(modelsBody.Items[0].Description)
 	s.Equal("Refinement against crystallographic density", *modelsBody.Items[0].Description)
 
-	entitiesResp := getWithToken(s.T(), entryPath+"/entities", tokenResponse.AccessToken)
+	modelResp := getWithToken(s.T(), entryPath+"/models/"+modelsBody.Items[0].Id.String(), "")
+	defer modelResp.Body.Close()
+	s.Equal(http.StatusOK, modelResp.StatusCode)
+	var modelBody httpapi.Model
+	s.Require().NoError(json.NewDecoder(modelResp.Body).Decode(&modelBody))
+	s.Equal(modelsBody.Items[0].Id, modelBody.Id)
+
+	entitiesResp := getWithToken(s.T(), entryPath+"/entities", "")
 	defer entitiesResp.Body.Close()
 	s.Equal(http.StatusOK, entitiesResp.StatusCode)
 
