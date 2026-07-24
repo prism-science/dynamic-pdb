@@ -2,6 +2,15 @@
   width: 100%;
 }
 
+/* When the Layers bar is present, the outer frame moves to the wrapper so the
+   bar and the canvas read as one panel (the canvas drops its own frame). */
+.structureViewer[data-has-bar="true"] {
+  border: 1px solid #e3dfd6;
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+  background: var(--surface, #fff);
+}
+
 .structureCanvas {
   position: relative;
   width: 100%;
@@ -11,6 +20,11 @@
   border: 1px solid var(--border, #e4e7ec);
   background: var(--surface, #fff);
   overflow: hidden;
+}
+
+.structureViewer[data-has-bar="true"] .structureCanvas {
+  border: none;
+  border-radius: 0;
 }
 
 .structureCanvas :global(.msp-plugin) {
@@ -72,6 +86,155 @@
   color: #fff;
 }
 
+/* Maps bar above the viewer, matching Mol*'s own light theme: warm greys
+   (#eeece7 panel / #f3f2ee control), burnt-orange accent (#ae5d04), muted
+   labels (#9c835f), dark values (#332b1f), Helvetica, flat, square corners. */
+.layerBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #f5f3ef;
+  border-bottom: 1px solid #e6e3da;
+  font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial, sans-serif;
+  font-size: 13px;
+  color: #332b1f;
+}
+
+.layerBarLabel {
+  color: #332b1f;
+  font-weight: 700;
+}
+
+.mapMenu {
+  position: relative;
+}
+
+.mapMenuTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #ddd7ca;
+  border-radius: 0;
+  background: #fbfaf7;
+  color: #332b1f;
+  font: inherit;
+  cursor: pointer;
+  outline-offset: -1px;
+}
+
+.mapMenuTrigger:hover:not(:disabled),
+.mapMenuTrigger[data-open="true"] {
+  color: #ae5d04;
+  background: #f1eee8;
+  border-color: #c9c2b3;
+}
+
+.mapMenuTrigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mapMenuTriggerText {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapMenuChevron {
+  flex: none;
+  color: #9c835f;
+}
+
+.mapMenuList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  padding: 3px;
+  background: #f5f3ef;
+  border: 1px solid #ddd7ca;
+  box-shadow: 0 6px 18px rgba(51, 43, 31, 0.14);
+}
+
+.mapMenuRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  margin-top: 1px;
+  border: none;
+  border-radius: 0;
+  background: #fbfaf7;
+  color: #332b1f;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline-offset: -1px;
+}
+
+.mapMenuRow:first-child {
+  margin-top: 0;
+}
+
+.mapMenuRow:hover:not(:disabled) {
+  color: #ae5d04;
+  background: #f1eee8;
+  outline: 1px solid #c9c2b3;
+}
+
+.mapMenuRow:disabled {
+  cursor: default;
+}
+
+.mapMenuRow[data-active="true"] {
+  color: #332b1f;
+}
+
+.mapMenuRow[data-active="true"] .layerEye {
+  color: #ae5d04;
+}
+
+.mapMenuRow[data-error="true"] {
+  color: #b42318;
+}
+
+.mapMenuRowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layerEye {
+  flex: none;
+}
+
+.layerToggleSpinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid #d8d3c8;
+  border-top-color: #ae5d04;
+  border-radius: 50%;
+  animation: layerSpin 700ms linear infinite;
+}
+
+@keyframes layerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .structurePlaceholder {
   position: absolute;
   inset: 0;
@@ -90,5 +253,10 @@
   .structureCanvas {
     height: calc(100vh - 128px);
     min-height: 420px;
+  }
+
+  .layerBar {
+    padding: 8px;
+    gap: 6px;
   }
 }

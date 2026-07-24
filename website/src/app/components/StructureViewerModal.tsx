@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 
-import type { StructureKind } from "@/lib/structureKind";
+import type { StructureKind, StructureMap } from "@/lib/structureKind";
 import styles from "./StructureViewerModal.module.css";
 
 const StructureViewer = dynamic(() => import("./StructureViewer"), {
@@ -15,10 +15,12 @@ export default function StructureViewerModal({
   url,
   kind,
   name,
+  maps,
 }: {
   url: string;
   kind: StructureKind;
   name: string;
+  maps?: StructureMap[];
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -83,7 +85,7 @@ export default function StructureViewerModal({
                     ×
                   </button>
                 </div>
-                <StructureViewer url={url} kind={kind} />
+                <StructureViewer url={url} kind={kind} maps={maps} />
               </div>
             </div>,
             document.body,

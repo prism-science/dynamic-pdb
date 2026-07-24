@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import {
   ApiRequestError,
@@ -25,14 +25,9 @@ type EntryRouteProps = {
 export default async function EntryPage({ params }: EntryRouteProps) {
   const { entryId } = await params;
   const session = await getAuthSession();
-  const returnTo = `/entries/${entryId}`;
 
-  if (!session) {
-    redirect(loginRedirectPath(returnTo));
-  }
-
-  const data = await loadEntryPage(session.token, entryId, returnTo);
-  const currentUserId = userIdFromToken(session.token);
+  const data = await loadEntryPage(session?.token, entryId);
+  const currentUserId = session ? userIdFromToken(session.token) : null;
   const sequence = getFastaMetadata(data);
 
   const vitals: string[] = [];
@@ -128,29 +123,17 @@ export default async function EntryPage({ params }: EntryRouteProps) {
 }
 
 async function loadEntryPage(
-  token: string,
+  token: string | undefined,
   entryId: string,
-  returnTo: string,
 ): Promise<EntryPageData> {
   try {
     return await getEntryPageData(token, entryId);
   } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      redirect(loginRedirectPath(returnTo));
-    }
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();
     }
     throw error;
   }
-}
-
-function loginRedirectPath(returnTo: string): string {
-  const encodedReturnTo = encodeURIComponent(returnTo);
-  if (process.env.NODE_ENV !== "production") {
-    return `/auth/local-demo?return_to=${encodedReturnTo}`;
-  }
-  return `/auth/github/login?return_to=${encodedReturnTo}`;
 }
 
 function getFastaMetadata(data: EntryPageData): FastaMetadata | null {

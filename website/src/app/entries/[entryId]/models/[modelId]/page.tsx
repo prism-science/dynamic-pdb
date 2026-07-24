@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import {
   ApiRequestError,
@@ -8,6 +8,7 @@ import {
   getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import type { StructureMap } from "@/lib/structureKind";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
 import SequenceView from "@/app/components/SequenceView";
@@ -32,22 +33,23 @@ export default async function ModelPage({
 }: ModelRouteProps) {
   const { entryId, modelId } = await params;
   const session = await getAuthSession();
-  const returnTo = `/entries/${entryId}/models/${modelId}`;
 
-  if (!session) {
-    redirect(loginRedirectPath(returnTo));
-  }
-
-  const data = await loadModelPage(
-    session.token,
-    entryId,
-    modelId,
-    returnTo,
-  );
+  const data = await loadModelPage(session?.token, entryId, modelId);
   const provenance = buildProvenance(data.entities, data.relations);
 
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
   const modelFileURL = model ? getEntityFileURL(model) : null;
+
+  // For now, treat every nearby MTZ file as a density-map layer, regardless of
+  // how it is related to the model.
+  const maps: StructureMap[] = data.entities
+    .filter(
+      (entity) =>
+        entity.type === "data" &&
+        (entity.payload as DataPayload)?.type === "mtz",
+    )
+    .map((entity) => ({ url: getEntityFileURL(entity), name: entity.name }))
+    .filter((map): map is StructureMap => typeof map.url === "string");
 
   let sequence: FastaMetadata | null = null;
   for (const entity of data.entities) {
@@ -97,6 +99,7 @@ export default async function ModelPage({
             entity={model}
             provenance={provenance}
             thumbnailImageURL={data.model.thumbnail_image_url}
+            maps={maps}
           />
         ) : (
           <p className={styles.emptyState}>No model produced yet.</p>
@@ -119,28 +122,16 @@ export default async function ModelPage({
 }
 
 async function loadModelPage(
-  token: string,
+  token: string | undefined,
   entryId: string,
   modelId: string,
-  returnTo: string,
 ): Promise<ModelPageData> {
   try {
     return await getModelPageData(token, entryId, modelId);
   } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      redirect(loginRedirectPath(returnTo));
-    }
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();
     }
     throw error;
   }
-}
-
-function loginRedirectPath(returnTo: string): string {
-  const encodedReturnTo = encodeURIComponent(returnTo);
-  if (process.env.NODE_ENV !== "production") {
-    return `/auth/local-demo?return_to=${encodedReturnTo}`;
-  }
-  return `/auth/github/login?return_to=${encodedReturnTo}`;
 }
