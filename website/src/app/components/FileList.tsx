@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import ResolvedFileLink from "./ResolvedFileLink";
 import styles from "./FileList.module.css";
 
 export type FileItem = {
@@ -94,9 +95,14 @@ function FileRow({ item }: { item: FileItem }) {
 
   if (item.url) {
     return (
-      <a className={styles.row} href={item.url} rel="noreferrer" target="_blank">
+      <ResolvedFileLink
+        className={styles.row}
+        href={item.url}
+        rel="noreferrer"
+        target="_blank"
+      >
         {inner}
-      </a>
+      </ResolvedFileLink>
     );
   }
   return <div className={styles.row}>{inner}</div>;

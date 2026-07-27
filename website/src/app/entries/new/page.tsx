@@ -8,10 +8,24 @@ import styles from "./new-entry.module.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewEntryPage() {
+type NewEntryPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function NewEntryPage({ searchParams }: NewEntryPageProps) {
+  const params = await searchParams;
+  const rawExperimentID = params.ext_experiment_id;
+  const experimentID =
+    typeof rawExperimentID === "string" ? rawExperimentID.trim() : "";
+  const returnToParams = new URLSearchParams();
+  if (experimentID) {
+    returnToParams.set("ext_experiment_id", experimentID);
+  }
+  const returnTo = `/entries/new${returnToParams.size > 0 ? `?${returnToParams}` : ""}`;
+
   const session = await getAuthSession();
   if (!session) {
-    redirect("/auth/github/login?return_to=/entries/new");
+    redirect(`/auth/github/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
   return (
@@ -21,7 +35,7 @@ export default async function NewEntryPage() {
           items={[{ label: "Proteins", href: "/" }, { label: "New entry" }]}
         />
         <h1 className={styles.title}>New entry</h1>
-        <NewEntryForm />
+        <NewEntryForm extExperimentId={experimentID || null} />
       </div>
     </main>
   );

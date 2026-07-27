@@ -11,6 +11,8 @@ import type {
   ModelPayload,
   ProgramPayload,
 } from "@/lib/api/entries";
+import { parseExtFileReference } from "@/lib/api/ext";
+import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import SequenceView from "@/app/components/SequenceView";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
 import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
@@ -190,7 +192,7 @@ export function EntityCard({
           </span>
         ) : null}
         {fileURL ? (
-          <a
+          <ResolvedFileLink
             className={styles.entityFileLink}
             href={fileURL}
             rel="noreferrer"
@@ -206,7 +208,7 @@ export function EntityCard({
                 strokeLinejoin="round"
               />
             </svg>
-          </a>
+          </ResolvedFileLink>
         ) : null}
       </div>
 
@@ -631,6 +633,10 @@ function metricEntries(payload: MetricsPayload) {
 }
 
 function getFileName(fileURL: string): string {
+  const extReference = parseExtFileReference(fileURL);
+  if (extReference) {
+    return extReference.path.split("/").filter(Boolean).pop() || extReference.path;
+  }
   try {
     const parsed = new URL(fileURL);
     return parsed.pathname.split("/").pop() || fileURL;
