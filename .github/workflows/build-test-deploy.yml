@@ -170,7 +170,7 @@ jobs:
       needs.changes.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.website.result == 'success' || needs.website.result == 'skipped')
-    runs-on: astera-sh-builder
+    runs-on: diffuse-sh-builder
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
