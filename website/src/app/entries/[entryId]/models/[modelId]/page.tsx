@@ -11,6 +11,7 @@ import { getAuthSession } from "@/lib/auth/session";
 import type { StructureMap } from "@/lib/structureKind";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
+import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import SequenceView from "@/app/components/SequenceView";
 import {
   buildProvenance,
@@ -78,7 +79,7 @@ export default async function ModelPage({
           title={data.model.name}
           action={
             modelFileURL ? (
-              <a
+              <ResolvedFileLink
                 className={styles.heroDownload}
                 href={modelFileURL}
                 download
@@ -89,7 +90,7 @@ export default async function ModelPage({
                   <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
                 </svg>
                 Download
-              </a>
+              </ResolvedFileLink>
             ) : null
           }
         />

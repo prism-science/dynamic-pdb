@@ -9,6 +9,8 @@ const {
   canAddModelFiles,
   detectType,
   draftHasContent,
+  extFileKeys,
+  extFileToParsed,
   modelFromDraft,
   modelValidationMessage,
   modelToDraft,
@@ -83,6 +85,44 @@ test("should convert files and metrics into create entry entities", () => {
     name: "Metrics",
     payload: { r_free: 0.231, cc: 0.98 },
   });
+});
+
+test("should preserve Ext provenance when linked file becomes an entity", () => {
+  const experimentId = "123e4567-e89b-42d3-a456-426614174003";
+  const linked = extFileToParsed(
+    {
+      name: "model.cif",
+      path: "/mnt/diffuse-shared/model.cif",
+      sha256: "sha-123",
+      size: 42,
+      directory: false,
+      available: true,
+      metadata: { detector: "eiger" },
+      directions: ["output"],
+    },
+    experimentId,
+    "L2",
+  );
+
+  const entity = toEntity(linked);
+  const restored = fileFromDraft(fileToDraft(linked));
+
+  assert.equal(linked.source, "ext");
+  assert.equal(linked.uploadStatus, "uploaded");
+  assert.match(linked.url, new RegExp(`^ext://${experimentId}\\?`));
+  assert.deepEqual(entity.payload.metadata, {
+    detector: "eiger",
+    _dynamic_pdb_source: {
+      provider: "ext",
+      experiment_id: experimentId,
+      path: "/mnt/diffuse-shared/model.cif",
+      sha256: "sha-123",
+    },
+  });
+  assert.deepEqual(restored.extReference, linked.extReference);
+  assert.deepEqual(Array.from(extFileKeys([restored])), [
+    "/mnt/diffuse-shared/model.cif\u0000sha-123",
+  ]);
 });
 
 test("should build explicit graph relations for model metrics and program", () => {

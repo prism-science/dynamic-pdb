@@ -10,6 +10,7 @@ import type {
   FastaMetadata,
   MetricsPayload,
 } from "@/lib/api/entries";
+import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
 import { detectStructureKind } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";
 
@@ -38,6 +39,12 @@ export default function FilePreviewModal({
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const filePayload = (entity?.payload ?? {}) as DataPayload & {
+    metadata?: Record<string, unknown>;
+  };
+  const sourceURL =
+    typeof filePayload.file_url === "string" ? filePayload.file_url : null;
+  const resolvedFile = useResolvedFileURL(sourceURL);
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -57,16 +64,14 @@ export default function FilePreviewModal({
     return null;
   }
 
-  const payload = (entity.payload ?? {}) as DataPayload & {
-    metadata?: Record<string, unknown>;
-  };
-  const url = typeof payload.file_url === "string" ? payload.file_url : null;
-  const kind = detectStructureKind(payload.type ?? url ?? undefined);
+  const payload = filePayload;
+  const url = resolvedFile.url;
+  const kind = detectStructureKind(payload.type ?? sourceURL ?? undefined);
   const isFasta = payload.type === "fasta";
   const isMetrics = entity.type === "metrics";
   const isImage =
     payload.type === "image" ||
-    (url != null && /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(url));
+    (sourceURL != null && /\.(png|jpe?g|gif|webp|svg|bmp)/i.test(sourceURL));
   const wide = kind != null && !isMetrics && !isFasta;
 
   return createPortal(

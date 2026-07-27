@@ -13,6 +13,7 @@ import { Volume } from "molstar/lib/mol-model/volume";
 import { Vec3, Mat4, Tensor } from "molstar/lib/mol-math/linear-algebra";
 import { Color } from "molstar/lib/mol-util/color";
 
+import { fetchFileURL } from "@/lib/api/ext";
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
 
 import styles from "./StructureViewer.module.css";
@@ -321,7 +322,7 @@ export default function StructureViewer({
         throw new Error(`unsupported structure format: ${kind}`);
       }
 
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetchFileURL(url, { signal: controller.signal });
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
@@ -423,7 +424,7 @@ export default function StructureViewer({
     // First enable (idle / retry after error): fetch + parse + render lazily.
     setLayerAt(index, { status: "loading", error: undefined });
     try {
-      const response = await fetch(layer.url);
+      const response = await fetchFileURL(layer.url);
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
