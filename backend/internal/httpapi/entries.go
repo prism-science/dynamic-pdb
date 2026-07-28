@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -16,7 +17,7 @@ import (
 	domainmodels "dynamic-pdb/backend/internal/models"
 )
 
-var errInvalidCreateEntryRequest = errors.New("invalid create entry request")
+var errInvalidRequest = errors.New("invalid request")
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
 	filters, err := entryFiltersFromParams(params)
@@ -59,7 +60,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.createEntryGraph(r.Context(), req, name, user.ID)
-	if errors.Is(err, errInvalidCreateEntryRequest) {
+	if errors.Is(err, errInvalidRequest) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
@@ -147,7 +148,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 	if req.Id != nil {
 		entryID = *req.Id
 		if entryID == uuid.Nil {
-			return invalidCreateEntryRequest("entry id is required")
+			return invalidRequest("entry id is required")
 		}
 	}
 
@@ -174,7 +175,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 			for _, entityRequest := range *req.Entities {
 				entityID := entityRequest.Id
 				if _, exists := createdEntityIDs[entityID]; exists {
-					return invalidCreateEntryRequest("duplicate entity id: %s", entityID)
+					return invalidRequest("duplicate entity id: %s", entityID)
 				}
 				entityID, err := s.createEntity(ctx, *entry, nil, entityRequest, now)
 				if err != nil {
@@ -208,14 +209,14 @@ func (s *Server) createModelGraph(
 ) error {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return invalidCreateEntryRequest("model name is required")
+		return invalidRequest("model name is required")
 	}
 
 	modelID := uuid.New()
 	if req.Id != nil {
 		modelID = *req.Id
 		if modelID == uuid.Nil {
-			return invalidCreateEntryRequest("model id is required")
+			return invalidRequest("model id is required")
 		}
 	}
 
@@ -241,7 +242,7 @@ func (s *Server) createModelGraph(
 		for _, entityRequest := range *req.Entities {
 			entityID := entityRequest.Id
 			if _, exists := createdEntityIDs[entityID]; exists {
-				return invalidCreateEntryRequest("duplicate entity id: %s", entityID)
+				return invalidRequest("duplicate entity id: %s", entityID)
 			}
 			entityID, err := s.createEntity(ctx, entry, &model.ID, entityRequest, now)
 			if err != nil {
@@ -272,12 +273,12 @@ func (s *Server) createEntity(
 ) (uuid.UUID, error) {
 	entityID := req.Id
 	if entityID == uuid.Nil {
-		return uuid.Nil, invalidCreateEntryRequest("entity id is required")
+		return uuid.Nil, invalidRequest("entity id is required")
 	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return uuid.Nil, invalidCreateEntryRequest("entity name is required")
+		return uuid.Nil, invalidRequest("entity name is required")
 	}
 
 	entityType := domainmodels.EntityType(req.Type)
@@ -317,19 +318,19 @@ func (s *Server) createEntityRelation(
 	sourceEntityID := req.SourceEntityId
 	targetEntityID := req.TargetEntityId
 	if sourceEntityID == uuid.Nil {
-		return invalidCreateEntryRequest("relation source_entity_id is required")
+		return invalidRequest("relation source_entity_id is required")
 	}
 	if targetEntityID == uuid.Nil {
-		return invalidCreateEntryRequest("relation target_entity_id is required")
+		return invalidRequest("relation target_entity_id is required")
 	}
 	if sourceEntityID == targetEntityID {
-		return invalidCreateEntryRequest("relation source_entity_id and target_entity_id must be different")
+		return invalidRequest("relation source_entity_id and target_entity_id must be different")
 	}
 	if !entityIDBelongsToModelGraph(sourceEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidCreateEntryRequest("relation source entity was not created in this entry request: %s", sourceEntityID)
+		return invalidRequest("relation source entity is not part of this entry: %s", sourceEntityID)
 	}
 	if !entityIDBelongsToModelGraph(targetEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidCreateEntryRequest("relation target entity was not created in this entry request: %s", targetEntityID)
+		return invalidRequest("relation target entity is not part of this entry: %s", targetEntityID)
 	}
 
 	if _, err := s.database.EntityRelations.Create(ctx, domainmodels.EntityRelation{
@@ -351,7 +352,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeData:
 		payload, err := req.Payload.AsDataPayload()
 		if err != nil {
-			return nil, invalidCreateEntryPayloadRequest("decode data payload", err)
+			return nil, invalidPayloadRequest("decode data payload", err)
 		}
 		return &domainmodels.DataPayload{
 			FileURL:     payload.FileUrl,
@@ -364,7 +365,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeModel:
 		payload, err := req.Payload.AsModelPayload()
 		if err != nil {
-			return nil, invalidCreateEntryPayloadRequest("decode model payload", err)
+			return nil, invalidPayloadRequest("decode model payload", err)
 		}
 		return &domainmodels.ModelPayload{
 			FileURL:     payload.FileUrl,
@@ -376,7 +377,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeMetrics:
 		payload, err := req.Payload.AsMetricsPayload()
 		if err != nil {
-			return nil, invalidCreateEntryPayloadRequest("decode metrics payload", err)
+			return nil, invalidPayloadRequest("decode metrics payload", err)
 		}
 		return &domainmodels.MetricsPayload{
 			RFree: payload.RFree,
@@ -387,7 +388,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 	case domainmodels.EntityTypeProgram:
 		payload, err := req.Payload.AsProgramPayload()
 		if err != nil {
-			return nil, invalidCreateEntryPayloadRequest("decode program payload", err)
+			return nil, invalidPayloadRequest("decode program payload", err)
 		}
 		return &domainmodels.ProgramPayload{
 			Name:        payload.Name,
@@ -395,7 +396,7 @@ func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
 			Description: payload.Description,
 		}, nil
 	default:
-		return nil, invalidCreateEntryRequest("unexpected entity type: %s", req.Type)
+		return nil, invalidRequest("unexpected entity type: %s", req.Type)
 	}
 }
 
@@ -461,12 +462,12 @@ func metadataFromRequest(metadata *map[string]interface{}) map[string]any {
 	return *metadata
 }
 
-func invalidCreateEntryRequest(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", errInvalidCreateEntryRequest, fmt.Sprintf(format, args...))
+func invalidRequest(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errInvalidRequest, fmt.Sprintf(format, args...))
 }
 
-func invalidCreateEntryPayloadRequest(description string, err error) error {
-	return fmt.Errorf("%s: %w", description, invalidCreateEntryRequest("%v", err))
+func invalidPayloadRequest(description string, err error) error {
+	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
 }
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
@@ -489,6 +490,77 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 	}
 
 	writeJSON(w, http.StatusOK, ModelListResponse{Items: items})
+}
+
+func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+	var req CreateModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	err := s.createModelForEntry(r.Context(), entryID, req, user.ID)
+	if errors.Is(err, db.ErrEntryNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+		return
+	}
+	if errors.Is(err, errInvalidRequest) {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if err != nil {
+		slog.Error("create model failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create model")
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) createModelForEntry(
+	ctx context.Context,
+	entryID uuid.UUID,
+	req CreateModelRequest,
+	createdBy uuid.UUID,
+) error {
+	now := time.Now().UTC()
+
+	return s.database.Do(ctx, func(ctx context.Context) error {
+		entry, err := s.database.Entries.Get(ctx, entryID)
+		if err != nil {
+			return err
+		}
+
+		entities, err := s.database.Entities.List(ctx, db.EntityFilters{
+			EntryID:        &entryID,
+			BelongsToEntry: true,
+		})
+		if err != nil {
+			return fmt.Errorf("list entry entities: %w", err)
+		}
+
+		entryEntityIDs := make(map[uuid.UUID]struct{}, len(entities))
+		for _, entity := range entities {
+			entryEntityIDs[entity.ID] = struct{}{}
+		}
+		createdEntityIDs := maps.Clone(entryEntityIDs)
+
+		return s.createModelGraph(
+			ctx,
+			*entry,
+			entryEntityIDs,
+			createdEntityIDs,
+			req,
+			now,
+			createdBy,
+		)
+	})
 }
 
 func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {

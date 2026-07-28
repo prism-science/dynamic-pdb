@@ -182,6 +182,45 @@ test("should build explicit graph relations for model metrics and program", () =
   ]);
 });
 
+test("should record existing entry entities as program inputs", () => {
+  const modelDraft = modelDraftFixture({
+    files: [parsedFile({ id: "model-entity-1", type: "mmcif" })],
+    program: {
+      id: "program-1",
+      name: "phenix.refine",
+      version: "1.21.2",
+      description: "Refinement",
+    },
+  });
+
+  const input = buildCreateModelInput(modelDraft, {
+    programInputEntityIds: ["existing-l0-1", "existing-l0-2"],
+  });
+
+  assert.deepEqual(
+    input.relations.filter((relation) => relation.relation_type === "input_to"),
+    [
+      {
+        source_entity_id: "existing-l0-1",
+        target_entity_id: "program-1",
+        relation_type: "input_to",
+      },
+      {
+        source_entity_id: "existing-l0-2",
+        target_entity_id: "program-1",
+        relation_type: "input_to",
+      },
+    ],
+  );
+
+  // Without a program there is nothing for the inputs to point at.
+  const withoutProgram = buildCreateModelInput(
+    modelDraftFixture({ program: null }),
+    { programInputEntityIds: ["existing-l0-1"] },
+  );
+  assert.deepEqual(withoutProgram.relations, []);
+});
+
 test("should validate the single model entity and complete program contract", () => {
   const modelFile = parsedFile({ id: "model-1", type: "mmcif" });
   const otherModelFile = parsedFile({ id: "model-2", type: "pdb" });

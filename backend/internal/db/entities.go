@@ -22,12 +22,13 @@ type EntitiesRepository struct {
 }
 
 type EntityFilters struct {
-	EntryID *uuid.UUID
-	ModelID *uuid.UUID
-	Types   []models.EntityType
-	Levels  []models.EntityLevel
-	Limit   *int
-	Offset  *int
+	EntryID        *uuid.UUID
+	ModelID        *uuid.UUID
+	BelongsToEntry bool
+	Types          []models.EntityType
+	Levels         []models.EntityLevel
+	Limit          *int
+	Offset         *int
 }
 
 func NewEntitiesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntitiesRepository {
@@ -131,6 +132,9 @@ func entityListQuery(filters EntityFilters) (string, map[string]any, error) {
 	if filters.ModelID != nil {
 		conditions = append(conditions, "model_id = :model_id")
 		args["model_id"] = *filters.ModelID
+	}
+	if filters.BelongsToEntry {
+		conditions = append(conditions, "model_id is null")
 	}
 	if len(filters.Types) > 0 {
 		conditions = append(conditions, "type = any(cast(:types as text[]))")

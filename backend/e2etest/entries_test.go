@@ -464,6 +464,241 @@ func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
 	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
 }
 
+func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
+	// given
+	ownerToken := issueEntryTokenForTest(s.T(), "model-add-owner-token")
+	entryID := uuid.New()
+	baselineEntityID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-add-model-" + uuid.NewString(),
+		"entities": []map[string]any{
+			dataEntityRequest(baselineEntityID, "baseline sequence"),
+		},
+	}, ownerToken)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	// A second user contributes the model, and its program declares the
+	// entry-level file that already existed as an input.
+	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-add-contributor-token", 8110)
+	contributorID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(contributorToken)
+	s.Require().NoError(err)
+	modelID := uuid.New()
+	modelEntityID := uuid.New()
+	programEntityID := uuid.New()
+	metricsEntityID := uuid.New()
+
+	// when
+	resp := postJSONWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models", map[string]any{
+		"id":          modelID,
+		"name":        "added refinement",
+		"description": "Added to an entry that already existed",
+		"entities": []map[string]any{
+			modelEntityRequest(modelEntityID, "added model entity"),
+			{
+				"id":   programEntityID,
+				"type": "program",
+				"name": "phenix.refine 1.21.2",
+				"payload": map[string]any{
+					"name":        "phenix.refine",
+					"version":     "1.21.2",
+					"description": "Automated reciprocal-space refinement",
+				},
+			},
+			{
+				"id":    metricsEntityID,
+				"type":  "metrics",
+				"level": "L3",
+				"name":  "added metrics",
+				"payload": map[string]any{
+					"r_free": 0.231,
+				},
+			},
+		},
+		"relations": []map[string]any{
+			{
+				"source_entity_id": baselineEntityID,
+				"target_entity_id": programEntityID,
+				"relation_type":    "input_to",
+			},
+			{
+				"source_entity_id": modelEntityID,
+				"target_entity_id": programEntityID,
+				"relation_type":    "output_of",
+			},
+			{
+				"source_entity_id": metricsEntityID,
+				"target_entity_id": modelEntityID,
+				"relation_type":    "metrics_for",
+			},
+		},
+	}, contributorToken)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusCreated, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	s.Require().NoError(err)
+	s.Empty(body)
+
+	modelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), "")
+	defer modelResp.Body.Close()
+	s.Equal(http.StatusOK, modelResp.StatusCode)
+	var modelBody httpapi.Model
+	s.Require().NoError(json.NewDecoder(modelResp.Body).Decode(&modelBody))
+	s.Equal("added refinement", modelBody.Name)
+	s.Equal(contributorID, modelBody.CreatedBy)
+
+	entitiesResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/entities", "")
+	defer entitiesResp.Body.Close()
+	s.Equal(http.StatusOK, entitiesResp.StatusCode)
+	var entitiesBody httpapi.EntityListResponse
+	s.Require().NoError(json.NewDecoder(entitiesResp.Body).Decode(&entitiesBody))
+	s.Require().NotNil(entityByID(entitiesBody.Items, modelEntityID))
+	s.Require().NotNil(entityByID(entitiesBody.Items, programEntityID))
+	s.Len(entitiesBody.Relations, 3)
+
+	// The relation from the pre-existing entry-level file is what this endpoint
+	// adds over creating a whole entry.
+	linkedBaseline := false
+	for _, relation := range entitiesBody.Relations {
+		if relation.SourceEntityId == baselineEntityID &&
+			relation.TargetEntityId == programEntityID &&
+			relation.RelationType == httpapi.InputTo {
+			linkedBaseline = true
+		}
+	}
+	s.True(linkedBaseline)
+}
+
+func (s *EntriesSuite) Test_should_return_404_when_adding_model_to_missing_entry() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "model-add-missing-entry-token")
+
+	// when
+	resp := postJSONWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
+		"name": "model for a missing entry",
+	}, token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+
+	var body httpapi.Error
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal("NOT_FOUND", body.Code)
+}
+
+func (s *EntriesSuite) Test_should_return_401_when_adding_model_without_token() {
+	// given
+
+	// when
+	resp := postJSON(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
+		"name": "unauthorized model",
+	})
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusUnauthorized, resp.StatusCode)
+}
+
+func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "model-add-invalid-token")
+	entryID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"id":   entryID,
+		"name": "entry-add-model-invalid-" + uuid.NewString(),
+	}, token)
+	defer createResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+
+	modelsPath := "/v1/entries/" + entryID.String() + "/models"
+	foreignEntityID := uuid.New()
+
+	tests := []struct {
+		name    string
+		request func() map[string]any
+		message string
+	}{
+		{
+			name: "missing model name",
+			request: func() map[string]any {
+				return map[string]any{"name": "   "}
+			},
+			message: "model name is required",
+		},
+		{
+			name: "relation to an entity outside the entry",
+			request: func() map[string]any {
+				modelEntityID := uuid.New()
+				return map[string]any{
+					"name": "model with a foreign relation",
+					"entities": []map[string]any{
+						modelEntityRequest(modelEntityID, "model entity"),
+					},
+					"relations": []map[string]any{
+						{
+							"source_entity_id": foreignEntityID,
+							"target_entity_id": modelEntityID,
+							"relation_type":    "input_to",
+						},
+					},
+				}
+			},
+			message: "is not part of this entry",
+		},
+		{
+			name: "entity id already used by the entry",
+			request: func() map[string]any {
+				reusedEntityID := uuid.New()
+				reuseEntryID := uuid.New()
+				reuseResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+					"id":   reuseEntryID,
+					"name": "entry-add-model-reuse-" + uuid.NewString(),
+					"entities": []map[string]any{
+						dataEntityRequest(reusedEntityID, "already deposited"),
+					},
+				}, token)
+				defer reuseResp.Body.Close()
+				s.Require().Equal(http.StatusCreated, reuseResp.StatusCode)
+
+				return map[string]any{
+					"path": "/v1/entries/" + reuseEntryID.String() + "/models",
+					"name": "model reusing an entity id",
+					"entities": []map[string]any{
+						dataEntityRequest(reusedEntityID, "duplicate id"),
+					},
+				}
+			},
+			message: "duplicate entity id",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// when
+			request := tt.request()
+			path := modelsPath
+			if override, ok := request["path"].(string); ok {
+				path = override
+				delete(request, "path")
+			}
+			resp := postJSONWithToken(s.T(), path, request, token)
+			defer resp.Body.Close()
+
+			// then
+			s.Equal(http.StatusBadRequest, resp.StatusCode)
+
+			var body httpapi.Error
+			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+			s.Equal("BAD_REQUEST", body.Code)
+			s.Contains(body.Message, tt.message)
+		})
+	}
+}
+
 func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_entry() {
 	// given
 	ownerToken := issueEntryTokenForTest(s.T(), "entry-delete-forbidden-owner")
@@ -732,7 +967,7 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 					},
 				}
 			},
-			message: "relation source entity was not created",
+			message: "relation source entity is not part of this entry",
 		},
 	}
 

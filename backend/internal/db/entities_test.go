@@ -172,6 +172,26 @@ func Test_should_return_error_when_entities_list_called_with_negative_limit(t *t
 	require.Error(t, err)
 }
 
+func Test_should_list_only_entry_entities_when_belongs_to_entry_filter_is_set(t *testing.T) {
+	// given
+	entry := createDBTestEntry(t, "entry-entities-filter", time.Now().UTC())
+	model := createDBTestModel(t, entry.ID, "entry entities filter model", time.Now().UTC())
+	entryEntity := createDBTestEntity(t, entry.ID, nil, models.EntityTypeData, nil, "entry entity")
+	_ = createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeModel, nil, "model entity")
+
+	// when
+	entities, err := testDB.Entities.List(context.Background(), db.EntityFilters{
+		EntryID:        &entry.ID,
+		BelongsToEntry: true,
+	})
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, entities, 1)
+	assert.Equal(t, entryEntity.ID, entities[0].ID)
+	assert.Nil(t, entities[0].ModelID)
+}
+
 func listSingleEntityByEntry(t *testing.T, entryID uuid.UUID) models.Entity {
 	t.Helper()
 
