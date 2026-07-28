@@ -141,6 +141,37 @@
   color: var(--text-secondary);
 }
 
+.contentSectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.addModelLink {
+  margin-bottom: 14px;
+  color: var(--accent-hover);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.addModelLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.modelsEmpty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 @media (max-width: 820px) {
   .layout {
     grid-template-columns: 1fr;

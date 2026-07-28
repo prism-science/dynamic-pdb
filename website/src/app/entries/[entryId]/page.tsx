@@ -103,9 +103,19 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               </section>
             ) : null}
 
-            {hasModels ? (
-              <section id="models" className={styles.contentSection}>
+            {/* Always rendered: an entry with no models still needs somewhere
+                to add the first one. */}
+            <section id="models" className={styles.contentSection}>
+              <div className={styles.contentSectionHead}>
                 <h2 className={styles.contentHeading}>Models</h2>
+                <a
+                  className={styles.addModelLink}
+                  href={`/entries/${encodeURIComponent(data.entry.id)}/models/new`}
+                >
+                  Add model
+                </a>
+              </div>
+              {hasModels ? (
                 <SortableModelList
                   entryId={data.entry.id}
                   models={data.models}
@@ -113,8 +123,13 @@ export default async function EntryPage({ params }: EntryRouteProps) {
                   relations={data.relations}
                   currentUserId={currentUserId}
                 />
-              </section>
-            ) : null}
+              ) : (
+                <p className={styles.modelsEmpty}>
+                  No models yet. Add the first refinement or prediction built
+                  from this entry&apos;s data.
+                </p>
+              )}
+            </section>
           </div>
         </div>
       </div>

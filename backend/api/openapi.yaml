@@ -371,6 +371,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    post:
+      operationId: createModel
+      summary: Create model
+      description: Adds a model, its entities, and its relations to an existing entry. Relations may reference entities created in this request or entry-level entities that already exist.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry the model belongs to.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRequest"
+      responses:
+        "201":
+          description: Model created.
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /v1/entries/{entry_id}/models/{model_id}:
     get:
       operationId: getModel

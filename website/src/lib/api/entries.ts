@@ -177,14 +177,34 @@ export type CreateEntryInput = {
   models?: CreateModelInput[];
 };
 
+export async function createModel(
+  token: string,
+  entryId: string,
+  input: CreateModelInput,
+): Promise<void> {
+  await postJSON(
+    `/v1/entries/${encodeURIComponent(entryId)}/models`,
+    token,
+    input,
+  );
+}
+
 export async function createEntry(
   token: string,
   input: CreateEntryInput,
 ): Promise<void> {
+  await postJSON("/v1/entries", token, input);
+}
+
+async function postJSON(
+  path: string,
+  token: string,
+  input: unknown,
+): Promise<void> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/v1/entries`, {
+    response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       cache: "no-store",
       headers: {
