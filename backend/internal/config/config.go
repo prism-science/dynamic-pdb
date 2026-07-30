@@ -8,13 +8,13 @@ import (
 
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
-	"dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 type Config struct {
-	Auth auth.Config     `mapstructure:"auth"`
-	DB   db.Config       `mapstructure:"db"`
-	S3   s3.BucketConfig `mapstructure:"s3"`
+	Auth auth.Config `mapstructure:"auth"`
+	DB   db.Config   `mapstructure:"db"`
+	CDN  cdn.Config  `mapstructure:"cdn"`
 }
 
 func ReadFromFile(filename string) (Config, error) {

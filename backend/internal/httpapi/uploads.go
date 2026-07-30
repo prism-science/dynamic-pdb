@@ -2,13 +2,14 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 
-	"dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
@@ -46,21 +47,21 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		modelID = parsedModelID.String()
 	}
 
-	fileUpload := s3.FileUpload{
+	fileUpload := cdn.FileUpload{
 		EntryID:          entryID.String(),
 		ModelID:          modelID,
 		EntityID:         entityID.String(),
 		OriginalFilename: req.Filename,
 		Size:             req.Size,
 	}
-	if _, err := s3.ObjectKey(fileUpload); err != nil {
+
+	grant, err := s.fileCDN.CreateUpload(r.Context(), fileUpload)
+	switch {
+	case errors.Is(err, cdn.ErrInvalidFileUpload):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid file upload path")
 		return
-	}
-
-	grant, err := s.fileUploadBucket.PresignMultipartUpload(r.Context(), fileUpload)
-	if err != nil {
-		slog.Error("presign file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "entity_id", entityID)
+	case err != nil:
+		slog.Error("create file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "entity_id", entityID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to presign file upload")
 		return
 	}
@@ -96,9 +97,9 @@ func (s *Server) CompleteFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parts := make([]s3.CompletedPart, 0, len(req.Parts))
+	parts := make([]cdn.CompletedPart, 0, len(req.Parts))
 	for _, part := range req.Parts {
-		if part.PartNumber < 1 || part.PartNumber > s3.MultipartMaxParts {
+		if part.PartNumber < 1 || part.PartNumber > cdn.MultipartMaxParts {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "part_number out of range")
 			return
 		}
@@ -106,13 +107,13 @@ func (s *Server) CompleteFileUpload(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "etag is required for each part")
 			return
 		}
-		parts = append(parts, s3.CompletedPart{
+		parts = append(parts, cdn.CompletedPart{
 			PartNumber: int32(part.PartNumber),
 			ETag:       part.Etag,
 		})
 	}
 
-	if err := s.fileUploadBucket.CompleteMultipartUpload(r.Context(), req.Key, req.UploadId, parts); err != nil {
+	if err := s.fileCDN.CompleteUpload(r.Context(), req.Key, req.UploadId, parts); err != nil {
 		slog.Error("complete file upload failed", "err", err, "key", req.Key)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to complete file upload")
 		return
@@ -131,7 +132,7 @@ func (s *Server) AbortFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.fileUploadBucket.AbortMultipartUpload(r.Context(), req.Key, req.UploadId); err != nil {
+	if err := s.fileCDN.AbortUpload(r.Context(), req.Key, req.UploadId); err != nil {
 		slog.Error("abort file upload failed", "err", err, "key", req.Key)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to abort file upload")
 		return

@@ -67,12 +67,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.backend.appSecretName }}
                   key: jwt-secret
-            - name: DYNAMIC_PDB_S3_REGION
+            - name: DYNAMIC_PDB_CDN_S3_REGION
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.backend.s3SecretName }}
                   key: AWS_REGION
-            - name: DYNAMIC_PDB_S3_BUCKET
+            - name: DYNAMIC_PDB_CDN_S3_BUCKET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.backend.s3SecretName }}
