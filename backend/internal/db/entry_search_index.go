@@ -46,7 +46,7 @@ func (r *EntrySearchIndexRepository) IndexEntry(ctx context.Context, entry model
 		ModelType:  entrySearchModelTypeEntry,
 		ModelID:    "",
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(entry.ID.String(), entry.Name, stringFromPtr(entry.Description), stringFromPtr(entry.ThumbnailImageURL)),
+		SearchText: searchTextFromParts(entry.Name, stringFromPtr(entry.Description)),
 	})
 }
 
@@ -56,24 +56,18 @@ func (r *EntrySearchIndexRepository) IndexModel(ctx context.Context, model model
 		ModelType:  entrySearchModelTypeModel,
 		ModelID:    model.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(model.ID.String(), model.Name, stringFromPtr(model.Description), stringFromPtr(model.ThumbnailImageURL)),
+		SearchText: searchTextFromParts(model.Name, stringFromPtr(model.Description)),
 	})
 }
 
 func (r *EntrySearchIndexRepository) IndexEntity(ctx context.Context, entity models.Entity) error {
-	payload, err := marshalEntityPayload(entity.Payload)
+	payloadParts, err := entityPayloadSearchParts(entity)
 	if err != nil {
-		return fmt.Errorf("prepare entity search payload: %w", err)
+		return fmt.Errorf("prepare entity search fields: %w", err)
 	}
 
-	parts := []string{
-		entity.ID.String(),
-		uuidPtrString(entity.ModelID),
-		string(entity.Type),
-		entityLevelPtrString(entity.Level),
-		entity.Name,
-		payload,
-	}
+	parts := []string{entity.Name}
+	parts = append(parts, payloadParts...)
 
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
 		EntryID:    entity.EntryID,
@@ -82,6 +76,46 @@ func (r *EntrySearchIndexRepository) IndexEntity(ctx context.Context, entity mod
 		UpdatedAt:  time.Now().UTC(),
 		SearchText: searchTextFromParts(parts...),
 	})
+}
+
+func entityPayloadSearchParts(entity models.Entity) ([]string, error) {
+	switch entity.Type {
+	case models.EntityTypeData:
+		payload, err := entity.Data()
+		if err != nil {
+			return nil, fmt.Errorf("get data payload: %w", err)
+		}
+		return []string{
+			strings.Join(payload.Authors, " "),
+			stringFromPtr(payload.Affiliation),
+		}, nil
+	case models.EntityTypeModel:
+		payload, err := entity.Model()
+		if err != nil {
+			return nil, fmt.Errorf("get model payload: %w", err)
+		}
+		return []string{
+			strings.Join(payload.Authors, " "),
+			stringFromPtr(payload.Affiliation),
+		}, nil
+	case models.EntityTypeProgram:
+		payload, err := entity.Program()
+		if err != nil {
+			return nil, fmt.Errorf("get program payload: %w", err)
+		}
+		return []string{
+			payload.Name,
+			payload.Version,
+			payload.Description,
+		}, nil
+	case models.EntityTypeMetrics:
+		if _, err := entity.Metrics(); err != nil {
+			return nil, fmt.Errorf("get metrics payload: %w", err)
+		}
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%w: %s", models.ErrUnexpectedEntityType, entity.Type)
+	}
 }
 
 func (r *EntrySearchIndexRepository) saveSearchRow(ctx context.Context, row entrySearchIndexRow) error {
@@ -124,18 +158,4 @@ func stringFromPtr(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-func uuidPtrString(value *uuid.UUID) string {
-	if value == nil {
-		return ""
-	}
-	return value.String()
-}
-
-func entityLevelPtrString(value *models.EntityLevel) string {
-	if value == nil {
-		return ""
-	}
-	return string(*value)
 }
