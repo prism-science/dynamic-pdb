@@ -19,6 +19,11 @@ import (
 
 var errInvalidRequest = errors.New("invalid request")
 
+const (
+	minProteinSequenceQueryLength = 8
+	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
+)
+
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
 	filters, err := entryFiltersFromParams(params)
 	if err != nil {
@@ -31,6 +36,19 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 		slog.Error("list entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
 		return
+	}
+
+	if len(entries) == 0 {
+		if proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query); ok {
+			filters.Query = ""
+			filters.ProteinSequence = proteinSequence
+			entries, err = s.database.Entries.List(r.Context(), filters)
+			if err != nil {
+				slog.Error("list entries by protein sequence failed", "err", err)
+				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
+				return
+			}
+		}
 	}
 
 	items := make([]Entry, 0, len(entries))
@@ -128,6 +146,26 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 		Offset: params.Offset,
 		Query:  search,
 	}, nil
+}
+
+func proteinSequenceFromSearchQuery(value string) (string, bool) {
+	var normalized strings.Builder
+	normalized.Grow(len(value))
+
+	for _, char := range strings.ToUpper(value) {
+		if char == ' ' || char == '\t' || char == '\n' || char == '\r' {
+			continue
+		}
+		if !strings.ContainsRune(proteinSequenceAlphabet, char) {
+			return "", false
+		}
+		normalized.WriteRune(char)
+	}
+
+	if normalized.Len() < minProteinSequenceQueryLength {
+		return "", false
+	}
+	return normalized.String(), true
 }
 
 func entryResponseFromModel(entry domainmodels.Entry) Entry {

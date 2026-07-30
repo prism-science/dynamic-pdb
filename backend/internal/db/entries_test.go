@@ -83,6 +83,39 @@ func Test_should_list_entries_matching_search_with_pagination_when_entries_list_
 	assert.Equal(t, second.ID, got[0].ID)
 }
 
+func Test_should_filter_entries_by_protein_sequence_when_entries_list_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	sequenceToken := proteinSequenceTokenForTest(uuid.New())
+	sequenceEntry := createDBTestEntry(t, "sequence entry", now)
+	sequenceEntity, err := testDB.Entities.Create(ctx, models.Entity{
+		ID:      uuid.New(),
+		EntryID: sequenceEntry.ID,
+		Type:    models.EntityTypeData,
+		Name:    "protein sequence",
+		Payload: models.DataPayload{
+			FileURL: "https://files.example/protein.fasta",
+			Type:    "fasta",
+			Metadata: map[string]any{
+				"sequence": "M" + sequenceToken + "K",
+			},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, sequenceEntity)
+	queryWithWhitespace := strings.ToLower(sequenceToken[:8] + "\n" + sequenceToken[8:])
+
+	// when
+	sequenceMatches, err := testDB.Entries.List(ctx, db.EntryFilters{ProteinSequence: queryWithWhitespace})
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, entryListContainsID(sequenceMatches, sequenceEntry.ID))
+}
+
 func Test_should_return_error_when_entries_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
@@ -92,4 +125,29 @@ func Test_should_return_error_when_entries_list_called_with_negative_limit(t *te
 
 	// then
 	require.Error(t, err)
+}
+
+func Test_should_return_error_when_entries_list_called_with_text_and_protein_sequence(t *testing.T) {
+	// given
+	filters := db.EntryFilters{
+		Query:           "text",
+		ProteinSequence: "ACDEFGHIK",
+	}
+
+	// when
+	_, err := testDB.Entries.List(context.Background(), filters)
+
+	// then
+	require.Error(t, err)
+}
+
+func proteinSequenceTokenForTest(id uuid.UUID) string {
+	const alphabet = "ACDEFGHIKLMNPQRSTVWY"
+
+	var token strings.Builder
+	token.Grow(len(id))
+	for _, value := range id {
+		token.WriteByte(alphabet[int(value)%len(alphabet)])
+	}
+	return token.String()
 }

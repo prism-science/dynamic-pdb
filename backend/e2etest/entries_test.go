@@ -240,11 +240,27 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	tokenResponse := issueTokenForTest(s.T(), "gh-token")
 	searchToken := "crambin-" + uuid.NewString()
 	affiliationSearchToken := "metadata-lab-" + uuid.NewString()
+	proteinSequence := proteinSequenceTokenForTest(uuid.New())
+	sequenceEntityID := uuid.New()
 	modelEntityID := uuid.New()
 
 	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"name":        "entry " + searchToken,
 		"description": "Searchable entry for nested graph tests",
+		"entities": []map[string]any{
+			{
+				"id":   sequenceEntityID,
+				"type": "data",
+				"name": "Protein FASTA",
+				"payload": map[string]any{
+					"file_url": "https://files.example/protein.fasta",
+					"type":     "fasta",
+					"metadata": map[string]any{
+						"sequence": "M" + proteinSequence + "K",
+					},
+				},
+			},
+		},
 		"models": []map[string]any{
 			{
 				"name":        "qFit refinement",
@@ -281,6 +297,9 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	affiliationSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(affiliationSearchToken), "")
 	defer affiliationSearchResp.Body.Close()
 
+	sequenceSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(strings.ToLower(proteinSequence)), "")
+	defer sequenceSearchResp.Body.Close()
+
 	missingResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("missing-"+searchToken), "")
 	defer missingResp.Body.Close()
 
@@ -289,6 +308,7 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	s.Equal(http.StatusOK, modelSearchResp.StatusCode)
 	s.Equal(http.StatusOK, entitySearchResp.StatusCode)
 	s.Equal(http.StatusOK, affiliationSearchResp.StatusCode)
+	s.Equal(http.StatusOK, sequenceSearchResp.StatusCode)
 	s.Equal(http.StatusOK, missingResp.StatusCode)
 
 	var textSearchBody httpapi.EntryListResponse
@@ -306,6 +326,10 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	var affiliationSearchBody httpapi.EntryListResponse
 	s.Require().NoError(json.NewDecoder(affiliationSearchResp.Body).Decode(&affiliationSearchBody))
 	s.Require().NotNil(entryByName(affiliationSearchBody.Items, "entry "+searchToken))
+
+	var sequenceSearchBody httpapi.EntryListResponse
+	s.Require().NoError(json.NewDecoder(sequenceSearchResp.Body).Decode(&sequenceSearchBody))
+	s.Require().NotNil(entryByName(sequenceSearchBody.Items, "entry "+searchToken))
 
 	var missingBody httpapi.EntryListResponse
 	s.Require().NoError(json.NewDecoder(missingResp.Body).Decode(&missingBody))
@@ -1076,6 +1100,17 @@ func chainIDsFromFastaHeader(header string) []string {
 	}
 
 	return nil
+}
+
+func proteinSequenceTokenForTest(id uuid.UUID) string {
+	const alphabet = "ACDEFGHIKLMNPQRSTVWY"
+
+	var token strings.Builder
+	token.Grow(len(id))
+	for _, value := range id {
+		token.WriteByte(alphabet[int(value)%len(alphabet)])
+	}
+	return token.String()
 }
 
 func entryByName(entries []httpapi.Entry, name string) *httpapi.Entry {

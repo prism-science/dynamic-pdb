@@ -25,9 +25,10 @@ type EntriesRepository struct {
 }
 
 type EntryFilters struct {
-	Limit  *int
-	Offset *int
-	Query  string
+	Limit           *int
+	Offset          *int
+	Query           string
+	ProteinSequence string
 }
 
 func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntriesRepository {
@@ -192,9 +193,19 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from entries`
 
-	if queryText := strings.TrimSpace(filters.Query); queryText != "" {
-		query += "\nwhere " + entrySearchCondition()
+	queryText := strings.TrimSpace(filters.Query)
+	proteinSequence := strings.ToUpper(strings.Join(strings.Fields(filters.ProteinSequence), ""))
+	if queryText != "" && proteinSequence != "" {
+		return "", nil, errors.New("query and protein sequence cannot be combined")
+	}
+
+	if queryText != "" {
 		args["search_query"] = queryText
+		query += "\nwhere " + entrySearchCondition()
+	}
+	if proteinSequence != "" {
+		args["protein_sequence"] = proteinSequence
+		query += "\nwhere " + entryProteinSequenceSearchCondition()
 	}
 
 	query += "\norder by created_at asc, id asc"
@@ -217,6 +228,19 @@ func entrySearchCondition() string {
 		from entry_search_index idx
 		where idx.entry_id = entries.id
 		  and idx.search_tsv @@ plainto_tsquery('simple', :search_query)
+	)`
+}
+
+func entryProteinSequenceSearchCondition() string {
+	return `exists (
+		select 1
+		from entities sequence_entity
+		where sequence_entity.entry_id = entries.id
+		  and sequence_entity.type = 'data'
+		  and sequence_entity.payload ->> 'type' = 'fasta'
+		  and jsonb_typeof(sequence_entity.payload #> '{metadata,sequence}') = 'string'
+		  and upper(sequence_entity.payload #>> '{metadata,sequence}')
+		      like '%' || :protein_sequence || '%'
 	)`
 }
 
