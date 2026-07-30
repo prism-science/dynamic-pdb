@@ -21,8 +21,15 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	token := strings.ReplaceAll(uuid.NewString(), "-", "")
 	entryToken := "entrytoken" + token
 	modelToken := "modeltoken" + token
+	thumbnailToken := "thumbnailtoken" + token
+	thumbnailURL := "https://images.example/" + thumbnailToken + ".jpeg"
 	firstEntityToken := "firstentitytoken" + token
 	secondEntityToken := "secondentitytoken" + token
+	authorToken := "authortoken" + token
+	affiliationToken := "affiliationtoken" + token
+	fileURLToken := "fileurltoken" + token
+	affiliation := "research affiliation " + affiliationToken
+	entityLevel := models.EntityLevelL3
 	createdBy := createDBTestUser(t)
 
 	entry, err := testDB.Entries.Create(ctx, models.Entry{
@@ -33,6 +40,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 		UpdatedAt: now,
 	})
 	require.NoError(t, err)
+	entry.ThumbnailImageURL = &thumbnailURL
 
 	model, err := testDB.Models.Create(ctx, models.Model{
 		ID:        uuid.New(),
@@ -43,16 +51,20 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 		UpdatedAt: now,
 	})
 	require.NoError(t, err)
+	model.ThumbnailImageURL = &thumbnailURL
 
 	firstEntity, err := testDB.Entities.Create(ctx, models.Entity{
 		ID:      uuid.New(),
 		EntryID: entry.ID,
 		ModelID: &model.ID,
 		Type:    models.EntityTypeData,
-		Name:    "first data file " + firstEntityToken,
+		Level:   &entityLevel,
+		Name:    "first entity " + firstEntityToken,
 		Payload: models.DataPayload{
-			FileURL: "s3://dynamic-pdb/test/first.fasta",
-			Type:    "fasta",
+			FileURL:     "https://files.example/" + fileURLToken + ".bin",
+			Type:        "fasta",
+			Authors:     []string{"Researcher " + authorToken},
+			Affiliation: &affiliation,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -80,6 +92,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assertEntrySearchContains(ctx, t, entryToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, thumbnailToken, entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, modelToken, entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, firstEntityToken, entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
@@ -90,6 +103,7 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assertEntrySearchContains(ctx, t, modelToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, thumbnailToken, entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, firstEntityToken, entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
 
@@ -99,6 +113,11 @@ func Test_should_index_only_requested_record_when_index_called(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assertEntrySearchContains(ctx, t, firstEntityToken, entry.ID)
+	assertEntrySearchContains(ctx, t, authorToken, entry.ID)
+	assertEntrySearchContains(ctx, t, affiliationToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, fileURLToken, entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, "fasta", entry.ID)
+	assertEntrySearchDoesNotContain(ctx, t, string(entityLevel), entry.ID)
 	assertEntrySearchDoesNotContain(ctx, t, secondEntityToken, entry.ID)
 
 	// when
