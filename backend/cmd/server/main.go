@@ -20,6 +20,7 @@ import (
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
 	"dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 func main() {
@@ -55,12 +56,17 @@ func run() int {
 		github.WithOAuthClientID(cfg.Auth.GitHub.ClientID),
 		github.WithOAuthClientSecret(cfg.Auth.GitHub.ClientSecret),
 	)
-	fileUploadBucket, err := s3.NewBucket(context.Background(), cfg.S3)
+	fileUploadBucket, err := s3.NewBucket(context.Background(), cfg.CDN.S3)
 	if err != nil {
 		slog.Error("file upload bucket init failed", "err", err)
 		return 1
 	}
-	srv := httpapi.NewServer(githubClient, fileUploadBucket, cfg.Auth, jwt, database)
+	fileCDN, err := cdn.NewService(fileUploadBucket, cfg.CDN)
+	if err != nil {
+		slog.Error("file CDN init failed", "err", err)
+		return 1
+	}
+	srv := httpapi.NewServer(githubClient, fileCDN, cfg.Auth, jwt, database)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)

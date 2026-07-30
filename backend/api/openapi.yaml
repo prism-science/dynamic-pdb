@@ -619,7 +619,7 @@ components:
           description: Identifier of the initiated multipart upload; echoed back on complete and abort.
         object_url:
           type: string
-          description: Full HTTP object URL to store with the entry payload.
+          description: Public HTTP object URL to store with the entry payload.
         part_size:
           type: integer
           format: int64

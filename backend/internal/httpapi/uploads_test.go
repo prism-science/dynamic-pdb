@@ -13,25 +13,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t *testing.T) {
 	// given
 	entryID := uuid.New()
 	entityID := uuid.New()
-	bucket := &uploadBucketStub{
-		grant: s3.MultipartUploadGrant{
+	fileCDN := &uploadCDNStub{
+		grant: cdn.UploadGrant{
 			Key:       "entry/entities/entity/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "s3://dynamic-pdb/entry/entities/entity/model.cif",
+			ObjectURL: "https://files.dynamicpdb.com/entry/entities/entity/model.cif",
 			PartSize:  64 * 1024 * 1024,
-			Parts: []s3.PresignedPart{
+			Parts: []cdn.UploadPart{
 				{PartNumber: 1, URL: "https://storage.example/part-1"},
 			},
 		},
 	}
-	server := &Server{fileUploadBucket: bucket}
+	server := &Server{
+		fileCDN: fileCDN,
+	}
 	req := uploadJSONRequest(t, map[string]any{
 		"entry_id":  entryID,
 		"entity_id": entityID,
@@ -45,15 +47,16 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, entryID.String(), bucket.presignedFile.EntryID)
-	assert.Equal(t, entityID.String(), bucket.presignedFile.EntityID)
-	assert.Equal(t, "model.cif", bucket.presignedFile.OriginalFilename)
-	assert.Equal(t, int64(42), bucket.presignedFile.Size)
+	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
+	assert.Equal(t, entityID.String(), fileCDN.createdFile.EntityID)
+	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
+	assert.Equal(t, int64(42), fileCDN.createdFile.Size)
 
 	var body FileUploadGrantResponse
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
-	assert.Equal(t, bucket.grant.Key, body.Key)
-	assert.Equal(t, bucket.grant.UploadID, body.UploadId)
+	assert.Equal(t, fileCDN.grant.Key, body.Key)
+	assert.Equal(t, fileCDN.grant.UploadID, body.UploadId)
+	assert.Equal(t, "https://files.dynamicpdb.com/entry/entities/entity/model.cif", body.ObjectUrl)
 	assert.Len(t, body.Parts, 1)
 }
 
@@ -113,8 +116,8 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// given
-			bucket := &uploadBucketStub{}
-			server := &Server{fileUploadBucket: bucket}
+			fileCDN := &uploadCDNStub{}
+			server := &Server{fileCDN: fileCDN}
 			req := uploadJSONRequest(t, tt.body)
 			rec := httptest.NewRecorder()
 
@@ -123,15 +126,15 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 
 			// then
 			require.Equal(t, http.StatusBadRequest, rec.Code)
-			assert.Zero(t, bucket.presignCalls)
+			assert.Zero(t, fileCDN.createCalls)
 		})
 	}
 }
 
-func Test_should_return_500_when_create_file_upload_presign_fails(t *testing.T) {
+func Test_should_return_500_when_create_file_upload_service_fails(t *testing.T) {
 	// given
-	bucket := &uploadBucketStub{presignErr: errors.New("presign failed")}
-	server := &Server{fileUploadBucket: bucket}
+	fileCDN := &uploadCDNStub{createErr: errors.New("create failed")}
+	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
 		"entry_id":  uuid.New(),
 		"entity_id": uuid.New(),
@@ -145,13 +148,33 @@ func Test_should_return_500_when_create_file_upload_presign_fails(t *testing.T) 
 
 	// then
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, 1, bucket.presignCalls)
+	assert.Equal(t, 1, fileCDN.createCalls)
+}
+
+func Test_should_return_400_when_cdn_rejects_file_upload(t *testing.T) {
+	// given
+	fileCDN := &uploadCDNStub{createErr: cdn.ErrInvalidFileUpload}
+	server := &Server{fileCDN: fileCDN}
+	req := uploadJSONRequest(t, map[string]any{
+		"entry_id":  uuid.New(),
+		"entity_id": uuid.New(),
+		"filename":  "model.cif",
+		"size":      1,
+	})
+	rec := httptest.NewRecorder()
+
+	// when
+	server.CreateFileUpload(rec, req)
+
+	// then
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, 1, fileCDN.createCalls)
 }
 
 func Test_should_complete_file_upload_when_complete_request_is_valid(t *testing.T) {
 	// given
-	bucket := &uploadBucketStub{}
-	server := &Server{fileUploadBucket: bucket}
+	fileCDN := &uploadCDNStub{}
+	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
 		"key":       "entry/entities/entity/model.cif",
 		"upload_id": "upload-id",
@@ -167,12 +190,12 @@ func Test_should_complete_file_upload_when_complete_request_is_valid(t *testing.
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "entry/entities/entity/model.cif", bucket.completedKey)
-	assert.Equal(t, "upload-id", bucket.completedUploadID)
-	assert.Equal(t, []s3.CompletedPart{
+	assert.Equal(t, "entry/entities/entity/model.cif", fileCDN.completedKey)
+	assert.Equal(t, "upload-id", fileCDN.completedUploadID)
+	assert.Equal(t, []cdn.CompletedPart{
 		{PartNumber: 2, ETag: `"etag-2"`},
 		{PartNumber: 1, ETag: `"etag-1"`},
-	}, bucket.completedParts)
+	}, fileCDN.completedParts)
 }
 
 func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *testing.T) {
@@ -217,8 +240,8 @@ func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// given
-			bucket := &uploadBucketStub{}
-			server := &Server{fileUploadBucket: bucket}
+			fileCDN := &uploadCDNStub{}
+			server := &Server{fileCDN: fileCDN}
 			req := uploadJSONRequest(t, tt.body)
 			rec := httptest.NewRecorder()
 
@@ -227,15 +250,15 @@ func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *test
 
 			// then
 			require.Equal(t, http.StatusBadRequest, rec.Code)
-			assert.Zero(t, bucket.completeCalls)
+			assert.Zero(t, fileCDN.completeCalls)
 		})
 	}
 }
 
 func Test_should_return_500_when_complete_file_upload_fails(t *testing.T) {
 	// given
-	bucket := &uploadBucketStub{completeErr: errors.New("complete failed")}
-	server := &Server{fileUploadBucket: bucket}
+	fileCDN := &uploadCDNStub{completeErr: errors.New("complete failed")}
+	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
 		"key":       "entry/entities/entity/model.cif",
 		"upload_id": "upload-id",
@@ -248,13 +271,13 @@ func Test_should_return_500_when_complete_file_upload_fails(t *testing.T) {
 
 	// then
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, 1, bucket.completeCalls)
+	assert.Equal(t, 1, fileCDN.completeCalls)
 }
 
 func Test_should_abort_file_upload_when_abort_request_is_valid(t *testing.T) {
 	// given
-	bucket := &uploadBucketStub{}
-	server := &Server{fileUploadBucket: bucket}
+	fileCDN := &uploadCDNStub{}
+	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
 		"key":       "entry/entities/entity/model.cif",
 		"upload_id": "upload-id",
@@ -266,14 +289,14 @@ func Test_should_abort_file_upload_when_abort_request_is_valid(t *testing.T) {
 
 	// then
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Equal(t, "entry/entities/entity/model.cif", bucket.abortedKey)
-	assert.Equal(t, "upload-id", bucket.abortedUploadID)
+	assert.Equal(t, "entry/entities/entity/model.cif", fileCDN.abortedKey)
+	assert.Equal(t, "upload-id", fileCDN.abortedUploadID)
 }
 
 func Test_should_return_500_when_abort_file_upload_fails(t *testing.T) {
 	// given
-	bucket := &uploadBucketStub{abortErr: errors.New("abort failed")}
-	server := &Server{fileUploadBucket: bucket}
+	fileCDN := &uploadCDNStub{abortErr: errors.New("abort failed")}
+	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
 		"key":       "entry/entities/entity/model.cif",
 		"upload_id": "upload-id",
@@ -285,7 +308,7 @@ func Test_should_return_500_when_abort_file_upload_fails(t *testing.T) {
 
 	// then
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, 1, bucket.abortCalls)
+	assert.Equal(t, 1, fileCDN.abortCalls)
 }
 
 func uploadJSONRequest(t *testing.T, body map[string]any) *http.Request {
@@ -298,45 +321,47 @@ func uploadJSONRequest(t *testing.T, body map[string]any) *http.Request {
 	return req
 }
 
-type uploadBucketStub struct {
-	grant       s3.MultipartUploadGrant
-	presignErr  error
+type uploadCDNStub struct {
+	grant       cdn.UploadGrant
+	createErr   error
 	completeErr error
 	abortErr    error
 
-	presignCalls  int
-	presignedFile s3.FileUpload
+	createCalls int
+	createdFile cdn.FileUpload
 
 	completeCalls     int
 	completedKey      string
 	completedUploadID string
-	completedParts    []s3.CompletedPart
+	completedParts    []cdn.CompletedPart
 
 	abortCalls      int
 	abortedKey      string
 	abortedUploadID string
 }
 
-func (b *uploadBucketStub) PresignMultipartUpload(_ context.Context, file s3.FileUpload) (s3.MultipartUploadGrant, error) {
-	b.presignCalls++
-	b.presignedFile = file
-	if b.presignErr != nil {
-		return s3.MultipartUploadGrant{}, b.presignErr
+func (s *uploadCDNStub) CreateUpload(_ context.Context, file cdn.FileUpload) (cdn.UploadGrant, error) {
+	s.createCalls++
+	s.createdFile = file
+	if s.createErr != nil {
+		return cdn.UploadGrant{}, s.createErr
 	}
-	return b.grant, nil
+	return s.grant, nil
 }
 
-func (b *uploadBucketStub) CompleteMultipartUpload(_ context.Context, key, uploadID string, parts []s3.CompletedPart) error {
-	b.completeCalls++
-	b.completedKey = key
-	b.completedUploadID = uploadID
-	b.completedParts = parts
-	return b.completeErr
+func (s *uploadCDNStub) CompleteUpload(_ context.Context, key, uploadID string, parts []cdn.CompletedPart) error {
+	s.completeCalls++
+	s.completedKey = key
+	s.completedUploadID = uploadID
+	s.completedParts = parts
+	return s.completeErr
 }
 
-func (b *uploadBucketStub) AbortMultipartUpload(_ context.Context, key, uploadID string) error {
-	b.abortCalls++
-	b.abortedKey = key
-	b.abortedUploadID = uploadID
-	return b.abortErr
+func (s *uploadCDNStub) AbortUpload(_ context.Context, key, uploadID string) error {
+	s.abortCalls++
+	s.abortedKey = key
+	s.abortedUploadID = uploadID
+	return s.abortErr
 }
+
+var _ cdn.Service = (*uploadCDNStub)(nil)

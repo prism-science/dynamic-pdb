@@ -21,6 +21,7 @@ import (
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
 	storage "dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 const (
@@ -80,17 +81,22 @@ func TestMain(m *testing.M) {
 	}
 
 	jwt := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL)
-	fileUploadBucket, err := storage.NewBucket(context.Background(), storage.BucketConfig{
+	storageConfig := storage.BucketConfig{
 		Endpoint:        s3Stub.URL(),
 		Region:          "us-east-1",
 		Bucket:          "dynamic-pdb",
 		AccessKeyID:     "AKIAEXAMPLE",
 		SecretAccessKey: "secret",
-	})
+	}
+	fileUploadBucket, err := storage.NewBucket(context.Background(), storageConfig)
 	if err != nil {
 		log.Fatalf("e2etest: create s3 bucket: %v", err)
 	}
-	server := httpapi.NewServer(githubClient, fileUploadBucket, authConfig, jwt, database)
+	fileCDN, err := cdn.NewService(fileUploadBucket, cdn.Config{S3: storageConfig})
+	if err != nil {
+		log.Fatalf("e2etest: create CDN service: %v", err)
+	}
+	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, database)
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())
