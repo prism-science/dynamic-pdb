@@ -12,7 +12,7 @@ import type {
 } from "@/lib/api/entries";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
 import { fastaRecordText, fastaRecords } from "@/lib/fasta";
-import { detectStructureKind } from "@/lib/structureKind";
+import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";
 
 import styles from "./FilePreviewModal.module.css";
@@ -34,9 +34,13 @@ const metricFormatter = new Intl.NumberFormat("en-US", {
 
 export default function FilePreviewModal({
   entity,
+  maps,
   onClose,
 }: {
   entity: Entity | null;
+  // Density maps offered alongside the structure, so opening a model from a
+  // file list gives the same viewer as opening it from its card.
+  maps?: StructureMap[];
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
@@ -141,7 +145,7 @@ export default function FilePreviewModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img className={styles.previewImg} src={url} alt={entity.name} />
           ) : kind && url ? (
-            <StructureViewer url={url} kind={kind} />
+            <StructureViewer url={url} kind={kind} maps={maps} />
           ) : (
             <GenericView type={payload.type} size={payload.size} url={url} />
           )}

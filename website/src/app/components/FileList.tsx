@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { Entity } from "@/lib/api/entries";
+import { structureMaps } from "@/lib/entities";
 import FilePreviewModal from "./FilePreviewModal";
 import ResolvedFileLink from "./ResolvedFileLink";
 import styles from "./FileList.module.css";
@@ -74,7 +75,15 @@ export default function FileList({ items }: { items: FileItem[] }) {
         </div>
       ) : null}
 
-      <FilePreviewModal entity={preview} onClose={() => setPreview(null)} />
+      <FilePreviewModal
+        entity={preview}
+        maps={structureMaps(
+          items
+            .map((item) => item.entity)
+            .filter((entity): entity is Entity => entity != null),
+        )}
+        onClose={() => setPreview(null)}
+      />
     </div>
   );
 }

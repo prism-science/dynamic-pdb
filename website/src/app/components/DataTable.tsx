@@ -3,7 +3,7 @@
 import { useState, type CSSProperties } from "react";
 
 import type { Entity, EntityLevel } from "@/lib/api/entries";
-import { dataTableEntities } from "@/lib/entities";
+import { dataTableEntities, structureMaps } from "@/lib/entities";
 import FilePreviewModal from "./FilePreviewModal";
 
 import styles from "./DataTable.module.css";
@@ -67,7 +67,11 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
         </div>
       ))}
 
-      <FilePreviewModal entity={selected} onClose={() => setSelected(null)} />
+      <FilePreviewModal
+        entity={selected}
+        maps={structureMaps(entities)}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

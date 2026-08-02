@@ -2,20 +2,21 @@ import { notFound } from "next/navigation";
 
 import {
   ApiRequestError,
-  type DataPayload,
   type ModelPageData,
   getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
-import { dataTableEntities } from "@/lib/entities";
-import type { StructureMap } from "@/lib/structureKind";
+import {
+  dataTableEntities,
+  getEntityFileURL,
+  structureMaps,
+} from "@/lib/entities";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
   EntryHero,
-  getEntityFileURL,
   ModelCard,
   SectionHeader,
 } from "../../entry-view";
@@ -40,16 +41,7 @@ export default async function ModelPage({
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
   const modelFileURL = model ? getEntityFileURL(model) : null;
 
-  // For now, treat every nearby MTZ file as a density-map layer, regardless of
-  // how it is related to the model.
-  const maps: StructureMap[] = data.entities
-    .filter(
-      (entity) =>
-        entity.type === "data" &&
-        (entity.payload as DataPayload)?.type === "mtz",
-    )
-    .map((entity) => ({ url: getEntityFileURL(entity), name: entity.name }))
-    .filter((map): map is StructureMap => typeof map.url === "string");
+  const maps = structureMaps(data.entities);
 
   const hasData = dataTableEntities(data.entities).length > 0;
 

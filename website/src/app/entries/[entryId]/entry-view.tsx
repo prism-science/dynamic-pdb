@@ -8,6 +8,7 @@ import type {
   ModelPayload,
   ProgramPayload,
 } from "@/lib/api/entries";
+import { getEntityFileURL, getFilePayload } from "@/lib/entities";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
 import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 
@@ -284,31 +285,6 @@ export function ModelCard({
       </div>
     </article>
   );
-}
-
-export function getEntityFileURL(entity: Entity): string | null {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return null;
-  }
-  if (
-    typeof entity.payload !== "object" ||
-    entity.payload === null ||
-    !("file_url" in entity.payload)
-  ) {
-    return null;
-  }
-  const fileURL = entity.payload.file_url;
-  return typeof fileURL === "string" && fileURL.length > 0 ? fileURL : null;
-}
-
-function getFilePayload(entity: Entity): DataPayload | ModelPayload | null {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return null;
-  }
-  if (typeof entity.payload !== "object" || entity.payload === null) {
-    return null;
-  }
-  return entity.payload as DataPayload | ModelPayload;
 }
 
 function formatProgram(program: Entity): string {
