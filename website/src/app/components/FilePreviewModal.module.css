@@ -125,24 +125,31 @@
   flex-shrink: 0;
 }
 
+/* Outlined, not filled — the same button the model page shows in its hero, so
+   Download reads the same everywhere and sits level with Copy beside it. */
 .download {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--surface);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
-  transition: background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
 }
 
 .download:hover {
-  background: var(--accent-hover);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  background: var(--accent-soft);
 }
 
 .copy {
