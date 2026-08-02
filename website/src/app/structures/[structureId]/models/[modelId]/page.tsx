@@ -6,7 +6,7 @@ import {
   type ModelPageData,
   type FastaMetadata,
   getModelPageData,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { getAuthSession } from "@/lib/auth/session";
 import type { StructureMap } from "@/lib/structureKind";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
@@ -15,27 +15,27 @@ import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import SequenceView from "@/app/components/SequenceView";
 import {
   buildProvenance,
-  EntryHero,
+  StructureHero,
   getEntityFileURL,
   ModelCard,
   SectionHeader,
-} from "../../entry-view";
+} from "../../structure-view";
 
-import styles from "../../entry-page.module.css";
+import styles from "../../structure-page.module.css";
 
 export const dynamic = "force-dynamic";
 
 type ModelRouteProps = {
-  params: Promise<{ entryId: string; modelId: string }>;
+  params: Promise<{ structureId: string; modelId: string }>;
 };
 
 export default async function ModelPage({
   params,
 }: ModelRouteProps) {
-  const { entryId, modelId } = await params;
+  const { structureId, modelId } = await params;
   const session = await getAuthSession();
 
-  const data = await loadModelPage(session?.token, entryId, modelId);
+  const data = await loadModelPage(session?.token, structureId, modelId);
   const provenance = buildProvenance(data.entities, data.relations);
 
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
@@ -64,18 +64,18 @@ export default async function ModelPage({
   return (
     <main
       className={styles.page}
-      aria-label={`${data.entry.name} model ${data.model.name}`}
+      aria-label={`${data.structure.name} model ${data.model.name}`}
     >
       <section className={styles.shell}>
         <Breadcrumbs
           items={[
-            { label: "Entries", href: "/" },
-            { label: data.entry.name, href: `/entries/${data.entry.id}` },
+            { label: "Structures", href: "/" },
+            { label: data.structure.name, href: `/structures/${data.structure.id}` },
             { label: data.model.name },
           ]}
         />
 
-        <EntryHero
+        <StructureHero
           title={data.model.name}
           action={
             modelFileURL ? (
@@ -124,11 +124,11 @@ export default async function ModelPage({
 
 async function loadModelPage(
   token: string | undefined,
-  entryId: string,
+  structureId: string,
   modelId: string,
 ): Promise<ModelPageData> {
   try {
-    return await getModelPageData(token, entryId, modelId);
+    return await getModelPageData(token, structureId, modelId);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();

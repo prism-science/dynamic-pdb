@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { Entity, EntityLevel } from "@/lib/api/entries";
+import type { Entity, EntityLevel } from "@/lib/api/structures";
 import FilePreviewModal from "./FilePreviewModal";
 
 import styles from "./DataTable.module.css";

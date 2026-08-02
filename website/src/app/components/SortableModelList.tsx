@@ -9,11 +9,11 @@ import type {
   EntityRelation,
   MetricsPayload,
   Model,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { deleteModelAction } from "@/app/actions/delete";
 
 import DeleteButton from "./DeleteButton";
-import styles from "@/app/entries/[entryId]/entry-page.module.css";
+import styles from "@/app/structures/[structureId]/structure-page.module.css";
 
 type MetricKey = keyof MetricsPayload;
 
@@ -114,13 +114,13 @@ function buildModelMetrics(
 }
 
 export default function SortableModelList({
-  entryId,
+  structureId,
   models,
   entities,
   relations,
   currentUserId = null,
 }: {
-  entryId: string;
+  structureId: string;
   models: Model[];
   entities: Entity[];
   relations: EntityRelation[];
@@ -262,7 +262,7 @@ export default function SortableModelList({
         <tbody>
           {sortedModels.map((model) => {
             const metrics = metricsByModelId.get(model.id) ?? {};
-            const href = `/entries/${entryId}/models/${model.id}`;
+            const href = `/structures/${structureId}/models/${model.id}`;
             return (
               <tr
                 key={model.id}
@@ -349,7 +349,7 @@ export default function SortableModelList({
                     {currentUserId != null &&
                     model.created_by === currentUserId ? (
                       <DeleteButton
-                        action={() => deleteModelAction(entryId, model.id)}
+                        action={() => deleteModelAction(structureId, model.id)}
                         itemName={model.name}
                         itemKind="model"
                       />

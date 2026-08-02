@@ -2,7 +2,7 @@ import "server-only";
 
 import { getApiBaseUrl } from "./baseUrl";
 
-export type Entry = {
+export type Structure = {
   id: string;
   created_by: string;
   name: string;
@@ -14,7 +14,7 @@ export type Entry = {
 
 export type Model = {
   id: string;
-  entry_id: string;
+  structure_id: string;
   created_by: string;
   name: string;
   description: string | null;
@@ -70,7 +70,7 @@ export type EntityPayload =
 
 export type Entity = {
   id: string;
-  entry_id: string;
+  structure_id: string;
   model_id: string | null;
   type: EntityType;
   level: EntityLevel | null;
@@ -103,15 +103,15 @@ type EntityListResponse = {
   relations: EntityRelation[];
 };
 
-export type EntryPageData = {
-  entry: Entry;
+export type StructurePageData = {
+  structure: Structure;
   models: Model[];
   entities: Entity[];
   relations: EntityRelation[];
 };
 
 export type ModelPageData = {
-  entry: Entry;
+  structure: Structure;
   model: Model;
   entities: Entity[];
   relations: EntityRelation[];
@@ -127,10 +127,10 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function listEntries(
+export async function listStructures(
   token?: string,
   opts?: { query?: string | null },
-): Promise<Entry[]> {
+): Promise<Structure[]> {
   const params = new URLSearchParams();
   const query = opts?.query?.trim();
   if (query) {
@@ -138,8 +138,8 @@ export async function listEntries(
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
-  const response = await fetchBackend<ListResponse<Entry>>(
-    `/v1/entries${suffix}`,
+  const response = await fetchBackend<ListResponse<Structure>>(
+    `/v1/structures${suffix}`,
     token,
   );
   return response.items;
@@ -168,7 +168,7 @@ export type CreateModelInput = {
   relations?: CreateEntityRelationInput[];
 };
 
-export type CreateEntryInput = {
+export type CreateStructureInput = {
   id?: string;
   name: string;
   description?: string | null;
@@ -179,21 +179,21 @@ export type CreateEntryInput = {
 
 export async function createModel(
   token: string,
-  entryId: string,
+  structureId: string,
   input: CreateModelInput,
 ): Promise<void> {
   await postJSON(
-    `/v1/entries/${encodeURIComponent(entryId)}/models`,
+    `/v1/structures/${encodeURIComponent(structureId)}/models`,
     token,
     input,
   );
 }
 
-export async function createEntry(
+export async function createStructure(
   token: string,
-  input: CreateEntryInput,
+  input: CreateStructureInput,
 ): Promise<void> {
-  await postJSON("/v1/entries", token, input);
+  await postJSON("/v1/structures", token, input);
 }
 
 async function postJSON(
@@ -229,25 +229,25 @@ async function postJSON(
   }
 }
 
-export async function getEntryPageData(
+export async function getStructurePageData(
   token: string | undefined,
-  entryId: string,
-): Promise<EntryPageData> {
-  const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, models, entityGraph] = await Promise.all([
-    fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
+  structureId: string,
+): Promise<StructurePageData> {
+  const encodedStructureId = encodeURIComponent(structureId);
+  const [structure, models, entityGraph] = await Promise.all([
+    fetchBackend<Structure>(`/v1/structures/${encodedStructureId}`, token),
     fetchBackend<ListResponse<Model>>(
-      `/v1/entries/${encodedEntryId}/models`,
+      `/v1/structures/${encodedStructureId}/models`,
       token,
     ),
     fetchBackend<EntityListResponse>(
-      `/v1/entries/${encodedEntryId}/entities`,
+      `/v1/structures/${encodedStructureId}/entities`,
       token,
     ),
   ]);
 
   return {
-    entry,
+    structure,
     models: models.items,
     entities: entityGraph.items,
     relations: entityGraph.relations,
@@ -256,19 +256,19 @@ export async function getEntryPageData(
 
 export async function getModelPageData(
   token: string | undefined,
-  entryId: string,
+  structureId: string,
   modelId: string,
 ): Promise<ModelPageData> {
-  const encodedEntryId = encodeURIComponent(entryId);
+  const encodedStructureId = encodeURIComponent(structureId);
   const encodedModelId = encodeURIComponent(modelId);
-  const [entry, model, entityGraph] = await Promise.all([
-    fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
+  const [structure, model, entityGraph] = await Promise.all([
+    fetchBackend<Structure>(`/v1/structures/${encodedStructureId}`, token),
     fetchBackend<Model>(
-      `/v1/entries/${encodedEntryId}/models/${encodedModelId}`,
+      `/v1/structures/${encodedStructureId}/models/${encodedModelId}`,
       token,
     ),
     fetchBackend<EntityListResponse>(
-      `/v1/entries/${encodedEntryId}/entities`,
+      `/v1/structures/${encodedStructureId}/entities`,
       token,
     ),
   ]);
@@ -281,7 +281,7 @@ export async function getModelPageData(
   const scopedIds = new Set(scopedEntities.map((entity) => entity.id));
 
   return {
-    entry,
+    structure,
     model,
     entities: scopedEntities,
     relations: entityGraph.relations.filter(
@@ -292,37 +292,37 @@ export async function getModelPageData(
   };
 }
 
-export type EntryGraph = {
+export type StructureGraph = {
   entities: Entity[];
   relations: EntityRelation[];
 };
 
-export async function getEntryGraph(
+export async function getStructureGraph(
   token: string | undefined,
-  entryId: string,
-): Promise<EntryGraph> {
-  const encodedEntryId = encodeURIComponent(entryId);
+  structureId: string,
+): Promise<StructureGraph> {
+  const encodedStructureId = encodeURIComponent(structureId);
   const entityGraph = await fetchBackend<EntityListResponse>(
-    `/v1/entries/${encodedEntryId}/entities`,
+    `/v1/structures/${encodedStructureId}/entities`,
     token,
   );
   return { entities: entityGraph.items, relations: entityGraph.relations };
 }
 
-export async function deleteEntry(
+export async function deleteStructure(
   token: string,
-  entryId: string,
+  structureId: string,
 ): Promise<void> {
-  await deleteBackend(`/v1/entries/${encodeURIComponent(entryId)}`, token);
+  await deleteBackend(`/v1/structures/${encodeURIComponent(structureId)}`, token);
 }
 
 export async function deleteModel(
   token: string,
-  entryId: string,
+  structureId: string,
   modelId: string,
 ): Promise<void> {
   await deleteBackend(
-    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+    `/v1/structures/${encodeURIComponent(structureId)}/models/${encodeURIComponent(
       modelId,
     )}`,
     token,

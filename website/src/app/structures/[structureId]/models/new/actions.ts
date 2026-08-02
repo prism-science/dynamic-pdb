@@ -2,11 +2,11 @@
 
 import { redirect } from "next/navigation";
 
-import { createModel, type CreateModelInput } from "@/lib/api/entries";
+import { createModel, type CreateModelInput } from "@/lib/api/structures";
 import { getAuthSession } from "@/lib/auth/session";
 
 export async function createModelAction(
-  entryId: string,
+  structureId: string,
   input: CreateModelInput,
 ): Promise<{ error: string } | void> {
   const session = await getAuthSession();
@@ -15,7 +15,7 @@ export async function createModelAction(
   }
 
   try {
-    await createModel(session.token, entryId, input);
+    await createModel(session.token, structureId, input);
   } catch (error) {
     return {
       error:
@@ -23,5 +23,5 @@ export async function createModelAction(
     };
   }
 
-  redirect(`/entries/${encodeURIComponent(entryId)}#models`);
+  redirect(`/structures/${encodeURIComponent(structureId)}#models`);
 }

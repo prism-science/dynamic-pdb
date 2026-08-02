@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { ApiRequestError, deleteEntry, deleteModel } from "@/lib/api/entries";
+import { ApiRequestError, deleteStructure, deleteModel } from "@/lib/api/structures";
 import { getAuthSession } from "@/lib/auth/session";
 
 type ActionResult = { error: string } | void;
@@ -22,23 +22,23 @@ function messageForStatus(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-export async function deleteEntryAction(entryId: string): Promise<ActionResult> {
+export async function deleteStructureAction(structureId: string): Promise<ActionResult> {
   const session = await getAuthSession();
   if (!session) {
-    return { error: "You must be signed in to delete an entry." };
+    return { error: "You must be signed in to delete a structure." };
   }
 
   try {
-    await deleteEntry(session.token, entryId);
+    await deleteStructure(session.token, structureId);
   } catch (error) {
-    return { error: messageForStatus(error, "Failed to delete the entry.") };
+    return { error: messageForStatus(error, "Failed to delete the structure.") };
   }
 
   revalidatePath("/");
 }
 
 export async function deleteModelAction(
-  entryId: string,
+  structureId: string,
   modelId: string,
 ): Promise<ActionResult> {
   const session = await getAuthSession();
@@ -47,10 +47,10 @@ export async function deleteModelAction(
   }
 
   try {
-    await deleteModel(session.token, entryId, modelId);
+    await deleteModel(session.token, structureId, modelId);
   } catch (error) {
     return { error: messageForStatus(error, "Failed to delete the model.") };
   }
 
-  revalidatePath(`/entries/${entryId}`);
+  revalidatePath(`/structures/${structureId}`);
 }

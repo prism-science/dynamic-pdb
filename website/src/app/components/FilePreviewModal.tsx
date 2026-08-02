@@ -9,7 +9,7 @@ import type {
   Entity,
   FastaMetadata,
   MetricsPayload,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
 import { detectStructureKind } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";

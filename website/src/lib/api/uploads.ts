@@ -1,5 +1,5 @@
 export type FileUploadContext = {
-  entryId: string;
+  structureId: string;
   modelId?: string | null;
   entityId: string;
   filename?: string;
@@ -31,7 +31,7 @@ export async function uploadFileToObjectStorage(
   onProgress?: UploadProgress,
 ): Promise<string> {
   const grant = await postJSON<FileUploadGrant>("/files", {
-    entry_id: context.entryId,
+    structure_id: context.structureId,
     model_id: context.modelId ?? null,
     entity_id: context.entityId,
     filename: context.filename ?? file.name,

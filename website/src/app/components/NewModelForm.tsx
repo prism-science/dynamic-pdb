@@ -2,29 +2,29 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { Entity, Entry } from "@/lib/api/entries";
+import type { Entity, Structure } from "@/lib/api/structures";
 import { getExtExperiment, type ExtExperiment } from "@/lib/api/ext";
-import { createModelAction } from "@/app/entries/[entryId]/models/new/actions";
+import { createModelAction } from "@/app/structures/[structureId]/models/new/actions";
 
-import ExtSourceField from "./entry-form/ExtSourceField";
+import ExtSourceField from "./structure-form/ExtSourceField";
 import ModelDraftFields, {
   emptyModelDraft,
-} from "./entry-form/ModelDraftFields";
-import type { ModelDraft } from "./entry-form/types";
+} from "./structure-form/ModelDraftFields";
+import type { ModelDraft } from "./structure-form/types";
 import {
   buildCreateModelInput,
   formatSize,
   modelValidationMessage,
-} from "./entry-form/helpers";
-import styles from "./entry-form/form.module.css";
+} from "./structure-form/helpers";
+import styles from "./structure-form/form.module.css";
 
 export default function NewModelForm({
-  entry,
-  entryDataEntities,
+  structure,
+  structureDataEntities,
   modelCount,
 }: {
-  entry: Entry;
-  entryDataEntities: Entity[];
+  structure: Structure;
+  structureDataEntities: Entity[];
   modelCount: number;
 }) {
   const [draft, setDraft] = useState<ModelDraft>(emptyModelDraft);
@@ -131,7 +131,7 @@ export default function NewModelForm({
           ? Array.from(programInputs)
           : undefined,
       });
-      const result = await createModelAction(entry.id, input);
+      const result = await createModelAction(structure.id, input);
       if (result?.error) {
         setError(result.error);
         setSubmitting(false);
@@ -144,7 +144,7 @@ export default function NewModelForm({
       );
       setSubmitting(false);
     }
-    // On success the action redirects back to the entry.
+    // On success the action redirects back to the structure.
   };
 
   return (
@@ -152,19 +152,19 @@ export default function NewModelForm({
       <section className={styles.field}>
         <span className={styles.label}>Adding to</span>
         <div className={styles.sourceRow}>
-          <span className={styles.entryMark}>
-            {entry.thumbnail_image_url ? (
+          <span className={styles.structureMark}>
+            {structure.thumbnail_image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={entry.thumbnail_image_url} alt="" />
+              <img src={structure.thumbnail_image_url} alt="" />
             ) : null}
           </span>
           <span className={styles.sourceMeta}>
-            <strong>{entry.name}</strong>
-            <span>{entry.id}</span>
+            <strong>{structure.name}</strong>
+            <span>{structure.id}</span>
           </span>
           <span className={styles.sourceCount}>
-            {`${modelCount} ${modelCount === 1 ? "model" : "models"} · ${entryDataEntities.length} ${
-              entryDataEntities.length === 1 ? "file" : "files"
+            {`${modelCount} ${modelCount === 1 ? "model" : "models"} · ${structureDataEntities.length} ${
+              structureDataEntities.length === 1 ? "file" : "files"
             }`}
           </span>
         </div>
@@ -191,18 +191,18 @@ export default function NewModelForm({
         ) : null}
         <ModelDraftFields
           draft={draft}
-          entryId={entry.id}
+          structureId={structure.id}
           extExperiment={extExperiment}
           onUpdate={(update) => setDraft((current) => update(current))}
           onError={setError}
         />
       </section>
 
-      {draft.program && entryDataEntities.length > 0 ? (
+      {draft.program && structureDataEntities.length > 0 ? (
         <section className={styles.field}>
-          <span className={styles.label}>Program inputs from this entry</span>
+          <span className={styles.label}>Program inputs from this structure</span>
           <ul className={styles.inputPicker}>
-            {entryDataEntities.map((entity) => (
+            {structureDataEntities.map((entity) => (
               <li key={entity.id}>
                 <label>
                   <input
@@ -235,7 +235,7 @@ export default function NewModelForm({
         <div className={styles.actionsRight}>
           <a
             className={styles.secondary}
-            href={`/entries/${encodeURIComponent(entry.id)}`}
+            href={`/structures/${encodeURIComponent(structure.id)}`}
           >
             Cancel
           </a>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { FastaMetadata } from "@/lib/api/entries";
+import type { FastaMetadata } from "@/lib/api/structures";
 
 import styles from "./SequenceView.module.css";
 

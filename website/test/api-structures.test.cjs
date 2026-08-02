@@ -5,12 +5,12 @@ const test = require("node:test");
 
 const {
   ApiRequestError,
-  createEntry,
+  createStructure,
   getModelPageData,
-  listEntries,
-} = require("../src/lib/api/entries.ts");
+  listStructures,
+} = require("../src/lib/api/structures.ts");
 
-test("should list entries with trimmed query and optional authorization", async () => {
+test("should list structures with trimmed query and optional authorization", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -20,21 +20,21 @@ test("should list entries with trimmed query and optional authorization", async 
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse({ items: [{ id: "entry-1", name: "Entry 1" }] });
+      return jsonResponse({ items: [{ id: "structure-1", name: "Structure 1" }] });
     };
 
-    const entries = await listEntries("token-123", { query: "  hemoglobin  " });
+    const structures = await listStructures("token-123", { query: "  hemoglobin  " });
 
-    assert.equal(requestedURL, "https://backend.example/v1/entries?query=hemoglobin");
+    assert.equal(requestedURL, "https://backend.example/v1/structures?query=hemoglobin");
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
-    assert.deepEqual(entries, [{ id: "entry-1", name: "Entry 1" }]);
+    assert.deepEqual(structures, [{ id: "structure-1", name: "Structure 1" }]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
   }
 });
 
-test("should throw ApiRequestError with status when create entry fails", async () => {
+test("should throw ApiRequestError with status when create structure fails", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -42,7 +42,7 @@ test("should throw ApiRequestError with status when create entry fails", async (
     global.fetch = async () => new Response(JSON.stringify({ code: "BAD_REQUEST" }), { status: 400 });
 
     await assert.rejects(
-      () => createEntry("token-123", { name: "Entry" }),
+      () => createStructure("token-123", { name: "Structure" }),
       (error) =>
         error instanceof ApiRequestError &&
         error.status === 400 &&
@@ -59,9 +59,9 @@ test("should scope model page data to model entities and L0 baseline entities", 
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
-    const entry = {
-      id: "entry-1",
-      name: "Entry",
+    const structure = {
+      id: "structure-1",
+      name: "Structure",
       description: null,
       thumbnail_image_url: null,
       created_at: "2026-01-01T00:00:00Z",
@@ -69,7 +69,7 @@ test("should scope model page data to model entities and L0 baseline entities", 
     };
     const model = {
       id: "model-1",
-      entry_id: "entry-1",
+      structure_id: "structure-1",
       name: "Model",
       description: null,
       thumbnail_image_url: null,
@@ -86,19 +86,19 @@ test("should scope model page data to model entities and L0 baseline entities", 
     ];
     global.fetch = async (url) => {
       const path = new URL(String(url)).pathname;
-      if (path === "/v1/entries/entry-1") {
-        return jsonResponse(entry);
+      if (path === "/v1/structures/structure-1") {
+        return jsonResponse(structure);
       }
-      if (path === "/v1/entries/entry-1/models/model-1") {
+      if (path === "/v1/structures/structure-1/models/model-1") {
         return jsonResponse(model);
       }
-      if (path === "/v1/entries/entry-1/entities") {
+      if (path === "/v1/structures/structure-1/entities") {
         return jsonResponse({ items: [baseline, modelEntity, otherModel], relations });
       }
       throw new Error(`unexpected fetch ${url}`);
     };
 
-    const data = await getModelPageData("token-123", "entry-1", "model-1");
+    const data = await getModelPageData("token-123", "structure-1", "model-1");
 
     assert.deepEqual(
       data.entities.map((item) => item.id),
@@ -117,7 +117,7 @@ test("should scope model page data to model entities and L0 baseline entities", 
 function entity(id, modelId, type, level) {
   return {
     id,
-    entry_id: "entry-1",
+    structure_id: "structure-1",
     model_id: modelId,
     type,
     level,

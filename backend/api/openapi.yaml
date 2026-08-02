@@ -203,39 +203,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries:
+  /v1/structures:
     get:
-      operationId: listEntries
-      summary: List entries
+      operationId: listStructures
+      summary: List structures
       security: []
       parameters:
         - name: limit
           in: query
-          description: Maximum number of entries to return.
+          description: Maximum number of structures to return.
           required: false
           schema:
             type: integer
             minimum: 0
         - name: offset
           in: query
-          description: Number of entries to skip.
+          description: Number of structures to skip.
           required: false
           schema:
             type: integer
             minimum: 0
         - name: query
           in: query
-          description: Text to search across entries, models, entities, and entity payloads.
+          description: Text to search across structures, models, entities, and entity payloads.
           required: false
           schema:
             type: string
       responses:
         "200":
-          description: Entries found.
+          description: Structures found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EntryListResponse"
+                $ref: "#/components/schemas/StructureListResponse"
         "400":
           description: Invalid filters.
           content:
@@ -243,8 +243,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
-      operationId: createEntry
-      summary: Create entry
+      operationId: createStructure
+      summary: Create structure
       security:
         - bearerAuth: []
       requestBody:
@@ -252,10 +252,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateEntryRequest"
+              $ref: "#/components/schemas/CreateStructureRequest"
       responses:
         "201":
-          description: Entry created.
+          description: Structure created.
         "400":
           description: Invalid request.
           content:
@@ -269,49 +269,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}:
+  /v1/structures/{structure_id}:
     get:
-      operationId: getEntry
-      summary: Get entry
+      operationId: getStructure
+      summary: Get structure
       security: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID.
+          description: Structure ID.
           required: true
           schema:
             type: string
             format: uuid
       responses:
         "200":
-          description: Entry found.
+          description: Structure found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Entry"
+                $ref: "#/components/schemas/Structure"
         "404":
-          description: Entry not found.
+          description: Structure not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
     delete:
-      operationId: deleteEntry
-      summary: Delete entry
-      description: Deletes an entry and all nested models, entities, relations, and search rows. Only the entry creator can delete it.
+      operationId: deleteStructure
+      summary: Delete structure
+      description: Deletes a structure and all nested models, entities, relations, and search rows. Only the structure creator can delete it.
       security:
         - bearerAuth: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID.
+          description: Structure ID.
           required: true
           schema:
             type: string
             format: uuid
       responses:
         "204":
-          description: Entry deleted.
+          description: Structure deleted.
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -319,27 +319,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not the entry creator.
+          description: Caller is not the structure creator.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: Entry not found.
+          description: Structure not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}/models:
+  /v1/structures/{structure_id}/models:
     get:
       operationId: listModels
       summary: List models
       security: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID to filter by.
+          description: Structure ID to filter by.
           required: true
           schema:
             type: string
@@ -374,13 +374,13 @@ paths:
     post:
       operationId: createModel
       summary: Create model
-      description: Adds a model, its entities, and its relations to an existing entry. Relations may reference entities created in this request or entry-level entities that already exist.
+      description: Adds a model, its entities, and its relations to an existing structure. Relations may reference entities created in this request or structure-level entities that already exist.
       security:
         - bearerAuth: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry the model belongs to.
+          description: Structure the model belongs to.
           required: true
           schema:
             type: string
@@ -407,21 +407,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: Entry not found.
+          description: Structure not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}/models/{model_id}:
+  /v1/structures/{structure_id}/models/{model_id}:
     get:
       operationId: getModel
       summary: Get model
       security: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID.
+          description: Structure ID.
           required: true
           schema:
             type: string
@@ -453,9 +453,9 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID.
+          description: Structure ID.
           required: true
           schema:
             type: string
@@ -489,15 +489,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}/entities:
+  /v1/structures/{structure_id}/entities:
     get:
       operationId: listEntities
       summary: List entities
       security: []
       parameters:
-        - name: entry_id
+        - name: structure_id
           in: path
-          description: Entry ID to filter by.
+          description: Structure ID to filter by.
           required: true
           schema:
             type: string
@@ -583,17 +583,17 @@ components:
 
     CreateFileUploadRequest:
       type: object
-      required: [entry_id, entity_id, filename, size]
+      required: [structure_id, entity_id, filename, size]
       properties:
-        entry_id:
+        structure_id:
           type: string
           format: uuid
-          description: Entry identifier that owns this file.
+          description: Structure identifier that owns this file.
         model_id:
           type: string
           format: uuid
           nullable: true
-          description: Model identifier for model-level files; null for entry-level files.
+          description: Model identifier for model-level files; null for structure-level files.
         entity_id:
           type: string
           format: uuid
@@ -619,7 +619,7 @@ components:
           description: Identifier of the initiated multipart upload; echoed back on complete and abort.
         object_url:
           type: string
-          description: Public HTTP object URL to store with the entry payload.
+          description: Public HTTP object URL to store with the structure payload.
         part_size:
           type: integer
           format: int64
@@ -722,16 +722,16 @@ components:
         login:
           type: string
 
-    EntryListResponse:
+    StructureListResponse:
       type: object
       required: [items]
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Entry"
+            $ref: "#/components/schemas/Structure"
 
-    CreateEntryRequest:
+    CreateStructureRequest:
       type: object
       required: [name]
       properties:
@@ -756,7 +756,7 @@ components:
           items:
             $ref: "#/components/schemas/CreateModelRequest"
 
-    Entry:
+    Structure:
       type: object
       required: [id, created_by, name, created_at, updated_at]
       properties:
@@ -817,12 +817,12 @@ components:
 
     Model:
       type: object
-      required: [id, entry_id, created_by, name, created_at, updated_at]
+      required: [id, structure_id, created_by, name, created_at, updated_at]
       properties:
         id:
           type: string
           format: uuid
-        entry_id:
+        structure_id:
           type: string
           format: uuid
         created_by:
@@ -902,18 +902,18 @@ components:
             $ref: "#/components/schemas/Entity"
         relations:
           type: array
-          description: Entity relations for the entry provenance graph.
+          description: Entity relations for the structure provenance graph.
           items:
             $ref: "#/components/schemas/EntityRelation"
 
     Entity:
       type: object
-      required: [id, entry_id, type, name, payload, created_at, updated_at]
+      required: [id, structure_id, type, name, payload, created_at, updated_at]
       properties:
         id:
           type: string
           format: uuid
-        entry_id:
+        structure_id:
           type: string
           format: uuid
         model_id:

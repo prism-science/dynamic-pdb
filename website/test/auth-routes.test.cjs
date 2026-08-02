@@ -12,7 +12,7 @@ const {
 } = require("../src/lib/auth/session.ts");
 
 test("should redirect github login and persist matching oauth state", async () => {
-  const request = new NextRequest("https://app.example/auth/github/login?return_to=/entries/new");
+  const request = new NextRequest("https://app.example/auth/github/login?return_to=/structures/new");
 
   const response = await loginRoute.GET(request);
 
@@ -25,7 +25,7 @@ test("should redirect github login and persist matching oauth state", async () =
 
   const cookieState = parseOAuthStateCookie(response.headers.get("set-cookie"));
   assert.equal(cookieState.state, location.searchParams.get("state"));
-  assert.equal(cookieState.returnTo, "/entries/new");
+  assert.equal(cookieState.returnTo, "/structures/new");
 });
 
 test("should exchange github callback code and set auth cookies", async () => {
@@ -50,7 +50,7 @@ test("should exchange github callback code and set auth cookies", async () => {
     };
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
       state: "state-123",
-      returnTo: "/entries/new",
+      returnTo: "/structures/new",
     })}`;
     const request = new NextRequest("https://app.example/auth/github/callback?code=code-123&state=state-123", {
       headers: { cookie },
@@ -59,7 +59,7 @@ test("should exchange github callback code and set auth cookies", async () => {
     const response = await callbackRoute.GET(request);
 
     assert.equal(response.status, 307);
-    assert.equal(response.headers.get("location"), "https://app.example/entries/new");
+    assert.equal(response.headers.get("location"), "https://app.example/structures/new");
     assert.equal(requestedURL, "https://backend.example/v1/auth/github/code/exchange");
     assert.deepEqual(requestedBody, {
       code: "code-123",
@@ -98,7 +98,7 @@ test("should redirect callback to forbidden when backend returns 403", async () 
       });
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
       state: "state-123",
-      returnTo: "/entries/new",
+      returnTo: "/structures/new",
     })}`;
     const request = new NextRequest("https://app.example/auth/github/callback?code=code-123&state=state-123", {
       headers: { cookie },
@@ -108,7 +108,7 @@ test("should redirect callback to forbidden when backend returns 403", async () 
 
     assert.equal(response.status, 307);
     const location = new URL(response.headers.get("location"));
-    assert.equal(location.pathname, "/entries/new");
+    assert.equal(location.pathname, "/structures/new");
     assert.equal(location.searchParams.get("login_error"), "forbidden");
   } finally {
     global.fetch = previousFetch;
@@ -128,7 +128,7 @@ test("should redirect callback to backend_exchange_failed when backend response 
       });
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
       state: "state-123",
-      returnTo: "/entries/new",
+      returnTo: "/structures/new",
     })}`;
     const request = new NextRequest("https://app.example/auth/github/callback?code=code-123&state=state-123", {
       headers: { cookie },

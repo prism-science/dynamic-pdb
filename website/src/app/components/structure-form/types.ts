@@ -1,4 +1,4 @@
-import type { EntityLevel } from "@/lib/api/entries";
+import type { EntityLevel } from "@/lib/api/structures";
 import type { ExtFileReference } from "@/lib/api/ext";
 
 export type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
@@ -61,5 +61,5 @@ export const METRIC_FIELDS: { key: string; label: string; example: string }[] = 
   { key: "cc", label: "CC", example: "e.g. 0.98" },
 ];
 
-export const DRAFT_STORAGE_KEY = "dpdb:new-entry-draft";
+export const DRAFT_STORAGE_KEY = "dpdb:new-structure-draft";
 export const DRAFT_VERSION = 1;

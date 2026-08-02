@@ -10,14 +10,14 @@ import type {
   MetricsPayload,
   ModelPayload,
   ProgramPayload,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { parseExtFileReference } from "@/lib/api/ext";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import SequenceView from "@/app/components/SequenceView";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
 import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 
-import styles from "./entry-page.module.css";
+import styles from "./structure-page.module.css";
 
 export const entityLevels: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 
@@ -110,7 +110,7 @@ export function LevelTag({ level }: { level: EntityLevel }) {
   );
 }
 
-export function EntryHero({
+export function StructureHero({
   title,
   eyebrow,
   description,
@@ -245,10 +245,10 @@ export function EntityCard({
       {metrics.length > 0 ? (
         <div className={styles.cardMetrics}>
           {metrics.flatMap((metric) =>
-            metricEntries(metric.payload as MetricsPayload).map((entry) => (
-              <span key={`${metric.id}-${entry.label}`} className={styles.metricPill}>
-                <b>{entry.label}</b>
-                {entry.value}
+            metricStructures(metric.payload as MetricsPayload).map((structure) => (
+              <span key={`${metric.id}-${structure.label}`} className={styles.metricPill}>
+                <b>{structure.label}</b>
+                {structure.value}
               </span>
             )),
           )}
@@ -620,7 +620,7 @@ function getModelPreviewURL(meta: Record<string, unknown>): string | null {
   return null;
 }
 
-function metricEntries(payload: MetricsPayload) {
+function metricStructures(payload: MetricsPayload) {
   return metricColumns
     .map((column) => {
       const value = payload[column.key];
@@ -629,7 +629,7 @@ function metricEntries(payload: MetricsPayload) {
       }
       return { label: column.label, value: metricFormatter.format(value) };
     })
-    .filter((entry): entry is { label: string; value: string } => entry !== null);
+    .filter((structure): structure is { label: string; value: string } => structure !== null);
 }
 
 function getFileName(fileURL: string): string {

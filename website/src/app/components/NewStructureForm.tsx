@@ -8,7 +8,7 @@ import {
   type FormEvent,
 } from "react";
 
-import type { CreateEntryInput } from "@/lib/api/entries";
+import type { CreateStructureInput } from "@/lib/api/structures";
 import {
   extFileKey,
   getExtExperiment,
@@ -17,18 +17,18 @@ import {
   type ExtFile,
 } from "@/lib/api/ext";
 import { uploadFileToObjectStorage } from "@/lib/api/uploads";
-import { createEntryAction } from "@/app/entries/new/actions";
+import { createStructureAction } from "@/app/structures/new/actions";
 
 import ExtSourceField, {
   EXT_LINK_INVALID,
-} from "./entry-form/ExtSourceField";
-import FilesEditor, { ProgressBar } from "./entry-form/FilesEditor";
+} from "./structure-form/ExtSourceField";
+import FilesEditor, { ProgressBar } from "./structure-form/FilesEditor";
 import ModelDraftFields, {
   emptyModelDraft,
-} from "./entry-form/ModelDraftFields";
-import { PlusIcon, UploadIcon } from "./entry-form/icons";
-import { DRAFT_VERSION } from "./entry-form/types";
-import type { ModelDraft, ParsedFile, UploadStatus } from "./entry-form/types";
+} from "./structure-form/ModelDraftFields";
+import { PlusIcon, UploadIcon } from "./structure-form/icons";
+import { DRAFT_VERSION } from "./structure-form/types";
+import type { ModelDraft, ParsedFile, UploadStatus } from "./structure-form/types";
 import {
   buildCreateModelInput,
   extFileKeys,
@@ -41,7 +41,7 @@ import {
   uploadParsedFileNow,
   uploadStatusText,
   uploadsReady,
-} from "./entry-form/helpers";
+} from "./structure-form/helpers";
 import {
   clearStoredDraft,
   draftHasContent,
@@ -54,22 +54,22 @@ import {
   readStoredDraft,
   writeStoredDraft,
   type StoredDraft,
-} from "./entry-form/drafts";
-import styles from "./entry-form/form.module.css";
+} from "./structure-form/drafts";
+import styles from "./structure-form/form.module.css";
 
-// The form's building blocks live in ./entry-form so the add-model form can
+// The form's building blocks live in ./structure-form so the add-model form can
 // reuse them; re-exported here because callers and tests import them by name.
-export * from "./entry-form/types";
-export * from "./entry-form/helpers";
-export * from "./entry-form/drafts";
+export * from "./structure-form/types";
+export * from "./structure-form/helpers";
+export * from "./structure-form/drafts";
 
-type NewEntryFormProps = {
+type NewStructureFormProps = {
   extExperimentId?: string | null;
 };
 
-export default function NewEntryForm({
+export default function NewStructureForm({
   extExperimentId: initialExtExperimentId = null,
-}: NewEntryFormProps) {
+}: NewStructureFormProps) {
   // The ?ext_experiment_id query param only seeds the field; from here on the
   // link is form state the user can change or clear.
   const seededExtExperimentId =
@@ -84,7 +84,7 @@ export default function NewEntryForm({
   const [extExperimentLoading, setExtExperimentLoading] = useState(
     Boolean(seededExtExperimentId),
   );
-  const [entryId, setEntryId] = useState(() => crypto.randomUUID());
+  const [structureId, setStructureId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const activeThumbFileId = useRef<string | null>(null);
@@ -170,7 +170,7 @@ export default function NewEntryForm({
     }
     const draft: StoredDraft = {
       version: DRAFT_VERSION,
-      entryId,
+      structureId,
       extExperimentId,
       name,
       description,
@@ -187,7 +187,7 @@ export default function NewEntryForm({
     }
   }, [
     storageReady,
-    entryId,
+    structureId,
     extExperimentId,
     name,
     description,
@@ -202,7 +202,7 @@ export default function NewEntryForm({
     if (!draft) {
       return;
     }
-    setEntryId(draft.entryId);
+    setStructureId(draft.structureId);
     const draftExtExperimentId = parseExtExperimentRef(
       typeof draft.extExperimentId === "string" ? draft.extExperimentId : "",
     );
@@ -234,7 +234,7 @@ export default function NewEntryForm({
 
   const resetForm = () => {
     clearStoredDraft();
-    setEntryId(crypto.randomUUID());
+    setStructureId(crypto.randomUUID());
     // The link is something the user entered, so it resets with everything
     // else instead of re-seeding name and description from the experiment.
     unlinkExtExperiment();
@@ -265,18 +265,18 @@ export default function NewEntryForm({
     setThumbProgress(0);
     setThumbUploadStatus("uploading");
     setThumbUploadError(null);
-    void uploadEntryThumbnail(file, nextThumbFileId);
+    void uploadStructureThumbnail(file, nextThumbFileId);
   };
 
-  const addEntryFiles = async (list: File[]) => {
+  const addStructureFiles = async (list: File[]) => {
     const parsed = await Promise.all(list.map((file) => parseFile(file, "L0")));
     setFiles((prev) => [...prev, ...parsed]);
     parsed.forEach((file) => {
-      void uploadParsedFileNow(file, { entryId, modelId: null }, patchEntryFile);
+      void uploadParsedFileNow(file, { structureId, modelId: null }, patchStructureFile);
     });
   };
 
-  const addEntryUrl = async (rawUrl: string) => {
+  const addStructureUrl = async (rawUrl: string) => {
     const parsed = await parseUrlFile(rawUrl, "L0");
     if (!parsed) {
       return;
@@ -284,7 +284,7 @@ export default function NewEntryForm({
     setFiles((prev) => [...prev, parsed]);
   };
 
-  const addEntryExtFiles = (selected: ExtFile[]) => {
+  const addStructureExtFiles = (selected: ExtFile[]) => {
     if (!extExperiment) {
       return;
     }
@@ -306,17 +306,17 @@ export default function NewEntryForm({
     setModels((prev) => prev.filter((modelDraft) => modelDraft.id !== id));
   };
 
-  const patchEntryFile = (id: string, patch: Partial<ParsedFile>) => {
+  const patchStructureFile = (id: string, patch: Partial<ParsedFile>) => {
     setFiles((prev) =>
       prev.map((file) => (file.id === id ? { ...file, ...patch } : file)),
     );
   };
 
-  const uploadEntryThumbnail = async (file: File, fileId: string) => {
+  const uploadStructureThumbnail = async (file: File, fileId: string) => {
     try {
       const url = await uploadFileToObjectStorage(
         file,
-        { entryId, modelId: null, entityId: fileId },
+        { structureId, modelId: null, entityId: fileId },
         (fraction) => {
           if (activeThumbFileId.current === fileId) {
             setThumbProgress(fraction);
@@ -382,8 +382,8 @@ export default function NewEntryForm({
         return;
       }
 
-      const input: CreateEntryInput = {
-        id: entryId,
+      const input: CreateStructureInput = {
+        id: structureId,
         name: name.trim(),
         description: description.trim() || null,
         thumbnail_image_url: thumbUrl,
@@ -394,7 +394,7 @@ export default function NewEntryForm({
       // The server action redirects on success, so clear the saved draft up
       // front; the persistence effect re-saves if the action returns an error.
       clearStoredDraft();
-      const result = await createEntryAction(input);
+      const result = await createStructureAction(input);
       if (result?.error) {
         setError(result.error);
         setSubmitting(false);
@@ -419,11 +419,11 @@ export default function NewEntryForm({
       ) : null}
 
       <section className={styles.field}>
-        <label className={styles.label} htmlFor="entry-name">
+        <label className={styles.label} htmlFor="structure-name">
           Name
         </label>
         <input
-          id="entry-name"
+          id="structure-name"
           className={styles.input}
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -443,11 +443,11 @@ export default function NewEntryForm({
       </section>
 
       <section className={styles.field}>
-        <label className={styles.label} htmlFor="entry-desc">
+        <label className={styles.label} htmlFor="structure-desc">
           Description
         </label>
         <textarea
-          id="entry-desc"
+          id="structure-desc"
           className={styles.textarea}
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -493,9 +493,9 @@ export default function NewEntryForm({
           files={files}
           lockLevel
           extExperiment={extExperiment}
-          onAdd={addEntryFiles}
-          onAddUrl={addEntryUrl}
-          onAddExt={addEntryExtFiles}
+          onAdd={addStructureFiles}
+          onAddUrl={addStructureUrl}
+          onAddExt={addStructureExtFiles}
           onRemove={(id) => setFiles((p) => p.filter((f) => f.id !== id))}
           onLevel={(id, level) =>
             setFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
@@ -540,7 +540,7 @@ export default function NewEntryForm({
                 </div>
                 <ModelDraftFields
                   draft={modelDraft}
-                  entryId={entryId}
+                  structureId={structureId}
                   extExperiment={extExperiment}
                   onUpdate={(update) =>
                     setModels((prev) =>
@@ -572,7 +572,7 @@ export default function NewEntryForm({
               ? "Creating…"
               : hasPendingUploads
                 ? "Uploading…"
-                : "Create entry"}
+                : "Create structure"}
           </button>
         </div>
       </div>
@@ -607,7 +607,7 @@ function DraftRestorePrompt({
   if (draft.extExperimentId) {
     parts.push("a linked Ext experiment");
   }
-  const summary = parts.length > 0 ? parts.join(" · ") : "an unfinished entry";
+  const summary = parts.length > 0 ? parts.join(" · ") : "an unfinished structure";
 
   return (
     <div className={styles.modalBackdrop} role="dialog" aria-modal="true">

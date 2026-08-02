@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import type { EntityLevel, FastaMetadata } from "@/lib/api/entries";
+import type { EntityLevel, FastaMetadata } from "@/lib/api/structures";
 import {
   extFileKey,
   searchExtFiles,

@@ -32,9 +32,9 @@ const {
   toProgramEntity,
   uploadStatusText,
   uploadsReady,
-} = require("../src/app/components/NewEntryForm.tsx");
+} = require("../src/app/components/NewStructureForm.tsx");
 
-test("should convert files and metrics into create entry entities", () => {
+test("should convert files and metrics into create structure entities", () => {
   const modelFile = parsedFile({
     id: "model-1",
     name: "model.cif",
@@ -182,7 +182,7 @@ test("should build explicit graph relations for model metrics and program", () =
   ]);
 });
 
-test("should record existing entry entities as program inputs", () => {
+test("should record existing structure entities as program inputs", () => {
   const modelDraft = modelDraftFixture({
     files: [parsedFile({ id: "model-entity-1", type: "mmcif" })],
     program: {
@@ -381,7 +381,7 @@ test("should serialize and restore persisted draft files safely", () => {
   assert.equal(
     draftHasContent({
       version: 1,
-      entryId: "entry-1",
+      structureId: "structure-1",
       name: "",
       description: "",
       thumbUrl: null,
@@ -394,7 +394,7 @@ test("should serialize and restore persisted draft files safely", () => {
   assert.equal(
     draftHasContent({
       version: 1,
-      entryId: "entry-1",
+      structureId: "structure-1",
       name: "Draft",
       description: "",
       thumbUrl: null,

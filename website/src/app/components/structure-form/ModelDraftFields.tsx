@@ -31,7 +31,7 @@ export type ModelDraftUpdater = (
 
 /**
  * The editable body of a single model: name, description, preview image, data
- * files, metrics, and program. Shared by the new-entry form (one block per
+ * files, metrics, and program. Shared by the new-structure form (one block per
  * model) and the add-model form (a single block).
  *
  * State stays with the parent, but every write goes through `onUpdate` as a
@@ -40,13 +40,13 @@ export type ModelDraftUpdater = (
  */
 export default function ModelDraftFields({
   draft,
-  entryId,
+  structureId,
   extExperiment = null,
   onUpdate,
   onError,
 }: {
   draft: ModelDraft;
-  entryId: string;
+  structureId: string;
   extExperiment?: ExtExperiment | null;
   onUpdate: ModelDraftUpdater;
   onError: (message: string | null) => void;
@@ -96,7 +96,7 @@ export default function ModelDraftFields({
     try {
       const url = await uploadFileToObjectStorage(
         file,
-        { entryId, modelId: draft.id, entityId: fileId },
+        { structureId, modelId: draft.id, entityId: fileId },
         (fraction) => patchThumb({ thumbProgress: fraction }),
       );
       patchThumb({
@@ -200,7 +200,7 @@ export default function ModelDraftFields({
           parsed.forEach((file) => {
             void uploadParsedFileNow(
               file,
-              { entryId, modelId: draft.id },
+              { structureId, modelId: draft.id },
               patchFile,
             );
           });

@@ -3,7 +3,7 @@ import type {
   CreateEntityRelationInput,
   CreateModelInput,
   EntityLevel,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { extFileKey, extFileReferenceURL, type ExtFile } from "@/lib/api/ext";
 import {
   uploadFileToObjectStorage,
@@ -65,8 +65,8 @@ export function buildCreateModelInput(
   modelDraft: ModelDraft,
   options: {
     /**
-     * Ids of entities that already exist on the entry and should be recorded as
-     * inputs to this model's program — used when adding a model to an entry
+     * Ids of entities that already exist on the structure and should be recorded as
+     * inputs to this model's program — used when adding a model to a structure
      * whose baseline data was deposited earlier.
      */
     programInputEntityIds?: string[];
@@ -319,7 +319,7 @@ export function extFileKeys(files: ParsedFile[]): Set<string> {
   );
 }
 
-// Builds a file entry from an external URL. Nothing is uploaded — the link is
+// Builds a file record from an external URL. Nothing is uploaded — the link is
 // stored as-is; a small, known-format file is fetched client-side (best effort)
 // to build a preview. CORS failures are swallowed and just skip the preview.
 export async function parseUrlFile(
@@ -401,7 +401,7 @@ export function hasDraggedFiles(transfer: DataTransfer | null): boolean {
 }
 
 // Dropping a folder yields a 0-byte File that would fail to upload, so keep
-// only real files. The entries API is best-effort; without it, size is the
+// only real files. The browser file-system API is best-effort; without it, size is the
 // only signal available.
 export function droppedFiles(transfer: DataTransfer | null): File[] {
   if (!transfer) {
@@ -410,8 +410,8 @@ export function droppedFiles(transfer: DataTransfer | null): File[] {
   const items = Array.from(transfer.items ?? []);
   const directoryNames = new Set(
     items.flatMap((item) => {
-      const entry = item.webkitGetAsEntry?.();
-      return entry && !entry.isFile ? [entry.name] : [];
+      const browserItem = item.webkitGetAsEntry?.();
+      return browserItem && !browserItem.isFile ? [browserItem.name] : [];
     }),
   );
   return Array.from(transfer.files ?? []).filter(
@@ -428,7 +428,7 @@ export function isValidHttpUrl(value: string): boolean {
   }
 }
 
-type FileUploadLocation = Pick<FileUploadContext, "entryId" | "modelId">;
+type FileUploadLocation = Pick<FileUploadContext, "structureId" | "modelId">;
 
 export async function uploadParsedFileNow(
   file: ParsedFile,
@@ -553,4 +553,3 @@ export function formatSize(size: number): string {
   const rounded = unit === 0 ? value : Math.round(value * 10) / 10;
   return `${rounded} ${units[unit]}`;
 }
-

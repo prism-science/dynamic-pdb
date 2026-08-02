@@ -3,30 +3,30 @@ import { notFound } from "next/navigation";
 import {
   ApiRequestError,
   type DataPayload,
-  type EntryPageData,
+  type StructurePageData,
   type FastaMetadata,
-  getEntryPageData,
-} from "@/lib/api/entries";
+  getStructurePageData,
+} from "@/lib/api/structures";
 import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SequenceView from "@/app/components/SequenceView";
 import SortableModelList from "@/app/components/SortableModelList";
-import { ImagePlaceholderIcon } from "./entry-view";
+import { ImagePlaceholderIcon } from "./structure-view";
 
-import styles from "./entry-page.module.css";
+import styles from "./structure-page.module.css";
 
 export const dynamic = "force-dynamic";
 
-type EntryRouteProps = {
-  params: Promise<{ entryId: string }>;
+type StructureRouteProps = {
+  params: Promise<{ structureId: string }>;
 };
 
-export default async function EntryPage({ params }: EntryRouteProps) {
-  const { entryId } = await params;
+export default async function StructurePage({ params }: StructureRouteProps) {
+  const { structureId } = await params;
   const session = await getAuthSession();
 
-  const data = await loadEntryPage(session?.token, entryId);
+  const data = await loadStructurePage(session?.token, structureId);
   const currentUserId = session ? userIdFromToken(session.token) : null;
   const sequence = getFastaMetadata(data);
 
@@ -53,27 +53,27 @@ export default async function EntryPage({ params }: EntryRouteProps) {
   const hasModels = data.models.length > 0;
 
   return (
-    <main className={styles.page} aria-label={`${data.entry.name} entry`}>
+    <main className={styles.page} aria-label={`${data.structure.name} structure`}>
       <div className={styles.record}>
         <Breadcrumbs
-          items={[{ label: "Entries", href: "/" }, { label: data.entry.name }]}
+          items={[{ label: "Structures", href: "/" }, { label: data.structure.name }]}
         />
 
         <div className={styles.layout}>
           <aside className={styles.sidebar}>
             <div
               className={styles.sideThumb}
-              data-empty={data.entry.thumbnail_image_url ? undefined : "true"}
+              data-empty={data.structure.thumbnail_image_url ? undefined : "true"}
             >
-              {data.entry.thumbnail_image_url ? (
+              {data.structure.thumbnail_image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={data.entry.thumbnail_image_url} alt="" />
+                <img src={data.structure.thumbnail_image_url} alt="" />
               ) : (
                 <ImagePlaceholderIcon size={34} />
               )}
             </div>
 
-            <h1 className={styles.sideName}>{data.entry.name}</h1>
+            <h1 className={styles.sideName}>{data.structure.name}</h1>
 
             {vitals.length > 0 ? (
               <dl className={styles.sideVitals}>
@@ -85,8 +85,8 @@ export default async function EntryPage({ params }: EntryRouteProps) {
           </aside>
 
           <div className={styles.content}>
-            {data.entry.description?.trim() ? (
-              <p className={styles.lead}>{data.entry.description}</p>
+            {data.structure.description?.trim() ? (
+              <p className={styles.lead}>{data.structure.description}</p>
             ) : null}
 
             {hasSequence ? (
@@ -103,21 +103,21 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               </section>
             ) : null}
 
-            {/* Always rendered: an entry with no models still needs somewhere
+            {/* Always rendered: a structure with no models still needs somewhere
                 to add the first one. */}
             <section id="models" className={styles.contentSection}>
               <div className={styles.contentSectionHead}>
                 <h2 className={styles.contentHeading}>Models</h2>
                 <a
                   className={styles.addModelLink}
-                  href={`/entries/${encodeURIComponent(data.entry.id)}/models/new`}
+                  href={`/structures/${encodeURIComponent(data.structure.id)}/models/new`}
                 >
                   Add model
                 </a>
               </div>
               {hasModels ? (
                 <SortableModelList
-                  entryId={data.entry.id}
+                  structureId={data.structure.id}
                   models={data.models}
                   entities={data.entities}
                   relations={data.relations}
@@ -126,7 +126,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               ) : (
                 <p className={styles.modelsEmpty}>
                   No models yet. Add the first refinement or prediction built
-                  from this entry&apos;s data.
+                  from this structure&apos;s data.
                 </p>
               )}
             </section>
@@ -137,12 +137,12 @@ export default async function EntryPage({ params }: EntryRouteProps) {
   );
 }
 
-async function loadEntryPage(
+async function loadStructurePage(
   token: string | undefined,
-  entryId: string,
-): Promise<EntryPageData> {
+  structureId: string,
+): Promise<StructurePageData> {
   try {
-    return await getEntryPageData(token, entryId);
+    return await getStructurePageData(token, structureId);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();
@@ -151,7 +151,7 @@ async function loadEntryPage(
   }
 }
 
-function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
+function getFastaMetadata(data: StructurePageData): FastaMetadata | null {
   for (const entity of data.entities) {
     if (entity.type !== "data" && entity.type !== "model") {
       continue;
@@ -166,7 +166,7 @@ function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
 
 // L0 raw files shown as a generic list (the sequence is rendered separately, so
 // the FASTA entity is excluded here).
-function getLevelZeroFiles(data: EntryPageData): FileItem[] {
+function getLevelZeroFiles(data: StructurePageData): FileItem[] {
   return data.entities
     .filter((entity) => entity.level === "L0" && entity.type === "data")
     .map((entity) => {

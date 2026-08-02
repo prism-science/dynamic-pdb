@@ -14,21 +14,21 @@ const {
 } = require("../src/lib/auth/session.ts");
 
 test("should sanitize unsafe return paths", () => {
-  assert.equal(sanitizeReturnTo("/entries/new"), "/entries/new");
-  assert.equal(sanitizeReturnTo("https://evil.example/entries"), "/");
-  assert.equal(sanitizeReturnTo("//evil.example/entries"), "/");
+  assert.equal(sanitizeReturnTo("/structures/new"), "/structures/new");
+  assert.equal(sanitizeReturnTo("https://evil.example/structures"), "/");
+  assert.equal(sanitizeReturnTo("//evil.example/structures"), "/");
   assert.equal(sanitizeReturnTo(null), "/");
 });
 
 test("should parse serialized oauth state and sanitize return_to", () => {
   const serialized = serializeOAuthState({
     state: "state-123",
-    returnTo: "/entries/new",
+    returnTo: "/structures/new",
   });
 
   assert.deepEqual(parseOAuthState(serialized), {
     state: "state-123",
-    returnTo: "/entries/new",
+    returnTo: "/structures/new",
   });
   assert.deepEqual(
     parseOAuthState(

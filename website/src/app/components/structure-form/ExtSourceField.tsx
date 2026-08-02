@@ -24,7 +24,7 @@ export default function ExtSourceField({
   onLink: (experimentId: string) => void;
   onUnlink: () => void;
 }) {
-  // Most entries have no Ext experiment, so the field stays collapsed to a
+  // Most structures have no Ext experiment, so the field stays collapsed to a
   // single line until it is asked for.
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");

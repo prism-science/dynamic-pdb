@@ -3,9 +3,9 @@
 import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import styles from "./EntriesBrowser.module.css";
+import styles from "./StructuresBrowser.module.css";
 
-export default function EntriesSearchForm({ query = "" }: { query?: string }) {
+export default function StructuresSearchForm({ query = "" }: { query?: string }) {
   const router = useRouter();
   const hasActiveQuery = query.trim().length > 0;
 

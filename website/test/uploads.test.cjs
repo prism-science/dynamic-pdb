@@ -8,9 +8,9 @@ const { uploadFileToObjectStorage } = require("../src/lib/api/uploads.ts");
 test("should upload all granted parts and complete upload", async () => {
   const restore = installUploadFakes({
     grant: {
-      key: "entry/entities/entity/data.bin",
+      key: "structure/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/data.bin",
       part_size: 3,
       parts: [
         { part_number: 1, url: "https://storage.example/part-1" },
@@ -27,11 +27,11 @@ test("should upload all granted parts and complete upload", async () => {
 
     const objectURL = await uploadFileToObjectStorage(
       new File(["abcdef"], "data.bin"),
-      { entryId: "entry", modelId: null, entityId: "entity" },
+      { structureId: "structure", modelId: null, entityId: "entity" },
       (fraction) => progress.push(fraction),
     );
 
-    assert.equal(objectURL, "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin");
+    assert.equal(objectURL, "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/data.bin");
     assert.deepEqual(FakeXMLHttpRequest.instances.map((xhr) => xhr.url), [
       "https://storage.example/part-1",
       "https://storage.example/part-2",
@@ -49,9 +49,9 @@ test("should upload all granted parts and complete upload", async () => {
 test("should abort upload and keep original error when object storage omits etag", async () => {
   const restore = installUploadFakes({
     grant: {
-      key: "entry/entities/entity/data.bin",
+      key: "structure/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/data.bin",
       part_size: 6,
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
@@ -61,14 +61,14 @@ test("should abort upload and keep original error when object storage omits etag
     await assert.rejects(
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
-          entryId: "entry",
+          structureId: "structure",
           modelId: null,
           entityId: "entity",
         }),
       /Object storage did not return ETag/,
     );
     assert.deepEqual(restore.calls.abort, {
-      key: "entry/entities/entity/data.bin",
+      key: "structure/entities/entity/data.bin",
       upload_id: "upload-id",
     });
   } finally {
@@ -79,9 +79,9 @@ test("should abort upload and keep original error when object storage omits etag
 test("should abort upload when complete endpoint fails", async () => {
   const restore = installUploadFakes({
     grant: {
-      key: "entry/entities/entity/data.bin",
+      key: "structure/entities/entity/data.bin",
       upload_id: "upload-id",
-      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/data.bin",
       part_size: 6,
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
@@ -93,14 +93,14 @@ test("should abort upload when complete endpoint fails", async () => {
     await assert.rejects(
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
-          entryId: "entry",
+          structureId: "structure",
           modelId: null,
           entityId: "entity",
         }),
       /complete failed/,
     );
     assert.deepEqual(restore.calls.abort, {
-      key: "entry/entities/entity/data.bin",
+      key: "structure/entities/entity/data.bin",
       upload_id: "upload-id",
     });
   } finally {
@@ -113,7 +113,7 @@ test("should reject invalid upload grant without aborting", async () => {
     grant: {
       key: "",
       upload_id: "upload-id",
-      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/data.bin",
+      object_url: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/data.bin",
       part_size: 0,
       parts: [],
     },
@@ -122,7 +122,7 @@ test("should reject invalid upload grant without aborting", async () => {
     await assert.rejects(
       () =>
         uploadFileToObjectStorage(new File(["abcdef"], "data.bin"), {
-          entryId: "entry",
+          structureId: "structure",
           modelId: null,
           entityId: "entity",
         }),

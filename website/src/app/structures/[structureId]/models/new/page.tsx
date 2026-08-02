@@ -2,24 +2,24 @@ import { notFound, redirect } from "next/navigation";
 
 import {
   ApiRequestError,
-  getEntryPageData,
+  getStructurePageData,
   type Entity,
-} from "@/lib/api/entries";
+} from "@/lib/api/structures";
 import { getAuthSession } from "@/lib/auth/session";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import NewModelForm from "@/app/components/NewModelForm";
 
-import styles from "@/app/entries/new/new-entry.module.css";
+import styles from "@/app/structures/new/new-structure.module.css";
 
 export const dynamic = "force-dynamic";
 
 type NewModelPageProps = {
-  params: Promise<{ entryId: string }>;
+  params: Promise<{ structureId: string }>;
 };
 
 export default async function NewModelPage({ params }: NewModelPageProps) {
-  const { entryId } = await params;
-  const returnTo = `/entries/${encodeURIComponent(entryId)}/models/new`;
+  const { structureId } = await params;
+  const returnTo = `/structures/${encodeURIComponent(structureId)}/models/new`;
 
   const session = await getAuthSession();
   if (!session) {
@@ -28,7 +28,7 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
 
   let data;
   try {
-    data = await getEntryPageData(session.token, entryId);
+    data = await getStructurePageData(session.token, structureId);
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) {
       notFound();
@@ -36,22 +36,22 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
     throw error;
   }
 
-  const entryHref = `/entries/${encodeURIComponent(entryId)}`;
+  const structureHref = `/structures/${encodeURIComponent(structureId)}`;
 
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
         <Breadcrumbs
           items={[
-            { label: "Entries", href: "/" },
-            { label: data.entry.name, href: entryHref },
+            { label: "Structures", href: "/" },
+            { label: data.structure.name, href: structureHref },
             { label: "New model" },
           ]}
         />
         <h1 className={styles.title}>New model</h1>
         <NewModelForm
-          entry={data.entry}
-          entryDataEntities={entryDataEntities(data.entities)}
+          structure={data.structure}
+          structureDataEntities={structureDataEntities(data.entities)}
           modelCount={data.models.length}
         />
       </div>
@@ -59,11 +59,11 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
   );
 }
 
-// Files already deposited on the entry are the existing entities a new model may
+// Files already deposited on the structure are the existing entities a new model may
 // point at: they can be inputs to the program that produced it. Structure files
-// count too — a .pdb/.cif is stored as a "model" entity, and an entry-level one
+// count too — a .pdb/.cif is stored as a "model" entity, and a structure-level one
 // is often the starting geometry.
-function entryDataEntities(entities: Entity[]): Entity[] {
+function structureDataEntities(entities: Entity[]): Entity[] {
   return entities.filter(
     (entity) =>
       entity.model_id === null &&

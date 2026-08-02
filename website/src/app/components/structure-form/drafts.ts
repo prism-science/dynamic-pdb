@@ -1,4 +1,4 @@
-import type { EntityLevel } from "@/lib/api/entries";
+import type { EntityLevel } from "@/lib/api/structures";
 import type { ExtFileReference } from "@/lib/api/ext";
 
 import { DRAFT_STORAGE_KEY, DRAFT_VERSION } from "./types";
@@ -40,7 +40,7 @@ export type StoredModel = {
 
 export type StoredDraft = {
   version: number;
-  entryId: string;
+  structureId: string;
   extExperimentId?: string | null;
   name: string;
   description: string;
@@ -148,7 +148,7 @@ export function readStoredDraft(): StoredDraft | null {
       return null;
     }
     const parsed = JSON.parse(raw) as StoredDraft;
-    if (!parsed || parsed.version !== DRAFT_VERSION || !parsed.entryId) {
+    if (!parsed || parsed.version !== DRAFT_VERSION || !parsed.structureId) {
       return null;
     }
     parsed.files = Array.isArray(parsed.files) ? parsed.files : [];
