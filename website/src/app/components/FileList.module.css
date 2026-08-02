@@ -23,8 +23,32 @@
   text-decoration: none;
 }
 
-a.row:hover {
+a.row:hover,
+.row[data-interactive="true"]:hover {
   background: var(--surface-muted);
+}
+
+/* Clickable body of a previewable row; the download icon sits outside it so
+   both actions stay reachable. */
+.rowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowMain:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius);
 }
 
 .icon {
@@ -65,7 +89,12 @@ a.row:hover {
   color: var(--text-muted);
 }
 
-a.row:hover .action {
+a.row:hover .action,
+.row[data-interactive="true"]:hover .action {
+  color: var(--accent-hover);
+}
+
+a.action:hover {
   color: var(--accent-hover);
 }
 

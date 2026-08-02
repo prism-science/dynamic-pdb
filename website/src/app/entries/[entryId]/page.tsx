@@ -11,7 +11,6 @@ import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 import { fastaTotalLength } from "@/lib/fasta";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
-import SequenceView from "@/app/components/SequenceView";
 import SortableModelList from "@/app/components/SortableModelList";
 import { ImagePlaceholderIcon } from "./entry-view";
 
@@ -41,7 +40,6 @@ export default async function EntryPage({ params }: EntryRouteProps) {
 
   const files = getLevelZeroFiles(data);
 
-  const hasSequence = sequence !== null;
   const hasFiles = files.length > 0;
   const hasModels = data.models.length > 0;
 
@@ -82,13 +80,8 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               <p className={styles.lead}>{data.entry.description}</p>
             ) : null}
 
-            {hasSequence ? (
-              <section id="sequence" className={styles.contentSection}>
-                <h2 className={styles.contentHeading}>Sequence</h2>
-                <SequenceView metadata={sequence} />
-              </section>
-            ) : null}
-
+            {/* The sequence is not printed inline any more: the FASTA shows up
+                as a regular file below and expands into a preview on click. */}
             {hasFiles ? (
               <section id="files" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Files</h2>
@@ -157,8 +150,9 @@ function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
   return null;
 }
 
-// L0 raw files shown as a generic list (the sequence is rendered separately, so
-// the FASTA entity is excluded here).
+// L0 raw files, FASTA included: the sequence belongs to the structure, so it is
+// listed here as a file and previewed in place. FASTA is pinned to the top
+// because it is what people look for first.
 function getLevelZeroFiles(data: EntryPageData): FileItem[] {
   return data.entities
     .filter((entity) => entity.level === "L0" && entity.type === "data")
@@ -170,7 +164,8 @@ function getLevelZeroFiles(data: EntryPageData): FileItem[] {
         type: payload?.type,
         size: payload?.size,
         url: typeof payload?.file_url === "string" ? payload.file_url : null,
+        entity,
       };
     })
-    .filter((item) => item.type !== "fasta");
+    .sort((a, b) => Number(b.type === "fasta") - Number(a.type === "fasta"));
 }
