@@ -115,75 +115,98 @@ export default function ModelDraftFields({
 
   return (
     <>
-      <input
-        className={styles.input}
-        value={draft.name}
-        onChange={(event) =>
-          onUpdate((current) => ({ ...current, name: event.target.value }))
-        }
-        placeholder="e.g. Refined structure (REFMAC)"
-        autoComplete="off"
-        data-1p-ignore
-        data-lpignore="true"
-        data-form-type="other"
-      />
-      <input
-        className={styles.input}
-        value={draft.description}
-        onChange={(event) =>
-          onUpdate((current) => ({
-            ...current,
-            description: event.target.value,
-          }))
-        }
-        placeholder="Optional — e.g. molecular replacement, then restrained refinement"
-        autoComplete="off"
-      />
+      {/* Same identity block as the entry form: preview on the left, name and
+          description beside it. The thumbnail is last in the DOM and moved by
+          CSS so tabbing still starts at the name. */}
+      <div className={styles.identityRow}>
+        <div className={styles.identityMain}>
+          <div className={styles.field}>
+            <label className={styles.subLabel} htmlFor={`${draft.id}-name`}>
+              Name
+            </label>
+            <input
+              id={`${draft.id}-name`}
+              className={styles.input}
+              value={draft.name}
+              onChange={(event) =>
+                onUpdate((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="e.g. Refined structure (REFMAC)"
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+            />
+          </div>
 
-      <label className={styles.thumbDrop}>
-        {draft.thumbPreview ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className={styles.thumbImg} src={draft.thumbPreview} alt="" />
-        ) : (
-          <span className={styles.thumbHint}>
-            <UploadIcon />
-            Preview image
-          </span>
-        )}
-        {draft.thumbUploadStatus === "uploading" ? (
-          <span className={styles.thumbOverlay}>
-            <ProgressBar value={draft.thumbProgress} />
-          </span>
-        ) : null}
-        <input
-          type="file"
-          accept="image/*"
-          className={styles.hiddenInput}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) {
-              return;
-            }
-            const nextThumbFileId = crypto.randomUUID();
-            onUpdate((current) => ({
-              ...current,
-              thumbFileId: nextThumbFileId,
-              thumbFile: file,
-              thumbPreview: URL.createObjectURL(file),
-              thumbUrl: null,
-              thumbProgress: 0,
-              thumbUploadStatus: "uploading",
-              thumbUploadError: null,
-            }));
-            void uploadThumbnail(file, nextThumbFileId);
-          }}
-        />
-      </label>
-      {draft.thumbUploadStatus === "failed" ? (
-        <span className={styles.uploadStatus} data-state="failed">
-          {uploadStatusText(draft.thumbUploadStatus, draft.thumbUploadError)}
-        </span>
-      ) : null}
+          <div className={styles.field}>
+            <label className={styles.subLabel} htmlFor={`${draft.id}-desc`}>
+              Description
+            </label>
+            <input
+              id={`${draft.id}-desc`}
+              className={styles.input}
+              value={draft.description}
+              onChange={(event) =>
+                onUpdate((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
+              placeholder="Optional — e.g. molecular replacement, then restrained refinement"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        <div className={styles.identityThumb}>
+          <span className={styles.subLabel}>Preview image</span>
+          <label className={styles.thumbDrop}>
+            {draft.thumbPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className={styles.thumbImg} src={draft.thumbPreview} alt="" />
+            ) : (
+              <span className={styles.thumbHint}>
+                <UploadIcon />
+                Choose an image
+              </span>
+            )}
+            {draft.thumbUploadStatus === "uploading" ? (
+              <span className={styles.thumbOverlay}>
+                <ProgressBar value={draft.thumbProgress} />
+              </span>
+            ) : null}
+            <input
+              type="file"
+              accept="image/*"
+              className={styles.hiddenInput}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) {
+                  return;
+                }
+                const nextThumbFileId = crypto.randomUUID();
+                onUpdate((current) => ({
+                  ...current,
+                  thumbFileId: nextThumbFileId,
+                  thumbFile: file,
+                  thumbPreview: URL.createObjectURL(file),
+                  thumbUrl: null,
+                  thumbProgress: 0,
+                  thumbUploadStatus: "uploading",
+                  thumbUploadError: null,
+                }));
+                void uploadThumbnail(file, nextThumbFileId);
+              }}
+            />
+          </label>
+          {draft.thumbUploadStatus === "failed" ? (
+            <span className={styles.uploadStatus} data-state="failed">
+              {uploadStatusText(draft.thumbUploadStatus, draft.thumbUploadError)}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
       <span className={styles.subLabel}>Data</span>
       <FilesEditor
