@@ -48,42 +48,6 @@
   -webkit-backdrop-filter: blur(2px);
 }
 
-.floatingCloseButton {
-  position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 120;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  border: 1px solid rgba(214, 211, 209, 0.9);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 22px;
-  line-height: 1;
-  box-shadow: 0 10px 30px rgba(28, 25, 23, 0.18);
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
-}
-
-.floatingCloseButton:hover {
-  background: var(--surface);
-  color: var(--text);
-  transform: scale(1.04);
-}
-
-.floatingCloseButton:focus-visible {
-  outline: none;
-  box-shadow: var(--ring), 0 10px 30px rgba(28, 25, 23, 0.18);
-}
-
 .chartOverlayCard {
   width: min(960px, 100%);
   max-height: calc(100vh - 64px);
@@ -94,8 +58,98 @@
   box-shadow: 0 24px 64px rgba(28, 25, 23, 0.28);
 }
 
+/* A structure takes the whole window: no frame, no padding, the canvas is the
+   page. The floating close button stays on top of it. */
 .structureOverlayCard {
-  width: min(1360px, 100%);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.structureOverlayBackdrop {
+  padding: 0;
+}
+
+/* Header in the Mol* light skin, one step darker than the density-map bar below
+   it, so the chrome descends into the canvas instead of sitting on it as a white
+   slab. */
+.structureOverlayCard .chartOverlayHead {
+  flex: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-bottom: 1px solid #d8d3c8;
+  background: #e6e3da;
+}
+
+.structureOverlayCard .chartOverlayTitle {
+  font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
+    sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #332b1f;
+}
+
+.structureOverlayCard .headActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Mol*'s own button: their control fill (#eeece7), no border, and their hover —
+   #e9e6e0 with the ochre accent and a hairline outline. Same values as the file
+   preview uses, so both routes into the viewer match. */
+.structureOverlayCard .download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-right: 10px;
+  padding: 0 9px;
+  border: none;
+  background: #eeece7;
+  color: #332b1f;
+  font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
+    sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.structureOverlayCard .download:hover {
+  background: #e9e6e0;
+  color: #ae5d04;
+  outline: 1px solid #c9c3b3;
+  outline-offset: -1px;
+}
+
+/* Flush to the corner: no inset, no rounding, no border of its own. */
+.structureOverlayCard .closeButton {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #332b1f;
+  font-size: 20px;
+}
+
+.structureOverlayCard .closeButton:hover {
+  background: #d8d3c8;
+  color: #ae5d04;
+}
+
+.structureOverlayBody {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .chartOverlayHead {
@@ -143,12 +197,9 @@
     padding: 12px;
   }
 
-  .floatingCloseButton {
-    top: 12px;
-    right: 12px;
-  }
-
-  .structureOverlayCard {
-    max-height: calc(100vh - 24px);
+  /* The structure overlay stays full-bleed on small screens too — that is where
+     the extra room matters most. */
+  .structureOverlayBackdrop {
+    padding: 0;
   }
 }

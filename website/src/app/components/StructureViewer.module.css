@@ -27,6 +27,24 @@
   border-radius: 0;
 }
 
+/* Full-screen preview: the viewer is the window, so the canvas takes whatever
+   height is left after the density-map bar instead of a fixed one. */
+.structureViewer[data-fill="true"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.structureViewer[data-fill="true"] .structureCanvas {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
 .structureCanvas :global(.msp-plugin) {
   border-radius: inherit;
 }
@@ -232,6 +250,35 @@
 @keyframes layerSpin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+.structureLoading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--surface, #fff);
+  color: var(--text-muted, #667085);
+  font-size: 13px;
+}
+
+.structureSpinner {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid #d8d3c8;
+  border-top-color: #ae5d04;
+  border-radius: 50%;
+  animation: layerSpin 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .structureSpinner {
+    animation-duration: 2400ms;
   }
 }
 

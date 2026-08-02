@@ -200,10 +200,14 @@ export default function StructureViewer({
   url,
   kind,
   maps,
+  fill = false,
 }: {
   url: string;
   kind: StructureKind;
   maps?: StructureMap[];
+  // Take the height of the container instead of a fixed canvas height. Used by
+  // the full-screen preview, where the viewer is the whole window.
+  fill?: boolean;
 }) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
@@ -542,6 +546,7 @@ export default function StructureViewer({
     <div
       className={styles.structureViewer}
       data-has-bar={layers.length > 0 ? "true" : undefined}
+      data-fill={fill ? "true" : undefined}
     >
       {layers.length > 0 ? (
         <div className={styles.layerBar}>
@@ -624,7 +629,10 @@ export default function StructureViewer({
           </div>
         ) : null}
         {loading && !error ? (
-          <p className={styles.structurePlaceholder}>Loading structure...</p>
+          <div className={styles.structureLoading} role="status">
+            <span className={styles.structureSpinner} aria-hidden="true" />
+            <span>Loading structure</span>
+          </div>
         ) : null}
         {error ? (
           <p className={styles.structurePlaceholder}>

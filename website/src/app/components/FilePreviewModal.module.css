@@ -26,6 +26,80 @@
   width: min(1360px, 100%);
 }
 
+/* A structure is worth the whole window: the dialog drops its frame and fills
+   the viewport, leaving only the header strip above the canvas. */
+.backdrop[data-full="true"] {
+  padding: 0;
+}
+
+.cardFull {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Header in the Mol* light skin, one step darker than the density-map bar below
+   it, so the chrome descends into the canvas instead of sitting on it as a white
+   slab. Kept low so it does not compete with the structure. */
+.cardFull .head {
+  padding: 0 0 0 14px;
+  border-bottom: 1px solid #d8d3c8;
+  background: #e6e3da;
+}
+
+.cardFull .title {
+  font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
+    sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #332b1f;
+}
+
+.cardFull .actions {
+  gap: 0;
+}
+
+/* Mol*'s own button: their control fill (#eeece7), no border, and their hover —
+   #e9e6e0 with the ochre accent and a hairline outline. Values taken from
+   molstar/build/viewer/theme/light.css. */
+.cardFull .download {
+  height: 24px;
+  margin-right: 10px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 0;
+  background: #eeece7;
+  color: #332b1f;
+  font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
+    sans-serif;
+  font-size: 12px;
+}
+
+.cardFull .download:hover {
+  background: #e9e6e0;
+  color: #ae5d04;
+  outline: 1px solid #c9c3b3;
+  outline-offset: -1px;
+}
+
+/* Flush to the corner: no inset, no rounding, no border of its own. */
+.cardFull .close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #332b1f;
+  font-size: 20px;
+}
+
+.cardFull .close:hover {
+  background: #d8d3c8;
+  color: #ae5d04;
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -136,6 +210,15 @@
   padding: 0;
 }
 
+/* The viewer sizes itself to this element, so it has to actually grow: without
+   flex-grow the body is content-height, the canvas resolves height:100% against
+   nothing, and Mol* gets a zero-height surface and renders nothing at all. */
+.cardFull .body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+}
+
 .previewImg {
   display: block;
   width: 100%;
@@ -197,5 +280,14 @@
   .card,
   .cardWide {
     max-height: calc(100vh - 24px);
+  }
+
+  /* Full-bleed on small screens too, where the canvas needs the room most. */
+  .backdrop[data-full="true"] {
+    padding: 0;
+  }
+
+  .cardFull {
+    max-height: 100%;
   }
 }

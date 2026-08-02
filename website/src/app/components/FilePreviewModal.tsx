@@ -79,6 +79,8 @@ export default function FilePreviewModal({
     payload.type === "image" ||
     (sourceURL != null && /\.(png|jpe?g|gif|webp|svg|bmp)/i.test(sourceURL));
   const wide = kind != null && !isMetrics && !isFasta;
+  // A structure gets the whole window; everything else stays a dialog.
+  const fullscreen = wide && url != null;
 
   // Header actions work on the file: Download saves it, Copy puts the same
   // content on the clipboard as valid FASTA, every record, wrapped at 60.
@@ -101,9 +103,19 @@ export default function FilePreviewModal({
   }
 
   return createPortal(
-    <div className={styles.backdrop} onClick={onClose}>
+    <div
+      className={styles.backdrop}
+      data-full={fullscreen ? "true" : undefined}
+      onClick={onClose}
+    >
       <div
-        className={`${styles.card} ${wide ? styles.cardWide : ""}`}
+        className={[
+          styles.card,
+          wide ? styles.cardWide : "",
+          fullscreen ? styles.cardFull : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         role="dialog"
         aria-label={`Preview of ${entity.name}`}
         onClick={(event) => event.stopPropagation()}
@@ -145,7 +157,7 @@ export default function FilePreviewModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img className={styles.previewImg} src={url} alt={entity.name} />
           ) : kind && url ? (
-            <StructureViewer url={url} kind={kind} maps={maps} />
+            <StructureViewer url={url} kind={kind} maps={maps} fill={fullscreen} />
           ) : (
             <GenericView type={payload.type} size={payload.size} url={url} />
           )}
