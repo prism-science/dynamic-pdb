@@ -369,7 +369,11 @@ export default function FilesEditor({
                       </div>
                     ) : file.type === "fasta" && file.metadata ? (
                       <div className={styles.filePreview}>
-                        <SequenceView metadata={file.metadata as FastaMetadata} />
+                        <div className={styles.sequencePreview}>
+                          <SequenceView
+                            metadata={file.metadata as FastaMetadata}
+                          />
+                        </div>
                       </div>
                     ) : null}
                   </>

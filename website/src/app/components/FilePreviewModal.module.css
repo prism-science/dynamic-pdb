@@ -71,6 +71,33 @@
   background: var(--accent-hover);
 }
 
+.copy {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.copy:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.copy:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
 .close {
   width: 32px;
   height: 32px;
@@ -101,6 +128,12 @@
 
 .cardWide .body {
   padding: 16px;
+}
+
+/* The sequence view brings its own tinted defline band, which has to reach both
+   edges of the dialog, so it supplies its own padding instead. */
+.body[data-flush="true"] {
+  padding: 0;
 }
 
 .previewImg {

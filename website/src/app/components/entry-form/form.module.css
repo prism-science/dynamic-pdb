@@ -580,6 +580,16 @@
   padding: 0 12px 12px;
 }
 
+/* A sequence preview supplies its own padding so its defline band can span the
+   row, so the row only has to draw the outline. */
+.filePreview:has(> .sequencePreview) {
+  padding: 0;
+}
+
+.sequencePreview {
+  border-top: 1px solid var(--border);
+}
+
 /* Deposition block (authors + affiliation) */
 .depositBlock {
   display: grid;

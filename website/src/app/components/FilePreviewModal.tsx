@@ -11,6 +11,7 @@ import type {
   MetricsPayload,
 } from "@/lib/api/entries";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
+import { fastaRecordText, fastaRecords } from "@/lib/fasta";
 import { detectStructureKind } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";
 
@@ -39,6 +40,7 @@ export default function FilePreviewModal({
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [copied, setCopied] = useState(false);
   const filePayload = (entity?.payload ?? {}) as DataPayload & {
     metadata?: Record<string, unknown>;
   };
@@ -74,6 +76,26 @@ export default function FilePreviewModal({
     (sourceURL != null && /\.(png|jpe?g|gif|webp|svg|bmp)/i.test(sourceURL));
   const wide = kind != null && !isMetrics && !isFasta;
 
+  // Header actions work on the file: Download saves it, Copy puts the same
+  // content on the clipboard as valid FASTA, every record, wrapped at 60.
+  async function copyFasta() {
+    const metadata = payload.metadata as FastaMetadata | undefined;
+    if (!metadata) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(
+        fastaRecords(metadata)
+          .map((record, index) => fastaRecordText(record, `Sequence ${index + 1}`))
+          .join(""),
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   return createPortal(
     <div className={styles.backdrop} onClick={onClose}>
       <div
@@ -85,6 +107,11 @@ export default function FilePreviewModal({
         <div className={styles.head}>
           <span className={styles.title}>{entity.name}</span>
           <div className={styles.actions}>
+            {isFasta && payload.metadata ? (
+              <button type="button" className={styles.copy} onClick={copyFasta}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            ) : null}
             {url ? (
               <a className={styles.download} href={url} download target="_blank" rel="noreferrer">
                 <DownloadIcon />
@@ -102,7 +129,10 @@ export default function FilePreviewModal({
           </div>
         </div>
 
-        <div className={styles.body}>
+        <div
+          className={styles.body}
+          data-flush={isFasta && payload.metadata ? "true" : undefined}
+        >
           {isMetrics ? (
             <MetricsView payload={entity.payload as MetricsPayload} />
           ) : isFasta && payload.metadata ? (
