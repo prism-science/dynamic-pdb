@@ -110,11 +110,17 @@ func (r *EntriesRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) e
 			      and (select count(*) from deleted_relations) >= 0
 			    returning entry_search_index.entry_id
 			  ),
+			  deleted_sequences as (
+			    delete from protein_sequences
+			    where protein_sequences.entity_id in (select id from target_entities)
+			      and (select count(*) from deleted_search) >= 0
+			    returning protein_sequences.id
+			  ),
 			  deleted_entities as (
 			    delete from entities
 			    using authorized_entry
 			    where entities.entry_id = authorized_entry.id
-			      and (select count(*) from deleted_search) >= 0
+			      and (select count(*) from deleted_sequences) >= 0
 			    returning entities.id
 			  ),
 			  deleted_models as (
@@ -234,13 +240,9 @@ func entrySearchCondition() string {
 func entryProteinSequenceSearchCondition() string {
 	return `exists (
 		select 1
-		from entities sequence_entity
-		where sequence_entity.entry_id = entries.id
-		  and sequence_entity.type = 'data'
-		  and sequence_entity.payload ->> 'type' = 'fasta'
-		  and jsonb_typeof(sequence_entity.payload #> '{metadata,sequence}') = 'string'
-		  and upper(sequence_entity.payload #>> '{metadata,sequence}')
-		      like '%' || :protein_sequence || '%'
+		from protein_sequences protein_sequence
+		where protein_sequence.entry_id = entries.id
+		  and protein_sequence.sequence like '%' || :protein_sequence || '%'
 	)`
 }
 

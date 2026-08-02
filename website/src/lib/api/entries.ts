@@ -26,10 +26,13 @@ export type Model = {
 export type EntityType = "data" | "metrics" | "model" | "program";
 export type EntityLevel = "L0" | "L1" | "L2" | "L3";
 
+export type FastaRecordMetadata = {
+  header: string;
+  sequence: string;
+};
+
 export type FastaMetadata = {
-  length?: number;
-  chains?: number;
-  sequence?: string;
+  records: FastaRecordMetadata[];
 };
 
 export type DataPayload = {

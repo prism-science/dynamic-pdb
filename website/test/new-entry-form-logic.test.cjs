@@ -33,6 +33,7 @@ const {
   uploadStatusText,
   uploadsReady,
 } = require("../src/app/components/NewEntryForm.tsx");
+const { fastaText, fastaTotalLength } = require("../src/lib/fasta.ts");
 
 test("should convert files and metrics into create entry entities", () => {
   const modelFile = parsedFile({
@@ -274,7 +275,9 @@ test("should normalize author and numeric inputs", () => {
 });
 
 test("should detect file types and parse fasta metadata", async () => {
-  const fasta = ">chain A\nac gt\n>chain B\nTT\n";
+  const fasta =
+    ">4HHB_1|Chains A,C|Hemoglobin subunit alpha|Homo sapiens\nac gt\n" +
+    ">4HHB_2|Chains B,D|Hemoglobin subunit beta|Homo sapiens\nTT\n";
   const file = new File([fasta], "sequence.fasta", { type: "text/plain" });
 
   const parsed = await parseFile(file, "L0");
@@ -283,15 +286,42 @@ test("should detect file types and parse fasta metadata", async () => {
   assert.equal(detectType("density.map"), "ccp4");
   assert.equal(detectType("notes.unknown"), "unknown");
   assert.equal(parsed.type, "fasta");
-  assert.deepEqual(parsed.metadata, { chains: 2, length: 6, sequence: "ACGTTT" });
-  assert.deepEqual(parseFasta("AC GT\n"), { chains: 1, length: 4, sequence: "ACGT" });
+  assert.deepEqual(parsed.metadata, {
+    records: [
+      {
+        header: "4HHB_1|Chains A,C|Hemoglobin subunit alpha|Homo sapiens",
+        sequence: "ACGT",
+      },
+      {
+        header: "4HHB_2|Chains B,D|Hemoglobin subunit beta|Homo sapiens",
+        sequence: "TT",
+      },
+    ],
+  });
+  assert.deepEqual(parseFasta("AC GT\n"), {
+    records: [{ header: "", sequence: "ACGT" }],
+  });
+});
+
+test("should read record-based fasta metadata", () => {
+  const metadata = parseFasta(
+    ">4HHB_1|Chains A,C|Hemoglobin alpha\nACGT\n" +
+      ">4HHB_2|Chains B,D|Hemoglobin beta\nTT\n",
+  );
+
+  assert.equal(fastaTotalLength(metadata), 6);
+  assert.equal(
+    fastaText(metadata),
+    ">4HHB_1|Chains A,C|Hemoglobin alpha\nACGT\n" +
+      ">4HHB_2|Chains B,D|Hemoglobin beta\nTT",
+  );
 });
 
 test("should parse URL files and skip unsafe URLs", async () => {
   const previousFetch = global.fetch;
   try {
     global.fetch = async () =>
-      new Response(">chain A\nAAAA", {
+      new Response(">example protein\nAAAA", {
         status: 200,
         headers: { "content-length": "13" },
       });
@@ -304,7 +334,9 @@ test("should parse URL files and skip unsafe URLs", async () => {
     assert.equal(isValidHttpUrl("ftp://example.com/model.cif"), false);
     assert.equal(parsed.name, "sequence.fasta");
     assert.equal(parsed.uploadStatus, "uploaded");
-    assert.deepEqual(parsed.metadata, { chains: 1, length: 4, sequence: "AAAA" });
+    assert.deepEqual(parsed.metadata, {
+      records: [{ header: "example protein", sequence: "AAAA" }],
+    });
   } finally {
     global.fetch = previousFetch;
   }

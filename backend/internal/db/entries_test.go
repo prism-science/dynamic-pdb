@@ -98,7 +98,12 @@ func Test_should_filter_entries_by_protein_sequence_when_entries_list_called(t *
 			FileURL: "https://files.example/protein.fasta",
 			Type:    "fasta",
 			Metadata: map[string]any{
-				"sequence": "M" + sequenceToken + "K",
+				"records": []map[string]any{
+					{
+						"header":   "test protein",
+						"sequence": "M" + sequenceToken + "K",
+					},
+				},
 			},
 		},
 		CreatedAt: now,
@@ -106,6 +111,9 @@ func Test_should_filter_entries_by_protein_sequence_when_entries_list_called(t *
 	})
 	require.NoError(t, err)
 	require.NotNil(t, sequenceEntity)
+	records, err := sequenceEntity.FASTARecords()
+	require.NoError(t, err)
+	require.NoError(t, testDB.ProteinSequences.Create(ctx, sequenceEntry.ID, sequenceEntity.ID, records))
 	queryWithWhitespace := strings.ToLower(sequenceToken[:8] + "\n" + sequenceToken[8:])
 
 	// when

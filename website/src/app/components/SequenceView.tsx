@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import type { FastaMetadata } from "@/lib/api/entries";
+import { fastaRecords, fastaText } from "@/lib/fasta";
 
 import styles from "./SequenceView.module.css";
 
@@ -12,27 +13,22 @@ const GROUPS_PER_LINE = 5;
 export default function SequenceView({ metadata }: { metadata: FastaMetadata }) {
   const [copied, setCopied] = useState(false);
 
-  const sequence = (
-    typeof metadata.sequence === "string" ? metadata.sequence : ""
-  )
-    .replace(/\s+/g, "")
-    .toUpperCase();
-
-  const lines = useMemo(() => {
-    const groups = sequence.match(new RegExp(`.{1,${GROUP}}`, "g")) ?? [];
-    const result: string[] = [];
-    for (let i = 0; i < groups.length; i += GROUPS_PER_LINE) {
-      result.push(groups.slice(i, i + GROUPS_PER_LINE).join(" "));
-    }
-    return result;
-  }, [sequence]);
+  const records = useMemo(
+    () =>
+      fastaRecords(metadata).map((record) => ({
+        ...record,
+        lines: sequenceLines(record.sequence),
+      })),
+    [metadata],
+  );
 
   async function copy() {
-    if (!sequence) {
+    const text = fastaText(metadata);
+    if (!text) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(sequence);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -40,7 +36,7 @@ export default function SequenceView({ metadata }: { metadata: FastaMetadata }) 
     }
   }
 
-  if (!sequence) {
+  if (records.length === 0) {
     return null;
   }
 
@@ -49,13 +45,29 @@ export default function SequenceView({ metadata }: { metadata: FastaMetadata }) 
       <button type="button" className={styles.copy} onClick={copy}>
         {copied ? "Copied" : "Copy"}
       </button>
-      <pre className={styles.seq}>
-        {lines.map((line, index) => (
-          <div className={styles.line} key={index}>
-            {line}
+      <div className={styles.seq}>
+        {records.map((record, recordIndex) => (
+          <div className={styles.record} key={`${record.header}-${recordIndex}`}>
+            {record.header ? (
+              <div className={styles.header}>&gt;{record.header}</div>
+            ) : null}
+            {record.lines.map((line, lineIndex) => (
+              <div className={styles.line} key={lineIndex}>
+                {line}
+              </div>
+            ))}
           </div>
         ))}
-      </pre>
+      </div>
     </div>
   );
+}
+
+function sequenceLines(sequence: string): string[] {
+  const groups = sequence.match(new RegExp(`.{1,${GROUP}}`, "g")) ?? [];
+  const lines: string[] = [];
+  for (let index = 0; index < groups.length; index += GROUPS_PER_LINE) {
+    lines.push(groups.slice(index, index + GROUPS_PER_LINE).join(" "));
+  }
+  return lines;
 }

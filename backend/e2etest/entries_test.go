@@ -199,11 +199,18 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NotNil(sequencePayload.Metadata)
 	sequenceMetadata := *sequencePayload.Metadata
 	s.Equal("4HHB", sequenceMetadata["pdb_id"])
-	s.Equal(float64(4), sequenceMetadata["chains"])
-	s.Equal([]interface{}{"A", "C", "B", "D"}, sequenceMetadata["chain_ids"])
-	s.Equal(float64(287), sequenceMetadata["length"])
 	s.Equal("Homo sapiens", sequenceMetadata["organism"])
-	s.Contains(sequenceMetadata["sequence"], "VHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQR")
+	records, ok := sequenceMetadata["records"].([]interface{})
+	s.Require().True(ok)
+	s.Require().Len(records, 2)
+	alphaRecord, ok := records[0].(map[string]interface{})
+	s.Require().True(ok)
+	s.Equal("4HHB_1|Chains A,C|Hemoglobin subunit alpha|Homo sapiens", alphaRecord["header"])
+	s.Contains(alphaRecord["sequence"], "VLSPADKTNVKAAWGKVGAHAGEYGAEALERM")
+	betaRecord, ok := records[1].(map[string]interface{})
+	s.Require().True(ok)
+	s.Equal("4HHB_2|Chains B,D|Hemoglobin subunit beta|Homo sapiens", betaRecord["header"])
+	s.Contains(betaRecord["sequence"], "VHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQR")
 
 	modelEntity := entityByID(entitiesBody.Items, modelEntityID)
 	s.Require().NotNil(modelEntity)
@@ -256,7 +263,12 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 					"file_url": "https://files.example/protein.fasta",
 					"type":     "fasta",
 					"metadata": map[string]any{
-						"sequence": "M" + proteinSequence + "K",
+						"records": []map[string]any{
+							{
+								"header":   "search protein",
+								"sequence": "M" + proteinSequence + "K",
+							},
+						},
 					},
 				},
 			},
@@ -1046,9 +1058,21 @@ func readFastaMetadataForTest(t *testing.T, path string) map[string]any {
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)
 
+	records := make([]map[string]any, 0, 2)
 	var sequence strings.Builder
+	var header string
 	var pdbID string
-	chainIDs := make([]string, 0, 4)
+
+	appendRecord := func() {
+		if sequence.Len() == 0 {
+			return
+		}
+		records = append(records, map[string]any{
+			"header":   header,
+			"sequence": sequence.String(),
+		})
+		sequence.Reset()
+	}
 
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
@@ -1056,50 +1080,27 @@ func readFastaMetadataForTest(t *testing.T, path string) map[string]any {
 			continue
 		}
 		if strings.HasPrefix(line, ">") {
+			appendRecord()
+			header = strings.TrimSpace(strings.TrimPrefix(line, ">"))
 			if pdbID == "" {
-				fields := strings.Fields(strings.TrimPrefix(line, ">"))
+				fields := strings.Fields(header)
 				require.NotEmpty(t, fields)
 				pdbID = strings.Split(fields[0], "_")[0]
 			}
-			chainIDs = append(chainIDs, chainIDsFromFastaHeader(line)...)
 			continue
 		}
 		sequence.WriteString(line)
 	}
+	appendRecord()
 
 	require.NotEmpty(t, pdbID)
-	require.NotEmpty(t, chainIDs)
-	require.NotEmpty(t, sequence.String())
+	require.NotEmpty(t, records)
 
 	return map[string]any{
-		"pdb_id":    pdbID,
-		"chains":    len(chainIDs),
-		"chain_ids": chainIDs,
-		"length":    sequence.Len(),
-		"organism":  "Homo sapiens",
-		"sequence":  sequence.String(),
+		"pdb_id":   pdbID,
+		"records":  records,
+		"organism": "Homo sapiens",
 	}
-}
-
-func chainIDsFromFastaHeader(header string) []string {
-	for _, segment := range strings.Split(header, "|") {
-		segment = strings.TrimSpace(segment)
-		if !strings.HasPrefix(segment, "Chains ") {
-			continue
-		}
-
-		chainList := strings.TrimPrefix(segment, "Chains ")
-		chainIDs := make([]string, 0)
-		for _, chainID := range strings.Split(chainList, ",") {
-			chainID = strings.TrimSpace(chainID)
-			if chainID != "" {
-				chainIDs = append(chainIDs, chainID)
-			}
-		}
-		return chainIDs
-	}
-
-	return nil
 }
 
 func proteinSequenceTokenForTest(id uuid.UUID) string {

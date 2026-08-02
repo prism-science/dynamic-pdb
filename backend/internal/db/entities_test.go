@@ -69,8 +69,12 @@ func Test_should_create_and_list_data_entity_metadata_when_entities_repository_c
 			Type:    "fasta",
 			Size:    &size,
 			Metadata: map[string]any{
-				"length": 310,
-				"chains": 1,
+				"records": []map[string]any{
+					{
+						"header":   "5GY3_1|Chain A|Example protein",
+						"sequence": "ACDEFGHIK",
+					},
+				},
 			},
 		},
 		CreatedAt: time.Now().UTC(),
@@ -90,8 +94,6 @@ func Test_should_create_and_list_data_entity_metadata_when_entities_repository_c
 	assert.Equal(t, "fasta", payload.Type)
 	require.NotNil(t, payload.Size)
 	assert.Equal(t, size, *payload.Size)
-	assert.Equal(t, float64(310), payload.Metadata["length"])
-	assert.Equal(t, float64(1), payload.Metadata["chains"])
 }
 
 func Test_should_create_and_list_program_entity_payload_when_entities_repository_called(t *testing.T) {

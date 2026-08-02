@@ -17,6 +17,11 @@ type DataPayload struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+type FASTARecord struct {
+	Header   string `json:"header"`
+	Sequence string `json:"sequence"`
+}
+
 type ProgramPayload struct {
 	Name        string `json:"name,omitempty"`
 	Version     string `json:"version,omitempty"`
