@@ -1,9 +1,12 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 )
@@ -11,6 +14,7 @@ import (
 var (
 	ErrUnexpectedEntityType = errors.New("models: unexpected entity type")
 	ErrInvalidEntityPayload = errors.New("models: invalid entity payload")
+	ErrInvalidFASTARecords  = errors.New("models: invalid FASTA records")
 )
 
 type EntityLevel string
@@ -114,6 +118,61 @@ func (e Entity) Data() (*DataPayload, error) {
 	}
 }
 
+func (e Entity) IsFASTA() bool {
+	if e.Type != EntityTypeData {
+		return false
+	}
+
+	payload, err := e.Data()
+	return err == nil && payload.Type == "fasta"
+}
+
+func (e Entity) FASTARecords() ([]FASTARecord, error) {
+	payload, err := e.Data()
+	if err != nil {
+		return nil, fmt.Errorf("get FASTA data payload: %w", err)
+	}
+	if payload.Type != "fasta" {
+		return nil, fmt.Errorf(
+			"%w: expected fasta data payload, got %q",
+			ErrInvalidEntityPayload,
+			payload.Type,
+		)
+	}
+
+	rawRecords, exists := payload.Metadata["records"]
+	if !exists {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(rawRecords)
+	if err != nil {
+		return nil, fmt.Errorf("marshal FASTA records: %w", err)
+	}
+
+	var records []FASTARecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		return nil, fmt.Errorf(
+			"decode FASTA records: %w",
+			errors.Join(ErrInvalidFASTARecords, err),
+		)
+	}
+
+	for index := range records {
+		records[index].Header = strings.TrimSpace(records[index].Header)
+		records[index].Sequence = normalizeProteinSequence(records[index].Sequence)
+		if records[index].Sequence == "" {
+			return nil, fmt.Errorf(
+				"FASTA record %d sequence is empty: %w",
+				index,
+				ErrInvalidFASTARecords,
+			)
+		}
+	}
+
+	return records, nil
+}
+
 func (e Entity) Program() (*ProgramPayload, error) {
 	if e.Type != EntityTypeProgram {
 		return nil, fmt.Errorf("%w: expected %s, got %s", ErrUnexpectedEntityType, EntityTypeProgram, e.Type)
@@ -130,4 +189,16 @@ func (e Entity) Program() (*ProgramPayload, error) {
 	default:
 		return nil, fmt.Errorf("%w: program payload has type %T", ErrInvalidEntityPayload, e.Payload)
 	}
+}
+
+func normalizeProteinSequence(sequence string) string {
+	var normalized strings.Builder
+	normalized.Grow(len(sequence))
+	for _, char := range sequence {
+		if unicode.IsSpace(char) {
+			continue
+		}
+		normalized.WriteRune(unicode.ToUpper(char))
+	}
+	return normalized.String()
 }

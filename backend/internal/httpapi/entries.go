@@ -339,6 +339,17 @@ func (s *Server) createEntity(
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create entity: %w", err)
 	}
+
+	if entity.IsFASTA() {
+		records, err := entity.FASTARecords()
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("read entity FASTA records: %w", err)
+		}
+		if err := s.database.ProteinSequences.Create(ctx, entry.ID, entity.ID, records); err != nil {
+			return uuid.Nil, fmt.Errorf("save entity protein sequences: %w", err)
+		}
+	}
+
 	if err := s.database.EntrySearch.IndexEntity(ctx, *entity); err != nil {
 		return uuid.Nil, fmt.Errorf("index entity search: %w", err)
 	}

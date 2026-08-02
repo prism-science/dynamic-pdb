@@ -525,18 +525,38 @@ export function detectType(filename: string): string {
 }
 
 export function parseFasta(text: string): Record<string, unknown> {
-  const lines = text.split(/\r?\n/);
-  let chains = 0;
+  const records: Array<{
+    header: string;
+    sequence: string;
+  }> = [];
+  let header = "";
   let sequence = "";
-  for (const line of lines) {
+
+  function appendRecord() {
+    const normalizedSequence = sequence.replace(/\s+/g, "").toUpperCase();
+    if (normalizedSequence.length > 0) {
+      records.push({
+        header,
+        sequence: normalizedSequence,
+      });
+    }
+    sequence = "";
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
     if (line.startsWith(">")) {
-      chains += 1;
+      appendRecord();
+      header = line.slice(1).trim();
       continue;
     }
-    sequence += line.trim();
+    sequence += line;
   }
-  sequence = sequence.replace(/\s+/g, "").toUpperCase();
-  return { chains: chains || 1, length: sequence.length, sequence };
+  appendRecord();
+
+  return {
+    records,
+  };
 }
 
 export function formatSize(size: number): string {
@@ -553,4 +573,3 @@ export function formatSize(size: number): string {
   const rounded = unit === 0 ? value : Math.round(value * 10) / 10;
   return `${rounded} ${units[unit]}`;
 }
-

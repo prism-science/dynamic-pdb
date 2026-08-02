@@ -8,6 +8,7 @@ import {
   getEntryPageData,
 } from "@/lib/api/entries";
 import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
+import { fastaTotalLength } from "@/lib/fasta";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SequenceView from "@/app/components/SequenceView";
@@ -32,17 +33,9 @@ export default async function EntryPage({ params }: EntryRouteProps) {
 
   const vitals: string[] = [];
   if (sequence) {
-    const length =
-      typeof sequence.length === "number"
-        ? sequence.length
-        : typeof sequence.sequence === "string"
-          ? sequence.sequence.replace(/\s+/g, "").length
-          : 0;
+    const length = fastaTotalLength(sequence);
     if (length > 0) {
       vitals.push(`${length.toLocaleString()} residues`);
-    }
-    if (typeof sequence.chains === "number") {
-      vitals.push(`${sequence.chains} ${sequence.chains === 1 ? "chain" : "chains"}`);
     }
   }
 

@@ -41,8 +41,22 @@
   overflow-x: auto;
 }
 
+.record + .record {
+  margin-top: 16px;
+}
+
+.header {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .line {
+  font-family: var(--font-mono);
   color: var(--text);
+  font-size: 13px;
   line-height: 2;
   letter-spacing: 0.14em;
   white-space: pre;

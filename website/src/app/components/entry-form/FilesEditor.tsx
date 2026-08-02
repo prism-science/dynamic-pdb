@@ -15,6 +15,7 @@ import {
   type ExtExperiment,
   type ExtFile,
 } from "@/lib/api/ext";
+import { fastaTotalLength } from "@/lib/fasta";
 
 import SequenceView from "../SequenceView";
 import { LinkIcon, SearchIcon, UploadIcon } from "./icons";
@@ -287,8 +288,8 @@ export default function FilesEditor({
                         <span className={styles.fileSub}>
                           {fileEntityType(file)}
                           {file.size > 0 ? ` · ${formatSize(file.size)}` : ""}
-                          {typeof file.metadata?.length === "number"
-                            ? ` · ${file.metadata.length} residues`
+                          {file.type === "fasta" && file.metadata
+                            ? ` · ${fastaTotalLength(file.metadata as FastaMetadata)} residues`
                             : ""}
                         </span>
                       </span>

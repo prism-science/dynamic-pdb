@@ -117,12 +117,18 @@ func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid
 			      and (select count(*) from deleted_relations) >= 0
 			    returning entry_search_index.entry_id
 			  ),
+			  deleted_sequences as (
+			    delete from protein_sequences
+			    where protein_sequences.entity_id in (select id from target_entities)
+			      and (select count(*) from deleted_search) >= 0
+			    returning protein_sequences.id
+			  ),
 			  deleted_entities as (
 			    delete from entities
 			    using authorized_model
 			    where entities.entry_id = authorized_model.entry_id
 			      and entities.model_id = authorized_model.id
-			      and (select count(*) from deleted_search) >= 0
+			      and (select count(*) from deleted_sequences) >= 0
 			    returning entities.id
 			  ),
 			  deleted_model as (
