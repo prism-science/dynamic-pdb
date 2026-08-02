@@ -40,15 +40,15 @@ const (
 )
 
 type Entity struct {
-	ID        uuid.UUID
-	EntryID   uuid.UUID
-	ModelID   *uuid.UUID
-	Type      EntityType
-	Level     *EntityLevel
-	Name      string
-	Payload   any
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          uuid.UUID
+	StructureID uuid.UUID
+	ModelID     *uuid.UUID
+	Type        EntityType
+	Level       *EntityLevel
+	Name        string
+	Payload     any
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type EntityRelation struct {

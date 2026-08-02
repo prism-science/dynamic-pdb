@@ -15,14 +15,14 @@ import (
 
 func Test_should_return_model_with_optional_fields_when_models_create_and_get_called(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "model-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "model-structure", time.Now().UTC())
 	now := time.Now().UTC()
 	description := "Refined coordinate model with electron-density support " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
 	model := models.Model{
 		ID:                uuid.New(),
-		EntryID:           entry.ID,
+		StructureID:       structure.ID,
 		CreatedBy:         createdBy,
 		Name:              "qFit run " + uuid.NewString(),
 		Description:       &description,
@@ -34,12 +34,12 @@ func Test_should_return_model_with_optional_fields_when_models_create_and_get_ca
 	// when
 	created, err := testDB.Models.Create(context.Background(), model)
 	require.NoError(t, err)
-	got, err := testDB.Models.Get(context.Background(), entry.ID, created.ID)
+	got, err := testDB.Models.Get(context.Background(), structure.ID, created.ID)
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, model.ID, got.ID)
-	assert.Equal(t, entry.ID, got.EntryID)
+	assert.Equal(t, structure.ID, got.StructureID)
 	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, model.Name, got.Name)
 	require.NotNil(t, got.Description)
@@ -52,31 +52,31 @@ func Test_should_return_model_with_optional_fields_when_models_create_and_get_ca
 
 func Test_should_return_not_found_when_models_get_misses(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "missing-model-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "missing-model-structure", time.Now().UTC())
 
 	// when
-	_, err := testDB.Models.Get(context.Background(), entry.ID, uuid.New())
+	_, err := testDB.Models.Get(context.Background(), structure.ID, uuid.New())
 
 	// then
 	require.ErrorIs(t, err, db.ErrModelNotFound)
 }
 
-func Test_should_list_models_for_entry_with_pagination_when_models_list_called(t *testing.T) {
+func Test_should_list_models_for_structure_with_pagination_when_models_list_called(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "list-models-entry", time.Now().UTC())
-	otherEntry := createDBTestEntry(t, "list-models-other-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "list-models-structure", time.Now().UTC())
+	otherStructure := createDBTestStructure(t, "list-models-other-structure", time.Now().UTC())
 	now := time.Now().UTC()
-	first := createDBTestModel(t, entry.ID, "first model", now)
-	second := createDBTestModel(t, entry.ID, "second model", now.Add(time.Second))
-	_ = createDBTestModel(t, otherEntry.ID, "other model", now.Add(2*time.Second))
+	first := createDBTestModel(t, structure.ID, "first model", now)
+	second := createDBTestModel(t, structure.ID, "second model", now.Add(time.Second))
+	_ = createDBTestModel(t, otherStructure.ID, "other model", now.Add(2*time.Second))
 	limit := 1
 	offset := 1
 
 	// when
 	got, err := testDB.Models.List(context.Background(), db.ModelFilters{
-		EntryID: &entry.ID,
-		Limit:   &limit,
-		Offset:  &offset,
+		StructureID: &structure.ID,
+		Limit:       &limit,
+		Offset:      &offset,
 	})
 
 	// then

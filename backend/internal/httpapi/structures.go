@@ -24,43 +24,43 @@ const (
 	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
 )
 
-func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
-	filters, err := entryFiltersFromParams(params)
+func (s *Server) ListStructures(w http.ResponseWriter, r *http.Request, params ListStructuresParams) {
+	filters, err := structureFiltersFromParams(params)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entry filters")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid structure filters")
 		return
 	}
 
-	entries, err := s.database.Entries.List(r.Context(), filters)
+	structures, err := s.database.Structures.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list entries failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
+		slog.Error("list structures failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list structures")
 		return
 	}
 
-	if len(entries) == 0 {
+	if len(structures) == 0 {
 		if proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query); ok {
 			filters.Query = ""
 			filters.ProteinSequence = proteinSequence
-			entries, err = s.database.Entries.List(r.Context(), filters)
+			structures, err = s.database.Structures.List(r.Context(), filters)
 			if err != nil {
-				slog.Error("list entries by protein sequence failed", "err", err)
-				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
+				slog.Error("list structures by protein sequence failed", "err", err)
+				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list structures")
 				return
 			}
 		}
 	}
 
-	items := make([]Entry, 0, len(entries))
-	for _, entry := range entries {
-		items = append(items, entryResponseFromModel(entry))
+	items := make([]Structure, 0, len(structures))
+	for _, structure := range structures {
+		items = append(items, structureResponseFromModel(structure))
 	}
 
-	writeJSON(w, http.StatusOK, EntryListResponse{Items: items})
+	writeJSON(w, http.StatusOK, StructureListResponse{Items: items})
 }
 
-func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
-	var req CreateEntryRequest
+func (s *Server) CreateStructure(w http.ResponseWriter, r *http.Request) {
+	var req CreateStructureRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
@@ -68,7 +68,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entry name is required")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "structure name is required")
 		return
 	}
 	user, ok := UserFromContext(r.Context())
@@ -77,63 +77,63 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.createEntryGraph(r.Context(), req, name, user.ID)
+	err := s.createStructureGraph(r.Context(), req, name, user.ID)
 	if errors.Is(err, errInvalidRequest) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 	if err != nil {
-		slog.Error("create entry failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create entry")
+		slog.Error("create structure failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create structure")
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
-	entry, err := s.database.Entries.Get(r.Context(), entryID)
-	if errors.Is(err, db.ErrEntryNotFound) {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+func (s *Server) GetStructure(w http.ResponseWriter, r *http.Request, structureID uuid.UUID) {
+	structure, err := s.database.Structures.Get(r.Context(), structureID)
+	if errors.Is(err, db.ErrStructureNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "structure not found")
 		return
 	}
 	if err != nil {
-		slog.Error("get entry failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		slog.Error("get structure failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get structure")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, entryResponseFromModel(*entry))
+	writeJSON(w, http.StatusOK, structureResponseFromModel(*structure))
 }
 
-func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+func (s *Server) DeleteStructure(w http.ResponseWriter, r *http.Request, structureID uuid.UUID) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
 
-	if err := s.database.Entries.Delete(r.Context(), entryID, user.ID); errors.Is(err, db.ErrEntryNotFound) {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+	if err := s.database.Structures.Delete(r.Context(), structureID, user.ID); errors.Is(err, db.ErrStructureNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "structure not found")
 		return
-	} else if errors.Is(err, db.ErrEntryOwnershipMismatch) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the entry creator can delete it")
+	} else if errors.Is(err, db.ErrStructureOwnershipMismatch) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the structure creator can delete it")
 		return
 	} else if err != nil {
-		slog.Error("delete entry failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete entry")
+		slog.Error("delete structure failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete structure")
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
+func structureFiltersFromParams(params ListStructuresParams) (db.StructureFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
-		return db.EntryFilters{}, errors.New("limit must be non-negative")
+		return db.StructureFilters{}, errors.New("limit must be non-negative")
 	}
 	if params.Offset != nil && *params.Offset < 0 {
-		return db.EntryFilters{}, errors.New("offset must be non-negative")
+		return db.StructureFilters{}, errors.New("offset must be non-negative")
 	}
 
 	search := ""
@@ -141,7 +141,7 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 		search = strings.TrimSpace(*params.Query)
 	}
 
-	return db.EntryFilters{
+	return db.StructureFilters{
 		Limit:  params.Limit,
 		Offset: params.Offset,
 		Query:  search,
@@ -168,31 +168,31 @@ func proteinSequenceFromSearchQuery(value string) (string, bool) {
 	return normalized.String(), true
 }
 
-func entryResponseFromModel(entry domainmodels.Entry) Entry {
-	return Entry{
-		Id:                entry.ID,
-		CreatedBy:         entry.CreatedBy,
-		Name:              entry.Name,
-		Description:       entry.Description,
-		ThumbnailImageUrl: entry.ThumbnailImageURL,
-		CreatedAt:         entry.CreatedAt,
-		UpdatedAt:         entry.UpdatedAt,
+func structureResponseFromModel(structure domainmodels.Structure) Structure {
+	return Structure{
+		Id:                structure.ID,
+		CreatedBy:         structure.CreatedBy,
+		Name:              structure.Name,
+		Description:       structure.Description,
+		ThumbnailImageUrl: structure.ThumbnailImageURL,
+		CreatedAt:         structure.CreatedAt,
+		UpdatedAt:         structure.UpdatedAt,
 	}
 }
 
-func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string, createdBy uuid.UUID) error {
+func (s *Server) createStructureGraph(ctx context.Context, req CreateStructureRequest, name string, createdBy uuid.UUID) error {
 	now := time.Now().UTC()
-	entryID := uuid.New()
+	structureID := uuid.New()
 	if req.Id != nil {
-		entryID = *req.Id
-		if entryID == uuid.Nil {
-			return invalidRequest("entry id is required")
+		structureID = *req.Id
+		if structureID == uuid.Nil {
+			return invalidRequest("structure id is required")
 		}
 	}
 
 	return s.database.Do(ctx, func(ctx context.Context) error {
-		entry, err := s.database.Entries.Create(ctx, domainmodels.Entry{
-			ID:                entryID,
+		structure, err := s.database.Structures.Create(ctx, domainmodels.Structure{
+			ID:                structureID,
 			CreatedBy:         createdBy,
 			Name:              name,
 			Description:       req.Description,
@@ -201,13 +201,13 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 			UpdatedAt:         now,
 		})
 		if err != nil {
-			return fmt.Errorf("create entry: %w", err)
+			return fmt.Errorf("create structure: %w", err)
 		}
-		if err := s.database.EntrySearch.IndexEntry(ctx, *entry); err != nil {
-			return fmt.Errorf("index entry search: %w", err)
+		if err := s.database.StructureSearch.IndexStructure(ctx, *structure); err != nil {
+			return fmt.Errorf("index structure search: %w", err)
 		}
 
-		entryEntityIDs := make(map[uuid.UUID]struct{})
+		structureEntityIDs := make(map[uuid.UUID]struct{})
 		createdEntityIDs := make(map[uuid.UUID]struct{})
 		if req.Entities != nil {
 			for _, entityRequest := range *req.Entities {
@@ -215,18 +215,18 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 				if _, exists := createdEntityIDs[entityID]; exists {
 					return invalidRequest("duplicate entity id: %s", entityID)
 				}
-				entityID, err := s.createEntity(ctx, *entry, nil, entityRequest, now)
+				entityID, err := s.createEntity(ctx, *structure, nil, entityRequest, now)
 				if err != nil {
 					return err
 				}
 				createdEntityIDs[entityID] = struct{}{}
-				entryEntityIDs[entityID] = struct{}{}
+				structureEntityIDs[entityID] = struct{}{}
 			}
 		}
 
 		if req.Models != nil {
 			for _, modelRequest := range *req.Models {
-				if err := s.createModelGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, modelRequest, now, createdBy); err != nil {
+				if err := s.createModelGraph(ctx, *structure, structureEntityIDs, createdEntityIDs, modelRequest, now, createdBy); err != nil {
 					return err
 				}
 			}
@@ -238,8 +238,8 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 
 func (s *Server) createModelGraph(
 	ctx context.Context,
-	entry domainmodels.Entry,
-	entryEntityIDs map[uuid.UUID]struct{},
+	structure domainmodels.Structure,
+	structureEntityIDs map[uuid.UUID]struct{},
 	createdEntityIDs map[uuid.UUID]struct{},
 	req CreateModelRequest,
 	now time.Time,
@@ -260,7 +260,7 @@ func (s *Server) createModelGraph(
 
 	model, err := s.database.Models.Create(ctx, domainmodels.Model{
 		ID:                modelID,
-		EntryID:           entry.ID,
+		StructureID:       structure.ID,
 		CreatedBy:         createdBy,
 		Name:              name,
 		Description:       req.Description,
@@ -271,7 +271,7 @@ func (s *Server) createModelGraph(
 	if err != nil {
 		return fmt.Errorf("create model: %w", err)
 	}
-	if err := s.database.EntrySearch.IndexModel(ctx, *model); err != nil {
+	if err := s.database.StructureSearch.IndexModel(ctx, *model); err != nil {
 		return fmt.Errorf("index model search: %w", err)
 	}
 
@@ -282,7 +282,7 @@ func (s *Server) createModelGraph(
 			if _, exists := createdEntityIDs[entityID]; exists {
 				return invalidRequest("duplicate entity id: %s", entityID)
 			}
-			entityID, err := s.createEntity(ctx, entry, &model.ID, entityRequest, now)
+			entityID, err := s.createEntity(ctx, structure, &model.ID, entityRequest, now)
 			if err != nil {
 				return err
 			}
@@ -293,7 +293,7 @@ func (s *Server) createModelGraph(
 
 	if req.Relations != nil {
 		for _, relationRequest := range *req.Relations {
-			if err := s.createEntityRelation(ctx, entryEntityIDs, modelEntityIDs, relationRequest, now); err != nil {
+			if err := s.createEntityRelation(ctx, structureEntityIDs, modelEntityIDs, relationRequest, now); err != nil {
 				return err
 			}
 		}
@@ -304,7 +304,7 @@ func (s *Server) createModelGraph(
 
 func (s *Server) createEntity(
 	ctx context.Context,
-	entry domainmodels.Entry,
+	structure domainmodels.Structure,
 	modelID *uuid.UUID,
 	req CreateEntityRequest,
 	now time.Time,
@@ -326,20 +326,20 @@ func (s *Server) createEntity(
 	}
 
 	entity, err := s.database.Entities.Create(ctx, domainmodels.Entity{
-		ID:        entityID,
-		EntryID:   entry.ID,
-		ModelID:   modelID,
-		Type:      entityType,
-		Level:     entityLevelFromRequest(req.Level),
-		Name:      name,
-		Payload:   payload,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          entityID,
+		StructureID: structure.ID,
+		ModelID:     modelID,
+		Type:        entityType,
+		Level:       entityLevelFromRequest(req.Level),
+		Name:        name,
+		Payload:     payload,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create entity: %w", err)
 	}
-	if err := s.database.EntrySearch.IndexEntity(ctx, *entity); err != nil {
+	if err := s.database.StructureSearch.IndexEntity(ctx, *entity); err != nil {
 		return uuid.Nil, fmt.Errorf("index entity search: %w", err)
 	}
 
@@ -348,7 +348,7 @@ func (s *Server) createEntity(
 
 func (s *Server) createEntityRelation(
 	ctx context.Context,
-	entryEntityIDs map[uuid.UUID]struct{},
+	structureEntityIDs map[uuid.UUID]struct{},
 	modelEntityIDs map[uuid.UUID]struct{},
 	req CreateEntityRelationRequest,
 	now time.Time,
@@ -364,11 +364,11 @@ func (s *Server) createEntityRelation(
 	if sourceEntityID == targetEntityID {
 		return invalidRequest("relation source_entity_id and target_entity_id must be different")
 	}
-	if !entityIDBelongsToModelGraph(sourceEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidRequest("relation source entity is not part of this entry: %s", sourceEntityID)
+	if !entityIDBelongsToModelGraph(sourceEntityID, structureEntityIDs, modelEntityIDs) {
+		return invalidRequest("relation source entity is not part of this structure: %s", sourceEntityID)
 	}
-	if !entityIDBelongsToModelGraph(targetEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidRequest("relation target entity is not part of this entry: %s", targetEntityID)
+	if !entityIDBelongsToModelGraph(targetEntityID, structureEntityIDs, modelEntityIDs) {
+		return invalidRequest("relation target entity is not part of this structure: %s", targetEntityID)
 	}
 
 	if _, err := s.database.EntityRelations.Create(ctx, domainmodels.EntityRelation{
@@ -448,10 +448,10 @@ func entityLevelFromRequest(level *EntityLevel) *domainmodels.EntityLevel {
 
 func entityIDBelongsToModelGraph(
 	entityID uuid.UUID,
-	entryEntityIDs map[uuid.UUID]struct{},
+	structureEntityIDs map[uuid.UUID]struct{},
 	modelEntityIDs map[uuid.UUID]struct{},
 ) bool {
-	if _, exists := entryEntityIDs[entityID]; exists {
+	if _, exists := structureEntityIDs[entityID]; exists {
 		return true
 	}
 	if _, exists := modelEntityIDs[entityID]; exists {
@@ -508,8 +508,8 @@ func invalidPayloadRequest(description string, err error) error {
 	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
 }
 
-func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
-	filters, err := modelFiltersFromParams(entryID, params)
+func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, structureID uuid.UUID, params ListModelsParams) {
+	filters, err := modelFiltersFromParams(structureID, params)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
 		return
@@ -530,7 +530,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 	writeJSON(w, http.StatusOK, ModelListResponse{Items: items})
 }
 
-func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, structureID uuid.UUID) {
 	var req CreateModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -543,9 +543,9 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 		return
 	}
 
-	err := s.createModelForEntry(r.Context(), entryID, req, user.ID)
-	if errors.Is(err, db.ErrEntryNotFound) {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+	err := s.createModelForStructure(r.Context(), structureID, req, user.ID)
+	if errors.Is(err, db.ErrStructureNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "structure not found")
 		return
 	}
 	if errors.Is(err, errInvalidRequest) {
@@ -561,38 +561,38 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (s *Server) createModelForEntry(
+func (s *Server) createModelForStructure(
 	ctx context.Context,
-	entryID uuid.UUID,
+	structureID uuid.UUID,
 	req CreateModelRequest,
 	createdBy uuid.UUID,
 ) error {
 	now := time.Now().UTC()
 
 	return s.database.Do(ctx, func(ctx context.Context) error {
-		entry, err := s.database.Entries.Get(ctx, entryID)
+		structure, err := s.database.Structures.Get(ctx, structureID)
 		if err != nil {
 			return err
 		}
 
 		entities, err := s.database.Entities.List(ctx, db.EntityFilters{
-			EntryID:        &entryID,
-			BelongsToEntry: true,
+			StructureID:        &structureID,
+			BelongsToStructure: true,
 		})
 		if err != nil {
-			return fmt.Errorf("list entry entities: %w", err)
+			return fmt.Errorf("list structure entities: %w", err)
 		}
 
-		entryEntityIDs := make(map[uuid.UUID]struct{}, len(entities))
+		structureEntityIDs := make(map[uuid.UUID]struct{}, len(entities))
 		for _, entity := range entities {
-			entryEntityIDs[entity.ID] = struct{}{}
+			structureEntityIDs[entity.ID] = struct{}{}
 		}
-		createdEntityIDs := maps.Clone(entryEntityIDs)
+		createdEntityIDs := maps.Clone(structureEntityIDs)
 
 		return s.createModelGraph(
 			ctx,
-			*entry,
-			entryEntityIDs,
+			*structure,
+			structureEntityIDs,
 			createdEntityIDs,
 			req,
 			now,
@@ -601,8 +601,8 @@ func (s *Server) createModelForEntry(
 	})
 }
 
-func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
-	model, err := s.database.Models.Get(r.Context(), entryID, modelID)
+func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, structureID, modelID uuid.UUID) {
+	model, err := s.database.Models.Get(r.Context(), structureID, modelID)
 	if errors.Is(err, db.ErrModelNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
@@ -616,14 +616,14 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 	writeJSON(w, http.StatusOK, modelResponseFromModel(*model))
 }
 
-func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, structureID, modelID uuid.UUID) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
 
-	if err := s.database.Models.Delete(r.Context(), entryID, modelID, user.ID); errors.Is(err, db.ErrModelNotFound) {
+	if err := s.database.Models.Delete(r.Context(), structureID, modelID, user.ID); errors.Is(err, db.ErrModelNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
 	} else if errors.Is(err, db.ErrModelOwnershipMismatch) {
@@ -638,7 +638,7 @@ func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, mo
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func modelFiltersFromParams(entryID uuid.UUID, params ListModelsParams) (db.ModelFilters, error) {
+func modelFiltersFromParams(structureID uuid.UUID, params ListModelsParams) (db.ModelFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
 		return db.ModelFilters{}, errors.New("limit must be non-negative")
 	}
@@ -647,16 +647,16 @@ func modelFiltersFromParams(entryID uuid.UUID, params ListModelsParams) (db.Mode
 	}
 
 	return db.ModelFilters{
-		EntryID: &entryID,
-		Limit:   params.Limit,
-		Offset:  params.Offset,
+		StructureID: &structureID,
+		Limit:       params.Limit,
+		Offset:      params.Offset,
 	}, nil
 }
 
 func modelResponseFromModel(model domainmodels.Model) Model {
 	return Model{
 		Id:                model.ID,
-		EntryId:           model.EntryID,
+		StructureId:       model.StructureID,
 		CreatedBy:         model.CreatedBy,
 		Name:              model.Name,
 		Description:       model.Description,
@@ -666,8 +666,8 @@ func modelResponseFromModel(model domainmodels.Model) Model {
 	}
 }
 
-func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListEntitiesParams) {
-	filters, err := entityFiltersFromParams(entryID, params)
+func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, structureID uuid.UUID, params ListEntitiesParams) {
+	filters, err := entityFiltersFromParams(structureID, params)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entity filters")
 		return
@@ -691,7 +691,7 @@ func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uu
 		items = append(items, item)
 	}
 
-	relations, err := s.database.EntityRelations.List(r.Context(), entryID)
+	relations, err := s.database.EntityRelations.List(r.Context(), structureID)
 	if err != nil {
 		slog.Error("list entity relations failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entity relations")
@@ -709,7 +709,7 @@ func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uu
 	})
 }
 
-func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.EntityFilters, error) {
+func entityFiltersFromParams(structureID uuid.UUID, params ListEntitiesParams) (db.EntityFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
 		return db.EntityFilters{}, errors.New("limit must be non-negative")
 	}
@@ -718,9 +718,9 @@ func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.E
 	}
 
 	filters := db.EntityFilters{
-		EntryID: &entryID,
-		Limit:   params.Limit,
-		Offset:  params.Offset,
+		StructureID: &structureID,
+		Limit:       params.Limit,
+		Offset:      params.Offset,
 	}
 	if params.ModelId != nil {
 		modelID := *params.ModelId
@@ -749,15 +749,15 @@ func entityResponseFromModel(entity domainmodels.Entity) (Entity, error) {
 	}
 
 	return Entity{
-		Id:        entity.ID,
-		EntryId:   entity.EntryID,
-		ModelId:   entity.ModelID,
-		Type:      EntityType(entity.Type),
-		Level:     entityLevelResponseFromModel(entity.Level),
-		Name:      entity.Name,
-		Payload:   payload,
-		CreatedAt: entity.CreatedAt,
-		UpdatedAt: entity.UpdatedAt,
+		Id:          entity.ID,
+		StructureId: entity.StructureID,
+		ModelId:     entity.ModelID,
+		Type:        EntityType(entity.Type),
+		Level:       entityLevelResponseFromModel(entity.Level),
+		Name:        entity.Name,
+		Payload:     payload,
+		CreatedAt:   entity.CreatedAt,
+		UpdatedAt:   entity.UpdatedAt,
 	}, nil
 }
 

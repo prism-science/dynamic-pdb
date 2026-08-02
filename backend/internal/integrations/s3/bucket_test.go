@@ -59,10 +59,10 @@ func Test_should_grow_part_size_to_stay_under_part_cap_when_file_very_large(t *t
 	assert.Zero(t, partSize%(1024*1024))
 }
 
-func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
+func Test_should_build_structure_object_key_when_file_has_no_model(t *testing.T) {
 	// given
 	file := FileUpload{
-		EntryID:          "entry-id",
+		StructureID:      "structure-id",
 		EntityID:         "entity-id",
 		OriginalFilename: "model.cif",
 		Size:             100,
@@ -73,13 +73,13 @@ func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry-id/entities/entity-id/model.cif", key)
+	assert.Equal(t, "structure-id/entities/entity-id/model.cif", key)
 }
 
 func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 	// given
 	file := FileUpload{
-		EntryID:          "entry-id",
+		StructureID:      "structure-id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
 		OriginalFilename: "model.cif",
@@ -91,13 +91,13 @@ func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry-id/models/model-id/entities/entity-id/model.cif", key)
+	assert.Equal(t, "structure-id/models/model-id/entities/entity-id/model.cif", key)
 }
 
 func Test_should_strip_path_from_original_filename_when_building_object_key(t *testing.T) {
 	// given
 	file := FileUpload{
-		EntryID:          "entry-id",
+		StructureID:      "structure-id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
 		OriginalFilename: "../unsafe/model.cif",
@@ -109,13 +109,13 @@ func Test_should_strip_path_from_original_filename_when_building_object_key(t *t
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry-id/models/model-id/entities/entity-id/model.cif", key)
+	assert.Equal(t, "structure-id/models/model-id/entities/entity-id/model.cif", key)
 }
 
 func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.T) {
 	// given
 	file := FileUpload{
-		EntryID:          "entry/id",
+		StructureID:      "structure/id",
 		ModelID:          "model-id",
 		EntityID:         "entity-id",
 		OriginalFilename: "model.cif",
@@ -127,7 +127,7 @@ func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.
 
 	// then
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "entry_id is invalid")
+	assert.ErrorContains(t, err, "structure_id is invalid")
 }
 
 func Test_should_build_full_aws_object_url_when_endpoint_is_not_configured(t *testing.T) {
@@ -140,13 +140,13 @@ func Test_should_build_full_aws_object_url_when_endpoint_is_not_configured(t *te
 	}
 
 	// when
-	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+	objectURL, err := bucket.objectURL("structure/entities/entity/model.cif")
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/model.cif",
+		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/model.cif",
 		objectURL,
 	)
 }
@@ -162,13 +162,13 @@ func Test_should_build_full_endpoint_object_url_when_endpoint_is_configured(t *t
 	}
 
 	// when
-	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+	objectURL, err := bucket.objectURL("structure/entities/entity/model.cif")
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		"https://storage.example/root/dynamic-pdb/entry/entities/entity/model.cif",
+		"https://storage.example/root/dynamic-pdb/structure/entities/entity/model.cif",
 		objectURL,
 	)
 }

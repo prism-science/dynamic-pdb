@@ -22,13 +22,13 @@ type EntitiesRepository struct {
 }
 
 type EntityFilters struct {
-	EntryID        *uuid.UUID
-	ModelID        *uuid.UUID
-	BelongsToEntry bool
-	Types          []models.EntityType
-	Levels         []models.EntityLevel
-	Limit          *int
-	Offset         *int
+	StructureID        *uuid.UUID
+	ModelID            *uuid.UUID
+	BelongsToStructure bool
+	Types              []models.EntityType
+	Levels             []models.EntityLevel
+	Limit              *int
+	Offset             *int
 }
 
 func NewEntitiesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntitiesRepository {
@@ -44,9 +44,9 @@ func (r *EntitiesRepository) Create(ctx context.Context, entity models.Entity) (
 		return nil, fmt.Errorf("prepare entity payload: %w", err)
 	}
 
-	query := `insert into entities(id, entry_id, model_id, type, level, name, payload, created_at, updated_at)
-			  values (:id, :entry_id, :model_id, :type, :level, :name, cast(:payload as jsonb), :created_at, :updated_at)
-			  returning id, entry_id, model_id, type, level, name, payload, created_at, updated_at`
+	query := `insert into entities(id, structure_id, model_id, type, level, name, payload, created_at, updated_at)
+			  values (:id, :structure_id, :model_id, :type, :level, :name, cast(:payload as jsonb), :created_at, :updated_at)
+			  returning id, structure_id, model_id, type, level, name, payload, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -56,15 +56,15 @@ func (r *EntitiesRepository) Create(ctx context.Context, entity models.Entity) (
 
 	var row entityRow
 	if err := stmt.GetContext(ctx, &row, map[string]any{
-		"id":         entity.ID,
-		"entry_id":   entity.EntryID,
-		"model_id":   nullableUUID(entity.ModelID),
-		"type":       string(entity.Type),
-		"level":      nullableEntityLevel(entity.Level),
-		"name":       entity.Name,
-		"payload":    payload,
-		"created_at": entity.CreatedAt,
-		"updated_at": entity.UpdatedAt,
+		"id":           entity.ID,
+		"structure_id": entity.StructureID,
+		"model_id":     nullableUUID(entity.ModelID),
+		"type":         string(entity.Type),
+		"level":        nullableEntityLevel(entity.Level),
+		"name":         entity.Name,
+		"payload":      payload,
+		"created_at":   entity.CreatedAt,
+		"updated_at":   entity.UpdatedAt,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to insert entity: %w", err)
 	}
@@ -125,15 +125,15 @@ func entityListQuery(filters EntityFilters) (string, map[string]any, error) {
 	conditions := make([]string, 0)
 	args := map[string]any{}
 
-	if filters.EntryID != nil {
-		conditions = append(conditions, "entry_id = :entry_id")
-		args["entry_id"] = *filters.EntryID
+	if filters.StructureID != nil {
+		conditions = append(conditions, "structure_id = :structure_id")
+		args["structure_id"] = *filters.StructureID
 	}
 	if filters.ModelID != nil {
 		conditions = append(conditions, "model_id = :model_id")
 		args["model_id"] = *filters.ModelID
 	}
-	if filters.BelongsToEntry {
+	if filters.BelongsToStructure {
 		conditions = append(conditions, "model_id is null")
 	}
 	if len(filters.Types) > 0 {
@@ -145,7 +145,7 @@ func entityListQuery(filters EntityFilters) (string, map[string]any, error) {
 		args["levels"] = pq.Array(entityLevelStrings(filters.Levels))
 	}
 
-	query := `select id, entry_id, model_id, type, level, name, payload, created_at, updated_at
+	query := `select id, structure_id, model_id, type, level, name, payload, created_at, updated_at
 			  from entities`
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
@@ -180,15 +180,15 @@ func entityFromRow(row *entityRow) (*models.Entity, error) {
 	}
 
 	return &models.Entity{
-		ID:        row.ID,
-		EntryID:   row.EntryID,
-		ModelID:   uuidPtrFromNull(row.ModelID),
-		Type:      entityType,
-		Level:     entityLevelPtrFromNull(row.Level),
-		Name:      row.Name,
-		Payload:   payload,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:          row.ID,
+		StructureID: row.StructureID,
+		ModelID:     uuidPtrFromNull(row.ModelID),
+		Type:        entityType,
+		Level:       entityLevelPtrFromNull(row.Level),
+		Name:        row.Name,
+		Payload:     payload,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
 	}, nil
 }
 
@@ -274,13 +274,13 @@ func entityLevelStrings(values []models.EntityLevel) []string {
 }
 
 type entityRow struct {
-	ID        uuid.UUID      `db:"id"`
-	EntryID   uuid.UUID      `db:"entry_id"`
-	ModelID   uuid.NullUUID  `db:"model_id"`
-	Type      string         `db:"type"`
-	Level     sql.NullString `db:"level"`
-	Name      string         `db:"name"`
-	Payload   []byte         `db:"payload"`
-	CreatedAt time.Time      `db:"created_at"`
-	UpdatedAt time.Time      `db:"updated_at"`
+	ID          uuid.UUID      `db:"id"`
+	StructureID uuid.UUID      `db:"structure_id"`
+	ModelID     uuid.NullUUID  `db:"model_id"`
+	Type        string         `db:"type"`
+	Level       sql.NullString `db:"level"`
+	Name        string         `db:"name"`
+	Payload     []byte         `db:"payload"`
+	CreatedAt   time.Time      `db:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"`
 }

@@ -19,18 +19,18 @@ import (
 	"dynamic-pdb/backend/internal/integrations/github"
 )
 
-type EntriesSuite struct {
+type StructuresSuite struct {
 	baseSuite
 }
 
-func TestEntries(t *testing.T) {
-	suite.Run(t, new(EntriesSuite))
+func TestStructures(t *testing.T) {
+	suite.Run(t, new(StructuresSuite))
 }
 
-func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
+func (s *StructuresSuite) Test_should_create_structure_when_request_is_valid() {
 	// given
 	githubClient.On("GetUser", mock.Anything, "gh-token").
-		Return(github.User{ID: 4201, Login: "entry-creator", Name: "Entry Creator", Email: "entry@example.com"}, nil)
+		Return(github.User{ID: 4201, Login: "structure-creator", Name: "Structure Creator", Email: "structure@example.com"}, nil)
 	githubClient.On("ListOrgs", mock.Anything, "gh-token").
 		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
 
@@ -41,15 +41,15 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	authors := []string{"Fermi, G.", "Perutz, M.F."}
 	affiliation := "MRC Laboratory of Molecular Biology, Cambridge"
 	fastaMetadata := readFastaMetadataForTest(s.T(), "testdata/fasta/pdb_4hhb_human_deoxyhemoglobin.fasta")
-	thumbnailImageURL := "https://example.com/entry.png"
-	name := "entry-" + uuid.NewString()
+	thumbnailImageURL := "https://example.com/structure.png"
+	name := "structure-" + uuid.NewString()
 	sequenceEntityID := uuid.New()
 	programEntityID := uuid.New()
 	modelEntityID := uuid.New()
 	metricsEntityID := uuid.New()
 
 	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+	resp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
 		"name":                name,
 		"description":         description,
 		"thumbnail_image_url": thumbnailImageURL,
@@ -136,31 +136,31 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NoError(err)
 	s.Empty(body)
 
-	entriesResp := getWithToken(s.T(), "/v1/entries", "")
-	defer entriesResp.Body.Close()
-	s.Equal(http.StatusOK, entriesResp.StatusCode)
+	structuresResp := getWithToken(s.T(), "/v1/structures", "")
+	defer structuresResp.Body.Close()
+	s.Equal(http.StatusOK, structuresResp.StatusCode)
 
-	var entriesBody httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(entriesResp.Body).Decode(&entriesBody))
-	entry := entryByName(entriesBody.Items, name)
-	s.Require().NotNil(entry)
-	s.NotEqual(uuid.Nil, entry.Id)
-	s.Equal(creatorID, entry.CreatedBy)
-	s.Require().NotNil(entry.Description)
-	s.Equal(description, *entry.Description)
-	s.Require().NotNil(entry.ThumbnailImageUrl)
-	s.Equal(thumbnailImageURL, *entry.ThumbnailImageUrl)
+	var structuresBody httpapi.StructureListResponse
+	s.Require().NoError(json.NewDecoder(structuresResp.Body).Decode(&structuresBody))
+	structure := structureByName(structuresBody.Items, name)
+	s.Require().NotNil(structure)
+	s.NotEqual(uuid.Nil, structure.Id)
+	s.Equal(creatorID, structure.CreatedBy)
+	s.Require().NotNil(structure.Description)
+	s.Equal(description, *structure.Description)
+	s.Require().NotNil(structure.ThumbnailImageUrl)
+	s.Equal(thumbnailImageURL, *structure.ThumbnailImageUrl)
 
-	entryPath := "/v1/entries/" + entry.Id.String()
+	structurePath := "/v1/structures/" + structure.Id.String()
 
-	entryResp := getWithToken(s.T(), entryPath, "")
-	defer entryResp.Body.Close()
-	s.Equal(http.StatusOK, entryResp.StatusCode)
-	var entryBody httpapi.Entry
-	s.Require().NoError(json.NewDecoder(entryResp.Body).Decode(&entryBody))
-	s.Equal(entry.Id, entryBody.Id)
+	structureResp := getWithToken(s.T(), structurePath, "")
+	defer structureResp.Body.Close()
+	s.Equal(http.StatusOK, structureResp.StatusCode)
+	var structureBody httpapi.Structure
+	s.Require().NoError(json.NewDecoder(structureResp.Body).Decode(&structureBody))
+	s.Equal(structure.Id, structureBody.Id)
 
-	modelsResp := getWithToken(s.T(), entryPath+"/models", "")
+	modelsResp := getWithToken(s.T(), structurePath+"/models", "")
 	defer modelsResp.Body.Close()
 	s.Equal(http.StatusOK, modelsResp.StatusCode)
 
@@ -172,14 +172,14 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.Require().NotNil(modelsBody.Items[0].Description)
 	s.Equal("Refinement against crystallographic density", *modelsBody.Items[0].Description)
 
-	modelResp := getWithToken(s.T(), entryPath+"/models/"+modelsBody.Items[0].Id.String(), "")
+	modelResp := getWithToken(s.T(), structurePath+"/models/"+modelsBody.Items[0].Id.String(), "")
 	defer modelResp.Body.Close()
 	s.Equal(http.StatusOK, modelResp.StatusCode)
 	var modelBody httpapi.Model
 	s.Require().NoError(json.NewDecoder(modelResp.Body).Decode(&modelBody))
 	s.Equal(modelsBody.Items[0].Id, modelBody.Id)
 
-	entitiesResp := getWithToken(s.T(), entryPath+"/entities", "")
+	entitiesResp := getWithToken(s.T(), structurePath+"/entities", "")
 	defer entitiesResp.Body.Close()
 	s.Equal(http.StatusOK, entitiesResp.StatusCode)
 
@@ -230,7 +230,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.True(relationTypes[httpapi.MetricsFor])
 }
 
-func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_nested_graph() {
+func (s *StructuresSuite) Test_should_filter_structures_when_search_text_matches_nested_graph() {
 	// given
 	githubClient.On("GetUser", mock.Anything, "gh-token").
 		Return(github.User{ID: 4202, Login: "search-creator", Name: "Search Creator", Email: "search@example.com"}, nil)
@@ -244,9 +244,9 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	sequenceEntityID := uuid.New()
 	modelEntityID := uuid.New()
 
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name":        "entry " + searchToken,
-		"description": "Searchable entry for nested graph tests",
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"name":        "structure " + searchToken,
+		"description": "Searchable structure for nested graph tests",
 		"entities": []map[string]any{
 			{
 				"id":   sequenceEntityID,
@@ -285,22 +285,22 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	s.Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	textSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(searchToken), "")
+	textSearchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape(searchToken), "")
 	defer textSearchResp.Body.Close()
 
-	modelSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("qFit"), "")
+	modelSearchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape("qFit"), "")
 	defer modelSearchResp.Body.Close()
 
-	entitySearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("model"), "")
+	entitySearchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape("model"), "")
 	defer entitySearchResp.Body.Close()
 
-	affiliationSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(affiliationSearchToken), "")
+	affiliationSearchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape(affiliationSearchToken), "")
 	defer affiliationSearchResp.Body.Close()
 
-	sequenceSearchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(strings.ToLower(proteinSequence)), "")
+	sequenceSearchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape(strings.ToLower(proteinSequence)), "")
 	defer sequenceSearchResp.Body.Close()
 
-	missingResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("missing-"+searchToken), "")
+	missingResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape("missing-"+searchToken), "")
 	defer missingResp.Body.Close()
 
 	// then
@@ -311,37 +311,37 @@ func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_neste
 	s.Equal(http.StatusOK, sequenceSearchResp.StatusCode)
 	s.Equal(http.StatusOK, missingResp.StatusCode)
 
-	var textSearchBody httpapi.EntryListResponse
+	var textSearchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(textSearchResp.Body).Decode(&textSearchBody))
-	s.Require().NotNil(entryByName(textSearchBody.Items, "entry "+searchToken))
+	s.Require().NotNil(structureByName(textSearchBody.Items, "structure "+searchToken))
 
-	var modelSearchBody httpapi.EntryListResponse
+	var modelSearchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(modelSearchResp.Body).Decode(&modelSearchBody))
-	s.Require().NotNil(entryByName(modelSearchBody.Items, "entry "+searchToken))
+	s.Require().NotNil(structureByName(modelSearchBody.Items, "structure "+searchToken))
 
-	var entitySearchBody httpapi.EntryListResponse
+	var entitySearchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(entitySearchResp.Body).Decode(&entitySearchBody))
-	s.Require().NotNil(entryByName(entitySearchBody.Items, "entry "+searchToken))
+	s.Require().NotNil(structureByName(entitySearchBody.Items, "structure "+searchToken))
 
-	var affiliationSearchBody httpapi.EntryListResponse
+	var affiliationSearchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(affiliationSearchResp.Body).Decode(&affiliationSearchBody))
-	s.Require().NotNil(entryByName(affiliationSearchBody.Items, "entry "+searchToken))
+	s.Require().NotNil(structureByName(affiliationSearchBody.Items, "structure "+searchToken))
 
-	var sequenceSearchBody httpapi.EntryListResponse
+	var sequenceSearchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(sequenceSearchResp.Body).Decode(&sequenceSearchBody))
-	s.Require().NotNil(entryByName(sequenceSearchBody.Items, "entry "+searchToken))
+	s.Require().NotNil(structureByName(sequenceSearchBody.Items, "structure "+searchToken))
 
-	var missingBody httpapi.EntryListResponse
+	var missingBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(missingResp.Body).Decode(&missingBody))
-	s.Nil(entryByName(missingBody.Items, "entry "+searchToken))
+	s.Nil(structureByName(missingBody.Items, "structure "+searchToken))
 }
 
-func (s *EntriesSuite) Test_should_return_401_when_create_entry_called_without_token() {
+func (s *StructuresSuite) Test_should_return_401_when_create_structure_called_without_token() {
 	// given
 
 	// when
-	resp := postJSON(s.T(), "/v1/entries", map[string]string{
-		"name": "unauthorized-entry",
+	resp := postJSON(s.T(), "/v1/structures", map[string]string{
+		"name": "unauthorized-structure",
 	})
 	defer resp.Body.Close()
 
@@ -349,15 +349,15 @@ func (s *EntriesSuite) Test_should_return_401_when_create_entry_called_without_t
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *EntriesSuite) Test_should_return_entry_when_get_entry_called() {
+func (s *StructuresSuite) Test_should_return_structure_when_get_structure_called() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "entry-get-token")
-	entryID := uuid.New()
-	description := "Entry loaded by id"
-	thumbnailURL := "https://example.com/entry-get.png"
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":                  entryID,
-		"name":                "entry-get-" + uuid.NewString(),
+	token := issueStructureTokenForTest(s.T(), "structure-get-token")
+	structureID := uuid.New()
+	description := "Structure loaded by id"
+	thumbnailURL := "https://example.com/structure-get.png"
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":                  structureID,
+		"name":                "structure-get-" + uuid.NewString(),
 		"description":         description,
 		"thumbnail_image_url": thumbnailURL,
 	}, token)
@@ -365,27 +365,27 @@ func (s *EntriesSuite) Test_should_return_entry_when_get_entry_called() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	resp := getWithToken(s.T(), "/v1/structures/"+structureID.String(), token)
 	defer resp.Body.Close()
 
 	// then
 	s.Equal(http.StatusOK, resp.StatusCode)
 
-	var body httpapi.Entry
+	var body httpapi.Structure
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(entryID, body.Id)
+	s.Equal(structureID, body.Id)
 	s.Require().NotNil(body.Description)
 	s.Equal(description, *body.Description)
 	s.Require().NotNil(body.ThumbnailImageUrl)
 	s.Equal(thumbnailURL, *body.ThumbnailImageUrl)
 }
 
-func (s *EntriesSuite) Test_should_return_404_when_get_entry_misses() {
+func (s *StructuresSuite) Test_should_return_404_when_get_structure_misses() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "entry-missing-token")
+	token := issueStructureTokenForTest(s.T(), "structure-missing-token")
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString(), token)
+	resp := getWithToken(s.T(), "/v1/structures/"+uuid.NewString(), token)
 	defer resp.Body.Close()
 
 	// then
@@ -396,15 +396,15 @@ func (s *EntriesSuite) Test_should_return_404_when_get_entry_misses() {
 	s.Equal("NOT_FOUND", body.Code)
 }
 
-func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
+func (s *StructuresSuite) Test_should_return_model_when_get_model_called() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "model-get-token")
-	entryID := uuid.New()
+	token := issueStructureTokenForTest(s.T(), "model-get-token")
+	structureID := uuid.New()
 	modelID := uuid.New()
 	description := "Model loaded by id"
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-with-model-" + uuid.NewString(),
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-with-model-" + uuid.NewString(),
 		"models": []map[string]any{
 			{
 				"id":          modelID,
@@ -417,7 +417,7 @@ func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	resp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), token)
 	defer resp.Body.Close()
 
 	// then
@@ -426,17 +426,17 @@ func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
 	var body httpapi.Model
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
 	s.Equal(modelID, body.Id)
-	s.Equal(entryID, body.EntryId)
+	s.Equal(structureID, body.StructureId)
 	s.Require().NotNil(body.Description)
 	s.Equal(description, *body.Description)
 }
 
-func (s *EntriesSuite) Test_should_return_404_when_get_model_misses() {
+func (s *StructuresSuite) Test_should_return_404_when_get_model_misses() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "model-missing-token")
+	token := issueStructureTokenForTest(s.T(), "model-missing-token")
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models/"+uuid.NewString(), token)
+	resp := getWithToken(s.T(), "/v1/structures/"+uuid.NewString()+"/models/"+uuid.NewString(), token)
 	defer resp.Body.Close()
 
 	// then
@@ -447,21 +447,21 @@ func (s *EntriesSuite) Test_should_return_404_when_get_model_misses() {
 	s.Equal("NOT_FOUND", body.Code)
 }
 
-func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
+func (s *StructuresSuite) Test_should_delete_structure_when_caller_is_creator() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "entry-delete-owner-token")
-	entryID := uuid.New()
+	token := issueStructureTokenForTest(s.T(), "structure-delete-owner-token")
+	structureID := uuid.New()
 	modelID := uuid.New()
 	modelEntityID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-delete-owner-" + uuid.NewString(),
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-delete-owner-" + uuid.NewString(),
 		"models": []map[string]any{
 			{
 				"id":   modelID,
-				"name": "model removed with entry",
+				"name": "model removed with structure",
 				"entities": []map[string]any{
-					modelEntityRequest(modelEntityID, "model entity removed with entry"),
+					modelEntityRequest(modelEntityID, "model entity removed with structure"),
 				},
 			},
 		},
@@ -470,7 +470,7 @@ func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
+	deleteResp := deleteWithToken(s.T(), "/v1/structures/"+structureID.String(), token)
 	defer deleteResp.Body.Close()
 
 	// then
@@ -479,23 +479,23 @@ func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
 	s.Require().NoError(err)
 	s.Empty(body)
 
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusNotFound, getEntryResp.StatusCode)
+	getStructureResp := getWithToken(s.T(), "/v1/structures/"+structureID.String(), token)
+	defer getStructureResp.Body.Close()
+	s.Equal(http.StatusNotFound, getStructureResp.StatusCode)
 
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	getModelResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), token)
 	defer getModelResp.Body.Close()
 	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
 }
 
-func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
+func (s *StructuresSuite) Test_should_add_model_to_existing_structure() {
 	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "model-add-owner-token")
-	entryID := uuid.New()
+	ownerToken := issueStructureTokenForTest(s.T(), "model-add-owner-token")
+	structureID := uuid.New()
 	baselineEntityID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-add-model-" + uuid.NewString(),
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-add-model-" + uuid.NewString(),
 		"entities": []map[string]any{
 			dataEntityRequest(baselineEntityID, "baseline sequence"),
 		},
@@ -504,8 +504,8 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// A second user contributes the model, and its program declares the
-	// entry-level file that already existed as an input.
-	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-add-contributor-token", 8110)
+	// structure-level file that already existed as an input.
+	contributorToken := issueStructureTokenForGitHubIDForTest(s.T(), "model-add-contributor-token", 8110)
 	contributorID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(contributorToken)
 	s.Require().NoError(err)
 	modelID := uuid.New()
@@ -514,10 +514,10 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	metricsEntityID := uuid.New()
 
 	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models", map[string]any{
+	resp := postJSONWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models", map[string]any{
 		"id":          modelID,
 		"name":        "added refinement",
-		"description": "Added to an entry that already existed",
+		"description": "Added to a structure that already existed",
 		"entities": []map[string]any{
 			modelEntityRequest(modelEntityID, "added model entity"),
 			{
@@ -566,7 +566,7 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	s.Require().NoError(err)
 	s.Empty(body)
 
-	modelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), "")
+	modelResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), "")
 	defer modelResp.Body.Close()
 	s.Equal(http.StatusOK, modelResp.StatusCode)
 	var modelBody httpapi.Model
@@ -574,7 +574,7 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	s.Equal("added refinement", modelBody.Name)
 	s.Equal(contributorID, modelBody.CreatedBy)
 
-	entitiesResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/entities", "")
+	entitiesResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/entities", "")
 	defer entitiesResp.Body.Close()
 	s.Equal(http.StatusOK, entitiesResp.StatusCode)
 	var entitiesBody httpapi.EntityListResponse
@@ -583,8 +583,8 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	s.Require().NotNil(entityByID(entitiesBody.Items, programEntityID))
 	s.Len(entitiesBody.Relations, 3)
 
-	// The relation from the pre-existing entry-level file is what this endpoint
-	// adds over creating a whole entry.
+	// The relation from the pre-existing structure-level file is what this endpoint
+	// adds over creating a whole structure.
 	linkedBaseline := false
 	for _, relation := range entitiesBody.Relations {
 		if relation.SourceEntityId == baselineEntityID &&
@@ -596,13 +596,13 @@ func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
 	s.True(linkedBaseline)
 }
 
-func (s *EntriesSuite) Test_should_return_404_when_adding_model_to_missing_entry() {
+func (s *StructuresSuite) Test_should_return_404_when_adding_model_to_missing_structure() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "model-add-missing-entry-token")
+	token := issueStructureTokenForTest(s.T(), "model-add-missing-structure-token")
 
 	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
-		"name": "model for a missing entry",
+	resp := postJSONWithToken(s.T(), "/v1/structures/"+uuid.NewString()+"/models", map[string]any{
+		"name": "model for a missing structure",
 	}, token)
 	defer resp.Body.Close()
 
@@ -614,11 +614,11 @@ func (s *EntriesSuite) Test_should_return_404_when_adding_model_to_missing_entry
 	s.Equal("NOT_FOUND", body.Code)
 }
 
-func (s *EntriesSuite) Test_should_return_401_when_adding_model_without_token() {
+func (s *StructuresSuite) Test_should_return_401_when_adding_model_without_token() {
 	// given
 
 	// when
-	resp := postJSON(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
+	resp := postJSON(s.T(), "/v1/structures/"+uuid.NewString()+"/models", map[string]any{
 		"name": "unauthorized model",
 	})
 	defer resp.Body.Close()
@@ -627,18 +627,18 @@ func (s *EntriesSuite) Test_should_return_401_when_adding_model_without_token() 
 	s.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
 
-func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
+func (s *StructuresSuite) Test_should_return_400_when_added_model_is_invalid() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "model-add-invalid-token")
-	entryID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-add-model-invalid-" + uuid.NewString(),
+	token := issueStructureTokenForTest(s.T(), "model-add-invalid-token")
+	structureID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-add-model-invalid-" + uuid.NewString(),
 	}, token)
 	defer createResp.Body.Close()
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
-	modelsPath := "/v1/entries/" + entryID.String() + "/models"
+	modelsPath := "/v1/structures/" + structureID.String() + "/models"
 	foreignEntityID := uuid.New()
 
 	tests := []struct {
@@ -654,7 +654,7 @@ func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
 			message: "model name is required",
 		},
 		{
-			name: "relation to an entity outside the entry",
+			name: "relation to an entity outside the structure",
 			request: func() map[string]any {
 				modelEntityID := uuid.New()
 				return map[string]any{
@@ -671,16 +671,16 @@ func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
 					},
 				}
 			},
-			message: "is not part of this entry",
+			message: "is not part of this structure",
 		},
 		{
-			name: "entity id already used by the entry",
+			name: "entity id already used by the structure",
 			request: func() map[string]any {
 				reusedEntityID := uuid.New()
-				reuseEntryID := uuid.New()
-				reuseResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-					"id":   reuseEntryID,
-					"name": "entry-add-model-reuse-" + uuid.NewString(),
+				reuseStructureID := uuid.New()
+				reuseResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+					"id":   reuseStructureID,
+					"name": "structure-add-model-reuse-" + uuid.NewString(),
 					"entities": []map[string]any{
 						dataEntityRequest(reusedEntityID, "already deposited"),
 					},
@@ -689,7 +689,7 @@ func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
 				s.Require().Equal(http.StatusCreated, reuseResp.StatusCode)
 
 				return map[string]any{
-					"path": "/v1/entries/" + reuseEntryID.String() + "/models",
+					"path": "/v1/structures/" + reuseStructureID.String() + "/models",
 					"name": "model reusing an entity id",
 					"entities": []map[string]any{
 						dataEntityRequest(reusedEntityID, "duplicate id"),
@@ -723,41 +723,41 @@ func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
 	}
 }
 
-func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_entry() {
+func (s *StructuresSuite) Test_should_return_403_when_non_creator_deletes_structure() {
 	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "entry-delete-forbidden-owner")
-	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-delete-forbidden-other", 8101)
-	entryID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-delete-forbidden-" + uuid.NewString(),
+	ownerToken := issueStructureTokenForTest(s.T(), "structure-delete-forbidden-owner")
+	otherToken := issueStructureTokenForGitHubIDForTest(s.T(), "structure-delete-forbidden-other", 8101)
+	structureID := uuid.New()
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-delete-forbidden-" + uuid.NewString(),
 	}, ownerToken)
 	defer createResp.Body.Close()
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), otherToken)
+	deleteResp := deleteWithToken(s.T(), "/v1/structures/"+structureID.String(), otherToken)
 	defer deleteResp.Body.Close()
 
 	// then
 	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
 
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), ownerToken)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusOK, getEntryResp.StatusCode)
+	getStructureResp := getWithToken(s.T(), "/v1/structures/"+structureID.String(), ownerToken)
+	defer getStructureResp.Body.Close()
+	s.Equal(http.StatusOK, getStructureResp.StatusCode)
 }
 
-func (s *EntriesSuite) Test_should_delete_model_when_caller_is_creator() {
+func (s *StructuresSuite) Test_should_delete_model_when_caller_is_creator() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "model-delete-owner-token")
-	entryID := uuid.New()
+	token := issueStructureTokenForTest(s.T(), "model-delete-owner-token")
+	structureID := uuid.New()
 	modelID := uuid.New()
 	modelEntityID := uuid.New()
 	searchToken := "modeldelete" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	entryName := "entry-kept-after-model-delete-" + uuid.NewString()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": entryName,
+	structureName := "structure-kept-after-model-delete-" + uuid.NewString()
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": structureName,
 		"models": []map[string]any{
 			{
 				"id":   modelID,
@@ -772,7 +772,7 @@ func (s *EntriesSuite) Test_should_delete_model_when_caller_is_creator() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	deleteResp := deleteWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), token)
 	defer deleteResp.Body.Close()
 
 	// then
@@ -781,38 +781,38 @@ func (s *EntriesSuite) Test_should_delete_model_when_caller_is_creator() {
 	s.Require().NoError(err)
 	s.Empty(body)
 
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusOK, getEntryResp.StatusCode)
+	getStructureResp := getWithToken(s.T(), "/v1/structures/"+structureID.String(), token)
+	defer getStructureResp.Body.Close()
+	s.Equal(http.StatusOK, getStructureResp.StatusCode)
 
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
+	getModelResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), token)
 	defer getModelResp.Body.Close()
 	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
 
-	entitiesResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/entities", token)
+	entitiesResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/entities", token)
 	defer entitiesResp.Body.Close()
 	s.Equal(http.StatusOK, entitiesResp.StatusCode)
 	var entitiesBody httpapi.EntityListResponse
 	s.Require().NoError(json.NewDecoder(entitiesResp.Body).Decode(&entitiesBody))
 	s.Nil(entityByID(entitiesBody.Items, modelEntityID))
 
-	searchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(searchToken), "")
+	searchResp := getWithToken(s.T(), "/v1/structures?query="+url.QueryEscape(searchToken), "")
 	defer searchResp.Body.Close()
 	s.Equal(http.StatusOK, searchResp.StatusCode)
-	var searchBody httpapi.EntryListResponse
+	var searchBody httpapi.StructureListResponse
 	s.Require().NoError(json.NewDecoder(searchResp.Body).Decode(&searchBody))
-	s.Nil(entryByName(searchBody.Items, entryName))
+	s.Nil(structureByName(searchBody.Items, structureName))
 }
 
-func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_model() {
+func (s *StructuresSuite) Test_should_return_403_when_non_creator_deletes_model() {
 	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "model-delete-forbidden-owner")
-	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-delete-forbidden-other", 8102)
-	entryID := uuid.New()
+	ownerToken := issueStructureTokenForTest(s.T(), "model-delete-forbidden-owner")
+	otherToken := issueStructureTokenForGitHubIDForTest(s.T(), "model-delete-forbidden-other", 8102)
+	structureID := uuid.New()
 	modelID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-with-forbidden-model-delete-" + uuid.NewString(),
+	createResp := postJSONWithToken(s.T(), "/v1/structures", map[string]any{
+		"id":   structureID,
+		"name": "structure-with-forbidden-model-delete-" + uuid.NewString(),
 		"models": []map[string]any{
 			{
 				"id":   modelID,
@@ -824,20 +824,20 @@ func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_model() {
 	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
 
 	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), otherToken)
+	deleteResp := deleteWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), otherToken)
 	defer deleteResp.Body.Close()
 
 	// then
 	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
 
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), ownerToken)
+	getModelResp := getWithToken(s.T(), "/v1/structures/"+structureID.String()+"/models/"+modelID.String(), ownerToken)
 	defer getModelResp.Body.Close()
 	s.Equal(http.StatusOK, getModelResp.StatusCode)
 }
 
-func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid() {
+func (s *StructuresSuite) Test_should_return_400_when_create_structure_graph_is_invalid() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "entry-validation-token")
+	token := issueStructureTokenForTest(s.T(), "structure-validation-token")
 
 	tests := []struct {
 		name    string
@@ -845,21 +845,21 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 		message string
 	}{
 		{
-			name: "nil entry id",
+			name: "nil structure id",
 			request: func() map[string]any {
 				return map[string]any{
 					"id":   uuid.Nil,
 					"name": "invalid nil id",
 				}
 			},
-			message: "entry id is required",
+			message: "structure id is required",
 		},
 		{
-			name: "duplicate entry entity id",
+			name: "duplicate structure entity id",
 			request: func() map[string]any {
 				entityID := uuid.New()
 				return map[string]any{
-					"name": "duplicate entry entity",
+					"name": "duplicate structure entity",
 					"entities": []map[string]any{
 						dataEntityRequest(entityID, "first duplicate entity"),
 						dataEntityRequest(entityID, "second duplicate entity"),
@@ -869,12 +869,12 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 			message: "duplicate entity id",
 		},
 		{
-			name: "duplicate entity id across entry and model",
+			name: "duplicate entity id across structure and model",
 			request: func() map[string]any {
 				entityID := uuid.New()
 				return map[string]any{
 					"name":     "duplicate graph entity",
-					"entities": []map[string]any{dataEntityRequest(entityID, "entry entity")},
+					"entities": []map[string]any{dataEntityRequest(entityID, "structure entity")},
 					"models": []map[string]any{
 						{
 							"name":     "model one",
@@ -991,14 +991,14 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 					},
 				}
 			},
-			message: "relation source entity is not part of this entry",
+			message: "relation source entity is not part of this structure",
 		},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
 			// when
-			resp := postJSONWithToken(s.T(), "/v1/entries", tt.request(), token)
+			resp := postJSONWithToken(s.T(), "/v1/structures", tt.request(), token)
 			defer resp.Body.Close()
 
 			// then
@@ -1012,17 +1012,17 @@ func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid
 	}
 }
 
-func issueEntryTokenForTest(t *testing.T, accessToken string) string {
+func issueStructureTokenForTest(t *testing.T, accessToken string) string {
 	t.Helper()
 
-	return issueEntryTokenForGitHubIDForTest(t, accessToken, 8000)
+	return issueStructureTokenForGitHubIDForTest(t, accessToken, 8000)
 }
 
-func issueEntryTokenForGitHubIDForTest(t *testing.T, accessToken string, githubID int64) string {
+func issueStructureTokenForGitHubIDForTest(t *testing.T, accessToken string, githubID int64) string {
 	t.Helper()
 
 	githubClient.On("GetUser", mock.Anything, accessToken).
-		Return(github.User{ID: githubID, Login: accessToken, Name: "Entry Test", Email: accessToken + "@example.com"}, nil)
+		Return(github.User{ID: githubID, Login: accessToken, Name: "Structure Test", Email: accessToken + "@example.com"}, nil)
 	githubClient.On("ListOrgs", mock.Anything, accessToken).
 		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
 
@@ -1113,10 +1113,10 @@ func proteinSequenceTokenForTest(id uuid.UUID) string {
 	return token.String()
 }
 
-func entryByName(entries []httpapi.Entry, name string) *httpapi.Entry {
-	for i := range entries {
-		if entries[i].Name == name {
-			return &entries[i]
+func structureByName(structures []httpapi.Structure, name string) *httpapi.Structure {
+	for i := range structures {
+		if structures[i].Name == name {
+			return &structures[i]
 		}
 	}
 	return nil

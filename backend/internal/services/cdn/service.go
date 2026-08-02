@@ -20,7 +20,7 @@ type Service interface {
 }
 
 type FileUpload struct {
-	EntryID          string
+	StructureID      string
 	ModelID          string
 	EntityID         string
 	OriginalFilename string
@@ -99,7 +99,7 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 
 func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGrant, error) {
 	storageFile := s3.FileUpload{
-		EntryID:          file.EntryID,
+		StructureID:      file.StructureID,
 		ModelID:          file.ModelID,
 		EntityID:         file.EntityID,
 		OriginalFilename: file.OriginalFilename,

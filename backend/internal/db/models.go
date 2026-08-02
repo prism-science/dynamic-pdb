@@ -24,9 +24,9 @@ type ModelsRepository struct {
 }
 
 type ModelFilters struct {
-	EntryID *uuid.UUID
-	Limit   *int
-	Offset  *int
+	StructureID *uuid.UUID
+	Limit       *int
+	Offset      *int
 }
 
 func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
@@ -37,9 +37,9 @@ func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRe
 }
 
 func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*models.Model, error) {
-	query := `insert into models(id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :entry_id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
+	query := `insert into models(id, structure_id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
+			  values (:id, :structure_id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
+			  returning id, structure_id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*mod
 	var row modelRow
 	if err := stmt.GetContext(ctx, &row, map[string]any{
 		"id":                  model.ID,
-		"entry_id":            model.EntryID,
+		"structure_id":        model.StructureID,
 		"created_by":          model.CreatedBy,
 		"name":                model.Name,
 		"description":         nullableString(model.Description),
@@ -64,13 +64,13 @@ func (r *ModelsRepository) Create(ctx context.Context, model models.Model) (*mod
 	return modelFromRow(&row), nil
 }
 
-func (r *ModelsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*models.Model, error) {
-	query := `select id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
+func (r *ModelsRepository) Get(ctx context.Context, structureID, id uuid.UUID) (*models.Model, error) {
+	query := `select id, structure_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from models
-			  where entry_id = $1 and id = $2`
+			  where structure_id = $1 and id = $2`
 
 	var row modelRow
-	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, entryID, id); err != nil {
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, structureID, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrModelNotFound
 		}
@@ -80,14 +80,14 @@ func (r *ModelsRepository) Get(ctx context.Context, entryID, id uuid.UUID) (*mod
 	return modelFromRow(&row), nil
 }
 
-func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid.UUID) error {
+func (r *ModelsRepository) Delete(ctx context.Context, structureID, id, ownerID uuid.UUID) error {
 	query := `with target_model as (
-			    select id, entry_id, created_by
+			    select id, structure_id, created_by
 			    from models
-			    where entry_id = $1 and id = $2
+			    where structure_id = $1 and id = $2
 			  ),
 			  authorized_model as (
-			    select id, entry_id
+			    select id, structure_id
 			    from target_model
 			    where created_by = $3
 			  ),
@@ -95,7 +95,7 @@ func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid
 			    select entities.id
 			    from entities
 			    join authorized_model on authorized_model.id = entities.model_id
-			     and authorized_model.entry_id = entities.entry_id
+			     and authorized_model.structure_id = entities.structure_id
 			  ),
 			  deleted_relations as (
 			    delete from entity_relations
@@ -104,23 +104,23 @@ func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid
 			    returning id
 			  ),
 			  deleted_search as (
-			    delete from entry_search_index
+			    delete from structure_search_index
 			    using authorized_model
-			    where entry_search_index.entry_id = authorized_model.entry_id
+			    where structure_search_index.structure_id = authorized_model.structure_id
 			      and (
-			        (entry_search_index.model_type = $4 and entry_search_index.model_id = authorized_model.id::text)
+			        (structure_search_index.model_type = $4 and structure_search_index.model_id = authorized_model.id::text)
 			        or (
-			          entry_search_index.model_type = $5
-			          and entry_search_index.model_id in (select id::text from target_entities)
+			          structure_search_index.model_type = $5
+			          and structure_search_index.model_id in (select id::text from target_entities)
 			        )
 			      )
 			      and (select count(*) from deleted_relations) >= 0
-			    returning entry_search_index.entry_id
+			    returning structure_search_index.structure_id
 			  ),
 			  deleted_entities as (
 			    delete from entities
 			    using authorized_model
-			    where entities.entry_id = authorized_model.entry_id
+			    where entities.structure_id = authorized_model.structure_id
 			      and entities.model_id = authorized_model.id
 			      and (select count(*) from deleted_search) >= 0
 			    returning entities.id
@@ -128,7 +128,7 @@ func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid
 			  deleted_model as (
 			    delete from models
 			    using authorized_model
-			    where models.entry_id = authorized_model.entry_id
+			    where models.structure_id = authorized_model.structure_id
 			      and models.id = authorized_model.id
 			      and (select count(*) from deleted_entities) >= 0
 			    returning models.id
@@ -142,11 +142,11 @@ func (r *ModelsRepository) Delete(ctx context.Context, entryID, id, ownerID uuid
 		ctx,
 		&result,
 		query,
-		entryID,
+		structureID,
 		id,
 		ownerID,
-		entrySearchModelTypeModel,
-		entrySearchModelTypeEntity,
+		structureSearchModelTypeModel,
+		structureSearchModelTypeEntity,
 	); err != nil {
 		return fmt.Errorf("failed to delete model graph: %w", err)
 	}
@@ -202,12 +202,12 @@ func modelListQuery(filters ModelFilters) (string, map[string]any, error) {
 
 	conditions := make([]string, 0)
 	args := map[string]any{}
-	if filters.EntryID != nil {
-		conditions = append(conditions, "entry_id = :entry_id")
-		args["entry_id"] = *filters.EntryID
+	if filters.StructureID != nil {
+		conditions = append(conditions, "structure_id = :structure_id")
+		args["structure_id"] = *filters.StructureID
 	}
 
-	query := `select id, entry_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
+	query := `select id, structure_id, created_by, name, description, thumbnail_image_url, created_at, updated_at
 			  from models`
 	if len(conditions) > 0 {
 		query += "\nwhere " + conditions[0]
@@ -229,7 +229,7 @@ func modelListQuery(filters ModelFilters) (string, map[string]any, error) {
 func modelFromRow(row *modelRow) *models.Model {
 	return &models.Model{
 		ID:                row.ID,
-		EntryID:           row.EntryID,
+		StructureID:       row.StructureID,
 		CreatedBy:         row.CreatedBy,
 		Name:              row.Name,
 		Description:       stringPtrFromNull(row.Description),
@@ -241,7 +241,7 @@ func modelFromRow(row *modelRow) *models.Model {
 
 type modelRow struct {
 	ID                uuid.UUID      `db:"id"`
-	EntryID           uuid.UUID      `db:"entry_id"`
+	StructureID       uuid.UUID      `db:"structure_id"`
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	Name              string         `db:"name"`
 	Description       sql.NullString `db:"description"`

@@ -50,15 +50,15 @@ func (r *EntityRelationsRepository) Create(ctx context.Context, relation models.
 	return &created, nil
 }
 
-func (r *EntityRelationsRepository) List(ctx context.Context, entryID uuid.UUID) ([]models.EntityRelation, error) {
+func (r *EntityRelationsRepository) List(ctx context.Context, structureID uuid.UUID) ([]models.EntityRelation, error) {
 	query := `select er.id, er.source_entity_id, er.target_entity_id, er.relation_type,
 				 er.created_at, er.updated_at
 			  from entity_relations er
 			  join entities e on e.id = er.source_entity_id
-			  where e.entry_id = $1
+			  where e.structure_id = $1
 			  order by er.created_at asc, er.id asc`
 
-	rows, err := r.queriers.Querier(ctx, r.db).QueryxContext(ctx, query, entryID)
+	rows, err := r.queriers.Querier(ctx, r.db).QueryxContext(ctx, query, structureID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list entity relations: %w", err)
 	}

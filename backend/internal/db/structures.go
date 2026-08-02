@@ -15,31 +15,31 @@ import (
 )
 
 var (
-	ErrEntryNotFound          = errors.New("db: entry not found")
-	ErrEntryOwnershipMismatch = errors.New("db: entry ownership mismatch")
+	ErrStructureNotFound          = errors.New("db: structure not found")
+	ErrStructureOwnershipMismatch = errors.New("db: structure ownership mismatch")
 )
 
-type EntriesRepository struct {
+type StructuresRepository struct {
 	db       *sqlx.DB
 	queriers *QuerierProvider
 }
 
-type EntryFilters struct {
+type StructureFilters struct {
 	Limit           *int
 	Offset          *int
 	Query           string
 	ProteinSequence string
 }
 
-func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntriesRepository {
-	return &EntriesRepository{
+func NewStructuresRepository(database *sqlx.DB, queriers *QuerierProvider) *StructuresRepository {
+	return &StructuresRepository{
 		db:       database,
 		queriers: queriers,
 	}
 }
 
-func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*models.Entry, error) {
-	query := `insert into entries(id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
+func (r *StructuresRepository) Create(ctx context.Context, structure models.Structure) (*models.Structure, error) {
+	query := `insert into structures(id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
 			  values (:id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
 			  returning id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
 
@@ -49,53 +49,53 @@ func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*mo
 	}
 	defer stmt.Close()
 
-	var row entryRow
+	var row structureRow
 	if err := stmt.GetContext(ctx, &row, map[string]any{
-		"id":                  entry.ID,
-		"created_by":          entry.CreatedBy,
-		"name":                entry.Name,
-		"description":         nullableString(entry.Description),
-		"thumbnail_image_url": nullableString(entry.ThumbnailImageURL),
-		"created_at":          entry.CreatedAt,
-		"updated_at":          entry.UpdatedAt,
+		"id":                  structure.ID,
+		"created_by":          structure.CreatedBy,
+		"name":                structure.Name,
+		"description":         nullableString(structure.Description),
+		"thumbnail_image_url": nullableString(structure.ThumbnailImageURL),
+		"created_at":          structure.CreatedAt,
+		"updated_at":          structure.UpdatedAt,
 	}); err != nil {
-		return nil, fmt.Errorf("failed to insert entry: %w", err)
+		return nil, fmt.Errorf("failed to insert structure: %w", err)
 	}
 
-	return entryFromRow(&row), nil
+	return structureFromRow(&row), nil
 }
 
-func (r *EntriesRepository) Get(ctx context.Context, id uuid.UUID) (*models.Entry, error) {
+func (r *StructuresRepository) Get(ctx context.Context, id uuid.UUID) (*models.Structure, error) {
 	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
-			  from entries
+			  from structures
 			  where id = $1`
 
-	var row entryRow
+	var row structureRow
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrEntryNotFound
+			return nil, ErrStructureNotFound
 		}
-		return nil, fmt.Errorf("failed to get entry: %w", err)
+		return nil, fmt.Errorf("failed to get structure: %w", err)
 	}
 
-	return entryFromRow(&row), nil
+	return structureFromRow(&row), nil
 }
 
-func (r *EntriesRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
-	query := `with target_entry as (
+func (r *StructuresRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
+	query := `with target_structure as (
 			    select id, created_by
-			    from entries
+			    from structures
 			    where id = $1
 			  ),
-			  authorized_entry as (
+			  authorized_structure as (
 			    select id
-			    from target_entry
+			    from target_structure
 			    where created_by = $2
 			  ),
 			  target_entities as (
 			    select entities.id
 			    from entities
-			    join authorized_entry on authorized_entry.id = entities.entry_id
+			    join authorized_structure on authorized_structure.id = entities.structure_id
 			  ),
 			  deleted_relations as (
 			    delete from entity_relations
@@ -104,54 +104,54 @@ func (r *EntriesRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) e
 			    returning id
 			  ),
 			  deleted_search as (
-			    delete from entry_search_index
-			    using authorized_entry
-			    where entry_search_index.entry_id = authorized_entry.id
+			    delete from structure_search_index
+			    using authorized_structure
+			    where structure_search_index.structure_id = authorized_structure.id
 			      and (select count(*) from deleted_relations) >= 0
-			    returning entry_search_index.entry_id
+			    returning structure_search_index.structure_id
 			  ),
 			  deleted_entities as (
 			    delete from entities
-			    using authorized_entry
-			    where entities.entry_id = authorized_entry.id
+			    using authorized_structure
+			    where entities.structure_id = authorized_structure.id
 			      and (select count(*) from deleted_search) >= 0
 			    returning entities.id
 			  ),
 			  deleted_models as (
 			    delete from models
-			    using authorized_entry
-			    where models.entry_id = authorized_entry.id
+			    using authorized_structure
+			    where models.structure_id = authorized_structure.id
 			      and (select count(*) from deleted_entities) >= 0
 			    returning models.id
 			  ),
-			  deleted_entry as (
-			    delete from entries
-			    using authorized_entry
-			    where entries.id = authorized_entry.id
+			  deleted_structure as (
+			    delete from structures
+			    using authorized_structure
+			    where structures.id = authorized_structure.id
 			      and (select count(*) from deleted_models) >= 0
-			    returning entries.id
+			    returning structures.id
 			  )
 			  select
-			    (select count(*) from target_entry) as matched_count,
-			    (select count(*) from deleted_entry) as deleted_count`
+			    (select count(*) from target_structure) as matched_count,
+			    (select count(*) from deleted_structure) as deleted_count`
 
 	var result deleteResult
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &result, query, id, ownerID); err != nil {
-		return fmt.Errorf("failed to delete entry graph: %w", err)
+		return fmt.Errorf("failed to delete structure graph: %w", err)
 	}
 	if result.MatchedCount == 0 {
-		return ErrEntryNotFound
+		return ErrStructureNotFound
 	}
 	if result.DeletedCount == 0 {
-		return ErrEntryOwnershipMismatch
+		return ErrStructureOwnershipMismatch
 	}
 	return nil
 }
 
-func (r *EntriesRepository) List(ctx context.Context, filters EntryFilters) ([]models.Entry, error) {
-	query, args, err := entryListQuery(filters)
+func (r *StructuresRepository) List(ctx context.Context, filters StructureFilters) ([]models.Structure, error) {
+	query, args, err := structureListQuery(filters)
 	if err != nil {
-		return nil, fmt.Errorf("build entry list query: %w", err)
+		return nil, fmt.Errorf("build structure list query: %w", err)
 	}
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
@@ -162,26 +162,26 @@ func (r *EntriesRepository) List(ctx context.Context, filters EntryFilters) ([]m
 
 	rows, err := stmt.QueryxContext(ctx, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list entries: %w", err)
+		return nil, fmt.Errorf("failed to list structures: %w", err)
 	}
 	defer rows.Close()
 
-	entries := make([]models.Entry, 0)
+	structures := make([]models.Structure, 0)
 	for rows.Next() {
-		var row entryRow
+		var row structureRow
 		if err := rows.StructScan(&row); err != nil {
-			return nil, fmt.Errorf("scan entry row: %w", err)
+			return nil, fmt.Errorf("scan structure row: %w", err)
 		}
-		entries = append(entries, *entryFromRow(&row))
+		structures = append(structures, *structureFromRow(&row))
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate entry rows: %w", err)
+		return nil, fmt.Errorf("iterate structure rows: %w", err)
 	}
 
-	return entries, nil
+	return structures, nil
 }
 
-func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
+func structureListQuery(filters StructureFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
 	}
@@ -191,7 +191,7 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 
 	args := map[string]any{}
 	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
-			  from entries`
+			  from structures`
 
 	queryText := strings.TrimSpace(filters.Query)
 	proteinSequence := strings.ToUpper(strings.Join(strings.Fields(filters.ProteinSequence), ""))
@@ -201,11 +201,11 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 
 	if queryText != "" {
 		args["search_query"] = queryText
-		query += "\nwhere " + entrySearchCondition()
+		query += "\nwhere " + structureSearchCondition()
 	}
 	if proteinSequence != "" {
 		args["protein_sequence"] = proteinSequence
-		query += "\nwhere " + entryProteinSequenceSearchCondition()
+		query += "\nwhere " + structureProteinSequenceSearchCondition()
 	}
 
 	query += "\norder by created_at asc, id asc"
@@ -222,20 +222,20 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	return query, args, nil
 }
 
-func entrySearchCondition() string {
+func structureSearchCondition() string {
 	return `exists (
 		select 1
-		from entry_search_index idx
-		where idx.entry_id = entries.id
+		from structure_search_index idx
+		where idx.structure_id = structures.id
 		  and idx.search_tsv @@ plainto_tsquery('simple', :search_query)
 	)`
 }
 
-func entryProteinSequenceSearchCondition() string {
+func structureProteinSequenceSearchCondition() string {
 	return `exists (
 		select 1
 		from entities sequence_entity
-		where sequence_entity.entry_id = entries.id
+		where sequence_entity.structure_id = structures.id
 		  and sequence_entity.type = 'data'
 		  and sequence_entity.payload ->> 'type' = 'fasta'
 		  and jsonb_typeof(sequence_entity.payload #> '{metadata,sequence}') = 'string'
@@ -244,8 +244,8 @@ func entryProteinSequenceSearchCondition() string {
 	)`
 }
 
-func entryFromRow(row *entryRow) *models.Entry {
-	return &models.Entry{
+func structureFromRow(row *structureRow) *models.Structure {
+	return &models.Structure{
 		ID:                row.ID,
 		CreatedBy:         row.CreatedBy,
 		Name:              row.Name,
@@ -270,7 +270,7 @@ func stringPtrFromNull(value sql.NullString) *string {
 	return &value.String
 }
 
-type entryRow struct {
+type structureRow struct {
 	ID                uuid.UUID      `db:"id"`
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	Name              string         `db:"name"`

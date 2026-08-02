@@ -12,17 +12,17 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-func Test_should_create_and_list_entity_relations_for_entry(t *testing.T) {
+func Test_should_create_and_list_entity_relations_for_structure(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "relations-entry", time.Now().UTC())
-	otherEntry := createDBTestEntry(t, "relations-other-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "relations-structure", time.Now().UTC())
+	otherStructure := createDBTestStructure(t, "relations-other-structure", time.Now().UTC())
 	now := time.Now().UTC()
 	levelL0 := models.EntityLevelL0
 	levelL2 := models.EntityLevelL2
-	source := createDBTestEntity(t, entry.ID, nil, models.EntityTypeData, &levelL0, "source data")
-	target := createDBTestEntity(t, entry.ID, nil, models.EntityTypeModel, &levelL2, "target model")
-	otherSource := createDBTestEntity(t, otherEntry.ID, nil, models.EntityTypeData, &levelL0, "other source")
-	otherTarget := createDBTestEntity(t, otherEntry.ID, nil, models.EntityTypeModel, &levelL2, "other target")
+	source := createDBTestEntity(t, structure.ID, nil, models.EntityTypeData, &levelL0, "source data")
+	target := createDBTestEntity(t, structure.ID, nil, models.EntityTypeModel, &levelL2, "target model")
+	otherSource := createDBTestEntity(t, otherStructure.ID, nil, models.EntityTypeData, &levelL0, "other source")
+	otherTarget := createDBTestEntity(t, otherStructure.ID, nil, models.EntityTypeModel, &levelL2, "other target")
 
 	relation, err := testDB.EntityRelations.Create(context.Background(), models.EntityRelation{
 		ID:             uuid.New(),
@@ -44,7 +44,7 @@ func Test_should_create_and_list_entity_relations_for_entry(t *testing.T) {
 	require.NoError(t, err)
 
 	// when
-	got, err := testDB.EntityRelations.List(context.Background(), entry.ID)
+	got, err := testDB.EntityRelations.List(context.Background(), structure.ID)
 
 	// then
 	require.NoError(t, err)

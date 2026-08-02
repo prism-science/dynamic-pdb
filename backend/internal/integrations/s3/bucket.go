@@ -80,7 +80,7 @@ type MultipartUploadGrant struct {
 }
 
 type FileUpload struct {
-	EntryID          string
+	StructureID      string
 	ModelID          string
 	EntityID         string
 	OriginalFilename string
@@ -111,9 +111,9 @@ func PartPlan(size int64) (partSize int64, partCount int) {
 }
 
 func ObjectKey(file FileUpload) (string, error) {
-	entryID, err := requiredKeySegment("entry_id", file.EntryID)
+	structureID, err := requiredKeySegment("structure_id", file.StructureID)
 	if err != nil {
-		return "", fmt.Errorf("entry id segment: %w", err)
+		return "", fmt.Errorf("structure id segment: %w", err)
 	}
 	entityID, err := requiredKeySegment("entity_id", file.EntityID)
 	if err != nil {
@@ -125,13 +125,13 @@ func ObjectKey(file FileUpload) (string, error) {
 	}
 	modelID := strings.TrimSpace(file.ModelID)
 	if modelID == "" {
-		return path.Join(entryID, "entities", entityID, filename), nil
+		return path.Join(structureID, "entities", entityID, filename), nil
 	}
 	modelID, err = requiredKeySegment("model_id", modelID)
 	if err != nil {
 		return "", fmt.Errorf("model id segment: %w", err)
 	}
-	return path.Join(entryID, "models", modelID, "entities", entityID, filename), nil
+	return path.Join(structureID, "models", modelID, "entities", entityID, filename), nil
 }
 
 func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUpload) (MultipartUploadGrant, error) {

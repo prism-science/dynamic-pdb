@@ -23,18 +23,18 @@ func TestUploads(t *testing.T) {
 
 func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_requests_are_valid() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "upload-token")
-	entryID := uuid.New()
+	token := issueStructureTokenForTest(s.T(), "upload-token")
+	structureID := uuid.New()
 	entityID := uuid.New()
 	fileSize := int64(64*1024*1024 + 1)
 
 	// when
 	createResp := postJSONWithToken(s.T(), "/v1/files", map[string]any{
-		"entry_id":  entryID,
-		"entity_id": entityID,
-		"model_id":  nil,
-		"filename":  "model.cif",
-		"size":      fileSize,
+		"structure_id": structureID,
+		"entity_id":    entityID,
+		"model_id":     nil,
+		"filename":     "model.cif",
+		"size":         fileSize,
 	}, token)
 	defer createResp.Body.Close()
 
@@ -43,7 +43,7 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 
 	var grant httpapi.FileUploadGrantResponse
 	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grant))
-	s.Equal(entryID.String()+"/entities/"+entityID.String()+"/model.cif", grant.Key)
+	s.Equal(structureID.String()+"/entities/"+entityID.String()+"/model.cif", grant.Key)
 	s.Equal("upload-id", grant.UploadId)
 	s.Equal(s3Stub.URL()+"/dynamic-pdb/"+grant.Key, grant.ObjectUrl)
 	s.Equal(int64(64*1024*1024), grant.PartSize)
@@ -102,15 +102,15 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 
 func (s *UploadsSuite) Test_should_return_500_when_s3_create_multipart_upload_returns_no_upload_id() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "upload-no-id-token")
+	token := issueStructureTokenForTest(s.T(), "upload-no-id-token")
 	s3Stub.ReturnNoUploadID()
 
 	// when
 	resp := postJSONWithToken(s.T(), "/v1/files", map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "model.cif",
-		"size":      1,
+		"structure_id": uuid.New(),
+		"entity_id":    uuid.New(),
+		"filename":     "model.cif",
+		"size":         1,
 	}, token)
 	defer resp.Body.Close()
 
@@ -120,12 +120,12 @@ func (s *UploadsSuite) Test_should_return_500_when_s3_create_multipart_upload_re
 
 func (s *UploadsSuite) Test_should_return_500_when_s3_abort_multipart_upload_fails() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "upload-abort-failure-token")
+	token := issueStructureTokenForTest(s.T(), "upload-abort-failure-token")
 	s3Stub.ReturnAbortStatus(http.StatusInternalServerError)
 
 	// when
 	resp := postJSONWithToken(s.T(), "/v1/files/abort", map[string]any{
-		"key":       "entry/entities/entity/file.cif",
+		"key":       "structure/entities/entity/file.cif",
 		"upload_id": "upload-id",
 	}, token)
 	defer resp.Body.Close()
@@ -136,7 +136,7 @@ func (s *UploadsSuite) Test_should_return_500_when_s3_abort_multipart_upload_fai
 
 func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_invalid() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "upload-validation-token")
+	token := issueStructureTokenForTest(s.T(), "upload-validation-token")
 
 	tests := []struct {
 		name string
@@ -147,27 +147,27 @@ func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_inva
 			name: "create with empty filename",
 			path: "/v1/files",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  "  ",
-				"size":      1,
+				"structure_id": uuid.New(),
+				"entity_id":    uuid.New(),
+				"filename":     "  ",
+				"size":         1,
 			},
 		},
 		{
 			name: "create with zero size",
 			path: "/v1/files",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  "data.fasta",
-				"size":      0,
+				"structure_id": uuid.New(),
+				"entity_id":    uuid.New(),
+				"filename":     "data.fasta",
+				"size":         0,
 			},
 		},
 		{
 			name: "complete with no parts",
 			path: "/v1/files/complete",
 			body: map[string]any{
-				"key":       "entry/entities/entity/file.cif",
+				"key":       "structure/entities/entity/file.cif",
 				"upload_id": "upload-id",
 				"parts":     []map[string]any{},
 			},
@@ -176,7 +176,7 @@ func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_inva
 			name: "complete with empty etag",
 			path: "/v1/files/complete",
 			body: map[string]any{
-				"key":       "entry/entities/entity/file.cif",
+				"key":       "structure/entities/entity/file.cif",
 				"upload_id": "upload-id",
 				"parts": []map[string]any{
 					{"part_number": 1, "etag": ""},
@@ -187,7 +187,7 @@ func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_inva
 			name: "abort with missing upload id",
 			path: "/v1/files/abort",
 			body: map[string]any{
-				"key":       "entry/entities/entity/file.cif",
+				"key":       "structure/entities/entity/file.cif",
 				"upload_id": "",
 			},
 		},
@@ -210,10 +210,10 @@ func (s *UploadsSuite) Test_should_return_401_when_file_upload_called_without_to
 
 	// when
 	resp := postJSON(s.T(), "/v1/files", map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "data.fasta",
-		"size":      1,
+		"structure_id": uuid.New(),
+		"entity_id":    uuid.New(),
+		"filename":     "data.fasta",
+		"size":         1,
 	})
 	defer resp.Body.Close()
 

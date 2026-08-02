@@ -32,11 +32,11 @@ func createDBTestUser(t *testing.T) uuid.UUID {
 	return user.ID
 }
 
-func createDBTestEntry(t *testing.T, name string, createdAt time.Time) *models.Entry {
+func createDBTestStructure(t *testing.T, name string, createdAt time.Time) *models.Structure {
 	t.Helper()
 
 	createdBy := createDBTestUser(t)
-	entry, err := testDB.Entries.Create(context.Background(), models.Entry{
+	structure, err := testDB.Structures.Create(context.Background(), models.Structure{
 		ID:        uuid.New(),
 		CreatedBy: createdBy,
 		Name:      name + "-" + uuid.NewString(),
@@ -44,20 +44,20 @@ func createDBTestEntry(t *testing.T, name string, createdAt time.Time) *models.E
 		UpdatedAt: createdAt,
 	})
 	require.NoError(t, err)
-	return entry
+	return structure
 }
 
-func createDBTestModel(t *testing.T, entryID uuid.UUID, name string, createdAt time.Time) *models.Model {
+func createDBTestModel(t *testing.T, structureID uuid.UUID, name string, createdAt time.Time) *models.Model {
 	t.Helper()
 
 	createdBy := createDBTestUser(t)
 	model, err := testDB.Models.Create(context.Background(), models.Model{
-		ID:        uuid.New(),
-		EntryID:   entryID,
-		CreatedBy: createdBy,
-		Name:      name + "-" + uuid.NewString(),
-		CreatedAt: createdAt,
-		UpdatedAt: createdAt,
+		ID:          uuid.New(),
+		StructureID: structureID,
+		CreatedBy:   createdBy,
+		Name:        name + "-" + uuid.NewString(),
+		CreatedAt:   createdAt,
+		UpdatedAt:   createdAt,
 	})
 	require.NoError(t, err)
 	return model
@@ -65,7 +65,7 @@ func createDBTestModel(t *testing.T, entryID uuid.UUID, name string, createdAt t
 
 func createDBTestEntity(
 	t *testing.T,
-	entryID uuid.UUID,
+	structureID uuid.UUID,
 	modelID *uuid.UUID,
 	entityType models.EntityType,
 	level *models.EntityLevel,
@@ -75,15 +75,15 @@ func createDBTestEntity(
 
 	now := time.Now().UTC()
 	entity, err := testDB.Entities.Create(context.Background(), models.Entity{
-		ID:        uuid.New(),
-		EntryID:   entryID,
-		ModelID:   modelID,
-		Type:      entityType,
-		Level:     level,
-		Name:      name + "-" + uuid.NewString(),
-		Payload:   dbTestPayload(entityType),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New(),
+		StructureID: structureID,
+		ModelID:     modelID,
+		Type:        entityType,
+		Level:       level,
+		Name:        name + "-" + uuid.NewString(),
+		Payload:     dbTestPayload(entityType),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	})
 	require.NoError(t, err)
 	return entity

@@ -15,17 +15,17 @@ import (
 
 func Test_should_create_and_list_model_entity_payload_when_entities_repository_called(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "model-entity-entry", time.Now().UTC())
-	model := createDBTestModel(t, entry.ID, "model model", time.Now().UTC())
+	structure := createDBTestStructure(t, "model-entity-structure", time.Now().UTC())
+	model := createDBTestModel(t, structure.ID, "model model", time.Now().UTC())
 	level := models.EntityLevelL2
 	affiliation := "Department of Chemistry, Boston University"
 	entity := models.Entity{
-		ID:      uuid.New(),
-		EntryID: entry.ID,
-		ModelID: &model.ID,
-		Type:    models.EntityTypeModel,
-		Level:   &level,
-		Name:    "qFit model " + uuid.NewString(),
+		ID:          uuid.New(),
+		StructureID: structure.ID,
+		ModelID:     &model.ID,
+		Type:        models.EntityTypeModel,
+		Level:       &level,
+		Name:        "qFit model " + uuid.NewString(),
 		Payload: models.ModelPayload{
 			FileURL:     "s3://dynamic-pdb/models/qfit.cif",
 			Authors:     []string{"Hendrickson, W.A.", "Teeter, M.M."},
@@ -38,11 +38,11 @@ func Test_should_create_and_list_model_entity_payload_when_entities_repository_c
 	// when
 	created, err := testDB.Entities.Create(context.Background(), entity)
 	require.NoError(t, err)
-	got := listSingleEntityByEntry(t, entry.ID)
+	got := listSingleEntityByStructure(t, structure.ID)
 
 	// then
 	assert.Equal(t, created.ID, got.ID)
-	assert.Equal(t, entry.ID, got.EntryID)
+	assert.Equal(t, structure.ID, got.StructureID)
 	require.NotNil(t, got.ModelID)
 	assert.Equal(t, model.ID, *got.ModelID)
 	require.NotNil(t, got.Level)
@@ -57,13 +57,13 @@ func Test_should_create_and_list_model_entity_payload_when_entities_repository_c
 
 func Test_should_create_and_list_data_entity_metadata_when_entities_repository_called(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "data-entity-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "data-entity-structure", time.Now().UTC())
 	size := int64(385)
 	entity := models.Entity{
-		ID:      uuid.New(),
-		EntryID: entry.ID,
-		Type:    models.EntityTypeData,
-		Name:    "fasta " + uuid.NewString(),
+		ID:          uuid.New(),
+		StructureID: structure.ID,
+		Type:        models.EntityTypeData,
+		Name:        "fasta " + uuid.NewString(),
 		Payload: models.DataPayload{
 			FileURL: "https://www.rcsb.org/fasta/entry/5GY3/download",
 			Type:    "fasta",
@@ -80,7 +80,7 @@ func Test_should_create_and_list_data_entity_metadata_when_entities_repository_c
 	// when
 	created, err := testDB.Entities.Create(context.Background(), entity)
 	require.NoError(t, err)
-	got := listSingleEntityByEntry(t, entry.ID)
+	got := listSingleEntityByStructure(t, structure.ID)
 
 	// then
 	assert.Equal(t, created.ID, got.ID)
@@ -96,12 +96,12 @@ func Test_should_create_and_list_data_entity_metadata_when_entities_repository_c
 
 func Test_should_create_and_list_program_entity_payload_when_entities_repository_called(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "program-entity-entry", time.Now().UTC())
+	structure := createDBTestStructure(t, "program-entity-structure", time.Now().UTC())
 	entity := models.Entity{
-		ID:      uuid.New(),
-		EntryID: entry.ID,
-		Type:    models.EntityTypeProgram,
-		Name:    "qFit " + uuid.NewString(),
+		ID:          uuid.New(),
+		StructureID: structure.ID,
+		Type:        models.EntityTypeProgram,
+		Name:        "qFit " + uuid.NewString(),
 		Payload: models.ProgramPayload{
 			Name:        "qFit",
 			Version:     "4.0.0",
@@ -114,7 +114,7 @@ func Test_should_create_and_list_program_entity_payload_when_entities_repository
 	// when
 	created, err := testDB.Entities.Create(context.Background(), entity)
 	require.NoError(t, err)
-	got := listSingleEntityByEntry(t, entry.ID)
+	got := listSingleEntityByStructure(t, structure.ID)
 
 	// then
 	assert.Equal(t, created.ID, got.ID)
@@ -125,31 +125,31 @@ func Test_should_create_and_list_program_entity_payload_when_entities_repository
 	assert.Equal(t, "Multiconformer model builder", payload.Description)
 }
 
-func Test_should_list_entities_matching_entry_model_type_and_level_filters(t *testing.T) {
+func Test_should_list_entities_matching_structure_model_type_and_level_filters(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "list-entities-entry", time.Now().UTC())
-	otherEntry := createDBTestEntry(t, "list-entities-other-entry", time.Now().UTC())
-	model := createDBTestModel(t, entry.ID, "filtered model", time.Now().UTC())
-	otherModel := createDBTestModel(t, entry.ID, "other model", time.Now().UTC().Add(time.Second))
-	foreignModel := createDBTestModel(t, otherEntry.ID, "foreign model", time.Now().UTC())
+	structure := createDBTestStructure(t, "list-entities-structure", time.Now().UTC())
+	otherStructure := createDBTestStructure(t, "list-entities-other-structure", time.Now().UTC())
+	model := createDBTestModel(t, structure.ID, "filtered model", time.Now().UTC())
+	otherModel := createDBTestModel(t, structure.ID, "other model", time.Now().UTC().Add(time.Second))
+	foreignModel := createDBTestModel(t, otherStructure.ID, "foreign model", time.Now().UTC())
 	levelL0 := models.EntityLevelL0
 	levelL2 := models.EntityLevelL2
 	levelL3 := models.EntityLevelL3
 
-	_ = createDBTestEntity(t, entry.ID, nil, models.EntityTypeData, &levelL0, "entry data")
-	matching := createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeModel, &levelL2, "matching model")
-	_ = createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeMetrics, &levelL3, "wrong type")
-	_ = createDBTestEntity(t, entry.ID, &otherModel.ID, models.EntityTypeModel, &levelL2, "wrong model")
-	_ = createDBTestEntity(t, otherEntry.ID, &foreignModel.ID, models.EntityTypeModel, &levelL2, "wrong entry")
+	_ = createDBTestEntity(t, structure.ID, nil, models.EntityTypeData, &levelL0, "structure data")
+	matching := createDBTestEntity(t, structure.ID, &model.ID, models.EntityTypeModel, &levelL2, "matching model")
+	_ = createDBTestEntity(t, structure.ID, &model.ID, models.EntityTypeMetrics, &levelL3, "wrong type")
+	_ = createDBTestEntity(t, structure.ID, &otherModel.ID, models.EntityTypeModel, &levelL2, "wrong model")
+	_ = createDBTestEntity(t, otherStructure.ID, &foreignModel.ID, models.EntityTypeModel, &levelL2, "wrong structure")
 	types := []models.EntityType{models.EntityTypeModel}
 	levels := []models.EntityLevel{models.EntityLevelL2}
 
 	// when
 	got, err := testDB.Entities.List(context.Background(), db.EntityFilters{
-		EntryID: &entry.ID,
-		ModelID: &model.ID,
-		Types:   types,
-		Levels:  levels,
+		StructureID: &structure.ID,
+		ModelID:     &model.ID,
+		Types:       types,
+		Levels:      levels,
 	})
 
 	// then
@@ -172,30 +172,30 @@ func Test_should_return_error_when_entities_list_called_with_negative_limit(t *t
 	require.Error(t, err)
 }
 
-func Test_should_list_only_entry_entities_when_belongs_to_entry_filter_is_set(t *testing.T) {
+func Test_should_list_only_structure_entities_when_belongs_to_structure_filter_is_set(t *testing.T) {
 	// given
-	entry := createDBTestEntry(t, "entry-entities-filter", time.Now().UTC())
-	model := createDBTestModel(t, entry.ID, "entry entities filter model", time.Now().UTC())
-	entryEntity := createDBTestEntity(t, entry.ID, nil, models.EntityTypeData, nil, "entry entity")
-	_ = createDBTestEntity(t, entry.ID, &model.ID, models.EntityTypeModel, nil, "model entity")
+	structure := createDBTestStructure(t, "structure-entities-filter", time.Now().UTC())
+	model := createDBTestModel(t, structure.ID, "structure entities filter model", time.Now().UTC())
+	structureEntity := createDBTestEntity(t, structure.ID, nil, models.EntityTypeData, nil, "structure entity")
+	_ = createDBTestEntity(t, structure.ID, &model.ID, models.EntityTypeModel, nil, "model entity")
 
 	// when
 	entities, err := testDB.Entities.List(context.Background(), db.EntityFilters{
-		EntryID:        &entry.ID,
-		BelongsToEntry: true,
+		StructureID:        &structure.ID,
+		BelongsToStructure: true,
 	})
 
 	// then
 	require.NoError(t, err)
 	require.Len(t, entities, 1)
-	assert.Equal(t, entryEntity.ID, entities[0].ID)
+	assert.Equal(t, structureEntity.ID, entities[0].ID)
 	assert.Nil(t, entities[0].ModelID)
 }
 
-func listSingleEntityByEntry(t *testing.T, entryID uuid.UUID) models.Entity {
+func listSingleEntityByStructure(t *testing.T, structureID uuid.UUID) models.Entity {
 	t.Helper()
 
-	entities, err := testDB.Entities.List(context.Background(), db.EntityFilters{EntryID: &entryID})
+	entities, err := testDB.Entities.List(context.Background(), db.EntityFilters{StructureID: &structureID})
 	require.NoError(t, err)
 	require.Len(t, entities, 1)
 	return entities[0]

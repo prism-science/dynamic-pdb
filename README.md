@@ -9,8 +9,8 @@ deployment assets:
 
 | Path | What it is |
 | ---- | ---------- |
-| [`backend/`](backend/) | Go HTTP API for auth, entries, models, entities, provenance relations, search, and file-upload grants |
-| [`website/`](website/) | Next.js app for browsing proteins, creating entries, uploading files, linking Ext experiments, and viewing models |
+| [`backend/`](backend/) | Go HTTP API for auth, structures, models, entities, provenance relations, search, and file-upload grants |
+| [`website/`](website/) | Next.js app for browsing proteins, creating structures, uploading files, linking Ext experiments, and viewing models |
 | [`deploy/`](deploy/) | Helm chart and ArgoCD ApplicationSet for `dynamicpdb.com` |
 | [`backend/migrations/`](backend/migrations/) | Flyway migrations plus helper CLI for local and deployed database changes |
 | [`backend/tools/`](backend/tools/) | Dedicated Go tool module for generators and other project tooling |
@@ -37,16 +37,16 @@ Next.js website ---- GitHub OAuth browser flow
    |
    `-- direct multipart PUTs to presigned object-storage URLs
 
-optional: new-entry form <---- public Ext API/files
+optional: new-structure form <---- public Ext API/files
 ```
 
 The backend is the system of record. It exchanges GitHub OAuth tokens or
 authorization codes for backend JWTs, gates authenticated writes by allowed
-GitHub organizations, stores entries/models/entities in PostgreSQL, builds a
+GitHub organizations, stores structures/models/entities in PostgreSQL, builds a
 search index, and issues multipart upload grants for S3-compatible storage.
 
 The website is the user-facing catalog. Anonymous users can browse/search public
-entries and open entry/model pages. Signed-in users can create entries with L0-L3
+structures and open structure/model pages. Signed-in users can create structures with L0-L3
 data, upload local files, reference URLs, import public Ext experiment files,
 attach programs and metrics, and view model data through the structure-focused
 UI.
@@ -56,14 +56,14 @@ UI.
 The core graph follows the same structure as the specification:
 
 ```text
-Entry
+Structure
 +-- Models
 +-- Entities
 `-- Entity Relations
 ```
 
-An `Entry` represents one baseline source dataset. A `Model` groups related
-processing or modeling work inside that entry. An `Entity` is an individual data
+A `Structure` represents one baseline source dataset. A `Model` groups related
+processing or modeling work inside that structure. An `Entity` is an individual data
 object, model file, metric set, or program record. `EntityRelation` rows connect
 inputs, outputs, and evaluations with relation types such as `input_to`,
 `output_of`, and `metrics_for`.
@@ -152,4 +152,3 @@ website typechecking, Node tests with coverage, and production image builds for
 - Working on the UI? Start with [`website/src/app/page.tsx`](website/src/app/page.tsx)
   and [`website/src/app/components/`](website/src/app/components/).
 - Deploying? See [`deploy/README.md`](deploy/README.md).
-

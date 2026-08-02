@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type Entry struct {
+type Structure struct {
 	ID                uuid.UUID
 	CreatedBy         uuid.UUID
 	Name              string

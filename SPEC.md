@@ -19,15 +19,15 @@ The project provides a central place to:
 
 ## Core structure
 
-### Entry
+### Structure
 
-An Entry represents one baseline source dataset.
+A Structure represents one baseline source dataset.
 
-The baseline is the least-processed data available, such as raw diffraction images or an existing MTZ file. If the baseline dataset changes, a new Entry is created.
+The baseline is the least-processed data available, such as raw diffraction images or an existing MTZ file. If the baseline dataset changes, a new Structure is created.
 
 ### Model
 
-A Model groups related processing or modeling work inside an Entry, for example:
+A Model groups related processing or modeling work inside a Structure, for example:
 
 * diffraction-data processing;
 * refinement;
@@ -40,7 +40,7 @@ A Model groups related processing or modeling work inside an Entry, for example:
 
 An Entity is an individual data object stored in the system.
 
-Every Entity belongs to an Entry and may also belong to a Model.
+Every Entity belongs to a Structure and may also belong to a Model.
 
 ### Entity Relation
 
@@ -172,14 +172,14 @@ Supporting files preserve the exact algorithm, parameters, inputs, and outputs u
 ## Database structure
 
 ```text
-entries
+structures
 models
 entities
 entity_relations
 ```
 
 ```text
-Entry
+Structure
 ├── Models
 ├── Entities
 └── Entity Relations

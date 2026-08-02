@@ -14,9 +14,9 @@ func Test_should_return_s3_object_url_when_cloudfront_is_not_configured(t *testi
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			Key:       "entry/entities/entity/model.cif",
+			Key:       "structure/entities/entity/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "http://localhost:9000/dynamic-pdb/entry/entities/entity/model.cif",
+			ObjectURL: "http://localhost:9000/dynamic-pdb/structure/entities/entity/model.cif",
 			PartSize:  64 * 1024 * 1024,
 		},
 	}
@@ -35,9 +35,9 @@ func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			Key:       "entry/entities/entity/model.cif",
+			Key:       "structure/entities/entity/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/model.cif",
+			ObjectURL: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/structure/entities/entity/model.cif",
 			PartSize:  64 * 1024 * 1024,
 			Parts: []s3.PresignedPart{
 				{PartNumber: 1, URL: "https://storage.example/part-1"},
@@ -60,7 +60,7 @@ func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "https://files.dynamicpdb.com/entry/entities/entity/model.cif", grant.ObjectURL)
+	assert.Equal(t, "https://files.dynamicpdb.com/structure/entities/entity/model.cif", grant.ObjectURL)
 	assert.Equal(t, "https://storage.example/part-1", grant.Parts[0].URL)
 }
 
@@ -68,7 +68,7 @@ func Test_should_reject_s3_object_url_from_another_bucket(t *testing.T) {
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			ObjectURL: "https://unrelated.example/entry/entities/entity/model.cif",
+			ObjectURL: "https://unrelated.example/structure/entities/entity/model.cif",
 		},
 	}
 	service, err := NewService(bucket, Config{
@@ -94,7 +94,7 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			ObjectURL: "http://localhost:9000/storage/dynamic-pdb/entry/entities/entity/model.cif",
+			ObjectURL: "http://localhost:9000/storage/dynamic-pdb/structure/entities/entity/model.cif",
 		},
 	}
 	service, err := NewService(bucket, Config{
@@ -113,7 +113,7 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "https://files.example.com/entry/entities/entity/model.cif", grant.ObjectURL)
+	assert.Equal(t, "https://files.example.com/structure/entities/entity/model.cif", grant.ObjectURL)
 }
 
 func Test_should_reject_invalid_file_upload_before_calling_s3(t *testing.T) {
@@ -159,7 +159,7 @@ func Test_should_proxy_complete_and_abort_to_s3(t *testing.T) {
 
 func validFileUpload() FileUpload {
 	return FileUpload{
-		EntryID:          "entry",
+		StructureID:      "structure",
 		EntityID:         "entity",
 		OriginalFilename: "model.cif",
 		Size:             42,

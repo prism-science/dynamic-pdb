@@ -14,16 +14,16 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_called(t *testing.T) {
+func Test_should_return_structure_with_optional_fields_when_structures_create_and_get_called(t *testing.T) {
 	// given
 	now := time.Now().UTC()
-	description := "Entry description " + uuid.NewString()
+	description := "Structure description " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
-	entry := models.Entry{
+	structure := models.Structure{
 		ID:                uuid.New(),
 		CreatedBy:         createdBy,
-		Name:              "entry-" + uuid.NewString(),
+		Name:              "structure-" + uuid.NewString(),
 		Description:       &description,
 		ThumbnailImageURL: &thumbnailImageURL,
 		CreatedAt:         now,
@@ -31,15 +31,15 @@ func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_c
 	}
 
 	// when
-	created, err := testDB.Entries.Create(context.Background(), entry)
+	created, err := testDB.Structures.Create(context.Background(), structure)
 	require.NoError(t, err)
-	got, err := testDB.Entries.Get(context.Background(), created.ID)
+	got, err := testDB.Structures.Get(context.Background(), created.ID)
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, entry.ID, got.ID)
+	assert.Equal(t, structure.ID, got.ID)
 	assert.Equal(t, createdBy, got.CreatedBy)
-	assert.Equal(t, entry.Name, got.Name)
+	assert.Equal(t, structure.Name, got.Name)
 	require.NotNil(t, got.Description)
 	assert.Equal(t, description, *got.Description)
 	require.NotNil(t, got.ThumbnailImageURL)
@@ -48,30 +48,30 @@ func Test_should_return_entry_with_optional_fields_when_entries_create_and_get_c
 	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
 }
 
-func Test_should_return_not_found_when_entries_get_misses(t *testing.T) {
+func Test_should_return_not_found_when_structures_get_misses(t *testing.T) {
 	// given / when
-	_, err := testDB.Entries.Get(context.Background(), uuid.New())
+	_, err := testDB.Structures.Get(context.Background(), uuid.New())
 
 	// then
-	require.ErrorIs(t, err, db.ErrEntryNotFound)
+	require.ErrorIs(t, err, db.ErrStructureNotFound)
 }
 
-func Test_should_list_entries_matching_search_with_pagination_when_entries_list_called(t *testing.T) {
+func Test_should_list_structures_matching_search_with_pagination_when_structures_list_called(t *testing.T) {
 	// given
 	ctx := context.Background()
-	token := "entrytoken" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	token := "structuretoken" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	now := time.Now().UTC()
-	first := createDBTestEntry(t, "first "+token, now)
-	second := createDBTestEntry(t, "second "+token, now.Add(time.Second))
-	unmatched := createDBTestEntry(t, "unmatched "+uuid.NewString(), now.Add(2*time.Second))
-	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *first))
-	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *second))
-	require.NoError(t, testDB.EntrySearch.IndexEntry(ctx, *unmatched))
+	first := createDBTestStructure(t, "first "+token, now)
+	second := createDBTestStructure(t, "second "+token, now.Add(time.Second))
+	unmatched := createDBTestStructure(t, "unmatched "+uuid.NewString(), now.Add(2*time.Second))
+	require.NoError(t, testDB.StructureSearch.IndexStructure(ctx, *first))
+	require.NoError(t, testDB.StructureSearch.IndexStructure(ctx, *second))
+	require.NoError(t, testDB.StructureSearch.IndexStructure(ctx, *unmatched))
 	limit := 1
 	offset := 1
 
 	// when
-	got, err := testDB.Entries.List(ctx, db.EntryFilters{
+	got, err := testDB.Structures.List(ctx, db.StructureFilters{
 		Query:  token,
 		Limit:  &limit,
 		Offset: &offset,
@@ -83,17 +83,17 @@ func Test_should_list_entries_matching_search_with_pagination_when_entries_list_
 	assert.Equal(t, second.ID, got[0].ID)
 }
 
-func Test_should_filter_entries_by_protein_sequence_when_entries_list_called(t *testing.T) {
+func Test_should_filter_structures_by_protein_sequence_when_structures_list_called(t *testing.T) {
 	// given
 	ctx := context.Background()
 	now := time.Now().UTC()
 	sequenceToken := proteinSequenceTokenForTest(uuid.New())
-	sequenceEntry := createDBTestEntry(t, "sequence entry", now)
+	sequenceStructure := createDBTestStructure(t, "sequence structure", now)
 	sequenceEntity, err := testDB.Entities.Create(ctx, models.Entity{
-		ID:      uuid.New(),
-		EntryID: sequenceEntry.ID,
-		Type:    models.EntityTypeData,
-		Name:    "protein sequence",
+		ID:          uuid.New(),
+		StructureID: sequenceStructure.ID,
+		Type:        models.EntityTypeData,
+		Name:        "protein sequence",
 		Payload: models.DataPayload{
 			FileURL: "https://files.example/protein.fasta",
 			Type:    "fasta",
@@ -109,33 +109,33 @@ func Test_should_filter_entries_by_protein_sequence_when_entries_list_called(t *
 	queryWithWhitespace := strings.ToLower(sequenceToken[:8] + "\n" + sequenceToken[8:])
 
 	// when
-	sequenceMatches, err := testDB.Entries.List(ctx, db.EntryFilters{ProteinSequence: queryWithWhitespace})
+	sequenceMatches, err := testDB.Structures.List(ctx, db.StructureFilters{ProteinSequence: queryWithWhitespace})
 
 	// then
 	require.NoError(t, err)
-	assert.True(t, entryListContainsID(sequenceMatches, sequenceEntry.ID))
+	assert.True(t, structureListContainsID(sequenceMatches, sequenceStructure.ID))
 }
 
-func Test_should_return_error_when_entries_list_called_with_negative_limit(t *testing.T) {
+func Test_should_return_error_when_structures_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
 
 	// when
-	_, err := testDB.Entries.List(context.Background(), db.EntryFilters{Limit: &limit})
+	_, err := testDB.Structures.List(context.Background(), db.StructureFilters{Limit: &limit})
 
 	// then
 	require.Error(t, err)
 }
 
-func Test_should_return_error_when_entries_list_called_with_text_and_protein_sequence(t *testing.T) {
+func Test_should_return_error_when_structures_list_called_with_text_and_protein_sequence(t *testing.T) {
 	// given
-	filters := db.EntryFilters{
+	filters := db.StructureFilters{
 		Query:           "text",
 		ProteinSequence: "ACDEFGHIK",
 	}
 
 	// when
-	_, err := testDB.Entries.List(context.Background(), filters)
+	_, err := testDB.Structures.List(context.Background(), filters)
 
 	// then
 	require.Error(t, err)
