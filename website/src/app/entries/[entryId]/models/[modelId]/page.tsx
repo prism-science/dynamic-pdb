@@ -4,15 +4,14 @@ import {
   ApiRequestError,
   type DataPayload,
   type ModelPageData,
-  type FastaMetadata,
   getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { dataTableEntities } from "@/lib/entities";
 import type { StructureMap } from "@/lib/structureKind";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
-import SequenceView from "@/app/components/SequenceView";
 import {
   buildProvenance,
   EntryHero,
@@ -52,14 +51,7 @@ export default async function ModelPage({
     .map((entity) => ({ url: getEntityFileURL(entity), name: entity.name }))
     .filter((map): map is StructureMap => typeof map.url === "string");
 
-  let sequence: FastaMetadata | null = null;
-  for (const entity of data.entities) {
-    const payload = entity.payload as DataPayload;
-    if (payload?.type === "fasta" && payload.metadata) {
-      sequence = payload.metadata as FastaMetadata;
-      break;
-    }
-  }
+  const hasData = dataTableEntities(data.entities).length > 0;
 
   return (
     <main
@@ -106,17 +98,14 @@ export default async function ModelPage({
           <p className={styles.emptyState}>No model produced yet.</p>
         )}
 
-        {sequence ? (
+        {/* No sequence block here: the sequence is a property of the structure,
+            identical across every model, and lives on the entry page. */}
+        {hasData ? (
           <section className={styles.modelsBlock}>
-            <SectionHeader title="Sequence" />
-            <SequenceView metadata={sequence} />
+            <SectionHeader title="Data" />
+            <DataTable entities={data.entities} />
           </section>
         ) : null}
-
-        <section className={styles.modelsBlock}>
-          <SectionHeader title="Data" />
-          <DataTable entities={data.entities} />
-        </section>
       </section>
     </main>
   );

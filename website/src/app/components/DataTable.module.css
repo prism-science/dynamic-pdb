@@ -1,9 +1,18 @@
+/* --cols is set by DataTable and equals the number of non-empty levels. The
+   surviving columns share the full width evenly, so a model with L1-L3 looks
+   like a table rather than a table with a gap where L0 used to be. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+
+/* One column stretched edge to edge stops reading as a column at all, so it
+   is the single case that keeps a cap. */
+.grid[data-cols="1"] {
+  max-width: 360px;
 }
 
 .column {
@@ -128,18 +137,14 @@
   overflow-wrap: anywhere;
 }
 
-.emptyCell {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
 @media (max-width: 760px) {
+  /* auto-fit rather than a fixed 2 columns: with one or two levels the row
+     simply holds fewer tracks instead of leaving a gap. */
   .grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 
-  .column:nth-child(3),
-  .column:nth-child(4) {
+  .column:nth-child(n + 3) {
     border-top: 1px solid var(--border);
   }
 

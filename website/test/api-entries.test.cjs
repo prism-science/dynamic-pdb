@@ -54,7 +54,7 @@ test("should throw ApiRequestError with status when create entry fails", async (
   }
 });
 
-test("should scope model page data to model entities and L0 baseline entities", async () => {
+test("should scope model page data to this model's entities only", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -100,13 +100,16 @@ test("should scope model page data to model entities and L0 baseline entities", 
 
     const data = await getModelPageData("token-123", "entry-1", "model-1");
 
+    // The structure-level L0 baseline belongs to the entry page, not here.
     assert.deepEqual(
       data.entities.map((item) => item.id),
-      ["baseline", "model"],
+      ["model"],
     );
+    // r1 survives because its target is in scope; r2 and r3 touch nothing
+    // this model owns.
     assert.deepEqual(
       data.relations.map((item) => item.id),
-      ["r1", "r2"],
+      ["r1"],
     );
   } finally {
     global.fetch = previousFetch;

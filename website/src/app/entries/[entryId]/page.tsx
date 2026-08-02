@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   ApiRequestError,
   type DataPayload,
+  type Entity,
   type EntryPageData,
   type FastaMetadata,
   getEntryPageData,
@@ -137,8 +138,15 @@ async function loadEntryPage(
   }
 }
 
+// The structure owns whatever is not attached to one of its models. Model-owned
+// entities are shown on that model's page, the same way this page's files are
+// not repeated there.
+function structureEntities(data: EntryPageData): Entity[] {
+  return data.entities.filter((entity) => entity.model_id === null);
+}
+
 function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
-  for (const entity of data.entities) {
+  for (const entity of structureEntities(data)) {
     if (entity.type !== "data" && entity.type !== "model") {
       continue;
     }
@@ -154,7 +162,7 @@ function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
 // listed here as a file and previewed in place. FASTA is pinned to the top
 // because it is what people look for first.
 function getLevelZeroFiles(data: EntryPageData): FileItem[] {
-  return data.entities
+  return structureEntities(data)
     .filter((entity) => entity.level === "L0" && entity.type === "data")
     .map((entity) => {
       const payload = entity.payload as DataPayload;

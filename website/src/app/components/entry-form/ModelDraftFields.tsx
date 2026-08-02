@@ -189,6 +189,7 @@ export default function ModelDraftFields({
       <FilesEditor
         files={draft.files}
         lockModelLevel
+        hint="Structures, maps, logs — .pdb, .cif, .mtz, .ccp4, .log"
         extExperiment={extExperiment}
         onAdd={async (list) => {
           const parsed = await Promise.all(
