@@ -23,8 +23,29 @@ type EntryRevision struct {
 	Name              string
 	Description       *string
 	ThumbnailImageURL *string
-	Metadata          map[string]any
+	Metadata          EntryMetadata
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
+
+type EntryMetadata struct {
+	ExternalRefs map[EntrySource]string `json:"external_refs,omitempty"`
+	Resolution   *float64               `json:"resolution,omitempty"`
+	Organism     *string                `json:"organism,omitempty"`
+	Method       *StructureMethod       `json:"method,omitempty"`
+	SpaceGroup   *string                `json:"space_group,omitempty"`
+}
+
+type EntrySource string
+
+const (
+	EntrySourcePDB EntrySource = "pdb"
+)
+
+type StructureMethod string
+
+const (
+	StructureMethodXRayCrystallography StructureMethod = "X-ray crystallography"
+	StructureMethodCryoEM              StructureMethod = "CryoEM"
+)
