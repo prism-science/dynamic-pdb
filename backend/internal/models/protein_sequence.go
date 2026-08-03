@@ -7,11 +7,11 @@ import (
 )
 
 type ProteinSequence struct {
-	ID          uuid.UUID
-	EntryID     uuid.UUID
-	EntityID    uuid.UUID
-	RecordIndex int
-	Header      string
-	Sequence    string
-	CreatedAt   time.Time
+	ID               uuid.UUID
+	EntryRevisionID  uuid.UUID
+	SourceArtifactID uuid.UUID
+	RecordIndex      int
+	Header           string
+	Sequence         string
+	CreatedAt        time.Time
 }

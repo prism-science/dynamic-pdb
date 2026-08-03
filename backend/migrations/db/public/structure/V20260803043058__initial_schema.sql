@@ -221,7 +221,6 @@ CREATE TABLE run_artifacts (
     run_id      uuid NOT NULL REFERENCES runs(id),
     artifact_id uuid NOT NULL REFERENCES artifacts(id),
     direction   text NOT NULL,
-    position    integer,
 
     PRIMARY KEY (run_id, artifact_id)
 );
