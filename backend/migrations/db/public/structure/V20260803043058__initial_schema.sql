@@ -102,6 +102,19 @@ CREATE TABLE entry_revision_artifacts (
     PRIMARY KEY (entry_revision_id, artifact_id)
 );
 
+CREATE TABLE protein_sequences (
+    id                  uuid PRIMARY KEY,
+    entry_revision_id   uuid NOT NULL REFERENCES entry_revisions(id),
+    source_artifact_id  uuid NOT NULL REFERENCES artifacts(id),
+    record_index        integer NOT NULL,
+    header              text NOT NULL,
+    sequence            text NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX protein_sequences_revision_artifact_record_idx
+    ON protein_sequences(entry_revision_id, source_artifact_id, record_index);
+
 CREATE TABLE models (
     id          uuid PRIMARY KEY,
     entry_id    uuid NOT NULL REFERENCES entries(id),
