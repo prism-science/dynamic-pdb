@@ -11,7 +11,8 @@ import type {
   MetricsPayload,
 } from "@/lib/api/entries";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
-import { detectStructureKind } from "@/lib/structureKind";
+import { fastaRecordText, fastaRecords } from "@/lib/fasta";
+import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";
 
 import styles from "./FilePreviewModal.module.css";
@@ -33,12 +34,17 @@ const metricFormatter = new Intl.NumberFormat("en-US", {
 
 export default function FilePreviewModal({
   entity,
+  maps,
   onClose,
 }: {
   entity: Entity | null;
+  // Density maps offered alongside the structure, so opening a model from a
+  // file list gives the same viewer as opening it from its card.
+  maps?: StructureMap[];
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [copied, setCopied] = useState(false);
   const filePayload = (entity?.payload ?? {}) as DataPayload & {
     metadata?: Record<string, unknown>;
   };
@@ -73,11 +79,43 @@ export default function FilePreviewModal({
     payload.type === "image" ||
     (sourceURL != null && /\.(png|jpe?g|gif|webp|svg|bmp)/i.test(sourceURL));
   const wide = kind != null && !isMetrics && !isFasta;
+  // A structure gets the whole window; everything else stays a dialog.
+  const fullscreen = wide && url != null;
+
+  // Header actions work on the file: Download saves it, Copy puts the same
+  // content on the clipboard as valid FASTA, every record, wrapped at 60.
+  async function copyFasta() {
+    const metadata = payload.metadata as FastaMetadata | undefined;
+    if (!metadata) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(
+        fastaRecords(metadata)
+          .map((record, index) => fastaRecordText(record, `Sequence ${index + 1}`))
+          .join(""),
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return createPortal(
-    <div className={styles.backdrop} onClick={onClose}>
+    <div
+      className={styles.backdrop}
+      data-full={fullscreen ? "true" : undefined}
+      onClick={onClose}
+    >
       <div
-        className={`${styles.card} ${wide ? styles.cardWide : ""}`}
+        className={[
+          styles.card,
+          wide ? styles.cardWide : "",
+          fullscreen ? styles.cardFull : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         role="dialog"
         aria-label={`Preview of ${entity.name}`}
         onClick={(event) => event.stopPropagation()}
@@ -85,6 +123,11 @@ export default function FilePreviewModal({
         <div className={styles.head}>
           <span className={styles.title}>{entity.name}</span>
           <div className={styles.actions}>
+            {isFasta && payload.metadata ? (
+              <button type="button" className={styles.copy} onClick={copyFasta}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            ) : null}
             {url ? (
               <a className={styles.download} href={url} download target="_blank" rel="noreferrer">
                 <DownloadIcon />
@@ -102,7 +145,10 @@ export default function FilePreviewModal({
           </div>
         </div>
 
-        <div className={styles.body}>
+        <div
+          className={styles.body}
+          data-flush={isFasta && payload.metadata ? "true" : undefined}
+        >
           {isMetrics ? (
             <MetricsView payload={entity.payload as MetricsPayload} />
           ) : isFasta && payload.metadata ? (
@@ -111,7 +157,7 @@ export default function FilePreviewModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img className={styles.previewImg} src={url} alt={entity.name} />
           ) : kind && url ? (
-            <StructureViewer url={url} kind={kind} />
+            <StructureViewer url={url} kind={kind} maps={maps} fill={fullscreen} />
           ) : (
             <GenericView type={payload.type} size={payload.size} url={url} />
           )}

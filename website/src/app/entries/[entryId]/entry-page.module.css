@@ -78,29 +78,6 @@
   font-weight: 600;
 }
 
-.sideNav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.sideNav a {
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.sideNav a:hover {
-  background: var(--surface-muted);
-  color: var(--text);
-}
-
 .content {
   min-width: 0;
 }
@@ -173,12 +150,13 @@
 }
 
 @media (max-width: 820px) {
-  .layout {
+
+.layout {
     grid-template-columns: 1fr;
     gap: 20px;
   }
 
-  .sidebar {
+.sidebar {
     position: static;
     flex-direction: row;
     flex-wrap: wrap;
@@ -186,46 +164,22 @@
     gap: 12px 16px;
   }
 
-  .sideThumb {
+.sideThumb {
     width: 72px;
     height: 72px;
     aspect-ratio: auto;
   }
 
-  .sideName {
+.sideName {
     flex: 1 1 auto;
     margin: 0;
   }
 
-  .sideVitals {
+.sideVitals {
     flex-direction: row;
     gap: 14px;
     width: 100%;
   }
-
-  .sideNav {
-    flex-direction: row;
-    width: 100%;
-    border-top: 0;
-    padding-top: 0;
-  }
-}
-
-/* Level color variables ([data-level] -> --lvl / --lvl-soft) are declared in
-   globals.css, because CSS Modules reject attribute-only selectors. */
-
-.entityLevelTag {
-  display: inline-flex;
-  align-items: center;
-  height: 19px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--lvl-soft);
-  color: var(--lvl);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
 }
 
 /* --------------------------------------------------------------------- */
@@ -324,20 +278,6 @@
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------------- */
-/* Sections                                                              */
-/* --------------------------------------------------------------------- */
-
-.panel {
-  min-width: 0;
-  padding: 18px;
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
 .modelsBlock {
   margin-top: 28px;
 }
@@ -365,15 +305,6 @@
   font-weight: 600;
   line-height: 1.2;
   text-align: right;
-}
-
-/* --------------------------------------------------------------------- */
-/* Entity cards                                                          */
-/* --------------------------------------------------------------------- */
-
-.cardList {
-  display: grid;
-  gap: 10px;
 }
 
 /* --------------------------------------------------------------------- */
@@ -415,59 +346,6 @@
 .modelBody {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.modelHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.modelName {
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.methodTag {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.modelDownload {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  height: 32px;
-  padding: 0 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease,
-    background 120ms ease;
-}
-
-.modelDownload:hover {
-  border-color: var(--accent);
-  color: var(--accent-hover);
-  background: var(--accent-soft);
 }
 
 .validation {
@@ -535,7 +413,8 @@
 }
 
 @media (max-width: 560px) {
-  .metricGrid {
+
+.metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px 20px;
   }
@@ -573,165 +452,15 @@
 }
 
 @media (max-width: 560px) {
-  .modelCard {
+
+.modelCard {
     flex-direction: column;
   }
 
-  .modelPreview {
+.modelPreview {
     width: 100%;
     height: 120px;
   }
-
-  .tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.entityCard {
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-muted);
-}
-
-.entityCardHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.entityKind {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--neutral-bg);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.entityKind[data-type="model"] {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-}
-
-.entityKind[data-type="metrics"] {
-  background: var(--l3-soft);
-  color: var(--l3);
-}
-
-.entityCardName {
-  min-width: 0;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.dataMeta {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.entityFileLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  color: var(--accent-hover);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.entityFileLink:hover {
-  text-decoration: underline;
-}
-
-.provenance {
-  display: grid;
-  gap: 6px;
-  margin: 12px 0 0;
-}
-
-.provenanceRow {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: 10px;
-  align-items: baseline;
-}
-
-.provenanceRow dt {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.provenanceRow dd {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.inputChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.inputChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.cardMetrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.metricPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.metricPill b {
-  color: var(--text-muted);
-  font-weight: 700;
 }
 
 /* --------------------------------------------------------------------- */
@@ -959,159 +688,6 @@
 }
 
 /* --------------------------------------------------------------------- */
-/* Model cards with thumbnails                                      */
-/* --------------------------------------------------------------------- */
-
-.modelGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
-
-.modelListCard {
-  display: flex;
-  align-items: stretch;
-  gap: 14px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: var(--text);
-  text-decoration: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
-}
-
-.modelListCard:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-.thumb {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 84px;
-  height: 84px;
-  overflow: hidden;
-  border-radius: var(--radius);
-  background: var(--surface-muted);
-  color: var(--text-muted);
-}
-
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.thumb[data-empty="true"] {
-  border: 1px dashed var(--border-strong);
-}
-
-.modelListBody {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.modelListName {
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.modelListCounts {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* --------------------------------------------------------------------- */
-/* Comparison table                                                      */
-/* --------------------------------------------------------------------- */
-
-.tableWrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.compareTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.compareTable th,
-.compareTable td {
-  padding: 10px 12px;
-  text-align: right;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--border);
-}
-
-.compareTable thead th {
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.thHint {
-  display: block;
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.compareTable th[scope="col"]:first-child,
-.compareTable th[scope="row"] {
-  text-align: left;
-}
-
-.compareTable th[scope="row"] {
-  color: var(--text);
-  font-weight: 650;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.compareTable tbody tr:last-child th,
-.compareTable tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.compareTable tbody tr:hover td,
-.compareTable tbody tr:hover th {
-  background: var(--surface-muted);
-}
-
-.metricCell {
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-}
-
-.metricCell[data-best="true"] {
-  background: var(--success-bg);
-  color: var(--success-fg);
-  font-weight: 700;
-}
-
-/* --------------------------------------------------------------------- */
 /* Empty states                                                          */
 /* --------------------------------------------------------------------- */
 
@@ -1139,24 +715,11 @@
     font-size: 30px;
   }
 
-  .panel {
-    padding: 14px;
-  }
-
-  .modelGrid {
-    grid-template-columns: 1fr;
-  }
-
   .modelTableWrap {
     overflow-x: auto;
   }
 
   .modelTable {
     min-width: 520px;
-  }
-
-  .provenanceRow {
-    grid-template-columns: 1fr;
-    gap: 3px;
   }
 }

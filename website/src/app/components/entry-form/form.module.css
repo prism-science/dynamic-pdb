@@ -10,10 +10,48 @@
   gap: 8px;
 }
 
-.fieldGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr);
-  gap: 14px;
+/* Identity block: preview image beside the name and description instead of
+   stacked under them. The thumbnail comes last in the DOM for tab order and is
+   pulled to the left with order, so it also lands on top once the row wraps. */
+.identityRow {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.identityMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.identityThumb {
+  order: -1;
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Inside the row the drop zone fills the height the fields set, so the two
+   columns end flush instead of leaving the thumbnail hanging below. */
+.identityThumb .thumbDrop {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+}
+
+@media (max-width: 640px) {
+  .identityRow {
+    flex-direction: column;
+  }
+
+  .identityThumb {
+    flex: 0 0 auto;
+  }
 }
 
 .label {
@@ -290,12 +328,6 @@
   font-weight: 600;
 }
 
-.thumbName {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: var(--font-mono);
-}
-
 .uploadStatus,
 .fileUploadStatus {
   color: var(--text-muted);
@@ -546,6 +578,16 @@
 
 .filePreview {
   padding: 0 12px 12px;
+}
+
+/* A sequence preview supplies its own padding so its defline band can span the
+   row, so the row only has to draw the outline. */
+.filePreview:has(> .sequencePreview) {
+  padding: 0;
+}
+
+.sequencePreview {
+  border-top: 1px solid var(--border);
 }
 
 /* Deposition block (authors + affiliation) */
@@ -1215,31 +1257,6 @@
   color: var(--text);
 }
 
-/* Done state */
-.done {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.doneTitle {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.doneNote {
-  margin: 0 0 8px;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
 /* Draft restore modal */
 .modalBackdrop {
   position: fixed;
@@ -1309,10 +1326,6 @@
 }
 
 @media (max-width: 680px) {
-  .fieldGrid {
-    grid-template-columns: 1fr;
-  }
-
   .depositBlock {
     grid-template-columns: 1fr;
   }

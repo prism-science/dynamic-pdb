@@ -35,6 +35,11 @@ import {
 } from "./helpers";
 import styles from "./form.module.css";
 
+// Nothing rejects a sequence dropped on a model, but the hint should not
+// suggest it either: a sequence belongs to the structure, not to one of its
+// models. Callers that scope files to a model pass their own wording.
+const DEFAULT_HINT = "Sequences, structures, maps — .fasta, .pdb, .cif, .ccp4, .log";
+
 export default function FilesEditor({
   files,
   onAdd,
@@ -46,6 +51,7 @@ export default function FilesEditor({
   extExperiment = null,
   lockLevel = false,
   lockModelLevel = false,
+  hint = DEFAULT_HINT,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -57,6 +63,7 @@ export default function FilesEditor({
   extExperiment?: ExtExperiment | null;
   lockLevel?: boolean;
   lockModelLevel?: boolean;
+  hint?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -140,9 +147,7 @@ export default function FilesEditor({
         <span className={styles.dropZoneTitle}>
           Drop files here or <span className={styles.dropZoneBrowse}>browse</span>
         </span>
-        <span className={styles.dropZoneHint}>
-          Sequences, structures, maps — .fasta, .pdb, .cif, .ccp4, .log
-        </span>
+        <span className={styles.dropZoneHint}>{hint}</span>
       </button>
 
       <div className={styles.altSourceRow}>
@@ -364,7 +369,11 @@ export default function FilesEditor({
                       </div>
                     ) : file.type === "fasta" && file.metadata ? (
                       <div className={styles.filePreview}>
-                        <SequenceView metadata={file.metadata as FastaMetadata} />
+                        <div className={styles.sequencePreview}>
+                          <SequenceView
+                            metadata={file.metadata as FastaMetadata}
+                          />
+                        </div>
                       </div>
                     ) : null}
                   </>

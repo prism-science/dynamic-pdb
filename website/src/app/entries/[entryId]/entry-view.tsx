@@ -3,23 +3,16 @@ import type { ReactNode } from "react";
 import type {
   DataPayload,
   Entity,
-  EntityLevel,
   EntityRelation,
-  EntityType,
-  FastaMetadata,
   MetricsPayload,
   ModelPayload,
   ProgramPayload,
 } from "@/lib/api/entries";
-import { parseExtFileReference } from "@/lib/api/ext";
-import ResolvedFileLink from "@/app/components/ResolvedFileLink";
-import SequenceView from "@/app/components/SequenceView";
+import { getEntityFileURL, getFilePayload } from "@/lib/entities";
 import StructureViewerModal from "@/app/components/StructureViewerModal";
 import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 
 import styles from "./entry-page.module.css";
-
-export const entityLevels: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 
 export type Provenance = {
 	index: Map<string, Entity>;
@@ -102,14 +95,6 @@ export function ImagePlaceholderIcon({ size = 26 }: { size?: number }) {
   );
 }
 
-export function LevelTag({ level }: { level: EntityLevel }) {
-  return (
-    <span className={styles.entityLevelTag} data-level={level}>
-      {level}
-    </span>
-  );
-}
-
 export function EntryHero({
   title,
   eyebrow,
@@ -156,109 +141,6 @@ export function SectionHeader({
       <h2>{title}</h2>
       {detail ? <span>{detail}</span> : null}
     </div>
-  );
-}
-
-export function EntityCard({
-  entity,
-  provenance,
-}: {
-  entity: Entity;
-  provenance: Provenance;
-}) {
-  const fileURL = getEntityFileURL(entity);
-  const program = provenance.programOf(entity.id);
-  const inputs = provenance.inputsOf(entity.id);
-  const metrics =
-    entity.type === "model" ? provenance.metricsOf(entity.id) : [];
-  const filePayload = getFilePayload(entity);
-  const dataPayload =
-    entity.type === "data" ? (filePayload as DataPayload | null) : null;
-  const subtype = dataPayload?.type;
-  const sizeLabel = formatSize(dataPayload?.size);
-  const authorFacts = getEntityAuthorFacts(entity);
-
-  return (
-    <article className={styles.entityCard}>
-      <div className={styles.entityCardHead}>
-        <span className={styles.entityKind} data-type={entity.type}>
-          {entity.type}
-        </span>
-        {entity.level ? <LevelTag level={entity.level} /> : null}
-        <span className={styles.entityCardName}>{entity.name}</span>
-        {subtype || sizeLabel ? (
-          <span className={styles.dataMeta}>
-            {[subtype?.toUpperCase(), sizeLabel].filter(Boolean).join(" · ")}
-          </span>
-        ) : null}
-        {fileURL ? (
-          <ResolvedFileLink
-            className={styles.entityFileLink}
-            href={fileURL}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {getFileName(fileURL)}
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path
-                d="M4.5 2h5.5v5.5M10 2 4 8M8 7v3H2V4h3"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </ResolvedFileLink>
-        ) : null}
-      </div>
-
-      {program || inputs.length > 0 || authorFacts.length > 0 ? (
-        <dl className={styles.provenance}>
-          {program ? (
-            <div className={styles.provenanceRow}>
-              <dt>Made with</dt>
-              <dd>{formatProgram(program)}</dd>
-            </div>
-          ) : null}
-          {inputs.length > 0 ? (
-            <div className={styles.provenanceRow}>
-              <dt>From</dt>
-              <dd className={styles.inputChips}>
-                {inputs.map((input) => (
-                  <span key={input.id} className={styles.inputChip}>
-                    {input.level ? <LevelTag level={input.level} /> : null}
-                    {input.name}
-                  </span>
-                ))}
-              </dd>
-            </div>
-          ) : null}
-          {authorFacts.map((fact) => (
-            <div key={fact.label} className={styles.provenanceRow}>
-              <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-
-      {metrics.length > 0 ? (
-        <div className={styles.cardMetrics}>
-          {metrics.flatMap((metric) =>
-            metricEntries(metric.payload as MetricsPayload).map((entry) => (
-              <span key={`${metric.id}-${entry.label}`} className={styles.metricPill}>
-                <b>{entry.label}</b>
-                {entry.value}
-              </span>
-            )),
-          )}
-        </div>
-      ) : null}
-
-      {subtype === "fasta" && dataPayload?.metadata ? (
-        <SequenceView metadata={dataPayload.metadata as FastaMetadata} />
-      ) : null}
-    </article>
   );
 }
 
@@ -405,177 +287,6 @@ export function ModelCard({
   );
 }
 
-export function EntityCardList({
-  entities,
-  provenance,
-  empty,
-}: {
-  entities: Entity[];
-  provenance: Provenance;
-  empty: string;
-}) {
-  if (entities.length === 0) {
-    return <p className={styles.emptyState}>{empty}</p>;
-  }
-  return (
-    <div className={styles.cardList}>
-      {entities.map((entity) =>
-        entity.type === "model" ? (
-          <ModelCard key={entity.id} entity={entity} provenance={provenance} />
-        ) : (
-          <EntityCard key={entity.id} entity={entity} provenance={provenance} />
-        ),
-      )}
-    </div>
-  );
-}
-
-type MetricColumn = {
-  key: keyof MetricsPayload;
-  label: string;
-  better: "lower" | "higher";
-};
-
-const metricColumns: MetricColumn[] = [
-  { key: "r_work", label: "Rwork", better: "lower" },
-  { key: "r_free", label: "Rfree", better: "lower" },
-  { key: "cc", label: "CC", better: "higher" },
-  { key: "rscc", label: "RSCC", better: "higher" },
-];
-
-export function ModelComparison({
-  models,
-  provenance,
-}: {
-  models: Entity[];
-  provenance: Provenance;
-}) {
-  const rows = models
-    .map((model) => {
-      const metricsEntities = provenance.metricsOf(model.id);
-      const merged: MetricsPayload = {};
-      for (const metric of metricsEntities) {
-        Object.assign(merged, metric.payload as MetricsPayload);
-      }
-      return { model, payload: merged, hasMetrics: metricsEntities.length > 0 };
-    })
-    .filter((row) => row.hasMetrics);
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  const activeColumns = metricColumns.filter((column) =>
-    rows.some((row) => typeof row.payload[column.key] === "number"),
-  );
-
-  const bestByColumn = new Map<keyof MetricsPayload, number>();
-  for (const column of activeColumns) {
-    const values = rows
-      .map((row) => row.payload[column.key])
-      .filter((value): value is number => typeof value === "number");
-    if (values.length > 0) {
-      bestByColumn.set(
-        column.key,
-        column.better === "lower" ? Math.min(...values) : Math.max(...values),
-      );
-    }
-  }
-
-  return (
-    <div className={styles.tableWrap}>
-      <table className={styles.compareTable}>
-        <thead>
-          <tr>
-            <th scope="col">Model</th>
-            {activeColumns.map((column) => (
-              <th key={column.key} scope="col">
-                {column.label}
-                <span className={styles.thHint}>
-                  {column.better === "lower" ? "↓ better" : "↑ better"}
-                </span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ model, payload }) => (
-            <tr key={model.id}>
-              <th scope="row">{model.name}</th>
-              {activeColumns.map((column) => {
-                const value = payload[column.key];
-                const isBest =
-                  typeof value === "number" &&
-                  rows.length > 1 &&
-                  value === bestByColumn.get(column.key);
-                return (
-                  <td
-                    key={column.key}
-                    data-best={isBest ? "true" : undefined}
-                    className={styles.metricCell}
-                  >
-                    {typeof value === "number"
-                      ? metricFormatter.format(value)
-                      : "—"}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function getLevelZeroEntities(entities: Entity[]) {
-  return entities.filter((entity) => entity.level === "L0");
-}
-
-export function countByType(entities: Entity[], type: EntityType) {
-  return entities.filter((entity) => entity.type === type).length;
-}
-
-export function getEntityFileURL(entity: Entity): string | null {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return null;
-  }
-  if (
-    typeof entity.payload !== "object" ||
-    entity.payload === null ||
-    !("file_url" in entity.payload)
-  ) {
-    return null;
-  }
-  const fileURL = entity.payload.file_url;
-  return typeof fileURL === "string" && fileURL.length > 0 ? fileURL : null;
-}
-
-function getFilePayload(entity: Entity): DataPayload | ModelPayload | null {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return null;
-  }
-  if (typeof entity.payload !== "object" || entity.payload === null) {
-    return null;
-  }
-  return entity.payload as DataPayload | ModelPayload;
-}
-
-function formatSize(size: number | undefined): string | null {
-  if (typeof size !== "number" || size <= 0) {
-    return null;
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = size;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const rounded = unit === 0 ? value : Math.round(value * 10) / 10;
-  return `${rounded} ${units[unit]}`;
-}
-
 function formatProgram(program: Entity): string {
   const payload = program.payload as ProgramPayload;
   if (payload && typeof payload.name === "string") {
@@ -618,31 +329,6 @@ function getModelPreviewURL(meta: Record<string, unknown>): string | null {
     return explicit;
   }
   return null;
-}
-
-function metricEntries(payload: MetricsPayload) {
-  return metricColumns
-    .map((column) => {
-      const value = payload[column.key];
-      if (typeof value !== "number") {
-        return null;
-      }
-      return { label: column.label, value: metricFormatter.format(value) };
-    })
-    .filter((entry): entry is { label: string; value: string } => entry !== null);
-}
-
-function getFileName(fileURL: string): string {
-  const extReference = parseExtFileReference(fileURL);
-  if (extReference) {
-    return extReference.path.split("/").filter(Boolean).pop() || extReference.path;
-  }
-  try {
-    const parsed = new URL(fileURL);
-    return parsed.pathname.split("/").pop() || fileURL;
-  } catch {
-    return fileURL;
-  }
 }
 
 const metricFormatter = new Intl.NumberFormat("en-US", {

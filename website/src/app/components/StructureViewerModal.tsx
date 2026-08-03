@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
+import ResolvedFileLink from "./ResolvedFileLink";
 import styles from "./StructureViewerModal.module.css";
 
 const StructureViewer = dynamic(() => import("./StructureViewer"), {
@@ -56,18 +57,9 @@ export default function StructureViewerModal({
       {mounted && open
         ? createPortal(
             <div
-              className={styles.chartOverlayBackdrop}
+              className={`${styles.chartOverlayBackdrop} ${styles.structureOverlayBackdrop}`}
               onClick={() => setOpen(false)}
             >
-              <button
-                type="button"
-                className={styles.floatingCloseButton}
-                onClick={() => setOpen(false)}
-                aria-label="Close viewer"
-                title="Close viewer"
-              >
-                ×
-              </button>
               <div
                 className={`${styles.chartOverlayCard} ${styles.structureOverlayCard}`}
                 role="dialog"
@@ -76,22 +68,46 @@ export default function StructureViewerModal({
               >
                 <div className={styles.chartOverlayHead}>
                   <span className={styles.chartOverlayTitle}>{name}</span>
-                  <button
-                    type="button"
-                    className={styles.closeButton}
-                    onClick={() => setOpen(false)}
-                    aria-label="Close viewer"
-                  >
-                    ×
-                  </button>
+                  <div className={styles.headActions}>
+                    {/* Resolves the storage URL itself, the same way the file
+                        preview does, so both routes offer the same download. */}
+                    <ResolvedFileLink
+                      className={styles.download}
+                      href={url}
+                      download
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <DownloadIcon />
+                      Download
+                    </ResolvedFileLink>
+                    <button
+                      type="button"
+                      className={styles.closeButton}
+                      onClick={() => setOpen(false)}
+                      aria-label="Close viewer"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
-                <StructureViewer url={url} kind={kind} maps={maps} />
+                <div className={styles.structureOverlayBody}>
+                  <StructureViewer url={url} kind={kind} maps={maps} fill />
+                </div>
               </div>
             </div>,
             document.body,
           )
         : null}
     </>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+    </svg>
   );
 }
 

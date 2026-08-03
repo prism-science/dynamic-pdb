@@ -276,10 +276,10 @@ export async function getModelPageData(
     ),
   ]);
 
+  // Only what this model owns. Structure-level entities (the FASTA and other
+  // entry-wide L0 data) live on the entry page and are not repeated here.
   const scopedEntities = entityGraph.items.filter(
-    (entity) =>
-      entity.model_id === model.id ||
-      (entity.model_id === null && entity.level === "L0"),
+    (entity) => entity.model_id === model.id,
   );
   const scopedIds = new Set(scopedEntities.map((entity) => entity.id));
 

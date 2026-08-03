@@ -33,7 +33,7 @@ const {
   uploadStatusText,
   uploadsReady,
 } = require("../src/app/components/NewEntryForm.tsx");
-const { fastaText, fastaTotalLength } = require("../src/lib/fasta.ts");
+const { fastaRecordText, fastaTotalLength } = require("../src/lib/fasta.ts");
 
 test("should convert files and metrics into create entry entities", () => {
   const modelFile = parsedFile({
@@ -311,9 +311,16 @@ test("should read record-based fasta metadata", () => {
 
   assert.equal(fastaTotalLength(metadata), 6);
   assert.equal(
-    fastaText(metadata),
-    ">4HHB_1|Chains A,C|Hemoglobin alpha\nACGT\n" +
-      ">4HHB_2|Chains B,D|Hemoglobin beta\nTT",
+    fastaRecordText(metadata.records[0]),
+    ">4HHB_1|Chains A,C|Hemoglobin alpha\nACGT\n",
+  );
+});
+
+test("should wrap a written-out fasta record at 60 columns", () => {
+  const sequence = "A".repeat(130);
+  assert.equal(
+    fastaRecordText({ header: "", sequence }, "Sequence"),
+    ">Sequence\n" + "A".repeat(60) + "\n" + "A".repeat(60) + "\n" + "A".repeat(10) + "\n",
   );
 });
 

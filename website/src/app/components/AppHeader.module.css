@@ -9,22 +9,138 @@
   -webkit-backdrop-filter: saturate(180%) blur(12px);
 }
 
+/* The header's layout lives in globals.css, which reaches these hashed class
+   names through header[class*="AppHeader_header"] [class*="AppHeader_inner"] —
+   an element plus two attribute selectors, so it outranks anything written
+   here no matter the order. This rule exists only so the class name is emitted
+   and that selector has something to match. Change the layout in globals.css. */
 .inner {
   height: 100%;
-  width: 100%;
-  padding: 0 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 
 .brand {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
   text-decoration: none;
+}
+
+/* A narrow field that widens on focus, growing leftwards away from the account
+   controls it sits beside. Nothing is hidden while narrow, so the widening is
+   just a width transition — no state to track. */
+.search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  width: 190px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  transition:
+    width 170ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.search:focus-within,
+.search[data-active="true"] {
+  width: min(360px, calc(100vw - 200px));
+}
+
+.search:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.searchInput {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0 2px 0 14px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:focus {
+  outline: none;
+}
+
+/* The native control already draws a clear affordance; ours is the one that
+   also drops the query from the URL, so hide theirs. */
+.searchInput::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.searchClear {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.searchClear:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.searchSubmit {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-right: 1px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.searchSubmit:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search {
+    transition: none;
+  }
+}
+
+/* Narrow screens: the field gives up width before the account label does. */
+@media (max-width: 720px) {
+  .search {
+    width: 150px;
+  }
+
+  .search:focus-within,
+  .search[data-active="true"] {
+    width: min(280px, calc(100vw - 120px));
+  }
 }
 
 .brandLogo {
@@ -43,6 +159,7 @@
 }
 
 .actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -245,10 +362,6 @@
 }
 
 @media (max-width: 600px) {
-  .inner {
-    padding: 0 14px;
-  }
-
   .brandText {
     font-size: 13px;
   }

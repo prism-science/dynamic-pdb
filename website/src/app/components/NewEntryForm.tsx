@@ -418,21 +418,76 @@ export default function NewEntryForm({
         />
       ) : null}
 
+      {/* Name, description and preview image are one identity block. The
+          thumbnail is placed first visually by CSS but stays last in the DOM so
+          the keyboard lands on the name field first. */}
       <section className={styles.field}>
-        <label className={styles.label} htmlFor="entry-name">
-          Name
-        </label>
-        <input
-          id="entry-name"
-          className={styles.input}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="e.g. Hen egg-white lysozyme"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-        />
+        <div className={styles.identityRow}>
+          <div className={styles.identityMain}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="entry-name">
+                Name
+              </label>
+              <input
+                id="entry-name"
+                className={styles.input}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. Hen egg-white lysozyme"
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="entry-desc">
+                Description
+              </label>
+              <textarea
+                id="entry-desc"
+                className={styles.textarea}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="e.g. 129-residue antibacterial enzyme; common crystallography benchmark"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <div className={styles.identityThumb}>
+            <span className={styles.label}>Preview image</span>
+            <label className={styles.thumbDrop}>
+              {thumbPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className={styles.thumbImg} src={thumbPreview} alt="" />
+              ) : (
+                <span className={styles.thumbHint}>
+                  <UploadIcon />
+                  Choose an image
+                </span>
+              )}
+              {thumbUploadStatus === "uploading" ? (
+                <span className={styles.thumbOverlay}>
+                  <ProgressBar value={thumbProgress} />
+                </span>
+              ) : null}
+              <input
+                type="file"
+                accept="image/*"
+                className={styles.hiddenInput}
+                onChange={onThumb}
+              />
+            </label>
+            {thumbUploadStatus === "failed" ? (
+              <span className={styles.uploadStatus} data-state="failed">
+                {uploadStatusText(thumbUploadStatus, thumbUploadError)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
         <ExtSourceField
           experiment={extExperiment}
           error={extExperimentError}
@@ -440,51 +495,6 @@ export default function NewEntryForm({
           onLink={linkExtExperiment}
           onUnlink={unlinkExtExperiment}
         />
-      </section>
-
-      <section className={styles.field}>
-        <label className={styles.label} htmlFor="entry-desc">
-          Description
-        </label>
-        <textarea
-          id="entry-desc"
-          className={styles.textarea}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="e.g. 129-residue antibacterial enzyme; common crystallography benchmark"
-          rows={3}
-        />
-      </section>
-
-      <section className={styles.field}>
-        <span className={styles.label}>Preview image</span>
-        <label className={styles.thumbDrop}>
-          {thumbPreview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className={styles.thumbImg} src={thumbPreview} alt="" />
-          ) : (
-            <span className={styles.thumbHint}>
-              <UploadIcon />
-              Choose an image
-            </span>
-          )}
-          {thumbUploadStatus === "uploading" ? (
-            <span className={styles.thumbOverlay}>
-              <ProgressBar value={thumbProgress} />
-            </span>
-          ) : null}
-          <input
-            type="file"
-            accept="image/*"
-            className={styles.hiddenInput}
-            onChange={onThumb}
-          />
-        </label>
-        {thumbUploadStatus === "failed" ? (
-          <span className={styles.uploadStatus} data-state="failed">
-            {uploadStatusText(thumbUploadStatus, thumbUploadError)}
-          </span>
-        ) : null}
       </section>
 
       <section className={styles.field}>

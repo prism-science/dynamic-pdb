@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 
+import type { Entity } from "@/lib/api/entries";
+import { structureMaps } from "@/lib/entities";
+import FilePreviewModal from "./FilePreviewModal";
 import ResolvedFileLink from "./ResolvedFileLink";
 import styles from "./FileList.module.css";
 
@@ -11,12 +14,16 @@ export type FileItem = {
   type?: string;
   size?: number;
   url: string | null;
+  // When present the row opens an in-place preview (sequence, structure,
+  // image, ...) instead of only offering the raw download.
+  entity?: Entity;
 };
 
 const PAGE_SIZE = 3;
 
 export default function FileList({ items }: { items: FileItem[] }) {
   const [page, setPage] = useState(0);
+  const [preview, setPreview] = useState<Entity | null>(null);
 
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const current = Math.min(page, pageCount - 1);
@@ -32,7 +39,7 @@ export default function FileList({ items }: { items: FileItem[] }) {
       <ul className={styles.list}>
         {visible.map((item) => (
           <li key={item.id}>
-            <FileRow item={item} />
+            <FileRow item={item} onPreview={setPreview} />
           </li>
         ))}
       </ul>
@@ -67,12 +74,28 @@ export default function FileList({ items }: { items: FileItem[] }) {
           </div>
         </div>
       ) : null}
+
+      <FilePreviewModal
+        entity={preview}
+        maps={structureMaps(
+          items
+            .map((item) => item.entity)
+            .filter((entity): entity is Entity => entity != null),
+        )}
+        onClose={() => setPreview(null)}
+      />
     </div>
   );
 }
 
-function FileRow({ item }: { item: FileItem }) {
-  const inner = (
+function FileRow({
+  item,
+  onPreview,
+}: {
+  item: FileItem;
+  onPreview: (entity: Entity) => void;
+}) {
+  const label = (
     <>
       <span className={styles.icon}>
         <FileIcon type={item.type} />
@@ -85,13 +108,40 @@ function FileRow({ item }: { item: FileItem }) {
             .join(" · ")}
         </span>
       </span>
-      {item.url ? (
-        <span className={styles.action} aria-hidden="true">
-          <DownloadIcon />
-        </span>
-      ) : null}
     </>
   );
+
+  const download = item.url ? (
+    <ResolvedFileLink
+      className={styles.action}
+      href={item.url}
+      download
+      rel="noreferrer"
+      target="_blank"
+      aria-label={`Download ${item.name}`}
+      title="Download"
+    >
+      <DownloadIcon />
+    </ResolvedFileLink>
+  ) : null;
+
+  // Previewable row: the body opens the modal, the icon still downloads.
+  if (item.entity) {
+    const entity = item.entity;
+    return (
+      <div className={styles.row} data-interactive="true">
+        <button
+          type="button"
+          className={styles.rowMain}
+          onClick={() => onPreview(entity)}
+          title="Open preview"
+        >
+          {label}
+        </button>
+        {download}
+      </div>
+    );
+  }
 
   if (item.url) {
     return (
@@ -101,11 +151,14 @@ function FileRow({ item }: { item: FileItem }) {
         rel="noreferrer"
         target="_blank"
       >
-        {inner}
+        {label}
+        <span className={styles.action} aria-hidden="true">
+          <DownloadIcon />
+        </span>
       </ResolvedFileLink>
     );
   }
-  return <div className={styles.row}>{inner}</div>;
+  return <div className={styles.row}>{label}</div>;
 }
 
 type IconKind = "structure" | "image" | "text" | "file";

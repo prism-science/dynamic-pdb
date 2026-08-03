@@ -2,21 +2,21 @@ import { notFound } from "next/navigation";
 
 import {
   ApiRequestError,
-  type DataPayload,
   type ModelPageData,
-  type FastaMetadata,
   getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
-import type { StructureMap } from "@/lib/structureKind";
+import {
+  dataTableEntities,
+  getEntityFileURL,
+  structureMaps,
+} from "@/lib/entities";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
-import SequenceView from "@/app/components/SequenceView";
 import {
   buildProvenance,
   EntryHero,
-  getEntityFileURL,
   ModelCard,
   SectionHeader,
 } from "../../entry-view";
@@ -41,25 +41,9 @@ export default async function ModelPage({
   const model = data.entities.find((entity) => entity.type === "model") ?? null;
   const modelFileURL = model ? getEntityFileURL(model) : null;
 
-  // For now, treat every nearby MTZ file as a density-map layer, regardless of
-  // how it is related to the model.
-  const maps: StructureMap[] = data.entities
-    .filter(
-      (entity) =>
-        entity.type === "data" &&
-        (entity.payload as DataPayload)?.type === "mtz",
-    )
-    .map((entity) => ({ url: getEntityFileURL(entity), name: entity.name }))
-    .filter((map): map is StructureMap => typeof map.url === "string");
+  const maps = structureMaps(data.entities);
 
-  let sequence: FastaMetadata | null = null;
-  for (const entity of data.entities) {
-    const payload = entity.payload as DataPayload;
-    if (payload?.type === "fasta" && payload.metadata) {
-      sequence = payload.metadata as FastaMetadata;
-      break;
-    }
-  }
+  const hasData = dataTableEntities(data.entities).length > 0;
 
   return (
     <main
@@ -106,17 +90,14 @@ export default async function ModelPage({
           <p className={styles.emptyState}>No model produced yet.</p>
         )}
 
-        {sequence ? (
+        {/* No sequence block here: the sequence is a property of the structure,
+            identical across every model, and lives on the entry page. */}
+        {hasData ? (
           <section className={styles.modelsBlock}>
-            <SectionHeader title="Sequence" />
-            <SequenceView metadata={sequence} />
+            <SectionHeader title="Data" />
+            <DataTable entities={data.entities} />
           </section>
         ) : null}
-
-        <section className={styles.modelsBlock}>
-          <SectionHeader title="Data" />
-          <DataTable entities={data.entities} />
-        </section>
       </section>
     </main>
   );
