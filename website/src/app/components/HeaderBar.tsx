@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 
 import styles from "./AppHeader.module.css";
+import HeaderSearch from "./HeaderSearch";
 import LoginButton from "./LoginButton";
 import UserMenu from "./UserMenu";
 
@@ -28,6 +30,12 @@ export default function HeaderBar({ user }: { user: HeaderUser | null }) {
         </Link>
 
         <div className={styles.actions}>
+          {/* useSearchParams needs a boundary so the rest of the header is not
+              pulled out of static rendering with it. */}
+          <Suspense fallback={<div className={styles.search} />}>
+            <HeaderSearch />
+          </Suspense>
+
           {user ? (
             <UserMenu
               displayName={user.displayName}

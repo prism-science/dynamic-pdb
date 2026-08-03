@@ -110,14 +110,19 @@ header[class*="AppHeader_header"] {
   -webkit-backdrop-filter: saturate(180%) blur(12px);
 }
 
+/* The bar stays full-bleed; its contents sit in the same column as the page, so
+   the logo lines up with the page title and the account with the button
+   opposite it. Width, not padding: the page column is min(1120, 100% - 2 x
+   24px), and only repeating that expression makes both edges agree at every
+   viewport width. */
 header[class*="AppHeader_header"] [class*="AppHeader_inner"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  width: 100%;
+  width: min(var(--content-max), calc(100% - 48px));
   height: 100%;
-  padding: 0 40px;
+  margin: 0 auto;
 }
 
 header[class*="AppHeader_header"] [class*="AppHeader_brand"] {
@@ -180,11 +185,14 @@ header[class*="AppHeader_header"] [class*="AppHeader_userName"] {
   white-space: nowrap;
 }
 
-@media (max-width: 600px) {
+/* Follows the page, which drops to 14px side padding at this width. */
+@media (max-width: 720px) {
   header[class*="AppHeader_header"] [class*="AppHeader_inner"] {
-    padding: 0 14px;
+    width: calc(100% - 28px);
   }
+}
 
+@media (max-width: 600px) {
   header[class*="AppHeader_header"] [class*="AppHeader_brandText"] {
     font-size: 13px;
   }

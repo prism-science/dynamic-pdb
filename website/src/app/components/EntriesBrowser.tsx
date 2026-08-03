@@ -4,7 +4,6 @@ import type { Entry } from "@/lib/api/entries";
 import { deleteEntryAction } from "@/app/actions/delete";
 
 import DeleteButton from "./DeleteButton";
-import EntriesSearchForm from "./EntriesSearchForm";
 import styles from "./EntriesBrowser.module.css";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -43,8 +42,8 @@ export default function EntriesBrowser({
         ) : null}
       </header>
 
-      <EntriesSearchForm query={query} />
-
+      {/* Search moved to the app header; query is still used for the empty
+          state so a fruitless search says so. */}
       {entries.length > 0 ? (
         <ul className={styles.grid}>
           {entries.map((entry) => {
