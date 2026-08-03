@@ -6,8 +6,9 @@
   color: var(--text);
 }
 
+/* Same column as every other page. Shared with the new-model page. */
 .shell {
-  width: min(720px, 100%);
+  width: min(var(--content-max), 100%);
   margin: 0 auto;
 }
 
@@ -19,7 +20,9 @@
   line-height: 1.1;
 }
 
-@media (max-width: 680px) {
+/* 720, like the other pages and the header, so the side padding never
+   disagrees between the bar and what is under it. */
+@media (max-width: 720px) {
   .page {
     padding: 22px 14px 64px;
   }
