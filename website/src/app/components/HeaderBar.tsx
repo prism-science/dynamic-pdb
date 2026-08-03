@@ -18,7 +18,7 @@ export default function HeaderBar({ user }: { user: HeaderUser | null }) {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
-        <Link href="/" className={styles.brand} aria-label="dynamic-pdb home">
+        <Link href="/" className={styles.brand} aria-label="Dynamic PDB home">
           <img
             className={styles.brandLogo}
             src="/dynamic-pdb-mark.svg"
@@ -26,7 +26,7 @@ export default function HeaderBar({ user }: { user: HeaderUser | null }) {
             width={32}
             height={32}
           />
-          <span className={styles.brandText}>dynamic-pdb</span>
+          <span className={styles.brandText}>Dynamic PDB</span>
         </Link>
 
         <div className={styles.actions}>
