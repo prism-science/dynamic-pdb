@@ -13,7 +13,11 @@ import { fastaTotalLength } from "@/lib/fasta";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SortableModelList from "@/app/components/SortableModelList";
-import { ImagePlaceholderIcon } from "./entry-view";
+import {
+  entryMetadataFacts,
+  ImagePlaceholderIcon,
+  MetadataFacts,
+} from "./entry-view";
 
 import styles from "./entry-page.module.css";
 
@@ -43,6 +47,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
 
   const hasFiles = files.length > 0;
   const hasModels = data.models.length > 0;
+  const entryFacts = entryMetadataFacts(data.entry.metadata);
 
   return (
     <main className={styles.page} aria-label={`${data.entry.name} entry`}>
@@ -79,6 +84,11 @@ export default async function EntryPage({ params }: EntryRouteProps) {
           <div className={styles.content}>
             {data.entry.description?.trim() ? (
               <p className={styles.lead}>{data.entry.description}</p>
+            ) : null}
+            {entryFacts.length > 0 ? (
+              <div className={styles.entryMetadata}>
+                <MetadataFacts facts={entryFacts} />
+              </div>
             ) : null}
 
             {/* The sequence is not printed inline any more: the FASTA shows up

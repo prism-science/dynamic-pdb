@@ -5,7 +5,7 @@ import type {
   Entity,
   EntityRelation,
   MetricsPayload,
-  ModelPayload,
+  Model,
   ProgramPayload,
 } from "@/lib/api/entries";
 import { getEntityFileURL, getFilePayload } from "@/lib/entities";
@@ -15,10 +15,15 @@ import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 import styles from "./entry-page.module.css";
 
 export type Provenance = {
-	index: Map<string, Entity>;
-	programOf: (entityId: string) => Entity | null;
-	inputsOf: (entityId: string) => Entity[];
-	metricsOf: (entityId: string) => Entity[];
+  index: Map<string, Entity>;
+  programOf: (entityId: string) => Entity | null;
+  inputsOf: (entityId: string) => Entity[];
+  metricsOf: (entityId: string) => Entity[];
+};
+
+export type MetadataFact = {
+  label: string;
+  value: string;
 };
 
 export function buildProvenance(
@@ -144,6 +149,22 @@ export function SectionHeader({
   );
 }
 
+export function MetadataFacts({ facts }: { facts: MetadataFact[] }) {
+  if (facts.length === 0) {
+    return null;
+  }
+  return (
+    <dl className={styles.modelProvenance}>
+      {facts.map((fact) => (
+        <div key={fact.label} className={styles.modelProvenanceRow}>
+          <dt>{fact.label}</dt>
+          <dd>{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 type MetricStatus = "good" | "warn" | "bad";
 
 type MetricSpec = {
@@ -192,11 +213,13 @@ export function ModelCard({
   entity,
   provenance,
   thumbnailImageURL,
+  metadata,
   maps,
 }: {
   entity: Entity;
   provenance: Provenance;
   thumbnailImageURL?: string | null;
+  metadata?: Model["metadata"];
   maps?: StructureMap[];
 }) {
   const fileURL = getEntityFileURL(entity);
@@ -213,7 +236,7 @@ export function ModelCard({
     (tile) => typeof merged[tile.key] === "number",
   );
   const program = provenance.programOf(entity.id);
-  const authorFacts = getEntityAuthorFacts(entity);
+  const modelFacts = modelMetadataFacts(metadata ?? payload ?? {});
 
   return (
     <article className={styles.modelCard}>
@@ -237,22 +260,14 @@ export function ModelCard({
       </div>
 
       <div className={styles.modelBody}>
-        {program || authorFacts.length > 0 ? (
-          <dl className={styles.modelProvenance}>
-            {program ? (
-              <div className={styles.modelProvenanceRow}>
-                <dt>Made with</dt>
-                <dd>{formatProgram(program)}</dd>
-              </div>
-            ) : null}
-            {authorFacts.map((fact) => (
-              <div key={fact.label} className={styles.modelProvenanceRow}>
-                <dt>{fact.label}</dt>
-                <dd>{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
+        <MetadataFacts
+          facts={[
+            ...(program
+              ? [{ label: "Made with", value: formatProgram(program) }]
+              : []),
+            ...modelFacts,
+          ]}
+        />
 
         {tiles.length > 0 ? (
           <section className={styles.validation}>
@@ -295,29 +310,104 @@ function formatProgram(program: Entity): string {
   return program.name;
 }
 
-function getEntityAuthorFacts(entity: Entity): { label: string; value: string }[] {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return [];
+export function entryMetadataFacts(
+  metadata: Record<string, unknown> | undefined,
+): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const externalRefs = recordValue(metadata?.external_refs);
+  const pdb = stringValue(externalRefs?.pdb);
+  const resolution = numberValue(metadata?.resolution);
+  const organism = stringValue(metadata?.organism);
+  const method = stringValue(metadata?.method);
+  const spaceGroup = stringValue(metadata?.space_group);
+
+  if (pdb) {
+    facts.push({ label: "PDB", value: pdb });
+  }
+  if (resolution != null) {
+    facts.push({
+      label: "Resolution",
+      value: `${numberFormatter.format(resolution)} Å`,
+    });
+  }
+  if (organism) {
+    facts.push({ label: "Organism", value: organism });
+  }
+  if (method) {
+    facts.push({ label: "Method", value: method });
+  }
+  if (spaceGroup) {
+    facts.push({ label: "Space group", value: spaceGroup });
   }
 
-  const payload = entity.payload as DataPayload | ModelPayload;
-  const authors = Array.isArray(payload.authors)
-    ? payload.authors.map((author) => author.trim()).filter(Boolean)
-    : [];
-  const institution =
-    typeof payload.affiliation === "string"
-      ? payload.affiliation.trim()
-      : "";
-  const facts: { label: string; value: string }[] = [];
+  return facts;
+}
+
+function modelMetadataFacts(metadata: Record<string, unknown>): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const authors = stringArrayValue(metadata.authors);
+  const affiliation = stringValue(metadata.affiliation);
+  const purpose = stringValue(metadata.purpose);
+  const modelType = stringValue(metadata.model_type);
+  const atomCount = numberValue(metadata.atom_count);
+  const modeledResidues = numberValue(metadata.modeled_residues);
+  const proteinChains = numberValue(metadata.unique_protein_chains);
+  const ligands = stringArrayValue(metadata.ligands);
 
   if (authors.length > 0) {
     facts.push({ label: "Authors", value: authors.join(", ") });
   }
-  if (institution) {
-    facts.push({ label: "Affiliation", value: institution });
+  if (affiliation) {
+    facts.push({ label: "Affiliation", value: affiliation });
+  }
+  if (purpose) {
+    facts.push({ label: "Purpose", value: purpose });
+  }
+  if (modelType) {
+    facts.push({ label: "Model type", value: modelType });
+  }
+  if (atomCount != null) {
+    facts.push({ label: "Atoms", value: numberFormatter.format(atomCount) });
+  }
+  if (modeledResidues != null) {
+    facts.push({
+      label: "Residues",
+      value: numberFormatter.format(modeledResidues),
+    });
+  }
+  if (proteinChains != null) {
+    facts.push({ label: "Chains", value: numberFormatter.format(proteinChains) });
+  }
+  if (ligands.length > 0) {
+    facts.push({ label: "Ligands", value: ligands.join(", ") });
   }
 
   return facts;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function getModelPreviewURL(meta: Record<string, unknown>): string | null {
@@ -334,3 +424,5 @@ function getModelPreviewURL(meta: Record<string, unknown>): string | null {
 const metricFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 3,
 });
+
+const numberFormatter = new Intl.NumberFormat("en-US");

@@ -90,6 +90,11 @@
   line-height: 1.6;
 }
 
+.entryMetadata {
+  margin-top: 16px;
+  max-width: 720px;
+}
+
 .contentSection {
   padding: 24px 0;
   border-bottom: 1px solid var(--border);

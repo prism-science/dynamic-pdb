@@ -40,6 +40,13 @@ test("should upload all granted parts and complete upload", async () => {
       { part_number: 1, etag: '"etag-1"' },
       { part_number: 2, etag: '"etag-2"' },
     ]);
+    assert.deepEqual(restore.calls.create, {
+      entry_id: "entry",
+      model_id: null,
+      artifact_id: "entity",
+      filename: "data.bin",
+      size: 6,
+    });
     assert.equal(progress.at(-1), 1);
   } finally {
     restore();

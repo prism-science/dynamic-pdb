@@ -84,6 +84,7 @@ export default async function ModelPage({
             entity={model}
             provenance={provenance}
             thumbnailImageURL={data.model.thumbnail_image_url}
+            metadata={data.model.metadata}
             maps={maps}
           />
         ) : (
