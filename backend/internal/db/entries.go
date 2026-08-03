@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	ErrEntryNotFound          = errors.New("db: entry not found")
-	ErrEntryOwnershipMismatch = errors.New("db: entry ownership mismatch")
+	ErrEntryRevisionNotFound          = errors.New("db: entry revision not found")
+	ErrEntryRevisionOwnershipMismatch = errors.New("db: entry revision ownership mismatch")
 )
 
 type EntriesRepository struct {
@@ -24,7 +24,11 @@ type EntriesRepository struct {
 	queriers *QuerierProvider
 }
 
-type EntryFilters struct {
+type EntryRevisionFilters struct {
+	ID              *uuid.UUID
+	EntryID         *uuid.UUID
+	State           *models.RevisionState
+	CreatedBy       *uuid.UUID
 	Limit           *int
 	Offset          *int
 	Query           string
@@ -38,156 +42,177 @@ func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *Entries
 	}
 }
 
-func (r *EntriesRepository) Create(ctx context.Context, entry models.Entry) (*models.Entry, error) {
-	query := `insert into entries(id, created_by, name, description, thumbnail_image_url, created_at, updated_at)
-			  values (:id, :created_by, :name, :description, :thumbnail_image_url, :created_at, :updated_at)
-			  returning id, created_by, name, description, thumbnail_image_url, created_at, updated_at`
-
-	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
+func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRevision) (*models.EntryRevision, error) {
+	metadata, err := marshalJSON(revision.Metadata)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
-	var row entryRow
-	if err := stmt.GetContext(ctx, &row, map[string]any{
-		"id":                  entry.ID,
-		"created_by":          entry.CreatedBy,
-		"name":                entry.Name,
-		"description":         nullableString(entry.Description),
-		"thumbnail_image_url": nullableString(entry.ThumbnailImageURL),
-		"created_at":          entry.CreatedAt,
-		"updated_at":          entry.UpdatedAt,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to insert entry: %w", err)
+		return nil, fmt.Errorf("prepare entry revision metadata: %w", err)
 	}
 
-	return entryFromRow(&row), nil
-}
-
-func (r *EntriesRepository) Get(ctx context.Context, id uuid.UUID) (*models.Entry, error) {
-	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
-			  from entries
-			  where id = $1`
-
-	var row entryRow
-	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrEntryNotFound
-		}
-		return nil, fmt.Errorf("failed to get entry: %w", err)
-	}
-
-	return entryFromRow(&row), nil
-}
-
-func (r *EntriesRepository) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
-	query := `with target_entry as (
-			    select id, created_by
-			    from entries
-			    where id = $1
-			  ),
-			  authorized_entry as (
-			    select id
-			    from target_entry
-			    where created_by = $2
-			  ),
-			  target_entities as (
-			    select entities.id
-			    from entities
-			    join authorized_entry on authorized_entry.id = entities.entry_id
-			  ),
-			  deleted_relations as (
-			    delete from entity_relations
-			    where source_entity_id in (select id from target_entities)
-			       or target_entity_id in (select id from target_entities)
+	query := `with ensured_entry as (
+			    insert into entries(id, created_by, created_at)
+			    values (:entry_id, :created_by, :created_at)
+			    on conflict (id) do nothing
 			    returning id
+			  )
+			  insert into entry_revisions(
+			    id,
+			    entry_id,
+			    parent_revision_id,
+			    revision_number,
+			    state,
+			    change_summary,
+			    published_at,
+			    name,
+			    description,
+			    thumbnail_image_url,
+			    metadata,
+			    created_by,
+			    created_at,
+			    updated_at
+			  )
+			  values (
+			    :id,
+			    :entry_id,
+			    :parent_revision_id,
+			    :revision_number,
+			    :state,
+			    :change_summary,
+			    :published_at,
+			    :name,
+			    :description,
+			    :thumbnail_image_url,
+			    cast(:metadata as jsonb),
+			    :created_by,
+			    :created_at,
+			    :updated_at
+			  )
+			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            created_at, updated_at`
+
+	var row entryRevisionRow
+	args := map[string]any{
+		"id":                  revision.ID,
+		"entry_id":            revision.EntryID,
+		"parent_revision_id":  revision.ParentRevisionID,
+		"revision_number":     revision.RevisionNumber,
+		"state":               string(revision.State),
+		"change_summary":      revision.ChangeSummary,
+		"published_at":        revision.PublishedAt,
+		"name":                revision.Name,
+		"description":         revision.Description,
+		"thumbnail_image_url": revision.ThumbnailImageURL,
+		"metadata":            metadata,
+		"created_by":          revision.CreatedBy,
+		"created_at":          revision.CreatedAt,
+		"updated_at":          revision.UpdatedAt,
+	}
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("bind entry revision insert query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, boundQuery, queryArgs...); err != nil {
+		return nil, fmt.Errorf("insert entry revision: %w", err)
+	}
+
+	created, err := entryRevisionFromRow(&row)
+	if err != nil {
+		return nil, fmt.Errorf("decode inserted entry revision: %w", err)
+	}
+	return created, nil
+}
+
+func (r *EntriesRepository) Get(ctx context.Context, filters EntryRevisionFilters) (*models.EntryRevision, error) {
+	revisions, err := r.List(ctx, filters)
+	if err != nil {
+		return nil, fmt.Errorf("list entry revisions for get: %w", err)
+	}
+	if len(revisions) == 0 {
+		return nil, ErrEntryRevisionNotFound
+	}
+	if len(revisions) > 1 {
+		return nil, fmt.Errorf("entry revision get returned %d rows", len(revisions))
+	}
+	return &revisions[0], nil
+}
+
+func (r *EntriesRepository) List(
+	ctx context.Context,
+	filters EntryRevisionFilters,
+) ([]models.EntryRevision, error) {
+	query, args, err := entryRevisionListQuery(filters)
+	if err != nil {
+		return nil, fmt.Errorf("build entry revision list query: %w", err)
+	}
+
+	rows := make([]entryRevisionRow, 0)
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("bind entry revision list query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, boundQuery, queryArgs...); err != nil {
+		return nil, fmt.Errorf("list entry revisions: %w", err)
+	}
+
+	revisions := make([]models.EntryRevision, 0, len(rows))
+	for _, row := range rows {
+		revision, err := entryRevisionFromRow(&row)
+		if err != nil {
+			return nil, fmt.Errorf("decode entry revision: %w", err)
+		}
+		revisions = append(revisions, *revision)
+	}
+	return revisions, nil
+}
+
+func (r *EntriesRepository) Delete(ctx context.Context, entryID, revisionID, ownerID uuid.UUID) error {
+	query := `with target_revision as (
+			    select id, entry_id, created_by
+			    from entry_revisions
+			    where entry_id = $1 and id = $2
 			  ),
-			  deleted_search as (
-			    delete from entry_search_index
-			    using authorized_entry
-			    where entry_search_index.entry_id = authorized_entry.id
-			      and (select count(*) from deleted_relations) >= 0
-			    returning entry_search_index.entry_id
+			  authorized_revision as (
+			    select id, entry_id
+			    from target_revision
+			    where created_by = $3
 			  ),
-			  deleted_sequences as (
-			    delete from protein_sequences
-			    where protein_sequences.entity_id in (select id from target_entities)
-			      and (select count(*) from deleted_search) >= 0
-			    returning protein_sequences.id
-			  ),
-			  deleted_entities as (
-			    delete from entities
-			    using authorized_entry
-			    where entities.entry_id = authorized_entry.id
-			      and (select count(*) from deleted_sequences) >= 0
-			    returning entities.id
-			  ),
-			  deleted_models as (
-			    delete from models
-			    using authorized_entry
-			    where models.entry_id = authorized_entry.id
-			      and (select count(*) from deleted_entities) >= 0
-			    returning models.id
-			  ),
-			  deleted_entry as (
-			    delete from entries
-			    using authorized_entry
-			    where entries.id = authorized_entry.id
-			      and (select count(*) from deleted_models) >= 0
-			    returning entries.id
+			  updated_revision as (
+			    update entry_revisions
+			    set state = $4,
+			        updated_at = now()
+			    where id in (select id from authorized_revision)
+			    returning id
 			  )
 			  select
-			    (select count(*) from target_entry) as matched_count,
-			    (select count(*) from deleted_entry) as deleted_count`
+			    (select count(*) from target_revision) as matched_count,
+			    (select count(*) from updated_revision) as deleted_count`
 
 	var result deleteResult
-	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &result, query, id, ownerID); err != nil {
-		return fmt.Errorf("failed to delete entry graph: %w", err)
+	if err := r.queriers.Querier(ctx, r.db).GetContext(
+		ctx,
+		&result,
+		query,
+		entryID,
+		revisionID,
+		ownerID,
+		models.RevisionStateDeleted,
+	); err != nil {
+		return fmt.Errorf("mark entry revision deleted: %w", err)
 	}
 	if result.MatchedCount == 0 {
-		return ErrEntryNotFound
+		return ErrEntryRevisionNotFound
 	}
 	if result.DeletedCount == 0 {
-		return ErrEntryOwnershipMismatch
+		return ErrEntryRevisionOwnershipMismatch
 	}
 	return nil
 }
 
-func (r *EntriesRepository) List(ctx context.Context, filters EntryFilters) ([]models.Entry, error) {
-	query, args, err := entryListQuery(filters)
-	if err != nil {
-		return nil, fmt.Errorf("build entry list query: %w", err)
-	}
-
-	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.QueryxContext(ctx, args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list entries: %w", err)
-	}
-	defer rows.Close()
-
-	entries := make([]models.Entry, 0)
-	for rows.Next() {
-		var row entryRow
-		if err := rows.StructScan(&row); err != nil {
-			return nil, fmt.Errorf("scan entry row: %w", err)
-		}
-		entries = append(entries, *entryFromRow(&row))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate entry rows: %w", err)
-	}
-
-	return entries, nil
-}
-
-func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
+func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
 	}
@@ -196,8 +221,7 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	}
 
 	args := map[string]any{}
-	query := `select id, created_by, name, description, thumbnail_image_url, created_at, updated_at
-			  from entries`
+	conditions := make([]string, 0)
 
 	queryText := strings.TrimSpace(filters.Query)
 	proteinSequence := strings.ToUpper(strings.Join(strings.Fields(filters.ProteinSequence), ""))
@@ -205,15 +229,48 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 		return "", nil, errors.New("query and protein sequence cannot be combined")
 	}
 
+	if filters.ID != nil {
+		conditions = append(conditions, "id = :id")
+		args["id"] = *filters.ID
+	}
+	if filters.EntryID != nil {
+		conditions = append(conditions, "entry_id = :entry_id")
+		args["entry_id"] = *filters.EntryID
+	}
+	if filters.State != nil {
+		conditions = append(conditions, "state = :state")
+		args["state"] = string(*filters.State)
+	}
+	if filters.CreatedBy != nil {
+		conditions = append(conditions, "created_by = :created_by")
+		args["created_by"] = *filters.CreatedBy
+	}
 	if queryText != "" {
+		conditions = append(conditions, `exists (
+			select 1
+			from entry_search_index idx
+			where idx.entry_id = entry_revisions.entry_id
+			  and idx.search_tsv @@ plainto_tsquery('simple', :search_query)
+		)`)
 		args["search_query"] = queryText
-		query += "\nwhere " + entrySearchCondition()
 	}
 	if proteinSequence != "" {
+		conditions = append(conditions, `exists (
+			select 1
+			from protein_sequences protein_sequence
+			where protein_sequence.entry_revision_id = entry_revisions.id
+			  and protein_sequence.sequence like '%' || :protein_sequence || '%'
+		)`)
 		args["protein_sequence"] = proteinSequence
-		query += "\nwhere " + entryProteinSequenceSearchCondition()
 	}
 
+	query := `select id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			         published_at, name, description, thumbnail_image_url, metadata, created_by,
+			         created_at, updated_at
+			  from entry_revisions`
+	if len(conditions) > 0 {
+		query += "\nwhere " + strings.Join(conditions, "\n  and ")
+	}
 	query += "\norder by created_at asc, id asc"
 
 	if filters.Limit != nil {
@@ -228,61 +285,43 @@ func entryListQuery(filters EntryFilters) (string, map[string]any, error) {
 	return query, args, nil
 }
 
-func entrySearchCondition() string {
-	return `exists (
-		select 1
-		from entry_search_index idx
-		where idx.entry_id = entries.id
-		  and idx.search_tsv @@ plainto_tsquery('simple', :search_query)
-	)`
-}
+func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) {
+	var metadata models.EntryMetadata
+	if err := unmarshalJSON(row.Metadata, &metadata); err != nil {
+		return nil, fmt.Errorf("decode metadata: %w", err)
+	}
 
-func entryProteinSequenceSearchCondition() string {
-	return `exists (
-		select 1
-		from protein_sequences protein_sequence
-		where protein_sequence.entry_id = entries.id
-		  and protein_sequence.sequence like '%' || :protein_sequence || '%'
-	)`
-}
-
-func entryFromRow(row *entryRow) *models.Entry {
-	return &models.Entry{
+	return &models.EntryRevision{
 		ID:                row.ID,
-		CreatedBy:         row.CreatedBy,
+		EntryID:           row.EntryID,
+		ParentRevisionID:  uuidPtrFromSQL(row.ParentRevisionID),
+		RevisionNumber:    intPtrFromSQL(row.RevisionNumber),
+		State:             models.RevisionState(row.State),
+		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
+		PublishedAt:       timePtrFromSQL(row.PublishedAt),
 		Name:              row.Name,
-		Description:       stringPtrFromNull(row.Description),
-		ThumbnailImageURL: stringPtrFromNull(row.ThumbnailImageURL),
+		Description:       stringPtrFromSQL(row.Description),
+		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
+		Metadata:          metadata,
+		CreatedBy:         row.CreatedBy,
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
-	}
+	}, nil
 }
 
-func nullableString(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func stringPtrFromNull(value sql.NullString) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-type entryRow struct {
+type entryRevisionRow struct {
 	ID                uuid.UUID      `db:"id"`
-	CreatedBy         uuid.UUID      `db:"created_by"`
+	EntryID           uuid.UUID      `db:"entry_id"`
+	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
+	RevisionNumber    sql.NullInt64  `db:"revision_number"`
+	State             string         `db:"state"`
+	ChangeSummary     sql.NullString `db:"change_summary"`
+	PublishedAt       sql.NullTime   `db:"published_at"`
 	Name              string         `db:"name"`
 	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
+	Metadata          []byte         `db:"metadata"`
+	CreatedBy         uuid.UUID      `db:"created_by"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`
-}
-
-type deleteResult struct {
-	MatchedCount int64 `db:"matched_count"`
-	DeletedCount int64 `db:"deleted_count"`
 }

@@ -16,8 +16,9 @@ type DB struct {
 	Entries          *EntriesRepository
 	EntrySearch      *EntrySearchIndexRepository
 	Models           *ModelsRepository
-	Entities         *EntitiesRepository
-	EntityRelations  *EntityRelationsRepository
+	Artifacts        *ArtifactsRepository
+	Metrics          *MetricsRepository
+	Runs             *RunsRepository
 	ProteinSequences *ProteinSequencesRepository
 
 	sqlx      *sqlx.DB
@@ -62,8 +63,9 @@ func NewDB(cfg Config) (*DB, error) {
 		Entries:          NewEntriesRepository(sqlxDB, queriers),
 		EntrySearch:      NewEntrySearchIndexRepository(sqlxDB, queriers),
 		Models:           NewModelsRepository(sqlxDB, queriers),
-		Entities:         NewEntitiesRepository(sqlxDB, queriers),
-		EntityRelations:  NewEntityRelationsRepository(sqlxDB, queriers),
+		Artifacts:        NewArtifactsRepository(sqlxDB, queriers),
+		Metrics:          NewMetricsRepository(sqlxDB, queriers),
+		Runs:             NewRunsRepository(sqlxDB, queriers),
 		ProteinSequences: NewProteinSequencesRepository(sqlxDB, queriers),
 		sqlx:             sqlxDB,
 		txManager:        txManager,

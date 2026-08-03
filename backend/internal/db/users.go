@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
-	"dynamic-pdb/backend/internal/auth"
+	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/types"
 )
 
@@ -28,7 +28,7 @@ func NewUsersRepository(database *sqlx.DB, queriers *QuerierProvider) *UsersRepo
 	}
 }
 
-func (r *UsersRepository) Create(ctx context.Context, user auth.User) (*auth.User, error) {
+func (r *UsersRepository) Create(ctx context.Context, user models.User) (*models.User, error) {
 	query := `insert into users(id, source, external_ref, email, display_name, avatar_url, created_at, updated_at)
 			  values (:id, :source, :external_ref, :email, :display_name, :avatar_url, :created_at, :updated_at)
 			  on conflict (source, external_ref) do update set source = excluded.source
@@ -56,7 +56,7 @@ func (r *UsersRepository) Create(ctx context.Context, user auth.User) (*auth.Use
 	return userFromRow(&row), nil
 }
 
-func (r *UsersRepository) Get(ctx context.Context, id uuid.UUID) (*auth.User, error) {
+func (r *UsersRepository) Get(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	query := `select id, source, external_ref, email, display_name, avatar_url, created_at, updated_at
 			  from users
 			  where id = $1`
@@ -71,8 +71,8 @@ func (r *UsersRepository) Get(ctx context.Context, id uuid.UUID) (*auth.User, er
 	return userFromRow(&row), nil
 }
 
-func userFromRow(row *userRow) *auth.User {
-	return &auth.User{
+func userFromRow(row *userRow) *models.User {
+	return &models.User{
 		ID: row.ID,
 		ExternalRef: types.ExternalRef{
 			Source: row.Source,

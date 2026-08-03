@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,9 +30,8 @@ type entrySearchIndexRow struct {
 const (
 	maxEntrySearchTextChars = 128 * 1024
 
-	entrySearchModelTypeEntry  = "entry"
-	entrySearchModelTypeModel  = "model"
-	entrySearchModelTypeEntity = "entity"
+	entrySearchModelTypeEntryRevision = "entry_revision"
+	entrySearchModelTypeModelRevision = "model_revision"
 )
 
 func NewEntrySearchIndexRepository(database *sqlx.DB, queriers *QuerierProvider) *EntrySearchIndexRepository {
@@ -40,82 +41,61 @@ func NewEntrySearchIndexRepository(database *sqlx.DB, queriers *QuerierProvider)
 	}
 }
 
-func (r *EntrySearchIndexRepository) IndexEntry(ctx context.Context, entry models.Entry) error {
+func (r *EntrySearchIndexRepository) IndexEntryRevision(
+	ctx context.Context,
+	revision models.EntryRevision,
+) error {
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
-		EntryID:    entry.ID,
-		ModelType:  entrySearchModelTypeEntry,
-		ModelID:    "",
+		EntryID:    revision.EntryID,
+		ModelType:  entrySearchModelTypeEntryRevision,
+		ModelID:    revision.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(entry.Name, stringFromPtr(entry.Description)),
+		SearchText: searchTextFromParts(entryRevisionSearchParts(revision)...),
 	})
 }
 
-func (r *EntrySearchIndexRepository) IndexModel(ctx context.Context, model models.Model) error {
-	return r.saveSearchRow(ctx, entrySearchIndexRow{
-		EntryID:    model.EntryID,
-		ModelType:  entrySearchModelTypeModel,
-		ModelID:    model.ID.String(),
-		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(model.Name, stringFromPtr(model.Description)),
-	})
-}
-
-func (r *EntrySearchIndexRepository) IndexEntity(ctx context.Context, entity models.Entity) error {
-	payloadParts, err := entityPayloadSearchParts(entity)
+func (r *EntrySearchIndexRepository) IndexModelRevision(
+	ctx context.Context,
+	revision models.ModelRevision,
+) error {
+	entryID, err := r.entryIDForModel(ctx, revision.ModelID)
 	if err != nil {
-		return fmt.Errorf("prepare entity search fields: %w", err)
+		return fmt.Errorf("resolve model entry id: %w", err)
 	}
 
-	parts := []string{entity.Name}
-	parts = append(parts, payloadParts...)
-
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
-		EntryID:    entity.EntryID,
-		ModelType:  entrySearchModelTypeEntity,
-		ModelID:    entity.ID.String(),
+		EntryID:    entryID,
+		ModelType:  entrySearchModelTypeModelRevision,
+		ModelID:    revision.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(parts...),
+		SearchText: searchTextFromParts(modelRevisionSearchParts(revision)...),
 	})
 }
 
-func entityPayloadSearchParts(entity models.Entity) ([]string, error) {
-	switch entity.Type {
-	case models.EntityTypeData:
-		payload, err := entity.Data()
-		if err != nil {
-			return nil, fmt.Errorf("get data payload: %w", err)
-		}
-		return []string{
-			strings.Join(payload.Authors, " "),
-			stringFromPtr(payload.Affiliation),
-		}, nil
-	case models.EntityTypeModel:
-		payload, err := entity.Model()
-		if err != nil {
-			return nil, fmt.Errorf("get model payload: %w", err)
-		}
-		return []string{
-			strings.Join(payload.Authors, " "),
-			stringFromPtr(payload.Affiliation),
-		}, nil
-	case models.EntityTypeProgram:
-		payload, err := entity.Program()
-		if err != nil {
-			return nil, fmt.Errorf("get program payload: %w", err)
-		}
-		return []string{
-			payload.Name,
-			payload.Version,
-			payload.Description,
-		}, nil
-	case models.EntityTypeMetrics:
-		if _, err := entity.Metrics(); err != nil {
-			return nil, fmt.Errorf("get metrics payload: %w", err)
-		}
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("%w: %s", models.ErrUnexpectedEntityType, entity.Type)
+func (r *EntrySearchIndexRepository) DeleteEntryRevision(
+	ctx context.Context,
+	entryID uuid.UUID,
+	revisionID uuid.UUID,
+) error {
+	if err := r.deleteSearchRow(ctx, entryID, entrySearchModelTypeEntryRevision, revisionID.String()); err != nil {
+		return fmt.Errorf("delete entry revision search row: %w", err)
 	}
+	return nil
+}
+
+func (r *EntrySearchIndexRepository) DeleteModelRevision(
+	ctx context.Context,
+	revision models.ModelRevision,
+) error {
+	entryID, err := r.entryIDForModel(ctx, revision.ModelID)
+	if err != nil {
+		return fmt.Errorf("resolve model entry id: %w", err)
+	}
+
+	if err := r.deleteSearchRow(ctx, entryID, entrySearchModelTypeModelRevision, revision.ID.String()); err != nil {
+		return fmt.Errorf("delete model revision search row: %w", err)
+	}
+	return nil
 }
 
 func (r *EntrySearchIndexRepository) saveSearchRow(ctx context.Context, row entrySearchIndexRow) error {
@@ -128,10 +108,76 @@ func (r *EntrySearchIndexRepository) saveSearchRow(ctx context.Context, row entr
 
 	row.SearchText = truncateSearchText(row.SearchText)
 	if _, err := r.queriers.Querier(ctx, r.db).NamedExecContext(ctx, query, row); err != nil {
-		return fmt.Errorf("failed to save entry search row: %w", err)
+		return fmt.Errorf("save entry search row: %w", err)
+	}
+	return nil
+}
+
+func (r *EntrySearchIndexRepository) deleteSearchRow(
+	ctx context.Context,
+	entryID uuid.UUID,
+	modelType string,
+	modelID string,
+) error {
+	query := `delete from entry_search_index
+			  where entry_id = $1 and model_type = $2 and model_id = $3`
+
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, entryID, modelType, modelID); err != nil {
+		return fmt.Errorf("delete entry search row: %w", err)
+	}
+	return nil
+}
+
+func (r *EntrySearchIndexRepository) entryIDForModel(ctx context.Context, modelID uuid.UUID) (uuid.UUID, error) {
+	query := `select entry_id
+			  from models
+			  where id = $1`
+
+	var entryID uuid.UUID
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &entryID, query, modelID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return uuid.Nil, ErrModelNotFound
+		}
+		return uuid.Nil, fmt.Errorf("get model entry id: %w", err)
+	}
+	return entryID, nil
+}
+
+func entryRevisionSearchParts(revision models.EntryRevision) []string {
+	parts := []string{
+		revision.Name,
+		stringFromPtr(revision.Description),
+		stringFromPtr(revision.Metadata.Organism),
+		stringFromPtr(revision.Metadata.SpaceGroup),
 	}
 
-	return nil
+	if revision.Metadata.Method != nil {
+		parts = append(parts, string(*revision.Metadata.Method))
+	}
+	for _, externalRef := range revision.Metadata.ExternalRefs {
+		parts = append(parts, externalRef)
+	}
+
+	return parts
+}
+
+func modelRevisionSearchParts(revision models.ModelRevision) []string {
+	parts := []string{
+		revision.Name,
+		stringFromPtr(revision.Description),
+		strings.Join(revision.Metadata.Authors, " "),
+		stringFromPtr(revision.Metadata.Affiliation),
+		strings.Join(revision.Metadata.Ligands, " "),
+	}
+
+	if revision.Metadata.Purpose != nil {
+		parts = append(parts, string(*revision.Metadata.Purpose))
+	}
+	if revision.Metadata.ModelType != nil {
+		parts = append(parts, string(*revision.Metadata.ModelType))
+	}
+
+	return parts
 }
 
 func searchTextFromParts(parts ...string) string {
