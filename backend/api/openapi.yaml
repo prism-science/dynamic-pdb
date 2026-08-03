@@ -225,7 +225,7 @@ paths:
             minimum: 0
         - name: query
           in: query
-          description: Text to search across entries, models, entities, and entity payloads.
+          description: Text to search across entries, models, artifacts, and artifact metadata.
           required: false
           schema:
             type: string
@@ -298,7 +298,7 @@ paths:
     delete:
       operationId: deleteEntry
       summary: Delete entry
-      description: Deletes an entry and all nested models, entities, relations, and search rows. Only the entry creator can delete it.
+      description: Deletes an entry and all nested models, revisions, and search rows. Only the entry creator can delete it.
       security:
         - bearerAuth: []
       parameters:
@@ -374,7 +374,7 @@ paths:
     post:
       operationId: createModel
       summary: Create model
-      description: Adds a model, its entities, and its relations to an existing entry. Relations may reference entities created in this request or entry-level entities that already exist.
+      description: Adds a model, its artifacts, runs, relations, and metrics to an existing entry. Runs may reference artifacts created in this request or entry-level artifacts that already exist.
       security:
         - bearerAuth: []
       parameters:
@@ -449,7 +449,7 @@ paths:
     delete:
       operationId: deleteModel
       summary: Delete model
-      description: Deletes one model and its nested entities, relations, and search rows. Only the model creator can delete it.
+      description: Deletes one model and its revisions. Only the model creator can delete it.
       security:
         - bearerAuth: []
       parameters:
@@ -489,10 +489,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}/entities:
+  /v1/entries/{entry_id}/artifacts:
     get:
-      operationId: listEntities
-      summary: List entities
+      operationId: listArtifacts
+      summary: List artifacts
       security: []
       parameters:
         - name: entry_id
@@ -502,56 +502,103 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: model_id
-          in: query
-          description: Model ID to filter by.
-          required: false
-          schema:
-            type: string
-            format: uuid
-        - name: types
-          in: query
-          description: Entity types to include.
-          required: false
-          style: form
-          explode: true
-          schema:
-            type: array
-            items:
-              $ref: "#/components/schemas/EntityType"
         - name: levels
           in: query
-          description: Entity levels to include.
+          description: Artifact levels to include.
           required: false
           style: form
           explode: true
           schema:
             type: array
             items:
-              $ref: "#/components/schemas/EntityLevel"
+              $ref: "#/components/schemas/ArtifactLevel"
         - name: limit
           in: query
-          description: Maximum number of entities to return.
+          description: Maximum number of artifacts to return.
           required: false
           schema:
             type: integer
             minimum: 0
         - name: offset
           in: query
-          description: Number of entities to skip.
+          description: Number of artifacts to skip.
           required: false
           schema:
             type: integer
             minimum: 0
       responses:
         "200":
-          description: Entities found.
+          description: Artifacts found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EntityListResponse"
+                $ref: "#/components/schemas/ArtifactListResponse"
         "400":
           description: Invalid filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/entries/{entry_id}/models/{model_id}/artifacts:
+    get:
+      operationId: listModelArtifacts
+      summary: List model artifacts
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: model_id
+          in: path
+          description: Model ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: levels
+          in: query
+          description: Artifact levels to include.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ArtifactLevel"
+        - name: limit
+          in: query
+          description: Maximum number of artifacts to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: offset
+          in: query
+          description: Number of artifacts to skip.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Model artifacts found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelArtifactListResponse"
+        "400":
+          description: Invalid filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Model not found.
           content:
             application/json:
               schema:
@@ -583,7 +630,7 @@ components:
 
     CreateFileUploadRequest:
       type: object
-      required: [entry_id, entity_id, filename, size]
+      required: [entry_id, artifact_id, filename, size]
       properties:
         entry_id:
           type: string
@@ -594,10 +641,10 @@ components:
           format: uuid
           nullable: true
           description: Model identifier for model-level files; null for entry-level files.
-        entity_id:
+        artifact_id:
           type: string
           format: uuid
-          description: Entity identifier this file belongs to.
+          description: Artifact identifier this file belongs to.
         filename:
           type: string
           minLength: 1
@@ -619,7 +666,7 @@ components:
           description: Identifier of the initiated multipart upload; echoed back on complete and abort.
         object_url:
           type: string
-          description: Public HTTP object URL to store with the entry payload.
+          description: Public HTTP object URL to store with the artifact.
         part_size:
           type: integer
           format: int64
@@ -729,34 +776,9 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Entry"
+            $ref: "#/components/schemas/EntryInfo"
 
-    CreateEntryRequest:
-      type: object
-      required: [name]
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-          minLength: 1
-        description:
-          type: string
-          nullable: true
-        thumbnail_image_url:
-          type: string
-          nullable: true
-        entities:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreateEntityRequest"
-        models:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreateModelRequest"
-
-    Entry:
+    EntryInfo:
       type: object
       required: [id, created_by, name, created_at, updated_at]
       properties:
@@ -774,12 +796,80 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    CreateEntryRequest:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateArtifactRequest"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateModelRequest"
+
+    Entry:
+      type: object
+      required: [id, created_by, name, metadata, created_at, updated_at, protein_sequences]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        protein_sequences:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProteinSequence"
 
     ModelListResponse:
       type: object
@@ -806,18 +896,29 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
-        entities:
+        metadata:
+          type: object
+          additionalProperties: true
+        primary_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        artifacts:
           type: array
           items:
-            $ref: "#/components/schemas/CreateEntityRequest"
-        relations:
+            $ref: "#/components/schemas/CreateArtifactRequest"
+        runs:
           type: array
           items:
-            $ref: "#/components/schemas/CreateEntityRelationRequest"
+            $ref: "#/components/schemas/CreateRunRequest"
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMetricRequest"
 
     Model:
       type: object
-      required: [id, entry_id, created_by, name, created_at, updated_at]
+      required: [id, entry_id, created_by, name, metadata, created_at, updated_at, metrics]
       properties:
         id:
           type: string
@@ -836,104 +937,198 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        primary_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/Metric"
 
-    EntityType:
-      type: string
-      enum: [data, metrics, model, program]
-
-    EntityLevel:
+    ArtifactLevel:
       type: string
       enum: [L0, L1, L2, L3]
 
-    EntityRelationType:
+    RunArtifactDirection:
       type: string
-      enum: [input_to, output_of, metrics_for]
+      enum: [input, output]
 
-    CreateEntityRequest:
+    CreateArtifactRequest:
       type: object
-      required: [id, type, name, payload]
+      required: [id, name, level]
       properties:
         id:
           type: string
           format: uuid
-        type:
-          $ref: "#/components/schemas/EntityType"
-        level:
-          allOf:
-            - $ref: "#/components/schemas/EntityLevel"
-          nullable: true
         name:
           type: string
           minLength: 1
-        payload:
-          oneOf:
-            - $ref: "#/components/schemas/DataPayload"
-            - $ref: "#/components/schemas/ModelPayload"
-            - $ref: "#/components/schemas/MetricsPayload"
-            - $ref: "#/components/schemas/ProgramPayload"
+        level:
+          $ref: "#/components/schemas/ArtifactLevel"
+        uri:
+          type: string
+          nullable: true
+        sha256:
+          type: string
+          nullable: true
+        format:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
 
-    CreateEntityRelationRequest:
+    Artifact:
       type: object
-      required: [source_entity_id, target_entity_id, relation_type]
+      required: [id, name, level, metadata, created_by, created_at]
       properties:
-        source_entity_id:
+        id:
           type: string
           format: uuid
-        target_entity_id:
+        name:
+          type: string
+        level:
+          $ref: "#/components/schemas/ArtifactLevel"
+        uri:
+          type: string
+          nullable: true
+        sha256:
+          type: string
+          nullable: true
+        format:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_by:
           type: string
           format: uuid
-        relation_type:
-          $ref: "#/components/schemas/EntityRelationType"
+        created_at:
+          type: string
+          format: date-time
 
-    EntityListResponse:
+    ArtifactListResponse:
       type: object
-      required: [items, relations]
+      required: [items]
       properties:
         items:
           type: array
-          description: Entities matching the requested filters.
           items:
-            $ref: "#/components/schemas/Entity"
+            $ref: "#/components/schemas/Artifact"
+
+    ModelArtifactListResponse:
+      type: object
+      required: [items, runs, relations]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
         relations:
           type: array
-          description: Entity relations for the entry provenance graph.
           items:
-            $ref: "#/components/schemas/EntityRelation"
+            $ref: "#/components/schemas/RunArtifact"
 
-    Entity:
+    CreateRunRequest:
       type: object
-      required: [id, entry_id, type, name, payload, created_at, updated_at]
+      required: [id, name]
       properties:
         id:
           type: string
           format: uuid
-        entry_id:
-          type: string
-          format: uuid
-        model_id:
-          type: string
-          format: uuid
-          nullable: true
-        type:
-          $ref: "#/components/schemas/EntityType"
-        level:
-          allOf:
-            - $ref: "#/components/schemas/EntityLevel"
-          nullable: true
         name:
           type: string
-        payload:
-          oneOf:
-            - $ref: "#/components/schemas/DataPayload"
-            - $ref: "#/components/schemas/ModelPayload"
-            - $ref: "#/components/schemas/MetricsPayload"
-            - $ref: "#/components/schemas/ProgramPayload"
+          minLength: 1
+        software_name:
+          type: string
+          nullable: true
+        software_version:
+          type: string
+          nullable: true
+        command:
+          type: string
+          nullable: true
+        parameters:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateRunArtifactRequest"
+
+    Run:
+      type: object
+      required: [id, name, parameters, metadata, created_by, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        software_name:
+          type: string
+          nullable: true
+        software_version:
+          type: string
+          nullable: true
+        command:
+          type: string
+          nullable: true
+        parameters:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
         created_at:
           type: string
           format: date-time
@@ -941,97 +1136,82 @@ components:
           type: string
           format: date-time
 
-    EntityRelation:
+    CreateRunArtifactRequest:
       type: object
-      required: [id, source_entity_id, target_entity_id, relation_type, created_at, updated_at]
+      required: [artifact_id, direction]
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        direction:
+          $ref: "#/components/schemas/RunArtifactDirection"
+        position:
+          type: integer
+          nullable: true
+
+    RunArtifact:
+      type: object
+      required: [run_id, artifact_id, direction]
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        direction:
+          $ref: "#/components/schemas/RunArtifactDirection"
+        position:
+          type: integer
+          nullable: true
+
+    CreateMetricRequest:
+      type: object
+      required: [id, key, value]
       properties:
         id:
           type: string
           format: uuid
-        source_entity_id:
+        key:
+          type: string
+          minLength: 1
+        value:
+          type: number
+          format: double
+
+    Metric:
+      type: object
+      required: [id, key, value, created_at]
+      properties:
+        id:
           type: string
           format: uuid
-        target_entity_id:
+        key:
           type: string
-          format: uuid
-        relation_type:
-          $ref: "#/components/schemas/EntityRelationType"
+        value:
+          type: number
+          format: double
         created_at:
           type: string
           format: date-time
-        updated_at:
+
+    ProteinSequence:
+      type: object
+      required: [id, source_artifact_id, record_index, header, sequence, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_artifact_id:
+          type: string
+          format: uuid
+        record_index:
+          type: integer
+          minimum: 0
+        header:
+          type: string
+        sequence:
+          type: string
+        created_at:
           type: string
           format: date-time
-
-    ModelPayload:
-      type: object
-      required: [file_url]
-      properties:
-        file_url:
-          type: string
-        authors:
-          type: array
-          description: Names of the people or systems associated with this model.
-          items:
-            type: string
-        affiliation:
-          type: string
-          description: Primary organization, lab, department, or institution associated with this model.
-          nullable: true
-        size:
-          type: integer
-          format: int64
-        metadata:
-          type: object
-          additionalProperties: true
-
-    DataPayload:
-      type: object
-      required: [file_url]
-      properties:
-        file_url:
-          type: string
-        type:
-          type: string
-        authors:
-          type: array
-          description: Names of the people or systems associated with this data file.
-          items:
-            type: string
-        affiliation:
-          type: string
-          description: Primary organization, lab, department, or institution associated with this data file.
-          nullable: true
-        size:
-          type: integer
-          format: int64
-        metadata:
-          type: object
-          additionalProperties: true
-
-    ProgramPayload:
-      type: object
-      required: [name, version, description]
-      properties:
-        name:
-          type: string
-        version:
-          type: string
-        description:
-          type: string
-
-    MetricsPayload:
-      type: object
-      properties:
-        r_free:
-          type: number
-          format: double
-        r_work:
-          type: number
-          format: double
-        rscc:
-          type: number
-          format: double
-        cc:
-          type: number
-          format: double
