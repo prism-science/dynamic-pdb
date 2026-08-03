@@ -2,8 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,13 +56,8 @@ func (r *EntrySearchIndexRepository) IndexModelRevision(
 	ctx context.Context,
 	revision models.ModelRevision,
 ) error {
-	entryID, err := r.entryIDForModel(ctx, revision.ModelID)
-	if err != nil {
-		return fmt.Errorf("resolve model entry id: %w", err)
-	}
-
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
-		EntryID:    entryID,
+		EntryID:    revision.EntryID,
 		ModelType:  entrySearchModelTypeModelRevision,
 		ModelID:    revision.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
@@ -87,12 +80,7 @@ func (r *EntrySearchIndexRepository) DeleteModelRevision(
 	ctx context.Context,
 	revision models.ModelRevision,
 ) error {
-	entryID, err := r.entryIDForModel(ctx, revision.ModelID)
-	if err != nil {
-		return fmt.Errorf("resolve model entry id: %w", err)
-	}
-
-	if err := r.deleteSearchRow(ctx, entryID, entrySearchModelTypeModelRevision, revision.ID.String()); err != nil {
+	if err := r.deleteSearchRow(ctx, revision.EntryID, entrySearchModelTypeModelRevision, revision.ID.String()); err != nil {
 		return fmt.Errorf("delete model revision search row: %w", err)
 	}
 	return nil
@@ -126,21 +114,6 @@ func (r *EntrySearchIndexRepository) deleteSearchRow(
 		return fmt.Errorf("delete entry search row: %w", err)
 	}
 	return nil
-}
-
-func (r *EntrySearchIndexRepository) entryIDForModel(ctx context.Context, modelID uuid.UUID) (uuid.UUID, error) {
-	query := `select entry_id
-			  from models
-			  where id = $1`
-
-	var entryID uuid.UUID
-	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &entryID, query, modelID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return uuid.Nil, ErrModelNotFound
-		}
-		return uuid.Nil, fmt.Errorf("get model entry id: %w", err)
-	}
-	return entryID, nil
 }
 
 func entryRevisionSearchParts(revision models.EntryRevision) []string {

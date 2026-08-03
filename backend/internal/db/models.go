@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	ErrModelNotFound                  = errors.New("db: model not found")
 	ErrModelRevisionNotFound          = errors.New("db: model revision not found")
 	ErrModelRevisionOwnershipMismatch = errors.New("db: model revision ownership mismatch")
 )
@@ -124,6 +123,7 @@ func (r *ModelsRepository) Create(
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, boundQuery, queryArgs...); err != nil {
 		return nil, fmt.Errorf("insert model revision: %w", err)
 	}
+	row.EntryID = entryID
 
 	created, err := modelRevisionFromRow(&row)
 	if err != nil {
@@ -252,7 +252,7 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		args["created_by"] = *filters.CreatedBy
 	}
 
-	query := `select model_revisions.id, model_revisions.model_id, model_revisions.parent_revision_id,
+	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
 			         model_revisions.state, model_revisions.change_summary, model_revisions.published_at,
 			         model_revisions.name, model_revisions.description, model_revisions.thumbnail_image_url,
@@ -285,6 +285,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 
 	return &models.ModelRevision{
 		ID:                row.ID,
+		EntryID:           row.EntryID,
 		ModelID:           row.ModelID,
 		ParentRevisionID:  uuidPtrFromSQL(row.ParentRevisionID),
 		PrimaryArtifactID: uuidPtrFromSQL(row.PrimaryArtifactID),
@@ -304,6 +305,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 
 type modelRevisionRow struct {
 	ID                uuid.UUID      `db:"id"`
+	EntryID           uuid.UUID      `db:"entry_id"`
 	ModelID           uuid.UUID      `db:"model_id"`
 	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
 	PrimaryArtifactID uuid.NullUUID  `db:"primary_artifact_id"`

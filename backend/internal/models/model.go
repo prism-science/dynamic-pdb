@@ -15,6 +15,7 @@ type Model struct {
 
 type ModelRevision struct {
 	ID                uuid.UUID
+	EntryID           uuid.UUID
 	ModelID           uuid.UUID
 	ParentRevisionID  *uuid.UUID
 	PrimaryArtifactID *uuid.UUID
