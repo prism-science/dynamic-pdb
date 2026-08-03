@@ -16,7 +16,7 @@ import SortableModelList from "@/app/components/SortableModelList";
 import {
   entryMetadataFacts,
   ImagePlaceholderIcon,
-  MetadataFacts,
+  InfoGrid,
 } from "./entry-view";
 
 import styles from "./entry-page.module.css";
@@ -82,13 +82,17 @@ export default async function EntryPage({ params }: EntryRouteProps) {
           </aside>
 
           <div className={styles.content}>
-            {data.entry.description?.trim() ? (
-              <p className={styles.lead}>{data.entry.description}</p>
-            ) : null}
-            {entryFacts.length > 0 ? (
-              <div className={styles.entryMetadata}>
-                <MetadataFacts facts={entryFacts} />
-              </div>
+            {/* Same block as the model page. The description lives inside it
+                rather than floating above: on its own it was the one piece of
+                the column with nothing to attach to. */}
+            {data.entry.description?.trim() || entryFacts.length > 0 ? (
+              <section id="info" className={styles.contentSection}>
+                <h2 className={styles.contentHeading}>Info</h2>
+                {data.entry.description?.trim() ? (
+                  <p className={styles.lead}>{data.entry.description}</p>
+                ) : null}
+                <InfoGrid facts={entryFacts} />
+              </section>
             ) : null}
 
             {/* The sequence is not printed inline any more: the FASTA shows up

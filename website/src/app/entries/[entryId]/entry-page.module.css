@@ -83,35 +83,23 @@
 }
 
 .lead {
-  margin: 4px 0 0;
-  max-width: 720px;
+  margin: 0 0 22px;
+  max-width: 640px;
   color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.6;
 }
 
-.entryMetadata {
-  margin-top: 16px;
-  max-width: 720px;
-}
-
+/* No rules between sections: the file list and the model table carry their
+   own borders, so a divider on top of them is a second frame around the same
+   break. Space does the separating. */
 .contentSection {
-  padding: 24px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 0 0 34px;
   scroll-margin-top: calc(var(--header-height) + 20px);
 }
 
-.contentSection:first-child {
-  padding-top: 4px;
-}
-
 .contentSection:last-child {
-  border-bottom: 0;
-}
-
-.lead + .contentSection {
-  margin-top: 20px;
-  border-top: 1px solid var(--border);
+  padding-bottom: 0;
 }
 
 .contentHeading {
@@ -187,182 +175,11 @@
   }
 }
 
-/* --------------------------------------------------------------------- */
-/* Hero                                                                  */
-/* --------------------------------------------------------------------- */
-
-.hero {
-  padding-bottom: 22px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.heroTitleRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.heroAction {
-  flex-shrink: 0;
-}
-
-.heroDownload {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease,
-    background 120ms ease;
-}
-
-.heroDownload:hover {
-  border-color: var(--accent);
-  color: var(--accent-hover);
-  background: var(--accent-soft);
-}
-
-.eyebrow {
-  margin: 0 0 9px;
-  color: var(--accent-hover);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.hero h1 {
-  margin: 0;
-  color: var(--text);
-  font-size: 38px;
-  font-weight: 460;
-  letter-spacing: -0.01em;
-  line-height: 1.08;
-}
-
-.description {
-  width: min(720px, 100%);
-  margin: 12px 0 0;
-  color: var(--text-muted);
-  font-size: 15px;
-  line-height: 1.55;
-}
-
-.heroMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.heroMeta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.modelsBlock {
-  margin-top: 28px;
-}
-
-.sectionHeader {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-  margin-bottom: 16px;
-}
-
-.sectionHeader h2 {
-  margin: 0;
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.sectionHeader span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: right;
-}
-
-/* --------------------------------------------------------------------- */
-/* Model card — structure preview + metric tiles                         */
-/* --------------------------------------------------------------------- */
-
-.modelCard {
-  display: flex;
-  align-items: stretch;
-  gap: 22px;
-}
-
-.modelLeft {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 180px;
-}
-
-.modelPreview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 180px;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-  background: var(--surface-muted);
-  color: var(--text-muted);
-}
-
-.modelPreview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.modelBody {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.validation {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
+  width: min(720px, 100%);
 }
 
 .metricTile {
@@ -425,47 +242,121 @@
   }
 }
 
-.modelProvenance {
-  margin: 0;
+/* --------------------------------------------------------------------- */
+/* Metadata — the Info block, shared by the entry and its models          */
+/* --------------------------------------------------------------------- */
+
+.infoColumns {
   display: grid;
-  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 40px;
+  width: min(720px, 100%);
 }
 
-.modelProvenanceRow {
+.infoColumn {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 10px;
+  align-content: start;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .infoColumns {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px;
+  }
+}
+
+/* Fixed label track, value left-aligned right after it. The shared track is
+   what lines the rows up, so they need no rules to read as a table. */
+.infoRow {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
   align-items: baseline;
 }
 
-.modelProvenanceRow dt {
+.infoRow dt {
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  line-height: 1.25;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
-.modelProvenanceRow dd {
+.infoRow dd {
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 560px) {
+.infoRow dd[data-format="mono"] {
+  font-family: var(--font-mono);
+}
 
-.modelCard {
-    flex-direction: column;
-  }
+.infoRow dd[data-format="italic"] {
+  font-style: italic;
+}
 
-.modelPreview {
-    width: 100%;
-    height: 120px;
-  }
+.factLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+.factLink:hover {
+  text-decoration: underline;
+}
+
+.factLink svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+/* Model rail actions: the viewer button and the download sit side by side
+   under the vitals, both stretched to half the rail. */
+.sideActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sideActions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sideDownload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.sideDownload:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 
 /* --------------------------------------------------------------------- */
