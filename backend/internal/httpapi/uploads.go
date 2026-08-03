@@ -32,9 +32,9 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entry_id is required")
 		return
 	}
-	entityID := req.EntityId
-	if entityID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entity_id is required")
+	artifactID := req.ArtifactId
+	if artifactID == uuid.Nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "artifact_id is required")
 		return
 	}
 	modelID := ""
@@ -50,7 +50,7 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 	fileUpload := cdn.FileUpload{
 		EntryID:          entryID.String(),
 		ModelID:          modelID,
-		EntityID:         entityID.String(),
+		ArtifactID:       artifactID.String(),
 		OriginalFilename: req.Filename,
 		Size:             req.Size,
 	}
@@ -61,7 +61,7 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid file upload path")
 		return
 	case err != nil:
-		slog.Error("create file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "entity_id", entityID)
+		slog.Error("create file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "artifact_id", artifactID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to presign file upload")
 		return
 	}

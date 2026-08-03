@@ -22,7 +22,7 @@ type Service interface {
 type FileUpload struct {
 	EntryID          string
 	ModelID          string
-	EntityID         string
+	ArtifactID       string
 	OriginalFilename string
 	Size             int64
 }
@@ -101,7 +101,7 @@ func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGran
 	storageFile := s3.FileUpload{
 		EntryID:          file.EntryID,
 		ModelID:          file.ModelID,
-		EntityID:         file.EntityID,
+		ArtifactID:       file.ArtifactID,
 		OriginalFilename: file.OriginalFilename,
 		Size:             file.Size,
 	}

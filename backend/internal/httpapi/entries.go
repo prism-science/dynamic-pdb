@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -25,24 +24,25 @@ const (
 )
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
-	filters, err := entryFiltersFromParams(params)
+	activeState := domainmodels.RevisionStateActive
+	filters, err := entryFiltersFromParams(params, activeState)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entry filters")
 		return
 	}
 
-	entries, err := s.database.Entries.List(r.Context(), filters)
+	revisions, err := s.database.Entries.List(r.Context(), filters)
 	if err != nil {
 		slog.Error("list entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
 		return
 	}
 
-	if len(entries) == 0 {
+	if len(revisions) == 0 {
 		if proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query); ok {
 			filters.Query = ""
 			filters.ProteinSequence = proteinSequence
-			entries, err = s.database.Entries.List(r.Context(), filters)
+			revisions, err = s.database.Entries.List(r.Context(), filters)
 			if err != nil {
 				slog.Error("list entries by protein sequence failed", "err", err)
 				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
@@ -51,9 +51,9 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 		}
 	}
 
-	items := make([]Entry, 0, len(entries))
-	for _, entry := range entries {
-		items = append(items, entryResponseFromModel(entry))
+	items := make([]EntryInfo, 0, len(revisions))
+	for _, revision := range revisions {
+		items = append(items, entryInfoResponseFromRevision(revision))
 	}
 
 	writeJSON(w, http.StatusOK, EntryListResponse{Items: items})
@@ -92,8 +92,8 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
-	entry, err := s.database.Entries.Get(r.Context(), entryID)
-	if errors.Is(err, db.ErrEntryNotFound) {
+	revision, err := s.activeEntryRevision(r.Context(), entryID)
+	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
 	}
@@ -103,7 +103,20 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 		return
 	}
 
-	writeJSON(w, http.StatusOK, entryResponseFromModel(*entry))
+	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), revision.ID)
+	if err != nil {
+		slog.Error("list entry protein sequences failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
+
+	entry, err := entryResponseFromRevision(*revision, proteinSequences)
+	if err != nil {
+		slog.Error("build entry response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry response")
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
 }
 
 func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
@@ -113,13 +126,28 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uui
 		return
 	}
 
-	if err := s.database.Entries.Delete(r.Context(), entryID, user.ID); errors.Is(err, db.ErrEntryNotFound) {
+	err := s.database.Do(r.Context(), func(ctx context.Context) error {
+		revision, err := s.activeEntryRevision(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if err := s.database.Entries.Delete(ctx, revision.EntryID, revision.ID, user.ID); err != nil {
+			return fmt.Errorf("delete entry revision: %w", err)
+		}
+		if err := s.database.EntrySearch.DeleteEntryRevision(ctx, revision.EntryID, revision.ID); err != nil {
+			return fmt.Errorf("delete entry revision search: %w", err)
+		}
+		return nil
+	})
+	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
-	} else if errors.Is(err, db.ErrEntryOwnershipMismatch) {
+	}
+	if errors.Is(err, db.ErrEntryRevisionOwnershipMismatch) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the entry creator can delete it")
 		return
-	} else if err != nil {
+	}
+	if err != nil {
 		slog.Error("delete entry failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete entry")
 		return
@@ -128,12 +156,15 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uui
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
+func entryFiltersFromParams(
+	params ListEntriesParams,
+	state domainmodels.RevisionState,
+) (db.EntryRevisionFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
-		return db.EntryFilters{}, errors.New("limit must be non-negative")
+		return db.EntryRevisionFilters{}, errors.New("limit must be non-negative")
 	}
 	if params.Offset != nil && *params.Offset < 0 {
-		return db.EntryFilters{}, errors.New("offset must be non-negative")
+		return db.EntryRevisionFilters{}, errors.New("offset must be non-negative")
 	}
 
 	search := ""
@@ -141,7 +172,8 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryFilters, error) {
 		search = strings.TrimSpace(*params.Query)
 	}
 
-	return db.EntryFilters{
+	return db.EntryRevisionFilters{
+		State:  &state,
 		Limit:  params.Limit,
 		Offset: params.Offset,
 		Query:  search,
@@ -168,18 +200,6 @@ func proteinSequenceFromSearchQuery(value string) (string, bool) {
 	return normalized.String(), true
 }
 
-func entryResponseFromModel(entry domainmodels.Entry) Entry {
-	return Entry{
-		Id:                entry.ID,
-		CreatedBy:         entry.CreatedBy,
-		Name:              entry.Name,
-		Description:       entry.Description,
-		ThumbnailImageUrl: entry.ThumbnailImageURL,
-		CreatedAt:         entry.CreatedAt,
-		UpdatedAt:         entry.UpdatedAt,
-	}
-}
-
 func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string, createdBy uuid.UUID) error {
 	now := time.Now().UTC()
 	entryID := uuid.New()
@@ -190,43 +210,51 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 		}
 	}
 
+	metadata, err := entryMetadataFromRequest(req.Metadata)
+	if err != nil {
+		return err
+	}
+
 	return s.database.Do(ctx, func(ctx context.Context) error {
-		entry, err := s.database.Entries.Create(ctx, domainmodels.Entry{
-			ID:                entryID,
-			CreatedBy:         createdBy,
+		revision, err := s.database.Entries.Create(ctx, domainmodels.EntryRevision{
+			ID:                uuid.New(),
+			EntryID:           entryID,
+			RevisionNumber:    ptr(1),
+			State:             domainmodels.RevisionStateActive,
+			PublishedAt:       &now,
 			Name:              name,
-			Description:       req.Description,
-			ThumbnailImageURL: req.ThumbnailImageUrl,
+			Description:       trimmedStringPtr(req.Description),
+			ThumbnailImageURL: trimmedStringPtr(req.ThumbnailImageUrl),
+			Metadata:          metadata,
+			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		})
 		if err != nil {
-			return fmt.Errorf("create entry: %w", err)
+			return fmt.Errorf("create entry revision: %w", err)
 		}
-		if err := s.database.EntrySearch.IndexEntry(ctx, *entry); err != nil {
-			return fmt.Errorf("index entry search: %w", err)
+		if err := s.database.EntrySearch.IndexEntryRevision(ctx, *revision); err != nil {
+			return fmt.Errorf("index entry revision search: %w", err)
 		}
 
-		entryEntityIDs := make(map[uuid.UUID]struct{})
-		createdEntityIDs := make(map[uuid.UUID]struct{})
-		if req.Entities != nil {
-			for _, entityRequest := range *req.Entities {
-				entityID := entityRequest.Id
-				if _, exists := createdEntityIDs[entityID]; exists {
-					return invalidRequest("duplicate entity id: %s", entityID)
-				}
-				entityID, err := s.createEntity(ctx, *entry, nil, entityRequest, now)
+		if req.Artifacts != nil {
+			for _, artifactRequest := range *req.Artifacts {
+				artifact, err := s.createArtifact(ctx, artifactRequest, createdBy, now)
 				if err != nil {
 					return err
 				}
-				createdEntityIDs[entityID] = struct{}{}
-				entryEntityIDs[entityID] = struct{}{}
+				if err := s.database.Artifacts.AttachToEntryRevision(ctx, revision.ID, artifact.ID); err != nil {
+					return fmt.Errorf("attach artifact to entry revision: %w", err)
+				}
+				if err := s.saveProteinSequencesIfFASTA(ctx, revision.ID, *artifact); err != nil {
+					return err
+				}
 			}
 		}
 
 		if req.Models != nil {
 			for _, modelRequest := range *req.Models {
-				if err := s.createModelGraph(ctx, *entry, entryEntityIDs, createdEntityIDs, modelRequest, now, createdBy); err != nil {
+				if err := s.createModelGraph(ctx, revision.EntryID, revision.ID, modelRequest, now, createdBy); err != nil {
 					return err
 				}
 			}
@@ -238,9 +266,8 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 
 func (s *Server) createModelGraph(
 	ctx context.Context,
-	entry domainmodels.Entry,
-	entryEntityIDs map[uuid.UUID]struct{},
-	createdEntityIDs map[uuid.UUID]struct{},
+	entryID uuid.UUID,
+	entryRevisionID uuid.UUID,
 	req CreateModelRequest,
 	now time.Time,
 	createdBy uuid.UUID,
@@ -258,43 +285,81 @@ func (s *Server) createModelGraph(
 		}
 	}
 
-	model, err := s.database.Models.Create(ctx, domainmodels.Model{
-		ID:                modelID,
-		EntryID:           entry.ID,
-		CreatedBy:         createdBy,
+	metadata, err := modelMetadataFromRequest(req.Metadata)
+	if err != nil {
+		return err
+	}
+
+	artifacts := make([]domainmodels.Artifact, 0)
+	if req.Artifacts != nil {
+		artifacts = make([]domainmodels.Artifact, 0, len(*req.Artifacts))
+		for _, artifactRequest := range *req.Artifacts {
+			artifact, err := s.createArtifact(ctx, artifactRequest, createdBy, now)
+			if err != nil {
+				return err
+			}
+			artifacts = append(artifacts, *artifact)
+		}
+	}
+
+	revision, err := s.database.Models.Create(ctx, entryID, domainmodels.ModelRevision{
+		ID:                uuid.New(),
+		ModelID:           modelID,
+		PrimaryArtifactID: req.PrimaryArtifactId,
+		RevisionNumber:    ptr(1),
+		State:             domainmodels.RevisionStateActive,
+		PublishedAt:       &now,
 		Name:              name,
-		Description:       req.Description,
-		ThumbnailImageURL: req.ThumbnailImageUrl,
+		Description:       trimmedStringPtr(req.Description),
+		ThumbnailImageURL: trimmedStringPtr(req.ThumbnailImageUrl),
+		Metadata:          metadata,
+		CreatedBy:         createdBy,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	})
 	if err != nil {
-		return fmt.Errorf("create model: %w", err)
+		return fmt.Errorf("create model revision: %w", err)
 	}
-	if err := s.database.EntrySearch.IndexModel(ctx, *model); err != nil {
-		return fmt.Errorf("index model search: %w", err)
+	if err := s.database.EntrySearch.IndexModelRevision(ctx, *revision); err != nil {
+		return fmt.Errorf("index model revision search: %w", err)
 	}
 
-	modelEntityIDs := make(map[uuid.UUID]struct{})
-	if req.Entities != nil {
-		for _, entityRequest := range *req.Entities {
-			entityID := entityRequest.Id
-			if _, exists := createdEntityIDs[entityID]; exists {
-				return invalidRequest("duplicate entity id: %s", entityID)
-			}
-			entityID, err := s.createEntity(ctx, entry, &model.ID, entityRequest, now)
+	for _, artifact := range artifacts {
+		if err := s.database.Artifacts.AttachToModelRevision(ctx, revision.ID, artifact.ID); err != nil {
+			return fmt.Errorf("attach artifact to model revision: %w", err)
+		}
+		if err := s.saveProteinSequencesIfFASTA(ctx, entryRevisionID, artifact); err != nil {
+			return err
+		}
+	}
+
+	if req.Metrics != nil {
+		for _, metricRequest := range *req.Metrics {
+			metric, err := s.createMetric(ctx, metricRequest, now)
 			if err != nil {
 				return err
 			}
-			createdEntityIDs[entityID] = struct{}{}
-			modelEntityIDs[entityID] = struct{}{}
+			if err := s.database.Metrics.AttachToModelRevision(ctx, revision.ID, metric.ID); err != nil {
+				return fmt.Errorf("attach metric to model revision: %w", err)
+			}
 		}
 	}
 
-	if req.Relations != nil {
-		for _, relationRequest := range *req.Relations {
-			if err := s.createEntityRelation(ctx, entryEntityIDs, modelEntityIDs, relationRequest, now); err != nil {
+	if req.Runs != nil {
+		for _, runRequest := range *req.Runs {
+			run, err := s.createRun(ctx, runRequest, createdBy, now)
+			if err != nil {
 				return err
+			}
+			if err := s.database.Runs.AttachToModelRevision(ctx, revision.ID, run.ID); err != nil {
+				return fmt.Errorf("attach run to model revision: %w", err)
+			}
+			if runRequest.Artifacts != nil {
+				for _, artifactRequest := range *runRequest.Artifacts {
+					if err := s.attachArtifactToRun(ctx, run.ID, artifactRequest); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
@@ -302,240 +367,183 @@ func (s *Server) createModelGraph(
 	return nil
 }
 
-func (s *Server) createEntity(
+func (s *Server) createArtifact(
 	ctx context.Context,
-	entry domainmodels.Entry,
-	modelID *uuid.UUID,
-	req CreateEntityRequest,
+	req CreateArtifactRequest,
+	createdBy uuid.UUID,
 	now time.Time,
-) (uuid.UUID, error) {
-	entityID := req.Id
-	if entityID == uuid.Nil {
-		return uuid.Nil, invalidRequest("entity id is required")
+) (*domainmodels.Artifact, error) {
+	if req.Id == uuid.Nil {
+		return nil, invalidRequest("artifact id is required")
 	}
-
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return uuid.Nil, invalidRequest("entity name is required")
+		return nil, invalidRequest("artifact name is required")
 	}
 
-	entityType := domainmodels.EntityType(req.Type)
-	payload, err := entityPayloadFromCreateRequest(req)
-	if err != nil {
-		return uuid.Nil, err
+	metadata := map[string]any{}
+	if req.Metadata != nil {
+		metadata = *req.Metadata
 	}
 
-	entity, err := s.database.Entities.Create(ctx, domainmodels.Entity{
-		ID:        entityID,
-		EntryID:   entry.ID,
-		ModelID:   modelID,
-		Type:      entityType,
-		Level:     entityLevelFromRequest(req.Level),
+	artifact, err := s.database.Artifacts.Create(ctx, domainmodels.Artifact{
+		ID:        req.Id,
 		Name:      name,
-		Payload:   payload,
+		Level:     domainmodels.ArtifactLevel(req.Level),
+		URI:       trimmedStringPtr(req.Uri),
+		SHA256:    trimmedStringPtr(req.Sha256),
+		Format:    trimmedStringPtr(req.Format),
+		SizeBytes: req.SizeBytes,
+		Metadata:  metadata,
+		CreatedBy: createdBy,
 		CreatedAt: now,
-		UpdatedAt: now,
 	})
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("create entity: %w", err)
+		return nil, fmt.Errorf("create artifact: %w", err)
 	}
-
-	if entity.IsFASTA() {
-		records, err := entity.FASTARecords()
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("read entity FASTA records: %w", err)
-		}
-		if err := s.database.ProteinSequences.Create(ctx, entry.ID, entity.ID, records); err != nil {
-			return uuid.Nil, fmt.Errorf("save entity protein sequences: %w", err)
-		}
-	}
-
-	if err := s.database.EntrySearch.IndexEntity(ctx, *entity); err != nil {
-		return uuid.Nil, fmt.Errorf("index entity search: %w", err)
-	}
-
-	return entity.ID, nil
+	return artifact, nil
 }
 
-func (s *Server) createEntityRelation(
+func (s *Server) createMetric(
 	ctx context.Context,
-	entryEntityIDs map[uuid.UUID]struct{},
-	modelEntityIDs map[uuid.UUID]struct{},
-	req CreateEntityRelationRequest,
+	req CreateMetricRequest,
 	now time.Time,
+) (*domainmodels.Metric, error) {
+	if req.Id == uuid.Nil {
+		return nil, invalidRequest("metric id is required")
+	}
+	key := strings.TrimSpace(req.Key)
+	if key == "" {
+		return nil, invalidRequest("metric key is required")
+	}
+
+	metric, err := s.database.Metrics.Create(ctx, domainmodels.Metric{
+		ID:        req.Id,
+		Key:       domainmodels.MetricKey(key),
+		Value:     req.Value,
+		CreatedAt: now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create metric: %w", err)
+	}
+	return metric, nil
+}
+
+func (s *Server) createRun(
+	ctx context.Context,
+	req CreateRunRequest,
+	createdBy uuid.UUID,
+	now time.Time,
+) (*domainmodels.Run, error) {
+	if req.Id == uuid.Nil {
+		return nil, invalidRequest("run id is required")
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, invalidRequest("run name is required")
+	}
+
+	parameters := map[string]any{}
+	if req.Parameters != nil {
+		parameters = *req.Parameters
+	}
+	metadata := map[string]any{}
+	if req.Metadata != nil {
+		metadata = *req.Metadata
+	}
+
+	run, err := s.database.Runs.Create(ctx, domainmodels.Run{
+		ID:              req.Id,
+		Name:            name,
+		SoftwareName:    trimmedStringPtr(req.SoftwareName),
+		SoftwareVersion: trimmedStringPtr(req.SoftwareVersion),
+		Command:         trimmedStringPtr(req.Command),
+		Parameters:      parameters,
+		Metadata:        metadata,
+		StartedAt:       req.StartedAt,
+		FinishedAt:      req.FinishedAt,
+		CreatedBy:       createdBy,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create run: %w", err)
+	}
+	return run, nil
+}
+
+func (s *Server) attachArtifactToRun(
+	ctx context.Context,
+	runID uuid.UUID,
+	req CreateRunArtifactRequest,
 ) error {
-	sourceEntityID := req.SourceEntityId
-	targetEntityID := req.TargetEntityId
-	if sourceEntityID == uuid.Nil {
-		return invalidRequest("relation source_entity_id is required")
+	if req.ArtifactId == uuid.Nil {
+		return invalidRequest("run artifact artifact_id is required")
 	}
-	if targetEntityID == uuid.Nil {
-		return invalidRequest("relation target_entity_id is required")
-	}
-	if sourceEntityID == targetEntityID {
-		return invalidRequest("relation source_entity_id and target_entity_id must be different")
-	}
-	if !entityIDBelongsToModelGraph(sourceEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidRequest("relation source entity is not part of this entry: %s", sourceEntityID)
-	}
-	if !entityIDBelongsToModelGraph(targetEntityID, entryEntityIDs, modelEntityIDs) {
-		return invalidRequest("relation target entity is not part of this entry: %s", targetEntityID)
+	if req.Direction == "" {
+		return invalidRequest("run artifact direction is required")
 	}
 
-	if _, err := s.database.EntityRelations.Create(ctx, domainmodels.EntityRelation{
-		ID:             uuid.New(),
-		SourceEntityID: sourceEntityID,
-		TargetEntityID: targetEntityID,
-		RelationType:   domainmodels.RelationType(req.RelationType),
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}); err != nil {
-		return fmt.Errorf("create entity relation: %w", err)
+	if err := s.database.Runs.AttachArtifact(
+		ctx,
+		runID,
+		req.ArtifactId,
+		domainmodels.RunArtifactDirection(req.Direction),
+	); err != nil {
+		return fmt.Errorf("attach artifact to run: %w", err)
 	}
-
 	return nil
 }
 
-func entityPayloadFromCreateRequest(req CreateEntityRequest) (any, error) {
-	switch domainmodels.EntityType(req.Type) {
-	case domainmodels.EntityTypeData:
-		payload, err := req.Payload.AsDataPayload()
-		if err != nil {
-			return nil, invalidPayloadRequest("decode data payload", err)
-		}
-		return &domainmodels.DataPayload{
-			FileURL:     payload.FileUrl,
-			Type:        stringFromPtr(payload.Type),
-			Authors:     authorsFromRequest(payload.Authors),
-			Affiliation: trimmedStringPtr(payload.Affiliation),
-			Size:        payload.Size,
-			Metadata:    metadataFromRequest(payload.Metadata),
-		}, nil
-	case domainmodels.EntityTypeModel:
-		payload, err := req.Payload.AsModelPayload()
-		if err != nil {
-			return nil, invalidPayloadRequest("decode model payload", err)
-		}
-		return &domainmodels.ModelPayload{
-			FileURL:     payload.FileUrl,
-			Authors:     authorsFromRequest(payload.Authors),
-			Affiliation: trimmedStringPtr(payload.Affiliation),
-			Size:        payload.Size,
-			Metadata:    metadataFromRequest(payload.Metadata),
-		}, nil
-	case domainmodels.EntityTypeMetrics:
-		payload, err := req.Payload.AsMetricsPayload()
-		if err != nil {
-			return nil, invalidPayloadRequest("decode metrics payload", err)
-		}
-		return &domainmodels.MetricsPayload{
-			RFree: payload.RFree,
-			RWork: payload.RWork,
-			RSCC:  payload.Rscc,
-			CC:    payload.Cc,
-		}, nil
-	case domainmodels.EntityTypeProgram:
-		payload, err := req.Payload.AsProgramPayload()
-		if err != nil {
-			return nil, invalidPayloadRequest("decode program payload", err)
-		}
-		return &domainmodels.ProgramPayload{
-			Name:        payload.Name,
-			Version:     payload.Version,
-			Description: payload.Description,
-		}, nil
-	default:
-		return nil, invalidRequest("unexpected entity type: %s", req.Type)
-	}
-}
-
-func entityLevelFromRequest(level *EntityLevel) *domainmodels.EntityLevel {
-	if level == nil {
-		return nil
-	}
-	domainLevel := domainmodels.EntityLevel(*level)
-	return &domainLevel
-}
-
-func entityIDBelongsToModelGraph(
-	entityID uuid.UUID,
-	entryEntityIDs map[uuid.UUID]struct{},
-	modelEntityIDs map[uuid.UUID]struct{},
-) bool {
-	if _, exists := entryEntityIDs[entityID]; exists {
-		return true
-	}
-	if _, exists := modelEntityIDs[entityID]; exists {
-		return true
-	}
-	return false
-}
-
-func stringFromPtr(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func authorsFromRequest(authors *[]string) []string {
-	if authors == nil {
+func (s *Server) saveProteinSequencesIfFASTA(
+	ctx context.Context,
+	entryRevisionID uuid.UUID,
+	artifact domainmodels.Artifact,
+) error {
+	if !artifact.IsFASTA() {
 		return nil
 	}
 
-	normalized := make([]string, 0, len(*authors))
-	for _, author := range *authors {
-		trimmed := strings.TrimSpace(author)
-		if trimmed != "" {
-			normalized = append(normalized, trimmed)
-		}
+	records, err := artifact.FASTARecords()
+	if err != nil {
+		return fmt.Errorf("read artifact FASTA records: %w", err)
 	}
-	return normalized
-}
-
-func trimmedStringPtr(value *string) *string {
-	if value == nil {
-		return nil
+	if err := s.database.ProteinSequences.Create(ctx, entryRevisionID, artifact.ID, records); err != nil {
+		return fmt.Errorf("save artifact protein sequences: %w", err)
 	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
-func metadataFromRequest(metadata *map[string]interface{}) map[string]any {
-	if metadata == nil {
-		return nil
-	}
-	return *metadata
-}
-
-func invalidRequest(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", errInvalidRequest, fmt.Sprintf(format, args...))
-}
-
-func invalidPayloadRequest(description string, err error) error {
-	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
+	return nil
 }
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
-	filters, err := modelFiltersFromParams(entryID, params)
+	activeState := domainmodels.RevisionStateActive
+	filters, err := modelFiltersFromParams(entryID, params, activeState)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
 		return
 	}
 
-	models, err := s.database.Models.List(r.Context(), filters)
+	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
 		slog.Error("list models failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
 
-	items := make([]Model, 0, len(models))
-	for _, model := range models {
-		items = append(items, modelResponseFromModel(model))
+	items := make([]Model, 0, len(revisions))
+	for _, revision := range revisions {
+		metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &revision.ID})
+		if err != nil {
+			slog.Error("list model metrics failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+			return
+		}
+		model, err := modelResponseFromRevision(revision, metrics)
+		if err != nil {
+			slog.Error("build model response failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build model response")
+			return
+		}
+		items = append(items, model)
 	}
 
 	writeJSON(w, http.StatusOK, ModelListResponse{Items: items})
@@ -555,7 +563,7 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 	}
 
 	err := s.createModelForEntry(r.Context(), entryID, req, user.ID)
-	if errors.Is(err, db.ErrEntryNotFound) {
+	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
 	}
@@ -581,40 +589,17 @@ func (s *Server) createModelForEntry(
 	now := time.Now().UTC()
 
 	return s.database.Do(ctx, func(ctx context.Context) error {
-		entry, err := s.database.Entries.Get(ctx, entryID)
+		entryRevision, err := s.activeEntryRevision(ctx, entryID)
 		if err != nil {
 			return err
 		}
-
-		entities, err := s.database.Entities.List(ctx, db.EntityFilters{
-			EntryID:        &entryID,
-			BelongsToEntry: true,
-		})
-		if err != nil {
-			return fmt.Errorf("list entry entities: %w", err)
-		}
-
-		entryEntityIDs := make(map[uuid.UUID]struct{}, len(entities))
-		for _, entity := range entities {
-			entryEntityIDs[entity.ID] = struct{}{}
-		}
-		createdEntityIDs := maps.Clone(entryEntityIDs)
-
-		return s.createModelGraph(
-			ctx,
-			*entry,
-			entryEntityIDs,
-			createdEntityIDs,
-			req,
-			now,
-			createdBy,
-		)
+		return s.createModelGraph(ctx, entryRevision.EntryID, entryRevision.ID, req, now, createdBy)
 	})
 }
 
 func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
-	model, err := s.database.Models.Get(r.Context(), entryID, modelID)
-	if errors.Is(err, db.ErrModelNotFound) {
+	revision, err := s.activeModelRevision(r.Context(), entryID, modelID)
+	if errors.Is(err, db.ErrModelRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
 	}
@@ -624,7 +609,20 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		return
 	}
 
-	writeJSON(w, http.StatusOK, modelResponseFromModel(*model))
+	metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &revision.ID})
+	if err != nil {
+		slog.Error("list model metrics failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
+		return
+	}
+
+	model, err := modelResponseFromRevision(*revision, metrics)
+	if err != nil {
+		slog.Error("build model response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build model response")
+		return
+	}
+	writeJSON(w, http.StatusOK, model)
 }
 
 func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
@@ -634,13 +632,28 @@ func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, mo
 		return
 	}
 
-	if err := s.database.Models.Delete(r.Context(), entryID, modelID, user.ID); errors.Is(err, db.ErrModelNotFound) {
+	err := s.database.Do(r.Context(), func(ctx context.Context) error {
+		revision, err := s.activeModelRevision(ctx, entryID, modelID)
+		if err != nil {
+			return err
+		}
+		if err := s.database.Models.Delete(ctx, revision.ModelID, revision.ID, user.ID); err != nil {
+			return fmt.Errorf("delete model revision: %w", err)
+		}
+		if err := s.database.EntrySearch.DeleteModelRevision(ctx, *revision); err != nil {
+			return fmt.Errorf("delete model revision search: %w", err)
+		}
+		return nil
+	})
+	if errors.Is(err, db.ErrModelRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
-	} else if errors.Is(err, db.ErrModelOwnershipMismatch) {
+	}
+	if errors.Is(err, db.ErrModelRevisionOwnershipMismatch) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the model creator can delete it")
 		return
-	} else if err != nil {
+	}
+	if err != nil {
 		slog.Error("delete model failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to delete model")
 		return
@@ -649,230 +662,425 @@ func (s *Server) DeleteModel(w http.ResponseWriter, r *http.Request, entryID, mo
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func modelFiltersFromParams(entryID uuid.UUID, params ListModelsParams) (db.ModelFilters, error) {
+func modelFiltersFromParams(
+	entryID uuid.UUID,
+	params ListModelsParams,
+	state domainmodels.RevisionState,
+) (db.ModelRevisionFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
-		return db.ModelFilters{}, errors.New("limit must be non-negative")
+		return db.ModelRevisionFilters{}, errors.New("limit must be non-negative")
 	}
 	if params.Offset != nil && *params.Offset < 0 {
-		return db.ModelFilters{}, errors.New("offset must be non-negative")
+		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
 	}
 
-	return db.ModelFilters{
+	return db.ModelRevisionFilters{
 		EntryID: &entryID,
+		State:   &state,
 		Limit:   params.Limit,
 		Offset:  params.Offset,
 	}, nil
 }
 
-func modelResponseFromModel(model domainmodels.Model) Model {
-	return Model{
-		Id:                model.ID,
-		EntryId:           model.EntryID,
-		CreatedBy:         model.CreatedBy,
-		Name:              model.Name,
-		Description:       model.Description,
-		ThumbnailImageUrl: model.ThumbnailImageURL,
-		CreatedAt:         model.CreatedAt,
-		UpdatedAt:         model.UpdatedAt,
+func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListArtifactsParams) {
+	entryRevision, err := s.activeEntryRevision(r.Context(), entryID)
+	if errors.Is(err, db.ErrEntryRevisionNotFound) {
+		writeJSON(w, http.StatusOK, ArtifactListResponse{Items: []Artifact{}})
+		return
 	}
+	if err != nil {
+		slog.Error("get entry for artifacts failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
+		return
+	}
+
+	filters, err := artifactFiltersFromParams(params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid artifact filters")
+		return
+	}
+	filters.EntryRevisionID = &entryRevision.ID
+
+	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
+	if err != nil {
+		slog.Error("list entry artifacts failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
+		return
+	}
+
+	items, err := artifactResponsesFromModels(artifacts)
+	if err != nil {
+		slog.Error("build artifact response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build artifact response")
+		return
+	}
+	writeJSON(w, http.StatusOK, ArtifactListResponse{Items: items})
 }
 
-func (s *Server) ListEntities(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListEntitiesParams) {
-	filters, err := entityFiltersFromParams(entryID, params)
+func (s *Server) ListModelArtifacts(
+	w http.ResponseWriter,
+	r *http.Request,
+	entryID uuid.UUID,
+	modelID uuid.UUID,
+	params ListModelArtifactsParams,
+) {
+	modelRevision, err := s.activeModelRevision(r.Context(), entryID, modelID)
+	if errors.Is(err, db.ErrModelRevisionNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
+		return
+	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entity filters")
+		slog.Error("get model for artifacts failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 
-	entities, err := s.database.Entities.List(r.Context(), filters)
+	filters, err := modelArtifactFiltersFromParams(params)
 	if err != nil {
-		slog.Error("list entities failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entities")
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid artifact filters")
+		return
+	}
+	filters.ModelRevisionID = &modelRevision.ID
+
+	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
+	if err != nil {
+		slog.Error("list model artifacts failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
+		return
+	}
+	runs, err := s.database.Runs.List(r.Context(), db.RunFilters{ModelRevisionID: &modelRevision.ID})
+	if err != nil {
+		slog.Error("list model runs failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
+		return
+	}
+	runArtifactLinks, err := s.database.Runs.ListArtifactLinks(r.Context(), modelRevision.ID)
+	if err != nil {
+		slog.Error("list model run artifact links failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 
-	items := make([]Entity, 0, len(entities))
-	for _, entity := range entities {
-		item, err := entityResponseFromModel(entity)
-		if err != nil {
-			slog.Error("build entity response failed", "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entity response")
-			return
-		}
-		items = append(items, item)
-	}
-
-	relations, err := s.database.EntityRelations.List(r.Context(), entryID)
+	artifactItems, err := artifactResponsesFromModels(artifacts)
 	if err != nil {
-		slog.Error("list entity relations failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entity relations")
+		slog.Error("build artifact response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build artifact response")
 		return
 	}
 
-	relationItems := make([]EntityRelation, 0, len(relations))
-	for _, relation := range relations {
-		relationItems = append(relationItems, entityRelationResponseFromModel(relation))
+	runItems := make([]Run, 0, len(runs))
+	for _, run := range runs {
+		runItems = append(runItems, runResponseFromModel(run))
 	}
 
-	writeJSON(w, http.StatusOK, EntityListResponse{
-		Items:     items,
+	relationItems := make([]RunArtifact, 0, len(runArtifactLinks))
+	for _, link := range runArtifactLinks {
+		relationItems = append(relationItems, runArtifactResponseFromModel(link))
+	}
+
+	writeJSON(w, http.StatusOK, ModelArtifactListResponse{
+		Items:     artifactItems,
+		Runs:      runItems,
 		Relations: relationItems,
 	})
 }
 
-func entityFiltersFromParams(entryID uuid.UUID, params ListEntitiesParams) (db.EntityFilters, error) {
+func artifactFiltersFromParams(params ListArtifactsParams) (db.ArtifactFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
-		return db.EntityFilters{}, errors.New("limit must be non-negative")
+		return db.ArtifactFilters{}, errors.New("limit must be non-negative")
 	}
 	if params.Offset != nil && *params.Offset < 0 {
-		return db.EntityFilters{}, errors.New("offset must be non-negative")
+		return db.ArtifactFilters{}, errors.New("offset must be non-negative")
 	}
 
-	filters := db.EntityFilters{
-		EntryID: &entryID,
-		Limit:   params.Limit,
-		Offset:  params.Offset,
-	}
-	if params.ModelId != nil {
-		modelID := *params.ModelId
-		filters.ModelID = &modelID
-	}
-	if params.Types != nil {
-		filters.Types = make([]domainmodels.EntityType, 0, len(*params.Types))
-		for _, entityType := range *params.Types {
-			filters.Types = append(filters.Types, domainmodels.EntityType(entityType))
-		}
+	filters := db.ArtifactFilters{
+		Limit:  params.Limit,
+		Offset: params.Offset,
 	}
 	if params.Levels != nil {
-		filters.Levels = make([]domainmodels.EntityLevel, 0, len(*params.Levels))
+		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
 		for _, level := range *params.Levels {
-			filters.Levels = append(filters.Levels, domainmodels.EntityLevel(level))
+			filters.Levels = append(filters.Levels, domainmodels.ArtifactLevel(level))
 		}
 	}
-
 	return filters, nil
 }
 
-func entityResponseFromModel(entity domainmodels.Entity) (Entity, error) {
-	payload, err := entityPayloadResponseFromModel(entity)
-	if err != nil {
-		return Entity{}, err
+func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.ArtifactFilters, error) {
+	if params.Limit != nil && *params.Limit < 0 {
+		return db.ArtifactFilters{}, errors.New("limit must be non-negative")
+	}
+	if params.Offset != nil && *params.Offset < 0 {
+		return db.ArtifactFilters{}, errors.New("offset must be non-negative")
 	}
 
-	return Entity{
-		Id:        entity.ID,
-		EntryId:   entity.EntryID,
-		ModelId:   entity.ModelID,
-		Type:      EntityType(entity.Type),
-		Level:     entityLevelResponseFromModel(entity.Level),
-		Name:      entity.Name,
-		Payload:   payload,
-		CreatedAt: entity.CreatedAt,
-		UpdatedAt: entity.UpdatedAt,
+	filters := db.ArtifactFilters{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	}
+	if params.Levels != nil {
+		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
+		for _, level := range *params.Levels {
+			filters.Levels = append(filters.Levels, domainmodels.ArtifactLevel(level))
+		}
+	}
+	return filters, nil
+}
+
+func (s *Server) activeEntryRevision(ctx context.Context, entryID uuid.UUID) (*domainmodels.EntryRevision, error) {
+	activeState := domainmodels.RevisionStateActive
+	revision, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{
+		EntryID: &entryID,
+		State:   &activeState,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return revision, nil
+}
+
+func (s *Server) activeModelRevision(
+	ctx context.Context,
+	entryID uuid.UUID,
+	modelID uuid.UUID,
+) (*domainmodels.ModelRevision, error) {
+	activeState := domainmodels.RevisionStateActive
+	revision, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
+		EntryID: &entryID,
+		ModelID: &modelID,
+		State:   &activeState,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return revision, nil
+}
+
+func entryInfoResponseFromRevision(revision domainmodels.EntryRevision) EntryInfo {
+	return EntryInfo{
+		Id:                revision.EntryID,
+		CreatedBy:         revision.CreatedBy,
+		Name:              revision.Name,
+		Description:       revision.Description,
+		ThumbnailImageUrl: revision.ThumbnailImageURL,
+		PublishedAt:       revision.PublishedAt,
+		CreatedAt:         revision.CreatedAt,
+		UpdatedAt:         revision.UpdatedAt,
+	}
+}
+
+func entryResponseFromRevision(
+	revision domainmodels.EntryRevision,
+	proteinSequences []domainmodels.ProteinSequence,
+) (Entry, error) {
+	metadata, err := metadataResponseFromValue(revision.Metadata)
+	if err != nil {
+		return Entry{}, fmt.Errorf("build entry metadata response: %w", err)
+	}
+
+	return Entry{
+		Id:                revision.EntryID,
+		CreatedBy:         revision.CreatedBy,
+		Name:              revision.Name,
+		Description:       revision.Description,
+		ThumbnailImageUrl: revision.ThumbnailImageURL,
+		Metadata:          metadata,
+		PublishedAt:       revision.PublishedAt,
+		CreatedAt:         revision.CreatedAt,
+		UpdatedAt:         revision.UpdatedAt,
+		ProteinSequences:  proteinSequenceResponsesFromModels(proteinSequences),
 	}, nil
 }
 
-func entityPayloadResponseFromModel(entity domainmodels.Entity) (Entity_Payload, error) {
-	var payload Entity_Payload
-	switch entity.Type {
-	case domainmodels.EntityTypeData:
-		dataPayload, err := entity.Data()
-		if err != nil {
-			return Entity_Payload{}, fmt.Errorf("get data payload: %w", err)
-		}
-		if err := payload.FromDataPayload(DataPayload{
-			FileUrl:     dataPayload.FileURL,
-			Authors:     stringSlicePtrFromNonEmpty(dataPayload.Authors),
-			Affiliation: dataPayload.Affiliation,
-			Metadata:    entityPayloadMetadataResponseFromModel(dataPayload.Metadata),
-			Size:        dataPayload.Size,
-			Type:        stringPtrFromNonEmpty(dataPayload.Type),
-		}); err != nil {
-			return Entity_Payload{}, fmt.Errorf("build data payload response: %w", err)
-		}
-	case domainmodels.EntityTypeModel:
-		modelPayload, err := entity.Model()
-		if err != nil {
-			return Entity_Payload{}, fmt.Errorf("get model payload: %w", err)
-		}
-		if err := payload.FromModelPayload(ModelPayload{
-			FileUrl:     modelPayload.FileURL,
-			Authors:     stringSlicePtrFromNonEmpty(modelPayload.Authors),
-			Affiliation: modelPayload.Affiliation,
-			Metadata:    entityPayloadMetadataResponseFromModel(modelPayload.Metadata),
-			Size:        modelPayload.Size,
-		}); err != nil {
-			return Entity_Payload{}, fmt.Errorf("build model payload response: %w", err)
-		}
-	case domainmodels.EntityTypeMetrics:
-		metricsPayload, err := entity.Metrics()
-		if err != nil {
-			return Entity_Payload{}, fmt.Errorf("get metrics payload: %w", err)
-		}
-		if err := payload.FromMetricsPayload(MetricsPayload{
-			Cc:    metricsPayload.CC,
-			RFree: metricsPayload.RFree,
-			RWork: metricsPayload.RWork,
-			Rscc:  metricsPayload.RSCC,
-		}); err != nil {
-			return Entity_Payload{}, fmt.Errorf("build metrics payload response: %w", err)
-		}
-	case domainmodels.EntityTypeProgram:
-		programPayload, err := entity.Program()
-		if err != nil {
-			return Entity_Payload{}, fmt.Errorf("get program payload: %w", err)
-		}
-		if err := payload.FromProgramPayload(ProgramPayload{
-			Description: programPayload.Description,
-			Name:        programPayload.Name,
-			Version:     programPayload.Version,
-		}); err != nil {
-			return Entity_Payload{}, fmt.Errorf("build program payload response: %w", err)
-		}
-	default:
-		return Entity_Payload{}, fmt.Errorf("%w: %s", domainmodels.ErrUnexpectedEntityType, entity.Type)
+func modelResponseFromRevision(
+	revision domainmodels.ModelRevision,
+	metrics []domainmodels.Metric,
+) (Model, error) {
+	metadata, err := metadataResponseFromValue(revision.Metadata)
+	if err != nil {
+		return Model{}, fmt.Errorf("build model metadata response: %w", err)
 	}
 
-	return payload, nil
+	return Model{
+		Id:                revision.ModelID,
+		EntryId:           revision.EntryID,
+		CreatedBy:         revision.CreatedBy,
+		Name:              revision.Name,
+		Description:       revision.Description,
+		ThumbnailImageUrl: revision.ThumbnailImageURL,
+		Metadata:          metadata,
+		PrimaryArtifactId: revision.PrimaryArtifactID,
+		PublishedAt:       revision.PublishedAt,
+		CreatedAt:         revision.CreatedAt,
+		UpdatedAt:         revision.UpdatedAt,
+		Metrics:           metricResponsesFromModels(metrics),
+	}, nil
 }
 
-func entityPayloadMetadataResponseFromModel(metadata map[string]any) *map[string]interface{} {
+func artifactResponsesFromModels(artifacts []domainmodels.Artifact) ([]Artifact, error) {
+	items := make([]Artifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		item, err := artifactResponseFromModel(artifact)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func artifactResponseFromModel(artifact domainmodels.Artifact) (Artifact, error) {
+	metadata, err := metadataResponseFromValue(artifact.Metadata)
+	if err != nil {
+		return Artifact{}, fmt.Errorf("build artifact metadata response: %w", err)
+	}
+
+	return Artifact{
+		Id:        artifact.ID,
+		Name:      artifact.Name,
+		Level:     ArtifactLevel(artifact.Level),
+		Uri:       artifact.URI,
+		Sha256:    artifact.SHA256,
+		Format:    artifact.Format,
+		SizeBytes: artifact.SizeBytes,
+		Metadata:  metadata,
+		CreatedBy: artifact.CreatedBy,
+		CreatedAt: artifact.CreatedAt,
+	}, nil
+}
+
+func metricResponsesFromModels(metrics []domainmodels.Metric) []Metric {
+	items := make([]Metric, 0, len(metrics))
+	for _, metric := range metrics {
+		items = append(items, Metric{
+			Id:        metric.ID,
+			Key:       string(metric.Key),
+			Value:     metric.Value,
+			CreatedAt: metric.CreatedAt,
+		})
+	}
+	return items
+}
+
+func runResponseFromModel(run domainmodels.Run) Run {
+	return Run{
+		Id:              run.ID,
+		Name:            run.Name,
+		SoftwareName:    run.SoftwareName,
+		SoftwareVersion: run.SoftwareVersion,
+		Command:         run.Command,
+		Parameters:      mapFromNil(run.Parameters),
+		Metadata:        mapFromNil(run.Metadata),
+		StartedAt:       run.StartedAt,
+		FinishedAt:      run.FinishedAt,
+		CreatedBy:       run.CreatedBy,
+		CreatedAt:       run.CreatedAt,
+		UpdatedAt:       run.UpdatedAt,
+	}
+}
+
+func runArtifactResponseFromModel(link db.RunArtifactLink) RunArtifact {
+	return RunArtifact{
+		RunId:      link.RunID,
+		ArtifactId: link.ArtifactID,
+		Direction:  RunArtifactDirection(link.Direction),
+		Position:   nil,
+	}
+}
+
+func proteinSequenceResponsesFromModels(sequences []domainmodels.ProteinSequence) []ProteinSequence {
+	items := make([]ProteinSequence, 0, len(sequences))
+	for _, sequence := range sequences {
+		items = append(items, ProteinSequence{
+			Id:               sequence.ID,
+			SourceArtifactId: sequence.SourceArtifactID,
+			RecordIndex:      sequence.RecordIndex,
+			Header:           sequence.Header,
+			Sequence:         sequence.Sequence,
+			CreatedAt:        sequence.CreatedAt,
+		})
+	}
+	return items
+}
+
+func entryMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.EntryMetadata, error) {
 	if metadata == nil {
-		return nil
+		return domainmodels.EntryMetadata{}, nil
 	}
-	responseMetadata := metadata
-	return &responseMetadata
+
+	var result domainmodels.EntryMetadata
+	if err := decodeMetadataRequest(*metadata, &result); err != nil {
+		return domainmodels.EntryMetadata{}, invalidPayloadRequest("decode entry metadata", err)
+	}
+	return result, nil
 }
 
-func stringPtrFromNonEmpty(value string) *string {
-	if value == "" {
+func modelMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.ModelMetadata, error) {
+	if metadata == nil {
+		return domainmodels.ModelMetadata{}, nil
+	}
+
+	var result domainmodels.ModelMetadata
+	if err := decodeMetadataRequest(*metadata, &result); err != nil {
+		return domainmodels.ModelMetadata{}, invalidPayloadRequest("decode model metadata", err)
+	}
+	return result, nil
+}
+
+func decodeMetadataRequest(metadata map[string]interface{}, dest any) error {
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+	if err := json.Unmarshal(data, dest); err != nil {
+		return fmt.Errorf("unmarshal metadata: %w", err)
+	}
+	return nil
+}
+
+func metadataResponseFromValue(value any) (map[string]interface{}, error) {
+	if value == nil {
+		return map[string]interface{}{}, nil
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal metadata: %w", err)
+	}
+
+	metadata := map[string]interface{}{}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("unmarshal metadata: %w", err)
+	}
+	return metadata, nil
+}
+
+func mapFromNil(value map[string]any) map[string]interface{} {
+	if value == nil {
+		return map[string]interface{}{}
+	}
+	return value
+}
+
+func trimmedStringPtr(value *string) *string {
+	if value == nil {
 		return nil
 	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func ptr[T any](value T) *T {
 	return &value
 }
 
-func stringSlicePtrFromNonEmpty(value []string) *[]string {
-	if len(value) == 0 {
-		return nil
-	}
-	return &value
+func invalidRequest(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errInvalidRequest, fmt.Sprintf(format, args...))
 }
 
-func entityLevelResponseFromModel(level *domainmodels.EntityLevel) *EntityLevel {
-	if level == nil {
-		return nil
-	}
-	responseLevel := EntityLevel(*level)
-	return &responseLevel
-}
-
-func entityRelationResponseFromModel(relation domainmodels.EntityRelation) EntityRelation {
-	return EntityRelation{
-		Id:             relation.ID,
-		SourceEntityId: relation.SourceEntityID,
-		TargetEntityId: relation.TargetEntityID,
-		RelationType:   EntityRelationType(relation.RelationType),
-		CreatedAt:      relation.CreatedAt,
-		UpdatedAt:      relation.UpdatedAt,
-	}
+func invalidPayloadRequest(description string, err error) error {
+	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
 }

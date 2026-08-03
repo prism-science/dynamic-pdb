@@ -19,12 +19,12 @@ import (
 func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t *testing.T) {
 	// given
 	entryID := uuid.New()
-	entityID := uuid.New()
+	artifactID := uuid.New()
 	fileCDN := &uploadCDNStub{
 		grant: cdn.UploadGrant{
-			Key:       "entry/entities/entity/model.cif",
+			Key:       "entry/artifacts/artifact/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "https://files.dynamicpdb.com/entry/entities/entity/model.cif",
+			ObjectURL: "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif",
 			PartSize:  64 * 1024 * 1024,
 			Parts: []cdn.UploadPart{
 				{PartNumber: 1, URL: "https://storage.example/part-1"},
@@ -35,10 +35,10 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 		fileCDN: fileCDN,
 	}
 	req := uploadJSONRequest(t, map[string]any{
-		"entry_id":  entryID,
-		"entity_id": entityID,
-		"filename":  "model.cif",
-		"size":      42,
+		"entry_id":    entryID,
+		"artifact_id": artifactID,
+		"filename":    "model.cif",
+		"size":        42,
 	})
 	rec := httptest.NewRecorder()
 
@@ -48,7 +48,7 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
-	assert.Equal(t, entityID.String(), fileCDN.createdFile.EntityID)
+	assert.Equal(t, artifactID.String(), fileCDN.createdFile.ArtifactID)
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
 	assert.Equal(t, int64(42), fileCDN.createdFile.Size)
 
@@ -56,7 +56,7 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
 	assert.Equal(t, fileCDN.grant.Key, body.Key)
 	assert.Equal(t, fileCDN.grant.UploadID, body.UploadId)
-	assert.Equal(t, "https://files.dynamicpdb.com/entry/entities/entity/model.cif", body.ObjectUrl)
+	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.ObjectUrl)
 	assert.Len(t, body.Parts, 1)
 }
 
@@ -68,47 +68,47 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 		{
 			name: "zero size",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  "model.cif",
-				"size":      0,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.New(),
+				"filename":    "model.cif",
+				"size":        0,
 			},
 		},
 		{
 			name: "empty filename",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  " ",
-				"size":      1,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.New(),
+				"filename":    " ",
+				"size":        1,
 			},
 		},
 		{
 			name: "nil entry id",
 			body: map[string]any{
-				"entry_id":  uuid.Nil,
-				"entity_id": uuid.New(),
-				"filename":  "model.cif",
-				"size":      1,
+				"entry_id":    uuid.Nil,
+				"artifact_id": uuid.New(),
+				"filename":    "model.cif",
+				"size":        1,
 			},
 		},
 		{
-			name: "nil entity id",
+			name: "nil artifact id",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.Nil,
-				"filename":  "model.cif",
-				"size":      1,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.Nil,
+				"filename":    "model.cif",
+				"size":        1,
 			},
 		},
 		{
 			name: "nil model id pointer",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"model_id":  uuid.Nil,
-				"filename":  "model.cif",
-				"size":      1,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.New(),
+				"model_id":    uuid.Nil,
+				"filename":    "model.cif",
+				"size":        1,
 			},
 		},
 	}
@@ -136,10 +136,10 @@ func Test_should_return_500_when_create_file_upload_service_fails(t *testing.T) 
 	fileCDN := &uploadCDNStub{createErr: errors.New("create failed")}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "model.cif",
-		"size":      1,
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        1,
 	})
 	rec := httptest.NewRecorder()
 
@@ -156,10 +156,10 @@ func Test_should_return_400_when_cdn_rejects_file_upload(t *testing.T) {
 	fileCDN := &uploadCDNStub{createErr: cdn.ErrInvalidFileUpload}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "model.cif",
-		"size":      1,
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        1,
 	})
 	rec := httptest.NewRecorder()
 
@@ -176,7 +176,7 @@ func Test_should_complete_file_upload_when_complete_request_is_valid(t *testing.
 	fileCDN := &uploadCDNStub{}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"key":       "entry/entities/entity/model.cif",
+		"key":       "entry/artifacts/artifact/model.cif",
 		"upload_id": "upload-id",
 		"parts": []map[string]any{
 			{"part_number": 2, "etag": `"etag-2"`},
@@ -190,7 +190,7 @@ func Test_should_complete_file_upload_when_complete_request_is_valid(t *testing.
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "entry/entities/entity/model.cif", fileCDN.completedKey)
+	assert.Equal(t, "entry/artifacts/artifact/model.cif", fileCDN.completedKey)
 	assert.Equal(t, "upload-id", fileCDN.completedUploadID)
 	assert.Equal(t, []cdn.CompletedPart{
 		{PartNumber: 2, ETag: `"etag-2"`},
@@ -214,7 +214,7 @@ func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *test
 		{
 			name: "no parts",
 			body: map[string]any{
-				"key":       "entry/entities/entity/model.cif",
+				"key":       "entry/artifacts/artifact/model.cif",
 				"upload_id": "upload-id",
 				"parts":     []map[string]any{},
 			},
@@ -222,7 +222,7 @@ func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *test
 		{
 			name: "part number below range",
 			body: map[string]any{
-				"key":       "entry/entities/entity/model.cif",
+				"key":       "entry/artifacts/artifact/model.cif",
 				"upload_id": "upload-id",
 				"parts":     []map[string]any{{"part_number": 0, "etag": `"etag-1"`}},
 			},
@@ -230,7 +230,7 @@ func Test_should_return_400_when_complete_file_upload_request_is_invalid(t *test
 		{
 			name: "empty etag",
 			body: map[string]any{
-				"key":       "entry/entities/entity/model.cif",
+				"key":       "entry/artifacts/artifact/model.cif",
 				"upload_id": "upload-id",
 				"parts":     []map[string]any{{"part_number": 1, "etag": ""}},
 			},
@@ -260,7 +260,7 @@ func Test_should_return_500_when_complete_file_upload_fails(t *testing.T) {
 	fileCDN := &uploadCDNStub{completeErr: errors.New("complete failed")}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"key":       "entry/entities/entity/model.cif",
+		"key":       "entry/artifacts/artifact/model.cif",
 		"upload_id": "upload-id",
 		"parts":     []map[string]any{{"part_number": 1, "etag": `"etag-1"`}},
 	})
@@ -279,7 +279,7 @@ func Test_should_abort_file_upload_when_abort_request_is_valid(t *testing.T) {
 	fileCDN := &uploadCDNStub{}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"key":       "entry/entities/entity/model.cif",
+		"key":       "entry/artifacts/artifact/model.cif",
 		"upload_id": "upload-id",
 	})
 	rec := httptest.NewRecorder()
@@ -289,7 +289,7 @@ func Test_should_abort_file_upload_when_abort_request_is_valid(t *testing.T) {
 
 	// then
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Equal(t, "entry/entities/entity/model.cif", fileCDN.abortedKey)
+	assert.Equal(t, "entry/artifacts/artifact/model.cif", fileCDN.abortedKey)
 	assert.Equal(t, "upload-id", fileCDN.abortedUploadID)
 }
 
@@ -298,7 +298,7 @@ func Test_should_return_500_when_abort_file_upload_fails(t *testing.T) {
 	fileCDN := &uploadCDNStub{abortErr: errors.New("abort failed")}
 	server := &Server{fileCDN: fileCDN}
 	req := uploadJSONRequest(t, map[string]any{
-		"key":       "entry/entities/entity/model.cif",
+		"key":       "entry/artifacts/artifact/model.cif",
 		"upload_id": "upload-id",
 	})
 	rec := httptest.NewRecorder()

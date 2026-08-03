@@ -7,6 +7,7 @@ import (
 
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/models"
 )
 
 type contextKey string
@@ -15,12 +16,12 @@ const userContextKey contextKey = "auth.user"
 
 const bearerAuthScopesKey = "bearerAuth.Scopes"
 
-func WithUser(ctx context.Context, user *auth.User) context.Context {
+func WithUser(ctx context.Context, user *models.User) context.Context {
 	return context.WithValue(ctx, userContextKey, user)
 }
 
-func UserFromContext(ctx context.Context) (*auth.User, bool) {
-	user, ok := ctx.Value(userContextKey).(*auth.User)
+func UserFromContext(ctx context.Context) (*models.User, bool) {
+	user, ok := ctx.Value(userContextKey).(*models.User)
 	return user, ok
 }
 

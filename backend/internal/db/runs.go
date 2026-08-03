@@ -27,6 +27,12 @@ type RunFilters struct {
 	Offset          *int
 }
 
+type RunArtifactLink struct {
+	RunID      uuid.UUID
+	ArtifactID uuid.UUID
+	Direction  models.RunArtifactDirection
+}
+
 func NewRunsRepository(database *sqlx.DB, queriers *QuerierProvider) *RunsRepository {
 	return &RunsRepository{
 		db:       database,
@@ -168,6 +174,32 @@ func (r *RunsRepository) AttachArtifact(
 	return nil
 }
 
+func (r *RunsRepository) ListArtifactLinks(
+	ctx context.Context,
+	modelRevisionID uuid.UUID,
+) ([]RunArtifactLink, error) {
+	query := `select run_artifacts.run_id, run_artifacts.artifact_id, run_artifacts.direction
+			  from run_artifacts
+			  join model_revision_runs on model_revision_runs.run_id = run_artifacts.run_id
+			  where model_revision_runs.model_revision_id = $1
+			  order by run_artifacts.run_id asc, run_artifacts.artifact_id asc`
+
+	rows := make([]runArtifactLinkRow, 0)
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, query, modelRevisionID); err != nil {
+		return nil, fmt.Errorf("list run artifact links: %w", err)
+	}
+
+	links := make([]RunArtifactLink, 0, len(rows))
+	for _, row := range rows {
+		links = append(links, RunArtifactLink{
+			RunID:      row.RunID,
+			ArtifactID: row.ArtifactID,
+			Direction:  models.RunArtifactDirection(row.Direction),
+		})
+	}
+	return links, nil
+}
+
 func runListQuery(filters RunFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
@@ -253,4 +285,10 @@ type runRow struct {
 	CreatedBy       uuid.UUID      `db:"created_by"`
 	CreatedAt       time.Time      `db:"created_at"`
 	UpdatedAt       time.Time      `db:"updated_at"`
+}
+
+type runArtifactLinkRow struct {
+	RunID      uuid.UUID `db:"run_id"`
+	ArtifactID uuid.UUID `db:"artifact_id"`
+	Direction  string    `db:"direction"`
 }
