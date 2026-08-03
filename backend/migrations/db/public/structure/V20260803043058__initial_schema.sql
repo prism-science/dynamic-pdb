@@ -174,6 +174,20 @@ CREATE TABLE model_revision_artifacts (
     PRIMARY KEY (model_revision_id, artifact_id)
 );
 
+CREATE TABLE metrics (
+    id          uuid PRIMARY KEY,
+    key         text NOT NULL,
+    value       numeric NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE model_revision_metrics (
+    model_revision_id uuid NOT NULL REFERENCES model_revisions(id),
+    metric_id         uuid NOT NULL REFERENCES metrics(id),
+
+    PRIMARY KEY (model_revision_id, metric_id)
+);
+
 CREATE TABLE runs (
     id                uuid PRIMARY KEY,
 
