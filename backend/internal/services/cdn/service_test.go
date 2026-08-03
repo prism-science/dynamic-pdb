@@ -29,6 +29,8 @@ func Test_should_return_s3_object_url_when_cloudfront_is_not_configured(t *testi
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, bucket.grant.ObjectURL, grant.ObjectURL)
+	assert.Equal(t, "entry/entities/entity/model.cif", bucket.presignedKey)
+	assert.Equal(t, int64(42), bucket.presignedSize)
 }
 
 func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.T) {
@@ -132,6 +134,57 @@ func Test_should_reject_invalid_file_upload_before_calling_s3(t *testing.T) {
 	assert.Zero(t, bucket.presignCalls)
 }
 
+func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
+	// given
+	file := validFileUpload()
+
+	// when
+	key, err := objectKey(file)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry/entities/entity/model.cif", key)
+}
+
+func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
+	// given
+	file := validFileUpload()
+	file.ModelID = "model"
+
+	// when
+	key, err := objectKey(file)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry/models/model/entities/entity/model.cif", key)
+}
+
+func Test_should_strip_path_from_original_filename_when_building_object_key(t *testing.T) {
+	// given
+	file := validFileUpload()
+	file.OriginalFilename = "../unsafe/model.cif"
+
+	// when
+	key, err := objectKey(file)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry/entities/entity/model.cif", key)
+}
+
+func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.T) {
+	// given
+	file := validFileUpload()
+	file.EntryID = "entry/id"
+
+	// when
+	_, err := objectKey(file)
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "entry_id is invalid")
+}
+
 func Test_should_proxy_complete_and_abort_to_s3(t *testing.T) {
 	// given
 	bucket := &bucketStub{}
@@ -172,15 +225,19 @@ type bucketStub struct {
 	completeErr error
 	abortErr    error
 
-	presignCalls int
+	presignCalls  int
+	presignedKey  string
+	presignedSize int64
 
 	completedParts  []s3.CompletedPart
 	abortedKey      string
 	abortedUploadID string
 }
 
-func (b *bucketStub) PresignMultipartUpload(_ context.Context, _ s3.FileUpload) (s3.MultipartUploadGrant, error) {
+func (b *bucketStub) PresignMultipartUpload(_ context.Context, key string, size int64) (s3.MultipartUploadGrant, error) {
 	b.presignCalls++
+	b.presignedKey = key
+	b.presignedSize = size
 	if b.presignErr != nil {
 		return s3.MultipartUploadGrant{}, b.presignErr
 	}

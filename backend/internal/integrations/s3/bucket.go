@@ -26,7 +26,7 @@ const (
 )
 
 type Bucket interface {
-	PresignMultipartUpload(ctx context.Context, file FileUpload) (MultipartUploadGrant, error)
+	PresignMultipartUpload(ctx context.Context, key string, size int64) (MultipartUploadGrant, error)
 	CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortMultipartUpload(ctx context.Context, key, uploadID string) error
 }
@@ -79,14 +79,6 @@ type MultipartUploadGrant struct {
 	Parts     []PresignedPart
 }
 
-type FileUpload struct {
-	EntryID          string
-	ModelID          string
-	EntityID         string
-	OriginalFilename string
-	Size             int64
-}
-
 type PresignedPart struct {
 	PartNumber int32
 	URL        string
@@ -110,39 +102,14 @@ func PartPlan(size int64) (partSize int64, partCount int) {
 	return partSize, partCount
 }
 
-func ObjectKey(file FileUpload) (string, error) {
-	entryID, err := requiredKeySegment("entry_id", file.EntryID)
-	if err != nil {
-		return "", fmt.Errorf("entry id segment: %w", err)
+func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, size int64) (MultipartUploadGrant, error) {
+	if strings.TrimSpace(key) == "" {
+		return MultipartUploadGrant{}, errors.New("s3: object key is required")
 	}
-	entityID, err := requiredKeySegment("entity_id", file.EntityID)
-	if err != nil {
-		return "", fmt.Errorf("entity id segment: %w", err)
-	}
-	filename, err := originalFilename(file.OriginalFilename)
-	if err != nil {
-		return "", fmt.Errorf("original filename: %w", err)
-	}
-	modelID := strings.TrimSpace(file.ModelID)
-	if modelID == "" {
-		return path.Join(entryID, "entities", entityID, filename), nil
-	}
-	modelID, err = requiredKeySegment("model_id", modelID)
-	if err != nil {
-		return "", fmt.Errorf("model id segment: %w", err)
-	}
-	return path.Join(entryID, "models", modelID, "entities", entityID, filename), nil
-}
-
-func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUpload) (MultipartUploadGrant, error) {
-	if file.Size <= 0 {
+	if size <= 0 {
 		return MultipartUploadGrant{}, errors.New("s3: file size must be greater than zero")
 	}
 
-	key, err := ObjectKey(file)
-	if err != nil {
-		return MultipartUploadGrant{}, fmt.Errorf("s3: build object key: %w", err)
-	}
 	objectURL, err := b.objectURL(key)
 	if err != nil {
 		return MultipartUploadGrant{}, fmt.Errorf("s3: build object url: %w", err)
@@ -151,7 +118,7 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUplo
 	created, err := b.client.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
 		Bucket:      aws.String(b.config.Bucket),
 		Key:         aws.String(key),
-		ContentType: aws.String(objectContentType(file.OriginalFilename)),
+		ContentType: aws.String(objectContentType(key)),
 	})
 	if err != nil {
 		return MultipartUploadGrant{}, fmt.Errorf("s3: create multipart upload: %w", err)
@@ -161,7 +128,7 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, file FileUplo
 	}
 	uploadID := *created.UploadId
 
-	partSize, partCount := PartPlan(file.Size)
+	partSize, partCount := PartPlan(size)
 	parts := make([]PresignedPart, 0, partCount)
 	for partNumber := 1; partNumber <= partCount; partNumber++ {
 		req, presignErr := b.presigner.PresignUploadPart(ctx, &awss3.UploadPartInput{
@@ -256,37 +223,4 @@ func (b *RemoteBucket) objectURL(key string) (string, error) {
 		Path:   "/" + trimmedKey,
 	}
 	return parsed.String(), nil
-}
-
-func requiredKeySegment(name, value string) (string, error) {
-	segment := strings.TrimSpace(value)
-	if segment == "" {
-		return "", fmt.Errorf("%s is required", name)
-	}
-	if segment == "." || segment == ".." || strings.ContainsAny(segment, `/\`) {
-		return "", fmt.Errorf("%s is invalid", name)
-	}
-	return segment, nil
-}
-
-func originalFilename(value string) (string, error) {
-	filename := strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
-	if filename == "" {
-		return "", errors.New("original_filename is required")
-	}
-	filename = strings.TrimSpace(path.Base(filename))
-	if filename == "" || filename == "." || filename == ".." {
-		return "", errors.New("original_filename is invalid")
-	}
-
-	filename = strings.Map(func(r rune) rune {
-		if r < 32 || r == 127 {
-			return -1
-		}
-		return r
-	}, filename)
-	if filename == "" || filename == "." || filename == ".." {
-		return "", errors.New("original_filename is invalid")
-	}
-	return filename, nil
 }
