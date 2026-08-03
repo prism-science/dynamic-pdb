@@ -12,6 +12,9 @@ CREATE TABLE users (
     updated_at    timestamptz NOT NULL
 );
 
+CREATE UNIQUE INDEX users_source_external_ref_idx
+    ON users(source, external_ref);
+
 CREATE TABLE entries (
     id          uuid PRIMARY KEY,
 
@@ -207,8 +210,8 @@ CREATE TABLE runs (
     updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX runs_created_by_idx
-    ON runs(created_by);
+CREATE INDEX runs_created_by_created_at_idx
+    ON runs(created_by, created_at);
 
 CREATE TABLE model_revision_runs (
     model_revision_id uuid NOT NULL REFERENCES model_revisions(id),
