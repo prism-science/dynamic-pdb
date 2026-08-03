@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   ApiRequestError,
   type ModelPageData,
+  getEntryGraph,
   getModelPageData,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
@@ -11,8 +12,10 @@ import {
   getEntityFileURL,
   structureMaps,
 } from "@/lib/entities";
+import { buildLineage } from "@/lib/lineage";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
+import PipelineModal from "@/app/components/PipelineModal";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
@@ -59,6 +62,17 @@ export default async function ModelPage({ params }: ModelRouteProps) {
 
   const hasData = dataTableEntities(data.entities).length > 0;
   const hasValidation = model ? hasModelValidation(model, provenance) : false;
+
+  // The chain crosses model boundaries: this model's input was some other
+  // model's output, and /models/{id}/artifacts only carries relations for this
+  // model's own runs. Until the backend grows a lineage endpoint, the whole
+  // entry graph is what has the edges to walk.
+  const entryGraph = await getEntryGraph(session?.token, entryId);
+  const lineage = buildLineage(
+    entryGraph.entities,
+    entryGraph.relations,
+    model?.id ?? null,
+  );
 
   return (
     <main
@@ -117,6 +131,8 @@ export default async function ModelPage({ params }: ModelRouteProps) {
                 ) : null}
               </div>
             ) : null}
+
+            <PipelineModal lineage={lineage} title={data.model.name} />
           </aside>
 
           <div className={styles.content}>

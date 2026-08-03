@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@xyflow/react": "^12.11.2",
     "molstar": "^5.10.1",
     "next": "^15.0.0",
     "react": "^18.3.0",
