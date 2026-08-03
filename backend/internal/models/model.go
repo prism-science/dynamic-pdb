@@ -25,10 +25,15 @@ type ModelRevision struct {
 	Name              string
 	Description       *string
 	ThumbnailImageURL *string
-	Metadata          map[string]any
+	Metadata          ModelMetadata
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+}
+
+type ModelMetadata struct {
+	Authors     []string `json:"authors,omitempty"`
+	Affiliation *string  `json:"affiliation,omitempty"`
 }
 
 type Metric struct {
