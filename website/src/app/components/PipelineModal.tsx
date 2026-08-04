@@ -33,15 +33,21 @@ export default function PipelineModal({
   // Same preview a DataTable cell opens, and the same density maps offered
   // alongside it — here the candidates are whatever the chain itself contains.
   const maps = useMemo(
-    () => structureMaps(lineage.nodes.map((node) => node.entity)),
+    () =>
+      structureMaps(
+        lineage.nodes
+          .map((node) => node.entity)
+          .filter((entity): entity is Entity => entity !== null),
+      ),
     [lineage],
   );
 
   // Stable identity: LineageFlow memoises its layout on this callback.
-  const openPreview = useCallback(
-    (node: LineageNode) => setPreview(node.entity),
-    [],
-  );
+  const openPreview = useCallback((node: LineageNode) => {
+    if (node.entity) {
+      setPreview(node.entity);
+    }
+  }, []);
 
   // A one-run chain is three rows tall; giving it the same box as a four-run
   // chain leaves half the overlay empty. Row height mirrors LineageFlow's

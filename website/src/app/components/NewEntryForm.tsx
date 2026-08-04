@@ -33,6 +33,7 @@ import {
   buildCreateModelInput,
   extFileKeys,
   extFileToParsed,
+  missingExpectedInputs,
   modelValidationMessage,
   parseFile,
   parseUrlFile,
@@ -98,6 +99,10 @@ export default function NewEntryForm({
   const [models, setModels] = useState<ModelDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [missingWarning, setMissingWarning] = useState<
+    { program: string; name: string; source: string }[]
+  >([]);
+  const [missingAcknowledged, setMissingAcknowledged] = useState(false);
 
   // Draft persistence: restore prompt + gate so we never overwrite a saved
   // draft before the user decides whether to continue or discard it.
@@ -372,6 +377,17 @@ export default function NewEntryForm({
     if (!canSubmit) {
       return;
     }
+    // Inputs a run named but nobody uploaded. Worth stopping over once — a
+    // deposit missing its free-R set is easy to make and hard to notice later
+    // — but never worth blocking: the record is still true without them.
+    const missing = models.flatMap((modelDraft) =>
+      missingExpectedInputs(modelDraft.programs),
+    );
+    if (missing.length > 0 && !missingAcknowledged) {
+      setMissingWarning(missing);
+      setMissingAcknowledged(true);
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
@@ -566,6 +582,33 @@ export default function NewEntryForm({
           </div>
         )}
       </section>
+
+      {missingWarning.length > 0 ? (
+        <div className={styles.missingWarning}>
+          <strong>
+            {missingWarning.length === 1
+              ? "A declared input was not uploaded"
+              : `${missingWarning.length} declared inputs were not uploaded`}
+          </strong>
+          <ul>
+            {/* A chain missing twenty inputs is a list nobody reads; the count
+                in the heading already carries the scale. */}
+            {missingWarning.slice(0, 5).map((item) => (
+              <li key={`${item.program}-${item.name}`}>
+                <code>{item.name}</code> — input to {item.program}, declared in{" "}
+                {item.source}
+              </li>
+            ))}
+            {missingWarning.length > 5 ? (
+              <li>and {missingWarning.length - 5} more</li>
+            ) : null}
+          </ul>
+          <span>
+            Upload them to complete the chain, or submit again to deposit
+            without them.
+          </span>
+        </div>
+      ) : null}
 
       {error ? <p className={styles.error}>{error}</p> : null}
 

@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 
 import type { EntityLevel, FastaMetadata } from "@/lib/api/entries";
@@ -52,6 +53,7 @@ export default function FilesEditor({
   lockLevel = false,
   lockModelLevel = false,
   hint = DEFAULT_HINT,
+  title,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -64,6 +66,9 @@ export default function FilesEditor({
   lockLevel?: boolean;
   lockModelLevel?: boolean;
   hint?: string;
+  /** Overrides the drop-zone headline; the model form asks for the
+   *  coordinates first because that file is what everything else hangs off. */
+  title?: ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -145,7 +150,12 @@ export default function FilesEditor({
       >
         <UploadIcon />
         <span className={styles.dropZoneTitle}>
-          Drop files here or <span className={styles.dropZoneBrowse}>browse</span>
+          {title ?? (
+            <>
+              Drop files here or{" "}
+              <span className={styles.dropZoneBrowse}>browse</span>
+            </>
+          )}
         </span>
         <span className={styles.dropZoneHint}>{hint}</span>
       </button>

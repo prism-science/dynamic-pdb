@@ -1375,3 +1375,392 @@
     justify-content: flex-end;
   }
 }
+
+/* --------------------------------------------------------------------- */
+/* Pipeline: program links, live graph preview, unlinked tray            */
+/* --------------------------------------------------------------------- */
+
+.programSource {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.linkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.linkColumn {
+  min-width: 0;
+}
+
+.linkLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expectedNote {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.previewCanvas {
+  background: var(--bg);
+}
+
+.previewEmpty,
+.previewLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.previewLoading {
+  border: 0;
+  background: transparent;
+}
+
+.tray {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.trayLabel {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trayChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.trayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.trayChip[data-kind="program"] {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.trayChipMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.missingWarning {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 15px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 13px;
+}
+
+.missingWarning ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.missingWarning code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.missingWarning span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* The model body and its live graph, side by side. 720 leaves the fields the
+   width they had before the preview existed; the rest is the graph column. */
+.modelLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: start;
+}
+
+.modelMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modelSide {
+  position: sticky;
+  /* Clears the app header, which is sticky too. */
+  top: calc(var(--header-height) + 20px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 1040px) {
+  .modelLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modelSide {
+    position: static;
+  }
+}
+
+/* Token field: what is linked, and a search for what is not. */
+.linkColumn {
+  position: relative;
+}
+
+.tokenField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: text;
+}
+
+.tokenField[data-open="true"] {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tokenLevel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--lvl-soft, var(--neutral-bg));
+  color: var(--lvl, var(--text-secondary));
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.tokenName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tokenRemove {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tokenRemove:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.tokenInput {
+  flex: 1 1 80px;
+  min-width: 60px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.tokenPopover {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  margin-top: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.tokenPopoverHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tokenBulk {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-hover);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tokenOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 11px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tokenOption:first-of-type {
+  border-top: 0;
+}
+
+.tokenOption:hover {
+  background: var(--accent-soft);
+}
+
+.tokenOptionName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.tokenOptionMeta {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tokenMore,
+.tokenEmpty {
+  margin: 0;
+  padding: 8px 11px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tokenEmpty {
+  border-top: 0;
+}
+
+.trayChip[data-kind="count"] {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.tokenCount {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tokenCount:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}

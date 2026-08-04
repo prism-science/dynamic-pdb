@@ -25,7 +25,7 @@ const {
   parseFasta,
   parseFile,
   parseUrlFile,
-  programValidationMessage,
+  programsValidationMessage,
   sanitizeNumeric,
   toEntity,
   toMetricEntity,
@@ -146,12 +146,18 @@ test("should build explicit graph relations for model metrics and program", () =
     description: " Description ",
     files: [modelFile, densityFile],
     metrics: [{ id: "metrics-1", values: { r_free: "0.231", cc: "0.98" } }],
-    program: {
-      id: "program-1",
-      name: " phenix.refine ",
-      version: " 1.21.2 ",
-      description: " Refinement run ",
-    },
+    programs: [
+      {
+        id: "program-1",
+        name: " phenix.refine ",
+        version: " 1.21.2 ",
+        description: " Refinement run ",
+        inputFileIds: ["density-1"],
+        outputFileIds: ["model-entity-1"],
+        expectedInputs: [],
+        origin: "manual",
+      },
+    ],
   });
 
   const input = buildCreateModelInput(modelDraft);
@@ -186,12 +192,18 @@ test("should build explicit graph relations for model metrics and program", () =
 test("should record existing entry entities as program inputs", () => {
   const modelDraft = modelDraftFixture({
     files: [parsedFile({ id: "model-entity-1", type: "mmcif" })],
-    program: {
-      id: "program-1",
-      name: "phenix.refine",
-      version: "1.21.2",
-      description: "Refinement",
-    },
+    programs: [
+      {
+        id: "program-1",
+        name: "phenix.refine",
+        version: "1.21.2",
+        description: "Refinement",
+        inputFileIds: ["existing-l0-1", "existing-l0-2"],
+        outputFileIds: [],
+        expectedInputs: [],
+        origin: "manual",
+      },
+    ],
   });
 
   const input = buildCreateModelInput(modelDraft, {
@@ -216,7 +228,7 @@ test("should record existing entry entities as program inputs", () => {
 
   // Without a program there is nothing for the inputs to point at.
   const withoutProgram = buildCreateModelInput(
-    modelDraftFixture({ program: null }),
+    modelDraftFixture({ programs: [] }),
     { programInputEntityIds: ["existing-l0-1"] },
   );
   assert.deepEqual(withoutProgram.relations, []);
@@ -237,14 +249,37 @@ test("should validate the single model entity and complete program contract", ()
     modelValidationMessage(modelDraftFixture({ files: [modelFile, otherModelFile] })),
     "Keep only one PDB/mmCIF model file.",
   );
+  // A run with no name cannot be recorded; a missing version is simply a
+  // version nobody wrote down.
   assert.equal(
-    programValidationMessage({
-      id: "program-1",
-      name: "phenix.refine",
-      version: "",
-      description: "Refinement",
-    }),
-    "Fill program name, version, and description or remove the program.",
+    programsValidationMessage([
+      {
+        id: "program-1",
+        name: "  ",
+        version: "1.21.2",
+        description: "Refinement",
+        inputFileIds: [],
+        outputFileIds: [],
+        expectedInputs: [],
+        origin: "manual",
+      },
+    ]),
+    "Give every program a name or remove it.",
+  );
+  assert.equal(
+    programsValidationMessage([
+      {
+        id: "program-1",
+        name: "phenix.refine",
+        version: "",
+        description: "",
+        inputFileIds: [],
+        outputFileIds: [],
+        expectedInputs: [],
+        origin: "manual",
+      },
+    ]),
+    null,
   );
   assert.deepEqual(
     toProgramEntity({
@@ -252,6 +287,10 @@ test("should validate the single model entity and complete program contract", ()
       name: " phenix.refine ",
       version: " 1.21.2 ",
       description: " Refinement ",
+      inputFileIds: [],
+      outputFileIds: [],
+      expectedInputs: [],
+      origin: "manual",
     }),
     {
       id: "program-1",
@@ -395,12 +434,18 @@ test("should serialize and restore persisted draft files safely", () => {
     thumbUploadError: null,
     files: [file],
     metrics: [{ id: "metrics-1", values: { cc: "0.9" } }],
-    program: {
-      id: "program-1",
-      name: "phenix.refine",
-      version: "1.21.2",
-      description: "Refinement",
-    },
+    programs: [
+      {
+        id: "program-1",
+        name: "phenix.refine",
+        version: "1.21.2",
+        description: "Refinement",
+        inputFileIds: [],
+        outputFileIds: ["file-1"],
+        expectedInputs: [],
+        origin: "manual",
+      },
+    ],
   };
 
   const storedFile = fileToDraft(file);
@@ -416,7 +461,30 @@ test("should serialize and restore persisted draft files safely", () => {
   assert.equal(storedModel.thumbPreview, "https://example.com/thumb.png");
   assert.equal(restoredModel.thumbUploadStatus, "uploaded");
   assert.deepEqual(restoredModel.metrics, model.metrics);
-  assert.deepEqual(restoredModel.program, model.program);
+  assert.deepEqual(restoredModel.programs, model.programs);
+
+  // A draft saved by the previous version carried one unlinked program; it is
+  // restored as the star the old form would have submitted rather than dropped.
+  const legacy = modelFromDraft({
+    id: "model-1",
+    name: "Model",
+    description: "",
+    thumbUrl: null,
+    files: [
+      { ...storedFile, id: "coords-1", type: "mmcif" },
+      { ...storedFile, id: "map-1", type: "ccp4" },
+    ],
+    metrics: [],
+    program: {
+      id: "legacy-program",
+      name: "refmac5",
+      version: "5.8",
+      description: "Refinement",
+    },
+  });
+  assert.equal(legacy.programs.length, 1);
+  assert.deepEqual(legacy.programs[0].inputFileIds, ["map-1"]);
+  assert.deepEqual(legacy.programs[0].outputFileIds, ["coords-1"]);
   assert.equal(
     draftHasContent({
       version: 1,

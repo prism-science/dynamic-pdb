@@ -76,20 +76,18 @@ export function buildCreateModelInput(
   if (modelEntityFiles.length !== 1) {
     throw new Error(ONE_MODEL_FILE_ERROR);
   }
-  const programMessage = programValidationMessage(modelDraft.program);
+  const programMessage = programsValidationMessage(modelDraft.programs);
   if (programMessage) {
     throw new Error(programMessage);
   }
 
   const fileEntities = modelDraft.files.map(toEntity);
   const metricsEntities = modelDraft.metrics.map(toMetricEntity);
-  const programEntity = modelDraft.program
-    ? toProgramEntity(modelDraft.program)
-    : null;
+  const programEntities = modelDraft.programs.map(toProgramEntity);
   const entities: CreateEntityInput[] = [
     ...fileEntities,
     ...metricsEntities,
-    ...(programEntity ? [programEntity] : []),
+    ...programEntities,
   ];
   const canonicalModelEntity = fileEntities.find(
     (entity) => entity.id === modelEntityFiles[0].id,
@@ -105,28 +103,32 @@ export function buildCreateModelInput(
       relation_type: "metrics_for",
     }),
   );
-  if (programEntity) {
-    for (const entity of fileEntities) {
-      if (entity.type === "data") {
+
+  // Edges come from what each run says it touched. Nothing is inferred from
+  // file type any more: a run that emits a density map records it as an
+  // output, where the old rule would have filed it as an input.
+  const known = new Set(fileEntities.map((entity) => entity.id));
+  const baseline = options.programInputEntityIds ?? [];
+
+  for (const program of modelDraft.programs) {
+    for (const fileId of program.inputFileIds) {
+      if (known.has(fileId) || baseline.includes(fileId)) {
         relations.push({
-          source_entity_id: entity.id,
-          target_entity_id: programEntity.id,
+          source_entity_id: fileId,
+          target_entity_id: program.id,
           relation_type: "input_to",
         });
       }
     }
-    for (const entityId of options.programInputEntityIds ?? []) {
-      relations.push({
-        source_entity_id: entityId,
-        target_entity_id: programEntity.id,
-        relation_type: "input_to",
-      });
+    for (const fileId of program.outputFileIds) {
+      if (known.has(fileId)) {
+        relations.push({
+          source_entity_id: fileId,
+          target_entity_id: program.id,
+          relation_type: "output_of",
+        });
+      }
     }
-    relations.push({
-      source_entity_id: canonicalModelEntity.id,
-      target_entity_id: programEntity.id,
-      relation_type: "output_of",
-    });
   }
 
   return {
@@ -147,21 +149,56 @@ export function modelValidationMessage(modelDraft: ModelDraft): string | null {
   if (modelEntityCount > 1) {
     return "Keep only one PDB/mmCIF model file.";
   }
-  return programValidationMessage(modelDraft.program);
+  return programsValidationMessage(modelDraft.programs);
 }
 
-export function programValidationMessage(program: ProgramDraft | null): string | null {
-  if (!program) {
-    return null;
-  }
-  if (
-    !program.name.trim() ||
-    !program.version.trim() ||
-    !program.description.trim()
-  ) {
-    return "Fill program name, version, and description or remove the program.";
+export function programsValidationMessage(
+  programs: ProgramDraft[],
+): string | null {
+  for (const program of programs) {
+    if (!program.name.trim()) {
+      return "Give every program a name or remove it.";
+    }
   }
   return null;
+}
+
+/**
+ * Inputs a run declared but that were never uploaded. Reported at save time as
+ * a warning rather than an error: an incomplete chain is still a truthful
+ * record, and refusing the deposit over it would only teach people to delete
+ * the log.
+ */
+export function missingExpectedInputs(
+  programs: ProgramDraft[],
+): { program: string; name: string; source: string }[] {
+  const missing: { program: string; name: string; source: string }[] = [];
+  for (const program of programs) {
+    for (const expected of program.expectedInputs) {
+      missing.push({
+        program: program.name.trim() || "a program",
+        name: expected.name,
+        source: expected.source,
+      });
+    }
+  }
+  return missing;
+}
+
+export function emptyProgramDraft(
+  patch: Partial<ProgramDraft> = {},
+): ProgramDraft {
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    version: "",
+    description: "",
+    inputFileIds: [],
+    outputFileIds: [],
+    expectedInputs: [],
+    origin: "manual",
+    ...patch,
+  };
 }
 
 export function toProgramEntity(program: ProgramDraft): CreateEntityInput {
