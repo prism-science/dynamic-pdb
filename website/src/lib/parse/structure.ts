@@ -163,10 +163,10 @@ function parsePdb(text: string): StructureFacts {
         facts.program = splitProgram(program[1]);
       }
     }
-    readNumber(body, /R VALUE\s+\(WORKING SET\)\s*:\s*([0-9.]+)/i, (value) => {
+    readNumber(body, /^\s*R VALUE\s+\(WORKING SET\)\s*:\s*([0-9.]+)/i, (value) => {
       facts.metrics.r_work = value;
     });
-    readNumber(body, /FREE R VALUE\s*:\s*([0-9.]+)/i, (value) => {
+    readNumber(body, /^\s*FREE R VALUE\s*:\s*([0-9.]+)/i, (value) => {
       facts.metrics.r_free = value;
     });
     readNumber(
