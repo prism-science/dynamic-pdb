@@ -22,10 +22,15 @@ export default function MetricsEditor({
 
   return (
     <div className={styles.filesEditor}>
-      <button type="button" className={styles.fileDrop} onClick={add}>
-        <PlusIcon />
-        Add metrics
-      </button>
+      {/* One set per model, so the button goes away once it exists. A second
+          set would not survive the round trip anyway: the model page merges
+          every metrics entity into a single record before displaying it. */}
+      {metrics.length === 0 ? (
+        <button type="button" className={styles.fileDrop} onClick={add}>
+          <PlusIcon />
+          Add metrics
+        </button>
+      ) : null}
 
       {metrics.map((metric) => (
         <div key={metric.id} className={styles.metricCard}>

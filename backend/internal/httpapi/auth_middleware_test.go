@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"dynamic-pdb/backend/internal/auth"
+	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/types"
 )
 
 func Test_should_return_user_when_user_was_stored_in_context(t *testing.T) {
 	// given
-	user := &auth.User{
+	user := &models.User{
 		ID:          uuid.New(),
 		ExternalRef: types.ExternalRef{Source: "github", Value: "42"},
 		Email:       "user@example.com",

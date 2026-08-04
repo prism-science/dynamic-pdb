@@ -7,12 +7,17 @@ import { uploadFileToObjectStorage } from "@/lib/api/uploads";
 
 import FilesEditor, { ProgressBar } from "./FilesEditor";
 import MetricsEditor from "./MetricsEditor";
-import ProgramEditor from "./ProgramEditor";
+import PipelineEditor from "./PipelineEditor";
+import PipelinePreview from "./PipelinePreview";
+import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
+import type { EntryFacts } from "./autoDetect";
 import { UploadIcon } from "./icons";
+import { MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type { ModelDraft, ParsedFile } from "./types";
 import {
   ONE_MODEL_FILE_ERROR,
   canAddModelFiles,
+  isModelFile,
   extFileKeys,
   extFileToParsed,
   normalizeModelLevel,
@@ -42,18 +47,26 @@ export default function ModelDraftFields({
   draft,
   entryId,
   extExperiment = null,
+  baselineFiles = [],
+  onEntryFacts,
   onUpdate,
   onError,
 }: {
   draft: ModelDraft;
   entryId: string;
   extExperiment?: ExtExperiment | null;
+  /** Entry-level files this model's runs may consume. */
+  baselineFiles?: ParsedFile[];
+  /** Structure-level facts read from the model file, for the entry to keep. */
+  onEntryFacts?: (facts: EntryFacts) => void;
   onUpdate: ModelDraftUpdater;
   onError: (message: string | null) => void;
 }) {
   // Tracks the draft that is currently on screen, for the guards below.
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  const hasModel = draft.files.some(isModelFile);
 
   const patchFile = (fileId: string, patch: Partial<ParsedFile>) =>
     onUpdate((current) => ({
@@ -114,7 +127,8 @@ export default function ModelDraftFields({
   };
 
   return (
-    <>
+    <div className={styles.modelLayout}>
+      <div className={styles.modelMain}>
       {/* Same identity block as the entry form: preview on the left, name and
           description beside it. The thumbnail is last in the DOM and moved by
           CSS so tabbing still starts at the name. */}
@@ -156,6 +170,57 @@ export default function ModelDraftFields({
               placeholder="Optional — e.g. molecular replacement, then restrained refinement"
               autoComplete="off"
             />
+          </div>
+
+          {/* What the run was for and what came out are properties of the
+              model, like its name — not a separate stage of the form. */}
+          <div className={styles.identityChoices}>
+            <div className={styles.field}>
+              <label className={styles.subLabel} htmlFor={`${draft.id}-purpose`}>
+                Purpose
+              </label>
+              <select
+                id={`${draft.id}-purpose`}
+                className={styles.select}
+                value={draft.purpose}
+                onChange={(event) =>
+                  onUpdate((current) => ({
+                    ...current,
+                    purpose: event.target.value,
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {MODEL_PURPOSES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.subLabel} htmlFor={`${draft.id}-type`}>
+                Model type
+              </label>
+              <select
+                id={`${draft.id}-type`}
+                className={styles.select}
+                value={draft.modelType}
+                onChange={(event) =>
+                  onUpdate((current) => ({
+                    ...current,
+                    modelType: event.target.value,
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {MODEL_TYPES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -212,7 +277,19 @@ export default function ModelDraftFields({
       <FilesEditor
         files={draft.files}
         lockModelLevel
-        hint="Structures, maps, logs — .pdb, .cif, .mtz, .ccp4, .log"
+        title={
+          hasModel ? undefined : (
+            <>
+              Start with the model file —{" "}
+              <span className={styles.dropZoneBrowse}>browse</span>
+            </>
+          )
+        }
+        hint={
+          hasModel
+            ? "Reflections, maps and run logs — .mtz, .ccp4, .log, .eff"
+            : "A .pdb or .cif. Its header supplies the refinement program, R-factors, cell and composition."
+        }
         extExperiment={extExperiment}
         onAdd={async (list) => {
           const parsed = await Promise.all(
@@ -228,6 +305,44 @@ export default function ModelDraftFields({
               patchFile,
             );
           });
+          // Any new file may be the one a log was waiting for, whether or not
+          // it has a header of its own — a plain .mtz never parses but is
+          // exactly what closes a placeholder.
+          onUpdate((current) => ({
+            ...current,
+            programs: resolveExpectedInputs(current),
+          }));
+
+          // Read each dropped file for what it already declares. Done after
+          // the files land in the draft so a log can match names against them.
+          for (let index = 0; index < parsed.length; index += 1) {
+            const source = list[index];
+            if (!source) {
+              continue;
+            }
+            void detectFromFile(
+              source,
+              parsed[index],
+              draftRef.current,
+              onEntryFacts,
+            )
+              .then((patch) => {
+                const { notes, ...rest } = patch;
+                if (Object.keys(rest).length === 0) {
+                  return;
+                }
+                onUpdate((current) => {
+                  const merged = { ...current, ...rest } as ModelDraft;
+                  return { ...merged, programs: resolveExpectedInputs(merged) };
+                });
+                if (notes.length > 0) {
+                  onError(null);
+                }
+              })
+              .catch(() => {
+                // A file we cannot read is simply a file with no header.
+              });
+          }
         }}
         onAddUrl={async (rawUrl) => {
           const parsed = await parseModelUrlFile(rawUrl);
@@ -274,14 +389,26 @@ export default function ModelDraftFields({
         }
       />
 
-      <span className={styles.subLabel}>Program</span>
-      <ProgramEditor
-        program={draft.program}
-        setProgram={(next) =>
-          onUpdate((current) => ({ ...current, program: next }))
+      <span className={styles.subLabel}>Pipeline</span>
+      <PipelineEditor
+        programs={draft.programs}
+        files={draft.files}
+        baseline={baselineFiles}
+        onChange={(next) =>
+          onUpdate((current) => ({ ...current, programs: next }))
         }
       />
-    </>
+
+      </div>
+
+      {/* The graph rides alongside the fields rather than under them: it is a
+          mirror of what is being typed, and a mirror below the fold is one
+          nobody looks in. */}
+      <aside className={styles.modelSide}>
+        <span className={styles.subLabel}>Pipeline preview</span>
+        <PipelinePreview draft={draft} baseline={baselineFiles} />
+      </aside>
+    </div>
   );
 }
 
@@ -299,6 +426,8 @@ export function emptyModelDraft(): ModelDraft {
     thumbUploadError: null,
     files: [],
     metrics: [],
-    program: null,
+    purpose: "",
+    modelType: "",
+    programs: [],
   };
 }

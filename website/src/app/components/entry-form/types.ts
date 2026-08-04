@@ -29,12 +29,64 @@ export type MetricDraft = {
   values: Record<string, string>;
 };
 
+/**
+ * A file a run declared but that nobody has uploaded yet. Kept on the program
+ * so the graph can show it as a placeholder and the form can nag about it at
+ * save time — a refinement whose free-R set is missing is a common and quiet
+ * kind of incomplete deposit.
+ */
+export type ExpectedInput = {
+  id: string;
+  /** Basename exactly as the log wrote it. */
+  name: string;
+  /** Which log it came from, so the hint can say where we read it. */
+  source: string;
+};
+
 export type ProgramDraft = {
   id: string;
   name: string;
   version: string;
   description: string;
+  /** Ids of files fed to this run. */
+  inputFileIds: string[];
+  /** Ids of files it produced. */
+  outputFileIds: string[];
+  expectedInputs: ExpectedInput[];
+  /** Whether a human typed this or a header/log did. */
+  origin: "manual" | "parsed";
+  /** Filename the facts were read from, for the "from refine_001.pdb" hint. */
+  originFile?: string;
 };
+
+/**
+ * Properties of the structure, not of any one model. Kept on the entry
+ * because two models of the same crystal share them.
+ *
+ * Method is constrained to what the record accepts; the rest are free text
+ * because a space group or an organism has no closed list worth enforcing.
+ */
+export type EntryMetadataDraft = {
+  pdb: string;
+  resolution: string;
+  method: string;
+  spaceGroup: string;
+  organism: string;
+};
+
+export const METHODS = ["X-ray crystallography", "CryoEM"] as const;
+
+export const MODEL_PURPOSES = ["Model Building", "Refinement"] as const;
+
+export const MODEL_TYPES = [
+  "Single Conformer",
+  "Multiconformer",
+  "Ensemble",
+] as const;
+
+export function emptyEntryMetadataDraft(): EntryMetadataDraft {
+  return { pdb: "", resolution: "", method: "", spaceGroup: "", organism: "" };
+}
 
 export type ModelDraft = {
   id: string;
@@ -49,7 +101,15 @@ export type ModelDraft = {
   thumbUploadError: string | null;
   files: ParsedFile[];
   metrics: MetricDraft[];
-  program: ProgramDraft | null;
+  /** Judgements no header states: what the run was for, what came out. */
+  purpose: string;
+  modelType: string;
+  /**
+   * One entry per run. A deposit that went model building -> refinement ->
+   * multiconformer build is three, and each states its own inputs, so the
+   * chain no longer has to be inferred from file extensions.
+   */
+  programs: ProgramDraft[];
 };
 
 export const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];
@@ -62,4 +122,5 @@ export const METRIC_FIELDS: { key: string; label: string; example: string }[] = 
 ];
 
 export const DRAFT_STORAGE_KEY = "dpdb:new-entry-draft";
-export const DRAFT_VERSION = 1;
+// 2: `program` became `programs[]` with explicit input/output links.
+export const DRAFT_VERSION = 2;

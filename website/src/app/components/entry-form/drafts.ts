@@ -3,6 +3,7 @@ import type { ExtFileReference } from "@/lib/api/ext";
 
 import { DRAFT_STORAGE_KEY, DRAFT_VERSION } from "./types";
 import type {
+  EntryMetadataDraft,
   FileSource,
   MetricDraft,
   ModelDraft,
@@ -35,12 +36,17 @@ export type StoredModel = {
   thumbPreview?: string;
   files: StoredFile[];
   metrics: MetricDraft[];
+  purpose?: string;
+  modelType?: string;
+  programs?: ProgramDraft[];
+  /** Version 1 shape, read once so an in-flight draft is not thrown away. */
   program?: ProgramDraft | null;
 };
 
 export type StoredDraft = {
   version: number;
   entryId: string;
+  metadata?: EntryMetadataDraft;
   extExperimentId?: string | null;
   name: string;
   description: string;
@@ -105,7 +111,9 @@ export function modelToDraft(modelDraft: ModelDraft): StoredModel {
     thumbPreview: httpOnly(modelDraft.thumbPreview),
     files: modelDraft.files.filter(isPersistable).map(fileToDraft),
     metrics: modelDraft.metrics,
-    program: modelDraft.program,
+    purpose: modelDraft.purpose,
+    modelType: modelDraft.modelType,
+    programs: modelDraft.programs,
   };
 }
 
@@ -123,8 +131,35 @@ export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
     thumbUploadError: null,
     files: modelDraft.files.map(fileFromDraft).map(normalizeModelLevel),
     metrics: modelDraft.metrics,
-    program: modelDraft.program ?? null,
+    purpose: modelDraft.purpose ?? "",
+    modelType: modelDraft.modelType ?? "",
+    programs: storedPrograms(modelDraft),
   };
+}
+
+// A version 1 draft carried a single `program` with no links. Its one run took
+// every data file and produced the model, so that is what it is restored as —
+// the same graph the old form would have submitted.
+function storedPrograms(modelDraft: StoredModel): ProgramDraft[] {
+  if (modelDraft.programs) {
+    return modelDraft.programs;
+  }
+  const legacy = modelDraft.program;
+  if (!legacy) {
+    return [];
+  }
+  const files = modelDraft.files;
+  const isModel = (file: StoredFile) =>
+    file.type === "pdb" || file.type === "mmcif";
+  return [
+    {
+      ...legacy,
+      inputFileIds: files.filter((file) => !isModel(file)).map((file) => file.id),
+      outputFileIds: files.filter(isModel).map((file) => file.id),
+      expectedInputs: [],
+      origin: "manual" as const,
+    },
+  ];
 }
 
 export function draftHasContent(draft: StoredDraft): boolean {

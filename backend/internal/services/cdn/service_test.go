@@ -14,9 +14,9 @@ func Test_should_return_s3_object_url_when_cloudfront_is_not_configured(t *testi
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			Key:       "entry/entities/entity/model.cif",
+			Key:       "entry/artifacts/artifact/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "http://localhost:9000/dynamic-pdb/entry/entities/entity/model.cif",
+			ObjectURL: "http://localhost:9000/dynamic-pdb/entry/artifacts/artifact/model.cif",
 			PartSize:  64 * 1024 * 1024,
 		},
 	}
@@ -29,7 +29,7 @@ func Test_should_return_s3_object_url_when_cloudfront_is_not_configured(t *testi
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, bucket.grant.ObjectURL, grant.ObjectURL)
-	assert.Equal(t, "entry/entities/entity/model.cif", bucket.presignedKey)
+	assert.Equal(t, "entry/artifacts/artifact/model.cif", bucket.presignedKey)
 	assert.Equal(t, int64(42), bucket.presignedSize)
 }
 
@@ -37,9 +37,9 @@ func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			Key:       "entry/entities/entity/model.cif",
+			Key:       "entry/artifacts/artifact/model.cif",
 			UploadID:  "upload-id",
-			ObjectURL: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/model.cif",
+			ObjectURL: "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/artifacts/artifact/model.cif",
 			PartSize:  64 * 1024 * 1024,
 			Parts: []s3.PresignedPart{
 				{PartNumber: 1, URL: "https://storage.example/part-1"},
@@ -62,7 +62,7 @@ func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "https://files.dynamicpdb.com/entry/entities/entity/model.cif", grant.ObjectURL)
+	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", grant.ObjectURL)
 	assert.Equal(t, "https://storage.example/part-1", grant.Parts[0].URL)
 }
 
@@ -70,7 +70,7 @@ func Test_should_reject_s3_object_url_from_another_bucket(t *testing.T) {
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			ObjectURL: "https://unrelated.example/entry/entities/entity/model.cif",
+			ObjectURL: "https://unrelated.example/entry/artifacts/artifact/model.cif",
 		},
 	}
 	service, err := NewService(bucket, Config{
@@ -96,7 +96,7 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 	// given
 	bucket := &bucketStub{
 		grant: s3.MultipartUploadGrant{
-			ObjectURL: "http://localhost:9000/storage/dynamic-pdb/entry/entities/entity/model.cif",
+			ObjectURL: "http://localhost:9000/storage/dynamic-pdb/entry/artifacts/artifact/model.cif",
 		},
 	}
 	service, err := NewService(bucket, Config{
@@ -115,7 +115,7 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "https://files.example.com/entry/entities/entity/model.cif", grant.ObjectURL)
+	assert.Equal(t, "https://files.example.com/entry/artifacts/artifact/model.cif", grant.ObjectURL)
 }
 
 func Test_should_reject_invalid_file_upload_before_calling_s3(t *testing.T) {
@@ -143,7 +143,7 @@ func Test_should_build_entry_object_key_when_file_has_no_model(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry/entities/entity/model.cif", key)
+	assert.Equal(t, "entry/artifacts/artifact/model.cif", key)
 }
 
 func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
@@ -156,7 +156,7 @@ func Test_should_build_model_object_key_when_file_has_model(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry/models/model/entities/entity/model.cif", key)
+	assert.Equal(t, "entry/models/model/artifacts/artifact/model.cif", key)
 }
 
 func Test_should_strip_path_from_original_filename_when_building_object_key(t *testing.T) {
@@ -169,7 +169,7 @@ func Test_should_strip_path_from_original_filename_when_building_object_key(t *t
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "entry/entities/entity/model.cif", key)
+	assert.Equal(t, "entry/artifacts/artifact/model.cif", key)
 }
 
 func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.T) {
@@ -213,7 +213,7 @@ func Test_should_proxy_complete_and_abort_to_s3(t *testing.T) {
 func validFileUpload() FileUpload {
 	return FileUpload{
 		EntryID:          "entry",
-		EntityID:         "entity",
+		ArtifactID:       "artifact",
 		OriginalFilename: "model.cif",
 		Size:             42,
 	}

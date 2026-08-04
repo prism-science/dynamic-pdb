@@ -1,0 +1,260 @@
+/* Nodes deliberately mirror the L0-L3 cells in DataTable.module.css: same
+   level stripe, same type pill, same name treatment. The graph is another view
+   of those artifacts, so it should not invent a second card style. */
+
+.artifact {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--lvl, var(--border-strong));
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.artifact[data-interactive="true"] {
+  cursor: pointer;
+  /* Belt to the onNodeClick brace: a child may re-enable hit testing even
+     when React Flow has switched the node wrapper off. */
+  pointer-events: all;
+}
+
+.artifact[data-interactive="true"]:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgba(59, 166, 241, 0.1);
+}
+
+.artifact[data-current="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Emitted by a run on the chain but never consumed by this model. */
+.artifact[data-off-path="true"] {
+  opacity: 0.55;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.level {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--lvl-soft, var(--neutral-bg));
+  color: var(--lvl, var(--text-secondary));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.type {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.type[data-type="model"] {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.type[data-type="metrics"] {
+  background: var(--l3-soft);
+  color: var(--l3);
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Runs read as steps rather than things: one line, pill shaped, so they never
+   get mistaken for an artifact card. */
+.run {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.runName {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runVersion {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* The connection points only exist so React Flow can anchor edges. */
+.handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+/* Placeholder for a declared but absent input. Warning-toned rather than
+   red: nothing is broken, something is simply not here yet. */
+.expected {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px dashed var(--warning-border);
+  border-left: 3px dashed var(--warning-fg);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+
+.expected[data-interactive="true"] {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.expected[data-interactive="true"]:hover {
+  border-style: solid;
+  border-left-style: solid;
+}
+
+.expectedTag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--warning-fg);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expectedAdd {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.expected .name {
+  color: var(--warning-fg);
+}
+
+/* Compact set for the form's side column: smaller type, one line for a name,
+   no room wasted on padding. */
+.artifact[data-compact="true"],
+.expected[data-compact="true"] {
+  gap: 3px;
+  padding: 6px 9px;
+}
+
+.artifact[data-compact="true"] .name,
+.expected[data-compact="true"] .name {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.artifact[data-compact="true"] .level,
+.artifact[data-compact="true"] .type,
+.expected[data-compact="true"] .expectedTag {
+  height: 15px;
+  padding: 0 5px;
+  font-size: 9px;
+}
+
+.run[data-compact="true"] {
+  gap: 6px;
+  padding: 0 11px;
+}
+
+.run[data-compact="true"] .runName {
+  font-size: 11px;
+}
+
+.run[data-compact="true"] .runVersion {
+  font-size: 9px;
+}
+
+/* Stand-in for the tail of an over-wide row. */
+.overflow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.overflowCount {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.overflowLabel {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.overflow[data-compact="true"] .overflowCount {
+  font-size: 13px;
+}
+
+.overflow[data-compact="true"] .overflowLabel {
+  font-size: 10px;
+}

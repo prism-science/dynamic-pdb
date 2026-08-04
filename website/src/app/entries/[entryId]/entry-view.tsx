@@ -1,11 +1,8 @@
-import type { ReactNode } from "react";
-
 import type {
-  DataPayload,
   Entity,
   EntityRelation,
   MetricsPayload,
-  ModelPayload,
+  Model,
   ProgramPayload,
 } from "@/lib/api/entries";
 import { getEntityFileURL, getFilePayload } from "@/lib/entities";
@@ -15,10 +12,21 @@ import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 import styles from "./entry-page.module.css";
 
 export type Provenance = {
-	index: Map<string, Entity>;
-	programOf: (entityId: string) => Entity | null;
-	inputsOf: (entityId: string) => Entity[];
-	metricsOf: (entityId: string) => Entity[];
+  index: Map<string, Entity>;
+  programOf: (entityId: string) => Entity | null;
+  inputsOf: (entityId: string) => Entity[];
+  metricsOf: (entityId: string) => Entity[];
+};
+
+export type MetadataFact = {
+  label: string;
+  value: string;
+  // Set when the value identifies the record in an external database; rendered
+  // as the only coloured value in the block so it reads as clickable.
+  href?: string;
+  // Identifiers and symmetry symbols are glyph-sensitive (P 21 21 21, 5GY3);
+  // organism names are conventionally italicised.
+  format?: "mono" | "italic";
 };
 
 export function buildProvenance(
@@ -95,51 +103,67 @@ export function ImagePlaceholderIcon({ size = 26 }: { size?: number }) {
   );
 }
 
-export function EntryHero({
-  title,
-  eyebrow,
-  description,
-  meta = [],
-  action,
-}: {
-  title: string;
-  eyebrow?: string;
-  description?: string | null;
-  meta?: string[];
-  action?: ReactNode;
-}) {
+function FactValue({ fact }: { fact: MetadataFact }) {
+  if (!fact.href) {
+    return <>{fact.value}</>;
+  }
   return (
-    <header className={styles.hero}>
-      {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
-      <div className={styles.heroTitleRow}>
-        <h1>{title}</h1>
-        {action ? <div className={styles.heroAction}>{action}</div> : null}
-      </div>
-      {description?.trim() ? (
-        <p className={styles.description}>{description}</p>
-      ) : null}
-      {meta.length > 0 ? (
-        <div className={styles.heroMeta} aria-label="Summary">
-          {meta.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      ) : null}
-    </header>
+    <a
+      className={styles.factLink}
+      href={fact.href}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {fact.value}
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+      </svg>
+    </a>
   );
 }
 
-export function SectionHeader({
-  title,
-  detail,
-}: {
-  title: string;
-  detail?: ReactNode;
-}) {
+// Two columns of label/value rows on a fixed label track, so values start at
+// the same x on both sides instead of being flung to the far edge.
+//
+// The halves are split here and rendered as two independent lists rather than
+// as one grid flowing across both. A single grid shares its rows between the
+// columns, so a three-line affiliation on the right stretches the row and
+// punches a hole into the left column; separate lists let each side pack
+// tight. Splitting at ceil(n / 2) also keeps the reading order down the left
+// column and stays balanced whichever facts happen to be missing.
+export function InfoGrid({ facts }: { facts: MetadataFact[] }) {
+  if (facts.length === 0) {
+    return null;
+  }
+  const half = Math.ceil(facts.length / 2);
+  const columns = [facts.slice(0, half), facts.slice(half)];
+
   return (
-    <div className={styles.sectionHeader}>
-      <h2>{title}</h2>
-      {detail ? <span>{detail}</span> : null}
+    <div className={styles.infoColumns}>
+      {columns.map((column, index) =>
+        column.length > 0 ? (
+          <dl key={index} className={styles.infoColumn}>
+            {column.map((fact) => (
+              <div key={fact.label} className={styles.infoRow}>
+                <dt>{fact.label}</dt>
+                <dd data-format={fact.format}>
+                  <FactValue fact={fact} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : null,
+      )}
     </div>
   );
 }
@@ -188,23 +212,13 @@ const modelMetricTiles: MetricSpec[] = [
   },
 ];
 
-export function ModelCard({
+export function ModelValidation({
   entity,
   provenance,
-  thumbnailImageURL,
-  maps,
 }: {
   entity: Entity;
   provenance: Provenance;
-  thumbnailImageURL?: string | null;
-  maps?: StructureMap[];
 }) {
-  const fileURL = getEntityFileURL(entity);
-  const payload = getFilePayload(entity);
-  const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
-  const previewURL = thumbnailImageURL?.trim() || getModelPreviewURL(meta);
-  const structureKind = detectStructureKind(fileURL ?? undefined);
-
   const merged: MetricsPayload = {};
   for (const metric of provenance.metricsOf(entity.id)) {
     Object.assign(merged, metric.payload as MetricsPayload);
@@ -212,78 +226,86 @@ export function ModelCard({
   const tiles = modelMetricTiles.filter(
     (tile) => typeof merged[tile.key] === "number",
   );
-  const program = provenance.programOf(entity.id);
-  const authorFacts = getEntityAuthorFacts(entity);
+  if (tiles.length === 0) {
+    return null;
+  }
 
   return (
-    <article className={styles.modelCard}>
-      <div className={styles.modelLeft}>
-        <div className={styles.modelPreview} data-empty={previewURL ? undefined : "true"}>
-          {previewURL ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={previewURL} alt="" loading="lazy" />
-          ) : (
-            <ImagePlaceholderIcon size={34} />
-          )}
-        </div>
-        {structureKind && fileURL ? (
-          <StructureViewerModal
-            url={fileURL}
-            kind={structureKind}
-            name={entity.name}
-            maps={maps}
-          />
-        ) : null}
-      </div>
-
-      <div className={styles.modelBody}>
-        {program || authorFacts.length > 0 ? (
-          <dl className={styles.modelProvenance}>
-            {program ? (
-              <div className={styles.modelProvenanceRow}>
-                <dt>Made with</dt>
-                <dd>{formatProgram(program)}</dd>
-              </div>
-            ) : null}
-            {authorFacts.map((fact) => (
-              <div key={fact.label} className={styles.modelProvenanceRow}>
-                <dt>{fact.label}</dt>
-                <dd>{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-
-        {tiles.length > 0 ? (
-          <section className={styles.validation}>
-            <div className={styles.metricGrid}>
-              {tiles.map((tile) => {
-                const value = merged[tile.key] as number;
-                const fill = Math.max(0, Math.min(1, value / tile.scaleMax));
-                return (
-                  <div key={tile.key} className={styles.metricTile}>
-                    <div className={styles.metricLabel}>{tile.label}</div>
-                    <div className={styles.metricValue}>
-                      {metricFormatter.format(value)}
-                    </div>
-                    <div className={styles.metricBar}>
-                      <span
-                        className={styles.metricBarFill}
-                        data-status={tile.status(value)}
-                        style={{ width: `${fill * 100}%` }}
-                      />
-                    </div>
-                    <div className={styles.metricHint}>
-                      {tile.direction === "lower" ? "↓ better" : "↑ better"}
-                    </div>
-                  </div>
-                );
-              })}
+    <div className={styles.metricGrid}>
+      {tiles.map((tile) => {
+        const value = merged[tile.key] as number;
+        const fill = Math.max(0, Math.min(1, value / tile.scaleMax));
+        return (
+          <div key={tile.key} className={styles.metricTile}>
+            <div className={styles.metricLabel}>{tile.label}</div>
+            <div className={styles.metricValue}>
+              {metricFormatter.format(value)}
             </div>
-          </section>
-        ) : null}
-      </div>
-    </article>
+            <div className={styles.metricBar}>
+              <span
+                className={styles.metricBarFill}
+                data-status={tile.status(value)}
+                style={{ width: `${fill * 100}%` }}
+              />
+            </div>
+            <div className={styles.metricHint}>
+              {tile.direction === "lower" ? "↓ better" : "↑ better"}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function hasModelValidation(entity: Entity, provenance: Provenance) {
+  const merged: MetricsPayload = {};
+  for (const metric of provenance.metricsOf(entity.id)) {
+    Object.assign(merged, metric.payload as MetricsPayload);
+  }
+  return modelMetricTiles.some((tile) => typeof merged[tile.key] === "number");
+}
+
+export function modelMetadata(
+  entity: Entity | null,
+  metadata?: Model["metadata"],
+): Record<string, unknown> {
+  const payload = entity ? getFilePayload(entity) : null;
+  return (metadata ?? payload ?? {}) as Record<string, unknown>;
+}
+
+export function modelPreviewURL(
+  entity: Entity | null,
+  thumbnailImageURL?: string | null,
+): string | null {
+  const explicit = thumbnailImageURL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const payload = entity ? getFilePayload(entity) : null;
+  const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
+  return getModelPreviewURL(meta);
+}
+
+export function ModelViewerButton({
+  entity,
+  maps,
+}: {
+  entity: Entity;
+  maps?: StructureMap[];
+}) {
+  const fileURL = getEntityFileURL(entity);
+  const structureKind = detectStructureKind(fileURL ?? undefined);
+  if (!structureKind || !fileURL) {
+    return null;
+  }
+  return (
+    <StructureViewerModal
+      url={fileURL}
+      kind={structureKind}
+      name={entity.name}
+      maps={maps}
+    />
   );
 }
 
@@ -295,29 +317,143 @@ function formatProgram(program: Entity): string {
   return program.name;
 }
 
-function getEntityAuthorFacts(entity: Entity): { label: string; value: string }[] {
-  if (entity.type !== "data" && entity.type !== "model") {
-    return [];
-  }
+export function entryMetadataFacts(
+  metadata: Record<string, unknown> | undefined,
+): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const externalRefs = recordValue(metadata?.external_refs);
+  const pdb = stringValue(externalRefs?.pdb);
+  const resolution = numberValue(metadata?.resolution);
+  const organism = stringValue(metadata?.organism);
+  const method = stringValue(metadata?.method);
+  const spaceGroup = stringValue(metadata?.space_group);
 
-  const payload = entity.payload as DataPayload | ModelPayload;
-  const authors = Array.isArray(payload.authors)
-    ? payload.authors.map((author) => author.trim()).filter(Boolean)
-    : [];
-  const institution =
-    typeof payload.affiliation === "string"
-      ? payload.affiliation.trim()
-      : "";
-  const facts: { label: string; value: string }[] = [];
-
-  if (authors.length > 0) {
-    facts.push({ label: "Authors", value: authors.join(", ") });
+  if (pdb) {
+    facts.push({
+      label: "PDB",
+      value: pdb,
+      href: rcsbStructureURL(pdb),
+      format: "mono",
+    });
   }
-  if (institution) {
-    facts.push({ label: "Affiliation", value: institution });
+  if (resolution != null) {
+    facts.push({
+      label: "Resolution",
+      value: `${numberFormatter.format(resolution)} Å`,
+    });
+  }
+  if (method) {
+    facts.push({ label: "Method", value: method });
+  }
+  if (spaceGroup) {
+    facts.push({ label: "Space group", value: spaceGroup, format: "mono" });
+  }
+  if (organism) {
+    facts.push({ label: "Organism", value: organism, format: "italic" });
   }
 
   return facts;
+}
+
+// A PDB ID is four alphanumerics starting with a digit; anything else is not
+// addressable on rcsb.org and stays plain text rather than a broken link.
+function rcsbStructureURL(pdb: string): string | undefined {
+  const id = pdb.trim().toUpperCase();
+  return /^[1-9][A-Z0-9]{3}$/.test(id)
+    ? `https://www.rcsb.org/structure/${id}`
+    : undefined;
+}
+
+// What the model contains: bare counts, which belong next to the thumbnail as
+// vitals — the same role "310 residues" plays on the entry — rather than as
+// tiles competing with the validation metrics.
+// Counts only. Ligand codes are a named fact, not a measurement, so they go in
+// the Info block with the rest of the labelled values instead of borrowing a
+// "Label: value" shape no other line in the rail uses.
+export function modelVitals(metadata: Record<string, unknown>): string[] {
+  const parts: string[] = [];
+  const atomCount = numberValue(metadata.atom_count);
+  const modeledResidues = numberValue(metadata.modeled_residues);
+  const proteinChains = numberValue(metadata.unique_protein_chains);
+
+  if (atomCount != null) {
+    parts.push(`${numberFormatter.format(atomCount)} atoms`);
+  }
+  if (modeledResidues != null) {
+    parts.push(`${numberFormatter.format(modeledResidues)} residues`);
+  }
+  if (proteinChains != null) {
+    parts.push(
+      `${numberFormatter.format(proteinChains)} ${
+        proteinChains === 1 ? "chain" : "chains"
+      }`,
+    );
+  }
+
+  return parts.length > 0 ? [parts.join(" · ")] : [];
+}
+
+// Where the model came from: prose-length values that need a label beside them.
+export function modelInfoFacts(
+  metadata: Record<string, unknown>,
+  program: Entity | null,
+): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const purpose = stringValue(metadata.purpose);
+  const modelType = stringValue(metadata.model_type);
+  const ligands = stringArrayValue(metadata.ligands);
+  const authors = stringArrayValue(metadata.authors);
+  const affiliation = stringValue(metadata.affiliation);
+
+  if (program) {
+    facts.push({ label: "Made with", value: formatProgram(program) });
+  }
+  if (purpose) {
+    facts.push({ label: "Purpose", value: purpose });
+  }
+  if (modelType) {
+    facts.push({ label: "Model type", value: modelType });
+  }
+  if (ligands.length > 0) {
+    facts.push({
+      label: ligands.length === 1 ? "Ligand" : "Ligands",
+      value: ligands.join(", "),
+      format: "mono",
+    });
+  }
+  if (authors.length > 0) {
+    facts.push({ label: "Authors", value: authors.join(", ") });
+  }
+  if (affiliation) {
+    facts.push({ label: "Affiliation", value: affiliation });
+  }
+
+  return facts;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function getModelPreviewURL(meta: Record<string, unknown>): string | null {
@@ -334,3 +470,5 @@ function getModelPreviewURL(meta: Record<string, unknown>): string | null {
 const metricFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 3,
 });
+
+const numberFormatter = new Intl.NumberFormat("en-US");

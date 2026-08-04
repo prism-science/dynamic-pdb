@@ -13,6 +13,7 @@ import (
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/integrations/github"
+	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
 )
@@ -110,7 +111,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 	}
 
 	now := time.Now().UTC()
-	persisted, err := s.database.Users.Create(r.Context(), auth.User{
+	persisted, err := s.database.Users.Create(r.Context(), models.User{
 		ID: uuid.New(),
 		ExternalRef: types.ExternalRef{
 			Source: "github",

@@ -22,7 +22,7 @@ type Service interface {
 type FileUpload struct {
 	EntryID          string
 	ModelID          string
-	EntityID         string
+	ArtifactID       string
 	OriginalFilename string
 	Size             int64
 }
@@ -138,9 +138,9 @@ func objectKey(file FileUpload) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("entry id segment: %w", err)
 	}
-	entityID, err := requiredKeySegment("entity_id", file.EntityID)
+	artifactID, err := requiredKeySegment("artifact_id", file.ArtifactID)
 	if err != nil {
-		return "", fmt.Errorf("entity id segment: %w", err)
+		return "", fmt.Errorf("artifact id segment: %w", err)
 	}
 	filename, err := originalFilename(file.OriginalFilename)
 	if err != nil {
@@ -148,13 +148,13 @@ func objectKey(file FileUpload) (string, error) {
 	}
 	modelID := strings.TrimSpace(file.ModelID)
 	if modelID == "" {
-		return path.Join(entryID, "entities", entityID, filename), nil
+		return path.Join(entryID, "artifacts", artifactID, filename), nil
 	}
 	modelID, err = requiredKeySegment("model_id", modelID)
 	if err != nil {
 		return "", fmt.Errorf("model id segment: %w", err)
 	}
-	return path.Join(entryID, "models", modelID, "entities", entityID, filename), nil
+	return path.Join(entryID, "models", modelID, "artifacts", artifactID, filename), nil
 }
 
 func requiredKeySegment(name, value string) (string, error) {

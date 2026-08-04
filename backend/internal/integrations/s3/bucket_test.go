@@ -69,13 +69,13 @@ func Test_should_build_full_aws_object_url_when_endpoint_is_not_configured(t *te
 	}
 
 	// when
-	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+	objectURL, err := bucket.objectURL("entry/artifacts/artifact/model.cif")
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/entities/entity/model.cif",
+		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/entry/artifacts/artifact/model.cif",
 		objectURL,
 	)
 }
@@ -91,13 +91,13 @@ func Test_should_build_full_endpoint_object_url_when_endpoint_is_configured(t *t
 	}
 
 	// when
-	objectURL, err := bucket.objectURL("entry/entities/entity/model.cif")
+	objectURL, err := bucket.objectURL("entry/artifacts/artifact/model.cif")
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		"https://storage.example/root/dynamic-pdb/entry/entities/entity/model.cif",
+		"https://storage.example/root/dynamic-pdb/entry/artifacts/artifact/model.cif",
 		objectURL,
 	)
 }

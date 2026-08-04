@@ -33,7 +33,7 @@ export async function uploadFileToObjectStorage(
   const grant = await postJSON<FileUploadGrant>("/files", {
     entry_id: context.entryId,
     model_id: context.modelId ?? null,
-    entity_id: context.entityId,
+    artifact_id: context.entityId,
     filename: context.filename ?? file.name,
     size: file.size,
   });
