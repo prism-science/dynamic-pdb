@@ -98,23 +98,17 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 }
 
 func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGrant, error) {
-	storageFile := s3.FileUpload{
-		EntryID:          file.EntryID,
-		ModelID:          file.ModelID,
-		ArtifactID:       file.ArtifactID,
-		OriginalFilename: file.OriginalFilename,
-		Size:             file.Size,
-	}
 	if file.Size <= 0 {
 		return UploadGrant{}, &invalidFileUploadError{
 			err: errors.New("size must be greater than zero"),
 		}
 	}
-	if _, err := s3.ObjectKey(storageFile); err != nil {
+	key, err := objectKey(file)
+	if err != nil {
 		return UploadGrant{}, &invalidFileUploadError{err: err}
 	}
 
-	storageGrant, err := s.bucket.PresignMultipartUpload(ctx, storageFile)
+	storageGrant, err := s.bucket.PresignMultipartUpload(ctx, key, file.Size)
 	if err != nil {
 		return UploadGrant{}, fmt.Errorf("cdn: create S3 upload: %w", err)
 	}
@@ -137,6 +131,63 @@ func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGran
 		PartSize:  storageGrant.PartSize,
 		Parts:     parts,
 	}, nil
+}
+
+func objectKey(file FileUpload) (string, error) {
+	entryID, err := requiredKeySegment("entry_id", file.EntryID)
+	if err != nil {
+		return "", fmt.Errorf("entry id segment: %w", err)
+	}
+	artifactID, err := requiredKeySegment("artifact_id", file.ArtifactID)
+	if err != nil {
+		return "", fmt.Errorf("artifact id segment: %w", err)
+	}
+	filename, err := originalFilename(file.OriginalFilename)
+	if err != nil {
+		return "", fmt.Errorf("original filename: %w", err)
+	}
+	modelID := strings.TrimSpace(file.ModelID)
+	if modelID == "" {
+		return path.Join(entryID, "artifacts", artifactID, filename), nil
+	}
+	modelID, err = requiredKeySegment("model_id", modelID)
+	if err != nil {
+		return "", fmt.Errorf("model id segment: %w", err)
+	}
+	return path.Join(entryID, "models", modelID, "artifacts", artifactID, filename), nil
+}
+
+func requiredKeySegment(name, value string) (string, error) {
+	segment := strings.TrimSpace(value)
+	if segment == "" {
+		return "", fmt.Errorf("%s is required", name)
+	}
+	if segment == "." || segment == ".." || strings.ContainsAny(segment, `/\`) {
+		return "", fmt.Errorf("%s is invalid", name)
+	}
+	return segment, nil
+}
+
+func originalFilename(value string) (string, error) {
+	filename := strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if filename == "" {
+		return "", errors.New("original_filename is required")
+	}
+	filename = strings.TrimSpace(path.Base(filename))
+	if filename == "" || filename == "." || filename == ".." {
+		return "", errors.New("original_filename is invalid")
+	}
+
+	filename = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, filename)
+	if filename == "" || filename == "." || filename == ".." {
+		return "", errors.New("original_filename is invalid")
+	}
+	return filename, nil
 }
 
 func (s *service) CompleteUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error {
