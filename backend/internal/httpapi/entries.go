@@ -134,8 +134,8 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uui
 		if err := s.database.Entries.Delete(ctx, revision.EntryID, revision.ID, user.ID); err != nil {
 			return fmt.Errorf("delete entry revision: %w", err)
 		}
-		if err := s.database.EntrySearch.DeleteEntryRevision(ctx, revision.EntryID, revision.ID); err != nil {
-			return fmt.Errorf("delete entry revision search: %w", err)
+		if err := s.database.EntrySearch.DeleteEntry(ctx, revision.EntryID); err != nil {
+			return fmt.Errorf("delete entry search rows: %w", err)
 		}
 		return nil
 	})
@@ -521,6 +521,14 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
 		return
 	}
+	if _, err := s.activeEntryRevision(r.Context(), entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
+		writeJSON(w, http.StatusOK, ModelListResponse{Items: []Model{}})
+		return
+	} else if err != nil {
+		slog.Error("get entry for models failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+		return
+	}
 
 	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
@@ -844,6 +852,12 @@ func (s *Server) activeModelRevision(
 	entryID uuid.UUID,
 	modelID uuid.UUID,
 ) (*domainmodels.ModelRevision, error) {
+	if _, err := s.activeEntryRevision(ctx, entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
+		return nil, db.ErrModelRevisionNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("get active entry for model: %w", err)
+	}
+
 	activeState := domainmodels.RevisionStateActive
 	revision, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
 		EntryID: &entryID,

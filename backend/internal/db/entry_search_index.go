@@ -76,6 +76,14 @@ func (r *EntrySearchIndexRepository) DeleteEntryRevision(
 	return nil
 }
 
+func (r *EntrySearchIndexRepository) DeleteEntry(ctx context.Context, entryID uuid.UUID) error {
+	query := `delete from entry_search_index where entry_id = $1`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, entryID); err != nil {
+		return fmt.Errorf("delete entry search rows: %w", err)
+	}
+	return nil
+}
+
 func (r *EntrySearchIndexRepository) DeleteModelRevision(
 	ctx context.Context,
 	revision models.ModelRevision,

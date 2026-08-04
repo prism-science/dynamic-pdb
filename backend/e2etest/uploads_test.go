@@ -25,16 +25,17 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	// given
 	token := issueEntryTokenForTest(s.T(), "upload-token")
 	entryID := uuid.New()
-	entityID := uuid.New()
+	modelID := uuid.New()
+	artifactID := uuid.New()
 	fileSize := int64(64*1024*1024 + 1)
 
 	// when
 	createResp := postJSONWithToken(s.T(), "/v1/files", map[string]any{
-		"entry_id":  entryID,
-		"entity_id": entityID,
-		"model_id":  nil,
-		"filename":  "model.cif",
-		"size":      fileSize,
+		"entry_id":    entryID,
+		"model_id":    modelID,
+		"artifact_id": artifactID,
+		"filename":    "model.cif",
+		"size":        fileSize,
 	}, token)
 	defer createResp.Body.Close()
 
@@ -43,7 +44,10 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 
 	var grant httpapi.FileUploadGrantResponse
 	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grant))
-	s.Equal(entryID.String()+"/entities/"+entityID.String()+"/model.cif", grant.Key)
+	s.Equal(
+		entryID.String()+"/models/"+modelID.String()+"/artifacts/"+artifactID.String()+"/model.cif",
+		grant.Key,
+	)
 	s.Equal("upload-id", grant.UploadId)
 	s.Equal(s3Stub.URL()+"/dynamic-pdb/"+grant.Key, grant.ObjectUrl)
 	s.Equal(int64(64*1024*1024), grant.PartSize)
@@ -107,10 +111,10 @@ func (s *UploadsSuite) Test_should_return_500_when_s3_create_multipart_upload_re
 
 	// when
 	resp := postJSONWithToken(s.T(), "/v1/files", map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "model.cif",
-		"size":      1,
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        1,
 	}, token)
 	defer resp.Body.Close()
 
@@ -125,7 +129,7 @@ func (s *UploadsSuite) Test_should_return_500_when_s3_abort_multipart_upload_fai
 
 	// when
 	resp := postJSONWithToken(s.T(), "/v1/files/abort", map[string]any{
-		"key":       "entry/entities/entity/file.cif",
+		"key":       "entry/artifacts/artifact/file.cif",
 		"upload_id": "upload-id",
 	}, token)
 	defer resp.Body.Close()
@@ -147,27 +151,36 @@ func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_inva
 			name: "create with empty filename",
 			path: "/v1/files",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  "  ",
-				"size":      1,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.New(),
+				"filename":    "  ",
+				"size":        1,
 			},
 		},
 		{
 			name: "create with zero size",
 			path: "/v1/files",
 			body: map[string]any{
-				"entry_id":  uuid.New(),
-				"entity_id": uuid.New(),
-				"filename":  "data.fasta",
-				"size":      0,
+				"entry_id":    uuid.New(),
+				"artifact_id": uuid.New(),
+				"filename":    "data.fasta",
+				"size":        0,
+			},
+		},
+		{
+			name: "create with missing artifact id",
+			path: "/v1/files",
+			body: map[string]any{
+				"entry_id": uuid.New(),
+				"filename": "data.fasta",
+				"size":     1,
 			},
 		},
 		{
 			name: "complete with no parts",
 			path: "/v1/files/complete",
 			body: map[string]any{
-				"key":       "entry/entities/entity/file.cif",
+				"key":       "entry/artifacts/artifact/file.cif",
 				"upload_id": "upload-id",
 				"parts":     []map[string]any{},
 			},
@@ -176,7 +189,7 @@ func (s *UploadsSuite) Test_should_return_400_when_file_upload_requests_are_inva
 			name: "complete with empty etag",
 			path: "/v1/files/complete",
 			body: map[string]any{
-				"key":       "entry/entities/entity/file.cif",
+				"key":       "entry/artifacts/artifact/file.cif",
 				"upload_id": "upload-id",
 				"parts": []map[string]any{
 					{"part_number": 1, "etag": ""},
@@ -210,10 +223,10 @@ func (s *UploadsSuite) Test_should_return_401_when_file_upload_called_without_to
 
 	// when
 	resp := postJSON(s.T(), "/v1/files", map[string]any{
-		"entry_id":  uuid.New(),
-		"entity_id": uuid.New(),
-		"filename":  "data.fasta",
-		"size":      1,
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "data.fasta",
+		"size":        1,
 	})
 	defer resp.Body.Close()
 

@@ -80,6 +80,23 @@ func Test_should_remove_entry_revision_text_when_search_index_delete_called(t *t
 	assertEntryRevisionSearchDoesNotContain(ctx, t, token, entryRevision.EntryID)
 }
 
+func Test_should_remove_all_entry_text_when_entry_search_index_delete_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	token := "deleteentrytoken" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	entryRevision := createDBTestEntryRevision(t, "entry "+token, time.Now().UTC())
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "model "+token, time.Now().UTC())
+	require.NoError(t, testDB.EntrySearch.IndexEntryRevision(ctx, *entryRevision))
+	require.NoError(t, testDB.EntrySearch.IndexModelRevision(ctx, *modelRevision))
+
+	// when
+	err := testDB.EntrySearch.DeleteEntry(ctx, entryRevision.EntryID)
+
+	// then
+	require.NoError(t, err)
+	assertEntryRevisionSearchDoesNotContain(ctx, t, token, entryRevision.EntryID)
+}
+
 func assertEntryRevisionSearchContains(ctx context.Context, t *testing.T, query string, entryID uuid.UUID) {
 	t.Helper()
 

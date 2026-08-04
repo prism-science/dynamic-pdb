@@ -123,19 +123,23 @@ func Test_should_filter_entry_revisions_by_protein_sequence_when_entries_list_ca
 	assert.True(t, entryRevisionListContainsEntryID(sequenceMatches, entryRevision.EntryID))
 }
 
-func Test_should_mark_entry_revision_deleted_when_entries_delete_called_by_owner(t *testing.T) {
+func Test_should_only_mark_target_entry_revision_deleted_when_entries_delete_called_by_owner(t *testing.T) {
 	// given
 	ctx := context.Background()
 	revision := createDBTestEntryRevision(t, "deleted entry revision", time.Now().UTC())
+	modelRevision := createDBTestModelRevision(t, revision.EntryID, "retained model revision", time.Now().UTC())
 
 	// when
 	err := testDB.Entries.Delete(ctx, revision.EntryID, revision.ID, revision.CreatedBy)
 	require.NoError(t, err)
-	got, err := testDB.Entries.Get(ctx, db.EntryRevisionFilters{ID: &revision.ID})
+	gotEntry, err := testDB.Entries.Get(ctx, db.EntryRevisionFilters{ID: &revision.ID})
+	require.NoError(t, err)
+	gotModel, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &modelRevision.ID})
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, models.RevisionStateDeleted, got.State)
+	assert.Equal(t, models.RevisionStateDeleted, gotEntry.State)
+	assert.Equal(t, modelRevision.State, gotModel.State)
 }
 
 func Test_should_return_error_when_entries_list_called_with_negative_limit(t *testing.T) {
