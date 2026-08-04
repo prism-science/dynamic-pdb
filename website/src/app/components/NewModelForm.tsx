@@ -14,6 +14,7 @@ import type { ModelDraft, ParsedFile } from "./entry-form/types";
 import {
   buildCreateModelInput,
   formatSize,
+  MODEL_FILE_MISSING,
   missingExpectedInputs,
   modelValidationMessage,
 } from "./entry-form/helpers";
@@ -188,7 +189,7 @@ export default function NewModelForm({
 
       <section className={styles.field}>
         <span className={styles.label}>Model</span>
-        {validationMessage ? (
+        {validationMessage && validationMessage !== MODEL_FILE_MISSING ? (
           <p className={styles.inlineError}>{validationMessage}</p>
         ) : null}
         <ModelDraftFields

@@ -88,8 +88,11 @@ test("pdb header yields program, metrics and composition", () => {
   assert.equal(facts.metrics.r_free, 0.195);
   assert.equal(facts.metadata.resolution, 1.77);
   assert.equal(facts.metadata.space_group, "P 21 21 21");
-  assert.equal(facts.metadata.organism, "Klebsiella Pneumoniae");
-  assert.equal(facts.metadata.method, "X-Ray Diffraction");
+  // Binomial nomenclature: the genus is capitalised, the epithet is not.
+  assert.equal(facts.metadata.organism, "Klebsiella pneumoniae");
+  // Mapped onto the value the record stores, not the one the header shouts.
+  assert.equal(facts.metadata.method, "X-ray crystallography");
+  assert.equal(facts.pdbId, "5GY3");
   // Four heavy atoms: hydrogen and water are excluded, the sugar is not.
   assert.equal(facts.metadata.atom_count, 4);
   assert.equal(facts.metadata.modeled_residues, 2);

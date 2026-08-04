@@ -10,7 +10,9 @@ import MetricsEditor from "./MetricsEditor";
 import PipelineEditor from "./PipelineEditor";
 import PipelinePreview from "./PipelinePreview";
 import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
+import type { EntryFacts } from "./autoDetect";
 import { UploadIcon } from "./icons";
+import { MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type { ModelDraft, ParsedFile } from "./types";
 import {
   ONE_MODEL_FILE_ERROR,
@@ -46,6 +48,7 @@ export default function ModelDraftFields({
   entryId,
   extExperiment = null,
   baselineFiles = [],
+  onEntryFacts,
   onUpdate,
   onError,
 }: {
@@ -54,6 +57,8 @@ export default function ModelDraftFields({
   extExperiment?: ExtExperiment | null;
   /** Entry-level files this model's runs may consume. */
   baselineFiles?: ParsedFile[];
+  /** Structure-level facts read from the model file, for the entry to keep. */
+  onEntryFacts?: (facts: EntryFacts) => void;
   onUpdate: ModelDraftUpdater;
   onError: (message: string | null) => void;
 }) {
@@ -166,6 +171,57 @@ export default function ModelDraftFields({
               autoComplete="off"
             />
           </div>
+
+          {/* What the run was for and what came out are properties of the
+              model, like its name — not a separate stage of the form. */}
+          <div className={styles.identityChoices}>
+            <div className={styles.field}>
+              <label className={styles.subLabel} htmlFor={`${draft.id}-purpose`}>
+                Purpose
+              </label>
+              <select
+                id={`${draft.id}-purpose`}
+                className={styles.select}
+                value={draft.purpose}
+                onChange={(event) =>
+                  onUpdate((current) => ({
+                    ...current,
+                    purpose: event.target.value,
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {MODEL_PURPOSES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.subLabel} htmlFor={`${draft.id}-type`}>
+                Model type
+              </label>
+              <select
+                id={`${draft.id}-type`}
+                className={styles.select}
+                value={draft.modelType}
+                onChange={(event) =>
+                  onUpdate((current) => ({
+                    ...current,
+                    modelType: event.target.value,
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {MODEL_TYPES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className={styles.identityThumb}>
@@ -264,7 +320,12 @@ export default function ModelDraftFields({
             if (!source) {
               continue;
             }
-            void detectFromFile(source, parsed[index], draftRef.current)
+            void detectFromFile(
+              source,
+              parsed[index],
+              draftRef.current,
+              onEntryFacts,
+            )
               .then((patch) => {
                 const { notes, ...rest } = patch;
                 if (Object.keys(rest).length === 0) {
@@ -365,6 +426,8 @@ export function emptyModelDraft(): ModelDraft {
     thumbUploadError: null,
     files: [],
     metrics: [],
+    purpose: "",
+    modelType: "",
     programs: [],
   };
 }

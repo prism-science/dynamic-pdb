@@ -59,6 +59,35 @@ export type ProgramDraft = {
   originFile?: string;
 };
 
+/**
+ * Properties of the structure, not of any one model. Kept on the entry
+ * because two models of the same crystal share them.
+ *
+ * Method is constrained to what the record accepts; the rest are free text
+ * because a space group or an organism has no closed list worth enforcing.
+ */
+export type EntryMetadataDraft = {
+  pdb: string;
+  resolution: string;
+  method: string;
+  spaceGroup: string;
+  organism: string;
+};
+
+export const METHODS = ["X-ray crystallography", "CryoEM"] as const;
+
+export const MODEL_PURPOSES = ["Model Building", "Refinement"] as const;
+
+export const MODEL_TYPES = [
+  "Single Conformer",
+  "Multiconformer",
+  "Ensemble",
+] as const;
+
+export function emptyEntryMetadataDraft(): EntryMetadataDraft {
+  return { pdb: "", resolution: "", method: "", spaceGroup: "", organism: "" };
+}
+
 export type ModelDraft = {
   id: string;
   name: string;
@@ -72,6 +101,9 @@ export type ModelDraft = {
   thumbUploadError: string | null;
   files: ParsedFile[];
   metrics: MetricDraft[];
+  /** Judgements no header states: what the run was for, what came out. */
+  purpose: string;
+  modelType: string;
   /**
    * One entry per run. A deposit that went model building -> refinement ->
    * multiconformer build is three, and each states its own inputs, so the

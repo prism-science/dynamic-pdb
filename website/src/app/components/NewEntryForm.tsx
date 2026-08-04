@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -26,17 +27,29 @@ import FilesEditor, { ProgressBar } from "./entry-form/FilesEditor";
 import ModelDraftFields, {
   emptyModelDraft,
 } from "./entry-form/ModelDraftFields";
+import type { EntryFacts } from "./entry-form/autoDetect";
 import { PlusIcon, UploadIcon } from "./entry-form/icons";
-import { DRAFT_VERSION } from "./entry-form/types";
-import type { ModelDraft, ParsedFile, UploadStatus } from "./entry-form/types";
+import {
+  DRAFT_VERSION,
+  METHODS,
+  emptyEntryMetadataDraft,
+} from "./entry-form/types";
+import type {
+  EntryMetadataDraft,
+  ModelDraft,
+  ParsedFile,
+  UploadStatus,
+} from "./entry-form/types";
 import {
   buildCreateModelInput,
   extFileKeys,
   extFileToParsed,
+  MODEL_FILE_MISSING,
   missingExpectedInputs,
   modelValidationMessage,
   parseFile,
   parseUrlFile,
+  sanitizeNumeric,
   toEntity,
   uploadErrorMessage,
   uploadParsedFileNow,
@@ -95,6 +108,9 @@ export default function NewEntryForm({
   const [thumbProgress, setThumbProgress] = useState(0);
   const [thumbUploadStatus, setThumbUploadStatus] = useState<UploadStatus>("idle");
   const [thumbUploadError, setThumbUploadError] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<EntryMetadataDraft>(
+    emptyEntryMetadataDraft,
+  );
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [models, setModels] = useState<ModelDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -372,6 +388,20 @@ export default function NewEntryForm({
     !hasFailedUploads &&
     !submitting;
 
+  // Prefill only: the header supplies what the depositor has not typed, and
+  // never argues with what they have.
+  const applyEntryFacts = useCallback((facts: EntryFacts) => {
+    setMetadata((current) => ({
+      pdb: current.pdb || facts.pdb || "",
+      resolution:
+        current.resolution ||
+        (facts.resolution !== undefined ? String(facts.resolution) : ""),
+      method: current.method || facts.method || "",
+      spaceGroup: current.spaceGroup || facts.spaceGroup || "",
+      organism: current.organism || facts.organism || "",
+    }));
+  }, []);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) {
@@ -399,6 +429,15 @@ export default function NewEntryForm({
       }
 
       const input: CreateEntryInput = {
+        metadata: {
+          pdb: metadata.pdb.trim() || null,
+          resolution: metadata.resolution.trim()
+            ? Number.parseFloat(metadata.resolution)
+            : null,
+          organism: metadata.organism.trim() || null,
+          method: metadata.method.trim() || null,
+          space_group: metadata.spaceGroup.trim() || null,
+        },
         id: entryId,
         name: name.trim(),
         description: description.trim() || null,
@@ -513,6 +552,100 @@ export default function NewEntryForm({
         />
       </section>
 
+      {/* Properties of the structure itself. Prefilled from the model file's
+          header when one is uploaded — the depositor confirms rather than
+          retypes. */}
+      <section className={styles.field}>
+        <span className={styles.label}>Info</span>
+        <div className={styles.entryMetaGrid}>
+          <label className={styles.metricField}>
+            <span>PDB ID</span>
+            <input
+              className={styles.input}
+              value={metadata.pdb}
+              onChange={(event) =>
+                setMetadata((current) => ({
+                  ...current,
+                  pdb: event.target.value.toUpperCase(),
+                }))
+              }
+              placeholder="e.g. 5GY3"
+              maxLength={4}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+            />
+          </label>
+          <label className={styles.metricField}>
+            <span>Resolution, Å</span>
+            <input
+              className={styles.input}
+              inputMode="decimal"
+              value={metadata.resolution}
+              onChange={(event) =>
+                setMetadata((current) => ({
+                  ...current,
+                  resolution: sanitizeNumeric(event.target.value),
+                }))
+              }
+              placeholder="e.g. 1.77"
+              autoComplete="off"
+            />
+          </label>
+          <label className={styles.metricField}>
+            <span>Method</span>
+            <select
+              className={styles.select}
+              value={metadata.method}
+              onChange={(event) =>
+                setMetadata((current) => ({
+                  ...current,
+                  method: event.target.value,
+                }))
+              }
+            >
+              <option value="">—</option>
+              {METHODS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.metricField}>
+            <span>Space group</span>
+            <input
+              className={styles.input}
+              value={metadata.spaceGroup}
+              onChange={(event) =>
+                setMetadata((current) => ({
+                  ...current,
+                  spaceGroup: event.target.value,
+                }))
+              }
+              placeholder="e.g. P 21 21 21"
+              autoComplete="off"
+            />
+          </label>
+          <label className={styles.metricField}>
+            <span>Organism</span>
+            <input
+              className={styles.input}
+              value={metadata.organism}
+              onChange={(event) =>
+                setMetadata((current) => ({
+                  ...current,
+                  organism: event.target.value,
+                }))
+              }
+              placeholder="e.g. Klebsiella pneumoniae"
+              autoComplete="off"
+            />
+          </label>
+        </div>
+      </section>
+
       <section className={styles.field}>
         <span className={styles.label}>Baseline data</span>
         <FilesEditor
@@ -549,12 +682,15 @@ export default function NewEntryForm({
               <div key={modelDraft.id} className={styles.modelDraftCard}>
                 {(() => {
                   const validationMessage = modelValidationMessage(modelDraft);
-                  return validationMessage ? (
+                  return validationMessage &&
+                    validationMessage !== MODEL_FILE_MISSING ? (
                     <p className={styles.inlineError}>{validationMessage}</p>
                   ) : null;
                 })()}
                 <div className={styles.modelDraftCardHead}>
-                  <span className={styles.modelDraftIndex}>#{index + 1}</span>
+                  <span className={styles.modelDraftIndex}>
+                    Model {index + 1}
+                  </span>
                   <button
                     type="button"
                     className={styles.remove}
@@ -568,6 +704,8 @@ export default function NewEntryForm({
                   draft={modelDraft}
                   entryId={entryId}
                   extExperiment={extExperiment}
+                  baselineFiles={files}
+                  onEntryFacts={applyEntryFacts}
                   onUpdate={(update) =>
                     setModels((prev) =>
                       prev.map((current) =>

@@ -3,6 +3,7 @@ import type { ExtFileReference } from "@/lib/api/ext";
 
 import { DRAFT_STORAGE_KEY, DRAFT_VERSION } from "./types";
 import type {
+  EntryMetadataDraft,
   FileSource,
   MetricDraft,
   ModelDraft,
@@ -35,6 +36,8 @@ export type StoredModel = {
   thumbPreview?: string;
   files: StoredFile[];
   metrics: MetricDraft[];
+  purpose?: string;
+  modelType?: string;
   programs?: ProgramDraft[];
   /** Version 1 shape, read once so an in-flight draft is not thrown away. */
   program?: ProgramDraft | null;
@@ -43,6 +46,7 @@ export type StoredModel = {
 export type StoredDraft = {
   version: number;
   entryId: string;
+  metadata?: EntryMetadataDraft;
   extExperimentId?: string | null;
   name: string;
   description: string;
@@ -107,6 +111,8 @@ export function modelToDraft(modelDraft: ModelDraft): StoredModel {
     thumbPreview: httpOnly(modelDraft.thumbPreview),
     files: modelDraft.files.filter(isPersistable).map(fileToDraft),
     metrics: modelDraft.metrics,
+    purpose: modelDraft.purpose,
+    modelType: modelDraft.modelType,
     programs: modelDraft.programs,
   };
 }
@@ -125,6 +131,8 @@ export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
     thumbUploadError: null,
     files: modelDraft.files.map(fileFromDraft).map(normalizeModelLevel),
     metrics: modelDraft.metrics,
+    purpose: modelDraft.purpose ?? "",
+    modelType: modelDraft.modelType ?? "",
     programs: storedPrograms(modelDraft),
   };
 }

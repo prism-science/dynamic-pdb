@@ -22,6 +22,14 @@ import type {
 export const ONE_MODEL_FILE_ERROR =
   "Each model must contain exactly one PDB/mmCIF model file.";
 
+/**
+ * A model with no coordinates yet is unfinished, not wrong. The submit button
+ * is already disabled; repeating it as an error under a freshly added block
+ * tells the depositor off for not having done the thing they are about to do.
+ * Callers render everything except this.
+ */
+export const MODEL_FILE_MISSING = "Add exactly one PDB/mmCIF model file.";
+
 export function toEntity(file: ParsedFile) {
   const entityType = fileEntityType(file);
   const metadata = file.extReference
@@ -131,6 +139,14 @@ export function buildCreateModelInput(
     }
   }
 
+  const metadata: Record<string, unknown> = {};
+  if (modelDraft.purpose.trim()) {
+    metadata.purpose = modelDraft.purpose.trim();
+  }
+  if (modelDraft.modelType.trim()) {
+    metadata.model_type = modelDraft.modelType.trim();
+  }
+
   return {
     id: modelDraft.id,
     name: modelDraft.name.trim(),
@@ -138,13 +154,14 @@ export function buildCreateModelInput(
     thumbnail_image_url: modelDraft.thumbUrl,
     entities,
     relations,
+    metadata,
   };
 }
 
 export function modelValidationMessage(modelDraft: ModelDraft): string | null {
   const modelEntityCount = modelDraft.files.filter(isModelFile).length;
   if (modelEntityCount === 0) {
-    return "Add exactly one PDB/mmCIF model file.";
+    return MODEL_FILE_MISSING;
   }
   if (modelEntityCount > 1) {
     return "Keep only one PDB/mmCIF model file.";

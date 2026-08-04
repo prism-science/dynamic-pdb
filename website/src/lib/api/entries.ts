@@ -285,6 +285,17 @@ export type CreateModelInput = {
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   relations?: CreateEntityRelationInput[];
+  /** Judgements a file cannot state about itself: what the run was for and
+   *  what kind of model came out. Composition is read from the coordinates. */
+  metadata?: JSONRecord;
+};
+
+export type CreateEntryMetadata = {
+  pdb?: string | null;
+  resolution?: number | null;
+  organism?: string | null;
+  method?: string | null;
+  space_group?: string | null;
 };
 
 export type CreateEntryInput = {
@@ -294,6 +305,8 @@ export type CreateEntryInput = {
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
+  /** Properties of the structure rather than of any one model. */
+  metadata?: CreateEntryMetadata;
 };
 
 export async function createModel(
@@ -459,10 +472,44 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
     name: input.name,
     description: input.description,
     thumbnail_image_url: input.thumbnail_image_url,
-    metadata: {},
+    metadata: entryMetadataRequest(input.metadata),
     artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
     models: (input.models ?? []).map(createModelRequest),
   };
+}
+
+/**
+ * Shapes the entry's own facts the way the record stores them. Empty fields
+ * are omitted rather than sent as null: the backend decodes into a struct of
+ * pointers, and an explicit null is indistinguishable from "unset" once it
+ * lands, so leaving the key out keeps the stored object honest.
+ */
+function entryMetadataRequest(metadata?: CreateEntryMetadata): JSONRecord {
+  if (!metadata) {
+    return {};
+  }
+  const result: JSONRecord = {};
+  const pdb = stringOrNull(metadata.pdb);
+  if (pdb) {
+    result.external_refs = { pdb: pdb.toUpperCase() };
+  }
+  const resolution = numberOrNull(metadata.resolution);
+  if (resolution !== null) {
+    result.resolution = resolution;
+  }
+  const organism = stringOrNull(metadata.organism);
+  if (organism) {
+    result.organism = organism;
+  }
+  const method = stringOrNull(metadata.method);
+  if (method) {
+    result.method = method;
+  }
+  const spaceGroup = stringOrNull(metadata.space_group);
+  if (spaceGroup) {
+    result.space_group = spaceGroup;
+  }
+  return result;
 }
 
 function createModelRequest(input: CreateModelInput): BackendCreateModelRequest {
@@ -477,7 +524,10 @@ function createModelRequest(input: CreateModelInput): BackendCreateModelRequest 
     name: input.name,
     description: input.description,
     thumbnail_image_url: input.thumbnail_image_url,
-    metadata: modelMetadataFromEntity(primaryModelEntity),
+    metadata: {
+      ...modelMetadataFromEntity(primaryModelEntity),
+      ...(input.metadata ?? {}),
+    },
     primary_artifact_id: primaryModelEntity?.id ?? null,
     artifacts,
     runs: entities
@@ -732,6 +782,26 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   if (affiliation) {
     metadata.affiliation = affiliation;
   }
+
+  // Composition was read out of the coordinates and parked on the artifact.
+  // The pages show it as a property of the model, so it is copied across
+  // rather than left where only a file preview would find it.
+  const parsed = objectRecord(payload.metadata);
+  for (const key of [
+    "atom_count",
+    "modeled_residues",
+    "unique_protein_chains",
+  ] as const) {
+    const value = numberOrNull(parsed[key]);
+    if (value !== null) {
+      metadata[key] = value;
+    }
+  }
+  const ligands = stringArray(parsed.ligands);
+  if (ligands.length > 0) {
+    metadata.ligands = ligands;
+  }
+
   return metadata;
 }
 

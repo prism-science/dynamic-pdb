@@ -19,6 +19,8 @@ export type StructureFacts = {
    * carry one, so that field stays for the depositor to fill.
    */
   authors: string[];
+  /** Four-character PDB accession, when the file admits to having one. */
+  pdbId: string | null;
   metrics: {
     r_work?: number;
     r_free?: number;
@@ -27,6 +29,10 @@ export type StructureFacts = {
     resolution?: number;
     space_group?: string;
     organism?: string;
+    /** One of the backend's StructureMethod values, or absent. The header
+     *  writes "X-RAY DIFFRACTION"; the record stores "X-ray crystallography",
+     *  and a value outside the enum would be saved verbatim and never match a
+     *  filter, so an unrecognised method is dropped rather than guessed. */
     method?: string;
     atom_count?: number;
     modeled_residues?: number;
@@ -72,6 +78,7 @@ function parsePdb(text: string): StructureFacts {
   const facts: StructureFacts = {
     program: null,
     authors: [],
+    pdbId: null,
     metrics: {},
     metadata: {},
   };
@@ -122,8 +129,14 @@ function parsePdb(text: string): StructureFacts {
       continue;
     }
 
+    if (record === "HEADER") {
+      // Columns 63-66 hold the accession.
+      facts.pdbId = normalizePdbId(line.slice(62, 66));
+      continue;
+    }
+
     if (record === "EXPDTA") {
-      const method = titleCase(line.slice(10).trim());
+      const method = canonicalMethod(line.slice(10).trim());
       if (method) {
         facts.metadata.method = method;
       }
@@ -133,7 +146,7 @@ function parsePdb(text: string): StructureFacts {
     if (record === "SOURCE") {
       const match = /ORGANISM_SCIENTIFIC:\s*([^;]+)/i.exec(line);
       if (match && !facts.metadata.organism) {
-        facts.metadata.organism = titleCase(match[1].trim());
+        facts.metadata.organism = binomial(match[1].trim());
       }
       continue;
     }
@@ -246,12 +259,16 @@ function parseMmcif(text: string): StructureFacts {
   const facts: StructureFacts = {
     program: null,
     authors: [],
+    pdbId: null,
     metrics: {},
     metadata: {},
   };
 
   facts.program = mmcifProgram(text);
   facts.authors = mmcifAuthors(text);
+  facts.pdbId =
+    normalizePdbId(cifValue(text, "_entry.id") ?? "") ??
+    normalizePdbId(/^data_(\S+)/m.exec(text)?.[1] ?? "");
 
   const rWork = numberOf(cifValue(text, "_refine.ls_r_factor_r_work"));
   const rFree = numberOf(cifValue(text, "_refine.ls_r_factor_r_free"));
@@ -276,16 +293,16 @@ function parseMmcif(text: string): StructureFacts {
     facts.metadata.space_group = spaceGroup;
   }
 
-  const method = cifValue(text, "_exptl.method");
+  const method = canonicalMethod(cifValue(text, "_exptl.method") ?? "");
   if (method) {
-    facts.metadata.method = titleCase(method);
+    facts.metadata.method = method;
   }
 
   const organism =
     cifValue(text, "_entity_src_gen.pdbx_gene_src_scientific_name") ??
     cifValue(text, "_entity_src_nat.pdbx_organism_scientific");
   if (organism) {
-    facts.metadata.organism = titleCase(organism);
+    facts.metadata.organism = binomial(organism);
   }
 
   const atomSite = cifLoop(text, "_atom_site");
@@ -394,6 +411,51 @@ function applyCounts(
   if (ligands.size > 0) {
     facts.metadata.ligands = [...ligands].sort();
   }
+}
+
+/**
+ * Maps what the headers actually say onto the two values the record accepts.
+ * Anything else returns null: storing an off-enum string would render as a
+ * one-off label nobody can search for.
+ */
+function canonicalMethod(raw: string): string | null {
+  const value = raw.trim().toLowerCase();
+  if (!value) {
+    return null;
+  }
+  if (value.includes("x-ray") || value.includes("xray")) {
+    return "X-ray crystallography";
+  }
+  if (
+    value.includes("electron microscopy") ||
+    value.includes("cryo-em") ||
+    value.includes("cryoem")
+  ) {
+    return "CryoEM";
+  }
+  return null;
+}
+
+/**
+ * `KLEBSIELLA PNEUMONIAE` is not a title: under binomial nomenclature the
+ * genus is capitalised and the species epithet never is. Title-casing the
+ * whole string, as the PDB's shouting invites, produces a name no journal
+ * would print.
+ *
+ * Anything already mixed-case came from mmCIF, which stores it correctly.
+ */
+function binomial(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed !== trimmed.toUpperCase()) {
+    return trimmed;
+  }
+  const lower = trimmed.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function normalizePdbId(raw: string): string | null {
+  const id = raw.trim().toUpperCase();
+  return /^[1-9][A-Z0-9]{3}$/.test(id) ? id : null;
 }
 
 function titleCase(value: string): string {

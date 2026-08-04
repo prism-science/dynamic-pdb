@@ -164,6 +164,7 @@ test("should build explicit graph relations for model metrics and program", () =
 
   assert.equal(input.name, "Refined model");
   assert.equal(input.description, "Description");
+  assert.deepEqual(input.metadata, {});
   assert.deepEqual(input.entities.map((entity) => [entity.id, entity.type, entity.level]), [
     ["model-entity-1", "model", "L2"],
     ["density-1", "data", "L1"],
@@ -552,7 +553,23 @@ function modelDraftFixture(overrides = {}) {
     thumbUploadError: null,
     files: [parsedFile({ id: "model-file-1", type: "mmcif" })],
     metrics: [],
-    program: null,
+    purpose: "",
+    modelType: "",
+    programs: [],
     ...overrides,
   };
 }
+
+test("purpose and model type travel with the model request", () => {
+  const input = buildCreateModelInput(
+    modelDraftFixture({
+      purpose: "Refinement",
+      modelType: "Multiconformer",
+    }),
+  );
+
+  assert.deepEqual(input.metadata, {
+    purpose: "Refinement",
+    model_type: "Multiconformer",
+  });
+});

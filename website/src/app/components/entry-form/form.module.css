@@ -1764,3 +1764,66 @@
   color: var(--text);
   border-color: var(--text-muted);
 }
+
+.entryMetaGrid {
+  display: grid;
+  /* Five fields across the full column at this width; narrower viewports wrap
+     them rather than squeezing "X-ray crystallography" into nothing. */
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
+  /* The section heading and the field labels are both small uppercase type,
+     so the section's own 8px gap reads as one crowded stack. This row needs
+     the extra air; the sections below, which start with a control rather
+     than another label, do not. */
+  margin-top: 6px;
+}
+
+.identityChoices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+/* Selects need their own control, not the text input's.
+   `.input` fixes a 34px height on top of 10px vertical padding, which leaves
+   a native select's line box taller than its container and clips the glyphs;
+   and the platform arrow paints over the right padding, so the value runs
+   underneath it. Drawing the chevron ourselves fixes both: the box is sized by
+   line-height, and the reserved space on the right is real padding. */
+.select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  /* Chevron drawn here rather than via a pseudo-element: a select cannot have
+     children, so a sibling overlay would have to be positioned by hand. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 36px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.select:hover {
+  border-color: var(--border-strong);
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* Inside a metrics-style card the controls run one step shorter. */
+.metricField .select {
+  height: 34px;
+  line-height: 32px;
+}
