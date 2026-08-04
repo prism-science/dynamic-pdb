@@ -53,6 +53,8 @@ const PDB = [
   "REMARK   3   PROGRAM     : PHENIX (1.21.2_5108)",
   "REMARK   3   R VALUE            (WORKING SET) : 0.163",
   "REMARK   3   FREE R VALUE                     : 0.195",
+  "REMARK   3   BIN R VALUE       (WORKING SET) : 0.234",
+  "REMARK   3   BIN FREE R VALUE                : 0.279",
   "REMARK   3   RESOLUTION RANGE HIGH (ANGSTROMS) : 1.77",
   "CRYST1   45.120   67.330   98.410  90.00  90.00  90.00 P 21 21 21    4",
   atomLine({ serial: 1, resSeq: 1, chain: "A" }),
