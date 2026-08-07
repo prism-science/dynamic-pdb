@@ -138,7 +138,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /v1/files/complete:
     post:
       operationId: completeFileUpload
@@ -229,6 +228,16 @@ paths:
           required: false
           schema:
             type: string
+        - name: pdb_id
+          in: query
+          description: PDB IDs to match against entry metadata.external_refs.pdb.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
       responses:
         "200":
           description: Entries found.
@@ -264,6 +273,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Entry with the same active PDB reference already exists.
           content:
             application/json:
               schema:
@@ -796,6 +811,9 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
         published_at:
           type: string
           format: date-time
