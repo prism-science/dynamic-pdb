@@ -12,9 +12,14 @@ import (
 )
 
 type Config struct {
-	Auth auth.Config `mapstructure:"auth"`
-	DB   db.Config   `mapstructure:"db"`
-	CDN  cdn.Config  `mapstructure:"cdn"`
+	Server ServerConfig `mapstructure:"server"`
+	Auth   auth.Config  `mapstructure:"auth"`
+	DB     db.Config    `mapstructure:"db"`
+	CDN    cdn.Config   `mapstructure:"cdn"`
+}
+
+type ServerConfig struct {
+	Addr string `mapstructure:"addr"`
 }
 
 func ReadFromFile(filename string) (Config, error) {

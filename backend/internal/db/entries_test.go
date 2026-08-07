@@ -123,6 +123,40 @@ func Test_should_filter_entry_revisions_by_protein_sequence_when_entries_list_ca
 	assert.True(t, entryRevisionListContainsEntryID(sequenceMatches, entryRevision.EntryID))
 }
 
+func Test_should_filter_entry_revisions_by_pdb_id_when_entries_list_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	pdbID := pdbIDForTest()
+	unmatchedPDBID := pdbIDForTest()
+	matched := createDBTestEntryRevisionWithPDBID(t, "matched pdb ref", pdbID, models.RevisionStateActive, now)
+	unmatched := createDBTestEntryRevisionWithPDBID(t, "unmatched pdb ref", unmatchedPDBID, models.RevisionStateActive, now.Add(time.Second))
+
+	// when
+	got, err := testDB.Entries.List(ctx, db.EntryRevisionFilters{PDBIDs: []string{strings.ToLower(pdbID)}})
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, matched.EntryID, got[0].EntryID)
+	assert.NotEqual(t, unmatched.EntryID, got[0].EntryID)
+}
+
+func Test_should_reject_duplicate_active_entry_revision_when_pdb_id_ref_matches(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	pdbID := pdbIDForTest()
+	createDBTestEntryRevisionWithPDBID(t, "first pdb ref", pdbID, models.RevisionStateActive, now)
+	duplicate := dbTestEntryRevisionWithPDBID(t, "duplicate pdb ref", strings.ToLower(pdbID), models.RevisionStateActive, now.Add(time.Second))
+
+	// when
+	_, err := testDB.Entries.Create(ctx, duplicate)
+
+	// then
+	require.Error(t, err)
+}
+
 func Test_should_only_mark_target_entry_revision_deleted_when_entries_delete_called_by_owner(t *testing.T) {
 	// given
 	ctx := context.Background()
@@ -185,4 +219,49 @@ func entryRevisionListContainsEntryID(revisions []models.EntryRevision, entryID 
 		}
 	}
 	return false
+}
+
+func pdbIDForTest() string {
+	token := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))
+	return "1" + token[:3]
+}
+
+func createDBTestEntryRevisionWithPDBID(
+	t *testing.T,
+	name string,
+	pdbID string,
+	state models.RevisionState,
+	createdAt time.Time,
+) *models.EntryRevision {
+	t.Helper()
+
+	revision := dbTestEntryRevisionWithPDBID(t, name, pdbID, state, createdAt)
+	created, err := testDB.Entries.Create(context.Background(), revision)
+	require.NoError(t, err)
+	return created
+}
+
+func dbTestEntryRevisionWithPDBID(
+	t *testing.T,
+	name string,
+	pdbID string,
+	state models.RevisionState,
+	createdAt time.Time,
+) models.EntryRevision {
+	t.Helper()
+
+	return models.EntryRevision{
+		ID:      uuid.New(),
+		EntryID: uuid.New(),
+		State:   state,
+		Name:    name + "-" + uuid.NewString(),
+		Metadata: models.EntryMetadata{
+			ExternalRefs: map[models.EntrySource]string{
+				models.EntrySourcePDB: pdbID,
+			},
+		},
+		CreatedBy: createDBTestUser(t),
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}
 }

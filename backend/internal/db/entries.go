@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/models"
 )
@@ -29,6 +30,7 @@ type EntryRevisionFilters struct {
 	EntryID         *uuid.UUID
 	State           *models.RevisionState
 	CreatedBy       *uuid.UUID
+	PDBIDs          []string
 	Limit           *int
 	Offset          *int
 	Query           string
@@ -245,6 +247,11 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
 	}
+	pdbIDs := normalizedPDBIDs(filters.PDBIDs)
+	if len(pdbIDs) > 0 {
+		conditions = append(conditions, "upper(metadata #>> '{external_refs,pdb}') = any(:pdb_ids)")
+		args["pdb_ids"] = pq.Array(pdbIDs)
+	}
 	if queryText != "" {
 		conditions = append(conditions, `exists (
 			select 1
@@ -283,6 +290,23 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	}
 
 	return query, args, nil
+}
+
+func normalizedPDBIDs(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.ToUpper(strings.TrimSpace(value))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
 }
 
 func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) {

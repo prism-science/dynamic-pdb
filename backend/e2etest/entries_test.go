@@ -198,6 +198,74 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	s.True(runArtifactLinkExists(modelArtifactsBody.Relations, runID, modelArtifactID, httpapi.Output))
 }
 
+func (s *EntriesSuite) Test_should_filter_entries_by_pdb_id_reference() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-pdb-filter-token")
+	matchedName := "entry-pdb-filter-matched-" + uuid.NewString()
+	unmatchedName := "entry-pdb-filter-unmatched-" + uuid.NewString()
+	matchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"name": matchedName,
+		"metadata": map[string]any{
+			"external_refs": map[string]string{"pdb": "1YJO"},
+		},
+	}, token)
+	defer matchedResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, matchedResp.StatusCode)
+	unmatchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"name": unmatchedName,
+		"metadata": map[string]any{
+			"external_refs": map[string]string{"pdb": "1YJP"},
+		},
+	}, token)
+	defer unmatchedResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, unmatchedResp.StatusCode)
+
+	// when
+	resp := getWithToken(s.T(), "/v1/entries?pdb_id=1yjo", "")
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusOK, resp.StatusCode)
+	var body httpapi.EntryListResponse
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	matched := entryInfoByName(body.Items, matchedName)
+	s.Require().NotNil(matched)
+	s.Nil(entryInfoByName(body.Items, unmatchedName))
+	s.Require().NotNil(matched.Metadata)
+	externalRefs, ok := (*matched.Metadata)["external_refs"].(map[string]any)
+	s.Require().True(ok)
+	s.Equal("1YJO", externalRefs["pdb"])
+}
+
+func (s *EntriesSuite) Test_should_return_409_when_active_pdb_id_reference_already_exists() {
+	// given
+	token := issueEntryTokenForTest(s.T(), "entry-pdb-conflict-token")
+	pdbID := "1" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))[:3]
+	firstResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"name": "entry-pdb-conflict-first-" + uuid.NewString(),
+		"metadata": map[string]any{
+			"external_refs": map[string]string{"pdb": pdbID},
+		},
+	}, token)
+	defer firstResp.Body.Close()
+	s.Require().Equal(http.StatusCreated, firstResp.StatusCode)
+
+	// when
+	resp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"name": "entry-pdb-conflict-second-" + uuid.NewString(),
+		"metadata": map[string]any{
+			"external_refs": map[string]string{"pdb": strings.ToLower(pdbID)},
+		},
+	}, token)
+	defer resp.Body.Close()
+
+	// then
+	s.Equal(http.StatusConflict, resp.StatusCode)
+	var body httpapi.Error
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal("ENTRY_PDB_REF_EXISTS", body.Code)
+}
+
 func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_revisions_or_sequence() {
 	// given
 	githubClient.On("GetUser", mock.Anything, "gh-token").
