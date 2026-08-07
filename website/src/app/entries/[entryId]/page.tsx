@@ -119,6 +119,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               {hasModels ? (
                 <SortableModelList
                   entryId={data.entry.id}
+                  entryThumbnailImageURL={data.entry.thumbnail_image_url}
                   models={data.models}
                   entities={data.entities}
                   relations={data.relations}

@@ -248,12 +248,18 @@ export class ApiRequestError extends Error {
 
 export async function listEntries(
   token?: string,
-  opts?: { query?: string | null },
+  opts?: { query?: string | null; pdbIds?: string[] | null },
 ): Promise<Entry[]> {
   const params = new URLSearchParams();
   const query = opts?.query?.trim();
   if (query) {
     params.set("query", query);
+  }
+  for (const pdbId of opts?.pdbIds ?? []) {
+    const trimmed = pdbId.trim();
+    if (trimmed) {
+      params.append("pdb_id", trimmed);
+    }
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";

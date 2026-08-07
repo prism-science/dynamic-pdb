@@ -34,6 +34,26 @@ test("should list entries with trimmed query and optional authorization", async 
   }
 });
 
+test("should list entries with pdb id filters", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    let requestedURL = "";
+    global.fetch = async (url) => {
+      requestedURL = String(url);
+      return jsonResponse({ items: [] });
+    };
+
+    await listEntries(undefined, { pdbIds: [" 1YJO ", "1YJP"] });
+
+    assert.equal(requestedURL, "https://backend.example/v1/entries?pdb_id=1YJO&pdb_id=1YJP");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
 test("should throw ApiRequestError with status when create entry fails", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;

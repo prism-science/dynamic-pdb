@@ -115,12 +115,14 @@ function buildModelMetrics(
 
 export default function SortableModelList({
   entryId,
+  entryThumbnailImageURL = null,
   models,
   entities,
   relations,
   currentUserId = null,
 }: {
   entryId: string;
+  entryThumbnailImageURL?: string | null;
   models: Model[];
   entities: Entity[];
   relations: EntityRelation[];
@@ -263,6 +265,10 @@ export default function SortableModelList({
           {sortedModels.map((model) => {
             const metrics = metricsByModelId.get(model.id) ?? {};
             const href = `/entries/${entryId}/models/${model.id}`;
+            const thumbnailImageURL =
+              model.thumbnail_image_url?.trim() ||
+              entryThumbnailImageURL?.trim() ||
+              null;
             return (
               <tr
                 key={model.id}
@@ -293,12 +299,12 @@ export default function SortableModelList({
                   <span className={styles.modelTableModelInner}>
                     <span
                       className={styles.modelTableThumb}
-                      data-empty={model.thumbnail_image_url ? undefined : "true"}
+                      data-empty={thumbnailImageURL ? undefined : "true"}
                     >
-                      {model.thumbnail_image_url ? (
+                      {thumbnailImageURL ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={model.thumbnail_image_url}
+                          src={thumbnailImageURL}
                           alt=""
                           loading="lazy"
                         />
