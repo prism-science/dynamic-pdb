@@ -1,3 +1,5 @@
+server:
+  addr: ":8080"
 auth:
   allowed_orgs:
     - Astera-org
@@ -22,6 +24,7 @@ db:
   max_connection_lifetime: 30m
 cdn:
   s3:
+    endpoint: ""
     region: us-west-1
     bucket: dynamic-pdb-data
     access_key_id: ""
