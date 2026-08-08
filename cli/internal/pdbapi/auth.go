@@ -1,0 +1,139 @@
+package pdbapi
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const defaultHTTPTimeout = 30 * time.Second
+
+var ErrUnauthorized = errors.New("pdbapi: unauthorized")
+
+type AuthClient interface {
+	ExchangeGitHubToken(ctx context.Context, githubToken string) (TokenResponse, error)
+}
+
+type TokenResponse struct {
+	TokenType   string    `json:"token_type"`
+	AccessToken string    `json:"access_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Name        string    `json:"name"`
+	Email       string    `json:"email"`
+	Login       string    `json:"login"`
+}
+
+type Error struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+func (e *Error) Error() string {
+	if e.Code == "" {
+		return fmt.Sprintf("pdbapi: backend %d: %s", e.Status, e.Message)
+	}
+	return fmt.Sprintf("pdbapi: backend %d: %s: %s", e.Status, e.Code, e.Message)
+}
+
+type RemoteAuthClient struct {
+	serverURL  string
+	httpClient *http.Client
+}
+
+var _ AuthClient = (*RemoteAuthClient)(nil)
+
+type AuthOption func(*RemoteAuthClient)
+
+func WithHTTPClient(httpClient *http.Client) AuthOption {
+	return func(client *RemoteAuthClient) {
+		client.httpClient = httpClient
+	}
+}
+
+func NewAuthClient(serverURL string, options ...AuthOption) *RemoteAuthClient {
+	client := &RemoteAuthClient{
+		serverURL:  strings.TrimRight(serverURL, "/"),
+		httpClient: &http.Client{Timeout: defaultHTTPTimeout},
+	}
+	for _, option := range options {
+		option(client)
+	}
+	return client
+}
+
+func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken string) (TokenResponse, error) {
+	//nolint:gosec // The GitHub OAuth token is the required request payload, not a hard-coded credential.
+	payload, err := json.Marshal(struct {
+		AccessToken string `json:"access_token"`
+	}{AccessToken: githubToken})
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("pdbapi: encode GitHub token exchange request: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.serverURL+"/v1/auth/github/exchange",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("pdbapi: create GitHub token exchange request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("pdbapi: exchange GitHub token: %w", err)
+	}
+	body, err := readResponseBody(response)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("pdbapi: read GitHub token exchange response: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return TokenResponse{}, decodeError(response.StatusCode, body)
+	}
+
+	var token TokenResponse
+	if err := json.Unmarshal(body, &token); err != nil {
+		return TokenResponse{}, fmt.Errorf("pdbapi: decode GitHub token exchange response: %w", err)
+	}
+	if token.TokenType == "" || token.AccessToken == "" || token.ExpiresAt.IsZero() || token.Login == "" {
+		return TokenResponse{}, errors.New("pdbapi: backend returned an incomplete token response")
+	}
+	return token, nil
+}
+
+func decodeError(status int, body []byte) error {
+	var payload struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		payload.Message = strings.TrimSpace(string(body))
+	}
+	if payload.Message == "" {
+		payload.Message = http.StatusText(status)
+	}
+	backendError := &Error{Status: status, Code: payload.Code, Message: payload.Message}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return fmt.Errorf("pdbapi: authorization failed: %w", errors.Join(ErrUnauthorized, backendError))
+	}
+	return backendError
+}
+
+func readResponseBody(response *http.Response) ([]byte, error) {
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<16))
+	closeErr := response.Body.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, fmt.Errorf("read and close response: %w", err)
+	}
+	return body, nil
+}
