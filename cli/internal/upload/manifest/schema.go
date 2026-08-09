@@ -32,13 +32,16 @@ type Artifact struct {
 }
 
 type ModelPattern struct {
-	ID        string     `yaml:"id"`
-	Name      string     `yaml:"name"`
-	ModelType string     `yaml:"model_type"`
-	Purpose   string     `yaml:"purpose"`
-	Artifacts []Artifact `yaml:"artifacts"`
-	Metrics   Metrics    `yaml:"metrics"`
+	ID        string        `yaml:"id"`
+	Name      string        `yaml:"name"`
+	ModelType string        `yaml:"model_type"`
+	Purpose   string        `yaml:"purpose"`
+	Metadata  ModelMetadata `yaml:"metadata,omitempty"`
+	Artifacts []Artifact    `yaml:"artifacts"`
+	Metrics   Metrics       `yaml:"metrics"`
 }
+
+type ModelMetadata map[string]FieldExtraction
 
 type Metrics map[string]FieldExtraction
 
