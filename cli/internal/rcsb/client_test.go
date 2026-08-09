@@ -25,6 +25,10 @@ _software.citation_id
 _software.pdbx_ordinal
 REFMAC refinement 5.2.0005 ? 1
 `)
+		case "/download/5AMF-sf.cif":
+			writeText(t, w, "structure factors\n")
+		case "/download/5AMF_assembly-1.jpeg":
+			writeText(t, w, "image\n")
 		case "/fasta/entry/5AMF":
 			writeText(t, w, ">5amf\nACDE\n")
 		default:
@@ -32,14 +36,14 @@ REFMAC refinement 5.2.0005 ? 1
 		}
 	}))
 	defer server.Close()
-	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL), WithCDNBaseURL(server.URL))
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL))
 
 	// when
-	coordinates, err := client.GetCoordinates(context.Background(), "5amf")
+	coordinates, err := client.GetFile(context.Background(), "5amf", "5amf.cif")
 	require.NoError(t, err)
-	structureFactors, err := client.GetStructureFactors(context.Background(), "5amf")
+	structureFactors, err := client.GetFile(context.Background(), "5amf", "5amf-sf.cif")
 	require.NoError(t, err)
-	previewImage, err := client.GetPreviewImage(context.Background(), "5amf")
+	previewImage, err := client.GetFile(context.Background(), "5amf", "5amf_assembly-1.jpeg")
 	require.NoError(t, err)
 	fasta, err := client.GetFASTA(context.Background(), "5amf")
 
@@ -52,11 +56,11 @@ REFMAC refinement 5.2.0005 ? 1
 	assert.Equal(t, "5amf-sf.cif", structureFactors.Filename)
 	assert.Equal(t, "structure_factors_cif", structureFactors.Format)
 	assert.Equal(t, server.URL+"/download/5AMF-sf.cif", structureFactors.URI)
-	assert.Empty(t, structureFactors.Contents)
+	assert.Equal(t, "structure factors\n", string(structureFactors.Contents))
 	assert.Equal(t, "5amf_assembly-1.jpeg", previewImage.Filename)
 	assert.Equal(t, "image", previewImage.Format)
-	assert.Equal(t, server.URL+"/images/structures/am/5amf/5amf_assembly-1.jpeg", previewImage.URI)
-	assert.Empty(t, previewImage.Contents)
+	assert.Equal(t, server.URL+"/download/5AMF_assembly-1.jpeg", previewImage.URI)
+	assert.Equal(t, "image\n", string(previewImage.Contents))
 	assert.Equal(t, "5amf.fasta", fasta.Filename)
 	assert.Equal(t, "fasta", fasta.Format)
 	assert.Equal(t, server.URL+"/fasta/entry/5AMF", fasta.URI)
@@ -106,37 +110,26 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	require.NoError(t, err)
 
 	// then
-	require.NotNil(t, entry.Struct)
-	assert.Equal(t, "example structure", entry.Struct.Title)
-	require.Len(t, entry.Experiments, 1)
-	assert.Equal(t, "X-RAY DIFFRACTION", entry.Experiments[0].Method)
-	require.NotNil(t, entry.EntryInfo)
-	assert.Equal(t, []float64{1.5}, entry.EntryInfo.ResolutionCombined)
-	require.NotNil(t, entry.EntryInfo.DepositedAtomCount)
-	assert.Equal(t, 1383, *entry.EntryInfo.DepositedAtomCount)
-	require.NotNil(t, entry.EntryInfo.DepositedModeledPolymerMonomerCount)
-	assert.Equal(t, 164, *entry.EntryInfo.DepositedModeledPolymerMonomerCount)
-	require.NotNil(t, entry.EntryInfo.DepositedPolymerEntityInstanceCount)
-	assert.Equal(t, 1, *entry.EntryInfo.DepositedPolymerEntityInstanceCount)
-	assert.Equal(t, []string{"ATP", "HOH", "ZN", "ACY"}, entry.EntryInfo.NonpolymerBoundComponents)
-	require.NotNil(t, entry.Symmetry)
-	assert.Equal(t, "P 21 21 21", entry.Symmetry.SpaceGroupNameHM)
-	require.NotNil(t, entry.EntryContainerIdentifiers)
-	assert.Equal(t, []string{"1", "2"}, entry.EntryContainerIdentifiers.PolymerEntityIDs)
-	assert.Equal(t, []EntitySourceOrganism{
-		{NCBIScientificName: "Homo sapiens"},
-		{NCBIScientificName: "Escherichia coli"},
-	}, polymerEntity.SourceOrganisms)
-	assert.Equal(t, []AuditAuthor{{Name: "Nelson, R."}, {Name: "Sawaya, M.R."}}, entry.AuditAuthors)
-	require.NotNil(t, entry.PrimaryCitation)
-	assert.Equal(t, []string{"Citation, A."}, entry.PrimaryCitation.Authors)
-	require.NotNil(t, entry.PubMed)
-	assert.Equal(t, []string{"Howard Hughes Medical Institute, UCLA, USA."}, entry.PubMed.Affiliations)
-	require.Len(t, entry.Refinements, 1)
-	require.NotNil(t, entry.Refinements[0].LSRFactorRFree)
-	assert.Equal(t, 0.21, *entry.Refinements[0].LSRFactorRFree)
-	require.NotNil(t, entry.Refinements[0].LSRFactorRWork)
-	assert.Equal(t, 0.18, *entry.Refinements[0].LSRFactorRWork)
+	assert.Equal(t, "example structure", entry["struct"].(map[string]any)["title"])
+	assert.Equal(t, "X-RAY DIFFRACTION", entry["exptl"].([]any)[0].(map[string]any)["method"])
+	entryInfo := entry["rcsb_entry_info"].(map[string]any)
+	assert.Equal(t, []any{1.5}, entryInfo["resolution_combined"])
+	assert.Equal(t, float64(1383), entryInfo["deposited_atom_count"])
+	assert.Equal(t, float64(164), entryInfo["deposited_modeled_polymer_monomer_count"])
+	assert.Equal(t, float64(1), entryInfo["deposited_polymer_entity_instance_count"])
+	assert.Equal(t, []any{"ATP", "HOH", "ZN", "ACY"}, entryInfo["nonpolymer_bound_components"])
+	assert.Equal(t, "P 21 21 21", entry["symmetry"].(map[string]any)["space_group_name_H_M"])
+	identifiers := entry["rcsb_entry_container_identifiers"].(map[string]any)
+	assert.Equal(t, []any{"1", "2"}, identifiers["polymer_entity_ids"])
+	organisms := polymerEntity["rcsb_entity_source_organism"].([]any)
+	assert.Equal(t, "Homo sapiens", organisms[0].(map[string]any)["ncbi_scientific_name"])
+	assert.Equal(t, "Escherichia coli", organisms[1].(map[string]any)["ncbi_scientific_name"])
+	assert.Equal(t, "Nelson, R.", entry["audit_author"].([]any)[0].(map[string]any)["name"])
+	assert.Equal(t, []any{"Citation, A."}, entry["rcsb_primary_citation"].(map[string]any)["rcsb_authors"])
+	assert.Equal(t, []any{"Howard Hughes Medical Institute, UCLA, USA."}, entry["pubmed"].(map[string]any)["rcsb_pubmed_affiliation_info"])
+	refinement := entry["refine"].([]any)[0].(map[string]any)
+	assert.Equal(t, 0.21, refinement["ls_R_factor_R_free"])
+	assert.Equal(t, 0.18, refinement["ls_R_factor_R_work"])
 }
 
 func writeText(t *testing.T, w http.ResponseWriter, text string) {

@@ -18,21 +18,17 @@ const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
 	defaultFilesBaseURL = "https://files.rcsb.org"
 	defaultWWWBaseURL   = "https://www.rcsb.org"
-	defaultCDNBaseURL   = "https://cdn.rcsb.org"
 
 	dataBaseURLEnv  = "DYNAMIC_PDB_RCSB_DATA_URL"
 	filesBaseURLEnv = "DYNAMIC_PDB_RCSB_FILES_URL"
 	wwwBaseURLEnv   = "DYNAMIC_PDB_RCSB_WWW_URL"
-	cdnBaseURLEnv   = "DYNAMIC_PDB_RCSB_CDN_URL"
 )
 
 type Client interface {
-	GetEntry(ctx context.Context, pdbID string) (Entry, error)
-	GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (PolymerEntity, error)
-	GetCoordinates(ctx context.Context, pdbID string) (Artifact, error)
-	GetStructureFactors(ctx context.Context, pdbID string) (Artifact, error)
+	GetEntry(ctx context.Context, pdbID string) (map[string]any, error)
+	GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error)
+	GetFile(ctx context.Context, pdbID string, file string) (Artifact, error)
 	GetFASTA(ctx context.Context, pdbID string) (Artifact, error)
-	GetPreviewImage(ctx context.Context, pdbID string) (PreviewImage, error)
 }
 
 type RemoteClient struct {
@@ -40,7 +36,6 @@ type RemoteClient struct {
 	dataBaseURL  string
 	filesBaseURL string
 	wwwBaseURL   string
-	cdnBaseURL   string
 }
 
 type Option func(*RemoteClient)
@@ -59,19 +54,12 @@ func WithBaseURLs(dataBaseURL string, filesBaseURL string, wwwBaseURL string) Op
 	}
 }
 
-func WithCDNBaseURL(cdnBaseURL string) Option {
-	return func(client *RemoteClient) {
-		client.cdnBaseURL = cleanBaseURL(cdnBaseURL, defaultCDNBaseURL)
-	}
-}
-
 func NewClient(options ...Option) *RemoteClient {
 	client := &RemoteClient{
 		httpClient:   &http.Client{Timeout: defaultHTTPTimeout},
 		dataBaseURL:  cleanBaseURL(os.Getenv(dataBaseURLEnv), defaultDataBaseURL),
 		filesBaseURL: cleanBaseURL(os.Getenv(filesBaseURLEnv), defaultFilesBaseURL),
 		wwwBaseURL:   cleanBaseURL(os.Getenv(wwwBaseURLEnv), defaultWWWBaseURL),
-		cdnBaseURL:   cleanBaseURL(os.Getenv(cdnBaseURLEnv), defaultCDNBaseURL),
 	}
 	for _, option := range options {
 		option(client)
@@ -79,66 +67,48 @@ func NewClient(options ...Option) *RemoteClient {
 	return client
 }
 
-func (c *RemoteClient) GetEntry(ctx context.Context, pdbID string) (Entry, error) {
+func (c *RemoteClient) GetEntry(ctx context.Context, pdbID string) (map[string]any, error) {
 	url := c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(pdbID)
 	contents, err := c.get(ctx, url)
 	if err != nil {
-		return Entry{}, fmt.Errorf("get RCSB entry: %w", err)
+		return nil, fmt.Errorf("get RCSB entry: %w", err)
 	}
 
-	var payload Entry
+	var payload map[string]any
 	if err := json.Unmarshal(contents, &payload); err != nil {
-		return Entry{}, fmt.Errorf("decode RCSB entry: %w", err)
+		return nil, fmt.Errorf("decode RCSB entry: %w", err)
 	}
 	return payload, nil
 }
 
-func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (PolymerEntity, error) {
+func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error) {
 	url := c.dataBaseURL + "/rest/v1/core/polymer_entity/" + strings.ToUpper(pdbID) + "/" + strings.TrimSpace(entityID)
 	contents, err := c.get(ctx, url)
 	if err != nil {
-		return PolymerEntity{}, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
+		return nil, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
-	var payload PolymerEntity
+	var payload map[string]any
 	if err := json.Unmarshal(contents, &payload); err != nil {
-		return PolymerEntity{}, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
+		return nil, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
 	return payload, nil
 }
 
-func (c *RemoteClient) GetCoordinates(ctx context.Context, pdbID string) (Artifact, error) {
-	url := c.filesBaseURL + "/download/" + strings.ToUpper(pdbID) + ".cif"
+func (c *RemoteClient) GetFile(ctx context.Context, pdbID string, file string) (Artifact, error) {
+	filename := strings.TrimSpace(file)
+	if filename == "" {
+		return Artifact{}, errors.New("RCSB file is required")
+	}
+	url := c.filesBaseURL + "/download/" + rcsbDownloadFilename(pdbID, filename)
 	contents, err := c.get(ctx, url)
 	if err != nil {
-		return Artifact{}, fmt.Errorf("get RCSB deposited coordinates: %w", err)
+		return Artifact{}, fmt.Errorf("get RCSB file %s: %w", filename, err)
 	}
 	return Artifact{
-		Filename: strings.ToLower(pdbID) + ".cif",
-		Format:   "cif",
+		Filename: filename,
+		Format:   formatFromFilename(filename),
 		URI:      url,
 		Contents: contents,
-	}, nil
-}
-
-func (c *RemoteClient) GetPreviewImage(_ context.Context, pdbID string) (PreviewImage, error) {
-	pdbID = strings.ToLower(strings.TrimSpace(pdbID))
-	if len(pdbID) != 4 {
-		return PreviewImage{}, fmt.Errorf("PDB ID must have 4 characters: %s", pdbID)
-	}
-	url := c.cdnBaseURL + "/images/structures/" + pdbID[1:3] + "/" + pdbID + "/" + pdbID + "_assembly-1.jpeg"
-	return PreviewImage{
-		Filename: pdbID + "_assembly-1.jpeg",
-		Format:   "image",
-		URI:      url,
-	}, nil
-}
-
-func (c *RemoteClient) GetStructureFactors(_ context.Context, pdbID string) (Artifact, error) {
-	url := c.filesBaseURL + "/download/" + strings.ToUpper(pdbID) + "-sf.cif"
-	return Artifact{
-		Filename: strings.ToLower(pdbID) + "-sf.cif",
-		Format:   "structure_factors_cif",
-		URI:      url,
 	}, nil
 }
 
@@ -153,6 +123,39 @@ func (c *RemoteClient) GetFASTA(ctx context.Context, pdbID string) (Artifact, er
 		URI:      c.wwwBaseURL + "/fasta/entry/" + strings.ToUpper(pdbID),
 		Contents: contents,
 	}, nil
+}
+
+func rcsbDownloadFilename(pdbID string, filename string) string {
+	pdbID = strings.TrimSpace(pdbID)
+	if len(pdbID) != 4 || len(filename) < 4 {
+		return filename
+	}
+	if !strings.EqualFold(filename[:4], pdbID) {
+		return filename
+	}
+	return strings.ToUpper(pdbID) + filename[4:]
+}
+
+func formatFromFilename(filename string) string {
+	filename = strings.ToLower(strings.TrimSpace(filename))
+	switch {
+	case strings.HasSuffix(filename, "-sf.cif"):
+		return "structure_factors_cif"
+	case strings.HasSuffix(filename, ".cif"):
+		return "cif"
+	case strings.HasSuffix(filename, ".pdb"):
+		return "pdb"
+	case strings.HasSuffix(filename, ".mtz"):
+		return "mtz"
+	case strings.HasSuffix(filename, ".jpeg") || strings.HasSuffix(filename, ".jpg") || strings.HasSuffix(filename, ".png"):
+		return "image"
+	default:
+		extension := strings.TrimPrefix(filename[strings.LastIndex(filename, ".")+1:], ".")
+		if extension == filename {
+			return ""
+		}
+		return extension
+	}
 }
 
 func cleanBaseURL(value string, fallback string) string {
