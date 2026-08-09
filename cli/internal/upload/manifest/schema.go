@@ -64,7 +64,7 @@ type ExtractRule struct {
 }
 
 type Source struct {
-	File     any         `yaml:"file,omitempty"`
+	Files    []string    `yaml:"files,omitempty"`
 	RCSB     *RCSBSource `yaml:"rcsb,omitempty"`
 	Artifact string      `yaml:"artifact,omitempty"`
 }

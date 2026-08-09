@@ -204,11 +204,13 @@ entries:
         artifacts:
           - id: coordinates
             source:
-              file: Rerefined/final_model/{{ pdb_id }}_020.pdb
+              files:
+                - Rerefined/final_model/{{ pdb_id }}_020.pdb
             level: L2
           - id: log_1
             source:
-              file: Rerefined/final_model/{{ pdb_id }}_020.log
+              files:
+                - Rerefined/final_model/{{ pdb_id }}_020.log
             level: L2
           - id: structure_factors_1
             source:
@@ -233,8 +235,8 @@ entries:
 
 Useful source forms:
 
-- `file: path/to/{{ pdb_id }}.pdb` reads a local file under `data_root`.
-- `file: archive.zip#path/in/archive/{{ pdb_id }}.pdb` reads a file inside a zip.
+- `files: [path/to/{{ pdb_id }}.pdb]` reads local files under `data_root`.
+- `files: [archive.zip#path/in/archive/{{ pdb_id }}.pdb]` reads files inside a zip.
 - `rcsb.pdb_id` selects the PDB entry. Use `rcsb.resource` for RCSB API resources such as `entry`, `polymer_entity`, or `fasta`, and `rcsb.file` for downloadable RCSB files such as `{{ pdb_id }}.cif` or `{{ pdb_id }}-sf.cif`.
 - `artifact: coordinates` lets metrics be parsed from another artifact in the
   same model.
