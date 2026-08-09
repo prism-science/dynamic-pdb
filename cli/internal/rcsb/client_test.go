@@ -27,23 +27,23 @@ REFMAC refinement 5.2.0005 ? 1
 `)
 		case "/download/5AMF-sf.cif":
 			writeText(t, w, "structure factors\n")
-		case "/download/5AMF_assembly-1.jpeg":
-			writeText(t, w, "image\n")
 		case "/fasta/entry/5AMF":
 			writeText(t, w, ">5amf\nACDE\n")
+		case "/images/structures/am/5amf/5amf_assembly-1.jpeg":
+			writeText(t, w, "image\n")
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
-	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL))
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
 
 	// when
 	coordinates, err := client.GetFile(context.Background(), "5amf", "5amf.cif")
 	require.NoError(t, err)
 	structureFactors, err := client.GetFile(context.Background(), "5amf", "5amf-sf.cif")
 	require.NoError(t, err)
-	previewImage, err := client.GetFile(context.Background(), "5amf", "5amf_assembly-1.jpeg")
+	previewImage, err := client.GetImage(context.Background(), "5amf", "5amf_assembly-1.jpeg")
 	require.NoError(t, err)
 	fasta, err := client.GetFASTA(context.Background(), "5amf")
 
@@ -59,7 +59,7 @@ REFMAC refinement 5.2.0005 ? 1
 	assert.Equal(t, "structure factors\n", string(structureFactors.Contents))
 	assert.Equal(t, "5amf_assembly-1.jpeg", previewImage.Filename)
 	assert.Equal(t, "image", previewImage.Format)
-	assert.Equal(t, server.URL+"/download/5AMF_assembly-1.jpeg", previewImage.URI)
+	assert.Equal(t, server.URL+"/images/structures/am/5amf/5amf_assembly-1.jpeg", previewImage.URI)
 	assert.Equal(t, "image\n", string(previewImage.Contents))
 	assert.Equal(t, "5amf.fasta", fasta.Filename)
 	assert.Equal(t, "fasta", fasta.Format)
@@ -101,7 +101,7 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 		}
 	}))
 	defer server.Close()
-	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL))
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
 
 	// when
 	entry, err := client.GetEntry(context.Background(), "5amf")

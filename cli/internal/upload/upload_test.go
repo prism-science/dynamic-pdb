@@ -52,7 +52,8 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "5AMF", externalRefs["pdb"])
 	require.NotNil(t, entry.ThumbnailImageURL)
-	assert.Equal(t, "https://files.rcsb.test/download/5AMF_assembly-1.jpeg", *entry.ThumbnailImageURL)
+	assert.Contains(t, *entry.ThumbnailImageURL, "https://cdn.example.test/")
+	assert.Contains(t, *entry.ThumbnailImageURL, "/5amf_assembly-1.jpeg")
 	assert.Len(t, entry.Artifacts, 1)
 	require.NotNil(t, entry.Artifacts[0].URI)
 	assert.Equal(t, "https://www.rcsb.test/fasta/entry/5AMF", *entry.Artifacts[0].URI)
@@ -95,9 +96,9 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	require.Len(t, models[1].Metrics, 2)
 	assert.Equal(t, "r_free", models[1].Metrics[0].Key)
 	assert.Equal(t, 0.243, models[1].Metrics[0].Value)
-	assert.Len(t, dynamicPDBClient.uploads, 3)
-	assert.Len(t, dynamicPDBClient.completed, 3)
-	assert.Equal(t, 0, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_assembly-1.jpeg"))
+	assert.Len(t, dynamicPDBClient.uploads, 4)
+	assert.Len(t, dynamicPDBClient.completed, 4)
+	assert.Equal(t, 1, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_assembly-1.jpeg"))
 	assert.Equal(t, 0, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf-sf.cif"))
 	assert.Equal(t, 1, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz"))
 	report := readReport(t, summary.ReportPath)
@@ -160,7 +161,7 @@ func Test_should_download_structure_factors_from_rcsb_when_manifest_points_to_rc
 	assert.Equal(t, 2, summary.Models)
 	assert.Equal(t, 6, summary.Artifacts)
 	assert.FileExists(t, summary.ReportPath)
-	assert.Len(t, dynamicPDBClient.uploads, 2)
+	assert.Len(t, dynamicPDBClient.uploads, 3)
 	assert.Equal(t, 0, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf-sf.cif"))
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz")
 	assert.Equal(t, 2, countString(rcsbClient.files, "5amf-sf.cif"))
@@ -493,6 +494,10 @@ func (f *trackingFakeRCSB) GetFile(ctx context.Context, pdbID string, file strin
 	return fakeRCSB{}.GetFile(ctx, pdbID, file)
 }
 
+func (f *trackingFakeRCSB) GetImage(ctx context.Context, pdbID string, file string) (rcsb.Artifact, error) {
+	return fakeRCSB{}.GetImage(ctx, pdbID, file)
+}
+
 func (f *trackingFakeRCSB) GetFASTA(ctx context.Context, pdbID string) (rcsb.Artifact, error) {
 	return fakeRCSB{}.GetFASTA(ctx, pdbID)
 }
@@ -521,11 +526,16 @@ REFMAC refinement 5.2.0005 ? 1
 			URI:      "https://files.rcsb.test/download/5AMF-sf.cif",
 			Contents: []byte("structure factors\n"),
 		}, nil
+	default:
+		return rcsb.Artifact{}, assert.AnError
+	}
+}
+
+func (fakeRCSB) GetImage(_ context.Context, _ string, file string) (rcsb.Artifact, error) {
+	switch file {
 	case "5amf_assembly-1.jpeg":
 		return rcsb.Artifact{
 			Filename: "5amf_assembly-1.jpeg",
-			Format:   "image",
-			URI:      "https://files.rcsb.test/download/5AMF_assembly-1.jpeg",
 			Contents: []byte("image\n"),
 		}, nil
 	default:

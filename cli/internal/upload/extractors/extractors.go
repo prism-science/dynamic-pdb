@@ -14,6 +14,10 @@ type ArtifactExtractor interface {
 	Extract(ctx context.Context, pdbID string, artifact manifest.Artifact) (Artifact, bool, error)
 }
 
+type ImageExtractor interface {
+	Extract(ctx context.Context, pdbID string, source manifest.Source) (Image, bool, error)
+}
+
 type Artifact struct {
 	Filename  string
 	Size      int64
@@ -21,6 +25,13 @@ type Artifact struct {
 	URI       string
 	SHA256    string
 	Metadata  map[string]any
+	LocalPath string
+	Contents  []byte
+}
+
+type Image struct {
+	Filename  string
+	Size      int64
 	LocalPath string
 	Contents  []byte
 }

@@ -413,7 +413,7 @@ func (u *Uploader) uploadArtifact(
 	}
 	artifactURI := strings.TrimSpace(payload.URI)
 	if artifactURI == "" {
-		uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, modelID, artifactID, payload)
+		uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
 		if err != nil {
 			return uploadedArtifact{}, false, err
 		}
@@ -458,33 +458,36 @@ func (u *Uploader) uploadPreviewImage(
 	if previewImage == nil || sourceIsEmpty(previewImage.Source) {
 		return nil, nil
 	}
-	payload, ok, err := u.previewImagePayload(ctx, dataRoot, pdbID, previewImage.Source)
+	image, ok, err := u.imagePayload(ctx, dataRoot, pdbID, previewImage.Source)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, nil
 	}
-	if url := strings.TrimSpace(payload.URI); url != "" {
-		return &url, nil
-	}
-	uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, nil, uuid.NewString(), payload)
+	uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, nil, uuid.NewString(), image.Filename, image.Size, image.LocalPath, image.Contents)
 	if err != nil {
 		return nil, fmt.Errorf("upload preview image: %w", err)
 	}
 	return &uploadedURL, nil
 }
 
-func (u *Uploader) previewImagePayload(
+func (u *Uploader) imagePayload(
 	ctx context.Context,
 	dataRoot string,
 	pdbID string,
 	source manifest.Source,
-) (extractorapi.Artifact, bool, error) {
-	return u.artifactPayload(ctx, dataRoot, pdbID, manifest.Artifact{
-		ID:     "preview_image",
-		Source: source,
-	})
+) (extractorapi.Image, bool, error) {
+	switch {
+	case sourceIsEmpty(source):
+		return extractorapi.Image{}, false, nil
+	case !rcsbSourceIsEmpty(source.RCSB):
+		return rcsbextractor.NewImageExtractor(u.rcsb).Extract(ctx, pdbID, source)
+	case strings.TrimSpace(source.Artifact) != "":
+		return extractorapi.Image{}, false, fmt.Errorf("artifact reference %s cannot be used as an image source", source.Artifact)
+	default:
+		return fileextractor.NewImageExtractor(dataRoot).Extract(ctx, pdbID, source)
+	}
 }
 
 func uploadPayload(
@@ -493,14 +496,17 @@ func uploadPayload(
 	entryID string,
 	modelID *string,
 	artifactID string,
-	payload extractorapi.Artifact,
+	filename string,
+	size int64,
+	localPath string,
+	contents []byte,
 ) (string, error) {
 	grant, err := dynamicPDBClient.CreateFileUpload(ctx, dynamicpdbapi.CreateFileUploadRequest{
 		EntryID:    entryID,
 		ModelID:    modelID,
 		ArtifactID: artifactID,
-		Filename:   payload.Filename,
-		Size:       payload.Size,
+		Filename:   filename,
+		Size:       size,
 	})
 	if err != nil {
 		return "", err
@@ -508,7 +514,7 @@ func uploadPayload(
 
 	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(grant.Parts))
 	for _, part := range grant.Parts {
-		reader, size, closeReader, err := partReader(payload, grant.PartSize, part.PartNumber)
+		reader, size, closeReader, err := partReader(contents, localPath, size, grant.PartSize, part.PartNumber)
 		if err != nil {
 			return "", err
 		}
@@ -535,18 +541,18 @@ func uploadPayload(
 	return grant.ObjectURL, nil
 }
 
-func partReader(payload extractorapi.Artifact, partSize int64, partNumber int) (io.Reader, int64, func() error, error) {
+func partReader(contents []byte, localPath string, payloadSize int64, partSize int64, partNumber int) (io.Reader, int64, func() error, error) {
 	offset := int64(partNumber-1) * partSize
-	size := min(partSize, payload.Size-offset)
+	size := min(partSize, payloadSize-offset)
 	if size < 0 {
 		return nil, 0, nil, fmt.Errorf("part %d starts beyond payload size", partNumber)
 	}
-	if payload.Contents != nil {
-		return bytes.NewReader(payload.Contents[offset : offset+size]), size, func() error { return nil }, nil
+	if contents != nil {
+		return bytes.NewReader(contents[offset : offset+size]), size, func() error { return nil }, nil
 	}
-	file, err := os.Open(payload.LocalPath)
+	file, err := os.Open(localPath)
 	if err != nil {
-		return nil, 0, nil, fmt.Errorf("open local artifact: %w", err)
+		return nil, 0, nil, fmt.Errorf("open upload file: %w", err)
 	}
 	return io.NewSectionReader(file, offset, size), size, file.Close, nil
 }

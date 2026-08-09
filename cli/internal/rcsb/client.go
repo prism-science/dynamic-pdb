@@ -18,16 +18,19 @@ const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
 	defaultFilesBaseURL = "https://files.rcsb.org"
 	defaultWWWBaseURL   = "https://www.rcsb.org"
+	defaultCDNBaseURL   = "https://cdn.rcsb.org"
 
 	dataBaseURLEnv  = "DYNAMIC_PDB_RCSB_DATA_URL"
 	filesBaseURLEnv = "DYNAMIC_PDB_RCSB_FILES_URL"
 	wwwBaseURLEnv   = "DYNAMIC_PDB_RCSB_WWW_URL"
+	cdnBaseURLEnv   = "DYNAMIC_PDB_RCSB_CDN_URL"
 )
 
 type Client interface {
 	GetEntry(ctx context.Context, pdbID string) (map[string]any, error)
 	GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error)
 	GetFile(ctx context.Context, pdbID string, file string) (Artifact, error)
+	GetImage(ctx context.Context, pdbID string, file string) (Artifact, error)
 	GetFASTA(ctx context.Context, pdbID string) (Artifact, error)
 }
 
@@ -36,6 +39,7 @@ type RemoteClient struct {
 	dataBaseURL  string
 	filesBaseURL string
 	wwwBaseURL   string
+	cdnBaseURL   string
 }
 
 type Option func(*RemoteClient)
@@ -46,11 +50,12 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-func WithBaseURLs(dataBaseURL string, filesBaseURL string, wwwBaseURL string) Option {
+func WithBaseURLs(dataBaseURL string, filesBaseURL string, wwwBaseURL string, cdnBaseURL string) Option {
 	return func(client *RemoteClient) {
 		client.dataBaseURL = cleanBaseURL(dataBaseURL, defaultDataBaseURL)
 		client.filesBaseURL = cleanBaseURL(filesBaseURL, defaultFilesBaseURL)
 		client.wwwBaseURL = cleanBaseURL(wwwBaseURL, defaultWWWBaseURL)
+		client.cdnBaseURL = cleanBaseURL(cdnBaseURL, defaultCDNBaseURL)
 	}
 }
 
@@ -60,6 +65,7 @@ func NewClient(options ...Option) *RemoteClient {
 		dataBaseURL:  cleanBaseURL(os.Getenv(dataBaseURLEnv), defaultDataBaseURL),
 		filesBaseURL: cleanBaseURL(os.Getenv(filesBaseURLEnv), defaultFilesBaseURL),
 		wwwBaseURL:   cleanBaseURL(os.Getenv(wwwBaseURLEnv), defaultWWWBaseURL),
+		cdnBaseURL:   cleanBaseURL(os.Getenv(cdnBaseURLEnv), defaultCDNBaseURL),
 	}
 	for _, option := range options {
 		option(client)
@@ -112,6 +118,24 @@ func (c *RemoteClient) GetFile(ctx context.Context, pdbID string, file string) (
 	}, nil
 }
 
+func (c *RemoteClient) GetImage(ctx context.Context, pdbID string, file string) (Artifact, error) {
+	filename := strings.TrimSpace(file)
+	if filename == "" {
+		return Artifact{}, errors.New("RCSB image is required")
+	}
+	url := c.rcsbImageURL(pdbID, filename)
+	contents, err := c.get(ctx, url)
+	if err != nil {
+		return Artifact{}, fmt.Errorf("get RCSB image %s: %w", filename, err)
+	}
+	return Artifact{
+		Filename: filename,
+		Format:   formatFromFilename(filename),
+		URI:      url,
+		Contents: contents,
+	}, nil
+}
+
 func (c *RemoteClient) GetFASTA(ctx context.Context, pdbID string) (Artifact, error) {
 	contents, err := c.get(ctx, c.wwwBaseURL+"/fasta/entry/"+strings.ToUpper(pdbID))
 	if err != nil {
@@ -123,6 +147,18 @@ func (c *RemoteClient) GetFASTA(ctx context.Context, pdbID string) (Artifact, er
 		URI:      c.wwwBaseURL + "/fasta/entry/" + strings.ToUpper(pdbID),
 		Contents: contents,
 	}, nil
+}
+
+func (c *RemoteClient) rcsbImageURL(pdbID string, filename string) string {
+	pdbID = strings.ToLower(strings.TrimSpace(pdbID))
+	filename = strings.ToLower(strings.TrimSpace(filename))
+	if len(pdbID) != 4 {
+		return c.cdnBaseURL + "/images/structures/" + filename
+	}
+	if strings.HasPrefix(filename, pdbID) {
+		filename = pdbID + filename[4:]
+	}
+	return c.cdnBaseURL + "/images/structures/" + pdbID[1:3] + "/" + pdbID + "/" + filename
 }
 
 func rcsbDownloadFilename(pdbID string, filename string) string {

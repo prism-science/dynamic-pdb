@@ -107,10 +107,12 @@ type fakeClient struct {
 	entry            map[string]any
 	polymerEntities  map[string]map[string]any
 	files            map[string]rcsbclient.Artifact
+	images           map[string]rcsbclient.Artifact
 	fasta            rcsbclient.Artifact
 	entryPDBIDs      []string
 	polymerEntityIDs []string
 	fileNames        []string
+	imageNames       []string
 	fastaPDBIDs      []string
 }
 
@@ -127,6 +129,11 @@ func (c *fakeClient) GetPolymerEntity(_ context.Context, _ string, entityID stri
 func (c *fakeClient) GetFile(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {
 	c.fileNames = append(c.fileNames, file)
 	return c.files[file], nil
+}
+
+func (c *fakeClient) GetImage(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {
+	c.imageNames = append(c.imageNames, file)
+	return c.images[file], nil
 }
 
 func (c *fakeClient) GetFASTA(_ context.Context, pdbID string) (rcsbclient.Artifact, error) {
