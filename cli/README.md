@@ -106,76 +106,136 @@ filter:
   skip: []
 
 entries:
-  pdb_id: "{{ pdb_id }}"
-  name: "{{ pdb_id }}"
-  metadata:
-    source:
-      rcsb: "{{ pdb_id }}"
-    fields:
-      - title
-      - method
-      - resolution
-      - organism
-      - space_group
-  preview_image:
-    source:
-      rcsb: "{{ pdb_id }}"
-  artifacts:
-    - id: fasta
+  - pdb_id: "{{ pdb_id }}"
+    name: "{{ pdb_id }}"
+    metadata:
+      title:
+        source:
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: entry
+        extract:
+          json:
+            field: struct.title
+      method:
+        source:
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: entry
+        extract:
+          json:
+            field: exptl[0].method
+      resolution:
+        source:
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: entry
+        extract:
+          json:
+            field: rcsb_entry_info.resolution_combined[0]
+      organism:
+        source:
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: polymer_entity
+        extract:
+          json:
+            field: rcsb_entity_source_organism.ncbi_scientific_name
+      space_group:
+        source:
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: entry
+        extract:
+          json:
+            field: symmetry.space_group_name_H_M
+    preview_image:
       source:
-        rcsb: "{{ pdb_id }}"
-      level: L0
-  models:
-    - id: model_1
-      name: Deposited model
-      model_type: Single Conformer
-      purpose: Model Building
-      artifacts:
-        - id: coordinates
-          source:
-            rcsb: "{{ pdb_id }}"
-          level: L2
-        - id: structure_factors_1
-          source:
-            rcsb: "{{ pdb_id }}"
-          level: L1
-      metrics:
+        rcsb:
+          pdb_id: "{{ pdb_id }}"
+          file: "{{ pdb_id }}_assembly-1.jpeg"
+    artifacts:
+      - id: fasta
         source:
-          rcsb: "{{ pdb_id }}"
-        fields:
-          - r_free
-          - r_work
+          rcsb:
+            pdb_id: "{{ pdb_id }}"
+            resource: fasta
+        level: L0
+    models:
+      - id: model_1
+        name: Deposited model
+        model_type: Single Conformer
+        purpose: Model Building
+        artifacts:
+          - id: coordinates
+            source:
+              rcsb:
+                pdb_id: "{{ pdb_id }}"
+                file: "{{ pdb_id }}.cif"
+            level: L2
+          - id: structure_factors_1
+            source:
+              rcsb:
+                pdb_id: "{{ pdb_id }}"
+                file: "{{ pdb_id }}-sf.cif"
+            level: L1
+        metrics:
+          r_free:
+            source:
+              rcsb:
+                pdb_id: "{{ pdb_id }}"
+                resource: entry
+            extract:
+              json:
+                field: refine[0].ls_R_factor_R_free
+          r_work:
+            source:
+              rcsb:
+                pdb_id: "{{ pdb_id }}"
+                resource: entry
+            extract:
+              json:
+                field: refine[0].ls_R_factor_R_work
 
-    - id: model_2
-      name: Rerefined model
-      model_type: Single Conformer
-      purpose: Refinement
-      artifacts:
-        - id: coordinates
-          source:
-            file: Rerefined/final_model/{{ pdb_id }}_020.pdb
-          level: L2
-        - id: log_1
-          source:
-            file: Rerefined/final_model/{{ pdb_id }}_020.log
-          level: L2
-        - id: structure_factors_1
-          source:
-            rcsb: "{{ pdb_id }}"
-          level: L1
-      metrics:
-        source:
-          artifact: coordinates
-        fields:
-          - r_free
-          - r_work
+      - id: model_2
+        name: Rerefined model
+        model_type: Single Conformer
+        purpose: Refinement
+        artifacts:
+          - id: coordinates
+            source:
+              file: Rerefined/final_model/{{ pdb_id }}_020.pdb
+            level: L2
+          - id: log_1
+            source:
+              file: Rerefined/final_model/{{ pdb_id }}_020.log
+            level: L2
+          - id: structure_factors_1
+            source:
+              rcsb:
+                pdb_id: "{{ pdb_id }}"
+                file: "{{ pdb_id }}-sf.cif"
+            level: L1
+        metrics:
+          r_free:
+            source:
+              artifact: coordinates
+            extract:
+              pdb:
+                field: REMARK 3 FREE R VALUE
+          r_work:
+            source:
+              artifact: coordinates
+            extract:
+              pdb:
+                field: REMARK 3 R VALUE WORKING SET
 ```
 
 Useful source forms:
 
 - `file: path/to/{{ pdb_id }}.pdb` reads a local file under `data_root`.
 - `file: archive.zip#path/in/archive/{{ pdb_id }}.pdb` reads a file inside a zip.
-- `rcsb: "{{ pdb_id }}"` resolves the artifact or metadata from RCSB.
+- `rcsb.pdb_id` selects the PDB entry. Use `rcsb.resource` for RCSB API resources such as `entry`, `polymer_entity`, or `fasta`, and `rcsb.file` for downloadable RCSB files such as `{{ pdb_id }}.cif` or `{{ pdb_id }}-sf.cif`.
 - `artifact: coordinates` lets metrics be parsed from another artifact in the
   same model.
 
