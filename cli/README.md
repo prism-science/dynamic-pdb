@@ -46,9 +46,8 @@ Then authenticate:
 ./cli/bin/dynamic-pdb login
 ```
 
-The command prints a GitHub device code, opens the browser when possible, copies
-the code to the clipboard when possible, and stores the Dynamic PDB token after
-authorization.
+The command prints a GitHub device code. Open the shown URL, enter the
+code, and the CLI stores the Dynamic PDB token after authorization.
 
 To clear saved auth:
 
