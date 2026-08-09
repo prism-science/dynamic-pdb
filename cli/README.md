@@ -73,7 +73,7 @@ that file is not part of the generated upload plan.
 ### 2. Generate a manifest
 
 ```bash
-./cli/bin/dynamic-pdb manifest init /path/to/data \
+./cli/bin/dynamic-pdb upload manifest init /path/to/data \
   --out /path/to/data/dynamic-pdb.manifest.yaml
 ```
 
@@ -244,7 +244,7 @@ Useful source forms:
 ### 4. Upload
 
 ```bash
-./cli/bin/dynamic-pdb manifest upload /path/to/data/dynamic-pdb.manifest.yaml
+./cli/bin/dynamic-pdb upload start /path/to/data/dynamic-pdb.manifest.yaml
 ```
 
 During upload the CLI shows progress in the terminal. At the end it prints a
@@ -256,5 +256,4 @@ Upload log: /path/to/data/dynamic-pdb.manifest.upload-log.json
 ```
 
 The JSON log is meant to be easy to parse. It contains uploaded entry IDs, model
-IDs, artifact IDs, run IDs, metric IDs, skipped PDB IDs, and the per-entry
-breakdown.
+IDs, artifact IDs, run IDs, and metric IDs.

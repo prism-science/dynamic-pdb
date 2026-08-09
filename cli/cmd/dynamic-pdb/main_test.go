@@ -24,6 +24,7 @@ func Test_should_show_login_command_when_no_command_is_given(t *testing.T) {
 	// then
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout.String(), "login")
+	assert.Contains(t, stdout.String(), "upload")
 	assert.Empty(t, stderr.String())
 }
 
@@ -33,7 +34,7 @@ func Test_should_fail_when_unknown_command_is_given(t *testing.T) {
 	var stderr bytes.Buffer
 
 	// when
-	exitCode := execute(context.Background(), []string{"upload"}, &stdout, &stderr)
+	exitCode := execute(context.Background(), []string{"wat"}, &stdout, &stderr)
 
 	// then
 	assert.Equal(t, 1, exitCode)

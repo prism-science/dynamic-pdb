@@ -48,8 +48,8 @@ func newRootCommand(ctx context.Context, stdout, stderr io.Writer, code *int) *c
 	root.AddCommand(simpleCommand("logout", "clear saved authentication for Dynamic PDB", code, func() int {
 		return frontend.Logout(stdout, stderr)
 	}))
-	root.AddCommand(passThroughCommand("manifest", "build upload manifests", code, func(args []string) int {
-		return frontend.Manifest(ctx, args, stdout, stderr)
+	root.AddCommand(passThroughCommand("upload", "upload Dynamic PDB datasets", code, func(args []string) int {
+		return frontend.Upload(ctx, args, stdout, stderr)
 	}))
 
 	return root
