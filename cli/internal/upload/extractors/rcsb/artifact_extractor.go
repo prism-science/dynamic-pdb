@@ -50,7 +50,7 @@ func (e ArtifactExtractor) rcsbArtifact(
 ) (extractors.Artifact, error) {
 	source := artifact.Source.RCSB
 	resource := strings.TrimSpace(source.Resource)
-	file := instantiate(source.File, pdbID)
+	file := strings.ReplaceAll(source.File, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
 	switch {
 	case resource == "fasta":
 		artifact, err := e.client.GetFASTA(ctx, pdbID)
@@ -91,10 +91,6 @@ func sourceDescription(source *manifest.RCSBSource) string {
 		return "resource " + strings.TrimSpace(source.Resource)
 	}
 	return "file " + strings.TrimSpace(source.File)
-}
-
-func instantiate(value string, pdbID string) string {
-	return strings.ReplaceAll(value, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
 }
 
 func parseFASTA(contents []byte) []map[string]string {
