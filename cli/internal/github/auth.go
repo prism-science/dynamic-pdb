@@ -31,14 +31,6 @@ type AuthClient interface {
 	WaitForToken(ctx context.Context, deviceCode DeviceCode) (string, error)
 }
 
-type DeviceCode struct {
-	DeviceCode      string
-	UserCode        string
-	VerificationURI string
-	ExpiresIn       time.Duration
-	Interval        time.Duration
-}
-
 type RemoteAuthClient struct {
 	clientID     string
 	scope        string
