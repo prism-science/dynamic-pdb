@@ -1,4 +1,4 @@
-package pdbapi
+package dynamicpdbapi
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 
 const defaultHTTPTimeout = 30 * time.Second
 
-var ErrUnauthorized = errors.New("pdbapi: unauthorized")
+var ErrUnauthorized = errors.New("dynamicpdbapi: unauthorized")
 
 type AuthClient interface {
 	ExchangeGitHubToken(ctx context.Context, githubToken string) (TokenResponse, error)
@@ -52,7 +52,7 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 		AccessToken string `json:"access_token"`
 	}{AccessToken: githubToken})
 	if err != nil {
-		return TokenResponse{}, fmt.Errorf("pdbapi: encode GitHub token exchange request: %w", err)
+		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: encode GitHub token exchange request: %w", err)
 	}
 
 	request, err := http.NewRequestWithContext(
@@ -62,18 +62,18 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return TokenResponse{}, fmt.Errorf("pdbapi: create GitHub token exchange request: %w", err)
+		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: create GitHub token exchange request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return TokenResponse{}, fmt.Errorf("pdbapi: exchange GitHub token: %w", err)
+		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: exchange GitHub token: %w", err)
 	}
 	body, err := readResponseBody(response)
 	if err != nil {
-		return TokenResponse{}, fmt.Errorf("pdbapi: read GitHub token exchange response: %w", err)
+		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: read GitHub token exchange response: %w", err)
 	}
 	if response.StatusCode != http.StatusOK {
 		return TokenResponse{}, decodeError(response.StatusCode, body)
@@ -81,10 +81,10 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 
 	var token TokenResponse
 	if err := json.Unmarshal(body, &token); err != nil {
-		return TokenResponse{}, fmt.Errorf("pdbapi: decode GitHub token exchange response: %w", err)
+		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: decode GitHub token exchange response: %w", err)
 	}
 	if token.TokenType == "" || token.AccessToken == "" || token.ExpiresAt.IsZero() || token.Login == "" {
-		return TokenResponse{}, errors.New("pdbapi: backend returned an incomplete token response")
+		return TokenResponse{}, errors.New("dynamicpdbapi: backend returned an incomplete token response")
 	}
 	return token, nil
 }
@@ -102,7 +102,7 @@ func decodeError(status int, body []byte) error {
 	}
 	backendError := &Error{Status: status, Code: payload.Code, Message: payload.Message}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return fmt.Errorf("pdbapi: authorization failed: %w", errors.Join(ErrUnauthorized, backendError))
+		return fmt.Errorf("dynamicpdbapi: authorization failed: %w", errors.Join(ErrUnauthorized, backendError))
 	}
 	return backendError
 }

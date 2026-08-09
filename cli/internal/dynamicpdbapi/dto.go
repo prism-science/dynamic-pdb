@@ -1,4 +1,4 @@
-package pdbapi
+package dynamicpdbapi
 
 import (
 	"fmt"
@@ -22,12 +22,12 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.Code == "" {
-		return fmt.Sprintf("pdbapi: backend %d: %s", e.Status, e.Message)
+		return fmt.Sprintf("dynamicpdbapi: backend %d: %s", e.Status, e.Message)
 	}
-	return fmt.Sprintf("pdbapi: backend %d: %s: %s", e.Status, e.Code, e.Message)
+	return fmt.Sprintf("dynamicpdbapi: backend %d: %s: %s", e.Status, e.Code, e.Message)
 }
 
-type ListEntriesOptions struct {
+type ListEntriesParams struct {
 	PDBIDs []string
 }
 

@@ -1,4 +1,4 @@
-package pdbapi
+package dynamicpdbapi
 
 import (
 	"context"

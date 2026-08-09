@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"dynamic-pdb/cli/internal/config"
+	"dynamic-pdb/cli/internal/dynamicpdbapi"
 	"dynamic-pdb/cli/internal/github"
 	"dynamic-pdb/cli/internal/paths"
-	"dynamic-pdb/cli/internal/pdbapi"
 )
 
 func Login(ctx context.Context, stdout, stderr io.Writer) error {
@@ -24,7 +24,7 @@ func Login(ctx context.Context, stdout, stderr io.Writer) error {
 	}
 
 	githubClient := github.NewAuthClient(cfg.GitHubClientID())
-	dynamicPDBClient := pdbapi.NewAuthClient(cfg.ServerURL())
+	dynamicPDBClient := dynamicpdbapi.NewAuthClient(cfg.ServerURL())
 
 	deviceCode, err := githubClient.RequestDeviceCode(ctx)
 	if err != nil {
@@ -62,7 +62,7 @@ func Login(ctx context.Context, stdout, stderr io.Writer) error {
 
 	token, err := dynamicPDBClient.ExchangeGitHubToken(ctx, githubToken)
 	if err != nil {
-		if errors.Is(err, pdbapi.ErrUnauthorized) {
+		if errors.Is(err, dynamicpdbapi.ErrUnauthorized) {
 			return fmt.Errorf("login: GitHub account is not allowed to use Dynamic PDB: %w", err)
 		}
 		return fmt.Errorf("login: exchange GitHub token with Dynamic PDB: %w", err)
