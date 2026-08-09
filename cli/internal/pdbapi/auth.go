@@ -20,28 +20,6 @@ type AuthClient interface {
 	ExchangeGitHubToken(ctx context.Context, githubToken string) (TokenResponse, error)
 }
 
-type TokenResponse struct {
-	TokenType   string    `json:"token_type"`
-	AccessToken string    `json:"access_token"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	Name        string    `json:"name"`
-	Email       string    `json:"email"`
-	Login       string    `json:"login"`
-}
-
-type Error struct {
-	Status  int
-	Code    string
-	Message string
-}
-
-func (e *Error) Error() string {
-	if e.Code == "" {
-		return fmt.Sprintf("pdbapi: backend %d: %s", e.Status, e.Message)
-	}
-	return fmt.Sprintf("pdbapi: backend %d: %s: %s", e.Status, e.Code, e.Message)
-}
-
 type RemoteAuthClient struct {
 	serverURL  string
 	httpClient *http.Client
