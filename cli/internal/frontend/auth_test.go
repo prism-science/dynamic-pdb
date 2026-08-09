@@ -26,15 +26,17 @@ func Test_should_clear_saved_auth_when_logout_succeeds(t *testing.T) {
 		},
 	}))
 	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 
 	// when
-	err := Logout(&stdout)
+	exitCode := Logout(&stdout, &stderr)
 	cfg, loadErr := config.Load(dataHome)
 
 	// then
-	require.NoError(t, err)
 	require.NoError(t, loadErr)
+	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout.String(), "Logged out.")
+	assert.Empty(t, stderr.String())
 	assert.Empty(t, cfg.Auth.AccessToken)
 	assert.Empty(t, cfg.Auth.Login)
 	assert.True(t, cfg.Auth.ExpiresAt.IsZero())
