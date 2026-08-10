@@ -912,18 +912,57 @@ func (u *Uploader) fieldValue(
 	ctx context.Context,
 	dataRoot string,
 	pdbID string,
+	fields []manifest.FieldExtraction,
+	artifacts map[string]extractorapi.Artifact,
+) (any, bool, error) {
+	for _, field := range fields {
+		value, ok, err := u.fieldExtractionValue(ctx, dataRoot, pdbID, field, artifacts)
+		if err != nil || fieldValuePresent(value, ok) {
+			return value, ok, err
+		}
+	}
+	return nil, false, nil
+}
+
+func (u *Uploader) fieldExtractionValue(
+	ctx context.Context,
+	dataRoot string,
+	pdbID string,
 	field manifest.FieldExtraction,
 	artifacts map[string]extractorapi.Artifact,
 ) (any, bool, error) {
+	source := fieldExtractionSource(field)
 	switch {
-	case sourceIsEmpty(field.Source):
+	case sourceIsEmpty(source):
 		return nil, false, nil
-	case !rcsbSourceIsEmpty(field.Source.RCSB):
-		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, field.Source, field.Extract)
-	case strings.TrimSpace(field.Source.Artifact) != "":
-		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, field.Source, field.Extract)
+	case !rcsbSourceIsEmpty(source.RCSB):
+		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, source, field.Extract)
+	case strings.TrimSpace(source.Artifact) != "":
+		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, source, field.Extract)
 	default:
-		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, field.Source, field.Extract)
+		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, source, field.Extract)
+	}
+}
+
+func fieldExtractionSource(field manifest.FieldExtraction) manifest.Source {
+	return field.Source
+}
+
+func fieldValuePresent(value any, ok bool) bool {
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case []string:
+		return len(typed) > 0
+	case []any:
+		return len(typed) > 0
+	default:
+		return true
 	}
 }
 

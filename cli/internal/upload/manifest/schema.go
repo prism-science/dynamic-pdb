@@ -18,7 +18,7 @@ type Entry struct {
 	Models       []ModelPattern     `yaml:"models"`
 }
 
-type EntryMetadata map[string]FieldExtraction
+type EntryMetadata map[string][]FieldExtraction
 
 type EntryPreviewImage struct {
 	Source Source `yaml:"source"`
@@ -41,9 +41,9 @@ type ModelPattern struct {
 	Metrics   Metrics       `yaml:"metrics"`
 }
 
-type ModelMetadata map[string]FieldExtraction
+type ModelMetadata map[string][]FieldExtraction
 
-type Metrics map[string]FieldExtraction
+type Metrics map[string][]FieldExtraction
 
 type FieldExtraction struct {
 	Source  Source  `yaml:"source"`

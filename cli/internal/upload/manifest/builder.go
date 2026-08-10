@@ -434,7 +434,7 @@ func coordinateModelMetadata(extensions map[string]struct{}) ModelMetadata {
 	}
 }
 
-func coordinateField(field string, extensions map[string]struct{}) FieldExtraction {
+func coordinateField(field string, extensions map[string]struct{}) []FieldExtraction {
 	extract := Extract{}
 	if hasPDBExtension(extensions) {
 		extract.PDB = &ExtractRule{Field: field}
@@ -442,10 +442,7 @@ func coordinateField(field string, extensions map[string]struct{}) FieldExtracti
 	if hasMMCIFExtension(extensions) {
 		extract.MMCIF = &ExtractRule{Field: field}
 	}
-	return FieldExtraction{
-		Source:  artifactCoordinatesSource(),
-		Extract: extract,
-	}
+	return newFieldExtractions(artifactCoordinatesSource(), extract)
 }
 
 func jsonRefinementMetrics() Metrics {
@@ -467,14 +464,8 @@ func coordinateRefinementMetrics(extensions map[string]struct{}) Metrics {
 		rWorkExtract.MMCIF = &ExtractRule{Field: "_refine.ls_R_factor_R_work"}
 	}
 	return Metrics{
-		"r_free": {
-			Source:  artifactCoordinatesSource(),
-			Extract: rFreeExtract,
-		},
-		"r_work": {
-			Source:  artifactCoordinatesSource(),
-			Extract: rWorkExtract,
-		},
+		"r_free": newFieldExtractions(artifactCoordinatesSource(), rFreeExtract),
+		"r_work": newFieldExtractions(artifactCoordinatesSource(), rWorkExtract),
 	}
 }
 
@@ -490,15 +481,24 @@ func hasMMCIFExtension(extensions map[string]struct{}) bool {
 	return hasCIF || hasMMCIF
 }
 
-func rcsbJSONField(field string) FieldExtraction {
+func rcsbJSONField(field string) []FieldExtraction {
 	return rcsbResourceJSONField("entry", field)
 }
 
-func rcsbResourceJSONField(resource string, field string) FieldExtraction {
-	return FieldExtraction{
-		Source: rcsbResourceSource(resource),
-		Extract: Extract{
+func rcsbResourceJSONField(resource string, field string) []FieldExtraction {
+	return newFieldExtractions(
+		rcsbResourceSource(resource),
+		Extract{
 			JSON: &ExtractRule{Field: field},
+		},
+	)
+}
+
+func newFieldExtractions(source Source, extract Extract) []FieldExtraction {
+	return []FieldExtraction{
+		{
+			Source:  source,
+			Extract: extract,
 		},
 	}
 }

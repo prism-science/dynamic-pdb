@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"dynamic-pdb/cli/internal/dynamicpdbapi"
 	"dynamic-pdb/cli/internal/rcsb"
@@ -361,15 +362,19 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 	require.NoError(t, os.WriteFile(artifactPath, []byte("_refine.ls_r_factor_r_free 0.244\n_refine.ls_r_factor_r_work 0.198\n"), 0o644))
 	metrics := manifest.Metrics{
 		"r_free": {
-			Source: manifest.Source{Artifact: "coordinates"},
-			Extract: manifest.Extract{
-				MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"},
+			{
+				Source: manifest.Source{Artifact: "coordinates"},
+				Extract: manifest.Extract{
+					MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"},
+				},
 			},
 		},
 		"r_work": {
-			Source: manifest.Source{Artifact: "coordinates"},
-			Extract: manifest.Extract{
-				MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_work"},
+			{
+				Source: manifest.Source{Artifact: "coordinates"},
+				Extract: manifest.Extract{
+					MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_work"},
+				},
 			},
 		},
 	}
@@ -395,6 +400,39 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 	assert.Equal(t, 0.244, requests[0].Value)
 	assert.Equal(t, "r_work", requests[1].Key)
 	assert.Equal(t, 0.198, requests[1].Value)
+}
+
+func Test_should_use_next_field_source_when_previous_source_has_no_value(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "metadata.csv", "pdb_id,title\n6ABC,\n")
+	metadata := manifest.EntryMetadata{
+		"title": {
+			{
+				Source: manifest.Source{Files: []string{"metadata.csv"}},
+				Extract: manifest.Extract{CSV: &manifest.ExtractRule{
+					Column: "title",
+					Where:  &manifest.ExtractRule{Column: "pdb_id", Equals: "{{ pdb_id }}"},
+				}},
+			},
+			{
+				Source:  manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", Resource: "entry"}},
+				Extract: manifest.Extract{JSON: &manifest.ExtractRule{Field: "struct.title"}},
+			},
+		},
+	}
+
+	// when
+	values, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}).entryMetadata(
+		context.Background(),
+		dataRoot,
+		metadata,
+		"5AMF",
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "example structure", values["title"])
 }
 
 func Test_should_prefer_manifest_artifact_name_over_filename(t *testing.T) {
@@ -664,472 +702,209 @@ func (fakeRCSB) GetFASTA(_ context.Context, _ string) (rcsb.Artifact, error) {
 
 func writeManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
-	contents := `version: 1
-data_root: ` + dataRoot + `
-entries:
-  - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
-    metadata:
-      title:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: struct.title
-      method:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: exptl[0].method
-      organism:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: polymer_entity
-        extract:
-          json:
-            field: rcsb_entity_source_organism.ncbi_scientific_name
-      resolution:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: rcsb_entry_info.resolution_combined[0]
-      space_group:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: symmetry.space_group_name_H_M
-    preview_image:
-      source:
-        rcsb:
-          pdb_id: '{{ pdb_id }}'
-          file: '{{ pdb_id }}_assembly-1.jpeg'
-    artifacts:
-      - id: fasta
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: fasta
-        level: L1
-    models:
-      - id: model_1
-        name: Deposited model
-        model_type: Deposited
-        purpose: Reference
-        metadata:
-          atom_count:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: rcsb_entry_info.deposited_atom_count
-          modeled_residues:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: rcsb_entry_info.deposited_modeled_polymer_monomer_count
-          unique_protein_chains:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: rcsb_entry_info.deposited_polymer_entity_instance_count
-          ligands:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: rcsb_entry_info.nonpolymer_bound_components
-          authors:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: audit_author.name
-          affiliation:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: pubmed.rcsb_pubmed_affiliation_info
-        artifacts:
-          - id: coordinates
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}.cif'
-            level: L2
-          - id: structure_factors_1
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}-sf.cif'
-            level: L1
-        metrics:
-          r_free:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_free
-          r_work:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_work
-      - id: model_2
-        name: Rerefined model
-        model_type: ""
-        purpose: ""
-        metadata:
-          atom_count:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: atom_count
-          modeled_residues:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: modeled_residues
-          unique_protein_chains:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: unique_protein_chains
-          ligands:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: ligands
-        artifacts:
-          - id: coordinates
-            source:
-              files:
-                - models/{{ pdb_id }}_model.pdb
-            level: L2
-          - id: log_1
-            source:
-              files:
-                - models/{{ pdb_id }}_model.log
-          - id: mtz_1
-            source:
-              files:
-                - models/{{ pdb_id }}_model.mtz
-            level: L1
-        metrics:
-          r_free:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 FREE R VALUE
-          r_work:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 R VALUE WORKING SET
-`
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	writeTestManifest(t, path, testManifest(dataRoot, "models/{{ pdb_id }}_model.pdb", "models/{{ pdb_id }}_model.log", "models/{{ pdb_id }}_model.mtz"))
 }
 
 func writeRemoteMTZManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
-	contents := `version: 1
-data_root: ` + dataRoot + `
-entries:
-  - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
-    metadata:
-      title:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: struct.title
-    preview_image:
-      source:
-        rcsb:
-          pdb_id: '{{ pdb_id }}'
-          file: '{{ pdb_id }}_assembly-1.jpeg'
-    artifacts:
-      - id: fasta
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: fasta
-        level: L1
-    models:
-      - id: model_1
-        name: Deposited model
-        model_type: Deposited
-        purpose: Reference
-        artifacts:
-          - id: coordinates
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}.cif'
-            level: L2
-          - id: structure_factors_1
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}-sf.cif'
-            level: L1
-        metrics:
-          r_free:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_free
-          r_work:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_work
-      - id: model_2
-        name: Rerefined model
-        model_type: ""
-        purpose: ""
-        artifacts:
-          - id: coordinates
-            source:
-              files:
-                - models/{{ pdb_id }}_model.pdb
-            level: L2
-          - id: log_1
-            source:
-              files:
-                - models/{{ pdb_id }}_model.log
-          - id: structure_factors_1
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}-sf.cif'
-            level: L1
-        metrics:
-          r_free:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 FREE R VALUE
-          r_work:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 R VALUE WORKING SET
-`
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	uploadManifest := testManifest(dataRoot, "models/{{ pdb_id }}_model.pdb", "models/{{ pdb_id }}_model.log", "")
+	uploadManifest.Entries[0].Metadata = manifest.EntryMetadata{"title": rcsbJSONExtraction("entry", "struct.title")}
+	uploadManifest.Entries[0].Models[1].Artifacts = []manifest.Artifact{
+		fileArtifact("coordinates", "models/{{ pdb_id }}_model.pdb", "L2"),
+		fileArtifact("log_1", "models/{{ pdb_id }}_model.log", ""),
+		rcsbFileArtifact("structure_factors_1", "{{ pdb_id }}-sf.cif", "L1"),
+	}
+	writeTestManifest(t, path, uploadManifest)
 }
 
 func writeZipManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
-	contents := `version: 1
-data_root: ` + dataRoot + `
-entries:
-  - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
-    metadata:
-      title:
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: entry
-        extract:
-          json:
-            field: struct.title
-    preview_image:
-      source:
-        rcsb:
-          pdb_id: '{{ pdb_id }}'
-          file: '{{ pdb_id }}_assembly-1.jpeg'
-    artifacts:
-      - id: fasta
-        source:
-          rcsb:
-            pdb_id: '{{ pdb_id }}'
-            resource: fasta
-        level: L1
-    models:
-      - id: model_1
-        name: Deposited model
-        model_type: Deposited
-        purpose: Reference
-        artifacts:
-          - id: coordinates
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}.cif'
-            level: L2
-          - id: structure_factors_1
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                file: '{{ pdb_id }}-sf.cif'
-            level: L1
-        metrics:
-          r_free:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_free
-          r_work:
-            source:
-              rcsb:
-                pdb_id: '{{ pdb_id }}'
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_work
-      - id: model_2
-        name: Rerefined model
-        model_type: ""
-        purpose: ""
-        artifacts:
-          - id: coordinates
-            source:
-              files:
-                - models.zip#models/{{ pdb_id }}_model.pdb
-            level: L2
-          - id: log_1
-            source:
-              files:
-                - models.zip#models/{{ pdb_id }}_model.log
-          - id: mtz_1
-            source:
-              files:
-                - models.zip#models/{{ pdb_id }}_model.mtz
-            level: L1
-        metrics:
-          r_free:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 FREE R VALUE
-          r_work:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 R VALUE WORKING SET
-`
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	uploadManifest := testManifest(dataRoot, "models.zip#models/{{ pdb_id }}_model.pdb", "models.zip#models/{{ pdb_id }}_model.log", "models.zip#models/{{ pdb_id }}_model.mtz")
+	uploadManifest.Entries[0].Metadata = manifest.EntryMetadata{"title": rcsbJSONExtraction("entry", "struct.title")}
+	writeTestManifest(t, path, uploadManifest)
 }
 
 func writeFilterManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
-	contents := `version: 1
-data_root: ` + dataRoot + `
-filter:
-  include:
-    - 5AMF
-  skip: []
-entries:
-  - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
-    models:
-      - id: model_1
-        name: Uploaded model
-        model_type: ""
-        purpose: ""
-        artifacts:
-          - id: coordinates
-            source:
-              files:
-                - models/{{ pdb_id }}_model.pdb
-            level: L2
-        metrics:
-          r_free:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 FREE R VALUE
-          r_work:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 R VALUE WORKING SET
-`
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	uploadManifest := simpleManifest(dataRoot)
+	uploadManifest.Filter.Include = []string{"5AMF"}
+	writeTestManifest(t, path, uploadManifest)
 }
 
 func writeSimpleManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
-	contents := `version: 1
-data_root: ` + dataRoot + `
-entries:
-  - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
-    models:
-      - id: model_1
-        name: Uploaded model
-        model_type: ""
-        purpose: ""
-        artifacts:
-          - id: coordinates
-            source:
-              files:
-                - models/{{ pdb_id }}_model.pdb
-            level: L2
-`
+	writeTestManifest(t, path, simpleManifest(dataRoot))
+}
+
+func writeTestManifest(t *testing.T, path string, uploadManifest manifest.Manifest) {
+	t.Helper()
+	contents, err := yaml.Marshal(uploadManifest)
+	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	require.NoError(t, os.WriteFile(path, contents, 0o644))
+}
+
+func testManifest(dataRoot string, coordinateSource string, logSource string, mtzSource string) manifest.Manifest {
+	entry := testEntry()
+	entry.Metadata = manifest.EntryMetadata{
+		"title":       rcsbJSONExtraction("entry", "struct.title"),
+		"method":      rcsbJSONExtraction("entry", "exptl[0].method"),
+		"organism":    rcsbJSONExtraction("polymer_entity", "rcsb_entity_source_organism.ncbi_scientific_name"),
+		"resolution":  rcsbJSONExtraction("entry", "rcsb_entry_info.resolution_combined[0]"),
+		"space_group": rcsbJSONExtraction("entry", "symmetry.space_group_name_H_M"),
+	}
+	entry.Models = []manifest.ModelPattern{
+		depositedModel(),
+		localModel("Rerefined model", coordinateSource, logSource, mtzSource),
+	}
+	return manifest.Manifest{
+		Version:  1,
+		DataRoot: dataRoot,
+		Filter:   manifest.Filter{Include: []string{}, Skip: []string{}},
+		Entries:  []manifest.Entry{entry},
+	}
+}
+
+func simpleManifest(dataRoot string) manifest.Manifest {
+	entry := manifest.Entry{
+		PDBID: "{{ pdb_id }}",
+		Name:  "{{ pdb_id }}",
+		Models: []manifest.ModelPattern{
+			{
+				ID:        "model_1",
+				Name:      "Uploaded model",
+				ModelType: "",
+				Purpose:   "",
+				Artifacts: []manifest.Artifact{
+					fileArtifact("coordinates", "models/{{ pdb_id }}_model.pdb", "L2"),
+				},
+				Metrics: pdbRefinementMetrics(),
+			},
+		},
+	}
+	return manifest.Manifest{
+		Version:  1,
+		DataRoot: dataRoot,
+		Filter:   manifest.Filter{Include: []string{}, Skip: []string{}},
+		Entries:  []manifest.Entry{entry},
+	}
+}
+
+func testEntry() manifest.Entry {
+	return manifest.Entry{
+		PDBID:        "{{ pdb_id }}",
+		Name:         "{{ pdb_id }}",
+		PreviewImage: &manifest.EntryPreviewImage{Source: rcsbFileSource("{{ pdb_id }}_assembly-1.jpeg")},
+		Artifacts: []manifest.Artifact{
+			{
+				ID:     "fasta",
+				Source: rcsbResourceSource("fasta"),
+				Level:  "L1",
+			},
+		},
+	}
+}
+
+func depositedModel() manifest.ModelPattern {
+	return manifest.ModelPattern{
+		ID:        "model_1",
+		Name:      "Deposited model",
+		ModelType: "Deposited",
+		Purpose:   "Reference",
+		Metadata: manifest.ModelMetadata{
+			"atom_count":            rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_atom_count"),
+			"modeled_residues":      rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_modeled_polymer_monomer_count"),
+			"unique_protein_chains": rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_polymer_entity_instance_count"),
+			"ligands":               rcsbJSONExtraction("entry", "rcsb_entry_info.nonpolymer_bound_components"),
+			"authors":               rcsbJSONExtraction("entry", "audit_author.name"),
+			"affiliation":           rcsbJSONExtraction("entry", "pubmed.rcsb_pubmed_affiliation_info"),
+		},
+		Artifacts: []manifest.Artifact{
+			rcsbFileArtifact("coordinates", "{{ pdb_id }}.cif", "L2"),
+			rcsbFileArtifact("structure_factors_1", "{{ pdb_id }}-sf.cif", "L1"),
+		},
+		Metrics: manifest.Metrics{
+			"r_free": rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_free"),
+			"r_work": rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_work"),
+		},
+	}
+}
+
+func localModel(name string, coordinateSource string, logSource string, mtzSource string) manifest.ModelPattern {
+	artifacts := []manifest.Artifact{fileArtifact("coordinates", coordinateSource, "L2")}
+	if logSource != "" {
+		artifacts = append(artifacts, fileArtifact("log_1", logSource, ""))
+	}
+	if mtzSource != "" {
+		artifacts = append(artifacts, fileArtifact("mtz_1", mtzSource, "L1"))
+	}
+	return manifest.ModelPattern{
+		ID:        "model_2",
+		Name:      name,
+		ModelType: "",
+		Purpose:   "",
+		Metadata: manifest.ModelMetadata{
+			"atom_count":            pdbArtifactExtraction("atom_count"),
+			"modeled_residues":      pdbArtifactExtraction("modeled_residues"),
+			"unique_protein_chains": pdbArtifactExtraction("unique_protein_chains"),
+			"ligands":               pdbArtifactExtraction("ligands"),
+		},
+		Artifacts: artifacts,
+		Metrics:   pdbRefinementMetrics(),
+	}
+}
+
+func fileArtifact(id string, source string, level string) manifest.Artifact {
+	return manifest.Artifact{
+		ID:     id,
+		Source: manifest.Source{Files: []string{source}},
+		Level:  level,
+	}
+}
+
+func rcsbFileArtifact(id string, file string, level string) manifest.Artifact {
+	return manifest.Artifact{
+		ID:     id,
+		Source: rcsbFileSource(file),
+		Level:  level,
+	}
+}
+
+func rcsbFileSource(file string) manifest.Source {
+	return manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", File: file}}
+}
+
+func rcsbResourceSource(resource string) manifest.Source {
+	return manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", Resource: resource}}
+}
+
+func rcsbJSONExtraction(resource string, field string) []manifest.FieldExtraction {
+	return []manifest.FieldExtraction{
+		{
+			Source: rcsbResourceSource(resource),
+			Extract: manifest.Extract{
+				JSON: &manifest.ExtractRule{Field: field},
+			},
+		},
+	}
+}
+
+func pdbArtifactExtraction(field string) []manifest.FieldExtraction {
+	return []manifest.FieldExtraction{
+		{
+			Source: manifest.Source{Artifact: "coordinates"},
+			Extract: manifest.Extract{
+				PDB: &manifest.ExtractRule{Field: field},
+			},
+		},
+	}
+}
+
+func pdbRefinementMetrics() manifest.Metrics {
+	return manifest.Metrics{
+		"r_free": pdbArtifactExtraction("REMARK 3 FREE R VALUE"),
+		"r_work": pdbArtifactExtraction("REMARK 3 R VALUE WORKING SET"),
+	}
 }
 
 func writeFile(t *testing.T, root string, relativePath string, contents string) {
