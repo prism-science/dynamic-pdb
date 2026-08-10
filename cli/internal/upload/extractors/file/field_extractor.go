@@ -40,7 +40,7 @@ func (e FieldExtractor) Extract(
 		if !ok {
 			continue
 		}
-		return extractFromContents(contents, extract)
+		return extractFromContents(contents, pdbID, extract)
 	}
 	return nil, false, nil
 }
@@ -60,12 +60,14 @@ func (e FieldExtractor) localContents(source string) ([]byte, bool, error) {
 	return contents, true, nil
 }
 
-func extractFromContents(contents []byte, extract manifest.Extract) (any, bool, error) {
+func extractFromContents(contents []byte, pdbID string, extract manifest.Extract) (any, bool, error) {
 	switch {
 	case extract.JSON != nil:
 		return extractJSON(contents, extract.JSON.Field)
 	case extract.CSV != nil:
-		return extractCSV(contents, *extract.CSV)
+		return extractDelimited(contents, *extract.CSV, ',', pdbID, "CSV")
+	case extract.TSV != nil:
+		return extractDelimited(contents, *extract.TSV, '\t', pdbID, "TSV")
 	case extract.PDB != nil:
 		return extractPDB(string(contents), extract.PDB.Field)
 	case extract.MMCIF != nil:
@@ -83,11 +85,13 @@ func extractJSON(contents []byte, field string) (any, bool, error) {
 	return valueAtPath(payload, field)
 }
 
-func extractCSV(contents []byte, rule manifest.ExtractRule) (any, bool, error) {
+func extractDelimited(contents []byte, rule manifest.ExtractRule, delimiter rune, pdbID string, format string) (any, bool, error) {
 	reader := csv.NewReader(bytes.NewReader(contents))
+	reader.Comma = delimiter
+	reader.FieldsPerRecord = -1
 	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, false, fmt.Errorf("read CSV field source: %w", err)
+		return nil, false, fmt.Errorf("read %s field source: %w", format, err)
 	}
 	if len(records) < 2 {
 		return nil, false, nil
@@ -101,7 +105,7 @@ func extractCSV(contents []byte, rule manifest.ExtractRule) (any, bool, error) {
 		return nil, false, nil
 	}
 	for _, record := range records[1:] {
-		if !csvRowMatches(record, columns, rule.Where) {
+		if !delimitedRowMatches(record, columns, rule.Where, pdbID) {
 			continue
 		}
 		if columnIndex >= len(record) {
@@ -112,7 +116,7 @@ func extractCSV(contents []byte, rule manifest.ExtractRule) (any, bool, error) {
 	return nil, false, nil
 }
 
-func csvRowMatches(record []string, columns map[string]int, where *manifest.ExtractRule) bool {
+func delimitedRowMatches(record []string, columns map[string]int, where *manifest.ExtractRule, pdbID string) bool {
 	if where == nil {
 		return true
 	}
@@ -120,7 +124,8 @@ func csvRowMatches(record []string, columns map[string]int, where *manifest.Extr
 	if !ok || columnIndex >= len(record) {
 		return false
 	}
-	return record[columnIndex] == strings.TrimSpace(where.Equals)
+	expected := strings.ReplaceAll(where.Equals, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
+	return strings.EqualFold(strings.TrimSpace(record[columnIndex]), strings.TrimSpace(expected))
 }
 
 var (

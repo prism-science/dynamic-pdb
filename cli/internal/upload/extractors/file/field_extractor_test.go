@@ -49,6 +49,27 @@ func Test_should_extract_csv_field_from_matching_row(t *testing.T) {
 	assert.Equal(t, "0.24", value)
 }
 
+func Test_should_extract_tsv_field_from_matching_row_with_template_value(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "structure.tsv", []byte("ID\tAtom Count\tLigands\n1abc\t123\tATP\n5AMF\t456\tCL;BME\n"))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	value, ok, err := extractor.Extract(context.Background(), "5amf",
+		manifest.Source{Files: []string{"structure.tsv"}},
+		manifest.Extract{TSV: &manifest.ExtractRule{
+			Column: "Ligands",
+			Where:  &manifest.ExtractRule{Column: "ID", Equals: "{{ pdb_id }}"},
+		}},
+	)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "CL;BME", value)
+}
+
 func Test_should_extract_pdb_field_from_zip_entry(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()

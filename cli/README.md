@@ -241,6 +241,22 @@ Useful source forms:
 - `artifact: coordinates` lets metrics be parsed from another artifact in the
   same model.
 
+CSV and TSV metadata tables can be used with `extract.csv` or `extract.tsv`:
+
+```yaml
+metadata:
+  atom_count:
+    source:
+      files:
+        - Rerefined/final_model_structure_table.tsv
+    extract:
+      tsv:
+        column: Atom Count
+        where:
+          column: ID
+          equals: "{{ pdb_id }}"
+```
+
 ### 4. Upload
 
 ```bash

@@ -53,6 +53,7 @@ type FieldExtraction struct {
 type Extract struct {
 	JSON  *ExtractRule `yaml:"json,omitempty"`
 	CSV   *ExtractRule `yaml:"csv,omitempty"`
+	TSV   *ExtractRule `yaml:"tsv,omitempty"`
 	PDB   *ExtractRule `yaml:"pdb,omitempty"`
 	MMCIF *ExtractRule `yaml:"mmcif,omitempty"`
 }

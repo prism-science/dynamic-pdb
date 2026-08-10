@@ -1150,12 +1150,18 @@ func hasRunInput(artifacts []dynamicpdbapi.CreateRunArtifactRequest) bool {
 func rcsbLigands(components []string) []string {
 	ligands := []string{}
 	for _, component := range components {
-		component = strings.ToUpper(strings.TrimSpace(component))
-		if component != "" && !rcsbIncidentalCompounds[component] {
-			ligands = appendUniqueNonEmptyString(ligands, component)
+		for _, ligand := range strings.FieldsFunc(component, ligandSeparator) {
+			ligand = strings.ToUpper(strings.TrimSpace(ligand))
+			if ligand != "" && !rcsbIncidentalCompounds[ligand] {
+				ligands = appendUniqueNonEmptyString(ligands, ligand)
+			}
 		}
 	}
 	return ligands
+}
+
+func ligandSeparator(value rune) bool {
+	return value == ';' || value == ','
 }
 
 func appendUniqueNonEmptyString(values []string, value string) []string {

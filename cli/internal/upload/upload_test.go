@@ -401,6 +401,17 @@ func Test_should_return_error_when_artifact_has_no_name_or_filename(t *testing.T
 	require.Error(t, err)
 }
 
+func Test_should_split_semicolon_ligands_when_model_metadata_is_canonicalized(t *testing.T) {
+	// given
+	value := "CL;BME,HOH"
+
+	// when
+	metadataValue := toCanonicalModelMetadataValue("ligands", value)
+
+	// then
+	assert.Equal(t, []string{"CL", "BME"}, metadataValue)
+}
+
 type fakeDynamicPDBClient struct {
 	existingEntries     []dynamicpdbapi.Entry
 	listResponses       [][]dynamicpdbapi.Entry
