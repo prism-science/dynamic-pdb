@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,6 +47,29 @@ type uploadStateEvent struct {
 	RunIDs      []string `json:"run_ids,omitempty"`
 	MetricIDs   []string `json:"metric_ids,omitempty"`
 	At          string   `json:"at"`
+}
+
+type uploadStateRecorder struct {
+	mutex sync.Mutex
+	path  string
+	state State
+}
+
+func newUploadStateRecorder(path string, state State) *uploadStateRecorder {
+	state.ensureEntries()
+	return &uploadStateRecorder{path: path, state: state}
+}
+
+func (r *uploadStateRecorder) startEntry(pdbID string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.state.startEntry(r.path, pdbID)
+}
+
+func (r *uploadStateRecorder) completeEntry(result entryUploadResult) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.state.completeEntry(r.path, result)
 }
 
 func uploadStatePath(manifestPath string) string {

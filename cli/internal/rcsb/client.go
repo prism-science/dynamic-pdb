@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -45,6 +46,7 @@ type RemoteClient struct {
 	wwwBaseURL   string
 	cdnBaseURL   string
 	cache        *lru.Cache[string, []byte]
+	cacheMutex   sync.Mutex
 }
 
 type Option func(*RemoteClient)
@@ -227,9 +229,12 @@ func newResponseCache(entries int) *lru.Cache[string, []byte] {
 
 func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	if c.cache != nil {
+		c.cacheMutex.Lock()
 		if contents, ok := c.cache.Get(url); ok {
+			c.cacheMutex.Unlock()
 			return bytes.Clone(contents), nil
 		}
+		c.cacheMutex.Unlock()
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -252,7 +257,9 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if c.cache != nil {
+		c.cacheMutex.Lock()
 		c.cache.Add(url, bytes.Clone(contents))
+		c.cacheMutex.Unlock()
 	}
 	return contents, nil
 }

@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -43,13 +44,16 @@ type Uploader struct {
 	dynamicPDBClient dynamicpdbapi.Client
 	rcsb             rcsb.Client
 	progress         Progress
+	concurrency      int
+	progressMutex    sync.Mutex
 }
 
-func New(dynamicPDBClient dynamicpdbapi.Client, rcsbClient rcsb.Client, progress Progress) *Uploader {
+func New(dynamicPDBClient dynamicpdbapi.Client, rcsbClient rcsb.Client, progress Progress, concurrency int) *Uploader {
 	return &Uploader{
 		dynamicPDBClient: dynamicPDBClient,
 		rcsb:             rcsbClient,
 		progress:         progress,
+		concurrency:      normalizeConcurrency(concurrency),
 	}
 }
 
@@ -111,34 +115,131 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 	if err := u.progress.Start(len(pendingPDBIDs)); err != nil {
 		return Summary{}, fmt.Errorf("start upload progress: %w", err)
 	}
-	result := Summary{StatePath: statePath}
-	result.Skipped = len(pdbIDs) - len(pendingPDBIDs)
-	for _, pdbID := range pendingPDBIDs {
-		if err := state.startEntry(statePath, pdbID); err != nil {
-			return result, err
-		}
-		existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
-		if err != nil {
-			return result, fmt.Errorf("check existing entry %s: %w", pdbID, err)
-		}
-		entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
-		if err != nil {
-			return result, fmt.Errorf("upload %s: %w", pdbID, err)
-		}
-		result.Entries++
-		result.Models += entryResult.Models
-		result.Artifacts += entryResult.Artifacts
-		if err := state.completeEntry(statePath, entryResult); err != nil {
-			return result, err
-		}
-		if err := u.progress.EntryDone(entryResult.PDBID, entryResult.EntryID, entryResult.Models, entryResult.Artifacts); err != nil {
-			return result, fmt.Errorf("update upload progress: %w", err)
-		}
+	recorder := newUploadStateRecorder(statePath, state)
+	uploadSummary, err := u.uploadEntries(ctx, entryTemplate, dataRoot, pendingPDBIDs, recorder)
+	uploadSummary.StatePath = statePath
+	uploadSummary.Skipped = len(pdbIDs) - len(pendingPDBIDs)
+	if err != nil {
+		return uploadSummary, err
 	}
 	if err := u.progress.Finish(); err != nil {
-		return result, fmt.Errorf("finish upload progress: %w", err)
+		return uploadSummary, fmt.Errorf("finish upload progress: %w", err)
 	}
-	return result, nil
+	return uploadSummary, nil
+}
+
+func (u *Uploader) uploadEntries(
+	ctx context.Context,
+	entryTemplate manifest.Entry,
+	dataRoot string,
+	pdbIDs []string,
+	state *uploadStateRecorder,
+) (Summary, error) {
+	if len(pdbIDs) == 0 {
+		return Summary{}, nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan string)
+	results := make(chan entryUploadResult, len(pdbIDs))
+	errors := make(chan error, 1)
+	workers := min(normalizeConcurrency(u.concurrency), len(pdbIDs))
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			for pdbID := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				entryResult, err := u.uploadEntryJob(ctx, entryTemplate, dataRoot, pdbID, state)
+				if err != nil {
+					select {
+					case errors <- err:
+						cancel()
+					default:
+					}
+					return
+				}
+				select {
+				case results <- entryResult:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, pdbID := range pdbIDs {
+			select {
+			case jobs <- pdbID:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		waitGroup.Wait()
+		close(results)
+	}()
+
+	summary := Summary{}
+	for entryResult := range results {
+		summary.Entries++
+		summary.Models += entryResult.Models
+		summary.Artifacts += entryResult.Artifacts
+	}
+	select {
+	case err := <-errors:
+		return summary, err
+	default:
+		return summary, nil
+	}
+}
+
+func (u *Uploader) uploadEntryJob(
+	ctx context.Context,
+	entryTemplate manifest.Entry,
+	dataRoot string,
+	pdbID string,
+	state *uploadStateRecorder,
+) (entryUploadResult, error) {
+	if err := state.startEntry(pdbID); err != nil {
+		return entryUploadResult{}, err
+	}
+	existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
+	if err != nil {
+		return entryUploadResult{}, fmt.Errorf("check existing entry %s: %w", pdbID, err)
+	}
+	entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
+	if err != nil {
+		return entryUploadResult{}, fmt.Errorf("upload %s: %w", pdbID, err)
+	}
+	if err := state.completeEntry(entryResult); err != nil {
+		return entryUploadResult{}, err
+	}
+	if err := u.entryDone(entryResult); err != nil {
+		return entryUploadResult{}, fmt.Errorf("update upload progress: %w", err)
+	}
+	return entryResult, nil
+}
+
+func (u *Uploader) entryDone(result entryUploadResult) error {
+	u.progressMutex.Lock()
+	defer u.progressMutex.Unlock()
+	return u.progress.EntryDone(result.PDBID, result.EntryID, result.Models, result.Artifacts)
+}
+
+func normalizeConcurrency(concurrency int) int {
+	if concurrency < 1 {
+		return 1
+	}
+	return concurrency
 }
 
 type entryUploadResult struct {

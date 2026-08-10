@@ -3,11 +3,13 @@ package frontend
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/schollz/progressbar/v3"
 )
 
 type uploadProgress struct {
+	mutex  sync.Mutex
 	writer io.Writer
 	bar    *progressbar.ProgressBar
 }
@@ -17,6 +19,8 @@ func newUploadProgress(writer io.Writer) *uploadProgress {
 }
 
 func (p *uploadProgress) Start(totalEntries int) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	if totalEntries <= 0 {
 		return nil
 	}
@@ -42,6 +46,8 @@ func (p *uploadProgress) Start(totalEntries int) error {
 }
 
 func (p *uploadProgress) EntryDone(pdbID string, entryID string, models int, artifacts int) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	if p.bar == nil {
 		return nil
 	}
@@ -55,6 +61,8 @@ func (p *uploadProgress) EntryDone(pdbID string, entryID string, models int, art
 }
 
 func (p *uploadProgress) Finish() error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	if p.bar == nil {
 		return nil
 	}

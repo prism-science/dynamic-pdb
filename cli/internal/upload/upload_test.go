@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -133,7 +134,7 @@ func Test_should_upload_entries_from_zip_sources(t *testing.T) {
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -162,7 +163,7 @@ func Test_should_download_structure_factors_from_rcsb_when_manifest_points_to_rc
 	rcsbClient := &trackingFakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -186,7 +187,7 @@ func Test_should_skip_non_deposited_model_when_coordinates_file_is_missing(t *te
 	rcsbClient := &trackingFakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -211,7 +212,7 @@ func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *test
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -244,7 +245,7 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -287,7 +288,7 @@ func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_con
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -318,7 +319,7 @@ func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -330,6 +331,33 @@ func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["5AMF"].Status)
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["6ABC"].Status)
 	assert.Equal(t, "entry-5amf", updatedState.Entries["5AMF"].EntryID)
+}
+
+func Test_should_upload_entries_in_parallel_when_concurrency_is_greater_than_one(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
+	writeFile(t, dataRoot, "models/6abc_model.pdb", "MODEL\n")
+	writeFile(t, dataRoot, "models/7def_model.pdb", "MODEL\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeSimpleManifest(t, manifestPath, dataRoot)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+	uploader := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 2)
+
+	// when
+	summary, err := uploader.Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 3, summary.Entries)
+	assert.Equal(t, 3, summary.Models)
+	assert.Equal(t, 3, summary.Artifacts)
+	assert.Len(t, dynamicPDBClient.entries, 3)
+	state := readState(t, summary.StatePath)
+	assert.Equal(t, entryStatusCompleted, state.Entries["5AMF"].Status)
+	assert.Equal(t, entryStatusCompleted, state.Entries["6ABC"].Status)
+	assert.Equal(t, entryStatusCompleted, state.Entries["7DEF"].Status)
 }
 
 func Test_should_stop_when_upload_state_has_uploading_entry(t *testing.T) {
@@ -345,7 +373,7 @@ func Test_should_stop_when_upload_state_has_uploading_entry(t *testing.T) {
 	rcsbClient := fakeRCSB{}
 
 	// when
-	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.Error(t, err)
@@ -380,7 +408,7 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 	}
 
 	// when
-	requests, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}).modelMetrics(
+	requests, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
 		context.Background(),
 		"",
 		"5amf",
@@ -423,7 +451,7 @@ func Test_should_use_next_field_source_when_previous_source_has_no_value(t *test
 	}
 
 	// when
-	values, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}).entryMetadata(
+	values, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).entryMetadata(
 		context.Background(),
 		dataRoot,
 		metadata,
@@ -486,6 +514,7 @@ func Test_should_parse_entry_resolution_string_when_metadata_is_canonicalized(t 
 }
 
 type fakeDynamicPDBClient struct {
+	mutex               sync.Mutex
 	existingEntries     []dynamicpdbapi.Entry
 	listResponses       [][]dynamicpdbapi.Entry
 	listCalls           int
@@ -503,6 +532,8 @@ type createdModel struct {
 }
 
 func (b *fakeDynamicPDBClient) ListEntries(_ context.Context, params dynamicpdbapi.ListEntriesParams) ([]dynamicpdbapi.Entry, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	if len(b.listResponses) > 0 {
 		index := b.listCalls
 		if index >= len(b.listResponses) {
@@ -529,6 +560,8 @@ func (b *fakeDynamicPDBClient) ListEntries(_ context.Context, params dynamicpdba
 }
 
 func (b *fakeDynamicPDBClient) CreateEntry(_ context.Context, request dynamicpdbapi.CreateEntryRequest) error {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	b.createEntryAttempts++
 	if b.createEntryError != nil {
 		return b.createEntryError
@@ -538,6 +571,8 @@ func (b *fakeDynamicPDBClient) CreateEntry(_ context.Context, request dynamicpdb
 }
 
 func (b *fakeDynamicPDBClient) CreateModel(_ context.Context, entryID string, request dynamicpdbapi.CreateModelRequest) error {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	b.models = append(b.models, createdModel{entryID: entryID, request: request})
 	return nil
 }
@@ -546,6 +581,8 @@ func (b *fakeDynamicPDBClient) CreateFileUpload(
 	_ context.Context,
 	request dynamicpdbapi.CreateFileUploadRequest,
 ) (dynamicpdbapi.FileUploadGrantResponse, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	b.uploads = append(b.uploads, request)
 	return dynamicpdbapi.FileUploadGrantResponse{
 		Key:       request.ArtifactID + "/" + request.Filename,
@@ -562,6 +599,8 @@ func (b *fakeDynamicPDBClient) CompleteFileUpload(
 	_ context.Context,
 	request dynamicpdbapi.CompleteFileUploadRequest,
 ) error {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	b.completed = append(b.completed, request)
 	return nil
 }
