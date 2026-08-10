@@ -1,6 +1,7 @@
 package rcsb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,9 +11,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 const defaultHTTPTimeout = 30 * time.Second
+const defaultResponseCacheEntries = 2048
 
 const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
@@ -40,6 +44,7 @@ type RemoteClient struct {
 	filesBaseURL string
 	wwwBaseURL   string
 	cdnBaseURL   string
+	cache        *lru.Cache[string, []byte]
 }
 
 type Option func(*RemoteClient)
@@ -59,6 +64,12 @@ func WithBaseURLs(dataBaseURL string, filesBaseURL string, wwwBaseURL string, cd
 	}
 }
 
+func WithCacheEntries(entries int) Option {
+	return func(client *RemoteClient) {
+		client.cache = newResponseCache(entries)
+	}
+}
+
 func NewClient(options ...Option) *RemoteClient {
 	client := &RemoteClient{
 		httpClient:   &http.Client{Timeout: defaultHTTPTimeout},
@@ -66,6 +77,7 @@ func NewClient(options ...Option) *RemoteClient {
 		filesBaseURL: cleanBaseURL(os.Getenv(filesBaseURLEnv), defaultFilesBaseURL),
 		wwwBaseURL:   cleanBaseURL(os.Getenv(wwwBaseURLEnv), defaultWWWBaseURL),
 		cdnBaseURL:   cleanBaseURL(os.Getenv(cdnBaseURLEnv), defaultCDNBaseURL),
+		cache:        newResponseCache(defaultResponseCacheEntries),
 	}
 	for _, option := range options {
 		option(client)
@@ -202,7 +214,23 @@ func cleanBaseURL(value string, fallback string) string {
 	return strings.TrimRight(value, "/")
 }
 
+func newResponseCache(entries int) *lru.Cache[string, []byte] {
+	if entries <= 0 {
+		return nil
+	}
+	cache, err := lru.New[string, []byte](entries)
+	if err != nil {
+		panic(fmt.Sprintf("create RCSB response cache: %v", err))
+	}
+	return cache
+}
+
 func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
+	if c.cache != nil {
+		if contents, ok := c.cache.Get(url); ok {
+			return bytes.Clone(contents), nil
+		}
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -222,6 +250,9 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	closeErr := response.Body.Close()
 	if err := errors.Join(err, closeErr); err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if c.cache != nil {
+		c.cache.Add(url, bytes.Clone(contents))
 	}
 	return contents, nil
 }

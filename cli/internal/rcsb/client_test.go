@@ -132,6 +132,71 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, 0.18, refinement["ls_R_factor_R_work"])
 }
 
+func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {
+	// given
+	requests := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		switch r.URL.Path {
+		case "/rest/v1/core/entry/5AMF":
+			writeText(t, w, `{"struct": {"title": "cached entry"}}`)
+		case "/rest/v1/core/polymer_entity/5AMF/1":
+			writeText(t, w, `{"id": "1"}`)
+		case "/download/5AMF.cif":
+			writeText(t, w, "data_5amf\n")
+		case "/images/structures/am/5amf/5amf_assembly-1.jpeg":
+			writeText(t, w, "image\n")
+		case "/fasta/entry/5AMF":
+			writeText(t, w, ">5amf\nACDE\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
+
+	// when
+	for range 2 {
+		_, err := client.GetEntry(context.Background(), "5amf")
+		require.NoError(t, err)
+		_, err = client.GetPolymerEntity(context.Background(), "5amf", "1")
+		require.NoError(t, err)
+		_, err = client.GetFile(context.Background(), "5amf", "5amf.cif")
+		require.NoError(t, err)
+		_, err = client.GetImage(context.Background(), "5amf", "5amf_assembly-1.jpeg")
+		require.NoError(t, err)
+		_, err = client.GetFASTA(context.Background(), "5amf")
+		require.NoError(t, err)
+	}
+
+	// then
+	assert.Equal(t, 1, requests["/rest/v1/core/entry/5AMF"])
+	assert.Equal(t, 1, requests["/rest/v1/core/polymer_entity/5AMF/1"])
+	assert.Equal(t, 1, requests["/download/5AMF.cif"])
+	assert.Equal(t, 1, requests["/images/structures/am/5amf/5amf_assembly-1.jpeg"])
+	assert.Equal(t, 1, requests["/fasta/entry/5AMF"])
+}
+
+func Test_should_allow_disabling_rcsb_response_cache(t *testing.T) {
+	// given
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		writeText(t, w, `{"struct": {"title": "uncached entry"}}`)
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL), WithCacheEntries(0))
+
+	// when
+	_, firstErr := client.GetEntry(context.Background(), "5amf")
+	_, secondErr := client.GetEntry(context.Background(), "5amf")
+
+	// then
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	assert.Equal(t, 2, requests)
+}
+
 func writeText(t *testing.T, w http.ResponseWriter, text string) {
 	t.Helper()
 	_, err := fmt.Fprint(w, text)
