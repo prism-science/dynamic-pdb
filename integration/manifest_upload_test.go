@@ -155,8 +155,67 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Contains(t, paths, "/rest/v1/core/entry/5AMF")
 	assert.Contains(t, paths, "/download/5AMF.cif")
 	assert.Contains(t, paths, "/images/structures/am/5amf/5amf_assembly-1.jpeg")
-	assert.Equal(t, 2, countString(paths, "/download/5AMF-sf.cif"))
+	assert.Equal(t, 1, countString(paths, "/download/5AMF-sf.cif"))
 	assert.Contains(t, paths, "/fasta/entry/5AMF")
+}
+
+func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given
+	root := repoRoot(t)
+	binaryPath := buildCLI(t, root)
+	backendBinaryPath := buildBackend(t, root)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "Rerefined/final_model/9zzz_020.pdb", integrationPDBModelText())
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+
+	database := setupDB(t)
+	auth := seedUserAndIssueToken(t, database)
+	s3 := newS3Stub(t)
+	defer s3.Close()
+	backend := startBackend(t, root, backendBinaryPath, s3.URL())
+	brokenRCSB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "RCSB is down", http.StatusInternalServerError)
+	}))
+	defer brokenRCSB.Close()
+	dataHome := t.TempDir()
+	writeConfig(t, dataHome, backend.URL, auth.AccessToken)
+	env := []string{
+		"XDG_DATA_HOME=" + dataHome,
+		"DYNAMIC_PDB_RCSB_DATA_URL=" + brokenRCSB.URL,
+		"DYNAMIC_PDB_RCSB_FILES_URL=" + brokenRCSB.URL,
+		"DYNAMIC_PDB_RCSB_WWW_URL=" + brokenRCSB.URL,
+		"DYNAMIC_PDB_RCSB_CDN_URL=" + brokenRCSB.URL,
+	}
+
+	// when
+	runCLI(t, binaryPath, nil, "upload", "manifest", "init", dataRoot, "--out", manifestPath)
+	firstOutput := runCLIError(t, binaryPath, env, "upload", "start", manifestPath)
+	secondOutput := runCLIError(t, binaryPath, env, "upload", "start", manifestPath)
+
+	// then
+	statePath := uploadStatePath(manifestPath)
+	stateContents, err := os.ReadFile(statePath)
+	require.NoError(t, err)
+	stateLines := strings.Split(strings.TrimSpace(string(stateContents)), "\n")
+	require.Len(t, stateLines, 1)
+	assert.Contains(t, stateLines[0], `"event":"entry_uploading"`)
+	assert.Contains(t, stateLines[0], `"pdb_id":"9ZZZ"`)
+	assert.NotContains(t, string(stateContents), `"event":"entry_completed"`)
+	assert.Contains(t, firstOutput, "unexpected HTTP status 500")
+	assert.Contains(t, secondOutput, "unfinished entries 9ZZZ")
+	assert.Contains(t, secondOutput, "fix the failed upload and remove those entries")
+
+	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
+	for _, entry := range entryList.Items {
+		assert.NotEqual(t, "9ZZZ", entry.Name)
+	}
 }
 
 type integrationDB struct {
@@ -591,6 +650,27 @@ func runCLI(t *testing.T, binaryPath string, env []string, args ...string) strin
 	err := cmd.Run()
 	require.NoError(t, err, output.String())
 	return output.String()
+}
+
+func runCLIError(t *testing.T, binaryPath string, env []string, args ...string) string {
+	t.Helper()
+	ctx := t.Context()
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Env = append(os.Environ(), env...)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := cmd.Run()
+	require.Error(t, err, output.String())
+	return output.String()
+}
+
+func uploadStatePath(manifestPath string) string {
+	extension := filepath.Ext(manifestPath)
+	if extension == "" {
+		return manifestPath + ".upload.jsonl"
+	}
+	return strings.TrimSuffix(manifestPath, extension) + ".upload.jsonl"
 }
 
 func goCommand() string {

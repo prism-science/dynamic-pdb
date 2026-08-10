@@ -141,8 +141,8 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stderr, "dynamic-pdb upload start: write summary:", err)
 		return 1
 	}
-	if summary.ReportPath != "" {
-		if _, err := fmt.Fprintf(stdout, "Upload log: %s\n", summary.ReportPath); err != nil {
+	if summary.StatePath != "" {
+		if _, err := fmt.Fprintf(stdout, "Upload state: %s\n", summary.StatePath); err != nil {
 			fmt.Fprintln(stderr, "dynamic-pdb upload start: write summary:", err)
 			return 1
 		}

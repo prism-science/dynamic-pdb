@@ -3,11 +3,11 @@ package upload
 import (
 	"archive/zip"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +38,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 2, summary.Models)
 	assert.Equal(t, 6, summary.Artifacts)
-	assert.Equal(t, uploadReportPath(manifestPath), summary.ReportPath)
+	assert.Equal(t, uploadStatePath(manifestPath), summary.StatePath)
 	require.Len(t, dynamicPDBClient.entries, 1)
 	entry := dynamicPDBClient.entries[0]
 	assert.Equal(t, "5AMF", entry.Name)
@@ -101,13 +101,21 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Equal(t, 1, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_assembly-1.jpeg"))
 	assert.Equal(t, 0, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf-sf.cif"))
 	assert.Equal(t, 1, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz"))
-	report := readReport(t, summary.ReportPath)
+	state := readState(t, summary.StatePath)
 	require.NotNil(t, entry.ID)
-	assert.Equal(t, []string{*entry.ID}, report.UploadedEntryIDs)
-	assert.Equal(t, modelIDs(models), report.UploadedModelIDs)
-	assert.Equal(t, append(artifactIDs(entry.Artifacts), append(artifactIDs(models[0].Artifacts), artifactIDs(models[1].Artifacts)...)...), report.UploadedArtifactIDs)
-	assert.Equal(t, append(runIDs(models[0].Runs), runIDs(models[1].Runs)...), report.UploadedRunIDs)
-	assert.Equal(t, append(metricIDs(models[0].Metrics), metricIDs(models[1].Metrics)...), report.UploadedMetricIDs)
+	entryState := state.Entries["5AMF"]
+	assert.Equal(t, entryStatusCompleted, entryState.Status)
+	assert.Equal(t, *entry.ID, entryState.EntryID)
+	assert.Equal(t, modelIDs(models), entryState.UploadedModelIDs)
+	assert.Equal(t, append(artifactIDs(entry.Artifacts), append(artifactIDs(models[0].Artifacts), artifactIDs(models[1].Artifacts)...)...), entryState.UploadedArtifactIDs)
+	assert.Equal(t, append(runIDs(models[0].Runs), runIDs(models[1].Runs)...), entryState.UploadedRunIDs)
+	assert.Equal(t, append(metricIDs(models[0].Metrics), metricIDs(models[1].Metrics)...), entryState.UploadedMetricIDs)
+	stateContents, err := os.ReadFile(summary.StatePath)
+	require.NoError(t, err)
+	stateLines := strings.Split(strings.TrimSpace(string(stateContents)), "\n")
+	require.Len(t, stateLines, 2)
+	assert.Contains(t, stateLines[0], `"event":"entry_uploading"`)
+	assert.Contains(t, stateLines[1], `"event":"entry_completed"`)
 }
 
 func Test_should_upload_entries_from_zip_sources(t *testing.T) {
@@ -131,7 +139,7 @@ func Test_should_upload_entries_from_zip_sources(t *testing.T) {
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 2, summary.Models)
 	assert.Equal(t, 6, summary.Artifacts)
-	assert.FileExists(t, summary.ReportPath)
+	assert.FileExists(t, summary.StatePath)
 	require.Len(t, dynamicPDBClient.entries, 1)
 	models := modelRequests(dynamicPDBClient.models)
 	require.Len(t, models, 2)
@@ -160,7 +168,7 @@ func Test_should_download_structure_factors_from_rcsb_when_manifest_points_to_rc
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 2, summary.Models)
 	assert.Equal(t, 6, summary.Artifacts)
-	assert.FileExists(t, summary.ReportPath)
+	assert.FileExists(t, summary.StatePath)
 	assert.Len(t, dynamicPDBClient.uploads, 3)
 	assert.Equal(t, 0, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf-sf.cif"))
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz")
@@ -186,8 +194,8 @@ func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *test
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
 	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Name)
-	report := readReport(t, summary.ReportPath)
-	assert.Len(t, report.UploadedEntryIDs, 1)
+	state := readState(t, summary.StatePath)
+	assert.NotEmpty(t, state.Entries["5AMF"].EntryID)
 }
 
 func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *testing.T) {
@@ -220,9 +228,9 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 	assert.Empty(t, dynamicPDBClient.entries)
 	require.Len(t, dynamicPDBClient.models, 1)
 	assert.Equal(t, existingEntryID, dynamicPDBClient.models[0].entryID)
-	report := readReport(t, summary.ReportPath)
-	assert.Empty(t, report.UploadedEntryIDs)
-	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), report.UploadedModelIDs)
+	state := readState(t, summary.StatePath)
+	assert.Equal(t, existingEntryID, state.Entries["5AMF"].EntryID)
+	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), state.Entries["5AMF"].UploadedModelIDs)
 }
 
 func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_conflict(t *testing.T) {
@@ -262,9 +270,65 @@ func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_con
 	assert.Equal(t, 1, dynamicPDBClient.createEntryAttempts)
 	require.Len(t, dynamicPDBClient.models, 1)
 	assert.Equal(t, existingEntryID, dynamicPDBClient.models[0].entryID)
-	report := readReport(t, summary.ReportPath)
-	assert.Empty(t, report.UploadedEntryIDs)
-	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), report.UploadedModelIDs)
+	state := readState(t, summary.StatePath)
+	assert.Equal(t, existingEntryID, state.Entries["5AMF"].EntryID)
+	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), state.Entries["5AMF"].UploadedModelIDs)
+}
+
+func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
+	writeFile(t, dataRoot, "models/6abc_model.pdb", "MODEL\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeSimpleManifest(t, manifestPath, dataRoot)
+	statePath := uploadStatePath(manifestPath)
+	state := newUploadState()
+	state.Entries["5AMF"] = EntryState{
+		Status:  entryStatusCompleted,
+		EntryID: "entry-5amf",
+	}
+	require.NoError(t, writeUploadState(statePath, state))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Entries)
+	assert.Equal(t, 1, summary.Skipped)
+	require.Len(t, dynamicPDBClient.entries, 1)
+	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Name)
+	updatedState := readState(t, statePath)
+	assert.Equal(t, entryStatusCompleted, updatedState.Entries["5AMF"].Status)
+	assert.Equal(t, entryStatusCompleted, updatedState.Entries["6ABC"].Status)
+	assert.Equal(t, "entry-5amf", updatedState.Entries["5AMF"].EntryID)
+}
+
+func Test_should_stop_when_upload_state_has_uploading_entry(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeSimpleManifest(t, manifestPath, dataRoot)
+	state := newUploadState()
+	state.Entries["5AMF"] = EntryState{Status: entryStatusUploading}
+	require.NoError(t, writeUploadState(uploadStatePath(manifestPath), state))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+
+	// then
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unfinished entries 5AMF")
+	assert.Contains(t, err.Error(), "fix the failed upload and remove those entries")
+	assert.Empty(t, summary)
+	assert.Empty(t, dynamicPDBClient.entries)
+	assert.Empty(t, dynamicPDBClient.models)
 }
 
 func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_references_artifact(t *testing.T) {
@@ -999,6 +1063,29 @@ entries:
 	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
 }
 
+func writeSimpleManifest(t *testing.T, path string, dataRoot string) {
+	t.Helper()
+	contents := `version: 1
+data_root: ` + dataRoot + `
+entries:
+  - pdb_id: '{{ pdb_id }}'
+    name: '{{ pdb_id }}'
+    models:
+      - id: model_1
+        name: Uploaded model
+        model_type: ""
+        purpose: ""
+        artifacts:
+          - id: coordinates
+            source:
+              files:
+                - models/{{ pdb_id }}_model.pdb
+            level: L2
+`
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+}
+
 func writeFile(t *testing.T, root string, relativePath string, contents string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))
@@ -1063,11 +1150,9 @@ func countString(values []string, target string) int {
 	return count
 }
 
-func readReport(t *testing.T, path string) Report {
+func readState(t *testing.T, path string) State {
 	t.Helper()
-	contents, err := os.ReadFile(path)
+	state, err := readUploadState(path)
 	require.NoError(t, err)
-	var report Report
-	require.NoError(t, json.Unmarshal(contents, &report))
-	return report
+	return state
 }

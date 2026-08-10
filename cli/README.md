@@ -247,13 +247,21 @@ Useful source forms:
 ./cli/bin/dynamic-pdb upload start /path/to/data/dynamic-pdb.manifest.yaml
 ```
 
-During upload the CLI shows progress in the terminal. At the end it prints a
-summary and writes a JSON upload log next to the manifest:
+During upload the CLI shows progress in the terminal. It also writes a JSON
+upload state next to the manifest:
 
 ```text
 Uploaded 1 entries, 3 models, 7 artifacts.
-Upload log: /path/to/data/dynamic-pdb.manifest.upload-log.json
+Upload state: /path/to/data/dynamic-pdb.manifest.upload.jsonl
 ```
 
-The JSON log is meant to be easy to parse. It contains uploaded entry IDs, model
-IDs, artifact IDs, run IDs, and metric IDs.
+The upload state is an append-only JSONL file:
+
+```jsonl
+{"event":"entry_uploading","pdb_id":"1YJO","at":"2026-08-10T12:00:00Z"}
+{"event":"entry_completed","pdb_id":"1YJO","entry_id":"...","model_ids":["..."],"artifact_ids":["..."],"run_ids":["..."],"metric_ids":["..."],"at":"2026-08-10T12:03:00Z"}
+```
+
+Completed entries are skipped on restart. If an entry is still marked as
+`entry_uploading` without a later `entry_completed`, the upload will stop until
+the failed upload is fixed and that entry is removed from the state file.

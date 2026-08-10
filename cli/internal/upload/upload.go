@@ -32,11 +32,11 @@ import (
 const templatePDBID = "{{ pdb_id }}"
 
 type Summary struct {
-	Entries    int
-	Models     int
-	Artifacts  int
-	Skipped    int
-	ReportPath string
+	Entries   int
+	Models    int
+	Artifacts int
+	Skipped   int
+	StatePath string
 }
 
 type Uploader struct {
@@ -96,15 +96,28 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 	if err != nil {
 		return Summary{}, err
 	}
+	statePath := uploadStatePath(resolvedManifestPath)
+	state, err := readUploadState(statePath)
+	if err != nil {
+		return Summary{}, err
+	}
+	uploadingEntries := state.uploadingEntries()
+	if len(uploadingEntries) > 0 {
+		return Summary{}, fmt.Errorf("upload state has unfinished entries %s; fix the failed upload and remove those entries from %s before restarting", strings.Join(uploadingEntries, ", "), statePath)
+	}
+
 	selectedPDBIDs := filteredPDBIDs(pdbIDs, uploadingManifest.Filter)
-	totalArtifacts := countPlannedArtifacts(entryTemplate, selectedPDBIDs)
+	pendingPDBIDs := pendingPDBIDs(selectedPDBIDs, state)
+	totalArtifacts := countPlannedArtifacts(entryTemplate, pendingPDBIDs)
 	if err := u.progress.Start(totalArtifacts); err != nil {
 		return Summary{}, fmt.Errorf("start upload progress: %w", err)
 	}
-	result := Summary{}
-	report := Report{}
-	result.Skipped = len(pdbIDs) - len(selectedPDBIDs)
-	for _, pdbID := range selectedPDBIDs {
+	result := Summary{StatePath: statePath}
+	result.Skipped = len(pdbIDs) - len(pendingPDBIDs)
+	for _, pdbID := range pendingPDBIDs {
+		if err := state.startEntry(statePath, pdbID); err != nil {
+			return result, err
+		}
 		existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
 		if err != nil {
 			return result, fmt.Errorf("check existing entry %s: %w", pdbID, err)
@@ -116,7 +129,9 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 		result.Entries++
 		result.Models += entryResult.Models
 		result.Artifacts += entryResult.Artifacts
-		report.add(entryResult)
+		if err := state.completeEntry(statePath, entryResult); err != nil {
+			return result, err
+		}
 		if err := u.progress.EntryDone(entryResult.PDBID, entryResult.EntryID, entryResult.Models, entryResult.Artifacts); err != nil {
 			return result, fmt.Errorf("update upload progress: %w", err)
 		}
@@ -124,11 +139,6 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 	if err := u.progress.Finish(); err != nil {
 		return result, fmt.Errorf("finish upload progress: %w", err)
 	}
-	reportPath := uploadReportPath(resolvedManifestPath)
-	if err := writeUploadReport(reportPath, report); err != nil {
-		return result, err
-	}
-	result.ReportPath = reportPath
 	return result, nil
 }
 
@@ -936,6 +946,17 @@ func filteredPDBIDs(pdbIDs []string, filter manifest.Filter) []string {
 		selected = append(selected, pdbID)
 	}
 	return selected
+}
+
+func pendingPDBIDs(pdbIDs []string, state State) []string {
+	pending := make([]string, 0, len(pdbIDs))
+	for _, pdbID := range pdbIDs {
+		if state.completedEntry(pdbID) {
+			continue
+		}
+		pending = append(pending, pdbID)
+	}
+	return pending
 }
 
 func skippedPDBIDs(all []string, selected []string) []string {
