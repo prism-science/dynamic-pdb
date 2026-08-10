@@ -108,8 +108,7 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 
 	selectedPDBIDs := filteredPDBIDs(pdbIDs, uploadingManifest.Filter)
 	pendingPDBIDs := pendingPDBIDs(selectedPDBIDs, state)
-	totalArtifacts := countPlannedArtifacts(entryTemplate, pendingPDBIDs)
-	if err := u.progress.Start(totalArtifacts); err != nil {
+	if err := u.progress.Start(len(pendingPDBIDs)); err != nil {
 		return Summary{}, fmt.Errorf("start upload progress: %w", err)
 	}
 	result := Summary{StatePath: statePath}
@@ -450,16 +449,10 @@ func (u *Uploader) uploadArtifact(
 		return uploadedArtifact{}, false, err
 	}
 	if !ok {
-		if err := u.progress.ArtifactDone(); err != nil {
-			return uploadedArtifact{}, false, err
-		}
 		return uploadedArtifact{}, false, nil
 	}
 
 	artifactID := uuid.NewString()
-	if err := u.progress.ArtifactStarted(pdbID, artifact.ID); err != nil {
-		return uploadedArtifact{}, false, err
-	}
 	artifactURI := strings.TrimSpace(payload.URI)
 	if artifactURI == "" {
 		uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
@@ -467,9 +460,6 @@ func (u *Uploader) uploadArtifact(
 			return uploadedArtifact{}, false, err
 		}
 		artifactURI = uploadedURL
-	}
-	if err := u.progress.ArtifactDone(); err != nil {
-		return uploadedArtifact{}, false, err
 	}
 	name, err := artifactName(artifact, payload)
 	if err != nil {
@@ -718,18 +708,6 @@ func rcsbSourceIsEmpty(source *manifest.RCSBSource) bool {
 		(strings.TrimSpace(source.PDBID) == "" &&
 			strings.TrimSpace(source.Resource) == "" &&
 			strings.TrimSpace(source.File) == "")
-}
-
-func countPlannedArtifacts(
-	entryTemplate manifest.Entry,
-	pdbIDs []string,
-) int {
-	newEntryArtifacts := len(entryTemplate.Artifacts)
-	modelArtifacts := 0
-	for _, model := range entryTemplate.Models {
-		modelArtifacts += len(model.Artifacts)
-	}
-	return len(pdbIDs) * (newEntryArtifacts + modelArtifacts)
 }
 
 func (u *Uploader) entryMetadata(ctx context.Context, dataRoot string, metadata manifest.EntryMetadata, pdbID string) (map[string]any, error) {
