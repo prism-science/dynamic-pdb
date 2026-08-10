@@ -62,7 +62,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	defer rcsb.Close()
 
 	// when
-	initOutput := runCLI(t, binaryPath, nil, "manifest", "init", dataRoot, "--out", manifestPath)
+	initOutput := runCLI(t, binaryPath, nil, "upload", "manifest", "init", dataRoot, "--out", manifestPath)
 	dataHome := t.TempDir()
 	writeConfig(t, dataHome, backend.URL, auth.AccessToken)
 	uploadOutput := runCLI(t, binaryPath, []string{
@@ -71,7 +71,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 		"DYNAMIC_PDB_RCSB_FILES_URL=" + rcsb.URL(),
 		"DYNAMIC_PDB_RCSB_WWW_URL=" + rcsb.URL(),
 		"DYNAMIC_PDB_RCSB_CDN_URL=" + rcsb.URL(),
-	}, "manifest", "upload", manifestPath)
+	}, "upload", "start", manifestPath)
 
 	// then
 	assert.Contains(t, initOutput, "PDB IDs: 1")
@@ -131,8 +131,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 			assert.Equal(t, 1.0, model.Metadata["unique_protein_chains"])
 			assert.Equal(t, []any{"ATP"}, model.Metadata["ligands"])
 		}
-		switch {
-		case slices.Contains(names, "5amf_020.log"):
+		if slices.Contains(names, "5amf_020.log") {
 			assert.Equal(t, []string{"5amf-sf.cif", "5amf_020.log", "5amf_020.pdb"}, names)
 			require.Len(t, artifacts.Runs, 1)
 			assert.Equal(t, "PHENIX", artifacts.Runs[0].Name)
@@ -156,7 +155,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Contains(t, paths, "/rest/v1/core/entry/5AMF")
 	assert.Contains(t, paths, "/download/5AMF.cif")
 	assert.Contains(t, paths, "/images/structures/am/5amf/5amf_assembly-1.jpeg")
-	assert.Equal(t, 0, countString(paths, "/download/5AMF-sf.cif"))
+	assert.Equal(t, 2, countString(paths, "/download/5AMF-sf.cif"))
 	assert.Contains(t, paths, "/fasta/entry/5AMF")
 }
 
@@ -411,6 +410,11 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 				"polymer_entity_ids": []string{"1"},
 			},
 			"refine": []map[string]any{{"ls_R_factor_R_free": 0.21, "ls_R_factor_R_work": 0.18}},
+			"audit_author": []map[string]any{
+				{"name": "Nelson, R."},
+				{"name": "Sawaya, M.R."},
+			},
+			"pubmed": map[string]any{"rcsb_pubmed_affiliation_info": []string{"Howard Hughes Medical Institute, UCLA, USA."}},
 		})
 	case "/rest/v1/core/polymer_entity/5AMF/1":
 		writeJSON(w, map[string]any{

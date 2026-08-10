@@ -38,7 +38,7 @@ func Init(options Options) (string, Manifest, Stats, error) {
 	if err != nil {
 		return "", Manifest{}, Stats{}, fmt.Errorf("encode manifest YAML: %w", err)
 	}
-	if err := os.WriteFile(outputPath, encoded, 0o644); err != nil {
+	if err := os.WriteFile(outputPath, encoded, 0o600); err != nil {
 		return "", Manifest{}, Stats{}, fmt.Errorf("write manifest: %w", err)
 	}
 	return outputPath, manifest, stats, nil

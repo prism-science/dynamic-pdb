@@ -40,7 +40,7 @@ func writeUploadReport(path string, report Report) error {
 		return fmt.Errorf("encode upload report: %w", err)
 	}
 	contents = append(contents, '\n')
-	if err := os.WriteFile(path, contents, 0o644); err != nil {
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
 		return fmt.Errorf("write upload report: %w", err)
 	}
 	return nil

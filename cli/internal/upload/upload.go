@@ -61,7 +61,7 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 		return Summary{}, errors.New("uploader is required")
 	}
 	if u.dynamicPDBClient == nil {
-		return Summary{}, errors.New("Dynamic PDB client is required")
+		return Summary{}, errors.New("dynamic PDB client is required")
 	}
 	if u.rcsb == nil {
 		return Summary{}, errors.New("RCSB client is required")
@@ -649,10 +649,11 @@ func localFilePatterns(entryTemplate manifest.Entry) []*regexp.Regexp {
 	}
 	patterns := make([]*regexp.Regexp, 0, len(sources))
 	for _, source := range sources {
-		if !strings.Contains(source, templatePDBID) {
+		templateIndex := strings.Index(source, templatePDBID)
+		if templateIndex < 0 {
 			continue
 		}
-		patterns = append(patterns, regexp.MustCompile("^"+regexp.QuoteMeta(source[:strings.Index(source, templatePDBID)])+`([0-9][A-Za-z0-9]{3})`+regexp.QuoteMeta(source[strings.Index(source, templatePDBID)+len(templatePDBID):])+"$"))
+		patterns = append(patterns, regexp.MustCompile("^"+regexp.QuoteMeta(source[:templateIndex])+`([0-9][A-Za-z0-9]{3})`+regexp.QuoteMeta(source[templateIndex+len(templatePDBID):])+"$"))
 	}
 	return patterns
 }

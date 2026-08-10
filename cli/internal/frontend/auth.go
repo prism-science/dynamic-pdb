@@ -14,7 +14,7 @@ import (
 )
 
 func Login(ctx context.Context, stdout, stderr io.Writer) int {
-	if err := login(ctx, stdout, stderr); err != nil {
+	if err := login(ctx, stdout); err != nil {
 		fmt.Fprintln(stderr, "dynamic-pdb login:", err)
 		return 1
 	}
@@ -29,7 +29,7 @@ func Logout(stdout, stderr io.Writer) int {
 	return 0
 }
 
-func login(ctx context.Context, stdout, stderr io.Writer) error {
+func login(ctx context.Context, stdout io.Writer) error {
 	dataHome, err := paths.DataHome()
 	if err != nil {
 		return fmt.Errorf("locate data directory: %w", err)

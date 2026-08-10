@@ -209,18 +209,18 @@ func parseSegment(segment string) (string, []int, error) {
 		if open < 0 {
 			break
 		}
-		close := strings.Index(name[open:], "]")
-		if close < 0 {
+		closeIndex := strings.Index(name[open:], "]")
+		if closeIndex < 0 {
 			return "", nil, fmt.Errorf("invalid JSON field segment: %s", segment)
 		}
-		close += open
-		rawIndex := name[open+1 : close]
+		closeIndex += open
+		rawIndex := name[open+1 : closeIndex]
 		index, err := strconv.Atoi(rawIndex)
 		if err != nil {
 			return "", nil, fmt.Errorf("invalid JSON field index %s: %w", rawIndex, err)
 		}
 		indexes = append(indexes, index)
-		name = name[:open] + name[close+1:]
+		name = name[:open] + name[closeIndex+1:]
 	}
 	return name, indexes, nil
 }
