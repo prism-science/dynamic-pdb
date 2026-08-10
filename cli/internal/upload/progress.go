@@ -1,9 +1,7 @@
 package upload
 
 type Progress interface {
-	Start(totalArtifacts int) error
-	ArtifactStarted(pdbID string, artifactID string) error
-	ArtifactDone() error
+	Start(totalEntries int) error
 	EntryDone(pdbID string, entryID string, models int, artifacts int) error
 	Finish() error
 }
@@ -11,14 +9,6 @@ type Progress interface {
 type NoopProgress struct{}
 
 func (NoopProgress) Start(_ int) error {
-	return nil
-}
-
-func (NoopProgress) ArtifactStarted(_ string, _ string) error {
-	return nil
-}
-
-func (NoopProgress) ArtifactDone() error {
 	return nil
 }
 

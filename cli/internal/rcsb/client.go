@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -17,6 +18,8 @@ import (
 
 const defaultHTTPTimeout = 30 * time.Second
 const defaultResponseCacheEntries = 2048
+
+var ErrNotFound = errors.New("RCSB resource not found")
 
 const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
@@ -45,6 +48,7 @@ type RemoteClient struct {
 	wwwBaseURL   string
 	cdnBaseURL   string
 	cache        *lru.Cache[string, []byte]
+	cacheMutex   sync.Mutex
 }
 
 type Option func(*RemoteClient)
@@ -227,9 +231,12 @@ func newResponseCache(entries int) *lru.Cache[string, []byte] {
 
 func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	if c.cache != nil {
+		c.cacheMutex.Lock()
 		if contents, ok := c.cache.Get(url); ok {
+			c.cacheMutex.Unlock()
 			return bytes.Clone(contents), nil
 		}
+		c.cacheMutex.Unlock()
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -241,6 +248,12 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	}
 	if response.StatusCode != http.StatusOK {
 		closeErr := response.Body.Close()
+		if response.StatusCode == http.StatusNotFound {
+			if closeErr != nil {
+				return nil, fmt.Errorf("%w: close response: %w", ErrNotFound, closeErr)
+			}
+			return nil, ErrNotFound
+		}
 		if closeErr != nil {
 			return nil, fmt.Errorf("unexpected HTTP status %d and close response: %w", response.StatusCode, closeErr)
 		}
@@ -252,7 +265,9 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if c.cache != nil {
+		c.cacheMutex.Lock()
 		c.cache.Add(url, bytes.Clone(contents))
+		c.cacheMutex.Unlock()
 	}
 	return contents, nil
 }

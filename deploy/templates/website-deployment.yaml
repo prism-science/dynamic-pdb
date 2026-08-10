@@ -33,12 +33,12 @@ spec:
               value: {{ .Values.website.auth.githubClientId | quote }}
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
             periodSeconds: 10
           resources:

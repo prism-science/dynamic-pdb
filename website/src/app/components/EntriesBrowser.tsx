@@ -4,6 +4,7 @@ import type { Entry } from "@/lib/api/entries";
 import { deleteEntryAction } from "@/app/actions/delete";
 
 import DeleteButton from "./DeleteButton";
+import EntriesInfiniteScroll from "./EntriesInfiniteScroll";
 import styles from "./EntriesBrowser.module.css";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -100,6 +101,12 @@ export default function EntriesBrowser({
           {query ? `No entries match "${query}".` : "No entries found."}
         </p>
       )}
+
+      <EntriesInfiniteScroll
+        query={query}
+        initialOffset={entries.length}
+        currentUserId={currentUserId}
+      />
     </div>
   );
 }

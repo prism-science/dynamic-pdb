@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -31,6 +33,8 @@ import (
 
 const templatePDBID = "{{ pdb_id }}"
 
+const uploadPartAttempts = 3
+
 type Summary struct {
 	Entries   int
 	Models    int
@@ -43,13 +47,16 @@ type Uploader struct {
 	dynamicPDBClient dynamicpdbapi.Client
 	rcsb             rcsb.Client
 	progress         Progress
+	concurrency      int
+	progressMutex    sync.Mutex
 }
 
-func New(dynamicPDBClient dynamicpdbapi.Client, rcsbClient rcsb.Client, progress Progress) *Uploader {
+func New(dynamicPDBClient dynamicpdbapi.Client, rcsbClient rcsb.Client, progress Progress, concurrency int) *Uploader {
 	return &Uploader{
 		dynamicPDBClient: dynamicPDBClient,
 		rcsb:             rcsbClient,
 		progress:         progress,
+		concurrency:      normalizeConcurrency(concurrency),
 	}
 }
 
@@ -108,38 +115,134 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 
 	selectedPDBIDs := filteredPDBIDs(pdbIDs, uploadingManifest.Filter)
 	pendingPDBIDs := pendingPDBIDs(selectedPDBIDs, state)
-	totalArtifacts := countPlannedArtifacts(entryTemplate, pendingPDBIDs)
-	if err := u.progress.Start(totalArtifacts); err != nil {
+	if err := u.progress.Start(len(pendingPDBIDs)); err != nil {
 		return Summary{}, fmt.Errorf("start upload progress: %w", err)
 	}
-	result := Summary{StatePath: statePath}
-	result.Skipped = len(pdbIDs) - len(pendingPDBIDs)
-	for _, pdbID := range pendingPDBIDs {
-		if err := state.startEntry(statePath, pdbID); err != nil {
-			return result, err
-		}
-		existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
-		if err != nil {
-			return result, fmt.Errorf("check existing entry %s: %w", pdbID, err)
-		}
-		entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
-		if err != nil {
-			return result, fmt.Errorf("upload %s: %w", pdbID, err)
-		}
-		result.Entries++
-		result.Models += entryResult.Models
-		result.Artifacts += entryResult.Artifacts
-		if err := state.completeEntry(statePath, entryResult); err != nil {
-			return result, err
-		}
-		if err := u.progress.EntryDone(entryResult.PDBID, entryResult.EntryID, entryResult.Models, entryResult.Artifacts); err != nil {
-			return result, fmt.Errorf("update upload progress: %w", err)
-		}
+	recorder := newUploadStateRecorder(statePath, state)
+	uploadSummary, err := u.uploadEntries(ctx, entryTemplate, dataRoot, pendingPDBIDs, recorder)
+	uploadSummary.StatePath = statePath
+	uploadSummary.Skipped = len(pdbIDs) - len(pendingPDBIDs)
+	if err != nil {
+		return uploadSummary, err
 	}
 	if err := u.progress.Finish(); err != nil {
-		return result, fmt.Errorf("finish upload progress: %w", err)
+		return uploadSummary, fmt.Errorf("finish upload progress: %w", err)
 	}
-	return result, nil
+	return uploadSummary, nil
+}
+
+func (u *Uploader) uploadEntries(
+	ctx context.Context,
+	entryTemplate manifest.Entry,
+	dataRoot string,
+	pdbIDs []string,
+	state *uploadStateRecorder,
+) (Summary, error) {
+	if len(pdbIDs) == 0 {
+		return Summary{}, nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan string)
+	results := make(chan entryUploadResult, len(pdbIDs))
+	errors := make(chan error, 1)
+	workers := min(normalizeConcurrency(u.concurrency), len(pdbIDs))
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			for pdbID := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				entryResult, err := u.uploadEntryJob(ctx, entryTemplate, dataRoot, pdbID, state)
+				if err != nil {
+					select {
+					case errors <- err:
+						cancel()
+					default:
+					}
+					return
+				}
+				select {
+				case results <- entryResult:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, pdbID := range pdbIDs {
+			select {
+			case jobs <- pdbID:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		waitGroup.Wait()
+		close(results)
+	}()
+
+	summary := Summary{}
+	for entryResult := range results {
+		summary.Entries++
+		summary.Models += entryResult.Models
+		summary.Artifacts += entryResult.Artifacts
+	}
+	select {
+	case err := <-errors:
+		return summary, err
+	default:
+		return summary, nil
+	}
+}
+
+func (u *Uploader) uploadEntryJob(
+	ctx context.Context,
+	entryTemplate manifest.Entry,
+	dataRoot string,
+	pdbID string,
+	state *uploadStateRecorder,
+) (entryUploadResult, error) {
+	if err := state.startEntry(pdbID); err != nil {
+		return entryUploadResult{}, err
+	}
+	existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
+	if err != nil {
+		return entryUploadResult{}, fmt.Errorf("check existing entry %s: %w", pdbID, err)
+	}
+	entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
+	if err != nil {
+		return entryUploadResult{}, fmt.Errorf("upload %s: %w", pdbID, err)
+	}
+	if err := state.completeEntry(entryResult); err != nil {
+		return entryUploadResult{}, err
+	}
+	if err := u.entryDone(entryResult); err != nil {
+		return entryUploadResult{}, fmt.Errorf("update upload progress: %w", err)
+	}
+	return entryResult, nil
+}
+
+func (u *Uploader) entryDone(result entryUploadResult) error {
+	u.progressMutex.Lock()
+	defer u.progressMutex.Unlock()
+	return u.progress.EntryDone(result.PDBID, result.EntryID, result.Models, result.Artifacts)
+}
+
+func normalizeConcurrency(concurrency int) int {
+	if concurrency < 1 {
+		return 1
+	}
+	return concurrency
 }
 
 type entryUploadResult struct {
@@ -325,6 +428,13 @@ func (u *Uploader) uploadModel(
 	modelArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0, len(model.Artifacts))
 	modelArtifactRefs := make([]uploadedArtifactRef, 0, len(model.Artifacts))
 	artifactPayloads := make(map[string]extractorapi.Artifact, len(model.Artifacts))
+	hasCoordinates, err := u.hasModelCoordinates(ctx, dataRoot, pdbID, model)
+	if err != nil {
+		return uploadedModel{}, false, err
+	}
+	if !hasCoordinates {
+		return uploadedModel{}, false, nil
+	}
 	for _, artifact := range model.Artifacts {
 		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, &modelID, artifact, pdbID)
 		if err != nil {
@@ -386,6 +496,38 @@ func (u *Uploader) uploadModel(
 	}, true, nil
 }
 
+func (u *Uploader) hasModelCoordinates(
+	ctx context.Context,
+	dataRoot string,
+	pdbID string,
+	model manifest.ModelPattern,
+) (bool, error) {
+	coordinates, _, ok := modelCoordinatesArtifact(model)
+	if !ok {
+		return false, nil
+	}
+	if !rcsbSourceIsEmpty(coordinates.Source.RCSB) {
+		return true, nil
+	}
+	if len(coordinates.Source.Files) == 0 {
+		return false, nil
+	}
+	_, ok, err := fileextractor.NewArtifactExtractor(dataRoot).Extract(ctx, pdbID, coordinates)
+	if err != nil {
+		return false, fmt.Errorf("check model coordinates: %w", err)
+	}
+	return ok, nil
+}
+
+func modelCoordinatesArtifact(model manifest.ModelPattern) (manifest.Artifact, int, bool) {
+	for index, artifact := range model.Artifacts {
+		if strings.EqualFold(strings.TrimSpace(artifact.ID), "coordinates") {
+			return artifact, index, true
+		}
+	}
+	return manifest.Artifact{}, 0, false
+}
+
 type uploadedArtifact struct {
 	Request dynamicpdbapi.CreateArtifactRequest
 	Payload extractorapi.Artifact
@@ -411,16 +553,10 @@ func (u *Uploader) uploadArtifact(
 		return uploadedArtifact{}, false, err
 	}
 	if !ok {
-		if err := u.progress.ArtifactDone(); err != nil {
-			return uploadedArtifact{}, false, err
-		}
 		return uploadedArtifact{}, false, nil
 	}
 
 	artifactID := uuid.NewString()
-	if err := u.progress.ArtifactStarted(pdbID, artifact.ID); err != nil {
-		return uploadedArtifact{}, false, err
-	}
 	artifactURI := strings.TrimSpace(payload.URI)
 	if artifactURI == "" {
 		uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
@@ -428,9 +564,6 @@ func (u *Uploader) uploadArtifact(
 			return uploadedArtifact{}, false, err
 		}
 		artifactURI = uploadedURL
-	}
-	if err := u.progress.ArtifactDone(); err != nil {
-		return uploadedArtifact{}, false, err
 	}
 	name, err := artifactName(artifact, payload)
 	if err != nil {
@@ -524,17 +657,9 @@ func uploadPayload(
 
 	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(grant.Parts))
 	for _, part := range grant.Parts {
-		reader, size, closeReader, err := partReader(contents, localPath, size, grant.PartSize, part.PartNumber)
+		etag, err := uploadPartWithRetry(ctx, dynamicPDBClient, part, contents, localPath, size, grant.PartSize)
 		if err != nil {
 			return "", err
-		}
-		etag, uploadErr := dynamicPDBClient.PutUploadPart(ctx, part.URL, reader, size)
-		closeErr := closeReader()
-		if uploadErr != nil {
-			return "", uploadErr
-		}
-		if closeErr != nil {
-			return "", closeErr
 		}
 		completedParts = append(completedParts, dynamicpdbapi.CompletedFileUploadPart{
 			PartNumber: part.PartNumber,
@@ -549,6 +674,54 @@ func uploadPayload(
 		return "", err
 	}
 	return grant.ObjectURL, nil
+}
+
+func uploadPartWithRetry(
+	ctx context.Context,
+	dynamicPDBClient dynamicpdbapi.Client,
+	part dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	payloadSize int64,
+	partSize int64,
+) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= uploadPartAttempts; attempt++ {
+		reader, size, closeReader, err := partReader(contents, localPath, payloadSize, partSize, part.PartNumber)
+		if err != nil {
+			return "", err
+		}
+		etag, uploadErr := dynamicPDBClient.PutUploadPart(ctx, part.URL, reader, size)
+		closeErr := closeReader()
+		if uploadErr == nil && closeErr == nil {
+			return etag, nil
+		}
+		if uploadErr != nil {
+			lastErr = uploadErr
+		}
+		if closeErr != nil {
+			lastErr = closeErr
+		}
+		if !shouldRetryUploadPart(ctx, lastErr, attempt) {
+			return "", lastErr
+		}
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	}
+	return "", lastErr
+}
+
+func shouldRetryUploadPart(ctx context.Context, err error, attempt int) bool {
+	if err == nil || attempt >= uploadPartAttempts {
+		return false
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	var dynamicPDBError *dynamicpdbapi.Error
+	if errors.As(err, &dynamicPDBError) && dynamicPDBError.Status < 500 {
+		return false
+	}
+	return true
 }
 
 func partReader(contents []byte, localPath string, payloadSize int64, partSize int64, partNumber int) (io.Reader, int64, func() error, error) {
@@ -679,18 +852,6 @@ func rcsbSourceIsEmpty(source *manifest.RCSBSource) bool {
 		(strings.TrimSpace(source.PDBID) == "" &&
 			strings.TrimSpace(source.Resource) == "" &&
 			strings.TrimSpace(source.File) == "")
-}
-
-func countPlannedArtifacts(
-	entryTemplate manifest.Entry,
-	pdbIDs []string,
-) int {
-	newEntryArtifacts := len(entryTemplate.Artifacts)
-	modelArtifacts := 0
-	for _, model := range entryTemplate.Models {
-		modelArtifacts += len(model.Artifacts)
-	}
-	return len(pdbIDs) * (newEntryArtifacts + modelArtifacts)
 }
 
 func (u *Uploader) entryMetadata(ctx context.Context, dataRoot string, metadata manifest.EntryMetadata, pdbID string) (map[string]any, error) {
@@ -895,18 +1056,57 @@ func (u *Uploader) fieldValue(
 	ctx context.Context,
 	dataRoot string,
 	pdbID string,
+	fields []manifest.FieldExtraction,
+	artifacts map[string]extractorapi.Artifact,
+) (any, bool, error) {
+	for _, field := range fields {
+		value, ok, err := u.fieldExtractionValue(ctx, dataRoot, pdbID, field, artifacts)
+		if err != nil || fieldValuePresent(value, ok) {
+			return value, ok, err
+		}
+	}
+	return nil, false, nil
+}
+
+func (u *Uploader) fieldExtractionValue(
+	ctx context.Context,
+	dataRoot string,
+	pdbID string,
 	field manifest.FieldExtraction,
 	artifacts map[string]extractorapi.Artifact,
 ) (any, bool, error) {
+	source := fieldExtractionSource(field)
 	switch {
-	case sourceIsEmpty(field.Source):
+	case sourceIsEmpty(source):
 		return nil, false, nil
-	case !rcsbSourceIsEmpty(field.Source.RCSB):
-		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, field.Source, field.Extract)
-	case strings.TrimSpace(field.Source.Artifact) != "":
-		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, field.Source, field.Extract)
+	case !rcsbSourceIsEmpty(source.RCSB):
+		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, source, field.Extract)
+	case strings.TrimSpace(source.Artifact) != "":
+		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, source, field.Extract)
 	default:
-		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, field.Source, field.Extract)
+		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, source, field.Extract)
+	}
+}
+
+func fieldExtractionSource(field manifest.FieldExtraction) manifest.Source {
+	return field.Source
+}
+
+func fieldValuePresent(value any, ok bool) bool {
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case []string:
+		return len(typed) > 0
+	case []any:
+		return len(typed) > 0
+	default:
+		return true
 	}
 }
 

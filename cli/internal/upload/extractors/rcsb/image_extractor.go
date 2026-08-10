@@ -38,6 +38,9 @@ func (e ImageExtractor) Extract(
 	}
 	image, err := e.client.GetImage(ctx, pdbID, file)
 	if err != nil {
+		if errors.Is(err, rcsb.ErrNotFound) {
+			return extractors.Image{}, false, nil
+		}
 		return extractors.Image{}, false, fmt.Errorf("get RCSB image %s: %w", file, err)
 	}
 	return imagePayload(image), true, nil

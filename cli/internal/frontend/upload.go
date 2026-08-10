@@ -28,7 +28,10 @@ Subcommands:
   start          upload entries and files described by a manifest
 
 Init flags:
-  --out <path>              manifest output path`
+  --out <path>              manifest output path
+
+Start flags:
+  -j, --concurrency <n>     number of entries to upload in parallel (default 1)`
 
 func Upload(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelpArgs(args) {
@@ -99,8 +102,11 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	fs := pflag.NewFlagSet("upload start", pflag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path>")
+		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path> [flags]")
+		fs.PrintDefaults()
 	}
+	concurrency := 1
+	fs.IntVarP(&concurrency, "concurrency", "j", concurrency, "number of entries to upload in parallel")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			return 0
@@ -108,7 +114,7 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path>")
+		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path> [flags]")
 		return 2
 	}
 
@@ -131,7 +137,7 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 1
 	}
 
-	uploader := upload.New(dynamicpdbapi.NewClient(cfg.ServerURL(), cfg.Auth.AccessToken), rcsb.NewClient(), newUploadProgress(stdout))
+	uploader := upload.New(dynamicpdbapi.NewClient(cfg.ServerURL(), cfg.Auth.AccessToken), rcsb.NewClient(), newUploadProgress(stdout), concurrency)
 	summary, err := uploader.Upload(ctx, fs.Arg(0))
 	if err != nil {
 		fmt.Fprintln(stderr, "dynamic-pdb upload start:", err)

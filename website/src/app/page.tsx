@@ -6,6 +6,8 @@ import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
 
+const entriesPageSize = 50;
+
 type SearchParamValue = string | string[] | undefined;
 
 type HomeProps = {
@@ -39,7 +41,11 @@ export default async function Home({ searchParams }: HomeProps) {
 // the backend returns for an anonymous request (empty on 401), never a gate.
 async function loadEntries(token?: string, query?: string) {
   try {
-    return await listEntries(token, { query });
+    return await listEntries(token, {
+      query,
+      limit: entriesPageSize,
+      offset: 0,
+    });
   } catch (error) {
     if (error instanceof ApiRequestError) {
       return [];

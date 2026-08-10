@@ -38,6 +38,9 @@ func (e ArtifactExtractor) Extract(
 	}
 	resolved, err := e.rcsbArtifact(ctx, pdbID, artifact)
 	if err != nil {
+		if errors.Is(err, rcsb.ErrNotFound) {
+			return extractors.Artifact{}, false, nil
+		}
 		return extractors.Artifact{}, false, err
 	}
 	return resolved, true, nil

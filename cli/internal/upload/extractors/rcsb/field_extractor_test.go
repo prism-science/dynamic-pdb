@@ -103,12 +103,32 @@ func Test_should_return_error_when_rcsb_field_resource_is_unsupported(t *testing
 	assert.Contains(t, err.Error(), "unsupported RCSB field resource")
 }
 
+func Test_should_return_no_field_when_rcsb_entry_is_not_found(t *testing.T) {
+	// given
+	extractor := NewFieldExtractor(&fakeClient{entryError: rcsbclient.ErrNotFound})
+
+	// when
+	value, ok, err := extractor.Extract(context.Background(), "1JT1",
+		manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", Resource: "entry"}},
+		manifest.Extract{JSON: &manifest.ExtractRule{Field: "struct.title"}},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Nil(t, value)
+}
+
 type fakeClient struct {
 	entry            map[string]any
+	entryError       error
 	polymerEntities  map[string]map[string]any
 	files            map[string]rcsbclient.Artifact
+	fileError        error
 	images           map[string]rcsbclient.Artifact
+	imageError       error
 	fasta            rcsbclient.Artifact
+	fastaError       error
 	entryPDBIDs      []string
 	polymerEntityIDs []string
 	fileNames        []string
@@ -118,6 +138,9 @@ type fakeClient struct {
 
 func (c *fakeClient) GetEntry(_ context.Context, pdbID string) (map[string]any, error) {
 	c.entryPDBIDs = append(c.entryPDBIDs, pdbID)
+	if c.entryError != nil {
+		return nil, c.entryError
+	}
 	return c.entry, nil
 }
 
@@ -128,15 +151,24 @@ func (c *fakeClient) GetPolymerEntity(_ context.Context, _ string, entityID stri
 
 func (c *fakeClient) GetFile(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {
 	c.fileNames = append(c.fileNames, file)
+	if c.fileError != nil {
+		return rcsbclient.Artifact{}, c.fileError
+	}
 	return c.files[file], nil
 }
 
 func (c *fakeClient) GetImage(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {
 	c.imageNames = append(c.imageNames, file)
+	if c.imageError != nil {
+		return rcsbclient.Artifact{}, c.imageError
+	}
 	return c.images[file], nil
 }
 
 func (c *fakeClient) GetFASTA(_ context.Context, pdbID string) (rcsbclient.Artifact, error) {
 	c.fastaPDBIDs = append(c.fastaPDBIDs, pdbID)
+	if c.fastaError != nil {
+		return rcsbclient.Artifact{}, c.fastaError
+	}
 	return c.fasta, nil
 }
