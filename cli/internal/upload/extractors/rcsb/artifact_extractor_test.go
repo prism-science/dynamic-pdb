@@ -91,6 +91,21 @@ func Test_should_return_error_when_rcsb_artifact_source_is_unsupported(t *testin
 	assert.Contains(t, err.Error(), "unsupported RCSB artifact source")
 }
 
+func Test_should_return_no_artifact_when_rcsb_file_is_not_found(t *testing.T) {
+	// given
+	extractor := NewArtifactExtractor(&fakeClient{fileError: rcsbclient.ErrNotFound})
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "1JT1", manifest.Artifact{
+		Source: manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", File: "{{ pdb_id }}.cif"}},
+	})
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Empty(t, artifact)
+}
+
 func testSHA256(contents []byte) string {
 	hash := sha256.Sum256(contents)
 	return hex.EncodeToString(hash[:])

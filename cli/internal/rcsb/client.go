@@ -19,6 +19,8 @@ import (
 const defaultHTTPTimeout = 30 * time.Second
 const defaultResponseCacheEntries = 2048
 
+var ErrNotFound = errors.New("RCSB resource not found")
+
 const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
 	defaultFilesBaseURL = "https://files.rcsb.org"
@@ -246,6 +248,12 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	}
 	if response.StatusCode != http.StatusOK {
 		closeErr := response.Body.Close()
+		if response.StatusCode == http.StatusNotFound {
+			if closeErr != nil {
+				return nil, fmt.Errorf("%w: close response: %w", ErrNotFound, closeErr)
+			}
+			return nil, ErrNotFound
+		}
 		if closeErr != nil {
 			return nil, fmt.Errorf("unexpected HTTP status %d and close response: %w", response.StatusCode, closeErr)
 		}

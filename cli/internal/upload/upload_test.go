@@ -3,6 +3,7 @@ package upload
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -384,6 +385,32 @@ func Test_should_stop_when_upload_state_has_uploading_entry(t *testing.T) {
 	assert.Empty(t, dynamicPDBClient.models)
 }
 
+func Test_should_retry_upload_part_when_transient_upload_error_happens(t *testing.T) {
+	// given
+	dynamicPDBClient := &fakeDynamicPDBClient{
+		putUploadPartErrors: []error{errors.New("read: connection reset by peer")},
+	}
+
+	// when
+	uploadedURL, err := uploadPayload(
+		context.Background(),
+		dynamicPDBClient,
+		"entry-id",
+		nil,
+		"artifact-id",
+		"model.pdb",
+		int64(len("MODEL\n")),
+		"",
+		[]byte("MODEL\n"),
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "https://cdn.example.test/artifact-id/model.pdb", uploadedURL)
+	assert.Equal(t, 2, dynamicPDBClient.putUploadPartCalls)
+	assert.Len(t, dynamicPDBClient.completed, 1)
+}
+
 func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_references_artifact(t *testing.T) {
 	// given
 	artifactPath := filepath.Join(t.TempDir(), "5amf.cif")
@@ -520,6 +547,8 @@ type fakeDynamicPDBClient struct {
 	listCalls           int
 	createEntryError    error
 	createEntryAttempts int
+	putUploadPartErrors []error
+	putUploadPartCalls  int
 	entries             []dynamicpdbapi.CreateEntryRequest
 	models              []createdModel
 	uploads             []dynamicpdbapi.CreateFileUploadRequest
@@ -606,6 +635,17 @@ func (b *fakeDynamicPDBClient) CompleteFileUpload(
 }
 
 func (b *fakeDynamicPDBClient) PutUploadPart(_ context.Context, _ string, body io.Reader, _ int64) (string, error) {
+	b.mutex.Lock()
+	b.putUploadPartCalls++
+	index := b.putUploadPartCalls - 1
+	var uploadErr error
+	if index < len(b.putUploadPartErrors) {
+		uploadErr = b.putUploadPartErrors[index]
+	}
+	b.mutex.Unlock()
+	if uploadErr != nil {
+		return "", uploadErr
+	}
 	_, err := io.Copy(io.Discard, body)
 	if err != nil {
 		return "", err

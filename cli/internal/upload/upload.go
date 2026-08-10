@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -31,6 +32,8 @@ import (
 )
 
 const templatePDBID = "{{ pdb_id }}"
+
+const uploadPartAttempts = 3
 
 type Summary struct {
 	Entries   int
@@ -654,17 +657,9 @@ func uploadPayload(
 
 	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(grant.Parts))
 	for _, part := range grant.Parts {
-		reader, size, closeReader, err := partReader(contents, localPath, size, grant.PartSize, part.PartNumber)
+		etag, err := uploadPartWithRetry(ctx, dynamicPDBClient, part, contents, localPath, size, grant.PartSize)
 		if err != nil {
 			return "", err
-		}
-		etag, uploadErr := dynamicPDBClient.PutUploadPart(ctx, part.URL, reader, size)
-		closeErr := closeReader()
-		if uploadErr != nil {
-			return "", uploadErr
-		}
-		if closeErr != nil {
-			return "", closeErr
 		}
 		completedParts = append(completedParts, dynamicpdbapi.CompletedFileUploadPart{
 			PartNumber: part.PartNumber,
@@ -679,6 +674,54 @@ func uploadPayload(
 		return "", err
 	}
 	return grant.ObjectURL, nil
+}
+
+func uploadPartWithRetry(
+	ctx context.Context,
+	dynamicPDBClient dynamicpdbapi.Client,
+	part dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	payloadSize int64,
+	partSize int64,
+) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= uploadPartAttempts; attempt++ {
+		reader, size, closeReader, err := partReader(contents, localPath, payloadSize, partSize, part.PartNumber)
+		if err != nil {
+			return "", err
+		}
+		etag, uploadErr := dynamicPDBClient.PutUploadPart(ctx, part.URL, reader, size)
+		closeErr := closeReader()
+		if uploadErr == nil && closeErr == nil {
+			return etag, nil
+		}
+		if uploadErr != nil {
+			lastErr = uploadErr
+		}
+		if closeErr != nil {
+			lastErr = closeErr
+		}
+		if !shouldRetryUploadPart(ctx, lastErr, attempt) {
+			return "", lastErr
+		}
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	}
+	return "", lastErr
+}
+
+func shouldRetryUploadPart(ctx context.Context, err error, attempt int) bool {
+	if err == nil || attempt >= uploadPartAttempts {
+		return false
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	var dynamicPDBError *dynamicpdbapi.Error
+	if errors.As(err, &dynamicPDBError) && dynamicPDBError.Status < 500 {
+		return false
+	}
+	return true
 }
 
 func partReader(contents []byte, localPath string, payloadSize int64, partSize int64, partNumber int) (io.Reader, int64, func() error, error) {

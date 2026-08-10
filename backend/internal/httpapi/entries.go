@@ -20,6 +20,7 @@ import (
 var errInvalidRequest = errors.New("invalid request")
 
 const (
+	defaultEntryListLimit         = 50
 	minProteinSequenceQueryLength = 8
 	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
 )
@@ -177,6 +178,11 @@ func entryFiltersFromParams(
 	if params.Offset != nil && *params.Offset < 0 {
 		return db.EntryRevisionFilters{}, errors.New("offset must be non-negative")
 	}
+	limit := params.Limit
+	if limit == nil {
+		defaultLimit := defaultEntryListLimit
+		limit = &defaultLimit
+	}
 
 	search := ""
 	if params.Query != nil {
@@ -185,7 +191,7 @@ func entryFiltersFromParams(
 
 	return db.EntryRevisionFilters{
 		State:  &state,
-		Limit:  params.Limit,
+		Limit:  limit,
 		Offset: params.Offset,
 		Query:  search,
 		PDBIDs: stringSliceFromPtr(params.PdbId),

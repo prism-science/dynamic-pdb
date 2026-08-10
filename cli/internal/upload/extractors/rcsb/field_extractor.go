@@ -41,6 +41,9 @@ func (e FieldExtractor) Extract(
 	case "entry":
 		entry, err := e.client.GetEntry(ctx, pdbID)
 		if err != nil {
+			if errors.Is(err, rcsb.ErrNotFound) {
+				return nil, false, nil
+			}
 			return nil, false, err
 		}
 		return jsonField(entry, extract.JSON.Field)
@@ -54,6 +57,9 @@ func (e FieldExtractor) Extract(
 func (e FieldExtractor) extractPolymerEntityField(ctx context.Context, pdbID string, field string) (any, bool, error) {
 	entry, err := e.client.GetEntry(ctx, pdbID)
 	if err != nil {
+		if errors.Is(err, rcsb.ErrNotFound) {
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	entityIDs := stringSliceAtPath(entry, "rcsb_entry_container_identifiers.polymer_entity_ids")
@@ -68,6 +74,9 @@ func (e FieldExtractor) extractPolymerEntityField(ctx context.Context, pdbID str
 		}
 		entity, err := e.client.GetPolymerEntity(ctx, pdbID, entityID)
 		if err != nil {
+			if errors.Is(err, rcsb.ErrNotFound) {
+				continue
+			}
 			return nil, false, err
 		}
 		value, ok, err := jsonField(entity, field)
