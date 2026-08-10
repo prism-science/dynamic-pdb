@@ -296,7 +296,7 @@ func (index fileIndex) coordinateGroups() []coordinateGroup {
 
 	groups := make([]coordinateGroup, 0, len(groupsByStem))
 	for _, group := range groupsByStem {
-		sort.Strings(group.sources)
+		sortCoordinateSources(group.sources)
 		sort.Strings(group.logs)
 		sort.Strings(group.mtzs)
 		groups = append(groups, *group)
@@ -305,6 +305,28 @@ func (index fileIndex) coordinateGroups() []coordinateGroup {
 		return groups[i].baseStemTemplate < groups[j].baseStemTemplate
 	})
 	return groups
+}
+
+func sortCoordinateSources(sources []string) {
+	sort.SliceStable(sources, func(i, j int) bool {
+		leftPriority := coordinateSourcePriority(sources[i])
+		rightPriority := coordinateSourcePriority(sources[j])
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		return sources[i] < sources[j]
+	})
+}
+
+func coordinateSourcePriority(source string) int {
+	switch strings.ToLower(filepath.Ext(source)) {
+	case ".cif", ".mmcif":
+		return 0
+	case ".pdb":
+		return 1
+	default:
+		return 2
+	}
 }
 
 func appendUniqueString(values []string, value string) []string {

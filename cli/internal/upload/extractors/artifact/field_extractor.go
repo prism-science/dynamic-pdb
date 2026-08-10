@@ -457,7 +457,14 @@ func splitProgram(raw string) programInfo {
 }
 
 func cleanVersion(raw string) string {
-	version := strings.TrimSpace(strings.Split(raw, ":")[0])
+	parts := strings.Split(raw, ":")
+	version := strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		right := strings.TrimSpace(parts[len(parts)-1])
+		if startsWithDigit(strings.TrimPrefix(right, "v")) {
+			version = right
+		}
+	}
 	if version == "" || strings.Trim(version, "?") == "" {
 		return ""
 	}

@@ -116,6 +116,10 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.Contains(t, string(contents), "- qFit/qfit_PDBs/{{ pdb_id }}_qFit_010.mtz")
 	assert.Contains(t, string(contents), "id: coordinates")
 	assert.Contains(t, string(contents), "level: L2")
+	assert.Less(t,
+		strings.Index(string(contents), "- qFit/qfit_cif/{{ pdb_id }}_qFit_010.cif"),
+		strings.Index(string(contents), "- qFit/qfit_PDBs/{{ pdb_id }}_qFit_010.pdb"),
+	)
 }
 
 func Test_should_create_template_manifest_from_zip_entries(t *testing.T) {

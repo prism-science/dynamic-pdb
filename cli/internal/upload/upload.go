@@ -717,12 +717,18 @@ func baseEntryMetadata(pdbID string) map[string]any {
 }
 
 func toCanonicalMetadataValue(key string, value any) any {
-	if key == "method" {
+	switch key {
+	case "method":
 		text, ok := value.(string)
 		if !ok {
 			return value
 		}
 		return canonicalMethod(text)
+	case "resolution":
+		number, ok := floatValue(value)
+		if ok {
+			return number
+		}
 	}
 	return value
 }
@@ -809,6 +815,27 @@ func integerValue(value any) (int, bool) {
 	}
 }
 
+func floatValue(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		number, err := typed.Float64()
+		return number, err == nil
+	case string:
+		number, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return number, err == nil
+	default:
+		return 0, false
+	}
+}
+
 func (u *Uploader) modelMetrics(
 	ctx context.Context,
 	dataRoot string,
@@ -861,24 +888,7 @@ func metricKeys(metrics manifest.Metrics) []string {
 }
 
 func metricNumber(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case json.Number:
-		number, err := typed.Float64()
-		return number, err == nil
-	case string:
-		number, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-		return number, err == nil
-	default:
-		return 0, false
-	}
+	return floatValue(value)
 }
 
 func (u *Uploader) fieldValue(

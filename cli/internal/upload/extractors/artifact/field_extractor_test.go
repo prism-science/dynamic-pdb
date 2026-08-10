@@ -60,6 +60,19 @@ func Test_should_build_field_map_from_pdb_contents(t *testing.T) {
 	assert.Equal(t, []string{"ATP"}, fields["ligands"])
 }
 
+func Test_should_parse_phenix_component_program_version_from_pdb_contents(t *testing.T) {
+	// given
+	text := "REMARK   3   PROGRAM     : PHENIX (phenix.ensemble_refinement: 1.21.2_5419)\n"
+
+	// when
+	fields := pdbFields(text)
+
+	// then
+	assert.Equal(t, "PHENIX (phenix.ensemble_refinement: 1.21.2_5419)", fields["REMARK 3 PROGRAM"])
+	assert.Equal(t, "PHENIX", fields["program.name"])
+	assert.Equal(t, "1.21.2_5419", fields["program.version"])
+}
+
 func Test_should_build_field_map_from_mmcif_contents(t *testing.T) {
 	// given
 	text := `data_model

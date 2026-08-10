@@ -412,6 +412,17 @@ func Test_should_split_semicolon_ligands_when_model_metadata_is_canonicalized(t 
 	assert.Equal(t, []string{"CL", "BME"}, metadataValue)
 }
 
+func Test_should_parse_entry_resolution_string_when_metadata_is_canonicalized(t *testing.T) {
+	// given
+	value := "1.30"
+
+	// when
+	metadataValue := toCanonicalMetadataValue("resolution", value)
+
+	// then
+	assert.Equal(t, 1.30, metadataValue)
+}
+
 type fakeDynamicPDBClient struct {
 	existingEntries     []dynamicpdbapi.Entry
 	listResponses       [][]dynamicpdbapi.Entry
