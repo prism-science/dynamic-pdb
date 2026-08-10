@@ -277,6 +277,7 @@ export function modelMetadata(
 export function modelPreviewURL(
   entity: Entity | null,
   thumbnailImageURL?: string | null,
+  entryThumbnailImageURL?: string | null,
 ): string | null {
   const explicit = thumbnailImageURL?.trim();
   if (explicit) {
@@ -284,7 +285,7 @@ export function modelPreviewURL(
   }
   const payload = entity ? getFilePayload(entity) : null;
   const meta = (payload?.metadata ?? {}) as Record<string, unknown>;
-  return getModelPreviewURL(meta);
+  return getModelPreviewURL(meta) ?? entryThumbnailImageURL?.trim() ?? null;
 }
 
 export function ModelViewerButton({

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
@@ -53,7 +54,13 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 
 	items := make([]EntryInfo, 0, len(revisions))
 	for _, revision := range revisions {
-		items = append(items, entryInfoResponseFromRevision(revision))
+		item, err := entryInfoResponseFromRevision(revision)
+		if err != nil {
+			slog.Error("build entry info response failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
+			return
+		}
+		items = append(items, item)
 	}
 
 	writeJSON(w, http.StatusOK, EntryListResponse{Items: items})
@@ -80,6 +87,10 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	err := s.createEntryGraph(r.Context(), req, name, user.ID)
 	if errors.Is(err, errInvalidRequest) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if isUniqueConstraint(err, "entry_revisions_active_pdb_ref_idx") {
+		writeError(w, http.StatusConflict, "ENTRY_PDB_REF_EXISTS", "entry with this PDB reference already exists")
 		return
 	}
 	if err != nil {
@@ -177,6 +188,7 @@ func entryFiltersFromParams(
 		Limit:  params.Limit,
 		Offset: params.Offset,
 		Query:  search,
+		PDBIDs: stringSliceFromPtr(params.PdbId),
 	}, nil
 }
 
@@ -870,17 +882,29 @@ func (s *Server) activeModelRevision(
 	return revision, nil
 }
 
-func entryInfoResponseFromRevision(revision domainmodels.EntryRevision) EntryInfo {
+func entryInfoResponseFromRevision(revision domainmodels.EntryRevision) (EntryInfo, error) {
+	metadata, err := metadataResponseFromValue(revision.Metadata)
+	if err != nil {
+		return EntryInfo{}, fmt.Errorf("build entry metadata response: %w", err)
+	}
 	return EntryInfo{
 		Id:                revision.EntryID,
 		CreatedBy:         revision.CreatedBy,
 		Name:              revision.Name,
 		Description:       revision.Description,
 		ThumbnailImageUrl: revision.ThumbnailImageURL,
+		Metadata:          &metadata,
 		PublishedAt:       revision.PublishedAt,
 		CreatedAt:         revision.CreatedAt,
 		UpdatedAt:         revision.UpdatedAt,
+	}, nil
+}
+
+func stringSliceFromPtr(values *[]string) []string {
+	if values == nil {
+		return nil
 	}
+	return *values
 }
 
 func entryResponseFromRevision(
@@ -1097,4 +1121,9 @@ func invalidRequest(format string, args ...any) error {
 
 func invalidPayloadRequest(description string, err error) error {
 	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
+}
+
+func isUniqueConstraint(err error, constraint string) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
 }

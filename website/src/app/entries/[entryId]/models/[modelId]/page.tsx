@@ -53,7 +53,11 @@ export default async function ModelPage({ params }: ModelRouteProps) {
   const maps = structureMaps(data.entities);
 
   const metadata = modelMetadata(model, data.model.metadata);
-  const previewURL = modelPreviewURL(model, data.model.thumbnail_image_url);
+  const previewURL = modelPreviewURL(
+    model,
+    data.model.thumbnail_image_url,
+    data.entry.thumbnail_image_url,
+  );
   const vitals = modelVitals(metadata);
   const infoFacts = modelInfoFacts(
     metadata,

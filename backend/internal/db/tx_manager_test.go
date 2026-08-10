@@ -21,7 +21,7 @@ var (
 
 // txManagerTestDB opens a dedicated connection and a scratch table the TxManager
 // tests write to, so they exercise commit/rollback without depending on the
-// application schema. The shared TestMain (users_test.go) owns testDB; this
+// application schema. The shared TestMain (suite_test.go) owns testDB; this
 // keeps the TxManager tests self-contained on the same local Postgres.
 func txManagerTestDB(t *testing.T) *sqlx.DB {
 	t.Helper()
