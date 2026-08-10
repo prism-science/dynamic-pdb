@@ -175,6 +175,30 @@ func Test_should_download_structure_factors_from_rcsb_when_manifest_points_to_rc
 	assert.Equal(t, 2, countString(rcsbClient.files, "5amf-sf.cif"))
 }
 
+func Test_should_skip_non_deposited_model_when_coordinates_file_is_missing(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.log", "LOG\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeRemoteMTZManifest(t, manifestPath, dataRoot)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := &trackingFakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Entries)
+	assert.Equal(t, 1, summary.Models)
+	assert.Equal(t, 3, summary.Artifacts)
+	models := modelRequests(dynamicPDBClient.models)
+	require.Len(t, models, 1)
+	assert.Equal(t, "Deposited model", models[0].Name)
+	assert.Equal(t, 1, countString(rcsbClient.files, "5amf-sf.cif"))
+	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.pdb")
+}
+
 func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()
@@ -701,8 +725,8 @@ entries:
     models:
       - id: model_1
         name: Deposited model
-        model_type: ""
-        purpose: ""
+        model_type: Deposited
+        purpose: Reference
         metadata:
           atom_count:
             source:
@@ -875,8 +899,8 @@ entries:
     models:
       - id: model_1
         name: Deposited model
-        model_type: ""
-        purpose: ""
+        model_type: Deposited
+        purpose: Reference
         artifacts:
           - id: coordinates
             source:
@@ -976,8 +1000,8 @@ entries:
     models:
       - id: model_1
         name: Deposited model
-        model_type: ""
-        purpose: ""
+        model_type: Deposited
+        purpose: Reference
         artifacts:
           - id: coordinates
             source:

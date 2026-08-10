@@ -364,9 +364,11 @@ func entryPreviewImage() *EntryPreviewImage {
 
 func depositedModelPattern(id string) ModelPattern {
 	return ModelPattern{
-		ID:       id,
-		Name:     "Deposited model",
-		Metadata: depositedModelMetadata(),
+		ID:        id,
+		Name:      "Deposited model",
+		ModelType: "Deposited",
+		Purpose:   "Reference",
+		Metadata:  depositedModelMetadata(),
 		Artifacts: []Artifact{
 			{
 				ID:     "coordinates",

@@ -325,6 +325,13 @@ func (u *Uploader) uploadModel(
 	modelArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0, len(model.Artifacts))
 	modelArtifactRefs := make([]uploadedArtifactRef, 0, len(model.Artifacts))
 	artifactPayloads := make(map[string]extractorapi.Artifact, len(model.Artifacts))
+	hasCoordinates, err := u.hasModelCoordinates(ctx, dataRoot, pdbID, model)
+	if err != nil {
+		return uploadedModel{}, false, err
+	}
+	if !hasCoordinates {
+		return uploadedModel{}, false, nil
+	}
 	for _, artifact := range model.Artifacts {
 		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, &modelID, artifact, pdbID)
 		if err != nil {
@@ -384,6 +391,38 @@ func (u *Uploader) uploadModel(
 		MetricIDs:     metricIDs(metrics),
 		ArtifactCount: len(modelArtifacts),
 	}, true, nil
+}
+
+func (u *Uploader) hasModelCoordinates(
+	ctx context.Context,
+	dataRoot string,
+	pdbID string,
+	model manifest.ModelPattern,
+) (bool, error) {
+	coordinates, _, ok := modelCoordinatesArtifact(model)
+	if !ok {
+		return false, nil
+	}
+	if !rcsbSourceIsEmpty(coordinates.Source.RCSB) {
+		return true, nil
+	}
+	if len(coordinates.Source.Files) == 0 {
+		return false, nil
+	}
+	_, ok, err := fileextractor.NewArtifactExtractor(dataRoot).Extract(ctx, pdbID, coordinates)
+	if err != nil {
+		return false, fmt.Errorf("check model coordinates: %w", err)
+	}
+	return ok, nil
+}
+
+func modelCoordinatesArtifact(model manifest.ModelPattern) (manifest.Artifact, int, bool) {
+	for index, artifact := range model.Artifacts {
+		if strings.EqualFold(strings.TrimSpace(artifact.ID), "coordinates") {
+			return artifact, index, true
+		}
+	}
+	return manifest.Artifact{}, 0, false
 }
 
 type uploadedArtifact struct {
