@@ -115,7 +115,9 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 		return
 	}
 
-	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), revision.ID)
+	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), db.ProteinSequenceFilters{
+		EntryRevisionID: &revision.ID,
+	})
 	if err != nil {
 		slog.Error("list entry protein sequences failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
