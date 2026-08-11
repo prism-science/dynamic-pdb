@@ -36,3 +36,15 @@ type ProteinSequenceSimilarity struct {
 	Metadata          map[string]any
 	CreatedAt         time.Time
 }
+
+type SimilarEntry struct {
+	Entry   EntryRevision
+	Score   float64
+	Matches []ProteinSequenceSimilarityMatch
+}
+
+type ProteinSequenceSimilarityMatch struct {
+	SourceSequenceID uuid.UUID
+	SimilarSequence  ProteinSequence
+	Similarity       ProteinSequenceSimilarity
+}

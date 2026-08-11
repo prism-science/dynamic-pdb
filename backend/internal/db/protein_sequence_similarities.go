@@ -31,6 +31,12 @@ type ProteinSequenceSimilarityFilters struct {
 	Offset           *int
 }
 
+type SimilarEntryFilters struct {
+	EntryID uuid.UUID
+	Limit   *int
+	Offset  *int
+}
+
 func NewProteinSequenceSimilaritiesRepository(
 	database *sqlx.DB,
 	queriers *QuerierProvider,
@@ -255,6 +261,49 @@ func (r *ProteinSequenceSimilaritiesRepository) List(
 	return similarities, nil
 }
 
+func (r *ProteinSequenceSimilaritiesRepository) ListSimilarEntries(
+	ctx context.Context,
+	filters SimilarEntryFilters,
+) ([]models.SimilarEntry, error) {
+	query, args, err := similarEntryListQuery(filters)
+	if err != nil {
+		return nil, fmt.Errorf("build similar entry list query: %w", err)
+	}
+
+	rows := make([]similarEntryMatchRow, 0)
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("bind similar entry list query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, boundQuery, queryArgs...); err != nil {
+		return nil, fmt.Errorf("list similar entries: %w", err)
+	}
+
+	entries := make([]models.SimilarEntry, 0)
+	entryIndexes := map[uuid.UUID]int{}
+	for _, row := range rows {
+		entryIndex, ok := entryIndexes[row.EntryID]
+		if !ok {
+			entry, err := similarEntryFromRow(row)
+			if err != nil {
+				return nil, fmt.Errorf("decode similar entry: %w", err)
+			}
+			entryIndexes[row.EntryID] = len(entries)
+			entries = append(entries, *entry)
+			entryIndex = len(entries) - 1
+		}
+
+		match, err := proteinSequenceSimilarityMatchFromRow(row)
+		if err != nil {
+			return nil, fmt.Errorf("decode protein sequence similarity match: %w", err)
+		}
+		entries[entryIndex].Matches = append(entries[entryIndex].Matches, *match)
+	}
+	return entries, nil
+}
+
 func proteinSequenceSimilarityRunListQuery(
 	filters ProteinSequenceSimilarityRunFilters,
 ) (string, map[string]any, error) {
@@ -329,6 +378,97 @@ func proteinSequenceSimilarityListQuery(
 	return query, args, nil
 }
 
+func similarEntryListQuery(filters SimilarEntryFilters) (string, map[string]any, error) {
+	if filters.EntryID == uuid.Nil {
+		return "", nil, errors.New("entry id is required")
+	}
+	if filters.Limit != nil && *filters.Limit < 0 {
+		return "", nil, errors.New("limit must be non-negative")
+	}
+	if filters.Offset != nil && *filters.Offset < 0 {
+		return "", nil, errors.New("offset must be non-negative")
+	}
+
+	args := map[string]any{
+		"entry_id":     filters.EntryID,
+		"active_state": string(models.RevisionStateActive),
+	}
+	query := `with source_sequences as (
+			    select protein_sequences.id
+			    from protein_sequences
+			    join entry_revisions on entry_revisions.id = protein_sequences.entry_revision_id
+			    where entry_revisions.entry_id = :entry_id
+			      and entry_revisions.state = :active_state
+			  ),
+			  similar_entries as (
+			    select similar_entry_revisions.entry_id,
+			           max(protein_sequence_similarities.score) as score
+			    from protein_sequence_similarities
+			    join source_sequences on source_sequences.id = protein_sequence_similarities.source_sequence_id
+			    join protein_sequences similar_sequences
+			      on similar_sequences.id = protein_sequence_similarities.similar_sequence_id
+			    join entry_revisions similar_entry_revisions
+			      on similar_entry_revisions.id = similar_sequences.entry_revision_id
+			    where similar_entry_revisions.state = :active_state
+			      and similar_entry_revisions.entry_id <> :entry_id
+			    group by similar_entry_revisions.entry_id
+			    order by score desc, similar_entry_revisions.entry_id asc`
+	if filters.Limit != nil {
+		query += "\nlimit :limit"
+		args["limit"] = *filters.Limit
+	}
+	if filters.Offset != nil {
+		query += "\noffset :offset"
+		args["offset"] = *filters.Offset
+	}
+	query += `
+			  )
+			  select
+			    similar_entries.score as entry_score,
+			    entry_revisions.id as entry_revision_id,
+			    entry_revisions.entry_id,
+			    entry_revisions.parent_revision_id,
+			    entry_revisions.revision_number,
+			    entry_revisions.state as entry_state,
+			    entry_revisions.change_summary,
+			    entry_revisions.published_at,
+			    entry_revisions.name as entry_name,
+			    entry_revisions.description as entry_description,
+			    entry_revisions.thumbnail_image_url as entry_thumbnail_image_url,
+			    entry_revisions.metadata as entry_metadata,
+			    entry_revisions.created_by as entry_created_by,
+			    entry_revisions.created_at as entry_created_at,
+			    entry_revisions.updated_at as entry_updated_at,
+			    protein_sequence_similarities.id as similarity_id,
+			    protein_sequence_similarities.run_id as similarity_run_id,
+			    protein_sequence_similarities.source_sequence_id,
+			    protein_sequence_similarities.similar_sequence_id,
+			    protein_sequence_similarities.tool as similarity_tool,
+			    protein_sequence_similarities.score as similarity_score,
+			    protein_sequence_similarities.metadata as similarity_metadata,
+			    protein_sequence_similarities.created_at as similarity_created_at,
+			    similar_sequences.source_artifact_id as similar_sequence_source_artifact_id,
+			    similar_sequences.record_index as similar_sequence_record_index,
+			    similar_sequences.header as similar_sequence_header,
+			    similar_sequences.sequence as similar_sequence_sequence,
+			    similar_sequences.processing_state as similar_sequence_processing_state,
+			    similar_sequences.created_at as similar_sequence_created_at
+			  from similar_entries
+			  join entry_revisions on entry_revisions.entry_id = similar_entries.entry_id
+			    and entry_revisions.state = :active_state
+			  join protein_sequences similar_sequences on similar_sequences.entry_revision_id = entry_revisions.id
+			  join protein_sequence_similarities
+			    on protein_sequence_similarities.similar_sequence_id = similar_sequences.id
+			  join source_sequences on source_sequences.id = protein_sequence_similarities.source_sequence_id
+			  order by similar_entries.score desc,
+			           similar_entries.entry_id asc,
+			           protein_sequence_similarities.score desc,
+			           protein_sequence_similarities.created_at asc,
+			           protein_sequence_similarities.id asc`
+
+	return query, args, nil
+}
+
 func proteinSequenceSimilarityRunFromRow(
 	row *proteinSequenceSimilarityRunRow,
 ) (*models.ProteinSequenceSimilarityRun, error) {
@@ -367,6 +507,67 @@ func proteinSequenceSimilarityFromRow(row proteinSequenceSimilarityRow) (*models
 	}, nil
 }
 
+func similarEntryFromRow(row similarEntryMatchRow) (*models.SimilarEntry, error) {
+	metadata := models.EntryMetadata{}
+	if err := unmarshalJSON(row.EntryMetadata, &metadata); err != nil {
+		return nil, fmt.Errorf("decode entry metadata: %w", err)
+	}
+
+	return &models.SimilarEntry{
+		Entry: models.EntryRevision{
+			ID:                row.EntryRevisionID,
+			EntryID:           row.EntryID,
+			ParentRevisionID:  uuidPtrFromSQL(row.ParentRevisionID),
+			RevisionNumber:    intPtrFromSQL(row.RevisionNumber),
+			State:             models.RevisionState(row.EntryState),
+			ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
+			PublishedAt:       timePtrFromSQL(row.PublishedAt),
+			Name:              row.EntryName,
+			Description:       stringPtrFromSQL(row.EntryDescription),
+			ThumbnailImageURL: stringPtrFromSQL(row.EntryThumbnailImageURL),
+			Metadata:          metadata,
+			CreatedBy:         row.EntryCreatedBy,
+			CreatedAt:         row.EntryCreatedAt,
+			UpdatedAt:         row.EntryUpdatedAt,
+		},
+		Score:   row.EntryScore,
+		Matches: make([]models.ProteinSequenceSimilarityMatch, 0),
+	}, nil
+}
+
+func proteinSequenceSimilarityMatchFromRow(
+	row similarEntryMatchRow,
+) (*models.ProteinSequenceSimilarityMatch, error) {
+	metadata := map[string]any{}
+	if err := unmarshalJSON(row.SimilarityMetadata, &metadata); err != nil {
+		return nil, fmt.Errorf("decode similarity metadata: %w", err)
+	}
+
+	return &models.ProteinSequenceSimilarityMatch{
+		SourceSequenceID: row.SourceSequenceID,
+		SimilarSequence: models.ProteinSequence{
+			ID:               row.SimilarSequenceID,
+			EntryRevisionID:  row.EntryRevisionID,
+			SourceArtifactID: row.SimilarSequenceSourceArtifactID,
+			RecordIndex:      row.SimilarSequenceRecordIndex,
+			Header:           row.SimilarSequenceHeader,
+			Sequence:         row.SimilarSequenceSequence,
+			ProcessingState:  models.ProteinSequenceProcessingState(row.SimilarSequenceProcessingState),
+			CreatedAt:        row.SimilarSequenceCreatedAt,
+		},
+		Similarity: models.ProteinSequenceSimilarity{
+			ID:                row.SimilarityID,
+			RunID:             row.SimilarityRunID,
+			SourceSequenceID:  row.SourceSequenceID,
+			SimilarSequenceID: row.SimilarSequenceID,
+			Tool:              row.SimilarityTool,
+			Score:             row.SimilarityScore,
+			Metadata:          metadata,
+			CreatedAt:         row.SimilarityCreatedAt,
+		},
+	}, nil
+}
+
 type proteinSequenceSimilarityRunRow struct {
 	ID           uuid.UUID      `db:"id"`
 	Tool         string         `db:"tool"`
@@ -398,4 +599,36 @@ type proteinSequenceSimilarityCreateParams struct {
 	Score             float64   `db:"score"`
 	Metadata          string    `db:"metadata"`
 	CreatedAt         time.Time `db:"created_at"`
+}
+
+type similarEntryMatchRow struct {
+	EntryScore                      float64        `db:"entry_score"`
+	EntryRevisionID                 uuid.UUID      `db:"entry_revision_id"`
+	EntryID                         uuid.UUID      `db:"entry_id"`
+	ParentRevisionID                uuid.NullUUID  `db:"parent_revision_id"`
+	RevisionNumber                  sql.NullInt64  `db:"revision_number"`
+	EntryState                      string         `db:"entry_state"`
+	ChangeSummary                   sql.NullString `db:"change_summary"`
+	PublishedAt                     sql.NullTime   `db:"published_at"`
+	EntryName                       string         `db:"entry_name"`
+	EntryDescription                sql.NullString `db:"entry_description"`
+	EntryThumbnailImageURL          sql.NullString `db:"entry_thumbnail_image_url"`
+	EntryMetadata                   []byte         `db:"entry_metadata"`
+	EntryCreatedBy                  uuid.UUID      `db:"entry_created_by"`
+	EntryCreatedAt                  time.Time      `db:"entry_created_at"`
+	EntryUpdatedAt                  time.Time      `db:"entry_updated_at"`
+	SimilarityID                    uuid.UUID      `db:"similarity_id"`
+	SimilarityRunID                 uuid.UUID      `db:"similarity_run_id"`
+	SourceSequenceID                uuid.UUID      `db:"source_sequence_id"`
+	SimilarSequenceID               uuid.UUID      `db:"similar_sequence_id"`
+	SimilarityTool                  string         `db:"similarity_tool"`
+	SimilarityScore                 float64        `db:"similarity_score"`
+	SimilarityMetadata              []byte         `db:"similarity_metadata"`
+	SimilarityCreatedAt             time.Time      `db:"similarity_created_at"`
+	SimilarSequenceSourceArtifactID uuid.UUID      `db:"similar_sequence_source_artifact_id"`
+	SimilarSequenceRecordIndex      int            `db:"similar_sequence_record_index"`
+	SimilarSequenceHeader           string         `db:"similar_sequence_header"`
+	SimilarSequenceSequence         string         `db:"similar_sequence_sequence"`
+	SimilarSequenceProcessingState  string         `db:"similar_sequence_processing_state"`
+	SimilarSequenceCreatedAt        time.Time      `db:"similar_sequence_created_at"`
 }
