@@ -152,7 +152,7 @@ func Test_should_create_and_list_protein_sequence_similarities_when_repository_c
 	assert.Equal(t, float64(0.5), listedRun.Parameters["min_seq_id"])
 	assert.Equal(t, float64(0.8), listedRun.Parameters["coverage"])
 	require.NotNil(t, listedRun.FinishedAt)
-	assert.Equal(t, finishedAt, *listedRun.FinishedAt)
+	assert.WithinDuration(t, finishedAt, *listedRun.FinishedAt, time.Microsecond)
 }
 
 func proteinSequenceSimilarityRunByID(

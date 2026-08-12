@@ -43,6 +43,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 	fastaMetadata := readFastaMetadataForTest(s.T(), "testdata/fasta/pdb_4hhb_human_deoxyhemoglobin.fasta")
 	thumbnailImageURL := "https://example.com/entry.png"
 	name := "entry-" + uuid.NewString()
+	pdbID := pdbIDForE2ETest()
 	sequenceArtifactID := uuid.New()
 	modelID := uuid.New()
 	modelArtifactID := uuid.New()
@@ -56,7 +57,7 @@ func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
 		"description":         description,
 		"thumbnail_image_url": thumbnailImageURL,
 		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": "4HHB"},
+			"external_refs": map[string]string{"pdb": pdbID},
 			"organism":      "Homo sapiens",
 			"method":        "X-ray crystallography",
 		},
@@ -203,10 +204,12 @@ func (s *EntriesSuite) Test_should_filter_entries_by_pdb_id_reference() {
 	token := issueEntryTokenForTest(s.T(), "entry-pdb-filter-token")
 	matchedName := "entry-pdb-filter-matched-" + uuid.NewString()
 	unmatchedName := "entry-pdb-filter-unmatched-" + uuid.NewString()
+	matchedPDBID := pdbIDForE2ETest()
+	unmatchedPDBID := pdbIDForE2ETest()
 	matchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"name": matchedName,
 		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": "1YJO"},
+			"external_refs": map[string]string{"pdb": matchedPDBID},
 		},
 	}, token)
 	defer matchedResp.Body.Close()
@@ -214,14 +217,14 @@ func (s *EntriesSuite) Test_should_filter_entries_by_pdb_id_reference() {
 	unmatchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"name": unmatchedName,
 		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": "1YJP"},
+			"external_refs": map[string]string{"pdb": unmatchedPDBID},
 		},
 	}, token)
 	defer unmatchedResp.Body.Close()
 	s.Require().Equal(http.StatusCreated, unmatchedResp.StatusCode)
 
 	// when
-	resp := getWithToken(s.T(), "/v1/entries?pdb_id=1yjo", "")
+	resp := getWithToken(s.T(), "/v1/entries?pdb_id="+strings.ToLower(matchedPDBID), "")
 	defer resp.Body.Close()
 
 	// then
@@ -234,13 +237,13 @@ func (s *EntriesSuite) Test_should_filter_entries_by_pdb_id_reference() {
 	s.Require().NotNil(matched.Metadata)
 	externalRefs, ok := (*matched.Metadata)["external_refs"].(map[string]any)
 	s.Require().True(ok)
-	s.Equal("1YJO", externalRefs["pdb"])
+	s.Equal(matchedPDBID, externalRefs["pdb"])
 }
 
 func (s *EntriesSuite) Test_should_return_409_when_active_pdb_id_reference_already_exists() {
 	// given
 	token := issueEntryTokenForTest(s.T(), "entry-pdb-conflict-token")
-	pdbID := "1" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))[:3]
+	pdbID := pdbIDForE2ETest()
 	firstResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"name": "entry-pdb-conflict-first-" + uuid.NewString(),
 		"metadata": map[string]any{
@@ -264,6 +267,10 @@ func (s *EntriesSuite) Test_should_return_409_when_active_pdb_id_reference_alrea
 	var body httpapi.Error
 	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
 	s.Equal("ENTRY_PDB_REF_EXISTS", body.Code)
+}
+
+func pdbIDForE2ETest() string {
+	return "1" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))[:3]
 }
 
 func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_revisions_or_sequence() {
