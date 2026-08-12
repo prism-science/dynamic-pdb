@@ -9,6 +9,7 @@ import (
 type Model struct {
 	ID        uuid.UUID
 	EntryID   uuid.UUID
+	State     ModelState
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
 }
@@ -21,6 +22,7 @@ type ModelRevision struct {
 	PrimaryArtifactID *uuid.UUID
 	RevisionNumber    *int
 	State             RevisionState
+	ModelState        ModelState
 	ChangeSummary     *string
 	PublishedAt       *time.Time
 	Name              string
@@ -73,3 +75,11 @@ type Metric struct {
 	Value     float64
 	CreatedAt time.Time
 }
+
+type ModelState string
+
+const (
+	ModelStateNew     ModelState = "new"
+	ModelStateActive  ModelState = "active"
+	ModelStateDeleted ModelState = "deleted"
+)

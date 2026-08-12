@@ -29,6 +29,7 @@ type EntryRevisionFilters struct {
 	ID              *uuid.UUID
 	EntryID         *uuid.UUID
 	State           *models.RevisionState
+	EntryState      *models.EntryState
 	CreatedBy       *uuid.UUID
 	PDBIDs          []string
 	Limit           *int
@@ -243,6 +244,15 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "state = :state")
 		args["state"] = string(*filters.State)
 	}
+	if filters.EntryState != nil {
+		conditions = append(conditions, `exists (
+			select 1
+			from entries e
+			where e.id = entry_revisions.entry_id
+			  and e.state = :entry_state
+		)`)
+		args["entry_state"] = string(*filters.EntryState)
+	}
 	if filters.CreatedBy != nil {
 		conditions = append(conditions, "created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
@@ -271,7 +281,9 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		args["protein_sequence"] = proteinSequence
 	}
 
-	query := `select id, entry_id, parent_revision_id, revision_number, state, change_summary,
+	query := `select id, entry_id, parent_revision_id, revision_number, state,
+			         entry_state,
+			         change_summary,
 			         published_at, name, description, thumbnail_image_url, metadata, created_by,
 			         created_at, updated_at
 			  from entry_revisions`
@@ -321,6 +333,7 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 		ParentRevisionID:  uuidPtrFromSQL(row.ParentRevisionID),
 		RevisionNumber:    intPtrFromSQL(row.RevisionNumber),
 		State:             models.RevisionState(row.State),
+		EntryState:        models.EntryState(row.EntryState),
 		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 		PublishedAt:       timePtrFromSQL(row.PublishedAt),
 		Name:              row.Name,
@@ -339,6 +352,7 @@ type entryRevisionRow struct {
 	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
 	RevisionNumber    sql.NullInt64  `db:"revision_number"`
 	State             string         `db:"state"`
+	EntryState        string         `db:"entry_state"`
 	ChangeSummary     sql.NullString `db:"change_summary"`
 	PublishedAt       sql.NullTime   `db:"published_at"`
 	Name              string         `db:"name"`
