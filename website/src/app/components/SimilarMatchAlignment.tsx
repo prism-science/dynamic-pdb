@@ -317,24 +317,14 @@ function AlignmentBlocks({
   }
 
   return (
-    <>
-      <div className={styles.legend}>
-        <span className={`${styles.swatch} ${styles.match}`} />
-        <span>same residue</span>
-        <span className={`${styles.swatch} ${styles.diff}`} />
-        <span>different</span>
-        <span className={`${styles.swatch} ${styles.gap}`} />
-        <span>gap</span>
-      </div>
-      <div className={styles.blocks}>
-        {blocks.map((block, position) => (
-          <div key={position} className={styles.block}>
-            <AlignmentLine label={queryLabel} line={block.query} />
-            <AlignmentLine label={matchLabel} line={block.match} />
-          </div>
-        ))}
-      </div>
-    </>
+    <div className={styles.blocks}>
+      {blocks.map((block, position) => (
+        <div key={position} className={styles.block}>
+          <AlignmentLine label={queryLabel} line={block.query} />
+          <AlignmentLine label={matchLabel} line={block.match} />
+        </div>
+      ))}
+    </div>
   );
 }
 

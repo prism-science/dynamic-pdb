@@ -1,26 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 
 import type { ProteinSequence, SimilarEntry } from "@/lib/api/entries";
-import { bestMatchStats, formatPercent } from "@/lib/similarity";
+import {
+  bestMatchStats,
+  formatPercent,
+  SIMILAR_ENTRIES_FETCH_LIMIT,
+} from "@/lib/similarity";
 import SimilarMatchAlignment from "./SimilarMatchAlignment";
 
 import styles from "./SimilarEntriesModal.module.css";
+
+/* Page size for follow-up loads; the first page arrived with the page. */
+const pageSize = 50;
+
+type SimilarPage = {
+  items: SimilarEntry[];
+};
 
 /**
  * The full similar-proteins list as a dialog: one row per entry with its best
  * numbers, expanding into the per-chain alignment view. Same dialog pattern
  * as FilePreviewModal (backdrop + card, Escape and backdrop-click close).
+ * Scrolling near the bottom loads further pages from the similar feed, the
+ * same way the entries list keeps loading on the home page.
  */
 export default function SimilarEntriesModal({
+  entryId,
   entryName,
   sequences,
-  items,
+  items: initialItems,
   onClose,
 }: {
+  entryId: string;
   entryName: string;
   sequences: ProteinSequence[];
   items: SimilarEntry[];
@@ -29,6 +44,13 @@ export default function SimilarEntriesModal({
   // Portals need the document; skip the first server-matching render.
   const [mounted, setMounted] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [items, setItems] = useState(initialItems);
+  const [hasMore, setHasMore] = useState(
+    initialItems.length >= SIMILAR_ENTRIES_FETCH_LIMIT,
+  );
+  const [loading, setLoading] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -40,6 +62,56 @@ export default function SimilarEntriesModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(items.length),
+      });
+      const response = await fetch(
+        `/entries/${encodeURIComponent(entryId)}/similar?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        setHasMore(false);
+        return;
+      }
+      const page = (await response.json()) as SimilarPage;
+      setItems((current) => {
+        const seen = new Set(current.map((item) => item.entry.id));
+        return [
+          ...current,
+          ...page.items.filter((item) => !seen.has(item.entry.id)),
+        ];
+      });
+      setHasMore(page.items.length === pageSize);
+    } finally {
+      setLoading(false);
+    }
+  }, [entryId, hasMore, items.length, loading]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!mounted || sentinel == null || !hasMore) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          void loadMore();
+        }
+      },
+      // The dialog body is the scroll container, not the window.
+      { root: bodyRef.current, rootMargin: "400px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [mounted, hasMore, loadMore]);
 
   if (!mounted) {
     return null;
@@ -65,7 +137,7 @@ export default function SimilarEntriesModal({
           </button>
         </div>
 
-        <div className={styles.body}>
+        <div className={styles.body} ref={bodyRef}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -94,6 +166,13 @@ export default function SimilarEntriesModal({
               ))}
             </tbody>
           </table>
+          {hasMore ? (
+            <div
+              ref={sentinelRef}
+              className={styles.loadSentinel}
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
       </div>
     </div>,

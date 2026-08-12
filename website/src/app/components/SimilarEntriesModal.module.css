@@ -259,6 +259,10 @@
   border-bottom: none;
 }
 
+.loadSentinel {
+  height: 1px;
+}
+
 @media (max-width: 720px) {
   .backdrop {
     padding: 12px;

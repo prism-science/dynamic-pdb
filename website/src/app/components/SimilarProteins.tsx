@@ -18,10 +18,12 @@ const RAIL_LIMIT = 5;
  * links, and a modal with the full list and per-chain alignments.
  */
 export default function SimilarProteins({
+  entryId,
   entryName,
   sequences,
   items,
 }: {
+  entryId: string;
   entryName: string;
   /** The entry's own sequences: matches reference them by id, and the
    *  alignment view needs their headers and lengths for the query side. */
@@ -32,33 +34,32 @@ export default function SimilarProteins({
   const sorted = sortedByScore(items);
   const top = sorted.slice(0, RAIL_LIMIT);
 
+  // Nothing to point at — no block at all. New sequences are matched in the
+  // background, so the block simply appears once the first hits land.
+  if (sorted.length === 0) {
+    return null;
+  }
+
   return (
     <div className={styles.block}>
       <h3 className={styles.heading}>Similar proteins</h3>
 
-      {top.length === 0 ? (
-        // New sequences are matched in the background, so an empty list most
-        // often means "not yet" rather than "nothing alike exists".
-        <p className={styles.empty}>No similar proteins found yet.</p>
-      ) : (
-        <>
-          <div className={styles.list}>
-            {top.map((item) => (
-              <RailItem key={item.entry.id} item={item} />
-            ))}
-          </div>
-          <button
-            type="button"
-            className={styles.more}
-            onClick={() => setOpen(true)}
-          >
-            All similar ({sorted.length}) →
-          </button>
-        </>
-      )}
+      <div className={styles.list}>
+        {top.map((item) => (
+          <RailItem key={item.entry.id} item={item} />
+        ))}
+      </div>
+      <button
+        type="button"
+        className={styles.more}
+        onClick={() => setOpen(true)}
+      >
+        All similar →
+      </button>
 
       {open ? (
         <SimilarEntriesModal
+          entryId={entryId}
           entryName={entryName}
           sequences={sequences}
           items={sorted}
@@ -71,7 +72,6 @@ export default function SimilarProteins({
 
 function RailItem({ item }: { item: SimilarEntry }) {
   const stats = bestMatchStats(item.matches);
-  const chains = item.matches.length;
 
   return (
     <Link
@@ -91,20 +91,24 @@ function RailItem({ item }: { item: SimilarEntry }) {
       </span>
       <span className={styles.body}>
         <span className={styles.name}>{item.entry.name}</span>
-        <span className={styles.sub}>
-          {stats.fident != null ? (
-            <>
+        {/* The two numbers the table leads with, in full words: how alike
+            the matched stretch is, and how much of the chain it spans. */}
+        {stats.fident != null || stats.qcov != null ? (
+          <span className={styles.sub}>
+            {stats.fident != null ? (
               <span
                 className={styles.id}
                 data-strong={stats.fident >= 0.6 ? "true" : undefined}
               >
-                {formatPercent(stats.fident)} id
+                {formatPercent(stats.fident)} identity
               </span>
-              {" · "}
-            </>
-          ) : null}
-          {chains} {chains === 1 ? "chain" : "chains"}
-        </span>
+            ) : null}
+            {stats.fident != null && stats.qcov != null ? " · " : null}
+            {stats.qcov != null
+              ? `${formatPercent(stats.qcov)} coverage`
+              : null}
+          </span>
+        ) : null}
       </span>
     </Link>
   );

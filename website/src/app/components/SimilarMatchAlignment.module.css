@@ -128,22 +128,6 @@
 /* Residue comparison — RCSB's zoomed-in level, wrapped at 60             */
 /* --------------------------------------------------------------------- */
 
-.legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 0 0;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-}
-
 .blocks {
   display: flex;
   flex-direction: column;
@@ -203,10 +187,6 @@
   background: var(--surface-muted);
   color: var(--text-muted);
   border-radius: 2px;
-}
-
-.swatch.gap {
-  border: 1px solid var(--border-strong);
 }
 
 .missing {

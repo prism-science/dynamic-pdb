@@ -160,6 +160,14 @@ export function formatPercent(fraction: number | null): string {
   return `${percent.toFixed(1).replace(/\.0$/, "")}%`;
 }
 
+/**
+ * How many similar entries the entry page fetches up front. The rail and the
+ * dialog's first screen work off this fetch; a full response means there may
+ * be more, and the dialog keeps loading pages from the similar feed while
+ * scrolling.
+ */
+export const SIMILAR_ENTRIES_FETCH_LIMIT = 100;
+
 /** Best hits first. The backend already orders this way; kept as a guard. */
 export function sortedByScore(items: SimilarEntry[]): SimilarEntry[] {
   return [...items].sort((a, b) => b.score - a.score);
