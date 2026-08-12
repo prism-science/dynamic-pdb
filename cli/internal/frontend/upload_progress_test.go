@@ -22,7 +22,7 @@ func Test_should_not_panic_when_upload_progress_has_no_entries(t *testing.T) {
 	require.NoError(t, finishErr)
 }
 
-func Test_should_update_upload_progress_for_entry_without_artifact_lines(t *testing.T) {
+func Test_should_update_upload_progress_without_entry_detail_lines(t *testing.T) {
 	// given
 	var stdout bytes.Buffer
 	progress := newUploadProgress(&stdout)
@@ -38,5 +38,6 @@ func Test_should_update_upload_progress_for_entry_without_artifact_lines(t *test
 	require.NoError(t, finishErr)
 	assert.NotContains(t, stdout.String(), "uploading 1yjo coordinates")
 	assert.NotContains(t, stdout.String(), "uploading 1yjo log_1")
-	assert.Contains(t, stdout.String(), "uploaded 1yjo entry_id=entry-id models=1 artifacts=1")
+	assert.NotContains(t, stdout.String(), "uploaded 1yjo entry_id=entry-id models=1 artifacts=1")
+	assert.Contains(t, stdout.String(), "upload")
 }

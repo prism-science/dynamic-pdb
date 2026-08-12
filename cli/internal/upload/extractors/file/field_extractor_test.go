@@ -49,6 +49,27 @@ func Test_should_extract_csv_field_from_matching_row(t *testing.T) {
 	assert.Equal(t, "0.24", value)
 }
 
+func Test_should_treat_delimited_missing_marker_as_no_value(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "metrics.csv", []byte("pdb_id,r_free,r_work\n2age,NA,0.1464\n"))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	value, ok, err := extractor.Extract(context.Background(), "2AGE",
+		manifest.Source{Files: []string{"metrics.csv"}},
+		manifest.Extract{CSV: &manifest.ExtractRule{
+			Column: "r_free",
+			Where:  &manifest.ExtractRule{Column: "pdb_id", Equals: "{{ pdb_id }}"},
+		}},
+	)
+
+	// then
+	require.NoError(t, err)
+	require.False(t, ok)
+	assert.Nil(t, value)
+}
+
 func Test_should_extract_tsv_field_from_matching_row_with_template_value(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()

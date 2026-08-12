@@ -153,7 +153,7 @@ func Test_should_upload_entries_from_zip_sources(t *testing.T) {
 	assert.Equal(t, 1, countString(uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz"))
 }
 
-func Test_should_download_structure_factors_from_rcsb_when_manifest_points_to_rcsb(t *testing.T) {
+func Test_should_link_structure_factors_from_rcsb_when_manifest_points_to_rcsb(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()
 	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
@@ -200,6 +200,35 @@ func Test_should_skip_non_deposited_model_when_coordinates_file_is_missing(t *te
 	assert.Equal(t, "Deposited model", models[0].Name)
 	assert.Equal(t, 1, countString(rcsbClient.files, "5amf-sf.cif"))
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.pdb")
+}
+
+func Test_should_skip_non_deposited_model_when_coordinates_zip_entry_is_empty(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeZipFile(t, dataRoot, "models.zip", map[string]string{
+		"models/5amf_model.pdb": "",
+		"models/5amf_model.log": "LOG\n",
+		"models/5amf_model.mtz": "MTZ\n",
+	})
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeZipManifest(t, manifestPath, dataRoot)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Entries)
+	assert.Equal(t, 1, summary.Models)
+	assert.Equal(t, 3, summary.Artifacts)
+	models := modelRequests(dynamicPDBClient.models)
+	require.Len(t, models, 1)
+	assert.Equal(t, "Deposited model", models[0].Name)
+	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.pdb")
+	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.log")
+	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz")
 }
 
 func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *testing.T) {
@@ -390,11 +419,11 @@ func Test_should_retry_upload_part_when_transient_upload_error_happens(t *testin
 	dynamicPDBClient := &fakeDynamicPDBClient{
 		putUploadPartErrors: []error{errors.New("read: connection reset by peer")},
 	}
+	uploader := New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1)
 
 	// when
-	uploadedURL, err := uploadPayload(
+	uploadedURL, err := uploader.uploadPayload(
 		context.Background(),
-		dynamicPDBClient,
 		"entry-id",
 		nil,
 		"artifact-id",
@@ -409,6 +438,63 @@ func Test_should_retry_upload_part_when_transient_upload_error_happens(t *testin
 	assert.Equal(t, "https://cdn.example.test/artifact-id/model.pdb", uploadedURL)
 	assert.Equal(t, 2, dynamicPDBClient.putUploadPartCalls)
 	assert.Len(t, dynamicPDBClient.completed, 1)
+}
+
+func Test_should_retry_upload_part_when_s3_request_timeout_happens(t *testing.T) {
+	// given
+	dynamicPDBClient := &fakeDynamicPDBClient{
+		putUploadPartErrors: []error{&dynamicpdbapi.Error{
+			Status:  http.StatusBadRequest,
+			Code:    "RequestTimeout",
+			Message: "Your socket connection to the server was not read from or written to within the timeout period.",
+		}},
+	}
+	uploader := New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1)
+
+	// when
+	uploadedURL, err := uploader.uploadPayload(
+		context.Background(),
+		"entry-id",
+		nil,
+		"artifact-id",
+		"model.pdb",
+		int64(len("MODEL\n")),
+		"",
+		[]byte("MODEL\n"),
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "https://cdn.example.test/artifact-id/model.pdb", uploadedURL)
+	assert.Equal(t, 2, dynamicPDBClient.putUploadPartCalls)
+	assert.Len(t, dynamicPDBClient.completed, 1)
+}
+
+func Test_should_upload_multipart_parts_in_parallel_when_part_concurrency_is_greater_than_one(t *testing.T) {
+	// given
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	uploader := New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1, 4)
+	parts := []dynamicpdbapi.FileUploadPart{
+		{PartNumber: 2, URL: "https://upload.example.test/part-2"},
+		{PartNumber: 1, URL: "https://upload.example.test/part-1"},
+	}
+
+	// when
+	completedParts, err := uploader.uploadParts(
+		context.Background(),
+		parts,
+		[]byte("MODEL DATA"),
+		"",
+		int64(len("MODEL DATA")),
+		5,
+	)
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, completedParts, 2)
+	assert.Equal(t, 1, completedParts[0].PartNumber)
+	assert.Equal(t, 2, completedParts[1].PartNumber)
+	assert.Equal(t, 2, dynamicPDBClient.putUploadPartCalls)
 }
 
 func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_references_artifact(t *testing.T) {
@@ -721,6 +807,11 @@ func (f *trackingFakeRCSB) GetFile(ctx context.Context, pdbID string, file strin
 	return fakeRCSB{}.GetFile(ctx, pdbID, file)
 }
 
+func (f *trackingFakeRCSB) DownloadFile(ctx context.Context, pdbID string, file string) (rcsb.Artifact, error) {
+	f.files = append(f.files, file)
+	return fakeRCSB{}.DownloadFile(ctx, pdbID, file)
+}
+
 func (f *trackingFakeRCSB) GetImage(ctx context.Context, pdbID string, file string) (rcsb.Artifact, error) {
 	return fakeRCSB{}.GetImage(ctx, pdbID, file)
 }
@@ -736,7 +827,26 @@ func (fakeRCSB) GetFile(_ context.Context, _ string, file string) (rcsb.Artifact
 			Filename: "5amf.cif",
 			Format:   "cif",
 			URI:      "https://files.rcsb.test/download/5AMF.cif",
-			Contents: []byte(`data_5amf
+		}, nil
+	case "5amf-sf.cif":
+		return rcsb.Artifact{
+			Filename: "5amf-sf.cif",
+			Format:   "structure_factors_cif",
+			URI:      "https://files.rcsb.test/download/5AMF-sf.cif",
+		}, nil
+	default:
+		return rcsb.Artifact{}, assert.AnError
+	}
+}
+
+func (fakeRCSB) DownloadFile(ctx context.Context, pdbID string, file string) (rcsb.Artifact, error) {
+	artifact, err := fakeRCSB{}.GetFile(ctx, pdbID, file)
+	if err != nil {
+		return rcsb.Artifact{}, err
+	}
+	switch file {
+	case "5amf.cif":
+		artifact.Contents = []byte(`data_5amf
 loop_
 _software.name
 _software.classification
@@ -744,18 +854,11 @@ _software.version
 _software.citation_id
 _software.pdbx_ordinal
 REFMAC refinement 5.2.0005 ? 1
-`),
-		}, nil
+`)
 	case "5amf-sf.cif":
-		return rcsb.Artifact{
-			Filename: "5amf-sf.cif",
-			Format:   "structure_factors_cif",
-			URI:      "https://files.rcsb.test/download/5AMF-sf.cif",
-			Contents: []byte("structure factors\n"),
-		}, nil
-	default:
-		return rcsb.Artifact{}, assert.AnError
+		artifact.Contents = []byte("structure factors\n")
 	}
+	return artifact, nil
 }
 
 func (fakeRCSB) GetImage(_ context.Context, _ string, file string) (rcsb.Artifact, error) {

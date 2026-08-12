@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -95,7 +96,16 @@ func decodeError(status int, body []byte) error {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		payload.Message = strings.TrimSpace(string(body))
+		var xmlPayload struct {
+			Code    string `xml:"Code"`
+			Message string `xml:"Message"`
+		}
+		if xmlErr := xml.Unmarshal(body, &xmlPayload); xmlErr == nil && (xmlPayload.Code != "" || xmlPayload.Message != "") {
+			payload.Code = xmlPayload.Code
+			payload.Message = xmlPayload.Message
+		} else {
+			payload.Message = strings.TrimSpace(string(body))
+		}
 	}
 	if payload.Message == "" {
 		payload.Message = http.StatusText(status)

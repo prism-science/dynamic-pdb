@@ -59,6 +59,9 @@ func (e ArtifactExtractor) localArtifact(source string) (extractors.Artifact, bo
 		}
 		return extractors.Artifact{}, false, fmt.Errorf("stat artifact source %s: %w", source, err)
 	}
+	if info.Size() == 0 {
+		return extractors.Artifact{}, false, nil
+	}
 	hash, err := fileSHA256(path)
 	if err != nil {
 		return extractors.Artifact{}, false, err
@@ -77,6 +80,9 @@ func (e ArtifactExtractor) zipArtifact(archiveSource string, entryName string, s
 	contents, ok, err := zipContents(archivePath, entryName, source)
 	if err != nil || !ok {
 		return extractors.Artifact{}, ok, err
+	}
+	if len(contents) == 0 {
+		return extractors.Artifact{}, false, nil
 	}
 	hash := sha256.Sum256(contents)
 	return extractors.Artifact{

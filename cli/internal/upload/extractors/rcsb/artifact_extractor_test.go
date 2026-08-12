@@ -2,8 +2,6 @@ package rcsb
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,14 +13,12 @@ import (
 
 func Test_should_extract_rcsb_file_artifact(t *testing.T) {
 	// given
-	contents := []byte("data_5amf\n")
 	client := &fakeClient{
 		files: map[string]rcsbclient.Artifact{
 			"5amf.cif": {
 				Filename: "5amf.cif",
 				Format:   "cif",
 				URI:      "https://files.rcsb.test/download/5AMF.cif",
-				Contents: contents,
 			},
 		},
 	}
@@ -39,11 +35,43 @@ func Test_should_extract_rcsb_file_artifact(t *testing.T) {
 	assert.Equal(t, "5amf.cif", artifact.Filename)
 	assert.Equal(t, "cif", artifact.Format)
 	assert.Equal(t, "https://files.rcsb.test/download/5AMF.cif", artifact.URI)
-	assert.Equal(t, int64(len(contents)), artifact.Size)
-	assert.Equal(t, testSHA256(contents), artifact.SHA256)
-	assert.Equal(t, contents, artifact.Contents)
+	assert.Zero(t, artifact.Size)
+	assert.Empty(t, artifact.SHA256)
+	assert.Empty(t, artifact.Contents)
 	assert.Empty(t, artifact.Metadata)
 	assert.Equal(t, []string{"5amf.cif"}, client.fileNames)
+}
+
+func Test_should_download_rcsb_coordinates_artifact_for_field_extraction(t *testing.T) {
+	// given
+	contents := []byte("data_5amf\n")
+	client := &fakeClient{
+		downloadedFiles: map[string]rcsbclient.Artifact{
+			"5amf.cif": {
+				Filename: "5amf.cif",
+				Format:   "cif",
+				URI:      "https://files.rcsb.test/download/5AMF.cif",
+				Contents: contents,
+			},
+		},
+	}
+	extractor := NewArtifactExtractor(client)
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "5AMF", manifest.Artifact{
+		ID:     "coordinates",
+		Source: manifest.Source{RCSB: &manifest.RCSBSource{PDBID: "{{ pdb_id }}", File: "{{ pdb_id }}.cif"}},
+	})
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "https://files.rcsb.test/download/5AMF.cif", artifact.URI)
+	assert.Equal(t, int64(len(contents)), artifact.Size)
+	assert.NotEmpty(t, artifact.SHA256)
+	assert.Equal(t, contents, artifact.Contents)
+	assert.Equal(t, []string{"5amf.cif"}, client.downloadFileNames)
+	assert.Empty(t, client.fileNames)
 }
 
 func Test_should_extract_rcsb_fasta_artifact_with_parsed_records(t *testing.T) {
@@ -104,9 +132,4 @@ func Test_should_return_no_artifact_when_rcsb_file_is_not_found(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Empty(t, artifact)
-}
-
-func testSHA256(contents []byte) string {
-	hash := sha256.Sum256(contents)
-	return hex.EncodeToString(hash[:])
 }
