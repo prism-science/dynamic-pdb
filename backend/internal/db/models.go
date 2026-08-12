@@ -25,13 +25,14 @@ type ModelsRepository struct {
 }
 
 type ModelRevisionFilters struct {
-	ID        *uuid.UUID
-	EntryID   *uuid.UUID
-	ModelID   *uuid.UUID
-	State     *models.RevisionState
-	CreatedBy *uuid.UUID
-	Limit     *int
-	Offset    *int
+	ID         *uuid.UUID
+	EntryID    *uuid.UUID
+	ModelID    *uuid.UUID
+	State      *models.RevisionState
+	ModelState *models.ModelState
+	CreatedBy  *uuid.UUID
+	Limit      *int
+	Offset     *int
 }
 
 func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
@@ -247,6 +248,15 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "model_revisions.state = :state")
 		args["state"] = string(*filters.State)
 	}
+	if filters.ModelState != nil {
+		conditions = append(conditions, `exists (
+			select 1
+			from models m
+			where m.id = model_revisions.model_id
+			  and m.state = :model_state
+		)`)
+		args["model_state"] = string(*filters.ModelState)
+	}
 	if filters.CreatedBy != nil {
 		conditions = append(conditions, "model_revisions.created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
@@ -254,7 +264,7 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 
 	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
-			         model_revisions.state, model_revisions.change_summary, model_revisions.published_at,
+			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
 			         model_revisions.name, model_revisions.description, model_revisions.thumbnail_image_url,
 			         model_revisions.metadata, model_revisions.created_by, model_revisions.created_at,
 			         model_revisions.updated_at
@@ -291,6 +301,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 		PrimaryArtifactID: uuidPtrFromSQL(row.PrimaryArtifactID),
 		RevisionNumber:    intPtrFromSQL(row.RevisionNumber),
 		State:             models.RevisionState(row.State),
+		ModelState:        models.ModelState(row.ModelState),
 		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 		PublishedAt:       timePtrFromSQL(row.PublishedAt),
 		Name:              row.Name,
@@ -311,6 +322,7 @@ type modelRevisionRow struct {
 	PrimaryArtifactID uuid.NullUUID  `db:"primary_artifact_id"`
 	RevisionNumber    sql.NullInt64  `db:"revision_number"`
 	State             string         `db:"state"`
+	ModelState        string         `db:"model_state"`
 	ChangeSummary     sql.NullString `db:"change_summary"`
 	PublishedAt       sql.NullTime   `db:"published_at"`
 	Name              string         `db:"name"`

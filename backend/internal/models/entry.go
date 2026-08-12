@@ -8,6 +8,7 @@ import (
 
 type Entry struct {
 	ID        uuid.UUID
+	State     EntryState
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
 }
@@ -18,6 +19,7 @@ type EntryRevision struct {
 	ParentRevisionID  *uuid.UUID
 	RevisionNumber    *int
 	State             RevisionState
+	EntryState        EntryState
 	ChangeSummary     *string
 	PublishedAt       *time.Time
 	Name              string
@@ -48,4 +50,12 @@ type StructureMethod string
 const (
 	StructureMethodXRayCrystallography StructureMethod = "X-ray crystallography"
 	StructureMethodCryoEM              StructureMethod = "CryoEM"
+)
+
+type EntryState string
+
+const (
+	EntryStateNew     EntryState = "new"
+	EntryStateActive  EntryState = "active"
+	EntryStateDeleted EntryState = "deleted"
 )
