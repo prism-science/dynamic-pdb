@@ -53,22 +53,22 @@ func Test_should_create_and_list_protein_sequence_similarities_when_repository_c
 			Tool:              "mmseqs2",
 			Score:             0.91,
 			Metadata: map[string]any{
-				"original_score":    100,
-				"norm_score":        0.91,
-				"score_type":        "bits",
-				"normalization":     "min_max_per_run",
-				"fident":            0.95,
-				"qcov":              1,
-				"tcov":              1,
-				"evalue":            1e-20,
-				"bits":              100,
-				"alignment_length":  20,
-				"source_start":      1,
-				"source_end":        20,
-				"similar_start":     1,
-				"similar_end":       20,
-				"source_alignment":  "ACDEFGHIKLMNPQRSTVWY",
-				"similar_alignment": "ACDEFGHIKLMNPQRSTVWF",
+				"original_score":   100,
+				"norm_score":       0.91,
+				"score_type":       "bits",
+				"normalization":    "min_max_per_run",
+				"fident":           0.95,
+				"qcov":             1,
+				"tcov":             1,
+				"evalue":           1e-20,
+				"bits":             100,
+				"alignment_length": 20,
+				"source_start":     1,
+				"source_end":       20,
+				"similar_start":    1,
+				"similar_end":      20,
+				"qaln":             "ACDEFGHIKLMNPQRSTVWY",
+				"taln":             "ACDEFGHIKLMNPQRSTVWF",
 			},
 		},
 		{
@@ -140,8 +140,8 @@ func Test_should_create_and_list_protein_sequence_similarities_when_repository_c
 	assert.Equal(t, float64(20), similarities[0].Metadata["source_end"])
 	assert.Equal(t, float64(1), similarities[0].Metadata["similar_start"])
 	assert.Equal(t, float64(20), similarities[0].Metadata["similar_end"])
-	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWY", similarities[0].Metadata["source_alignment"])
-	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWF", similarities[0].Metadata["similar_alignment"])
+	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWY", similarities[0].Metadata["qaln"])
+	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWF", similarities[0].Metadata["taln"])
 
 	require.NoError(t, runErr)
 	require.NotEmpty(t, runs)
