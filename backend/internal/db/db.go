@@ -12,14 +12,15 @@ import (
 )
 
 type DB struct {
-	Users            *UsersRepository
-	Entries          *EntriesRepository
-	EntrySearch      *EntrySearchIndexRepository
-	Models           *ModelsRepository
-	Artifacts        *ArtifactsRepository
-	Metrics          *MetricsRepository
-	Runs             *RunsRepository
-	ProteinSequences *ProteinSequencesRepository
+	Users                       *UsersRepository
+	Entries                     *EntriesRepository
+	EntrySearch                 *EntrySearchIndexRepository
+	Models                      *ModelsRepository
+	Artifacts                   *ArtifactsRepository
+	Metrics                     *MetricsRepository
+	Runs                        *RunsRepository
+	ProteinSequences            *ProteinSequencesRepository
+	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
 
 	sqlx      *sqlx.DB
 	txManager *TxManager
@@ -59,16 +60,17 @@ func NewDB(cfg Config) (*DB, error) {
 	txManager := NewTxManager(sqlxDB)
 	queriers := DefaultQuerierProvider
 	return &DB{
-		Users:            NewUsersRepository(sqlxDB, queriers),
-		Entries:          NewEntriesRepository(sqlxDB, queriers),
-		EntrySearch:      NewEntrySearchIndexRepository(sqlxDB, queriers),
-		Models:           NewModelsRepository(sqlxDB, queriers),
-		Artifacts:        NewArtifactsRepository(sqlxDB, queriers),
-		Metrics:          NewMetricsRepository(sqlxDB, queriers),
-		Runs:             NewRunsRepository(sqlxDB, queriers),
-		ProteinSequences: NewProteinSequencesRepository(sqlxDB, queriers),
-		sqlx:             sqlxDB,
-		txManager:        txManager,
+		Users:                       NewUsersRepository(sqlxDB, queriers),
+		Entries:                     NewEntriesRepository(sqlxDB, queriers),
+		EntrySearch:                 NewEntrySearchIndexRepository(sqlxDB, queriers),
+		Models:                      NewModelsRepository(sqlxDB, queriers),
+		Artifacts:                   NewArtifactsRepository(sqlxDB, queriers),
+		Metrics:                     NewMetricsRepository(sqlxDB, queriers),
+		Runs:                        NewRunsRepository(sqlxDB, queriers),
+		ProteinSequences:            NewProteinSequencesRepository(sqlxDB, queriers),
+		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
+		sqlx:                        sqlxDB,
+		txManager:                   txManager,
 	}, nil
 }
 

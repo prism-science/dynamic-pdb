@@ -115,7 +115,9 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 		return
 	}
 
-	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), revision.ID)
+	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), db.ProteinSequenceFilters{
+		EntryRevisionID: &revision.ID,
+	})
 	if err != nil {
 		slog.Error("list entry protein sequences failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
@@ -129,6 +131,57 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 		return
 	}
 	writeJSON(w, http.StatusOK, entry)
+}
+
+func (s *Server) ListSimilarEntries(
+	w http.ResponseWriter,
+	r *http.Request,
+	entryID uuid.UUID,
+	params ListSimilarEntriesParams,
+) {
+	if params.Limit != nil && *params.Limit < 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_LIMIT", "limit must be non-negative")
+		return
+	}
+	if params.Offset != nil && *params.Offset < 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_OFFSET", "offset must be non-negative")
+		return
+	}
+
+	if _, err := s.activeEntryRevision(r.Context(), entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
+		return
+	} else if err != nil {
+		slog.Error("get entry for similar entries failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
+		return
+	}
+
+	similarEntries, err := s.database.ProteinSequenceSimilarities.ListSimilarEntries(
+		r.Context(),
+		db.SimilarEntryFilters{
+			EntryID: entryID,
+			Limit:   params.Limit,
+			Offset:  params.Offset,
+		},
+	)
+	if err != nil {
+		slog.Error("list similar entries failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
+		return
+	}
+
+	items, err := similarEntryResponsesFromModels(similarEntries)
+	if err != nil {
+		slog.Error("build similar entry response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build similar entry response")
+		return
+	}
+	writeJSON(w, http.StatusOK, SimilarEntryListResponse{
+		Items:  items,
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	})
 }
 
 func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
@@ -1045,6 +1098,50 @@ func proteinSequenceResponsesFromModels(sequences []domainmodels.ProteinSequence
 		})
 	}
 	return items
+}
+
+func similarEntryResponsesFromModels(entries []domainmodels.SimilarEntry) ([]SimilarEntry, error) {
+	items := make([]SimilarEntry, 0, len(entries))
+	for _, entry := range entries {
+		entryInfo, err := entryInfoResponseFromRevision(entry.Entry)
+		if err != nil {
+			return nil, fmt.Errorf("build similar entry info response: %w", err)
+		}
+		items = append(items, SimilarEntry{
+			Entry:   entryInfo,
+			Score:   entry.Score,
+			Matches: proteinSequenceSimilarityMatchResponsesFromModels(entry.Matches),
+		})
+	}
+	return items, nil
+}
+
+func proteinSequenceSimilarityMatchResponsesFromModels(
+	matches []domainmodels.ProteinSequenceSimilarityMatch,
+) []ProteinSequenceSimilarityMatch {
+	items := make([]ProteinSequenceSimilarityMatch, 0, len(matches))
+	for _, match := range matches {
+		items = append(items, ProteinSequenceSimilarityMatch{
+			SourceSequenceId: match.SourceSequenceID,
+			SimilarSequence:  proteinSequenceResponseFromModel(match.SimilarSequence),
+			Score:            match.Similarity.Score,
+			Tool:             match.Similarity.Tool,
+			Metadata:         mapFromNil(match.Similarity.Metadata),
+			CreatedAt:        match.Similarity.CreatedAt,
+		})
+	}
+	return items
+}
+
+func proteinSequenceResponseFromModel(sequence domainmodels.ProteinSequence) ProteinSequence {
+	return ProteinSequence{
+		Id:               sequence.ID,
+		SourceArtifactId: sequence.SourceArtifactID,
+		RecordIndex:      sequence.RecordIndex,
+		Header:           sequence.Header,
+		Sequence:         sequence.Sequence,
+		CreatedAt:        sequence.CreatedAt,
+	}
 }
 
 func entryMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.EntryMetadata, error) {

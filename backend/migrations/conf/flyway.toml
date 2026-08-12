@@ -1,6 +1,9 @@
 [flyway]
 outOfOrder = true
 
+[flyway.postgresql]
+transactional.lock = false
+
 [environments.local]
 user = "postgres"
 password = "password"
