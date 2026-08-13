@@ -1,6 +1,7 @@
 # dynamic-pdb deployment
 
-This chart deploys the Dynamic PDB backend, website, and Flyway migrations.
+This chart deploys the Dynamic PDB backend, website, Flyway migrations, and the
+MMseqs similarity job.
 
 ## Namespace and secrets
 
@@ -30,10 +31,35 @@ Apply once:
 kubectl apply -f deploy/appset.yaml
 ```
 
-The GitHub Actions workflow builds and pushes backend, migrations, and website
-images as `sha-<commit>` on `main`. The ApplicationSet resolves the current
-`main` SHA and deploys the chart with those image tags, so CI does not commit
-image-tag changes back to git.
+The GitHub Actions workflow builds and pushes backend, migrations, website, and
+MMseqs job images as `sha-<commit>` on `main`. The ApplicationSet resolves the
+current `main` SHA and deploys the chart with those image tags, so CI does not
+commit image-tag changes back to git.
+
+## MMseqs job
+
+The MMseqs job is deployed as a Kubernetes CronJob. It uses the same database
+secret as the backend and stores its local similarity index under a persistent
+volume mounted at `/app/.tmp/mmseqs`.
+
+The default schedule is daily at `02:30` UTC:
+
+```yaml
+mmseqsJob:
+  enabled: true
+  schedule: "30 2 * * *"
+  timeZone: Etc/UTC
+```
+
+The chart creates a PVC for the MMseqs cache. The default values expect an `ebs-gp3`
+storage class and request `16Gi`; override `mmseqsJob.cache.storageClassName`
+and `mmseqsJob.cache.size` if the cluster uses different storage.
+
+To run it manually:
+
+```sh
+kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-mmseqs-job dynamic-pdb-mmseqs-job-manual-$(date +%s)
+```
 
 ## Infrastructure prerequisites
 

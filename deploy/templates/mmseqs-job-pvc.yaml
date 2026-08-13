@@ -1,0 +1,18 @@
+{{- if .Values.mmseqsJob.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pdb-mmseqs-cache
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.mmseqsJob.selectorLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.mmseqsJob.cache.storageClassName }}
+  storageClassName: {{ .Values.mmseqsJob.cache.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.mmseqsJob.cache.size | quote }}
+{{- end }}

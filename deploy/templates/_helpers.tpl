@@ -12,3 +12,8 @@ app.kubernetes.io/component: backend
 app.kubernetes.io/name: dynamic-pdb-website
 app.kubernetes.io/component: website
 {{- end -}}
+
+{{- define "dynamic-pdb.mmseqsJob.selectorLabels" -}}
+app.kubernetes.io/name: dynamic-pdb-mmseqs-job
+app.kubernetes.io/component: mmseqs-job
+{{- end -}}

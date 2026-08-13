@@ -44,6 +44,9 @@ spec:
             migrations:
               image:
                 tag: "sha-{{ .sha }}"
+            mmseqsJob:
+              image:
+                tag: "sha-{{ .sha }}"
       destination:
         server: https://kubernetes.default.svc
         namespace: dynamicpdb
