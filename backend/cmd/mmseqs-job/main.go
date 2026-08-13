@@ -11,7 +11,6 @@ import (
 
 	"dynamic-pdb/backend/cmd/mmseqs-job/jobs"
 	"dynamic-pdb/backend/cmd/mmseqs-job/mmseqs"
-	appconfig "dynamic-pdb/backend/internal/config"
 	"dynamic-pdb/backend/internal/db"
 )
 
@@ -29,7 +28,7 @@ func run() int {
 
 func execute() error {
 	mmseqsCacheDir := mmseqsCacheDirFromEnvironment()
-	cfg, err := appconfig.ReadFromFile(envFromEnvironment())
+	cfg, err := readConfig(envFromEnvironment())
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
 	}
