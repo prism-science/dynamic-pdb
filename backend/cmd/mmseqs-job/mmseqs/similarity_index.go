@@ -195,6 +195,9 @@ func (b *SimilarityIndexBuilder) publishSimilarityIndex(
 		if err := b.commands.ConcatDBs(ctx, existingSimilarityIndexPath, paths.partialIndex.index, paths.fullIndex.buildIndex); err != nil {
 			return nil, fmt.Errorf("concat similarity index databases: %w", err)
 		}
+		if err := b.commands.ConcatDBs(ctx, existingSimilarityIndexPath+"_h", paths.partialIndex.index+"_h", paths.fullIndex.buildIndex+"_h"); err != nil {
+			return nil, fmt.Errorf("concat similarity index headers: %w", err)
+		}
 		if err := b.commands.CreateIndex(ctx, paths.fullIndex.buildIndex, paths.fullIndex.tmpDir); err != nil {
 			return nil, fmt.Errorf("create full similarity index lookup files: %w", err)
 		}
