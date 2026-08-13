@@ -62,11 +62,18 @@ func (e ArtifactExtractor) rcsbArtifact(
 			map[string]any{"records": parseFASTA(artifact.Contents)},
 		), err
 	case strings.TrimSpace(file) != "":
-		artifact, err := e.client.GetFile(ctx, pdbID, file)
+		artifact, err := e.rcsbFile(ctx, pdbID, file, artifact.ID)
 		return artifactPayload(artifact, nil), err
 	default:
 		return extractors.Artifact{}, fmt.Errorf("unsupported RCSB artifact source: %s", sourceDescription(source))
 	}
+}
+
+func (e ArtifactExtractor) rcsbFile(ctx context.Context, pdbID string, file string, artifactID string) (rcsb.Artifact, error) {
+	if strings.EqualFold(strings.TrimSpace(artifactID), "coordinates") {
+		return e.client.DownloadFile(ctx, pdbID, file)
+	}
+	return e.client.GetFile(ctx, pdbID, file)
 }
 
 func artifactPayload(artifact rcsb.Artifact, metadata map[string]any) extractors.Artifact {

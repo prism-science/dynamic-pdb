@@ -16,10 +16,21 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
-const defaultHTTPTimeout = 30 * time.Second
+const defaultHTTPTimeout = 5 * time.Minute
 const defaultResponseCacheEntries = 2048
+const getAttempts = 8
+const retryBaseDelay = 500 * time.Millisecond
+const retryMaxDelay = 10 * time.Second
 
 var ErrNotFound = errors.New("RCSB resource not found")
+
+type statusError struct {
+	status int
+}
+
+func (e statusError) Error() string {
+	return fmt.Sprintf("unexpected HTTP status %d", e.status)
+}
 
 const (
 	defaultDataBaseURL  = "https://data.rcsb.org"
@@ -37,6 +48,7 @@ type Client interface {
 	GetEntry(ctx context.Context, pdbID string) (map[string]any, error)
 	GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error)
 	GetFile(ctx context.Context, pdbID string, file string) (Artifact, error)
+	DownloadFile(ctx context.Context, pdbID string, file string) (Artifact, error)
 	GetImage(ctx context.Context, pdbID string, file string) (Artifact, error)
 	GetFASTA(ctx context.Context, pdbID string) (Artifact, error)
 }
@@ -122,16 +134,24 @@ func (c *RemoteClient) GetFile(ctx context.Context, pdbID string, file string) (
 		return Artifact{}, errors.New("RCSB file is required")
 	}
 	url := c.filesBaseURL + "/download/" + rcsbDownloadFilename(pdbID, filename)
-	contents, err := c.get(ctx, url)
-	if err != nil {
-		return Artifact{}, fmt.Errorf("get RCSB file %s: %w", filename, err)
-	}
 	return Artifact{
 		Filename: filename,
 		Format:   formatFromFilename(filename),
 		URI:      url,
-		Contents: contents,
 	}, nil
+}
+
+func (c *RemoteClient) DownloadFile(ctx context.Context, pdbID string, file string) (Artifact, error) {
+	artifact, err := c.GetFile(ctx, pdbID, file)
+	if err != nil {
+		return Artifact{}, err
+	}
+	contents, err := c.get(ctx, artifact.URI)
+	if err != nil {
+		return Artifact{}, fmt.Errorf("download RCSB file %s: %w", artifact.Filename, err)
+	}
+	artifact.Contents = contents
+	return artifact, nil
 }
 
 func (c *RemoteClient) GetImage(ctx context.Context, pdbID string, file string) (Artifact, error) {
@@ -238,6 +258,29 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 		}
 		c.cacheMutex.Unlock()
 	}
+	var lastErr error
+	for attempt := 1; attempt <= getAttempts; attempt++ {
+		contents, err := c.getOnce(ctx, url)
+		if err == nil {
+			if c.cache != nil {
+				c.cacheMutex.Lock()
+				c.cache.Add(url, bytes.Clone(contents))
+				c.cacheMutex.Unlock()
+			}
+			return contents, nil
+		}
+		lastErr = err
+		if !shouldRetryGet(ctx, err, attempt) {
+			return nil, err
+		}
+		if err := waitBeforeRetry(ctx, attempt); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *RemoteClient) getOnce(ctx context.Context, url string) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -257,17 +300,41 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 		if closeErr != nil {
 			return nil, fmt.Errorf("unexpected HTTP status %d and close response: %w", response.StatusCode, closeErr)
 		}
-		return nil, fmt.Errorf("unexpected HTTP status %d", response.StatusCode)
+		return nil, statusError{status: response.StatusCode}
 	}
 	contents, err := io.ReadAll(response.Body)
 	closeErr := response.Body.Close()
 	if err := errors.Join(err, closeErr); err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	if c.cache != nil {
-		c.cacheMutex.Lock()
-		c.cache.Add(url, bytes.Clone(contents))
-		c.cacheMutex.Unlock()
-	}
 	return contents, nil
+}
+
+func shouldRetryGet(ctx context.Context, err error, attempt int) bool {
+	if err == nil || attempt >= getAttempts || ctx.Err() != nil {
+		return false
+	}
+	if errors.Is(err, ErrNotFound) {
+		return false
+	}
+	var status statusError
+	if errors.As(err, &status) {
+		return status.status == http.StatusTooManyRequests || status.status >= http.StatusInternalServerError
+	}
+	return true
+}
+
+func waitBeforeRetry(ctx context.Context, attempt int) error {
+	delay := retryBaseDelay << (attempt - 1)
+	if delay > retryMaxDelay {
+		delay = retryMaxDelay
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

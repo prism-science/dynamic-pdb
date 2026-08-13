@@ -52,11 +52,11 @@ REFMAC refinement 5.2.0005 ? 1
 	assert.Equal(t, "5amf.cif", coordinates.Filename)
 	assert.Equal(t, "cif", coordinates.Format)
 	assert.Equal(t, server.URL+"/download/5AMF.cif", coordinates.URI)
-	assert.Contains(t, string(coordinates.Contents), "REFMAC refinement 5.2.0005")
+	assert.Empty(t, coordinates.Contents)
 	assert.Equal(t, "5amf-sf.cif", structureFactors.Filename)
 	assert.Equal(t, "structure_factors_cif", structureFactors.Format)
 	assert.Equal(t, server.URL+"/download/5AMF-sf.cif", structureFactors.URI)
-	assert.Equal(t, "structure factors\n", string(structureFactors.Contents))
+	assert.Empty(t, structureFactors.Contents)
 	assert.Equal(t, "5amf_assembly-1.jpeg", previewImage.Filename)
 	assert.Equal(t, "image", previewImage.Format)
 	assert.Equal(t, server.URL+"/images/structures/am/5amf/5amf_assembly-1.jpeg", previewImage.URI)
@@ -64,6 +64,34 @@ REFMAC refinement 5.2.0005 ? 1
 	assert.Equal(t, "5amf.fasta", fasta.Filename)
 	assert.Equal(t, "fasta", fasta.Format)
 	assert.Equal(t, server.URL+"/fasta/entry/5AMF", fasta.URI)
+	assert.Equal(t, ">5amf\nACDE\n", string(fasta.Contents))
+}
+
+func Test_should_download_rcsb_file_only_when_contents_are_requested(t *testing.T) {
+	// given
+	requests := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		switch r.URL.Path {
+		case "/download/5AMF.cif":
+			writeText(t, w, "data_5amf\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
+
+	// when
+	linked, linkErr := client.GetFile(context.Background(), "5amf", "5amf.cif")
+	downloaded, downloadErr := client.DownloadFile(context.Background(), "5amf", "5amf.cif")
+
+	// then
+	require.NoError(t, linkErr)
+	require.NoError(t, downloadErr)
+	assert.Empty(t, linked.Contents)
+	assert.Equal(t, "data_5amf\n", string(downloaded.Contents))
+	assert.Equal(t, 1, requests["/download/5AMF.cif"])
 }
 
 func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testing.T) {
@@ -161,7 +189,7 @@ func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {
 		require.NoError(t, err)
 		_, err = client.GetPolymerEntity(context.Background(), "5amf", "1")
 		require.NoError(t, err)
-		_, err = client.GetFile(context.Background(), "5amf", "5amf.cif")
+		_, err = client.DownloadFile(context.Background(), "5amf", "5amf.cif")
 		require.NoError(t, err)
 		_, err = client.GetImage(context.Background(), "5amf", "5amf_assembly-1.jpeg")
 		require.NoError(t, err)
@@ -194,6 +222,29 @@ func Test_should_allow_disabling_rcsb_response_cache(t *testing.T) {
 	// then
 	require.NoError(t, firstErr)
 	require.NoError(t, secondErr)
+	assert.Equal(t, 2, requests)
+}
+
+func Test_should_retry_transient_rcsb_get_errors(t *testing.T) {
+	// given
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		if requests == 1 {
+			http.Error(w, "temporary failure", http.StatusInternalServerError)
+			return
+		}
+		writeText(t, w, `{"struct": {"title": "retried entry"}}`)
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
+
+	// when
+	entry, err := client.GetEntry(context.Background(), "5amf")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "retried entry", entry["struct"].(map[string]any)["title"])
 	assert.Equal(t, 2, requests)
 }
 

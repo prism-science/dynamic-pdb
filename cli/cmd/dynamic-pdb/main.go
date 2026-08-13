@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"dynamic-pdb/cli/internal/frontend"
 
@@ -12,7 +14,13 @@ import (
 )
 
 func main() {
-	os.Exit(execute(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	os.Exit(execute(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {

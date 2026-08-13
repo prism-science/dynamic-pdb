@@ -84,6 +84,63 @@ func Test_should_try_next_file_source_when_first_file_is_missing(t *testing.T) {
 	assert.Equal(t, "cif", artifact.Format)
 }
 
+func Test_should_skip_local_artifact_when_file_is_empty(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "models/5amf_model.pdb", []byte{})
+	extractor := NewArtifactExtractor(dataRoot)
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "5AMF", manifest.Artifact{
+		Source: manifest.Source{Files: []string{"models/{{ pdb_id }}_model.pdb"}},
+	})
+
+	// then
+	require.NoError(t, err)
+	require.False(t, ok)
+	assert.Empty(t, artifact)
+}
+
+func Test_should_skip_zip_artifact_when_entry_is_empty(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestZip(t, dataRoot, "models.zip", map[string][]byte{
+		"models/5amf_model.pdb": {},
+	})
+	extractor := NewArtifactExtractor(dataRoot)
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "5AMF", manifest.Artifact{
+		Source: manifest.Source{Files: []string{"models.zip#models/{{ pdb_id }}_model.pdb"}},
+	})
+
+	// then
+	require.NoError(t, err)
+	require.False(t, ok)
+	assert.Empty(t, artifact)
+}
+
+func Test_should_try_next_file_source_when_first_file_is_empty(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "models/5amf_model.pdb", []byte{})
+	writeTestFile(t, dataRoot, "fallback/5amf_model.cif", []byte("data_5amf\n"))
+	extractor := NewArtifactExtractor(dataRoot)
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "5AMF", manifest.Artifact{
+		Source: manifest.Source{Files: []string{
+			"models/{{ pdb_id }}_model.pdb",
+			"fallback/{{ pdb_id }}_model.cif",
+		}},
+	})
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "5amf_model.cif", artifact.Filename)
+}
+
 func writeTestFile(t *testing.T, root string, relativePath string, contents []byte) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))

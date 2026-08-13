@@ -48,15 +48,26 @@ type Uploader struct {
 	rcsb             rcsb.Client
 	progress         Progress
 	concurrency      int
-	progressMutex    sync.Mutex
+	partConcurrency  int
 }
 
-func New(dynamicPDBClient dynamicpdbapi.Client, rcsbClient rcsb.Client, progress Progress, concurrency int) *Uploader {
+func New(
+	dynamicPDBClient dynamicpdbapi.Client,
+	rcsbClient rcsb.Client,
+	progress Progress,
+	concurrency int,
+	partConcurrency ...int,
+) *Uploader {
+	normalizedPartConcurrency := 1
+	if len(partConcurrency) > 0 {
+		normalizedPartConcurrency = normalizeConcurrency(partConcurrency[0])
+	}
 	return &Uploader{
 		dynamicPDBClient: dynamicPDBClient,
 		rcsb:             rcsbClient,
 		progress:         progress,
 		concurrency:      normalizeConcurrency(concurrency),
+		partConcurrency:  normalizedPartConcurrency,
 	}
 }
 
@@ -233,8 +244,6 @@ func (u *Uploader) uploadEntryJob(
 }
 
 func (u *Uploader) entryDone(result entryUploadResult) error {
-	u.progressMutex.Lock()
-	defer u.progressMutex.Unlock()
 	return u.progress.EntryDone(result.PDBID, result.EntryID, result.Models, result.Artifacts)
 }
 
@@ -559,7 +568,7 @@ func (u *Uploader) uploadArtifact(
 	artifactID := uuid.NewString()
 	artifactURI := strings.TrimSpace(payload.URI)
 	if artifactURI == "" {
-		uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
+		uploadedURL, err := u.uploadPayload(ctx, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
 		if err != nil {
 			return uploadedArtifact{}, false, err
 		}
@@ -608,7 +617,7 @@ func (u *Uploader) uploadPreviewImage(
 	if !ok {
 		return nil, nil
 	}
-	uploadedURL, err := uploadPayload(ctx, u.dynamicPDBClient, entryID, nil, uuid.NewString(), image.Filename, image.Size, image.LocalPath, image.Contents)
+	uploadedURL, err := u.uploadPayload(ctx, entryID, nil, uuid.NewString(), image.Filename, image.Size, image.LocalPath, image.Contents)
 	if err != nil {
 		return nil, fmt.Errorf("upload preview image: %w", err)
 	}
@@ -633,9 +642,8 @@ func (u *Uploader) imagePayload(
 	}
 }
 
-func uploadPayload(
+func (u *Uploader) uploadPayload(
 	ctx context.Context,
-	dynamicPDBClient dynamicpdbapi.Client,
 	entryID string,
 	modelID *string,
 	artifactID string,
@@ -644,7 +652,7 @@ func uploadPayload(
 	localPath string,
 	contents []byte,
 ) (string, error) {
-	grant, err := dynamicPDBClient.CreateFileUpload(ctx, dynamicpdbapi.CreateFileUploadRequest{
+	grant, err := u.dynamicPDBClient.CreateFileUpload(ctx, dynamicpdbapi.CreateFileUploadRequest{
 		EntryID:    entryID,
 		ModelID:    modelID,
 		ArtifactID: artifactID,
@@ -655,18 +663,11 @@ func uploadPayload(
 		return "", err
 	}
 
-	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(grant.Parts))
-	for _, part := range grant.Parts {
-		etag, err := uploadPartWithRetry(ctx, dynamicPDBClient, part, contents, localPath, size, grant.PartSize)
-		if err != nil {
-			return "", err
-		}
-		completedParts = append(completedParts, dynamicpdbapi.CompletedFileUploadPart{
-			PartNumber: part.PartNumber,
-			ETag:       etag,
-		})
+	completedParts, err := u.uploadParts(ctx, grant.Parts, contents, localPath, size, grant.PartSize)
+	if err != nil {
+		return "", err
 	}
-	if err := dynamicPDBClient.CompleteFileUpload(ctx, dynamicpdbapi.CompleteFileUploadRequest{
+	if err := u.dynamicPDBClient.CompleteFileUpload(ctx, dynamicpdbapi.CompleteFileUploadRequest{
 		Key:      grant.Key,
 		UploadID: grant.UploadID,
 		Parts:    completedParts,
@@ -674,6 +675,132 @@ func uploadPayload(
 		return "", err
 	}
 	return grant.ObjectURL, nil
+}
+
+func (u *Uploader) uploadParts(
+	ctx context.Context,
+	parts []dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	size int64,
+	partSize int64,
+) ([]dynamicpdbapi.CompletedFileUploadPart, error) {
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	if normalizeConcurrency(u.partConcurrency) == 1 || len(parts) == 1 {
+		return u.uploadPartsSequentially(ctx, parts, contents, localPath, size, partSize)
+	}
+	return u.uploadPartsConcurrently(ctx, parts, contents, localPath, size, partSize)
+}
+
+func (u *Uploader) uploadPartsSequentially(
+	ctx context.Context,
+	parts []dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	size int64,
+	partSize int64,
+) ([]dynamicpdbapi.CompletedFileUploadPart, error) {
+	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(parts))
+	for _, part := range parts {
+		completed, err := u.uploadPart(ctx, part, contents, localPath, size, partSize)
+		if err != nil {
+			return nil, err
+		}
+		completedParts = append(completedParts, completed)
+	}
+	return completedParts, nil
+}
+
+func (u *Uploader) uploadPartsConcurrently(
+	ctx context.Context,
+	parts []dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	size int64,
+	partSize int64,
+) ([]dynamicpdbapi.CompletedFileUploadPart, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type partResult struct {
+		part dynamicpdbapi.CompletedFileUploadPart
+		err  error
+	}
+
+	jobs := make(chan dynamicpdbapi.FileUploadPart)
+	results := make(chan partResult, len(parts))
+	workers := min(normalizeConcurrency(u.partConcurrency), len(parts))
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			for part := range jobs {
+				completed, err := u.uploadPart(ctx, part, contents, localPath, size, partSize)
+				if err != nil {
+					results <- partResult{err: err}
+					cancel()
+					return
+				}
+				results <- partResult{part: completed}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, part := range parts {
+			select {
+			case jobs <- part:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		waitGroup.Wait()
+		close(results)
+	}()
+
+	completedParts := make([]dynamicpdbapi.CompletedFileUploadPart, 0, len(parts))
+	for result := range results {
+		if result.err != nil {
+			return nil, result.err
+		}
+		completedParts = append(completedParts, result.part)
+	}
+	sort.Slice(completedParts, func(left int, right int) bool {
+		return completedParts[left].PartNumber < completedParts[right].PartNumber
+	})
+	return completedParts, nil
+}
+
+func (u *Uploader) uploadPart(
+	ctx context.Context,
+	part dynamicpdbapi.FileUploadPart,
+	contents []byte,
+	localPath string,
+	size int64,
+	partSize int64,
+) (dynamicpdbapi.CompletedFileUploadPart, error) {
+	etag, err := uploadPartWithRetry(ctx, u.dynamicPDBClient, part, contents, localPath, size, partSize)
+	if err != nil {
+		return dynamicpdbapi.CompletedFileUploadPart{}, err
+	}
+	return dynamicpdbapi.CompletedFileUploadPart{
+		PartNumber: part.PartNumber,
+		ETag:       etag,
+	}, nil
+}
+
+func uploadPartSize(payloadSize int64, partSize int64, partNumber int) int64 {
+	offset := int64(partNumber-1) * partSize
+	size := min(partSize, payloadSize-offset)
+	if size < 0 {
+		return 0
+	}
+	return size
 }
 
 func uploadPartWithRetry(
@@ -719,6 +846,9 @@ func shouldRetryUploadPart(ctx context.Context, err error, attempt int) bool {
 	}
 	var dynamicPDBError *dynamicpdbapi.Error
 	if errors.As(err, &dynamicPDBError) && dynamicPDBError.Status < 500 {
+		if dynamicPDBError.Code == "RequestTimeout" {
+			return true
+		}
 		return false
 	}
 	return true
@@ -726,8 +856,11 @@ func shouldRetryUploadPart(ctx context.Context, err error, attempt int) bool {
 
 func partReader(contents []byte, localPath string, payloadSize int64, partSize int64, partNumber int) (io.Reader, int64, func() error, error) {
 	offset := int64(partNumber-1) * partSize
-	size := min(partSize, payloadSize-offset)
+	size := uploadPartSize(payloadSize, partSize, partNumber)
 	if size < 0 {
+		return nil, 0, nil, fmt.Errorf("part %d starts beyond payload size", partNumber)
+	}
+	if offset > payloadSize {
 		return nil, 0, nil, fmt.Errorf("part %d starts beyond payload size", partNumber)
 	}
 	if contents != nil {
