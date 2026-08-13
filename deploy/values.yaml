@@ -55,6 +55,32 @@ migrations:
       cpu: 500m
       memory: 512Mi
 
+mmseqsJob:
+  enabled: true
+  # Temporary test cadence. Switch back to daily after production smoke testing.
+  schedule: "0 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  backoffLimit: 1
+  activeDeadlineSeconds: 21600
+  image:
+    repository: harbor.astera.sh/library/dynamic-pdb-mmseqs-job
+    tag: latest
+    pullPolicy: IfNotPresent
+  cache:
+    storageClassName: ebs-gp3
+    size: 16Gi
+    mountPath: /app/.tmp/mmseqs
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+
 ingress:
   className: traefik
   annotations:
