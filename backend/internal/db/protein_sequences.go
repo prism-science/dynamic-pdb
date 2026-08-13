@@ -21,6 +21,8 @@ type ProteinSequencesRepository struct {
 type ProteinSequenceFilters struct {
 	EntryRevisionID *uuid.UUID
 	ProcessingState *models.ProteinSequenceProcessingState
+	AfterID         *uuid.UUID
+	OrderByID       bool
 	Limit           *int
 	Offset          *int
 }
@@ -170,11 +172,19 @@ func proteinSequenceListQuery(filters ProteinSequenceFilters) (string, map[strin
 		conditions = append(conditions, "processing_state = :processing_state")
 		args["processing_state"] = string(*filters.ProcessingState)
 	}
+	if filters.AfterID != nil {
+		conditions = append(conditions, "id > :after_id")
+		args["after_id"] = *filters.AfterID
+	}
 
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
 	}
-	query += "\norder by created_at asc, source_artifact_id asc, record_index asc, id asc"
+	if filters.OrderByID {
+		query += "\norder by id asc"
+	} else {
+		query += "\norder by created_at asc, source_artifact_id asc, record_index asc, id asc"
+	}
 
 	if filters.Limit != nil {
 		query += "\nlimit :limit"
