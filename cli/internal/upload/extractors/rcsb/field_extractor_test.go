@@ -120,20 +120,22 @@ func Test_should_return_no_field_when_rcsb_entry_is_not_found(t *testing.T) {
 }
 
 type fakeClient struct {
-	entry            map[string]any
-	entryError       error
-	polymerEntities  map[string]map[string]any
-	files            map[string]rcsbclient.Artifact
-	fileError        error
-	images           map[string]rcsbclient.Artifact
-	imageError       error
-	fasta            rcsbclient.Artifact
-	fastaError       error
-	entryPDBIDs      []string
-	polymerEntityIDs []string
-	fileNames        []string
-	imageNames       []string
-	fastaPDBIDs      []string
+	entry             map[string]any
+	entryError        error
+	polymerEntities   map[string]map[string]any
+	files             map[string]rcsbclient.Artifact
+	downloadedFiles   map[string]rcsbclient.Artifact
+	fileError         error
+	images            map[string]rcsbclient.Artifact
+	imageError        error
+	fasta             rcsbclient.Artifact
+	fastaError        error
+	entryPDBIDs       []string
+	polymerEntityIDs  []string
+	fileNames         []string
+	downloadFileNames []string
+	imageNames        []string
+	fastaPDBIDs       []string
 }
 
 func (c *fakeClient) GetEntry(_ context.Context, pdbID string) (map[string]any, error) {
@@ -155,6 +157,14 @@ func (c *fakeClient) GetFile(_ context.Context, _ string, file string) (rcsbclie
 		return rcsbclient.Artifact{}, c.fileError
 	}
 	return c.files[file], nil
+}
+
+func (c *fakeClient) DownloadFile(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {
+	c.downloadFileNames = append(c.downloadFileNames, file)
+	if c.fileError != nil {
+		return rcsbclient.Artifact{}, c.fileError
+	}
+	return c.downloadedFiles[file], nil
 }
 
 func (c *fakeClient) GetImage(_ context.Context, _ string, file string) (rcsbclient.Artifact, error) {

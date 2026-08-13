@@ -31,7 +31,8 @@ Init flags:
   --out <path>              manifest output path
 
 Start flags:
-  -j, --concurrency <n>     number of entries to upload in parallel (default 1)`
+  -j, --concurrency <n>              number of entries to upload in parallel (default 1)
+      --upload-part-concurrency <n>  number of multipart upload parts per file to upload in parallel (default 1)`
 
 func Upload(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelpArgs(args) {
@@ -106,7 +107,9 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		fs.PrintDefaults()
 	}
 	concurrency := 1
+	uploadPartConcurrency := 1
 	fs.IntVarP(&concurrency, "concurrency", "j", concurrency, "number of entries to upload in parallel")
+	fs.IntVar(&uploadPartConcurrency, "upload-part-concurrency", uploadPartConcurrency, "number of multipart upload parts per file to upload in parallel")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			return 0
@@ -137,7 +140,13 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 1
 	}
 
-	uploader := upload.New(dynamicpdbapi.NewClient(cfg.ServerURL(), cfg.Auth.AccessToken), rcsb.NewClient(), newUploadProgress(stdout), concurrency)
+	uploader := upload.New(
+		dynamicpdbapi.NewClient(cfg.ServerURL(), cfg.Auth.AccessToken),
+		rcsb.NewClient(),
+		newUploadProgress(stdout),
+		concurrency,
+		uploadPartConcurrency,
+	)
 	summary, err := uploader.Upload(ctx, fs.Arg(0))
 	if err != nil {
 		fmt.Fprintln(stderr, "dynamic-pdb upload start:", err)

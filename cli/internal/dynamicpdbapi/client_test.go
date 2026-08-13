@@ -1,8 +1,10 @@
 package dynamicpdbapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,4 +80,28 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 
 	// then
 	require.NoError(t, err)
+}
+
+func Test_should_decode_s3_xml_error_when_upload_part_failed(t *testing.T) {
+	// given
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, http.MethodPut, request.Method)
+		response.WriteHeader(http.StatusBadRequest)
+		_, err := response.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>RequestTimeout</Code><Message>Your socket connection to the server was not read from or written to within the timeout period.</Message></Error>`))
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+	client := NewClient("https://api.example.test", "jwt-token")
+
+	// when
+	_, err := client.PutUploadPart(context.Background(), server.URL, bytes.NewReader([]byte("MODEL\n")), int64(len("MODEL\n")))
+
+	// then
+	require.Error(t, err)
+	var backendError *Error
+	require.True(t, errors.As(err, &backendError))
+	assert.Equal(t, http.StatusBadRequest, backendError.Status)
+	assert.Equal(t, "RequestTimeout", backendError.Code)
+	assert.Equal(t, "Your socket connection to the server was not read from or written to within the timeout period.", backendError.Message)
 }

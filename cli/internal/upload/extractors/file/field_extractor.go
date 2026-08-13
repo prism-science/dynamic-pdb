@@ -111,9 +111,22 @@ func extractDelimited(contents []byte, rule manifest.ExtractRule, delimiter rune
 		if columnIndex >= len(record) {
 			return nil, false, nil
 		}
-		return record[columnIndex], true, nil
+		value := record[columnIndex]
+		if missingDelimitedValue(value) {
+			return nil, false, nil
+		}
+		return value, true, nil
 	}
 	return nil, false, nil
+}
+
+func missingDelimitedValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", ".", "?", "na", "n/a", "nan", "null", "none":
+		return true
+	default:
+		return false
+	}
 }
 
 func delimitedRowMatches(record []string, columns map[string]int, where *manifest.ExtractRule, pdbID string) bool {
