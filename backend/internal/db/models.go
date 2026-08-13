@@ -51,10 +51,14 @@ func (r *ModelsRepository) Create(
 	if err != nil {
 		return nil, fmt.Errorf("prepare model revision metadata: %w", err)
 	}
+	modelState := revision.ModelState
+	if modelState == "" {
+		modelState = modelStateFromRevisionState(revision.State)
+	}
 
 	query := `with ensured_model as (
-			    insert into models(id, entry_id, created_by, created_at)
-			    values (:model_id, :entry_id, :created_by, :created_at)
+			    insert into models(id, entry_id, state, created_by, created_at)
+			    values (:model_id, :entry_id, :model_state, :created_by, :created_at)
 			    on conflict (id) do nothing
 			    returning id
 			  )
@@ -65,6 +69,7 @@ func (r *ModelsRepository) Create(
 			    primary_artifact_id,
 			    revision_number,
 			    state,
+			    model_state,
 			    change_summary,
 			    published_at,
 			    name,
@@ -82,6 +87,7 @@ func (r *ModelsRepository) Create(
 			    :primary_artifact_id,
 			    :revision_number,
 			    :state,
+			    :model_state,
 			    :change_summary,
 			    :published_at,
 			    :name,
@@ -93,7 +99,7 @@ func (r *ModelsRepository) Create(
 			    :updated_at
 			  )
 			  returning id, model_id, parent_revision_id, primary_artifact_id, revision_number,
-			            state, change_summary, published_at, name, description,
+			            state, model_state, change_summary, published_at, name, description,
 			            thumbnail_image_url, metadata, created_by, created_at, updated_at`
 
 	var row modelRevisionRow
@@ -105,6 +111,7 @@ func (r *ModelsRepository) Create(
 		"primary_artifact_id": revision.PrimaryArtifactID,
 		"revision_number":     revision.RevisionNumber,
 		"state":               string(revision.State),
+		"model_state":         string(modelState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
 		"name":                revision.Name,
@@ -192,8 +199,15 @@ func (r *ModelsRepository) Delete(ctx context.Context, modelID, revisionID, owne
 			  updated_revision as (
 			    update model_revisions
 			    set state = $4,
+			        model_state = $5,
 			        updated_at = now()
 			    where id in (select id from authorized_revision)
+			    returning id
+			  ),
+			  updated_model as (
+			    update models
+			    set state = $5
+			    where id in (select model_id from authorized_revision)
 			    returning id
 			  )
 			  select
@@ -209,6 +223,7 @@ func (r *ModelsRepository) Delete(ctx context.Context, modelID, revisionID, owne
 		revisionID,
 		ownerID,
 		models.RevisionStateDeleted,
+		models.ModelStateDeleted,
 	); err != nil {
 		return fmt.Errorf("mark model revision deleted: %w", err)
 	}
@@ -285,6 +300,17 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	}
 
 	return query, args, nil
+}
+
+func modelStateFromRevisionState(state models.RevisionState) models.ModelState {
+	switch state {
+	case models.RevisionStateActive:
+		return models.ModelStateActive
+	case models.RevisionStateDeleted:
+		return models.ModelStateDeleted
+	default:
+		return models.ModelStateNew
+	}
 }
 
 func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) {

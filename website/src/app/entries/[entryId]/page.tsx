@@ -7,12 +7,16 @@ import {
   type EntryPageData,
   type FastaMetadata,
   getEntryPageData,
+  listSimilarEntries,
+  type SimilarEntry,
 } from "@/lib/api/entries";
 import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 import { fastaTotalLength } from "@/lib/fasta";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
+import SimilarProteins from "@/app/components/SimilarProteins";
 import SortableModelList from "@/app/components/SortableModelList";
+import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import {
   entryMetadataFacts,
   ImagePlaceholderIcon,
@@ -31,7 +35,10 @@ export default async function EntryPage({ params }: EntryRouteProps) {
   const { entryId } = await params;
   const session = await getAuthSession();
 
-  const data = await loadEntryPage(session?.token, entryId);
+  const [data, similarEntries] = await Promise.all([
+    loadEntryPage(session?.token, entryId),
+    loadSimilarEntries(session?.token, entryId),
+  ]);
   const currentUserId = session ? userIdFromToken(session.token) : null;
   const sequence = getFastaMetadata(data);
 
@@ -79,6 +86,16 @@ export default async function EntryPage({ params }: EntryRouteProps) {
                 ))}
               </dl>
             ) : null}
+
+            {/* Discovery lives in the rail: entries whose sequences a
+                similarity run matched to this one, with the full list and
+                alignments behind "All similar". */}
+            <SimilarProteins
+              entryId={data.entry.id}
+              entryName={data.entry.name}
+              sequences={data.entry.protein_sequences ?? []}
+              items={similarEntries}
+            />
           </aside>
 
           <div className={styles.content}>
@@ -119,6 +136,7 @@ export default async function EntryPage({ params }: EntryRouteProps) {
               {hasModels ? (
                 <SortableModelList
                   entryId={data.entry.id}
+                  entryThumbnailImageURL={data.entry.thumbnail_image_url}
                   models={data.models}
                   entities={data.entities}
                   relations={data.relations}
@@ -149,6 +167,23 @@ async function loadEntryPage(
       notFound();
     }
     throw error;
+  }
+}
+
+// Similarity is a bonus block on the page: if listing it fails the entry
+// still renders, just without the rail. This first page feeds the rail and
+// the dialog; the dialog loads further pages itself while scrolling.
+async function loadSimilarEntries(
+  token: string | undefined,
+  entryId: string,
+): Promise<SimilarEntry[]> {
+  try {
+    return await listSimilarEntries(token, entryId, {
+      limit: SIMILAR_ENTRIES_FETCH_LIMIT,
+    });
+  } catch (error) {
+    console.error("list similar entries failed", error);
+    return [];
   }
 }
 

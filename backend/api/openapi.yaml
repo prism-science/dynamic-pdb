@@ -138,7 +138,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /v1/files/complete:
     post:
       operationId: completeFileUpload
@@ -229,6 +228,16 @@ paths:
           required: false
           schema:
             type: string
+        - name: pdb_id
+          in: query
+          description: PDB IDs to match against entry metadata.external_refs.pdb.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
       responses:
         "200":
           description: Entries found.
@@ -264,6 +273,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Entry with the same active PDB reference already exists.
           content:
             application/json:
               schema:
@@ -324,6 +339,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/entries/{entry_id}/similar-entries:
+    get:
+      operationId: listSimilarEntries
+      summary: List entries with similar protein sequences
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Source entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: Maximum number of similar entries to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: offset
+          in: query
+          description: Number of similar entries to skip.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Similar entries found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimilarEntryListResponse"
         "404":
           description: Entry not found.
           content:
@@ -796,6 +852,9 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
         published_at:
           type: string
           format: date-time
@@ -804,6 +863,56 @@ components:
           type: string
           format: date-time
         updated_at:
+          type: string
+          format: date-time
+
+    SimilarEntryListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarEntry"
+        limit:
+          type: integer
+          minimum: 0
+        offset:
+          type: integer
+          minimum: 0
+
+    SimilarEntry:
+      type: object
+      required: [entry, score, matches]
+      properties:
+        entry:
+          $ref: "#/components/schemas/EntryInfo"
+        score:
+          type: number
+          format: double
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProteinSequenceSimilarityMatch"
+
+    ProteinSequenceSimilarityMatch:
+      type: object
+      required: [source_sequence_id, similar_sequence, score, tool, metadata, created_at]
+      properties:
+        source_sequence_id:
+          type: string
+          format: uuid
+        similar_sequence:
+          $ref: "#/components/schemas/ProteinSequence"
+        score:
+          type: number
+          format: double
+        tool:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
           type: string
           format: date-time
 

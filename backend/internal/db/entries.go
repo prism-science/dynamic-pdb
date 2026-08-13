@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/models"
 )
@@ -30,6 +31,7 @@ type EntryRevisionFilters struct {
 	State           *models.RevisionState
 	EntryState      *models.EntryState
 	CreatedBy       *uuid.UUID
+	PDBIDs          []string
 	Limit           *int
 	Offset          *int
 	Query           string
@@ -48,10 +50,14 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 	if err != nil {
 		return nil, fmt.Errorf("prepare entry revision metadata: %w", err)
 	}
+	entryState := revision.EntryState
+	if entryState == "" {
+		entryState = entityStateFromRevisionState(revision.State)
+	}
 
 	query := `with ensured_entry as (
-			    insert into entries(id, created_by, created_at)
-			    values (:entry_id, :created_by, :created_at)
+			    insert into entries(id, state, created_by, created_at)
+			    values (:entry_id, :entry_state, :created_by, :created_at)
 			    on conflict (id) do nothing
 			    returning id
 			  )
@@ -61,6 +67,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    parent_revision_id,
 			    revision_number,
 			    state,
+			    entry_state,
 			    change_summary,
 			    published_at,
 			    name,
@@ -77,6 +84,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :parent_revision_id,
 			    :revision_number,
 			    :state,
+			    :entry_state,
 			    :change_summary,
 			    :published_at,
 			    :name,
@@ -87,7 +95,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :created_at,
 			    :updated_at
 			  )
-			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
 			            published_at, name, description, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 
@@ -98,6 +106,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 		"parent_revision_id":  revision.ParentRevisionID,
 		"revision_number":     revision.RevisionNumber,
 		"state":               string(revision.State),
+		"entry_state":         string(entryState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
 		"name":                revision.Name,
@@ -184,8 +193,15 @@ func (r *EntriesRepository) Delete(ctx context.Context, entryID, revisionID, own
 			  updated_revision as (
 			    update entry_revisions
 			    set state = $4,
+			        entry_state = $5,
 			        updated_at = now()
 			    where id in (select id from authorized_revision)
+			    returning id
+			  ),
+			  updated_entry as (
+			    update entries
+			    set state = $5
+			    where id in (select entry_id from authorized_revision)
 			    returning id
 			  )
 			  select
@@ -201,6 +217,7 @@ func (r *EntriesRepository) Delete(ctx context.Context, entryID, revisionID, own
 		revisionID,
 		ownerID,
 		models.RevisionStateDeleted,
+		models.EntryStateDeleted,
 	); err != nil {
 		return fmt.Errorf("mark entry revision deleted: %w", err)
 	}
@@ -231,29 +248,29 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	}
 
 	if filters.ID != nil {
-		conditions = append(conditions, "id = :id")
+		conditions = append(conditions, "entry_revisions.id = :id")
 		args["id"] = *filters.ID
 	}
 	if filters.EntryID != nil {
-		conditions = append(conditions, "entry_id = :entry_id")
+		conditions = append(conditions, "entry_revisions.entry_id = :entry_id")
 		args["entry_id"] = *filters.EntryID
 	}
 	if filters.State != nil {
-		conditions = append(conditions, "state = :state")
+		conditions = append(conditions, "entry_revisions.state = :state")
 		args["state"] = string(*filters.State)
 	}
 	if filters.EntryState != nil {
-		conditions = append(conditions, `exists (
-			select 1
-			from entries e
-			where e.id = entry_revisions.entry_id
-			  and e.state = :entry_state
-		)`)
+		conditions = append(conditions, "entries.state = :entry_state")
 		args["entry_state"] = string(*filters.EntryState)
 	}
 	if filters.CreatedBy != nil {
-		conditions = append(conditions, "created_by = :created_by")
+		conditions = append(conditions, "entry_revisions.created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
+	}
+	pdbIDs := normalizedPDBIDs(filters.PDBIDs)
+	if len(pdbIDs) > 0 {
+		conditions = append(conditions, "upper(entry_revisions.metadata #>> '{external_refs,pdb}') = any(:pdb_ids)")
+		args["pdb_ids"] = pq.Array(pdbIDs)
 	}
 	if queryText != "" {
 		conditions = append(conditions, `exists (
@@ -274,16 +291,18 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		args["protein_sequence"] = proteinSequence
 	}
 
-	query := `select id, entry_id, parent_revision_id, revision_number, state,
-			         entry_state,
+	query := `select entry_revisions.id, entry_revisions.entry_id, parent_revision_id, revision_number,
+			         entry_revisions.state,
+			         entries.state as entry_state,
 			         change_summary,
-			         published_at, name, description, thumbnail_image_url, metadata, created_by,
-			         created_at, updated_at
-			  from entry_revisions`
+			         published_at, name, description, thumbnail_image_url, metadata,
+			         entry_revisions.created_by, entry_revisions.created_at, updated_at
+			  from entry_revisions
+			  join entries on entries.id = entry_revisions.entry_id`
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
 	}
-	query += "\norder by created_at asc, id asc"
+	query += "\norder by entry_revisions.created_at asc, entry_revisions.id asc"
 
 	if filters.Limit != nil {
 		query += "\nlimit :limit"
@@ -295,6 +314,34 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	}
 
 	return query, args, nil
+}
+
+func entityStateFromRevisionState(state models.RevisionState) models.EntryState {
+	switch state {
+	case models.RevisionStateActive:
+		return models.EntryStateActive
+	case models.RevisionStateDeleted:
+		return models.EntryStateDeleted
+	default:
+		return models.EntryStateNew
+	}
+}
+
+func normalizedPDBIDs(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.ToUpper(strings.TrimSpace(value))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
 }
 
 func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) {

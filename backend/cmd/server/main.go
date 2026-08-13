@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -81,8 +82,12 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	addr := strings.TrimSpace(cfg.Server.Addr)
+	if addr == "" {
+		addr = ":8080"
+	}
 	httpServer := &http.Server{
-		Addr:              ":8080",
+		Addr:              addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       3 * time.Minute,

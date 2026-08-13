@@ -55,6 +55,23 @@ export type ProteinSequence = {
   created_at: string;
 };
 
+export type SimilarEntryMatch = {
+  source_sequence_id: string;
+  similar_sequence: ProteinSequence;
+  score: number;
+  tool: string;
+  /** Tool-specific alignment facts (fident, qcov, evalue, positions, aligned
+   *  strings, ...). Free-form by design; lib/similarity.ts is the reader. */
+  metadata: JSONRecord;
+  created_at: string;
+};
+
+export type SimilarEntry = {
+  entry: Entry;
+  score: number;
+  matches: SimilarEntryMatch[];
+};
+
 export type DataPayload = {
   file_url: string;
   type?: string;
@@ -248,17 +265,58 @@ export class ApiRequestError extends Error {
 
 export async function listEntries(
   token?: string,
-  opts?: { query?: string | null },
+  opts?: {
+    query?: string | null;
+    pdbIds?: string[] | null;
+    limit?: number | null;
+    offset?: number | null;
+  },
 ): Promise<Entry[]> {
   const params = new URLSearchParams();
   const query = opts?.query?.trim();
   if (query) {
     params.set("query", query);
   }
+  if (opts?.limit != null) {
+    params.set("limit", String(opts.limit));
+  }
+  if (opts?.offset != null) {
+    params.set("offset", String(opts.offset));
+  }
+  for (const pdbId of opts?.pdbIds ?? []) {
+    const trimmed = pdbId.trim();
+    if (trimmed) {
+      params.append("pdb_id", trimmed);
+    }
+  }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   const response = await fetchBackend<ListResponse<Entry>>(
     `/v1/entries${suffix}`,
+    token,
+  );
+  return response.items;
+}
+
+// Entries whose protein sequences a similarity run matched against this
+// entry's, best overall score first. Scoring and ordering belong to the
+// backend; the frontend only presents them.
+export async function listSimilarEntries(
+  token: string | undefined,
+  entryId: string,
+  opts?: { limit?: number | null; offset?: number | null },
+): Promise<SimilarEntry[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit != null) {
+    params.set("limit", String(opts.limit));
+  }
+  if (opts?.offset != null) {
+    params.set("offset", String(opts.offset));
+  }
+
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const response = await fetchBackend<ListResponse<SimilarEntry>>(
+    `/v1/entries/${encodeURIComponent(entryId)}/similar-entries${suffix}`,
     token,
   );
   return response.items;
