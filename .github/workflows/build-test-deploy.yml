@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      cli: ${{ steps.filter.outputs.cli }}
       website: ${{ steps.filter.outputs.website }}
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +45,14 @@ jobs:
               - "go.work"
               - "go.work.sum"
               - "backend/**"
+            cli:
+              - ".github/workflows/build-test-deploy.yml"
+              - ".github/workflows/release.yml"
+              - ".golangci.yml"
+              - "Makefile"
+              - "go.work"
+              - "go.work.sum"
+              - "cli/**"
             website:
               - ".github/workflows/build-test-deploy.yml"
               - "website/**"
@@ -121,6 +130,27 @@ jobs:
         working-directory: backend/migrations
         run: GOWORK=off go test ./... -count=1
 
+  cli:
+    name: CLI
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Build CLI
+        run: make -C cli build
+
+      - name: Test CLI
+        working-directory: cli
+        run: go test ./... -count=1
+
   website:
     name: Website
     needs: changes
@@ -163,12 +193,14 @@ jobs:
     needs:
       - changes
       - backend
+      - cli
       - website
     if: |
       always() &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.changes.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
+      (needs.cli.result == 'success' || needs.cli.result == 'skipped') &&
       (needs.website.result == 'success' || needs.website.result == 'skipped')
     runs-on: diffuse-sh-builder
     timeout-minutes: 60
@@ -213,3 +245,17 @@ jobs:
             -t "${IMAGE}:sha-${SHA}" \
             -t "${IMAGE}:latest" \
             -f website/Dockerfile website
+
+      - name: Build and push CLI image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-cli"
+          SHA="$(git rev-parse HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker buildx build --push \
+            --build-arg VERSION="sha-${SHA}" \
+            --build-arg COMMIT="${SHA}" \
+            --build-arg DATE="${DATE}" \
+            -t "${IMAGE}:sha-${SHA}" \
+            -t "${IMAGE}:latest" \
+            -f cli/Dockerfile cli

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-pdb-s3proxy
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.s3proxy.service.type }}
+  ports:
+    - port: {{ .Values.s3proxy.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 4 }}
