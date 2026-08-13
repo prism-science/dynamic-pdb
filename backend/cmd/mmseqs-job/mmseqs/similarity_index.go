@@ -23,8 +23,6 @@ type SimilarityIndexBuilder struct {
 type SimilarityIndexBuildResult struct {
 	SimilarityIndexPath string
 	SearchResultPath    string
-	SequenceCount       int64
-	Hits                []Hit
 }
 
 func NewSimilarityIndexBuilder(commands *Commands, cacheDir string, runID uuid.UUID) (*SimilarityIndexBuilder, error) {
@@ -65,6 +63,23 @@ func (b *SimilarityIndexBuilder) BuildSimilarityIndex(
 	}
 
 	paths := b.similarityIndexBuildPaths(sequenceFilePath)
+	if fullIndex, ok, err := b.existingSimilarityIndex(paths.fullIndex); err != nil {
+		return nil, fmt.Errorf("check full similarity index: %w", err)
+	} else if ok {
+		if exists, err := fileExists(paths.searchResult); err != nil {
+			return nil, fmt.Errorf("check search result file: %w", err)
+		} else if exists {
+			return &SimilarityIndexBuildResult{
+				SimilarityIndexPath: fullIndex.SimilarityIndexPath,
+				SearchResultPath:    paths.searchResult,
+			}, nil
+		}
+
+		if err := removePaths(paths.fullIndex.indexDir, paths.fullIndex.buildDir, paths.partialIndex.indexDir, paths.partialIndex.buildDir, paths.searchTmpDir, paths.searchResultTemp); err != nil {
+			return nil, fmt.Errorf("drop incomplete similarity index build files: %w", err)
+		}
+	}
+
 	defer func() {
 		if cleanupErr := removePaths(paths.partialIndex.indexDir, paths.partialIndex.buildDir, paths.searchTmpDir, paths.searchResultTemp); cleanupErr != nil && err == nil {
 			err = fmt.Errorf("cleanup similarity index build files: %w", cleanupErr)
@@ -79,34 +94,18 @@ func (b *SimilarityIndexBuilder) BuildSimilarityIndex(
 		}
 	}
 
-	if existingSimilarityIndexPath != "" {
-		if err := b.searchNewSequences(ctx, existingSimilarityIndexPath, paths); err != nil {
-			return nil, fmt.Errorf("search new sequences: %w", err)
-		}
-	} else if err := publishEmptyFile(paths.searchResultTemp, paths.searchResult); err != nil {
-		return nil, fmt.Errorf("publish empty search result: %w", err)
+	if err := b.searchNewSequences(ctx, existingSimilarityIndexPath, paths); err != nil {
+		return nil, fmt.Errorf("search new sequences: %w", err)
 	}
 
-	fullIndex, ok, err := b.existingSimilarityIndex(paths.fullIndex)
+	fullIndex, err := b.publishSimilarityIndex(ctx, existingSimilarityIndexPath, paths)
 	if err != nil {
-		return nil, fmt.Errorf("check full similarity index: %w", err)
-	}
-	if !ok {
-		fullIndex, err = b.publishSimilarityIndex(ctx, existingSimilarityIndexPath, paths)
-		if err != nil {
-			return nil, fmt.Errorf("publish similarity index: %w", err)
-		}
+		return nil, fmt.Errorf("publish similarity index: %w", err)
 	}
 
-	hits, err := ParseOutput(paths.searchResult)
-	if err != nil {
-		return nil, fmt.Errorf("parse new sequence search result: %w", err)
-	}
 	return &SimilarityIndexBuildResult{
 		SimilarityIndexPath: fullIndex.SimilarityIndexPath,
 		SearchResultPath:    paths.searchResult,
-		SequenceCount:       fullIndex.SequenceCount,
-		Hits:                hits,
 	}, nil
 }
 
@@ -131,15 +130,21 @@ func (b *SimilarityIndexBuilder) searchNewSequences(
 		return fmt.Errorf("remove stale search result temp file: %w", err)
 	}
 
-	existingResultPath := filepath.Join(paths.searchTmpDir, "existing-index.tsv")
 	partialResultPath := filepath.Join(paths.searchTmpDir, "partial-index.tsv")
-	if err := b.commands.EasySearch(ctx, paths.partialIndex.sequenceFile, existingSimilarityIndexPath, existingResultPath, filepath.Join(paths.searchTmpDir, "existing-index.tmp")); err != nil {
-		return fmt.Errorf("search new sequences against existing similarity index: %w", err)
-	}
 	if err := b.commands.EasySearch(ctx, paths.partialIndex.sequenceFile, paths.partialIndex.index, partialResultPath, filepath.Join(paths.searchTmpDir, "partial-index.tmp")); err != nil {
 		return fmt.Errorf("search new sequences against partial similarity index: %w", err)
 	}
-	if err := combineSearchResults(paths.searchResultTemp, existingResultPath, partialResultPath); err != nil {
+
+	searchResultPaths := []string{partialResultPath}
+	if existingSimilarityIndexPath != "" {
+		existingResultPath := filepath.Join(paths.searchTmpDir, "existing-index.tsv")
+		if err := b.commands.EasySearch(ctx, paths.partialIndex.sequenceFile, existingSimilarityIndexPath, existingResultPath, filepath.Join(paths.searchTmpDir, "existing-index.tmp")); err != nil {
+			return fmt.Errorf("search new sequences against existing similarity index: %w", err)
+		}
+		searchResultPaths = append(searchResultPaths, existingResultPath)
+	}
+
+	if err := combineSearchResults(paths.searchResultTemp, searchResultPaths...); err != nil {
 		return fmt.Errorf("combine search result files: %w", err)
 	}
 	if err := os.Rename(paths.searchResultTemp, paths.searchResult); err != nil {
@@ -153,11 +158,9 @@ func (b *SimilarityIndexBuilder) publishSimilarityIndex(
 	existingSimilarityIndexPath string,
 	paths similarityIndexBuildPaths,
 ) (result *similarityIndexResult, err error) {
-	partialIndex, ok, err := b.existingSimilarityIndex(paths.partialIndex)
-	if err != nil {
+	if _, ok, err := b.existingSimilarityIndex(paths.partialIndex); err != nil {
 		return nil, fmt.Errorf("check new partial similarity index: %w", err)
-	}
-	if !ok {
+	} else if !ok {
 		return nil, errors.New("new partial similarity index is not built")
 	}
 
@@ -200,16 +203,8 @@ func (b *SimilarityIndexBuilder) publishSimilarityIndex(
 	}
 	published = true
 
-	sequenceCount, err := countMMseqsIndexRecords(paths.fullIndex.index)
-	if err != nil {
-		return nil, fmt.Errorf("count full similarity index records: %w", err)
-	}
-	if sequenceCount < partialIndex.SequenceCount {
-		return nil, errors.New("full similarity index has fewer records than new partial index")
-	}
 	return &similarityIndexResult{
 		SimilarityIndexPath: paths.fullIndex.index,
-		SequenceCount:       sequenceCount,
 	}, nil
 }
 
@@ -263,7 +258,6 @@ func (b *SimilarityIndexBuilder) buildSimilarityIndex(ctx context.Context, paths
 
 	return &similarityIndexResult{
 		SimilarityIndexPath: paths.index,
-		SequenceCount:       sequenceCount,
 	}, nil
 }
 
@@ -280,16 +274,8 @@ func (b *SimilarityIndexBuilder) existingSimilarityIndex(paths similarityIndexPa
 		return nil, false, errors.New("similarity index dir exists without mmseqs index file")
 	}
 
-	sequenceCount, err := countMMseqsIndexRecords(paths.index)
-	if err != nil {
-		return nil, false, fmt.Errorf("count similarity index records: %w", err)
-	}
-	if sequenceCount == 0 {
-		return nil, false, errors.New("similarity index does not contain records")
-	}
 	return &similarityIndexResult{
 		SimilarityIndexPath: paths.index,
-		SequenceCount:       sequenceCount,
 	}, true, nil
 }
 
@@ -352,7 +338,6 @@ type similarityIndexPaths struct {
 
 type similarityIndexResult struct {
 	SimilarityIndexPath string
-	SequenceCount       int64
 }
 
 func copyDirectory(sourceDir string, targetDir string) error {
@@ -506,30 +491,6 @@ func countFASTARecords(path string) (count int64, err error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return 0, fmt.Errorf("scan FASTA file: %w", err)
-	}
-	return count, nil
-}
-
-func countMMseqsIndexRecords(databasePath string) (count int64, err error) {
-	file, err := os.Open(databasePath + ".index")
-	if err != nil {
-		return 0, fmt.Errorf("open mmseqs database index file: %w", err)
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("close mmseqs database index file: %w", closeErr)
-		}
-	}()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 1024), 32*1024*1024)
-	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) != "" {
-			count++
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, fmt.Errorf("scan mmseqs database index file: %w", err)
 	}
 	return count, nil
 }
