@@ -406,7 +406,7 @@ func copyFile(sourcePath string, targetPath string, mode fs.FileMode) (err error
 }
 
 func publishEmptyFile(tempPath string, path string) error {
-	if err := os.WriteFile(tempPath, []byte{}, 0o644); err != nil {
+	if err := os.WriteFile(tempPath, []byte{}, 0o600); err != nil {
 		return fmt.Errorf("write empty temp file: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {

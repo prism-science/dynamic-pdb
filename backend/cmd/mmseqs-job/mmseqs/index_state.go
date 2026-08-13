@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
+//nolint:revive // MMseqsIndexState is the domain name used by the job state file.
 type MMseqsIndexState struct {
 	LatestCompletedRunID *uuid.UUID `json:"latest_completed_run_id,omitempty"`
 	UpdatedAt            time.Time  `json:"updated_at"`
@@ -44,7 +45,7 @@ func WriteIndexState(cacheDir string, value MMseqsIndexState) error {
 		return fmt.Errorf("create mmseqs index state dir: %w", err)
 	}
 	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
 		return fmt.Errorf("write mmseqs index state temp file: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {

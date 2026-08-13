@@ -200,7 +200,7 @@ func writeCheckpoint(path string, checkpoint DataLoaderCheckpoint) error {
 	data = append(data, '\n')
 
 	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
 		return fmt.Errorf("write checkpoint temp file: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {

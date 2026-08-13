@@ -72,6 +72,7 @@ func (c *Commands) EasySearch(
 }
 
 func (c *Commands) run(ctx context.Context, args ...string) (string, error) {
+	//nolint:gosec // mmseqs binary path is controlled by deployment config and tests.
 	command := exec.CommandContext(ctx, c.binaryPath, args...)
 	var output bytes.Buffer
 	command.Stdout = &output
