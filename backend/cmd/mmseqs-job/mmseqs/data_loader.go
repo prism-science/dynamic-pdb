@@ -149,11 +149,11 @@ func (l *DataLoader) loadNextBatch(
 	return sequences, nil
 }
 func (l *DataLoader) proteinSequenceDataPaths(name string) dataLoaderPaths {
-	dir := filepath.Join(l.cacheDir, "runs", l.runID.String(), "data")
+	dir := filepath.Join(l.cacheDir, "runs", l.runID.String(), "data", name)
 	return dataLoaderPaths{
 		dir:        dir,
 		output:     filepath.Join(dir, "sequences.fasta"),
-		checkpoint: filepath.Join(dir, name+"-checkpoint.json"),
+		checkpoint: filepath.Join(dir, "checkpoint.json"),
 	}
 }
 

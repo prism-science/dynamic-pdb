@@ -44,9 +44,13 @@ func NewSimilarityIndexBuilder(commands *Commands, cacheDir string, runID uuid.U
 
 func (b *SimilarityIndexBuilder) BuildSimilarityIndex(
 	ctx context.Context,
+	sequenceFilePath string,
 	existingSimilarityIndexPath string,
 ) (result *SimilarityIndexBuildResult, err error) {
-	sequenceFilePath := b.sequenceFilePath()
+	sequenceFilePath = strings.TrimSpace(sequenceFilePath)
+	if sequenceFilePath == "" {
+		return nil, errors.New("sequence file path is empty")
+	}
 	if exists, err := fileExists(sequenceFilePath); err != nil {
 		return nil, fmt.Errorf("check sequence file: %w", err)
 	} else if !exists {
@@ -277,10 +281,6 @@ func (b *SimilarityIndexBuilder) existingSimilarityIndex(paths similarityIndexPa
 	return &similarityIndexResult{
 		SimilarityIndexPath: paths.index,
 	}, true, nil
-}
-
-func (b *SimilarityIndexBuilder) sequenceFilePath() string {
-	return filepath.Join(b.cacheDir, "runs", b.runID.String(), "data", "sequences.fasta")
 }
 
 func (b *SimilarityIndexBuilder) similarityIndexBuildPaths(sequenceFilePath string) similarityIndexBuildPaths {

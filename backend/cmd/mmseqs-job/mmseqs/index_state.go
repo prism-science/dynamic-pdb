@@ -38,8 +38,17 @@ func WriteIndexState(cacheDir string, value MMseqsIndexState) error {
 		return fmt.Errorf("encode mmseqs index state: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(IndexStatePath(cacheDir), data, 0o644); err != nil {
-		return fmt.Errorf("write mmseqs index state: %w", err)
+
+	path := IndexStatePath(cacheDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create mmseqs index state dir: %w", err)
+	}
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+		return fmt.Errorf("write mmseqs index state temp file: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("publish mmseqs index state: %w", err)
 	}
 	return nil
 }
