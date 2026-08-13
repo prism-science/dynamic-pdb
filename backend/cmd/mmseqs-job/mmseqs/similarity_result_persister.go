@@ -26,6 +26,11 @@ type SimilarityResultPersisterParams struct {
 	SearchResultPath string
 }
 
+const (
+	similarityPersistBatchSize     = 5000
+	processingStateUpdateBatchSize = 10000
+)
+
 func NewSimilarityResultPersister(database *db.DB) (*SimilarityResultPersister, error) {
 	if database == nil {
 		return nil, errors.New("database is nil")
@@ -54,21 +59,41 @@ func (p *SimilarityResultPersister) Persist(ctx context.Context, params Similari
 	}
 	similarities := similaritiesFromHits(params.Run.ID, hits)
 
-	if err := p.database.Do(ctx, func(ctx context.Context) error {
-		if err := p.database.ProteinSequenceSimilarities.Create(ctx, similarities); err != nil {
-			return fmt.Errorf("save protein sequence similarities: %w", err)
-		}
+	if err := p.persistSimilarities(ctx, similarities); err != nil {
+		return fmt.Errorf("persist protein sequence similarities: %w", err)
+	}
+	if err := p.markSequencesProcessed(ctx, sequenceIDs); err != nil {
+		return fmt.Errorf("mark protein sequences processed: %w", err)
+	}
+	return nil
+}
 
+func (p *SimilarityResultPersister) persistSimilarities(
+	ctx context.Context,
+	similarities []models.ProteinSequenceSimilarity,
+) error {
+	for start := 0; start < len(similarities); start += similarityPersistBatchSize {
+		end := min(start+similarityPersistBatchSize, len(similarities))
+		if err := p.database.ProteinSequenceSimilarities.Create(ctx, similarities[start:end]); err != nil {
+			return fmt.Errorf("save protein sequence similarity batch: %w", err)
+		}
+	}
+	return nil
+}
+
+func (p *SimilarityResultPersister) markSequencesProcessed(
+	ctx context.Context,
+	sequenceIDs []uuid.UUID,
+) error {
+	for start := 0; start < len(sequenceIDs); start += processingStateUpdateBatchSize {
+		end := min(start+processingStateUpdateBatchSize, len(sequenceIDs))
 		if err := p.database.ProteinSequences.UpdateProcessingState(
 			ctx,
-			sequenceIDs,
+			sequenceIDs[start:end],
 			models.ProteinSequenceProcessingStateProcessed,
 		); err != nil {
-			return fmt.Errorf("mark protein sequences processed: %w", err)
+			return fmt.Errorf("update protein sequence processing state batch: %w", err)
 		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("persist similarity result: %w", err)
 	}
 	return nil
 }

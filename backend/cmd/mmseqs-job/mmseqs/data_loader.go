@@ -29,6 +29,8 @@ type DataLoaderCheckpoint struct {
 	Completed      bool       `json:"completed"`
 }
 
+const proteinSequenceLoadBatchSize = 10000
+
 func NewDataLoader(database *db.DB, cacheDir string, runID uuid.UUID) (*DataLoader, error) {
 	if database == nil {
 		return nil, errors.New("database is nil")
@@ -136,7 +138,7 @@ func (l *DataLoader) loadNextBatch(
 	processingState models.ProteinSequenceProcessingState,
 	lastSequenceID *uuid.UUID,
 ) ([]models.ProteinSequence, error) {
-	limit := 50000
+	limit := proteinSequenceLoadBatchSize
 	sequences, err := l.database.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
 		ProcessingState: &processingState,
 		AfterID:         lastSequenceID,
