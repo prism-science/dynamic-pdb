@@ -297,7 +297,7 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
 	}
-	query += "\norder by created_at asc, id asc"
+	query += "\norder by created_at desc, id desc"
 
 	if filters.Limit != nil {
 		query += "\nlimit :limit"
