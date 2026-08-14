@@ -29,6 +29,7 @@ Subcommands:
 
 Init flags:
   --out <path>              manifest output path
+  --include-rcsb-model      include the deposited RCSB model as the first model
 
 Start flags:
   -j, --concurrency <n>              number of entries to upload in parallel (default 1)
@@ -74,6 +75,7 @@ func uploadManifestInit(args []string, stdout, stderr io.Writer) int {
 
 	options := manifest.Options{}
 	fs.StringVar(&options.OutputPath, "out", "", "manifest output path")
+	fs.BoolVar(&options.IncludeRCSBModel, "include-rcsb-model", false, "include the deposited RCSB model as the first model")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {

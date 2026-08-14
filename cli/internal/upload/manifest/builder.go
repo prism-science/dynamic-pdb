@@ -52,7 +52,11 @@ type Stats struct {
 	LocalFiles int
 }
 
-func Build(dataRoot string) (Manifest, Stats, error) {
+type BuildOptions struct {
+	IncludeRCSBModel bool
+}
+
+func Build(dataRoot string, options ...BuildOptions) (Manifest, Stats, error) {
 	dataRoot, err := filepath.Abs(dataRoot)
 	if err != nil {
 		return Manifest{}, Stats{}, fmt.Errorf("resolve data folder path: %w", err)
@@ -72,7 +76,7 @@ func Build(dataRoot string) (Manifest, Stats, error) {
 
 	index := indexFiles(sources)
 	groups := index.coordinateGroups()
-	models := buildModels(groups)
+	models := buildModels(groups, buildOptions(options).IncludeRCSBModel)
 
 	return Manifest{
 		Version:  1,
@@ -92,6 +96,13 @@ func Build(dataRoot string) (Manifest, Stats, error) {
 			},
 		},
 	}, Stats{PDBIDs: len(index.pdbIDs), LocalFiles: len(sources)}, nil
+}
+
+func buildOptions(options []BuildOptions) BuildOptions {
+	if len(options) == 0 {
+		return BuildOptions{}
+	}
+	return options[0]
 }
 
 func listLocalSources(root string) ([]string, error) {
@@ -252,11 +263,16 @@ func normalizePDBID(value string) (string, bool) {
 	return trimmed, true
 }
 
-func buildModels(groups []coordinateGroup) []ModelPattern {
+func buildModels(groups []coordinateGroup, includeRCSBModel bool) []ModelPattern {
 	models := make([]ModelPattern, 0, len(groups)+1)
-	models = append(models, depositedModelPattern("model_1"))
-	for index, group := range groups {
-		models = append(models, modelPatternFromGroup(fmt.Sprintf("model_%d", index+2), group))
+	nextModelIndex := 1
+	if includeRCSBModel {
+		models = append(models, depositedModelPattern(fmt.Sprintf("model_%d", nextModelIndex)))
+		nextModelIndex++
+	}
+	for _, group := range groups {
+		models = append(models, modelPatternFromGroup(fmt.Sprintf("model_%d", nextModelIndex), group))
+		nextModelIndex++
 	}
 	return models
 }

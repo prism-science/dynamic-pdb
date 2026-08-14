@@ -105,6 +105,9 @@ Local files: 9
 If `--out` is omitted, the manifest is written as `dynamic-pdb.manifest.yaml`
 inside the data folder.
 
+Pass `--include-rcsb-model` to include the deposited RCSB structure as the first
+model in the generated manifest.
+
 ### 3. Review and edit the manifest
 
 The manifest is intentionally editable. Fill in the fields that the CLI
