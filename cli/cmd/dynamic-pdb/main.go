@@ -62,6 +62,9 @@ func newRootCommand(ctx context.Context, stdout, stderr io.Writer, code *int) *c
 	root.AddCommand(passThroughCommand("upload", "upload Dynamic PDB datasets", code, func(args []string) int {
 		return frontend.Upload(ctx, args, stdout, stderr)
 	}))
+	root.AddCommand(passThroughCommand("update", "update dynamic-pdb to the latest release", code, func(args []string) int {
+		return frontend.Update(ctx, args, stdout, stderr)
+	}))
 
 	return root
 }

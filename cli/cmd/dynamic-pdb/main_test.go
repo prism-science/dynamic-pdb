@@ -24,6 +24,7 @@ func Test_should_show_login_command_when_no_command_is_given(t *testing.T) {
 	// then
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout.String(), "login")
+	assert.Contains(t, stdout.String(), "update")
 	assert.Contains(t, stdout.String(), "upload")
 	assert.Empty(t, stderr.String())
 }
