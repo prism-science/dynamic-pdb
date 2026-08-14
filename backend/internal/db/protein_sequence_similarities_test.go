@@ -155,6 +155,98 @@ func Test_should_create_and_list_protein_sequence_similarities_when_repository_c
 	assert.WithinDuration(t, finishedAt, *listedRun.FinishedAt, time.Microsecond)
 }
 
+func Test_should_create_protein_sequence_similarities_from_staging_when_repository_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "protein-sequence-similarities-staging-entry", now)
+	artifact := createDBTestArtifact(t, entryRevision.CreatedBy, "protein sequences staging", now)
+	require.NoError(t, testDB.ProteinSequences.Create(
+		ctx,
+		entryRevision.ID,
+		artifact.ID,
+		[]models.FASTARecord{
+			{Header: "query", Sequence: "ACDEFGHIKLMNPQRSTVWY"},
+			{Header: "target", Sequence: "ACDEFGHIKLMNPQRSTVWF"},
+			{Header: "other", Sequence: "ACDEFGHIKLMNPQRSTVWA"},
+		},
+	))
+	sequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &entryRevision.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, sequences, 3)
+
+	run, err := testDB.ProteinSequenceSimilarities.CreateRun(ctx, models.ProteinSequenceSimilarityRun{
+		ID:        uuid.New(),
+		Tool:      "mmseqs2",
+		State:     models.ProteinSequenceSimilarityRunStateRunning,
+		StartedAt: &now,
+		CreatedAt: now,
+	})
+	require.NoError(t, err)
+	similarities := []models.ProteinSequenceSimilarity{
+		{
+			RunID:             run.ID,
+			SourceSequenceID:  sequences[0].ID,
+			SimilarSequenceID: sequences[1].ID,
+			Tool:              "mmseqs2",
+			Score:             0.95,
+			Metadata:          map[string]any{"fident": 0.95, "qcov": 1, "tcov": 1},
+			CreatedAt:         now,
+		},
+		{
+			RunID:             run.ID,
+			SourceSequenceID:  sequences[0].ID,
+			SimilarSequenceID: sequences[2].ID,
+			Tool:              "mmseqs2",
+			Score:             0.8,
+			Metadata:          map[string]any{"fident": 0.8, "qcov": 1, "tcov": 1},
+			CreatedAt:         now,
+		},
+		{
+			RunID:             run.ID,
+			SourceSequenceID:  sequences[0].ID,
+			SimilarSequenceID: sequences[1].ID,
+			Tool:              "mmseqs2",
+			Score:             0.95,
+			Metadata:          map[string]any{"fident": 0.95, "qcov": 1, "tcov": 1},
+			CreatedAt:         now,
+		},
+	}
+
+	// when
+	var insertedCount int64
+	err = testDB.Do(ctx, func(ctx context.Context) error {
+		if err := testDB.ProteinSequenceSimilarities.CreateSimilarityStagingTable(ctx); err != nil {
+			return err
+		}
+		if err := testDB.ProteinSequenceSimilarities.CopyToSimilarityStaging(ctx, similarities); err != nil {
+			return err
+		}
+		insertedCount, err = testDB.ProteinSequenceSimilarities.CreateFromSimilarityStaging(ctx)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	created, err := testDB.ProteinSequenceSimilarities.List(
+		ctx,
+		db.ProteinSequenceSimilarityFilters{SourceSequenceID: &sequences[0].ID},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), insertedCount)
+	require.Len(t, created, 2)
+	assert.Equal(t, sequences[1].ID, created[0].SimilarSequenceID)
+	assert.Equal(t, 0.95, created[0].Score)
+	assert.Equal(t, 0.95, created[0].Metadata["fident"])
+	assert.Equal(t, sequences[2].ID, created[1].SimilarSequenceID)
+	assert.Equal(t, 0.8, created[1].Score)
+}
+
 func proteinSequenceSimilarityRunByID(
 	runs []models.ProteinSequenceSimilarityRun,
 	id uuid.UUID,
