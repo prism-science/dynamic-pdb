@@ -128,7 +128,7 @@ func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entit
 	return payload, nil
 }
 
-func (c *RemoteClient) GetFile(ctx context.Context, pdbID string, file string) (Artifact, error) {
+func (c *RemoteClient) GetFile(_ context.Context, pdbID string, file string) (Artifact, error) {
 	filename := strings.TrimSpace(file)
 	if filename == "" {
 		return Artifact{}, errors.New("RCSB file is required")

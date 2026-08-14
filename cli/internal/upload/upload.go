@@ -846,10 +846,7 @@ func shouldRetryUploadPart(ctx context.Context, err error, attempt int) bool {
 	}
 	var dynamicPDBError *dynamicpdbapi.Error
 	if errors.As(err, &dynamicPDBError) && dynamicPDBError.Status < 500 {
-		if dynamicPDBError.Code == "RequestTimeout" {
-			return true
-		}
-		return false
+		return dynamicPDBError.Code == "RequestTimeout"
 	}
 	return true
 }
