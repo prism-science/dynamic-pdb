@@ -42,7 +42,7 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.Equal(t, 3, stats.PDBIDs)
 	assert.Equal(t, 12, stats.LocalFiles)
 	require.Len(t, generated.Entries, 1)
-	assert.Len(t, generated.Entries[0].Models, 4)
+	assert.Len(t, generated.Entries[0].Models, 3)
 
 	contents, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.Contains(t, string(contents), "id: model_1")
 	assert.Contains(t, string(contents), "id: model_2")
 	assert.Contains(t, string(contents), "id: model_3")
-	assert.Contains(t, string(contents), "id: model_4")
+	assert.NotContains(t, string(contents), "id: model_4")
 	assert.NotContains(t, string(contents), "id: deposited")
 	assert.NotContains(t, string(contents), "id: rerefined")
 	assert.NotContains(t, string(contents), "id: qfit")
@@ -76,14 +76,14 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.NotContains(t, string(contents), "Model Building")
 	assert.NotContains(t, string(contents), "purpose: Refinement")
 	assert.NotContains(t, string(contents), "model_type: Ensemble")
-	assert.Contains(t, string(contents), "name: Deposited model")
+	assert.NotContains(t, string(contents), "name: Deposited model")
 	assert.Contains(t, string(contents), "r_free")
 	assert.Contains(t, string(contents), "r_work")
-	assert.GreaterOrEqual(t, strings.Count(string(contents), "pdb_id: '{{ pdb_id }}'"), 4)
+	assert.GreaterOrEqual(t, strings.Count(string(contents), "pdb_id: '{{ pdb_id }}'"), 3)
 	assert.Contains(t, string(contents), "resource: entry")
 	assert.Contains(t, string(contents), "resource: polymer_entity")
 	assert.Contains(t, string(contents), "resource: fasta")
-	assert.Contains(t, string(contents), "file: '{{ pdb_id }}.cif'")
+	assert.NotContains(t, string(contents), "file: '{{ pdb_id }}.cif'")
 	assert.Contains(t, string(contents), "file: '{{ pdb_id }}-sf.cif'")
 	assert.Contains(t, string(contents), "file: '{{ pdb_id }}_assembly-1.jpeg'")
 	assert.Contains(t, string(contents), "artifact: coordinates")
@@ -120,6 +120,37 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 		strings.Index(string(contents), "- qFit/qfit_cif/{{ pdb_id }}_qFit_010.cif"),
 		strings.Index(string(contents), "- qFit/qfit_PDBs/{{ pdb_id }}_qFit_010.pdb"),
 	)
+}
+
+func Test_should_include_rcsb_model_when_requested(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "Rerefined/final_model/5amf_020.pdb", "MODEL\n")
+	outputPath := filepath.Join(t.TempDir(), DefaultFilename)
+
+	// when
+	writtenPath, generated, stats, err := Init(Options{
+		DataRoot:         dataRoot,
+		OutputPath:       outputPath,
+		IncludeRCSBModel: true,
+	})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, outputPath, writtenPath)
+	assert.Equal(t, 1, stats.PDBIDs)
+	assert.Equal(t, 1, stats.LocalFiles)
+	require.Len(t, generated.Entries, 1)
+	require.Len(t, generated.Entries[0].Models, 2)
+	assert.Equal(t, "model_1", generated.Entries[0].Models[0].ID)
+	assert.Equal(t, "Deposited model", generated.Entries[0].Models[0].Name)
+	assert.Equal(t, "model_2", generated.Entries[0].Models[1].ID)
+
+	contents, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "name: Deposited model")
+	assert.Contains(t, string(contents), "file: '{{ pdb_id }}.cif'")
+	assert.Contains(t, string(contents), "- Rerefined/final_model/{{ pdb_id }}_020.pdb")
 }
 
 func Test_should_create_template_manifest_from_zip_entries(t *testing.T) {

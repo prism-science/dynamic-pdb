@@ -49,11 +49,34 @@ func Test_should_create_manifest_when_upload_manifest_init_called(t *testing.T) 
 	assert.Contains(t, string(contents), "resource: entry")
 	assert.Contains(t, string(contents), "files:")
 	assert.Contains(t, string(contents), "- '{{ pdb_id }}_020.pdb'")
+	assert.NotContains(t, string(contents), "name: Deposited model")
 	assert.NotContains(t, string(contents), "rcsb: '{{ pdb_id }}/metadata'")
 	assert.NotContains(t, string(contents), "rcsb: '{{ pdb_id }}/coordinates.cif'")
 	assert.NotContains(t, string(contents), "rcsb: '{{ pdb_id }}/fasta'")
 	assert.NotContains(t, string(contents), "fetch:")
 	assert.NotContains(t, string(contents), "external_ref:")
+}
+
+func Test_should_create_manifest_with_rcsb_model_when_upload_manifest_init_flag_is_given(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dataRoot, "5amf_020.pdb"), []byte("MODEL\n"), 0o644))
+	outputPath := filepath.Join(t.TempDir(), "manifest.yaml")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	// when
+	exitCode := Upload(context.Background(), []string{"manifest", "init", dataRoot, "--out", outputPath, "--include-rcsb-model"}, &stdout, &stderr)
+
+	// then
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, stdout.String(), "Wrote "+outputPath)
+	assert.Empty(t, stderr.String())
+	contents, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "name: Deposited model")
+	assert.Contains(t, string(contents), "file: '{{ pdb_id }}.cif'")
+	assert.Contains(t, string(contents), "- '{{ pdb_id }}_020.pdb'")
 }
 
 func Test_should_fail_upload_start_when_user_is_not_authenticated(t *testing.T) {

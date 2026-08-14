@@ -12,8 +12,9 @@ import (
 )
 
 type Options struct {
-	DataRoot   string
-	OutputPath string
+	DataRoot         string
+	OutputPath       string
+	IncludeRCSBModel bool
 }
 
 func Init(options Options) (string, Manifest, Stats, error) {
@@ -30,7 +31,9 @@ func Init(options Options) (string, Manifest, Stats, error) {
 		return "", Manifest{}, Stats{}, fmt.Errorf("resolve output path: %w", err)
 	}
 
-	manifest, stats, err := Build(options.DataRoot)
+	manifest, stats, err := Build(options.DataRoot, BuildOptions{
+		IncludeRCSBModel: options.IncludeRCSBModel,
+	})
 	if err != nil {
 		return "", Manifest{}, Stats{}, err
 	}
