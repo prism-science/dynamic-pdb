@@ -64,6 +64,16 @@ func (c *Commands) EasySearch(
 		tmpDir,
 		"--format-output",
 		FormatOutput,
+		"--max-seqs",
+		"200",
+		"--min-seq-id",
+		"0.3",
+		"-e",
+		"0.1",
+		"-c",
+		"0.5",
+		"--cov-mode",
+		"0",
 	}
 	if _, err := c.run(ctx, args...); err != nil {
 		return fmt.Errorf("run mmseqs easy-search: %w", err)
