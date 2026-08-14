@@ -30,9 +30,20 @@ type Hit struct {
 }
 
 func ParseOutput(path string) (hits []Hit, err error) {
+	hits = make([]Hit, 0)
+	if err := ForEachOutputHit(path, func(hit Hit) error {
+		hits = append(hits, hit)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return hits, nil
+}
+
+func ForEachOutputHit(path string, fn func(Hit) error) (err error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open mmseqs output file: %w", err)
+		return fmt.Errorf("open mmseqs output file: %w", err)
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil && err == nil {
@@ -40,7 +51,6 @@ func ParseOutput(path string) (hits []Hit, err error) {
 		}
 	}()
 
-	hits = make([]Hit, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 1024), 32*1024*1024)
 	lineNumber := 0
@@ -52,17 +62,32 @@ func ParseOutput(path string) (hits []Hit, err error) {
 		}
 		hit, err := parseHit(line)
 		if err != nil {
-			return nil, fmt.Errorf("parse mmseqs output line %d: %w", lineNumber, err)
+			return fmt.Errorf("parse mmseqs output line %d: %w", lineNumber, err)
 		}
 		if hit.QuerySequenceID == hit.TargetSequenceID {
 			continue
 		}
-		hits = append(hits, *hit)
+		if err := fn(*hit); err != nil {
+			return fmt.Errorf("handle mmseqs output line %d: %w", lineNumber, err)
+		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan mmseqs output file: %w", err)
+		return fmt.Errorf("scan mmseqs output file: %w", err)
 	}
-	return hits, nil
+	return nil
+}
+
+func MaxOutputBits(path string) (float64, error) {
+	maxBits := 0.0
+	if err := ForEachOutputHit(path, func(hit Hit) error {
+		if hit.Bits > maxBits {
+			maxBits = hit.Bits
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	return maxBits, nil
 }
 
 func parseHit(line string) (*Hit, error) {
