@@ -1,0 +1,71 @@
+{{- if .Values.mmseqsJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dynamic-pdb-mmseqs-job
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.mmseqsJob.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.mmseqsJob.schedule | quote }}
+  {{- if .Values.mmseqsJob.timeZone }}
+  timeZone: {{ .Values.mmseqsJob.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.mmseqsJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.mmseqsJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.mmseqsJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.mmseqsJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.mmseqsJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "dynamic-pdb.labels" . | nindent 12 }}
+            {{- include "dynamic-pdb.mmseqsJob.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: mmseqs-job
+              image: "{{ .Values.mmseqsJob.image.repository }}:{{ .Values.mmseqsJob.image.tag }}"
+              imagePullPolicy: {{ .Values.mmseqsJob.image.pullPolicy }}
+              env:
+                - name: DYNAMIC_PDB_ENV
+                  value: production
+                - name: DYNAMIC_PDB_DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.dbSecretName }}
+                      key: host
+                - name: DYNAMIC_PDB_DB_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.dbSecretName }}
+                      key: port
+                - name: DYNAMIC_PDB_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.dbSecretName }}
+                      key: database
+                - name: DYNAMIC_PDB_DB_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.dbSecretName }}
+                      key: username
+                - name: DYNAMIC_PDB_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backend.dbSecretName }}
+                      key: password
+                - name: DYNAMIC_PDB_MMSEQS_CACHE_DIR
+                  value: {{ .Values.mmseqsJob.cache.mountPath | quote }}
+              volumeMounts:
+                - name: mmseqs-cache
+                  mountPath: {{ .Values.mmseqsJob.cache.mountPath | quote }}
+              resources:
+                {{- toYaml .Values.mmseqsJob.resources | nindent 16 }}
+          volumes:
+            - name: mmseqs-cache
+              persistentVolumeClaim:
+                claimName: dynamic-pdb-mmseqs-cache
+{{- end }}

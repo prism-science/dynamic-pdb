@@ -236,6 +236,16 @@ jobs:
             -t "${IMAGE}:latest" \
             -f backend/migrations/Dockerfile backend/migrations
 
+      - name: Build and push mmseqs job image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-mmseqs-job"
+          SHA="$(git rev-parse HEAD)"
+          docker buildx build --push \
+            -t "${IMAGE}:sha-${SHA}" \
+            -t "${IMAGE}:latest" \
+            -f backend/cmd/mmseqs-job/Dockerfile backend
+
       - name: Build and push website image
         run: |
           set -euo pipefail

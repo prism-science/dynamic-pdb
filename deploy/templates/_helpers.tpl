@@ -17,3 +17,8 @@ app.kubernetes.io/component: website
 app.kubernetes.io/name: dynamic-pdb-s3proxy
 app.kubernetes.io/component: s3proxy
 {{- end -}}
+
+{{- define "dynamic-pdb.mmseqsJob.selectorLabels" -}}
+app.kubernetes.io/name: dynamic-pdb-mmseqs-job
+app.kubernetes.io/component: mmseqs-job
+{{- end -}}
