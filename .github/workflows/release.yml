@@ -61,6 +61,34 @@ jobs:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
 
+      - name: Print GitHub OIDC claims
+        run: |
+          set -euo pipefail
+          response="$(curl -fsSL \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")"
+          token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<<"${response}")"
+          OIDC_TOKEN="${token}" python3 - <<'PY'
+          import base64
+          import json
+          import os
+
+          payload = os.environ["OIDC_TOKEN"].split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          for key in (
+              "sub",
+              "aud",
+              "repository",
+              "repository_owner",
+              "ref",
+              "workflow_ref",
+              "job_workflow_ref",
+              "event_name",
+          ):
+              print(f"{key}={claims.get(key)}")
+          PY
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
