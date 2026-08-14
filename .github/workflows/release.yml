@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-west-1
+  AWS_DEFAULT_REGION: us-west-1
+  S3_BUCKET: dynamic-pdb-dynamicpdb-com
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::928648268654:role/astera-sh-dynamic-pdb-web-ci
+  REGISTRY: harbor.astera.sh
+  IMAGE_PREFIX: library
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: go build / vet / test
+        run: |
+          set -euo pipefail
+          go build ./cli/...
+          go vet ./cli/...
+          go test ./cli/... -count=1
+
+      - name: helm lint / template
+        run: |
+          set -euo pipefail
+          helm lint deploy
+          helm template dynamic-pdb deploy >/dev/null
+
+  release-binaries:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sanity check S3 access
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          aws s3 ls "s3://${S3_BUCKET}/" >/dev/null
+
+      - name: Cross-compile dynamic-pdb release archives
+        working-directory: cli
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          SHA=$(git rev-parse HEAD)
+          VERSION_NO_V="${VERSION#v}"
+          LDFLAGS="-s -w \
+            -X dynamic-pdb/cli/internal/version.Version=${VERSION} \
+            -X dynamic-pdb/cli/internal/version.Commit=${SHA} \
+            -X dynamic-pdb/cli/internal/version.Date=${DATE}"
+
+          mkdir -p dist
+
+          pack() {
+            local os="$1" arch="$2"
+            local dir="dynamic-pdb_${VERSION_NO_V}_${os}_${arch}"
+            local stage="dist/${dir}"
+            mkdir -p "${stage}"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "${stage}/dynamic-pdb" ./cmd/dynamic-pdb
+            for extra in ../README.md README.md; do
+              [ -f "$extra" ] && cp "$extra" "${stage}/" || true
+            done
+            (cd "${stage}" && tar -czf "../${dir}.tar.gz" *)
+          }
+
+          pack linux amd64
+          pack linux arm64
+          pack darwin amd64
+          pack darwin arm64
+
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+          ls -la dist
+
+      - name: Upload release assets
+        working-directory: cli
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for f in dist/*.tar.gz dist/checksums.txt; do
+            aws s3 cp "$f" "s3://${S3_BUCKET}/releases/${VERSION}/$(basename "$f")" \
+              --cache-control 'public, max-age=31536000, immutable'
+          done
+
+      - name: Update latest.txt
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${VERSION}" > /tmp/latest.txt
+          aws s3 cp /tmp/latest.txt "s3://${S3_BUCKET}/releases/latest.txt" \
+            --content-type 'text/plain; charset=utf-8' \
+            --cache-control 'public, no-cache'
+
+  release-cli-image:
+    needs: build
+    runs-on: diffuse-sh-builder
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Harbor
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: echo "${HARBOR_PASSWORD}" | docker login ${{ env.REGISTRY }} -u "${HARBOR_USERNAME}" --password-stdin
+
+      - name: Set up Docker Buildx
+        run: docker buildx create --use --name ci-builder || docker buildx use ci-builder
+
+      - name: Build and push CLI release image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-cli"
+          VERSION="${{ github.ref_name }}"
+          SHA=$(git rev-parse HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker buildx build --push \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${SHA}" \
+            --build-arg DATE="${DATE}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:sha-${SHA}" \
+            -f cli/Dockerfile cli
+
+  sync-web:
+    needs: [build, release-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sanity check S3 access
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          aws s3 ls "s3://${S3_BUCKET}/" >/dev/null
+
+      - name: Sync install.sh and config to S3
+        run: |
+          set -euo pipefail
+          aws s3 cp install.sh "s3://${S3_BUCKET}/install.sh" \
+            --content-type 'text/x-shellscript; charset=utf-8' \
+            --cache-control 'public, no-cache'
+          aws s3 cp cli/config/dynamic-pdb.yaml "s3://${S3_BUCKET}/config/dynamic-pdb.yaml" \
+            --content-type 'application/yaml; charset=utf-8' \
+            --cache-control 'public, no-cache'

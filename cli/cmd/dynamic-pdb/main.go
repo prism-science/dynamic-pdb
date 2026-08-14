@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"dynamic-pdb/cli/internal/frontend"
+	"dynamic-pdb/cli/internal/version"
 
 	"github.com/spf13/cobra"
 )
@@ -40,6 +41,7 @@ func newRootCommand(ctx context.Context, stdout, stderr io.Writer, code *int) *c
 	root := &cobra.Command{
 		Use:           "dynamic-pdb <command> [args]",
 		Short:         "Dynamic PDB console client",
+		Version:       fmt.Sprintf("%s (commit %s, built %s)", version.Version, version.Commit, version.Date),
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -49,6 +51,7 @@ func newRootCommand(ctx context.Context, stdout, stderr io.Writer, code *int) *c
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
+	root.SetVersionTemplate("dynamic-pdb {{.Version}}\n")
 
 	root.AddCommand(simpleCommand("login", "authenticate to Dynamic PDB", code, func() int {
 		return frontend.Login(ctx, stdout, stderr)
@@ -58,6 +61,9 @@ func newRootCommand(ctx context.Context, stdout, stderr io.Writer, code *int) *c
 	}))
 	root.AddCommand(passThroughCommand("upload", "upload Dynamic PDB datasets", code, func(args []string) int {
 		return frontend.Upload(ctx, args, stdout, stderr)
+	}))
+	root.AddCommand(passThroughCommand("update", "update dynamic-pdb to the latest release", code, func(args []string) int {
+		return frontend.Update(ctx, args, stdout, stderr)
 	}))
 
 	return root

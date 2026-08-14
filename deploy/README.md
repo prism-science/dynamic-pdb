@@ -1,7 +1,7 @@
 # dynamic-pdb deployment
 
-This chart deploys the Dynamic PDB backend, website, Flyway migrations, and the
-MMseqs similarity job.
+This chart deploys the Dynamic PDB backend, website, Flyway migrations, the S3
+proxy that serves CLI release artifacts, and the MMseqs similarity job.
 
 ## Namespace and secrets
 
@@ -13,6 +13,7 @@ Required secrets:
 
 - `dynamic-pdb`: created by `astera-k3s` in `dynamicpdb`, with `host`, `port`, `database`, `username`, `password`, and `url`.
 - `dynamic-pdb-s3-data`: created by `astera-k3s` in `dynamicpdb`, with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_BUCKET`.
+- `dynamic-pdb-s3proxy-aws`: created by `astera-k3s` in `dynamicpdb`, with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for read-only access to the CLI release bucket.
 - `dynamic-pdb-backend`: create manually in `dynamicpdb`, with `jwt-secret` and `github-client-secret`.
 
 Example app secret:
@@ -77,3 +78,17 @@ The `dynamic-pdb-data` bucket also needs S3 CORS for browser multipart uploads:
 - allowed methods: `GET`, `HEAD`, `PUT`
 - allowed headers: `*`
 - exposed headers: `ETag`
+
+## CLI releases
+
+Tag pushes matching `v*` run `.github/workflows/release.yml`. The workflow
+cross-compiles the CLI, uploads immutable archives and `checksums.txt` under
+`s3://dynamic-pdb-dynamicpdb-com/releases/<tag>/`, then updates
+`releases/latest.txt`, `install.sh`, and `config/dynamic-pdb.yaml`.
+
+The chart routes `/install.sh`, `/releases/*`, and `/config/*` to s3proxy, so
+users can install with:
+
+```sh
+curl -fsSL https://dynamicpdb.com/install.sh | bash
+```

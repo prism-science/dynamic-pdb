@@ -24,6 +24,22 @@ From the repository root, the binary is usually available at:
 ./cli/bin/dynamic-pdb
 ```
 
+## Install and update
+
+Release builds are installed from `dynamicpdb.com`:
+
+```bash
+curl -fsSL https://dynamicpdb.com/install.sh | bash
+```
+
+Update an installed release in place:
+
+```bash
+dynamic-pdb update
+```
+
+Pin a specific version with `dynamic-pdb update --version vX.Y.Z`.
+
 ## Configure
 
 Login uses GitHub device authorization. The CLI stores its config under
