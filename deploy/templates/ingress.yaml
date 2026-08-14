@@ -22,6 +22,27 @@ spec:
                 name: dynamic-pdb-backend
                 port:
                   name: http
+          - path: /install.sh
+            pathType: Exact
+            backend:
+              service:
+                name: dynamic-pdb-s3proxy
+                port:
+                  name: http
+          - path: /releases
+            pathType: Prefix
+            backend:
+              service:
+                name: dynamic-pdb-s3proxy
+                port:
+                  name: http
+          - path: /config
+            pathType: Prefix
+            backend:
+              service:
+                name: dynamic-pdb-s3proxy
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

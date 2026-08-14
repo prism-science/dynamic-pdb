@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-pdb-s3proxy
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.s3proxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dynamic-pdb.labels" . | nindent 8 }}
+        {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: s3proxy
+          image: "{{ .Values.s3proxy.image.repository }}:{{ .Values.s3proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.s3proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.s3proxy.service.port }}
+              protocol: TCP
+          env:
+            - name: S3_BUCKET_NAME
+              value: {{ .Values.s3proxy.s3.bucketName | quote }}
+            - name: AWS_REGION
+              value: {{ .Values.s3proxy.s3.region | quote }}
+            - name: INDEX_DOCUMENT
+              value: {{ .Values.s3proxy.s3.indexDocument | quote }}
+            - name: LISTEN_ADDR
+              value: ":{{ .Values.s3proxy.service.port }}"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3proxy.awsSecretName }}
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3proxy.awsSecretName }}
+                  key: AWS_SECRET_ACCESS_KEY
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.s3proxy.resources | nindent 12 }}

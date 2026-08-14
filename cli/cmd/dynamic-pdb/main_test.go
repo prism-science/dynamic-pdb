@@ -24,6 +24,7 @@ func Test_should_show_login_command_when_no_command_is_given(t *testing.T) {
 	// then
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout.String(), "login")
+	assert.Contains(t, stdout.String(), "update")
 	assert.Contains(t, stdout.String(), "upload")
 	assert.Empty(t, stderr.String())
 }
@@ -39,6 +40,20 @@ func Test_should_fail_when_unknown_command_is_given(t *testing.T) {
 	// then
 	assert.Equal(t, 1, exitCode)
 	assert.Contains(t, stderr.String(), "unknown command")
+}
+
+func Test_should_print_version_when_version_flag_is_given(t *testing.T) {
+	// given
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	// when
+	exitCode := execute(context.Background(), []string{"--version"}, &stdout, &stderr)
+
+	// then
+	assert.Equal(t, 0, exitCode)
+	assert.Contains(t, stdout.String(), "dynamic-pdb dev")
+	assert.Empty(t, stderr.String())
 }
 
 func Test_should_clear_auth_when_logout_command_is_called(t *testing.T) {
