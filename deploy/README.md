@@ -43,14 +43,12 @@ The MMseqs job is deployed as a Kubernetes CronJob. It uses the same database
 secret as the backend and stores its local similarity index under a persistent
 volume mounted at `/app/.tmp/mmseqs`.
 
-The current schedule is hourly for production smoke testing. Switch it back to
-daily after the job behavior is verified:
+The MMseqs job runs once per day:
 
 ```yaml
 mmseqsJob:
   enabled: true
-  # Temporary test cadence. Switch back to daily after production smoke testing.
-  schedule: "0 * * * *"
+  schedule: "0 0 * * *"
   timeZone: Etc/UTC
 ```
 

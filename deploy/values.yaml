@@ -79,8 +79,7 @@ migrations:
 
 mmseqsJob:
   enabled: true
-  # Temporary test cadence. Switch back to daily after production smoke testing.
-  schedule: "0 * * * *"
+  schedule: "0 0 * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
