@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ type SimilarityResultPersisterParams struct {
 
 const (
 	similarityPersistBatchSize     = 5000
+	similarityPersistLogEvery      = 20
 	processingStateUpdateBatchSize = 10000
 )
 
@@ -53,18 +55,57 @@ func (p *SimilarityResultPersister) Persist(ctx context.Context, params Similari
 	if err != nil {
 		return fmt.Errorf("read sequence ids: %w", err)
 	}
-	hits, err := ParseOutput(params.SearchResultPath)
+	maxBits, err := MaxOutputBits(params.SearchResultPath)
 	if err != nil {
-		return fmt.Errorf("parse similarity search result: %w", err)
+		return fmt.Errorf("read max similarity search bits: %w", err)
 	}
-	similarities := similaritiesFromHits(params.Run.ID, hits)
-
-	if err := p.persistSimilarities(ctx, similarities); err != nil {
+	slog.Info("persisting mmseqs similarity search result", "run_id", params.Run.ID, "max_bits", maxBits)
+	if err := p.persistSearchResult(ctx, params.Run.ID, params.SearchResultPath, maxBits); err != nil {
 		return fmt.Errorf("persist protein sequence similarities: %w", err)
 	}
 	if err := p.markSequencesProcessed(ctx, sequenceIDs); err != nil {
 		return fmt.Errorf("mark protein sequences processed: %w", err)
 	}
+	slog.Info("mmseqs similarity result persisted", "run_id", params.Run.ID, "processed_sequences", len(sequenceIDs))
+	return nil
+}
+
+func (p *SimilarityResultPersister) persistSearchResult(
+	ctx context.Context,
+	runID uuid.UUID,
+	searchResultPath string,
+	maxBits float64,
+) error {
+	now := time.Now().UTC()
+	batch := make([]models.ProteinSequenceSimilarity, 0, similarityPersistBatchSize)
+	persistedCount := 0
+	batchCount := 0
+	if err := ForEachOutputHit(searchResultPath, func(hit Hit) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		batch = append(batch, similarityFromHit(runID, hit, maxBits, now))
+		if len(batch) < similarityPersistBatchSize {
+			return nil
+		}
+		if err := p.persistSimilarities(ctx, batch); err != nil {
+			return err
+		}
+		persistedCount += len(batch)
+		batchCount++
+		if batchCount%similarityPersistLogEvery == 0 {
+			slog.Info("persisted mmseqs similarity batch", "run_id", runID, "similarities", persistedCount)
+		}
+		batch = batch[:0]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("stream similarity search result: %w", err)
+	}
+	if err := p.persistSimilarities(ctx, batch); err != nil {
+		return fmt.Errorf("save final protein sequence similarity batch: %w", err)
+	}
+	persistedCount += len(batch)
+	slog.Info("finished streaming mmseqs similarity result", "run_id", runID, "similarities", persistedCount)
 	return nil
 }
 
@@ -107,38 +148,47 @@ func similaritiesFromHits(runID uuid.UUID, hits []Hit) []models.ProteinSequenceS
 	similarities := make([]models.ProteinSequenceSimilarity, 0, len(hits))
 	now := time.Now().UTC()
 	for _, hit := range hits {
-		score := 0.0
-		if maxBits > 0 {
-			score = hit.Bits / maxBits
-		}
-		similarities = append(similarities, models.ProteinSequenceSimilarity{
-			ID:                uuid.New(),
-			RunID:             runID,
-			SourceSequenceID:  hit.QuerySequenceID,
-			SimilarSequenceID: hit.TargetSequenceID,
-			Tool:              "mmseqs2",
-			Score:             score,
-			Metadata: map[string]any{
-				"fident":              hit.Fident,
-				"qcov":                hit.Qcov,
-				"tcov":                hit.Tcov,
-				"evalue":              hit.Evalue,
-				"bits":                hit.Bits,
-				"alignment_length":    hit.AlignmentLength,
-				"qstart":              hit.Qstart,
-				"qend":                hit.Qend,
-				"tstart":              hit.Tstart,
-				"tend":                hit.Tend,
-				"qaln":                hit.Qaln,
-				"taln":                hit.Taln,
-				"score_source":        "bits",
-				"score_normalization": "max_bits_per_run",
-				"max_bits_in_run":     maxBits,
-			},
-			CreatedAt: now,
-		})
+		similarities = append(similarities, similarityFromHit(runID, hit, maxBits, now))
 	}
 	return similarities
+}
+
+func similarityFromHit(
+	runID uuid.UUID,
+	hit Hit,
+	maxBits float64,
+	createdAt time.Time,
+) models.ProteinSequenceSimilarity {
+	score := 0.0
+	if maxBits > 0 {
+		score = hit.Bits / maxBits
+	}
+	return models.ProteinSequenceSimilarity{
+		ID:                uuid.New(),
+		RunID:             runID,
+		SourceSequenceID:  hit.QuerySequenceID,
+		SimilarSequenceID: hit.TargetSequenceID,
+		Tool:              "mmseqs2",
+		Score:             score,
+		Metadata: map[string]any{
+			"fident":              hit.Fident,
+			"qcov":                hit.Qcov,
+			"tcov":                hit.Tcov,
+			"evalue":              hit.Evalue,
+			"bits":                hit.Bits,
+			"alignment_length":    hit.AlignmentLength,
+			"qstart":              hit.Qstart,
+			"qend":                hit.Qend,
+			"tstart":              hit.Tstart,
+			"tend":                hit.Tend,
+			"qaln":                hit.Qaln,
+			"taln":                hit.Taln,
+			"score_source":        "bits",
+			"score_normalization": "max_bits_per_run",
+			"max_bits_in_run":     maxBits,
+		},
+		CreatedAt: createdAt,
+	}
 }
 
 func readSequenceIDs(path string) (ids []uuid.UUID, err error) {
