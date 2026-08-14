@@ -50,10 +50,14 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 	if err != nil {
 		return nil, fmt.Errorf("prepare entry revision metadata: %w", err)
 	}
+	entryState := revision.EntryState
+	if entryState == "" {
+		entryState = models.EntryStateActive
+	}
 
 	query := `with ensured_entry as (
-			    insert into entries(id, created_by, created_at)
-			    values (:entry_id, :created_by, :created_at)
+			    insert into entries(id, state, created_by, created_at)
+			    values (:entry_id, :entry_state, :created_by, :created_at)
 			    on conflict (id) do nothing
 			    returning id
 			  )
@@ -63,6 +67,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    parent_revision_id,
 			    revision_number,
 			    state,
+			    entry_state,
 			    change_summary,
 			    published_at,
 			    name,
@@ -79,6 +84,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :parent_revision_id,
 			    :revision_number,
 			    :state,
+			    :entry_state,
 			    :change_summary,
 			    :published_at,
 			    :name,
@@ -89,7 +95,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :created_at,
 			    :updated_at
 			  )
-			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
 			            published_at, name, description, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 
@@ -100,6 +106,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 		"parent_revision_id":  revision.ParentRevisionID,
 		"revision_number":     revision.RevisionNumber,
 		"state":               string(revision.State),
+		"entry_state":         string(entryState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
 		"name":                revision.Name,

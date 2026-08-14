@@ -51,10 +51,14 @@ func (r *ModelsRepository) Create(
 	if err != nil {
 		return nil, fmt.Errorf("prepare model revision metadata: %w", err)
 	}
+	modelState := revision.ModelState
+	if modelState == "" {
+		modelState = models.ModelStateActive
+	}
 
 	query := `with ensured_model as (
-			    insert into models(id, entry_id, created_by, created_at)
-			    values (:model_id, :entry_id, :created_by, :created_at)
+			    insert into models(id, entry_id, state, created_by, created_at)
+			    values (:model_id, :entry_id, :model_state, :created_by, :created_at)
 			    on conflict (id) do nothing
 			    returning id
 			  )
@@ -65,6 +69,7 @@ func (r *ModelsRepository) Create(
 			    primary_artifact_id,
 			    revision_number,
 			    state,
+			    model_state,
 			    change_summary,
 			    published_at,
 			    name,
@@ -82,6 +87,7 @@ func (r *ModelsRepository) Create(
 			    :primary_artifact_id,
 			    :revision_number,
 			    :state,
+			    :model_state,
 			    :change_summary,
 			    :published_at,
 			    :name,
@@ -93,7 +99,7 @@ func (r *ModelsRepository) Create(
 			    :updated_at
 			  )
 			  returning id, model_id, parent_revision_id, primary_artifact_id, revision_number,
-			            state, change_summary, published_at, name, description,
+			            state, model_state, change_summary, published_at, name, description,
 			            thumbnail_image_url, metadata, created_by, created_at, updated_at`
 
 	var row modelRevisionRow
@@ -105,6 +111,7 @@ func (r *ModelsRepository) Create(
 		"primary_artifact_id": revision.PrimaryArtifactID,
 		"revision_number":     revision.RevisionNumber,
 		"state":               string(revision.State),
+		"model_state":         string(modelState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
 		"name":                revision.Name,
