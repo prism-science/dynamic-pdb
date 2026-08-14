@@ -37,8 +37,9 @@ export default function SimilarMatchAlignment({
     return null;
   }
 
-  const index = Math.min(activeIndex, matches.length - 1);
-  const match = matches[index];
+  const orderedMatches = matchesSortedByIdentity(matches);
+  const index = Math.min(activeIndex, orderedMatches.length - 1);
+  const match = orderedMatches[index];
   const source =
     sequences.find((sequence) => sequence.id === match.source_sequence_id) ??
     null;
@@ -58,7 +59,7 @@ export default function SimilarMatchAlignment({
   );
   const pairLabel = `${queryLabel} → ${matchLabel}`;
 
-  const switchable = matches.length > 1;
+  const switchable = orderedMatches.length > 1;
   const tail = deflineTail(match.similar_sequence.header);
 
   return (
@@ -74,7 +75,7 @@ export default function SimilarMatchAlignment({
               value={index}
               onChange={(event) => setActiveIndex(Number(event.target.value))}
             >
-              {matches.map((option, position) => (
+              {orderedMatches.map((option, position) => (
                 <option key={position} value={position}>
                   {optionLabel(option, position, sequences)}
                 </option>
@@ -117,6 +118,16 @@ export default function SimilarMatchAlignment({
       </div>
     </div>
   );
+}
+
+function matchesSortedByIdentity(
+  matches: SimilarEntryMatch[],
+): SimilarEntryMatch[] {
+  return [...matches].sort((a, b) => {
+    const aIdentity = similarityStats(a.metadata).fident ?? -1;
+    const bIdentity = similarityStats(b.metadata).fident ?? -1;
+    return bIdentity - aIdentity;
+  });
 }
 
 function optionLabel(

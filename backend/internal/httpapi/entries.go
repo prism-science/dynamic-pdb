@@ -242,12 +242,14 @@ func entryFiltersFromParams(
 		search = strings.TrimSpace(*params.Query)
 	}
 
+	entryActive := domainmodels.EntryStateActive
 	return db.EntryRevisionFilters{
-		State:  &state,
-		Limit:  limit,
-		Offset: params.Offset,
-		Query:  search,
-		PDBIDs: stringSliceFromPtr(params.PdbId),
+		State:      &state,
+		EntryState: &entryActive,
+		Limit:      limit,
+		Offset:     params.Offset,
+		Query:      search,
+		PDBIDs:     stringSliceFromPtr(params.PdbId),
 	}, nil
 }
 
@@ -292,6 +294,7 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 			EntryID:           entryID,
 			RevisionNumber:    ptr(1),
 			State:             domainmodels.RevisionStateActive,
+			EntryState:        domainmodels.EntryStateActive,
 			PublishedAt:       &now,
 			Name:              name,
 			Description:       trimmedStringPtr(req.Description),
@@ -379,6 +382,7 @@ func (s *Server) createModelGraph(
 		PrimaryArtifactID: req.PrimaryArtifactId,
 		RevisionNumber:    ptr(1),
 		State:             domainmodels.RevisionStateActive,
+		ModelState:        domainmodels.ModelStateActive,
 		PublishedAt:       &now,
 		Name:              name,
 		Description:       trimmedStringPtr(req.Description),
@@ -753,11 +757,13 @@ func modelFiltersFromParams(
 		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
 	}
 
+	modelActive := domainmodels.ModelStateActive
 	return db.ModelRevisionFilters{
-		EntryID: &entryID,
-		State:   &state,
-		Limit:   params.Limit,
-		Offset:  params.Offset,
+		EntryID:    &entryID,
+		State:      &state,
+		ModelState: &modelActive,
+		Limit:      params.Limit,
+		Offset:     params.Offset,
 	}, nil
 }
 
@@ -908,9 +914,11 @@ func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.Artifac
 
 func (s *Server) activeEntryRevision(ctx context.Context, entryID uuid.UUID) (*domainmodels.EntryRevision, error) {
 	activeState := domainmodels.RevisionStateActive
+	entryActive := domainmodels.EntryStateActive
 	revision, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{
-		EntryID: &entryID,
-		State:   &activeState,
+		EntryID:    &entryID,
+		State:      &activeState,
+		EntryState: &entryActive,
 	})
 	if err != nil {
 		return nil, err
@@ -930,10 +938,12 @@ func (s *Server) activeModelRevision(
 	}
 
 	activeState := domainmodels.RevisionStateActive
+	activeModel := domainmodels.ModelStateActive
 	revision, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
-		EntryID: &entryID,
-		ModelID: &modelID,
-		State:   &activeState,
+		EntryID:    &entryID,
+		ModelID:    &modelID,
+		State:      &activeState,
+		ModelState: &activeModel,
 	})
 	if err != nil {
 		return nil, err

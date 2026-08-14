@@ -16,12 +16,13 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		stop()
 	}()
-	os.Exit(execute(ctx, os.Args[1:], os.Stdout, os.Stderr))
+	code := execute(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
 func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {

@@ -29,6 +29,7 @@ type EntryRevisionFilters struct {
 	ID              *uuid.UUID
 	EntryID         *uuid.UUID
 	State           *models.RevisionState
+	EntryState      *models.EntryState
 	CreatedBy       *uuid.UUID
 	PDBIDs          []string
 	Limit           *int
@@ -49,10 +50,14 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 	if err != nil {
 		return nil, fmt.Errorf("prepare entry revision metadata: %w", err)
 	}
+	entryState := revision.EntryState
+	if entryState == "" {
+		entryState = models.EntryStateActive
+	}
 
 	query := `with ensured_entry as (
-			    insert into entries(id, created_by, created_at)
-			    values (:entry_id, :created_by, :created_at)
+			    insert into entries(id, state, created_by, created_at)
+			    values (:entry_id, :entry_state, :created_by, :created_at)
 			    on conflict (id) do nothing
 			    returning id
 			  )
@@ -62,6 +67,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    parent_revision_id,
 			    revision_number,
 			    state,
+			    entry_state,
 			    change_summary,
 			    published_at,
 			    name,
@@ -78,6 +84,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :parent_revision_id,
 			    :revision_number,
 			    :state,
+			    :entry_state,
 			    :change_summary,
 			    :published_at,
 			    :name,
@@ -88,7 +95,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :created_at,
 			    :updated_at
 			  )
-			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
 			            published_at, name, description, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 
@@ -99,6 +106,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 		"parent_revision_id":  revision.ParentRevisionID,
 		"revision_number":     revision.RevisionNumber,
 		"state":               string(revision.State),
+		"entry_state":         string(entryState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
 		"name":                revision.Name,
@@ -243,6 +251,15 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "state = :state")
 		args["state"] = string(*filters.State)
 	}
+	if filters.EntryState != nil {
+		conditions = append(conditions, `exists (
+			select 1
+			from entries e
+			where e.id = entry_revisions.entry_id
+			  and e.state = :entry_state
+		)`)
+		args["entry_state"] = string(*filters.EntryState)
+	}
 	if filters.CreatedBy != nil {
 		conditions = append(conditions, "created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
@@ -271,14 +288,16 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		args["protein_sequence"] = proteinSequence
 	}
 
-	query := `select id, entry_id, parent_revision_id, revision_number, state, change_summary,
+	query := `select id, entry_id, parent_revision_id, revision_number, state,
+			         entry_state,
+			         change_summary,
 			         published_at, name, description, thumbnail_image_url, metadata, created_by,
 			         created_at, updated_at
 			  from entry_revisions`
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
 	}
-	query += "\norder by created_at asc, id asc"
+	query += "\norder by created_at desc, id desc"
 
 	if filters.Limit != nil {
 		query += "\nlimit :limit"
@@ -321,6 +340,7 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 		ParentRevisionID:  uuidPtrFromSQL(row.ParentRevisionID),
 		RevisionNumber:    intPtrFromSQL(row.RevisionNumber),
 		State:             models.RevisionState(row.State),
+		EntryState:        models.EntryState(row.EntryState),
 		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 		PublishedAt:       timePtrFromSQL(row.PublishedAt),
 		Name:              row.Name,
@@ -339,6 +359,7 @@ type entryRevisionRow struct {
 	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
 	RevisionNumber    sql.NullInt64  `db:"revision_number"`
 	State             string         `db:"state"`
+	EntryState        string         `db:"entry_state"`
 	ChangeSummary     sql.NullString `db:"change_summary"`
 	PublishedAt       sql.NullTime   `db:"published_at"`
 	Name              string         `db:"name"`

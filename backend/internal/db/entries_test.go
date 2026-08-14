@@ -97,7 +97,7 @@ func Test_should_list_entry_revisions_matching_search_with_pagination_when_entri
 	// then
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	assert.Equal(t, second.ID, got[0].ID)
+	assert.Equal(t, first.ID, got[0].ID)
 }
 
 func Test_should_filter_entry_revisions_by_protein_sequence_when_entries_list_called(t *testing.T) {
