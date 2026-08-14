@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_should_normalize_scores_and_keep_mmseqs_metadata_when_hits_converted_to_similarities(t *testing.T) {
+func Test_should_score_by_identity_and_coverage_and_keep_mmseqs_metadata_when_hits_converted_to_similarities(t *testing.T) {
 	// given
 	runID := uuid.New()
 	firstSourceID := uuid.New()
@@ -59,7 +59,7 @@ func Test_should_normalize_scores_and_keep_mmseqs_metadata_when_hits_converted_t
 	assert.Equal(t, firstSourceID, similarities[0].SourceSequenceID)
 	assert.Equal(t, firstTargetID, similarities[0].SimilarSequenceID)
 	assert.Equal(t, "mmseqs2", similarities[0].Tool)
-	assert.Equal(t, 0.5, similarities[0].Score)
+	assert.InDelta(t, 0.637, similarities[0].Score, 0.0000001)
 	assert.Equal(t, 0.91, similarities[0].Metadata["fident"])
 	assert.Equal(t, 0.8, similarities[0].Metadata["qcov"])
 	assert.Equal(t, 0.7, similarities[0].Metadata["tcov"])
@@ -72,11 +72,11 @@ func Test_should_normalize_scores_and_keep_mmseqs_metadata_when_hits_converted_t
 	assert.Equal(t, 21, similarities[0].Metadata["tend"])
 	assert.Equal(t, "ACDE", similarities[0].Metadata["qaln"])
 	assert.Equal(t, "ACDF", similarities[0].Metadata["taln"])
-	assert.Equal(t, "bits", similarities[0].Metadata["score_source"])
-	assert.Equal(t, "max_bits_per_run", similarities[0].Metadata["score_normalization"])
-	assert.Equal(t, 100.0, similarities[0].Metadata["max_bits_in_run"])
+	assert.Equal(t, "fident_min_coverage", similarities[0].Metadata["score_source"])
+	assert.NotContains(t, similarities[0].Metadata, "score_normalization")
+	assert.NotContains(t, similarities[0].Metadata, "max_bits_in_run")
 
-	assert.Equal(t, 1.0, similarities[1].Score)
+	assert.Equal(t, 0.95, similarities[1].Score)
 	assert.NotZero(t, similarities[0].ID)
 	assert.False(t, similarities[0].CreatedAt.IsZero())
 }

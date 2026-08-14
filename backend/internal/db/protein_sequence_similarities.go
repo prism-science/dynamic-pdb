@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/models"
 )
@@ -228,6 +229,119 @@ func (r *ProteinSequenceSimilaritiesRepository) Create(
 		return fmt.Errorf("insert protein sequence similarities: %w", err)
 	}
 	return nil
+}
+
+func (r *ProteinSequenceSimilaritiesRepository) CreateSimilarityStagingTable(ctx context.Context) error {
+	query := `create temporary table protein_sequence_similarities_staging (
+			    id uuid not null,
+			    run_id uuid not null,
+			    source_sequence_id uuid not null,
+			    similar_sequence_id uuid not null,
+			    tool text not null,
+			    score double precision not null,
+			    metadata jsonb not null,
+			    created_at timestamptz not null
+			  ) on commit drop`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("create protein sequence similarities staging table: %w", err)
+	}
+	return nil
+}
+
+func (r *ProteinSequenceSimilaritiesRepository) CopyToSimilarityStaging(
+	ctx context.Context,
+	similarities []models.ProteinSequenceSimilarity,
+) (err error) {
+	if len(similarities) == 0 {
+		return nil
+	}
+
+	statement, err := r.queriers.Querier(ctx, r.db).PreparexContext(ctx, pq.CopyIn(
+		"protein_sequence_similarities_staging",
+		"id",
+		"run_id",
+		"source_sequence_id",
+		"similar_sequence_id",
+		"tool",
+		"score",
+		"metadata",
+		"created_at",
+	))
+	if err != nil {
+		return fmt.Errorf("prepare copy protein sequence similarities to staging: %w", err)
+	}
+	defer func() {
+		if closeErr := statement.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close copy protein sequence similarities statement: %w", closeErr)
+		}
+	}()
+
+	now := time.Now().UTC()
+	for _, similarity := range similarities {
+		metadata, err := marshalJSON(similarity.Metadata)
+		if err != nil {
+			return fmt.Errorf("prepare protein sequence similarity metadata: %w", err)
+		}
+
+		id := similarity.ID
+		if id == uuid.Nil {
+			id = uuid.New()
+		}
+		createdAt := similarity.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = now
+		}
+		if _, err := statement.ExecContext(
+			ctx,
+			id,
+			similarity.RunID,
+			similarity.SourceSequenceID,
+			similarity.SimilarSequenceID,
+			similarity.Tool,
+			similarity.Score,
+			metadata,
+			createdAt,
+		); err != nil {
+			return fmt.Errorf("copy protein sequence similarity to staging: %w", err)
+		}
+	}
+	if _, err := statement.ExecContext(ctx); err != nil {
+		return fmt.Errorf("flush protein sequence similarities staging copy: %w", err)
+	}
+	return nil
+}
+
+func (r *ProteinSequenceSimilaritiesRepository) CreateFromSimilarityStaging(ctx context.Context) (int64, error) {
+	query := `insert into protein_sequence_similarities(
+			    id,
+			    run_id,
+			    source_sequence_id,
+			    similar_sequence_id,
+			    tool,
+			    score,
+			    metadata,
+			    created_at
+			  )
+			  select
+			    id,
+			    run_id,
+			    source_sequence_id,
+			    similar_sequence_id,
+			    tool,
+			    score,
+			    metadata,
+			    created_at
+			  from protein_sequence_similarities_staging
+			  on conflict (source_sequence_id, similar_sequence_id, tool) do nothing`
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("insert protein sequence similarities from staging: %w", err)
+	}
+	insertedCount, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read inserted protein sequence similarities count: %w", err)
+	}
+	return insertedCount, nil
 }
 
 func (r *ProteinSequenceSimilaritiesRepository) List(

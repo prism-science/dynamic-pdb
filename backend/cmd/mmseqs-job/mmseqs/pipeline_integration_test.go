@@ -61,8 +61,9 @@ func Test_should_recalculate_protein_sequence_similarities_when_mmseqs_pipeline_
 	require.Len(t, similarities, 1)
 	assert.Equal(t, sequences[1].ID, similarities[0].SimilarSequenceID)
 	assert.Equal(t, "mmseqs2", similarities[0].Tool)
-	assert.Equal(t, 1.0, similarities[0].Score)
+	assert.Equal(t, 0.9, similarities[0].Score)
 	assert.Equal(t, 0.9, similarities[0].Metadata["fident"])
+	assert.Equal(t, "fident_min_coverage", similarities[0].Metadata["score_source"])
 	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWY", similarities[0].Metadata["qaln"])
 	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWF", similarities[0].Metadata["taln"])
 
@@ -87,6 +88,98 @@ func Test_should_recalculate_protein_sequence_similarities_when_mmseqs_pipeline_
 	runsAfterSecondRun, err := database.ProteinSequenceSimilarities.ListRuns(ctx, db.ProteinSequenceSimilarityRunFilters{State: &succeededState})
 	require.NoError(t, err)
 	assert.Len(t, runsAfterSecondRun, 1)
+}
+
+func Test_should_resume_similarity_result_persisting_from_checkpoint_when_persister_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	database := setupPipelineTestDB(t)
+	now := time.Now().UTC()
+	entryRevision := createPipelineTestEntryRevision(t, database, "mmseqs-persister-checkpoint-entry", now)
+	artifact := createPipelineTestArtifact(t, database, entryRevision.CreatedBy, "mmseqs-persister-checkpoint-fasta", now)
+	records := []models.FASTARecord{
+		{Header: "source", Sequence: "ACDEFGHIKLMNPQRSTVWY"},
+		{Header: "first-target", Sequence: "ACDEFGHIKLMNPQRSTVWF"},
+		{Header: "second-target", Sequence: "ACDEFGHIKLMNPQRSTVWA"},
+	}
+	require.NoError(t, database.ProteinSequences.Create(ctx, entryRevision.ID, artifact.ID, records))
+	sequences, err := database.ProteinSequences.List(ctx, db.ProteinSequenceFilters{EntryRevisionID: &entryRevision.ID})
+	require.NoError(t, err)
+	require.Len(t, sequences, 3)
+
+	run, err := database.ProteinSequenceSimilarities.CreateRun(ctx, models.ProteinSequenceSimilarityRun{
+		ID:        uuid.New(),
+		Tool:      "mmseqs2",
+		State:     models.ProteinSequenceSimilarityRunStateRunning,
+		StartedAt: &now,
+		CreatedAt: now,
+	})
+	require.NoError(t, err)
+	firstLine := fmt.Sprintf(
+		"%s\t%s\t0.95\t1\t1\t1e-20\t100\t20\t1\t20\t1\t20\tACDEFGHIKLMNPQRSTVWY\tACDEFGHIKLMNPQRSTVWF\n",
+		sequences[0].ID,
+		sequences[1].ID,
+	)
+	secondLine := fmt.Sprintf(
+		"%s\t%s\t0.8\t1\t1\t1e-10\t80\t20\t1\t20\t1\t20\tACDEFGHIKLMNPQRSTVWY\tACDEFGHIKLMNPQRSTVWA\n",
+		sequences[0].ID,
+		sequences[2].ID,
+	)
+	tempDir := t.TempDir()
+	sequenceFilePath := filepath.Join(tempDir, "sequences.fasta")
+	searchResultPath := filepath.Join(tempDir, "similarity-search.tsv")
+	require.NoError(t, os.WriteFile(sequenceFilePath, []byte(fmt.Sprintf(">%s\n%s\n", sequences[0].ID, sequences[0].Sequence)), 0o600))
+	require.NoError(t, os.WriteFile(searchResultPath, []byte(firstLine+secondLine), 0o600))
+	require.NoError(t, database.ProteinSequenceSimilarities.Create(ctx, []models.ProteinSequenceSimilarity{
+		{
+			RunID:             run.ID,
+			SourceSequenceID:  sequences[0].ID,
+			SimilarSequenceID: sequences[1].ID,
+			Tool:              "mmseqs2",
+			Score:             0.95,
+			Metadata:          map[string]any{"fident": 0.95, "qcov": 1, "tcov": 1},
+			CreatedAt:         now,
+		},
+	}))
+	checkpointPath := similarityResultPersisterCheckpointPath(searchResultPath)
+	require.NoError(t, writeSimilarityResultPersisterCheckpoint(checkpointPath, SimilarityResultPersisterCheckpoint{
+		SearchResultOffset:      int64(len(firstLine)),
+		ProcessedSimilarityRows: 1,
+		InsertedSimilarityRows:  1,
+		Completed:               false,
+	}))
+	persister, err := NewSimilarityResultPersister(database)
+	require.NoError(t, err)
+
+	// when
+	err = persister.Persist(ctx, SimilarityResultPersisterParams{
+		Run:              *run,
+		SequenceFilePath: sequenceFilePath,
+		SearchResultPath: searchResultPath,
+	})
+
+	// then
+	require.NoError(t, err)
+	similarities, err := database.ProteinSequenceSimilarities.List(ctx, db.ProteinSequenceSimilarityFilters{
+		SourceSequenceID: &sequences[0].ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, similarities, 2)
+	assert.Equal(t, sequences[1].ID, similarities[0].SimilarSequenceID)
+	assert.Equal(t, 0.95, similarities[0].Score)
+	assert.Equal(t, sequences[2].ID, similarities[1].SimilarSequenceID)
+	assert.Equal(t, 0.8, similarities[1].Score)
+
+	checkpoint, err := readSimilarityResultPersisterCheckpoint(checkpointPath)
+	require.NoError(t, err)
+	assert.True(t, checkpoint.Completed)
+	assert.Equal(t, int64(len(firstLine)+len(secondLine)), checkpoint.SearchResultOffset)
+	assert.Equal(t, int64(2), checkpoint.ProcessedSimilarityRows)
+	assert.Equal(t, int64(2), checkpoint.InsertedSimilarityRows)
+
+	processedSequences, err := database.ProteinSequences.List(ctx, db.ProteinSequenceFilters{EntryRevisionID: &entryRevision.ID})
+	require.NoError(t, err)
+	assert.Equal(t, models.ProteinSequenceProcessingStateProcessed, processedSequences[0].ProcessingState)
 }
 
 func setupPipelineTestDB(t *testing.T) *db.DB {
