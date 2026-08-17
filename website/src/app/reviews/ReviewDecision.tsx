@@ -2,37 +2,31 @@
 
 import { useState, useTransition } from "react";
 
+import type { RevisionTarget } from "@/lib/api/entries";
+
 import { approveSubmissionAction, rejectSubmissionAction } from "./actions";
 import styles from "./reviews.module.css";
 
 type Props = {
-  entryId: string;
+  target: RevisionTarget;
 };
 
-/** One decision per submission: the entry revision and every model revision in
- *  review under it are approved or rejected together. */
-export default function ReviewDecision({ entryId }: Props) {
+export default function ReviewDecision({ target }: Props) {
   const [pending, startTransition] = useTransition();
-  const [rejecting, setRejecting] = useState(false);
-  const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function approve() {
     setError(null);
     startTransition(async () => {
-      const result = await approveSubmissionAction(entryId);
+      const result = await approveSubmissionAction(target);
       if (result && "error" in result) setError(result.error);
     });
   }
 
   function reject() {
-    if (!rejecting) {
-      setRejecting(true);
-      return;
-    }
     setError(null);
     startTransition(async () => {
-      const result = await rejectSubmissionAction(entryId, comment);
+      const result = await rejectSubmissionAction(target);
       if (result && "error" in result) setError(result.error);
     });
   }
@@ -54,34 +48,9 @@ export default function ReviewDecision({ entryId }: Props) {
           onClick={reject}
           disabled={pending}
         >
-          {rejecting ? "Confirm reject" : "Reject submission"}
+          Reject submission
         </button>
-        {rejecting ? (
-          <button
-            type="button"
-            className={styles.buttonGhost}
-            onClick={() => {
-              setRejecting(false);
-              setComment("");
-              setError(null);
-            }}
-            disabled={pending}
-          >
-            Cancel
-          </button>
-        ) : null}
       </div>
-
-      {rejecting ? (
-        <textarea
-          className={styles.commentBox}
-          placeholder="Why is this being rejected? (required)"
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
-          rows={2}
-          disabled={pending}
-        />
-      ) : null}
 
       {error ? <p className={styles.decisionError}>{error}</p> : null}
     </div>

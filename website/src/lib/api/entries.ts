@@ -217,7 +217,7 @@ type CreateRunRequest = {
   artifacts: CreateRunArtifactRequest[];
 };
 
-type BackendCreateModelRequest = {
+type BackendCreateModelData = {
   id?: string;
   name: string;
   description?: string | null;
@@ -230,13 +230,38 @@ type BackendCreateModelRequest = {
 };
 
 type BackendCreateEntryRequest = {
-  id?: string;
-  name: string;
-  description?: string | null;
-  thumbnail_image_url?: string | null;
-  metadata: JSONRecord;
-  artifacts: CreateArtifactRequest[];
-  models: BackendCreateModelRequest[];
+  entry: {
+    id?: string;
+    name: string;
+    description?: string | null;
+    thumbnail_image_url?: string | null;
+    metadata: JSONRecord;
+    artifacts: CreateArtifactRequest[];
+  };
+  model_operations: {
+    op: "add";
+    data: Omit<BackendCreateModelData, "id"> & { model_id?: string };
+  }[];
+};
+
+export type CreateEntryRevisionResult = {
+  entry_id: string;
+  revision_id: string;
+  base_revision_id?: string | null;
+  state: "pending";
+  model_results: {
+    op: "add";
+    model_id: string;
+    model_revision_id: string;
+  }[];
+};
+
+export type CreateModelRevisionResult = {
+  entry_id: string;
+  model_id: string;
+  revision_id: string;
+  base_revision_id?: string | null;
+  state: "pending";
 };
 
 export type EntryPageData = {
@@ -263,8 +288,6 @@ export class ApiRequestError extends Error {
   }
 }
 
-export type EntryStatus = "active" | "under_review" | "archived";
-
 export async function listEntries(
   token?: string,
   opts?: {
@@ -272,8 +295,6 @@ export async function listEntries(
     pdbIds?: string[] | null;
     limit?: number | null;
     offset?: number | null;
-    status?: EntryStatus;
-    mine?: boolean;
   },
 ): Promise<Entry[]> {
   const params = new URLSearchParams();
@@ -293,13 +314,6 @@ export async function listEntries(
       params.append("pdb_id", trimmed);
     }
   }
-  if (opts?.status && opts.status !== "active") {
-    params.set("status", opts.status);
-  }
-  if (opts?.mine) {
-    params.set("mine", "true");
-  }
-
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   const response = await fetchBackend<ListResponse<Entry>>(
     `/v1/entries${suffix}`,
@@ -377,87 +391,123 @@ export type CreateEntryInput = {
   metadata?: CreateEntryMetadata;
 };
 
-/** Creates a draft model and returns its id. The model starts in `pending`
- *  and only becomes visible once submitted and approved. */
+/** Creates a model and its initial pending revision. */
 export async function createModel(
   token: string,
   entryId: string,
   input: CreateModelInput,
-): Promise<string> {
+): Promise<CreateModelRevisionResult> {
   const modelId = input.id ?? randomUUID();
-  await sendWithoutResponse(
+  return sendJSON<CreateModelRevisionResult>(
     "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
-    createModelRequest({ ...input, id: modelId }),
+    { model: createModelData({ ...input, id: modelId }) },
   );
-  return modelId;
 }
 
-/** Creates a draft entry and returns its id. */
+/** Creates an entry, its initial revision, and independent model revisions. */
 export async function createEntry(
   token: string,
   input: CreateEntryInput,
-): Promise<string> {
+): Promise<CreateEntryRevisionResult> {
   const entryId = input.id ?? randomUUID();
-  await sendWithoutResponse(
+  return sendJSON<CreateEntryRevisionResult>(
     "POST",
     "/v1/entries",
     token,
     createEntryRequest({ ...input, id: entryId }),
   );
-  return entryId;
 }
 
 // --- Review workflow -------------------------------------------------------
 
-/** One row of the review queue. Rows are always entries: a model submitted
- *  against an entry is part of that entry's submission, never a row of its own. */
-export type ReviewQueueItem = {
-  entry_id: string;
-  name: string;
-  submitted_at: string;
-  submitted_by: string[];
-};
+export type RevisionState =
+  | "pending"
+  | "in_review"
+  | "active"
+  | "rejected"
+  | "archived";
 
-/** One side of an entry under review. `active` and `proposed` carry this same
- *  shape, so the two can be diffed field by field. */
-export type ReviewEntry = {
+export type EntryRevisionSummary = {
   id: string;
+  entry_id: string;
+  parent_revision_id?: string | null;
+  revision_number?: number | null;
+  state: RevisionState;
+  entry_state: "new" | "active" | "deleted";
   created_by: string;
   name: string;
-  description: string | null;
-  thumbnail_image_url: string | null;
-  metadata: JSONRecord;
   published_at?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ModelRevisionSummary = {
+  id: string;
+  entry_id: string;
+  model_id: string;
+  parent_revision_id?: string | null;
+  revision_number?: number | null;
+  state: RevisionState;
+  model_state: "new" | "active" | "deleted";
+  created_by: string;
+  name: string;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EntryRevisionGroup = {
+  entry: Entry;
+  entry_revisions: EntryRevisionSummary[];
+  model_revisions: ModelRevisionSummary[];
+};
+
+export type RevisionTarget =
+  | {
+      kind: "entry";
+      entry_id: string;
+      revision_id: string;
+    }
+  | {
+      kind: "model";
+      entry_id: string;
+      model_id: string;
+      revision_id: string;
+    };
+
+export type ReviewQueueItem = {
+  key: string;
+  target: RevisionTarget;
+  entry_id: string;
+  name: string;
+  submitted_at: string;
+};
+
+export type EntryRevision = EntryRevisionSummary & {
+  description: string | null;
+  thumbnail_image_url: string | null;
+  metadata: JSONRecord;
   protein_sequences: ProteinSequence[];
   artifacts: Artifact[];
 };
 
-export type ReviewModel = {
-  id: string;
-  entry_id: string;
-  created_by: string;
-  name: string;
+export type ModelRevision = ModelRevisionSummary & {
   description: string | null;
   thumbnail_image_url: string | null;
   primary_artifact_id: string | null;
   metadata: JSONRecord;
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
   metrics: Metric[];
   artifacts: Artifact[];
 };
 
-/** `active` is the published revision, `proposed` the one waiting for a
- *  decision. The entry has neither side guaranteed: `active` is null for a new
- *  entry, `proposed` is null when only its models were submitted. A model
- *  always has `proposed` — that is what puts it in the submission. */
+export type ReviewEntry = EntryRevision;
+export type ReviewModel = ModelRevision;
+
 export type EntryReview = {
   entry_id: string;
+  target: RevisionTarget;
   entry: {
     active: ReviewEntry | null;
     proposed: ReviewEntry | null;
@@ -469,68 +519,204 @@ export type EntryReview = {
   }[];
 };
 
-export type ReviewDecision = "approved" | "rejected";
+export type RevisionDecision = "active" | "rejected";
 
-/** Submits a draft entry for review (pending/rejected -> in_review). */
-export async function submitEntry(token: string, entryId: string): Promise<void> {
+export async function submitEntryRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  revisionId: string,
+): Promise<void> {
   await sendJSON(
     "PATCH",
-    `/v1/entries/${encodeURIComponent(entryId)}`,
+    `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/revisions/${encodeURIComponent(revisionId)}`,
     token,
     { state: "in_review" },
   );
 }
 
-/** Submits a draft model for review (pending/rejected -> in_review). */
-export async function submitModel(
+export async function submitModelRevision(
   token: string,
+  userId: string,
   entryId: string,
   modelId: string,
+  revisionId: string,
 ): Promise<void> {
   await sendJSON(
     "PATCH",
-    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
-      modelId,
+    `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/models/${encodeURIComponent(modelId)}/revisions/${encodeURIComponent(
+      revisionId,
     )}`,
     token,
     { state: "in_review" },
   );
 }
 
-/** Lists the review queue. The reviewer sees every entry with something
- *  waiting; anyone else sees only entries they contributed to. */
 export async function listReviews(token: string): Promise<ReviewQueueItem[]> {
-  const response = await fetchBackend<ListResponse<ReviewQueueItem>>(
-    "/v1/reviews",
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    "/v1/entries/revisions?state=in_review",
+    token,
+  );
+  return response.items
+    .flatMap((group) => [
+      ...group.entry_revisions.map((revision) => ({
+        key: revisionKey("entry", revision.entry_id, revision.id),
+        target: {
+          kind: "entry" as const,
+          entry_id: revision.entry_id,
+          revision_id: revision.id,
+        },
+        entry_id: revision.entry_id,
+        name: group.entry.name,
+        submitted_at: revision.updated_at,
+      })),
+      ...group.model_revisions.map((revision) => ({
+        key: revisionKey("model", revision.entry_id, revision.id),
+        target: {
+          kind: "model" as const,
+          entry_id: revision.entry_id,
+          model_id: revision.model_id,
+          revision_id: revision.id,
+        },
+        entry_id: revision.entry_id,
+        name: group.entry.name,
+        submitted_at: revision.updated_at,
+      })),
+    ])
+    .sort(
+      (left, right) =>
+        new Date(right.submitted_at).getTime() -
+        new Date(left.submitted_at).getTime(),
+    );
+}
+
+export async function getEntryReview(
+  token: string,
+  target: RevisionTarget,
+): Promise<EntryReview> {
+  if (target.kind === "entry") {
+    const proposed = await getAdminEntryRevision(
+      token,
+      target.entry_id,
+      target.revision_id,
+    );
+    const active = proposed.parent_revision_id
+      ? await getAdminEntryRevision(
+          token,
+          target.entry_id,
+          proposed.parent_revision_id,
+        )
+      : null;
+    return {
+      entry_id: target.entry_id,
+      target,
+      entry: { active, proposed },
+      models: [],
+    };
+  }
+
+  const proposed = await getAdminModelRevision(
+    token,
+    target.entry_id,
+    target.model_id,
+    target.revision_id,
+  );
+  const active = proposed.parent_revision_id
+    ? await getAdminModelRevision(
+        token,
+        target.entry_id,
+        target.model_id,
+        proposed.parent_revision_id,
+      )
+    : null;
+  return {
+    entry_id: target.entry_id,
+    target,
+    entry: { active: null, proposed: null },
+    models: [
+      {
+        model_id: target.model_id,
+        active,
+        proposed,
+      },
+    ],
+  };
+}
+
+export async function decideEntryReview(
+  token: string,
+  target: RevisionTarget,
+  state: RevisionDecision,
+): Promise<void> {
+  const path =
+    target.kind === "entry"
+      ? `/v1/entries/${encodeURIComponent(
+          target.entry_id,
+        )}/revisions/${encodeURIComponent(target.revision_id)}`
+      : `/v1/entries/${encodeURIComponent(
+          target.entry_id,
+        )}/models/${encodeURIComponent(
+          target.model_id,
+        )}/revisions/${encodeURIComponent(target.revision_id)}`;
+  await sendJSON(
+    "PATCH",
+    path,
+    token,
+    { state },
+  );
+}
+
+export async function listUserEntryRevisionGroups(
+  token: string,
+  userId: string,
+  state: RevisionState,
+): Promise<EntryRevisionGroup[]> {
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    `/v1/users/${encodeURIComponent(
+      userId,
+    )}/entries/revisions?state=${encodeURIComponent(state)}`,
     token,
   );
   return response.items;
 }
 
-export async function getEntryReview(
+async function getAdminEntryRevision(
   token: string,
   entryId: string,
-): Promise<EntryReview> {
-  return fetchBackend<EntryReview>(
-    `/v1/reviews/${encodeURIComponent(entryId)}`,
+  revisionId: string,
+): Promise<EntryRevision> {
+  return fetchBackend<EntryRevision>(
+    `/v1/entries/${encodeURIComponent(entryId)}/revisions/${encodeURIComponent(
+      revisionId,
+    )}`,
     token,
   );
 }
 
-/** Applies one decision to the whole submission. `comment` is required when
- *  rejecting. */
-export async function decideEntryReview(
+async function getAdminModelRevision(
   token: string,
   entryId: string,
-  status: ReviewDecision,
-  comment?: string | null,
-): Promise<EntryReview> {
-  return sendJSON<EntryReview>(
-    "POST",
-    `/v1/reviews/${encodeURIComponent(entryId)}/decision`,
+  modelId: string,
+  revisionId: string,
+): Promise<ModelRevision> {
+  return fetchBackend<ModelRevision>(
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+      modelId,
+    )}/revisions/${encodeURIComponent(revisionId)}`,
     token,
-    { status, comment: comment ?? null },
   );
+}
+
+function revisionKey(
+  kind: RevisionTarget["kind"],
+  entryId: string,
+  revisionId: string,
+): string {
+  return `${kind}:${entryId}:${revisionId}`;
 }
 
 async function sendJSON<T>(
@@ -566,40 +752,6 @@ async function sendJSON<T>(
     );
   }
   return (await response.json()) as T;
-}
-
-async function sendWithoutResponse(
-  method: string,
-  path: string,
-  token: string,
-  input: unknown,
-): Promise<void> {
-  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method,
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(input),
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
-    );
-  }
-  if (!response.ok) {
-    throw new ApiRequestError(
-      `Backend responded with ${response.status}`,
-      response.status,
-    );
-  }
 }
 
 /** Fetches a single entry without its models or artifacts. Cheap enough to
@@ -684,26 +836,6 @@ export async function getEntryGraph(
   return { entities: data.entities, relations: data.relations };
 }
 
-export async function deleteEntry(
-  token: string,
-  entryId: string,
-): Promise<void> {
-  await deleteBackend(`/v1/entries/${encodeURIComponent(entryId)}`, token);
-}
-
-export async function deleteModel(
-  token: string,
-  entryId: string,
-  modelId: string,
-): Promise<void> {
-  await deleteBackend(
-    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
-      modelId,
-    )}`,
-    token,
-  );
-}
-
 async function fetchModelGraph(
   token: string | undefined,
   entryId: string,
@@ -721,13 +853,22 @@ async function fetchModelGraph(
 function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest {
   const entities = input.entities ?? [];
   return {
-    id: input.id,
-    name: input.name,
-    description: input.description,
-    thumbnail_image_url: input.thumbnail_image_url,
-    metadata: entryMetadataRequest(input.metadata),
-    artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
-    models: (input.models ?? []).map(createModelRequest),
+    entry: {
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      thumbnail_image_url: input.thumbnail_image_url,
+      metadata: entryMetadataRequest(input.metadata),
+      artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
+    },
+    model_operations: (input.models ?? []).map((model) => {
+      const data = createModelData(model);
+      const { id, ...fields } = data;
+      return {
+        op: "add" as const,
+        data: { ...fields, model_id: id },
+      };
+    }),
   };
 }
 
@@ -765,7 +906,7 @@ function entryMetadataRequest(metadata?: CreateEntryMetadata): JSONRecord {
   return result;
 }
 
-function createModelRequest(input: CreateModelInput): BackendCreateModelRequest {
+function createModelData(input: CreateModelInput): BackendCreateModelData {
   const entities = input.entities ?? [];
   const relations = input.relations ?? [];
   const artifacts = entities.filter(isArtifactEntity).map(createArtifactRequest);
@@ -1116,35 +1257,6 @@ function stableUUID(value: string): string {
     12,
     16,
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-async function deleteBackend(path: string, token: string): Promise<void> {
-  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
-
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method: "DELETE",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
-    );
-  }
-
-  if (!response.ok) {
-    throw new ApiRequestError(
-      `Backend responded with ${response.status}`,
-      response.status,
-    );
-  }
 }
 
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {

@@ -2,9 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { Entry } from "@/lib/api/entries";
-import { deleteEntryAction } from "@/app/actions/delete";
 
-import DeleteButton from "./DeleteButton";
 import EntriesInfiniteScroll from "./EntriesInfiniteScroll";
 import styles from "./EntriesBrowser.module.css";
 
@@ -23,7 +21,7 @@ export default function EntriesBrowser({
   entries,
   canCreate = false,
   query = "",
-  currentUserId = null,
+  infiniteScroll = true,
   tabs = null,
   emptyLabel,
   title = "Proteins",
@@ -31,7 +29,7 @@ export default function EntriesBrowser({
   entries: Entry[];
   canCreate?: boolean;
   query?: string;
-  currentUserId?: string | null;
+  infiniteScroll?: boolean;
   tabs?: ReactNode;
   emptyLabel?: string;
   title?: string;
@@ -58,14 +56,8 @@ export default function EntriesBrowser({
         <ul className={styles.grid}>
           {entries.map((entry) => {
             const updated = formatDate(entry.updated_at);
-            const canDelete =
-              currentUserId != null && entry.created_by === currentUserId;
             return (
-              <li
-                key={entry.id}
-                className={styles.cardItem}
-                data-has-delete={canDelete ? "true" : undefined}
-              >
+              <li key={entry.id} className={styles.cardItem}>
                 <Link className={styles.card} href={`/entries/${entry.id}`}>
                   <span
                     className={styles.thumb}
@@ -92,15 +84,6 @@ export default function EntriesBrowser({
                     ) : null}
                   </span>
                 </Link>
-                {canDelete ? (
-                  <div className={styles.cardDelete}>
-                    <DeleteButton
-                      action={deleteEntryAction.bind(null, entry.id)}
-                      itemName={entry.name}
-                      itemKind="entry"
-                    />
-                  </div>
-                ) : null}
               </li>
             );
           })}
@@ -113,11 +96,9 @@ export default function EntriesBrowser({
         </p>
       )}
 
-      <EntriesInfiniteScroll
-        query={query}
-        initialOffset={entries.length}
-        currentUserId={currentUserId}
-      />
+      {infiniteScroll ? (
+        <EntriesInfiniteScroll query={query} initialOffset={entries.length} />
+      ) : null}
     </div>
   );
 }

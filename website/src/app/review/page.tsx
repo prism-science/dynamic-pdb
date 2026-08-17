@@ -6,6 +6,7 @@ import {
   listReviews,
   type EntryReview,
   type ReviewQueueItem,
+  type RevisionTarget,
 } from "@/lib/api/entries";
 import {
   diffEntry,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/reviewDiff";
 import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
 import ReviewDecision from "@/app/reviews/ReviewDecision";
-import { isConfiguredReviewer } from "@/app/reviews/reviewer";
+import { isConfiguredAdmin } from "@/app/reviews/admin";
 
 import styles from "./review-inbox.module.css";
 
@@ -32,7 +33,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
   }
 
   const userId = await getCurrentUserId();
-  if (!isConfiguredReviewer(userId)) {
+  if (!isConfiguredAdmin(userId)) {
     return <Shell>You don&apos;t have review access.</Shell>;
   }
 
@@ -41,9 +42,9 @@ export default async function ReviewInbox({ searchParams }: Props) {
   const requested = firstValue(params.sel);
 
   const selected =
-    queue.find((item) => item.entry_id === requested) ?? queue[0] ?? null;
+    queue.find((item) => item.key === requested) ?? queue[0] ?? null;
   const review = selected
-    ? await loadReview(session.token, selected.entry_id)
+    ? await loadReview(session.token, selected.target)
     : null;
 
   return (
@@ -55,7 +56,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
             <div className={styles.listHead}>
               <h2 className={styles.listTitle}>To review</h2>
               <div className={styles.sub}>
-                {queue.length} entr{queue.length === 1 ? "y" : "ies"} waiting
+                {queue.length} item{queue.length === 1 ? "" : "s"} waiting
               </div>
             </div>
             {queue.length === 0 ? (
@@ -63,10 +64,10 @@ export default async function ReviewInbox({ searchParams }: Props) {
             ) : (
               queue.map((item) => (
                 <Link
-                  key={item.entry_id}
-                  href={`/review?sel=${encodeURIComponent(item.entry_id)}`}
+                  key={item.key}
+                  href={`/review?sel=${encodeURIComponent(item.key)}`}
                   className={`${styles.row} ${
-                    item.entry_id === selected?.entry_id ? styles.rowSel : ""
+                    item.key === selected?.key ? styles.rowSel : ""
                   }`}
                 >
                   <div className={styles.rowName}>{item.name}</div>
@@ -106,7 +107,7 @@ function Card({
       </div>
 
       <div className={styles.toolbar}>
-        <ReviewDecision entryId={review.entry_id} />
+        <ReviewDecision target={review.target} />
       </div>
 
       <Changes review={review} />
@@ -288,10 +289,10 @@ async function loadQueue(token: string): Promise<ReviewQueueItem[]> {
 
 async function loadReview(
   token: string,
-  entryId: string,
+  target: RevisionTarget,
 ): Promise<EntryReview | null> {
   try {
-    return await getEntryReview(token, entryId);
+    return await getEntryReview(token, target);
   } catch (error) {
     if (error instanceof ApiRequestError) return null;
     throw error;

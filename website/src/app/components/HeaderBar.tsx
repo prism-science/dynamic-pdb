@@ -15,7 +15,7 @@ export type HeaderUser = {
 };
 
 export type HeaderReviews = {
-  /** Number of entries waiting, not raw review records. */
+  /** Number of revisions waiting for a decision. */
   toReviewCount: number;
   isReviewer: boolean;
 };

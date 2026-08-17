@@ -23,10 +23,6 @@ export type DiffSection = {
   rows: DiffRow[];
 };
 
-/** Reviewer decisions are stamped into the same metadata blob as the content,
- *  so they would otherwise show up as a change on every approval. */
-const HIDDEN_METADATA_KEYS = new Set(["_review"]);
-
 /** Only called when the entry itself was submitted — an untouched entry is not
  *  part of the review at all. */
 export function diffEntry(
@@ -99,7 +95,6 @@ function metadataRows(
 
   const rows: DiffRow[] = [];
   for (const key of [...keys].sort()) {
-    if (HIDDEN_METADATA_KEYS.has(key)) continue;
     rows.push(
       scalarRow(
         key,

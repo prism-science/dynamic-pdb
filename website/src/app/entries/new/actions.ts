@@ -4,10 +4,11 @@ import { redirect } from "next/navigation";
 
 import {
   createEntry,
-  submitEntry,
+  submitEntryRevision,
+  submitModelRevision,
   type CreateEntryInput,
 } from "@/lib/api/entries";
-import { getAuthSession } from "@/lib/auth/session";
+import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 
 export async function createEntryAction(
   input: CreateEntryInput,
@@ -18,10 +19,28 @@ export async function createEntryAction(
   }
 
   try {
-    // New entries are not published directly: create the draft, then submit it
-    // for review. It becomes public only after a reviewer approves it.
-    const entryId = await createEntry(session.token, input);
-    await submitEntry(session.token, entryId);
+    const userId = userIdFromToken(session.token);
+    if (!userId) {
+      return { error: "Your session does not contain a user ID." };
+    }
+    const result = await createEntry(session.token, input);
+    await Promise.all([
+      submitEntryRevision(
+        session.token,
+        userId,
+        result.entry_id,
+        result.revision_id,
+      ),
+      ...result.model_results.map((model) =>
+        submitModelRevision(
+          session.token,
+          userId,
+          result.entry_id,
+          model.model_id,
+          model.model_revision_id,
+        ),
+      ),
+    ]);
   } catch (error) {
     return {
       error:

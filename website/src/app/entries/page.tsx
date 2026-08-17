@@ -3,10 +3,10 @@ import { redirect } from "next/navigation";
 
 import {
   ApiRequestError,
-  listEntries,
-  type EntryStatus,
+  listUserEntryRevisionGroups,
+  type RevisionState,
 } from "@/lib/api/entries";
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
+import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 
 import EntriesBrowser from "../components/EntriesBrowser";
 import browserStyles from "../components/EntriesBrowser.module.css";
@@ -17,10 +17,15 @@ export const dynamic = "force-dynamic";
 type SearchParamValue = string | string[] | undefined;
 type Props = { searchParams?: Promise<Record<string, SearchParamValue>> };
 
-const TABS: { key: string; label: string; status: EntryStatus }[] = [
-  { key: "active", label: "Active", status: "active" },
-  { key: "under-review", label: "Under review", status: "under_review" },
-  { key: "archived", label: "Archived", status: "archived" },
+type EntryRevisionListState = Extract<
+  RevisionState,
+  "active" | "in_review" | "archived"
+>;
+
+const TABS: { key: string; label: string; state: EntryRevisionListState }[] = [
+  { key: "active", label: "Active", state: "active" },
+  { key: "under-review", label: "Under review", state: "in_review" },
+  { key: "archived", label: "Archived", state: "archived" },
 ];
 
 // The Entries area is the signed-in user's own entries, split by status. The
@@ -30,15 +35,16 @@ export default async function MyEntriesPage({ searchParams }: Props) {
   if (!session) {
     redirect("/");
   }
+  const userId = userIdFromToken(session.token);
+  if (!userId) {
+    redirect("/");
+  }
 
   const params = (await searchParams) ?? {};
   const tabKey = firstValue(params.tab) ?? "active";
   const activeTab = TABS.find((tab) => tab.key === tabKey) ?? TABS[0];
 
-  const [entries, currentUserId] = await Promise.all([
-    loadEntries(session.token, activeTab.status),
-    getCurrentUserId(),
-  ]);
+  const entries = await loadEntries(session.token, userId, activeTab.state);
 
   const tabs = (
     <nav className={browserStyles.tabs} aria-label="Entry status">
@@ -64,9 +70,9 @@ export default async function MyEntriesPage({ searchParams }: Props) {
         <EntriesBrowser
           entries={entries}
           canCreate
-          currentUserId={currentUserId}
+          infiniteScroll={false}
           tabs={tabs}
-          emptyLabel={emptyLabelFor(activeTab.status)}
+          emptyLabel={emptyLabelFor(activeTab.state)}
           title="My entries"
         />
       </section>
@@ -74,9 +80,14 @@ export default async function MyEntriesPage({ searchParams }: Props) {
   );
 }
 
-async function loadEntries(token: string, status: EntryStatus) {
+async function loadEntries(
+  token: string,
+  userId: string,
+  state: EntryRevisionListState,
+) {
   try {
-    return await listEntries(token, { status, mine: true });
+    const groups = await listUserEntryRevisionGroups(token, userId, state);
+    return groups.map((group) => group.entry);
   } catch (error) {
     if (error instanceof ApiRequestError) {
       return [];
@@ -85,9 +96,9 @@ async function loadEntries(token: string, status: EntryStatus) {
   }
 }
 
-function emptyLabelFor(status: EntryStatus): string {
-  switch (status) {
-    case "under_review":
+function emptyLabelFor(state: EntryRevisionListState): string {
+  switch (state) {
+    case "in_review":
       return "You have no entries in review.";
     case "archived":
       return "Nothing archived.";

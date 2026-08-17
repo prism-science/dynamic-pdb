@@ -10,7 +10,7 @@ import {
   listSimilarEntries,
   type SimilarEntry,
 } from "@/lib/api/entries";
-import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
+import { getAuthSession } from "@/lib/auth/session";
 import { fastaTotalLength } from "@/lib/fasta";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
@@ -41,7 +41,6 @@ export default async function EntryPage({
     loadEntryPage(session?.token, entryId),
     loadSimilarEntries(session?.token, entryId),
   ]);
-  const currentUserId = session ? userIdFromToken(session.token) : null;
   const sequence = getFastaMetadata(data);
 
   const vitals: string[] = [];
@@ -142,7 +141,6 @@ export default async function EntryPage({
                   models={data.models}
                   entities={data.entities}
                   relations={data.relations}
-                  currentUserId={currentUserId}
                 />
               ) : (
                 <p className={styles.modelsEmpty}>

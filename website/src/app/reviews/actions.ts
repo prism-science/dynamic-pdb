@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { ApiRequestError, decideEntryReview } from "@/lib/api/entries";
+import type { RevisionTarget } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 
 type ActionResult = { error: string } | void;
@@ -10,7 +11,7 @@ type ActionResult = { error: string } | void;
 function messageForStatus(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 403) {
-      return "Only the reviewer can approve or reject.";
+      return "Only the administrator can approve or reject.";
     }
     if (error.status === 404) {
       return "This submission is no longer in the queue.";
@@ -21,15 +22,12 @@ function messageForStatus(error: unknown, fallback: string): string {
     if (error.status === 401) {
       return "You must be signed in to review.";
     }
-    if (error.status === 400) {
-      return "A comment is required to reject.";
-    }
   }
   return error instanceof Error ? error.message : fallback;
 }
 
 export async function approveSubmissionAction(
-  entryId: string,
+  target: RevisionTarget,
 ): Promise<ActionResult> {
   const session = await getAuthSession();
   if (!session) {
@@ -37,7 +35,7 @@ export async function approveSubmissionAction(
   }
 
   try {
-    await decideEntryReview(session.token, entryId, "approved", null);
+    await decideEntryReview(session.token, target, "active");
   } catch (error) {
     return { error: messageForStatus(error, "Failed to approve.") };
   }
@@ -48,21 +46,15 @@ export async function approveSubmissionAction(
 }
 
 export async function rejectSubmissionAction(
-  entryId: string,
-  comment: string,
+  target: RevisionTarget,
 ): Promise<ActionResult> {
-  const trimmed = comment.trim();
-  if (!trimmed) {
-    return { error: "Please add a comment explaining the rejection." };
-  }
-
   const session = await getAuthSession();
   if (!session) {
     return { error: "You must be signed in to review." };
   }
 
   try {
-    await decideEntryReview(session.token, entryId, "rejected", trimmed);
+    await decideEntryReview(session.token, target, "rejected");
   } catch (error) {
     return { error: messageForStatus(error, "Failed to reject.") };
   }
