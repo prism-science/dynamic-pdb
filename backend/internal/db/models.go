@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/models"
 )
@@ -17,6 +18,7 @@ import (
 var (
 	ErrModelRevisionNotFound          = errors.New("db: model revision not found")
 	ErrModelRevisionOwnershipMismatch = errors.New("db: model revision ownership mismatch")
+	ErrModelRevisionConflict          = errors.New("db: model revision not in the expected state")
 )
 
 type ModelsRepository struct {
@@ -29,6 +31,7 @@ type ModelRevisionFilters struct {
 	EntryID    *uuid.UUID
 	ModelID    *uuid.UUID
 	State      *models.RevisionState
+	States     []models.RevisionState
 	ModelState *models.ModelState
 	CreatedBy  *uuid.UUID
 	Limit      *int
@@ -228,6 +231,187 @@ func (r *ModelsRepository) Delete(ctx context.Context, modelID, revisionID, owne
 	return nil
 }
 
+const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_id, model_revisions.model_id,
+			model_revisions.parent_revision_id, model_revisions.primary_artifact_id, model_revisions.revision_number,
+			model_revisions.state, model_revisions.change_summary, model_revisions.published_at, model_revisions.name,
+			model_revisions.description, model_revisions.thumbnail_image_url, model_revisions.metadata,
+			model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
+
+// GetLive returns the single non-deleted revision of a model.
+func (r *ModelsRepository) GetLive(ctx context.Context, modelID uuid.UUID) (*models.ModelRevision, error) {
+	revisions, err := r.List(ctx, ModelRevisionFilters{
+		ModelID: &modelID,
+		States:  nonDeletedRevisionStates,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list live model revisions: %w", err)
+	}
+	if len(revisions) == 0 {
+		return nil, ErrModelRevisionNotFound
+	}
+	return &revisions[len(revisions)-1], nil
+}
+
+// SaveDraft rewrites the editable fields (and optionally the state) of a model's
+// draft. Only pending or rejected revisions can be written.
+func (r *ModelsRepository) SaveDraft(ctx context.Context, revision models.ModelRevision) (*models.ModelRevision, error) {
+	metadata, err := marshalJSON(revision.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("prepare model revision metadata: %w", err)
+	}
+
+	query := `update model_revisions
+			  set name = :name,
+			      description = :description,
+			      thumbnail_image_url = :thumbnail_image_url,
+			      primary_artifact_id = :primary_artifact_id,
+			      metadata = cast(:metadata as jsonb),
+			      state = :state,
+			      updated_at = now()
+			  from models mo
+			  where mo.id = model_revisions.model_id
+			    and model_revisions.id = :id
+			    and model_revisions.state in ('pending', 'rejected')
+			  returning ` + modelRevisionReturningColumns
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"id":                  revision.ID,
+		"name":                revision.Name,
+		"description":         revision.Description,
+		"thumbnail_image_url": revision.ThumbnailImageURL,
+		"primary_artifact_id": revision.PrimaryArtifactID,
+		"metadata":            metadata,
+		"state":               string(revision.State),
+	})
+	if errors.Is(err, ErrModelRevisionNotFound) {
+		return nil, ErrModelRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("save model draft: %w", err)
+	}
+	return updated, nil
+}
+
+// Approve publishes a model's in_review revision.
+func (r *ModelsRepository) Approve(
+	ctx context.Context,
+	modelID, reviewerID uuid.UUID,
+	comment *string,
+) (*models.ModelRevision, error) {
+	query := `update model_revisions
+			  set state = 'active',
+			      published_at = now(),
+			      revision_number = coalesce(
+			          (select max(revision_number) from model_revisions where model_id = :model_id), 0) + 1,
+			      updated_at = now(),
+			      metadata = jsonb_set(coalesce(model_revisions.metadata, '{}'::jsonb), '{_review}',
+			          jsonb_build_object('by', :reviewer, 'decision', 'approved', 'comment', :comment, 'at', now()))
+			  from models mo
+			  where mo.id = model_revisions.model_id
+			    and model_revisions.model_id = :model_id
+			    and model_revisions.state = 'in_review'
+			  returning ` + modelRevisionReturningColumns
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"model_id": modelID,
+		"reviewer": reviewerID.String(),
+		"comment":  comment,
+	})
+	if errors.Is(err, ErrModelRevisionNotFound) {
+		return nil, ErrModelRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("approve model revision: %w", err)
+	}
+	return updated, nil
+}
+
+// Reject moves a model's in_review revision back to rejected.
+func (r *ModelsRepository) Reject(
+	ctx context.Context,
+	modelID, reviewerID uuid.UUID,
+	comment string,
+) (*models.ModelRevision, error) {
+	query := `update model_revisions
+			  set state = 'rejected',
+			      updated_at = now(),
+			      metadata = jsonb_set(coalesce(model_revisions.metadata, '{}'::jsonb), '{_review}',
+			          jsonb_build_object('by', :reviewer, 'decision', 'rejected', 'comment', :comment, 'at', now()))
+			  from models mo
+			  where mo.id = model_revisions.model_id
+			    and model_revisions.model_id = :model_id
+			    and model_revisions.state = 'in_review'
+			  returning ` + modelRevisionReturningColumns
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"model_id": modelID,
+		"reviewer": reviewerID.String(),
+		"comment":  comment,
+	})
+	if errors.Is(err, ErrModelRevisionNotFound) {
+		return nil, ErrModelRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reject model revision: %w", err)
+	}
+	return updated, nil
+}
+
+// PublishForEntry activates every draft/in_review model revision belonging to an
+// entry. It is used when an entry is approved so its initial models are
+// published together with it.
+func (r *ModelsRepository) PublishForEntry(ctx context.Context, entryID, reviewerID uuid.UUID) error {
+	query := `update model_revisions
+			  set state = 'active',
+			      published_at = now(),
+			      revision_number = coalesce(model_revisions.revision_number, 1),
+			      updated_at = now(),
+			      metadata = jsonb_set(coalesce(model_revisions.metadata, '{}'::jsonb), '{_review}',
+			          jsonb_build_object('by', :reviewer, 'decision', 'approved', 'comment', null::text, 'at', now()))
+			  from models mo
+			  where mo.id = model_revisions.model_id
+			    and mo.entry_id = :entry_id
+			    and model_revisions.state in ('pending', 'in_review')`
+
+	boundQuery, queryArgs, err := sqlx.Named(query, map[string]any{
+		"entry_id": entryID,
+		"reviewer": reviewerID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("bind publish models query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, boundQuery, queryArgs...); err != nil {
+		return fmt.Errorf("publish entry models: %w", err)
+	}
+	return nil
+}
+
+func (r *ModelsRepository) getRevision(
+	ctx context.Context,
+	query string,
+	args map[string]any,
+) (*models.ModelRevision, error) {
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("bind model revision query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+
+	var row modelRevisionRow
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, boundQuery, queryArgs...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrModelRevisionNotFound
+		}
+		return nil, fmt.Errorf("get model revision: %w", err)
+	}
+	revision, err := modelRevisionFromRow(&row)
+	if err != nil {
+		return nil, fmt.Errorf("decode model revision: %w", err)
+	}
+	return revision, nil
+}
+
 func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
@@ -254,6 +438,23 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	if filters.State != nil {
 		conditions = append(conditions, "model_revisions.state = :state")
 		args["state"] = string(*filters.State)
+	}
+	if filters.ModelState != nil {
+		conditions = append(conditions, `exists (
+			select 1
+			from models m
+			where m.id = model_revisions.model_id
+			  and m.state = :model_state
+		)`)
+		args["model_state"] = string(*filters.ModelState)
+	}
+	if len(filters.States) > 0 {
+		states := make([]string, 0, len(filters.States))
+		for _, state := range filters.States {
+			states = append(states, string(state))
+		}
+		conditions = append(conditions, "model_revisions.state = any(:states::text[])")
+		args["states"] = pq.StringArray(states)
 	}
 	if filters.ModelState != nil {
 		conditions = append(conditions, `exists (

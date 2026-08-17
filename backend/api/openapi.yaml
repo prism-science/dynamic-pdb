@@ -238,6 +238,25 @@ paths:
               type: string
           style: form
           explode: true
+        - name: status
+          in: query
+          description: >
+            Which lifecycle bucket to list. "active" (default) is published
+            entries. "under_review" and "archived" (rejected/withdrawn) are
+            always scoped to the authenticated caller's own entries.
+          required: false
+          schema:
+            type: string
+            enum: [active, under_review, archived]
+        - name: mine
+          in: query
+          description: >
+            When true, restrict the result to the authenticated caller's own
+            entries (applies to the active catalog too). Ignored when there is
+            no authenticated caller.
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: Entries found.
@@ -264,7 +283,7 @@ paths:
               $ref: "#/components/schemas/CreateEntryRequest"
       responses:
         "201":
-          description: Entry created.
+          description: Draft entry created.
         "400":
           description: Invalid request.
           content:
@@ -285,6 +304,66 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}:
+    patch:
+      operationId: updateEntry
+      summary: Edit or submit a draft entry
+      description: >
+        Author-only. Allowed while the entry is in state `pending` or `rejected`.
+        Set `state` to `in_review` to submit the draft for review; this also
+        submits the models and artifacts created in the same draft, which are
+        published together with the entry on approval.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEntryRequest"
+      responses:
+        "200":
+          description: Entry updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entry"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not the entry creator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Entry is not in an editable state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
       operationId: getEntry
       summary: Get entry
@@ -449,7 +528,7 @@ paths:
               $ref: "#/components/schemas/CreateModelRequest"
       responses:
         "201":
-          description: Model created.
+          description: Draft model created.
         "400":
           description: Invalid request.
           content:
@@ -470,6 +549,70 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models/{model_id}:
+    patch:
+      operationId: updateModel
+      summary: Edit or submit a draft model
+      description: >
+        Author-only. Allowed while the model is in state `pending` or `rejected`.
+        Set `state` to `in_review` to submit the model for review.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModelRequest"
+      responses:
+        "200":
+          description: Model updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "400":
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not the model creator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Model is not in an editable state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
       operationId: getModel
       summary: Get model
@@ -655,6 +798,157 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/reviews:
+    get:
+      operationId: listReviews
+      summary: List entries awaiting review
+      description: >
+        One row per entry: entries whose own revision is in_review, plus entries
+        that have at least one model revision in_review. A model never produces a
+        row of its own. The configured reviewer sees the whole queue; any other
+        caller sees only what they submitted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Review queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewQueueResponse"
+        "400":
+          description: Invalid filters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/reviews/{entry_id}:
+    get:
+      operationId: getEntryReview
+      summary: Get the submission waiting on an entry
+      description: >
+        The entry and each of its models under review, each as an
+        `active` / `proposed` pair of identically shaped objects. `active` is the
+        published revision, `proposed` is the one waiting for a decision.
+        `active` is null when the thing is new; the entry's `proposed` is null
+        when the entry itself was not touched and only its models were submitted.
+        Models with nothing in review are omitted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryReview"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is neither the reviewer nor the submitter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No submission waiting on this entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/reviews/{entry_id}/decision:
+    post:
+      operationId: decideEntryReview
+      summary: Approve or reject a submission
+      description: >
+        Reviewer-only, all or nothing: the entry revision (when it is in review)
+        and every model revision in review under it are decided together in one
+        transaction. `comment` is required when rejecting.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionRequest"
+      responses:
+        "200":
+          description: Decision applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryReview"
+        "400":
+          description: Invalid request (e.g. reject without a comment).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not the reviewer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No submission waiting on this entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The submission changed since it was loaded.
           content:
             application/json:
               schema:
@@ -1324,3 +1618,223 @@ components:
         created_at:
           type: string
           format: date-time
+
+    UpdateEntryRequest:
+      type: object
+      description: >
+        Partial update of a draft or rejected entry. Provide at least one field.
+        state may only be set to in_review (submit).
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        state:
+          type: string
+          description: Set to in_review to submit the draft for review.
+
+    UpdateModelRequest:
+      type: object
+      description: >
+        Partial update of a draft or rejected model. Provide at least one field.
+        state may only be set to in_review (submit).
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        primary_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        state:
+          type: string
+          description: Set to in_review to submit the draft for review.
+
+    ReviewDecisionRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected]
+        comment:
+          type: string
+          nullable: true
+
+    ReviewQueueResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewQueueItem"
+
+    ReviewQueueItem:
+      type: object
+      required: [entry_id, name, submitted_at, submitted_by]
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        submitted_by:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    EntryReview:
+      type: object
+      required: [entry_id, entry, models]
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+        entry:
+          $ref: "#/components/schemas/EntryReviewPair"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelReviewPair"
+
+    EntryReviewPair:
+      type: object
+      description: >
+        Both sides of the entry. Same object shape on each side; at least one of
+        the two is always present.
+      required: [active, proposed]
+      properties:
+        active:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReviewEntry"
+        proposed:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReviewEntry"
+
+    ModelReviewPair:
+      type: object
+      description: >
+        Both sides of one model. `proposed` is always present - a model with
+        nothing in review is not part of the submission.
+      required: [model_id, active, proposed]
+      properties:
+        model_id:
+          type: string
+          format: uuid
+        active:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReviewModel"
+        proposed:
+          $ref: "#/components/schemas/ReviewModel"
+
+    ReviewEntry:
+      type: object
+      required: [id, created_by, name, metadata, created_at, updated_at, protein_sequences, artifacts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        protein_sequences:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProteinSequence"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+
+    ReviewModel:
+      type: object
+      required: [id, entry_id, created_by, name, metadata, created_at, updated_at, metrics, artifacts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entry_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        primary_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/Metric"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"

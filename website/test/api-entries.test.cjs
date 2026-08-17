@@ -85,7 +85,7 @@ test("should post create entry using the new backend graph shape", async () => {
       return new Response(null, { status: 201 });
     };
 
-    await createEntry("token-123", {
+    const createdId = await createEntry("token-123", {
       id: "entry-1",
       name: "Entry",
       entities: [
@@ -145,6 +145,7 @@ test("should post create entry using the new backend graph shape", async () => {
       ],
     });
 
+    assert.equal(createdId, "entry-1");
     assert.equal(request.url, "https://backend.example/v1/entries");
     assert.equal(request.init.headers.Authorization, "Bearer token-123");
     assert.equal(request.body.entities, undefined);

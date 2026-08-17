@@ -28,7 +28,7 @@ export default async function Home({ searchParams }: HomeProps) {
       <section className={styles.entriesShell}>
         <EntriesBrowser
           entries={entries}
-          canCreate={session != null}
+          canCreate={false}
           query={query}
           currentUserId={currentUserId}
         />

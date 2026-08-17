@@ -17,7 +17,11 @@ import (
 	domainmodels "dynamic-pdb/backend/internal/models"
 )
 
-var errInvalidRequest = errors.New("invalid request")
+var (
+	errInvalidRequest = errors.New("invalid request")
+	errForbidden      = errors.New("forbidden")
+	errConflict       = errors.New("conflict")
+)
 
 const (
 	defaultEntryListLimit         = 50
@@ -26,10 +30,52 @@ const (
 )
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
-	activeState := domainmodels.RevisionStateActive
-	filters, err := entryFiltersFromParams(params, activeState)
+	filters, err := entryFiltersFromParams(params)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entry filters")
+		return
+	}
+
+	// "active" is the public catalog; "under_review" and "archived" are the
+	// caller's own entries by state.
+	status := "active"
+	if params.Status != nil {
+		status = strings.TrimSpace(string(*params.Status))
+	}
+	mine := params.Mine != nil && *params.Mine
+
+	switch status {
+	case "", "active":
+		activeState := domainmodels.RevisionStateActive
+		activeEntryState := domainmodels.EntryStateActive
+		filters.State = &activeState
+		filters.EntryState = &activeEntryState
+		if mine {
+			if user, ok := UserFromContext(r.Context()); ok {
+				filters.CreatedBy = &user.ID
+			}
+		}
+	case "under_review":
+		user, ok := UserFromContext(r.Context())
+		if !ok {
+			writeJSON(w, http.StatusOK, EntryListResponse{Items: []EntryInfo{}})
+			return
+		}
+		filters.States = []domainmodels.RevisionState{domainmodels.RevisionStateInReview}
+		filters.CreatedBy = &user.ID
+	case "archived":
+		user, ok := UserFromContext(r.Context())
+		if !ok {
+			writeJSON(w, http.StatusOK, EntryListResponse{Items: []EntryInfo{}})
+			return
+		}
+		filters.States = []domainmodels.RevisionState{
+			domainmodels.RevisionStateRejected,
+			domainmodels.RevisionStateDeleted,
+		}
+		filters.CreatedBy = &user.ID
+	default:
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid status")
 		return
 	}
 
@@ -85,7 +131,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.createEntryGraph(r.Context(), req, name, user.ID)
+	_, err := s.createEntryGraph(r.Context(), req, name, user.ID)
 	if errors.Is(err, errInvalidRequest) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
@@ -101,6 +147,95 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) UpdateEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+	var req UpdateEntryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	var updated *domainmodels.EntryRevision
+	err := s.database.Do(r.Context(), func(ctx context.Context) error {
+		revision, err := s.database.Entries.GetLive(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if revision.CreatedBy != user.ID {
+			return errForbidden
+		}
+		if revision.State != domainmodels.RevisionStatePending &&
+			revision.State != domainmodels.RevisionStateRejected {
+			return fmt.Errorf("entry is %s: %w", revision.State, errConflict)
+		}
+		if err := applyEntryPatch(revision, req); err != nil {
+			return err
+		}
+		saved, err := s.database.Entries.SaveDraft(ctx, *revision)
+		if err != nil {
+			return err
+		}
+		if err := s.database.EntrySearch.IndexEntryRevision(ctx, *saved); err != nil {
+			return fmt.Errorf("index entry revision search: %w", err)
+		}
+		updated = saved
+		return nil
+	})
+	if s.writeRevisionError(w, err, "entry", "update entry") {
+		return
+	}
+
+	proteinSequences, err := s.database.ProteinSequences.List(r.Context(), db.ProteinSequenceFilters{
+		EntryRevisionID: &updated.ID,
+	})
+	if err != nil {
+		slog.Error("list entry protein sequences failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry response")
+		return
+	}
+	entry, err := entryResponseFromRevision(*updated, proteinSequences)
+	if err != nil {
+		slog.Error("build entry response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry response")
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func applyEntryPatch(revision *domainmodels.EntryRevision, req UpdateEntryRequest) error {
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return invalidRequest("entry name cannot be empty")
+		}
+		revision.Name = name
+	}
+	if req.Description != nil {
+		revision.Description = trimmedStringPtr(req.Description)
+	}
+	if req.ThumbnailImageUrl != nil {
+		revision.ThumbnailImageURL = trimmedStringPtr(req.ThumbnailImageUrl)
+	}
+	if req.Metadata != nil {
+		metadata, err := entryMetadataFromRequest(req.Metadata)
+		if err != nil {
+			return err
+		}
+		revision.Metadata = metadata
+	}
+	if req.State != nil {
+		if *req.State != string(domainmodels.RevisionStateInReview) {
+			return invalidRequest("state can only be set to in_review")
+		}
+		revision.State = domainmodels.RevisionStateInReview
+	}
+	return nil
 }
 
 func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
@@ -221,10 +356,7 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request, entryID uui
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func entryFiltersFromParams(
-	params ListEntriesParams,
-	state domainmodels.RevisionState,
-) (db.EntryRevisionFilters, error) {
+func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
 		return db.EntryRevisionFilters{}, errors.New("limit must be non-negative")
 	}
@@ -242,14 +374,11 @@ func entryFiltersFromParams(
 		search = strings.TrimSpace(*params.Query)
 	}
 
-	entryActive := domainmodels.EntryStateActive
 	return db.EntryRevisionFilters{
-		State:      &state,
-		EntryState: &entryActive,
-		Limit:      limit,
-		Offset:     params.Offset,
-		Query:      search,
-		PDBIDs:     stringSliceFromPtr(params.PdbId),
+		Limit:  limit,
+		Offset: params.Offset,
+		Query:  search,
+		PDBIDs: stringSliceFromPtr(params.PdbId),
 	}, nil
 }
 
@@ -273,29 +402,26 @@ func proteinSequenceFromSearchQuery(value string) (string, bool) {
 	return normalized.String(), true
 }
 
-func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string, createdBy uuid.UUID) error {
+func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, name string, createdBy uuid.UUID) (uuid.UUID, error) {
 	now := time.Now().UTC()
 	entryID := uuid.New()
 	if req.Id != nil {
 		entryID = *req.Id
 		if entryID == uuid.Nil {
-			return invalidRequest("entry id is required")
+			return uuid.Nil, invalidRequest("entry id is required")
 		}
 	}
 
 	metadata, err := entryMetadataFromRequest(req.Metadata)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
-	return s.database.Do(ctx, func(ctx context.Context) error {
+	if err := s.database.Do(ctx, func(ctx context.Context) error {
 		revision, err := s.database.Entries.Create(ctx, domainmodels.EntryRevision{
 			ID:                uuid.New(),
 			EntryID:           entryID,
-			RevisionNumber:    ptr(1),
-			State:             domainmodels.RevisionStateActive,
-			EntryState:        domainmodels.EntryStateActive,
-			PublishedAt:       &now,
+			State:             domainmodels.RevisionStatePending,
 			Name:              name,
 			Description:       trimmedStringPtr(req.Description),
 			ThumbnailImageURL: trimmedStringPtr(req.ThumbnailImageUrl),
@@ -328,14 +454,17 @@ func (s *Server) createEntryGraph(ctx context.Context, req CreateEntryRequest, n
 
 		if req.Models != nil {
 			for _, modelRequest := range *req.Models {
-				if err := s.createModelGraph(ctx, revision.EntryID, revision.ID, modelRequest, now, createdBy); err != nil {
+				if _, err := s.createModelGraph(ctx, revision.EntryID, revision.ID, modelRequest, now, createdBy); err != nil {
 					return err
 				}
 			}
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return uuid.Nil, err
+	}
+	return entryID, nil
 }
 
 func (s *Server) createModelGraph(
@@ -345,23 +474,23 @@ func (s *Server) createModelGraph(
 	req CreateModelRequest,
 	now time.Time,
 	createdBy uuid.UUID,
-) error {
+) (uuid.UUID, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return invalidRequest("model name is required")
+		return uuid.Nil, invalidRequest("model name is required")
 	}
 
 	modelID := uuid.New()
 	if req.Id != nil {
 		modelID = *req.Id
 		if modelID == uuid.Nil {
-			return invalidRequest("model id is required")
+			return uuid.Nil, invalidRequest("model id is required")
 		}
 	}
 
 	metadata, err := modelMetadataFromRequest(req.Metadata)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	artifacts := make([]domainmodels.Artifact, 0)
@@ -370,7 +499,7 @@ func (s *Server) createModelGraph(
 		for _, artifactRequest := range *req.Artifacts {
 			artifact, err := s.createArtifact(ctx, artifactRequest, createdBy, now)
 			if err != nil {
-				return err
+				return uuid.Nil, err
 			}
 			artifacts = append(artifacts, *artifact)
 		}
@@ -380,10 +509,7 @@ func (s *Server) createModelGraph(
 		ID:                uuid.New(),
 		ModelID:           modelID,
 		PrimaryArtifactID: req.PrimaryArtifactId,
-		RevisionNumber:    ptr(1),
-		State:             domainmodels.RevisionStateActive,
-		ModelState:        domainmodels.ModelStateActive,
-		PublishedAt:       &now,
+		State:             domainmodels.RevisionStatePending,
 		Name:              name,
 		Description:       trimmedStringPtr(req.Description),
 		ThumbnailImageURL: trimmedStringPtr(req.ThumbnailImageUrl),
@@ -393,18 +519,18 @@ func (s *Server) createModelGraph(
 		UpdatedAt:         now,
 	})
 	if err != nil {
-		return fmt.Errorf("create model revision: %w", err)
+		return uuid.Nil, fmt.Errorf("create model revision: %w", err)
 	}
 	if err := s.database.EntrySearch.IndexModelRevision(ctx, *revision); err != nil {
-		return fmt.Errorf("index model revision search: %w", err)
+		return uuid.Nil, fmt.Errorf("index model revision search: %w", err)
 	}
 
 	for _, artifact := range artifacts {
 		if err := s.database.Artifacts.AttachToModelRevision(ctx, revision.ID, artifact.ID); err != nil {
-			return fmt.Errorf("attach artifact to model revision: %w", err)
+			return uuid.Nil, fmt.Errorf("attach artifact to model revision: %w", err)
 		}
 		if err := s.saveProteinSequencesIfFASTA(ctx, entryRevisionID, artifact); err != nil {
-			return err
+			return uuid.Nil, err
 		}
 	}
 
@@ -412,10 +538,10 @@ func (s *Server) createModelGraph(
 		for _, metricRequest := range *req.Metrics {
 			metric, err := s.createMetric(ctx, metricRequest, now)
 			if err != nil {
-				return err
+				return uuid.Nil, err
 			}
 			if err := s.database.Metrics.AttachToModelRevision(ctx, revision.ID, metric.ID); err != nil {
-				return fmt.Errorf("attach metric to model revision: %w", err)
+				return uuid.Nil, fmt.Errorf("attach metric to model revision: %w", err)
 			}
 		}
 	}
@@ -424,22 +550,22 @@ func (s *Server) createModelGraph(
 		for _, runRequest := range *req.Runs {
 			run, err := s.createRun(ctx, runRequest, createdBy, now)
 			if err != nil {
-				return err
+				return uuid.Nil, err
 			}
 			if err := s.database.Runs.AttachToModelRevision(ctx, revision.ID, run.ID); err != nil {
-				return fmt.Errorf("attach run to model revision: %w", err)
+				return uuid.Nil, fmt.Errorf("attach run to model revision: %w", err)
 			}
 			if runRequest.Artifacts != nil {
 				for _, artifactRequest := range *runRequest.Artifacts {
 					if err := s.attachArtifactToRun(ctx, run.ID, artifactRequest); err != nil {
-						return err
+						return uuid.Nil, err
 					}
 				}
 			}
 		}
 	}
 
-	return nil
+	return modelID, nil
 }
 
 func (s *Server) createArtifact(
@@ -645,7 +771,7 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 		return
 	}
 
-	err := s.createModelForEntry(r.Context(), entryID, req, user.ID)
+	_, err := s.createModelForEntry(r.Context(), entryID, req, user.ID)
 	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
@@ -668,19 +794,148 @@ func (s *Server) createModelForEntry(
 	entryID uuid.UUID,
 	req CreateModelRequest,
 	createdBy uuid.UUID,
-) error {
+) (uuid.UUID, error) {
 	now := time.Now().UTC()
 
-	return s.database.Do(ctx, func(ctx context.Context) error {
+	var modelID uuid.UUID
+	if err := s.database.Do(ctx, func(ctx context.Context) error {
 		entryRevision, err := s.activeEntryRevision(ctx, entryID)
 		if err != nil {
 			return err
 		}
-		return s.createModelGraph(ctx, entryRevision.EntryID, entryRevision.ID, req, now, createdBy)
-	})
+		id, err := s.createModelGraph(ctx, entryRevision.EntryID, entryRevision.ID, req, now, createdBy)
+		if err != nil {
+			return err
+		}
+		modelID = id
+		return nil
+	}); err != nil {
+		return uuid.Nil, err
+	}
+	return modelID, nil
 }
 
-func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+func (s *Server) UpdateModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+	var req UpdateModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	var updated *domainmodels.ModelRevision
+	err := s.database.Do(r.Context(), func(ctx context.Context) error {
+		revision, err := s.database.Models.GetLive(ctx, modelID)
+		if err != nil {
+			return err
+		}
+		if revision.EntryID != entryID {
+			return db.ErrModelRevisionNotFound
+		}
+		if revision.CreatedBy != user.ID {
+			return errForbidden
+		}
+		if revision.State != domainmodels.RevisionStatePending &&
+			revision.State != domainmodels.RevisionStateRejected {
+			return fmt.Errorf("model is %s: %w", revision.State, errConflict)
+		}
+		if err := applyModelPatch(revision, req); err != nil {
+			return err
+		}
+		saved, err := s.database.Models.SaveDraft(ctx, *revision)
+		if err != nil {
+			return err
+		}
+		if err := s.database.EntrySearch.IndexModelRevision(ctx, *saved); err != nil {
+			return fmt.Errorf("index model revision search: %w", err)
+		}
+		updated = saved
+		return nil
+	})
+	if s.writeRevisionError(w, err, "model", "update model") {
+		return
+	}
+
+	metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &updated.ID})
+	if err != nil {
+		slog.Error("list model metrics failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build model response")
+		return
+	}
+	model, err := modelResponseFromRevision(*updated, metrics)
+	if err != nil {
+		slog.Error("build model response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build model response")
+		return
+	}
+	writeJSON(w, http.StatusOK, model)
+}
+
+func applyModelPatch(revision *domainmodels.ModelRevision, req UpdateModelRequest) error {
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return invalidRequest("model name cannot be empty")
+		}
+		revision.Name = name
+	}
+	if req.Description != nil {
+		revision.Description = trimmedStringPtr(req.Description)
+	}
+	if req.ThumbnailImageUrl != nil {
+		revision.ThumbnailImageURL = trimmedStringPtr(req.ThumbnailImageUrl)
+	}
+	if req.PrimaryArtifactId != nil {
+		revision.PrimaryArtifactID = req.PrimaryArtifactId
+	}
+	if req.Metadata != nil {
+		metadata, err := modelMetadataFromRequest(req.Metadata)
+		if err != nil {
+			return err
+		}
+		revision.Metadata = metadata
+	}
+	if req.State != nil {
+		if *req.State != string(domainmodels.RevisionStateInReview) {
+			return invalidRequest("state can only be set to in_review")
+		}
+		revision.State = domainmodels.RevisionStateInReview
+	}
+	return nil
+}
+
+// writeRevisionError maps the shared draft/transition errors to HTTP responses.
+// It returns true when it wrote a response.
+func (s *Server) writeRevisionError(w http.ResponseWriter, err error, resource, action string) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, db.ErrEntryRevisionNotFound), errors.Is(err, db.ErrModelRevisionNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", resource+" not found")
+	case errors.Is(err, errForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the "+resource+" creator can change it")
+	case errors.Is(err, errInvalidRequest):
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case errors.Is(err, errConflict),
+		errors.Is(err, db.ErrEntryRevisionConflict),
+		errors.Is(err, db.ErrModelRevisionConflict):
+		writeError(w, http.StatusConflict, "CONFLICT", resource+" is not in an editable state")
+	default:
+		slog.Error(action+" failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)
+	}
+	return true
+}
+
+func (s *Server) GetModel(
+	w http.ResponseWriter,
+	r *http.Request,
+	entryID, modelID uuid.UUID,
+) {
 	revision, err := s.activeModelRevision(r.Context(), entryID, modelID)
 	if errors.Is(err, db.ErrModelRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")

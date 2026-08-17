@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { Entry } from "@/lib/api/entries";
 import { deleteEntryAction } from "@/app/actions/delete";
@@ -23,16 +24,22 @@ export default function EntriesBrowser({
   canCreate = false,
   query = "",
   currentUserId = null,
+  tabs = null,
+  emptyLabel,
+  title = "Proteins",
 }: {
   entries: Entry[];
   canCreate?: boolean;
   query?: string;
   currentUserId?: string | null;
+  tabs?: ReactNode;
+  emptyLabel?: string;
+  title?: string;
 }) {
   return (
     <div className={styles.wrap}>
       <header className={styles.head}>
-        <h1 className={styles.title}>Proteins</h1>
+        <h1 className={styles.title}>{title}</h1>
         {canCreate ? (
           <Link className={styles.addButton} href="/entries/new">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -42,6 +49,8 @@ export default function EntriesBrowser({
           </Link>
         ) : null}
       </header>
+
+      {tabs}
 
       {/* Search moved to the app header; query is still used for the empty
           state so a fruitless search says so. */}
@@ -98,7 +107,9 @@ export default function EntriesBrowser({
         </ul>
       ) : (
         <p className={styles.empty}>
-          {query ? `No entries match "${query}".` : "No entries found."}
+          {query
+            ? `No entries match "${query}".`
+            : (emptyLabel ?? "No entries found.")}
         </p>
       )}
 

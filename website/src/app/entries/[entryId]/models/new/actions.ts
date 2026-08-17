@@ -2,7 +2,11 @@
 
 import { redirect } from "next/navigation";
 
-import { createModel, type CreateModelInput } from "@/lib/api/entries";
+import {
+  createModel,
+  submitModel,
+  type CreateModelInput,
+} from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 
 export async function createModelAction(
@@ -15,7 +19,10 @@ export async function createModelAction(
   }
 
   try {
-    await createModel(session.token, entryId, input);
+    // A new model is a draft that goes through review before it appears on the
+    // entry: create it, then submit it for review.
+    const modelId = await createModel(session.token, entryId, input);
+    await submitModel(session.token, entryId, modelId);
   } catch (error) {
     return {
       error:
@@ -23,5 +30,5 @@ export async function createModelAction(
     };
   }
 
-  redirect(`/entries/${encodeURIComponent(entryId)}#models`);
+  redirect(`/entries/${encodeURIComponent(entryId)}`);
 }

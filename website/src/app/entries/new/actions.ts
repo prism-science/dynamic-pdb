@@ -2,7 +2,11 @@
 
 import { redirect } from "next/navigation";
 
-import { createEntry, type CreateEntryInput } from "@/lib/api/entries";
+import {
+  createEntry,
+  submitEntry,
+  type CreateEntryInput,
+} from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 
 export async function createEntryAction(
@@ -14,7 +18,10 @@ export async function createEntryAction(
   }
 
   try {
-    await createEntry(session.token, input);
+    // New entries are not published directly: create the draft, then submit it
+    // for review. It becomes public only after a reviewer approves it.
+    const entryId = await createEntry(session.token, input);
+    await submitEntry(session.token, entryId);
   } catch (error) {
     return {
       error:
@@ -22,5 +29,5 @@ export async function createEntryAction(
     };
   }
 
-  redirect("/");
+  redirect("/entries?tab=under-review");
 }

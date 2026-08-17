@@ -18,6 +18,7 @@ import (
 var (
 	ErrEntryRevisionNotFound          = errors.New("db: entry revision not found")
 	ErrEntryRevisionOwnershipMismatch = errors.New("db: entry revision ownership mismatch")
+	ErrEntryRevisionConflict          = errors.New("db: entry revision not in the expected state")
 )
 
 type EntriesRepository struct {
@@ -29,6 +30,7 @@ type EntryRevisionFilters struct {
 	ID              *uuid.UUID
 	EntryID         *uuid.UUID
 	State           *models.RevisionState
+	States          []models.RevisionState
 	EntryState      *models.EntryState
 	CreatedBy       *uuid.UUID
 	PDBIDs          []string
@@ -36,6 +38,16 @@ type EntryRevisionFilters struct {
 	Offset          *int
 	Query           string
 	ProteinSequence string
+}
+
+// nonDeletedRevisionStates is the set of states a live (non-deleted) revision
+// can be in. Because a changed baseline is always a brand-new entry, an entry
+// carries at most one live revision at a time.
+var nonDeletedRevisionStates = []models.RevisionState{
+	models.RevisionStatePending,
+	models.RevisionStateInReview,
+	models.RevisionStateActive,
+	models.RevisionStateRejected,
 }
 
 func NewEntriesRepository(database *sqlx.DB, queriers *QuerierProvider) *EntriesRepository {
@@ -222,6 +234,154 @@ func (r *EntriesRepository) Delete(ctx context.Context, entryID, revisionID, own
 	return nil
 }
 
+// GetLive returns the single non-deleted revision of an entry. Because an
+// update is always a brand-new entry, there is at most one such revision.
+func (r *EntriesRepository) GetLive(ctx context.Context, entryID uuid.UUID) (*models.EntryRevision, error) {
+	revisions, err := r.List(ctx, EntryRevisionFilters{
+		EntryID: &entryID,
+		States:  nonDeletedRevisionStates,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list live entry revisions: %w", err)
+	}
+	if len(revisions) == 0 {
+		return nil, ErrEntryRevisionNotFound
+	}
+	// List orders by created_at asc; the newest live revision is authoritative.
+	return &revisions[len(revisions)-1], nil
+}
+
+// SaveDraft rewrites the editable fields (and optionally the state) of an
+// entry's draft. Only revisions still in the pending or rejected state can be
+// written; anything else yields ErrEntryRevisionConflict.
+func (r *EntriesRepository) SaveDraft(ctx context.Context, revision models.EntryRevision) (*models.EntryRevision, error) {
+	metadata, err := marshalJSON(revision.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("prepare entry revision metadata: %w", err)
+	}
+
+	query := `update entry_revisions
+			  set name = :name,
+			      description = :description,
+			      thumbnail_image_url = :thumbnail_image_url,
+			      metadata = cast(:metadata as jsonb),
+			      state = :state,
+			      updated_at = now()
+			  where id = :id
+			    and state in ('pending', 'rejected')
+			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            created_at, updated_at`
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"id":                  revision.ID,
+		"name":                revision.Name,
+		"description":         revision.Description,
+		"thumbnail_image_url": revision.ThumbnailImageURL,
+		"metadata":            metadata,
+		"state":               string(revision.State),
+	})
+	if errors.Is(err, ErrEntryRevisionNotFound) {
+		return nil, ErrEntryRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("save entry draft: %w", err)
+	}
+	return updated, nil
+}
+
+// Approve publishes the entry's in_review revision, assigning a revision number
+// and recording the reviewer decision under the metadata "_review" key.
+func (r *EntriesRepository) Approve(
+	ctx context.Context,
+	entryID, reviewerID uuid.UUID,
+	comment *string,
+) (*models.EntryRevision, error) {
+	query := `update entry_revisions
+			  set state = 'active',
+			      published_at = now(),
+			      revision_number = coalesce(
+			          (select max(revision_number) from entry_revisions where entry_id = :entry_id), 0) + 1,
+			      updated_at = now(),
+			      metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{_review}',
+			          jsonb_build_object('by', :reviewer, 'decision', 'approved', 'comment', :comment, 'at', now()))
+			  where entry_id = :entry_id
+			    and state = 'in_review'
+			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            created_at, updated_at`
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"entry_id": entryID,
+		"reviewer": reviewerID.String(),
+		"comment":  comment,
+	})
+	if errors.Is(err, ErrEntryRevisionNotFound) {
+		return nil, ErrEntryRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("approve entry revision: %w", err)
+	}
+	return updated, nil
+}
+
+// Reject moves the entry's in_review revision back to rejected, recording the
+// reviewer comment under the metadata "_review" key.
+func (r *EntriesRepository) Reject(
+	ctx context.Context,
+	entryID, reviewerID uuid.UUID,
+	comment string,
+) (*models.EntryRevision, error) {
+	query := `update entry_revisions
+			  set state = 'rejected',
+			      updated_at = now(),
+			      metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{_review}',
+			          jsonb_build_object('by', :reviewer, 'decision', 'rejected', 'comment', :comment, 'at', now()))
+			  where entry_id = :entry_id
+			    and state = 'in_review'
+			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
+			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            created_at, updated_at`
+
+	updated, err := r.getRevision(ctx, query, map[string]any{
+		"entry_id": entryID,
+		"reviewer": reviewerID.String(),
+		"comment":  comment,
+	})
+	if errors.Is(err, ErrEntryRevisionNotFound) {
+		return nil, ErrEntryRevisionConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reject entry revision: %w", err)
+	}
+	return updated, nil
+}
+
+func (r *EntriesRepository) getRevision(
+	ctx context.Context,
+	query string,
+	args map[string]any,
+) (*models.EntryRevision, error) {
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return nil, fmt.Errorf("bind entry revision query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
+
+	var row entryRevisionRow
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, boundQuery, queryArgs...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrEntryRevisionNotFound
+		}
+		return nil, fmt.Errorf("get entry revision: %w", err)
+	}
+	revision, err := entryRevisionFromRow(&row)
+	if err != nil {
+		return nil, fmt.Errorf("decode entry revision: %w", err)
+	}
+	return revision, nil
+}
+
 func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")
@@ -250,6 +410,23 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	if filters.State != nil {
 		conditions = append(conditions, "state = :state")
 		args["state"] = string(*filters.State)
+	}
+	if filters.EntryState != nil {
+		conditions = append(conditions, `exists (
+			select 1
+			from entries e
+			where e.id = entry_revisions.entry_id
+			  and e.state = :entry_state
+		)`)
+		args["entry_state"] = string(*filters.EntryState)
+	}
+	if len(filters.States) > 0 {
+		states := make([]string, 0, len(filters.States))
+		for _, state := range filters.States {
+			states = append(states, string(state))
+		}
+		conditions = append(conditions, "state = any(:states::text[])")
+		args["states"] = pq.StringArray(states)
 	}
 	if filters.EntryState != nil {
 		conditions = append(conditions, `exists (

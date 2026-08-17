@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getApiBaseUrl } from "./baseUrl";
 
@@ -135,7 +135,7 @@ type ListResponse<T> = {
   items: T[];
 };
 
-type Artifact = {
+export type Artifact = {
   id: string;
   name: string;
   level: EntityLevel;
@@ -148,7 +148,7 @@ type Artifact = {
   created_at: string;
 };
 
-type Metric = {
+export type Metric = {
   id: string;
   key: string;
   value: number;
@@ -263,6 +263,8 @@ export class ApiRequestError extends Error {
   }
 }
 
+export type EntryStatus = "active" | "under_review" | "archived";
+
 export async function listEntries(
   token?: string,
   opts?: {
@@ -270,6 +272,8 @@ export async function listEntries(
     pdbIds?: string[] | null;
     limit?: number | null;
     offset?: number | null;
+    status?: EntryStatus;
+    mine?: boolean;
   },
 ): Promise<Entry[]> {
   const params = new URLSearchParams();
@@ -288,6 +292,12 @@ export async function listEntries(
     if (trimmed) {
       params.append("pdb_id", trimmed);
     }
+  }
+  if (opts?.status && opts.status !== "active") {
+    params.set("status", opts.status);
+  }
+  if (opts?.mine) {
+    params.set("mine", "true");
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
@@ -367,35 +377,173 @@ export type CreateEntryInput = {
   metadata?: CreateEntryMetadata;
 };
 
+/** Creates a draft model and returns its id. The model starts in `pending`
+ *  and only becomes visible once submitted and approved. */
 export async function createModel(
   token: string,
   entryId: string,
   input: CreateModelInput,
-): Promise<void> {
-  await postJSON(
+): Promise<string> {
+  const modelId = input.id ?? randomUUID();
+  await sendWithoutResponse(
+    "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
-    createModelRequest(input),
+    createModelRequest({ ...input, id: modelId }),
   );
+  return modelId;
 }
 
+/** Creates a draft entry and returns its id. */
 export async function createEntry(
   token: string,
   input: CreateEntryInput,
-): Promise<void> {
-  await postJSON("/v1/entries", token, createEntryRequest(input));
+): Promise<string> {
+  const entryId = input.id ?? randomUUID();
+  await sendWithoutResponse(
+    "POST",
+    "/v1/entries",
+    token,
+    createEntryRequest({ ...input, id: entryId }),
+  );
+  return entryId;
 }
 
-async function postJSON(
+// --- Review workflow -------------------------------------------------------
+
+/** One row of the review queue. Rows are always entries: a model submitted
+ *  against an entry is part of that entry's submission, never a row of its own. */
+export type ReviewQueueItem = {
+  entry_id: string;
+  name: string;
+  submitted_at: string;
+  submitted_by: string[];
+};
+
+/** One side of an entry under review. `active` and `proposed` carry this same
+ *  shape, so the two can be diffed field by field. */
+export type ReviewEntry = {
+  id: string;
+  created_by: string;
+  name: string;
+  description: string | null;
+  thumbnail_image_url: string | null;
+  metadata: JSONRecord;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  protein_sequences: ProteinSequence[];
+  artifacts: Artifact[];
+};
+
+export type ReviewModel = {
+  id: string;
+  entry_id: string;
+  created_by: string;
+  name: string;
+  description: string | null;
+  thumbnail_image_url: string | null;
+  primary_artifact_id: string | null;
+  metadata: JSONRecord;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  metrics: Metric[];
+  artifacts: Artifact[];
+};
+
+/** `active` is the published revision, `proposed` the one waiting for a
+ *  decision. The entry has neither side guaranteed: `active` is null for a new
+ *  entry, `proposed` is null when only its models were submitted. A model
+ *  always has `proposed` — that is what puts it in the submission. */
+export type EntryReview = {
+  entry_id: string;
+  entry: {
+    active: ReviewEntry | null;
+    proposed: ReviewEntry | null;
+  };
+  models: {
+    model_id: string;
+    active: ReviewModel | null;
+    proposed: ReviewModel;
+  }[];
+};
+
+export type ReviewDecision = "approved" | "rejected";
+
+/** Submits a draft entry for review (pending/rejected -> in_review). */
+export async function submitEntry(token: string, entryId: string): Promise<void> {
+  await sendJSON(
+    "PATCH",
+    `/v1/entries/${encodeURIComponent(entryId)}`,
+    token,
+    { state: "in_review" },
+  );
+}
+
+/** Submits a draft model for review (pending/rejected -> in_review). */
+export async function submitModel(
+  token: string,
+  entryId: string,
+  modelId: string,
+): Promise<void> {
+  await sendJSON(
+    "PATCH",
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+      modelId,
+    )}`,
+    token,
+    { state: "in_review" },
+  );
+}
+
+/** Lists the review queue. The reviewer sees every entry with something
+ *  waiting; anyone else sees only entries they contributed to. */
+export async function listReviews(token: string): Promise<ReviewQueueItem[]> {
+  const response = await fetchBackend<ListResponse<ReviewQueueItem>>(
+    "/v1/reviews",
+    token,
+  );
+  return response.items;
+}
+
+export async function getEntryReview(
+  token: string,
+  entryId: string,
+): Promise<EntryReview> {
+  return fetchBackend<EntryReview>(
+    `/v1/reviews/${encodeURIComponent(entryId)}`,
+    token,
+  );
+}
+
+/** Applies one decision to the whole submission. `comment` is required when
+ *  rejecting. */
+export async function decideEntryReview(
+  token: string,
+  entryId: string,
+  status: ReviewDecision,
+  comment?: string | null,
+): Promise<EntryReview> {
+  return sendJSON<EntryReview>(
+    "POST",
+    `/v1/reviews/${encodeURIComponent(entryId)}/decision`,
+    token,
+    { status, comment: comment ?? null },
+  );
+}
+
+async function sendJSON<T>(
+  method: string,
   path: string,
   token: string,
   input: unknown,
-): Promise<void> {
+): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
+      method,
       cache: "no-store",
       headers: {
         Accept: "application/json",
@@ -417,6 +565,53 @@ async function postJSON(
       response.status,
     );
   }
+  return (await response.json()) as T;
+}
+
+async function sendWithoutResponse(
+  method: string,
+  path: string,
+  token: string,
+  input: unknown,
+): Promise<void> {
+  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    throw new ApiRequestError(
+      error instanceof Error
+        ? `Backend request failed: ${error.message}`
+        : "Backend request failed",
+    );
+  }
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `Backend responded with ${response.status}`,
+      response.status,
+    );
+  }
+}
+
+/** Fetches a single entry without its models or artifacts. Cheap enough to
+ *  call per row when a list only needs entry names. */
+export async function getEntry(
+  token: string | undefined,
+  entryId: string,
+): Promise<Entry> {
+  return fetchBackend<Entry>(
+    `/v1/entries/${encodeURIComponent(entryId)}`,
+    token,
+  );
 }
 
 export async function getEntryPageData(

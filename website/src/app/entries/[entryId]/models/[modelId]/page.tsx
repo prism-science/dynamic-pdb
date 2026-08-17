@@ -41,7 +41,9 @@ type ModelRouteProps = {
 // The model mirrors the entry: a narrow identity rail on the left, sections on
 // the right. Facts belong in the rail — a label/value list only reads well in a
 // column that narrow.
-export default async function ModelPage({ params }: ModelRouteProps) {
+export default async function ModelPage({
+  params,
+}: ModelRouteProps) {
   const { entryId, modelId } = await params;
   const session = await getAuthSession();
 

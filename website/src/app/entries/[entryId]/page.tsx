@@ -31,7 +31,9 @@ type EntryRouteProps = {
   params: Promise<{ entryId: string }>;
 };
 
-export default async function EntryPage({ params }: EntryRouteProps) {
+export default async function EntryPage({
+  params,
+}: EntryRouteProps) {
   const { entryId } = await params;
   const session = await getAuthSession();
 
