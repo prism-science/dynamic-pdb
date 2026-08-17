@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import styles from "./AppHeader.module.css";
 
@@ -8,9 +9,17 @@ type Props = {
   displayName: string;
   subLabel: string | null;
   initial: string;
+  isReviewer?: boolean;
+  hasWork?: boolean;
 };
 
-export default function UserMenu({ displayName, subLabel, initial }: Props) {
+export default function UserMenu({
+  displayName,
+  subLabel,
+  initial,
+  isReviewer = false,
+  hasWork = false,
+}: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +74,32 @@ export default function UserMenu({ displayName, subLabel, initial }: Props) {
               <span className={styles.menuSub}>{subLabel}</span>
             ) : null}
           </div>
+
+          <Link
+            href="/entries"
+            role="menuitem"
+            className={styles.menuLink}
+            onClick={() => setOpen(false)}
+          >
+            My entries
+          </Link>
+
+          {isReviewer ? (
+            <Link
+              href="/review"
+              role="menuitem"
+              className={styles.menuLink}
+              onClick={() => setOpen(false)}
+            >
+              <span>Reviews</span>
+              {hasWork ? (
+                <span className={styles.menuDot} aria-label="waiting" />
+              ) : null}
+            </Link>
+          ) : null}
+
+          <div className={styles.menuDivider} />
+
           <form action="/auth/logout" method="post" className={styles.menuForm}>
             <button type="submit" role="menuitem" className={styles.menuItem}>
               <svg

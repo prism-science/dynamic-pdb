@@ -52,6 +52,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, revision.ID, got.ID)
 	assert.Equal(t, entryRevision.EntryID, got.EntryID)
 	assert.Equal(t, revision.ModelID, got.ModelID)
+	assert.Equal(t, models.ModelStateActive, got.ModelState)
 	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, revision.Name, got.Name)
 	require.NotNil(t, got.Description)
@@ -68,6 +69,18 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, []string{"HEM"}, got.Metadata.Ligands)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
 	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
+	newModelState := models.ModelStateNew
+	_, err = testDB.Models.Get(context.Background(), db.ModelRevisionFilters{
+		ID:         &created.ID,
+		ModelState: &newModelState,
+	})
+	require.NoError(t, err)
+	activeModelState := models.ModelStateActive
+	_, err = testDB.Models.Get(context.Background(), db.ModelRevisionFilters{
+		ID:         &created.ID,
+		ModelState: &activeModelState,
+	})
+	require.ErrorIs(t, err, db.ErrModelRevisionNotFound)
 }
 
 func Test_should_return_not_found_when_models_get_misses(t *testing.T) {
@@ -103,22 +116,6 @@ func Test_should_list_model_revisions_for_entry_with_pagination_when_models_list
 	assert.Equal(t, second.ID, got[0].ID)
 }
 
-func Test_should_mark_model_revision_deleted_when_models_delete_called_by_owner(t *testing.T) {
-	// given
-	ctx := context.Background()
-	entryRevision := createDBTestEntryRevision(t, "deleted model entry", time.Now().UTC())
-	revision := createDBTestModelRevision(t, entryRevision.EntryID, "deleted model revision", time.Now().UTC())
-
-	// when
-	err := testDB.Models.Delete(ctx, revision.ModelID, revision.ID, revision.CreatedBy)
-	require.NoError(t, err)
-	got, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &revision.ID})
-
-	// then
-	require.NoError(t, err)
-	assert.Equal(t, models.RevisionStateDeleted, got.State)
-}
-
 func Test_should_return_error_when_models_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
@@ -128,4 +125,77 @@ func Test_should_return_error_when_models_list_called_with_negative_limit(t *tes
 
 	// then
 	require.Error(t, err)
+}
+
+func Test_should_activate_only_target_model_revision_when_models_activate_revision_called(t *testing.T) {
+	// given
+	ctx := context.Background()
+	entryRevision := createDBTestEntryRevision(t, "submission-entry", time.Now().UTC())
+	createdBy := createDBTestUser(t)
+	now := time.Now().UTC()
+	modelID := uuid.New()
+	revisionNumber := 1
+	active, err := testDB.Models.Create(ctx, entryRevision.EntryID, models.ModelRevision{
+		ID:             uuid.New(),
+		ModelID:        modelID,
+		RevisionNumber: &revisionNumber,
+		State:          models.RevisionStateActive,
+		ModelState:     models.ModelStateActive,
+		Name:           "active model revision",
+		CreatedBy:      createdBy,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	require.NoError(t, err)
+	target, err := testDB.Models.Create(ctx, entryRevision.EntryID, models.ModelRevision{
+		ID:               uuid.New(),
+		ModelID:          modelID,
+		ParentRevisionID: &active.ID,
+		State:            models.RevisionStateInReview,
+		ModelState:       models.ModelStateActive,
+		Name:             "replacement model revision",
+		CreatedBy:        createdBy,
+		CreatedAt:        now.Add(time.Second),
+		UpdatedAt:        now.Add(time.Second),
+	})
+	require.NoError(t, err)
+	unrelated, err := testDB.Models.Create(ctx, entryRevision.EntryID, models.ModelRevision{
+		ID:               uuid.New(),
+		ModelID:          modelID,
+		ParentRevisionID: &active.ID,
+		State:            models.RevisionStatePending,
+		ModelState:       models.ModelStateActive,
+		Name:             "unrelated model revision",
+		CreatedBy:        createdBy,
+		CreatedAt:        now.Add(2 * time.Second),
+		UpdatedAt:        now.Add(2 * time.Second),
+	})
+	require.NoError(t, err)
+
+	// when
+	err = testDB.Do(ctx, func(ctx context.Context) error {
+		_, err := testDB.Models.ActivateRevision(ctx, target.ID)
+		return err
+	})
+	require.NoError(t, err)
+	archived, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &active.ID})
+	require.NoError(t, err)
+	activated, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &target.ID})
+	require.NoError(t, err)
+	untouched, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &unrelated.ID})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, models.RevisionStateArchived, archived.State)
+	assert.Equal(t, models.RevisionStateActive, activated.State)
+	assert.Equal(t, models.ModelStateActive, activated.ModelState)
+	activeModelState := models.ModelStateActive
+	_, err = testDB.Models.Get(ctx, db.ModelRevisionFilters{
+		ID:         &activated.ID,
+		ModelState: &activeModelState,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, activated.RevisionNumber)
+	assert.Equal(t, 2, *activated.RevisionNumber)
+	assert.Equal(t, models.RevisionStatePending, untouched.State)
 }

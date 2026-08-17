@@ -22,5 +22,5 @@ export async function createEntryAction(
     };
   }
 
-  redirect("/");
+  redirect("/entries?tab=under-review");
 }

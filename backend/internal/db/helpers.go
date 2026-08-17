@@ -70,8 +70,3 @@ func timePtrFromSQL(value sql.NullTime) *time.Time {
 	}
 	return &value.Time
 }
-
-type deleteResult struct {
-	MatchedCount int64 `db:"matched_count"`
-	DeletedCount int64 `db:"deleted_count"`
-}

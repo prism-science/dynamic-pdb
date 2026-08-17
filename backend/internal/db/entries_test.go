@@ -50,6 +50,7 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	require.NoError(t, err)
 	assert.Equal(t, revision.ID, got.ID)
 	assert.Equal(t, revision.EntryID, got.EntryID)
+	assert.Equal(t, models.EntryStateActive, got.EntryState)
 	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, revision.Name, got.Name)
 	require.NotNil(t, got.Description)
@@ -63,6 +64,18 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	assert.Equal(t, method, *got.Metadata.Method)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
 	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
+	newEntryState := models.EntryStateNew
+	_, err = testDB.Entries.Get(context.Background(), db.EntryRevisionFilters{
+		ID:         &created.ID,
+		EntryState: &newEntryState,
+	})
+	require.NoError(t, err)
+	activeEntryState := models.EntryStateActive
+	_, err = testDB.Entries.Get(context.Background(), db.EntryRevisionFilters{
+		ID:         &created.ID,
+		EntryState: &activeEntryState,
+	})
+	require.ErrorIs(t, err, db.ErrEntryRevisionNotFound)
 }
 
 func Test_should_return_not_found_when_entries_get_misses(t *testing.T) {
@@ -157,25 +170,6 @@ func Test_should_reject_duplicate_active_entry_revision_when_pdb_id_ref_matches(
 	require.Error(t, err)
 }
 
-func Test_should_only_mark_target_entry_revision_deleted_when_entries_delete_called_by_owner(t *testing.T) {
-	// given
-	ctx := context.Background()
-	revision := createDBTestEntryRevision(t, "deleted entry revision", time.Now().UTC())
-	modelRevision := createDBTestModelRevision(t, revision.EntryID, "retained model revision", time.Now().UTC())
-
-	// when
-	err := testDB.Entries.Delete(ctx, revision.EntryID, revision.ID, revision.CreatedBy)
-	require.NoError(t, err)
-	gotEntry, err := testDB.Entries.Get(ctx, db.EntryRevisionFilters{ID: &revision.ID})
-	require.NoError(t, err)
-	gotModel, err := testDB.Models.Get(ctx, db.ModelRevisionFilters{ID: &modelRevision.ID})
-
-	// then
-	require.NoError(t, err)
-	assert.Equal(t, models.RevisionStateDeleted, gotEntry.State)
-	assert.Equal(t, modelRevision.State, gotModel.State)
-}
-
 func Test_should_return_error_when_entries_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
@@ -199,6 +193,63 @@ func Test_should_return_error_when_entries_list_called_with_text_and_protein_seq
 
 	// then
 	require.Error(t, err)
+}
+
+func Test_should_archive_previous_active_revision_when_entry_revision_activated(t *testing.T) {
+	// given
+	ctx := context.Background()
+	createdBy := createDBTestUser(t)
+	entryID := uuid.New()
+	now := time.Now().UTC()
+	revisionNumber := 1
+	active, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID:             uuid.New(),
+		EntryID:        entryID,
+		RevisionNumber: &revisionNumber,
+		State:          models.RevisionStateActive,
+		EntryState:     models.EntryStateActive,
+		Name:           "active entry revision",
+		CreatedBy:      createdBy,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	require.NoError(t, err)
+	pending, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID:               uuid.New(),
+		EntryID:          entryID,
+		ParentRevisionID: &active.ID,
+		State:            models.RevisionStateInReview,
+		EntryState:       models.EntryStateActive,
+		Name:             "replacement entry revision",
+		CreatedBy:        createdBy,
+		CreatedAt:        now.Add(time.Second),
+		UpdatedAt:        now.Add(time.Second),
+	})
+	require.NoError(t, err)
+
+	// when
+	err = testDB.Do(ctx, func(ctx context.Context) error {
+		_, err := testDB.Entries.ActivateRevision(ctx, entryID, pending.ID)
+		return err
+	})
+	require.NoError(t, err)
+	archived, err := testDB.Entries.Get(ctx, db.EntryRevisionFilters{ID: &active.ID})
+	require.NoError(t, err)
+	activated, err := testDB.Entries.Get(ctx, db.EntryRevisionFilters{ID: &pending.ID})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, models.RevisionStateArchived, archived.State)
+	assert.Equal(t, models.RevisionStateActive, activated.State)
+	assert.Equal(t, models.EntryStateActive, activated.EntryState)
+	activeEntryState := models.EntryStateActive
+	_, err = testDB.Entries.Get(ctx, db.EntryRevisionFilters{
+		ID:         &activated.ID,
+		EntryState: &activeEntryState,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, activated.RevisionNumber)
+	assert.Equal(t, 2, *activated.RevisionNumber)
 }
 
 func proteinSequenceTokenForTest(id uuid.UUID) string {

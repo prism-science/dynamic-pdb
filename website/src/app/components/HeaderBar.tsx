@@ -14,7 +14,18 @@ export type HeaderUser = {
   initial: string;
 };
 
-export default function HeaderBar({ user }: { user: HeaderUser | null }) {
+export type HeaderReviews = {
+  isReviewer: boolean;
+  /** Something is waiting. Deliberately not a count: see reviews/count.ts. */
+  hasWork: boolean;
+};
+
+type Props = {
+  user: HeaderUser | null;
+  reviews: HeaderReviews | null;
+};
+
+export default function HeaderBar({ user, reviews }: Props) {
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
@@ -41,6 +52,8 @@ export default function HeaderBar({ user }: { user: HeaderUser | null }) {
               displayName={user.displayName}
               subLabel={user.subLabel}
               initial={user.initial}
+              isReviewer={reviews?.isReviewer ?? false}
+              hasWork={reviews?.hasWork ?? false}
             />
           ) : (
             <LoginButton />

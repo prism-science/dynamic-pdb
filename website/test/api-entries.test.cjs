@@ -6,9 +6,17 @@ const test = require("node:test");
 const {
   ApiRequestError,
   createEntry,
+  createModel,
+  decideEntryReview,
+  getEntryReview,
   getModelPageData,
   listEntries,
+  listReviews,
+  listUserEntryRevisionGroups,
+  submitEntryRevision,
+  submitModelRevision,
 } = require("../src/lib/api/entries.ts");
+const { REVIEW_PAGE_SIZE } = require("../src/lib/reviewQueue.ts");
 
 test("should list entries with trimmed query and optional authorization", async () => {
   const previousFetch = global.fetch;
@@ -82,10 +90,24 @@ test("should post create entry using the new backend graph shape", async () => {
     let request = null;
     global.fetch = async (url, init) => {
       request = { url: String(url), init, body: JSON.parse(init.body) };
-      return new Response(null, { status: 201 });
+      return jsonResponse(
+        {
+          entry_id: "entry-1",
+          revision_id: "entry-revision-1",
+          state: "in_review",
+          model_results: [
+            {
+              op: "add",
+              model_id: "model-1",
+              model_revision_id: "model-revision-1",
+            },
+          ],
+        },
+        { status: 201 },
+      );
     };
 
-    await createEntry("token-123", {
+    const result = await createEntry("token-123", {
       id: "entry-1",
       name: "Entry",
       entities: [
@@ -145,10 +167,13 @@ test("should post create entry using the new backend graph shape", async () => {
       ],
     });
 
+    assert.equal(result.entry_id, "entry-1");
+    assert.equal(result.revision_id, "entry-revision-1");
+    assert.equal(result.model_results[0].model_revision_id, "model-revision-1");
     assert.equal(request.url, "https://backend.example/v1/entries");
     assert.equal(request.init.headers.Authorization, "Bearer token-123");
     assert.equal(request.body.entities, undefined);
-    assert.deepEqual(request.body.artifacts, [
+    assert.deepEqual(request.body.entry.artifacts, [
       {
         id: "baseline",
         name: "sequence.fasta",
@@ -160,23 +185,274 @@ test("should post create entry using the new backend graph shape", async () => {
         metadata: { records: [{ header: "A", sequence: "AC" }] },
       },
     ]);
-    assert.equal(request.body.models[0].primary_artifact_id, "model-artifact");
-    assert.deepEqual(request.body.models[0].metadata, {
+    assert.equal(request.body.entry.id, "entry-1");
+    assert.equal(request.body.model_operations[0].op, "add");
+    assert.equal(request.body.model_operations[0].data.model_id, "model-1");
+    assert.equal(
+      request.body.model_operations[0].data.primary_artifact_id,
+      "model-artifact",
+    );
+    assert.deepEqual(request.body.model_operations[0].data.metadata, {
       authors: ["Alice"],
       affiliation: "Lab",
     });
-    assert.deepEqual(request.body.models[0].runs[0].artifacts, [
+    assert.deepEqual(request.body.model_operations[0].data.runs[0].artifacts, [
       { artifact_id: "baseline", direction: "input", position: null },
       { artifact_id: "model-artifact", direction: "output", position: null },
     ]);
-    assert.match(request.body.models[0].metrics[0].id, /^[0-9a-f-]{36}$/);
+    assert.match(
+      request.body.model_operations[0].data.metrics[0].id,
+      /^[0-9a-f-]{36}$/,
+    );
     assert.deepEqual(
       {
-        key: request.body.models[0].metrics[0].key,
-        value: request.body.models[0].metrics[0].value,
+        key: request.body.model_operations[0].data.metrics[0].key,
+        value: request.body.model_operations[0].data.metrics[0].value,
       },
       { key: "r_free", value: 0.23 },
     );
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should create and submit model revisions through user routes", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const requests = [];
+    global.fetch = async (url, init) => {
+      const request = {
+        url: String(url),
+        method: init.method,
+        body: JSON.parse(init.body),
+      };
+      requests.push(request);
+      if (request.method === "POST") {
+        return jsonResponse(
+          {
+            entry_id: "entry-1",
+            model_id: "model-1",
+            revision_id: "model-revision-1",
+            state: "in_review",
+          },
+          { status: 201 },
+        );
+      }
+      return jsonResponse({ state: "in_review" });
+    };
+
+    const result = await createModel("token-123", "entry-1", {
+      id: "model-1",
+      name: "Model",
+    });
+    await submitModelRevision(
+      "token-123",
+      "user-1",
+      result.entry_id,
+      result.model_id,
+      result.revision_id,
+    );
+    await submitEntryRevision(
+      "token-123",
+      "user-1",
+      "entry-1",
+      "entry-revision-1",
+    );
+
+    assert.equal(requests[0].url, "https://backend.example/v1/entries/entry-1/models");
+    assert.deepEqual(requests[0].body.model, {
+      id: "model-1",
+      name: "Model",
+      metadata: {},
+      primary_artifact_id: null,
+      artifacts: [],
+      runs: [],
+      metrics: [],
+    });
+    assert.equal(
+      requests[1].url,
+      "https://backend.example/v1/users/user-1/entries/entry-1/models/model-1/revisions/model-revision-1",
+    );
+    assert.equal(
+      requests[2].url,
+      "https://backend.example/v1/users/user-1/entries/entry-1/revisions/entry-revision-1",
+    );
+    assert.deepEqual(requests.slice(1).map((request) => request.body), [
+      { state: "in_review" },
+      { state: "in_review" },
+    ]);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should list user revision groups by explicit state", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    let requestedURL = "";
+    global.fetch = async (url) => {
+      requestedURL = String(url);
+      return jsonResponse({ items: [{ entry: { id: "entry-1" } }] });
+    };
+
+    const groups = await listUserEntryRevisionGroups(
+      "token-123",
+      "user-1",
+      "in_review",
+    );
+
+    assert.equal(
+      requestedURL,
+      "https://backend.example/v1/users/user-1/entries/revisions?state=in_review",
+    );
+    assert.equal(groups[0].entry.id, "entry-1");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should group the review queue by entry and pair each revision with the one it replaces", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const paths = [];
+    global.fetch = async (url) => {
+      const requested = new URL(String(url));
+      paths.push(`${requested.pathname}${requested.search}`);
+      if (requested.pathname === "/v1/entries/revisions") {
+        return jsonResponse({
+          items: [
+            {
+              entry: { id: "entry-1", name: "Entry" },
+              entry_revisions: [
+                revisionSummary("entry-revision-1", "2026-01-01T01:00:00Z"),
+              ],
+              model_revisions: [
+                modelRevisionSummary(
+                  "model-revision-1",
+                  "model-1",
+                  "2026-01-01T02:00:00Z",
+                ),
+              ],
+            },
+          ],
+        });
+      }
+      if (requested.pathname.endsWith("/revisions/entry-revision-1")) {
+        return jsonResponse(
+          entryRevision("entry-revision-1", "2026-01-01T01:00:00Z", {
+            description: "Fresh",
+          }),
+        );
+      }
+      if (requested.pathname.endsWith("/revisions/model-revision-1")) {
+        return jsonResponse(
+          modelRevision("model-revision-1", "2026-01-01T02:00:00Z", {
+            parent_revision_id: "model-revision-active",
+            description: "Updated",
+          }),
+        );
+      }
+      if (requested.pathname.endsWith("/revisions/model-revision-active")) {
+        return jsonResponse(
+          modelRevision("model-revision-active", "2025-12-01T00:00:00Z", {
+            state: "active",
+            description: "Original",
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+    const page = await listReviews("token-123");
+    const review = await getEntryReview("token-123", page.items[0]);
+
+    assert.equal(
+      paths[0],
+      `/v1/entries/revisions?state=in_review&limit=${REVIEW_PAGE_SIZE}&offset=0`,
+    );
+    // One row per entry, never one per revision.
+    assert.equal(page.items.length, 1);
+    assert.equal(page.hasMore, false);
+    // The row is stamped with the earliest thing waiting under it.
+    assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
+
+    // A first revision has nothing published to compare against.
+    assert.equal(review.entry.active, null);
+    assert.equal(review.entry.proposed.description, "Fresh");
+    assert.deepEqual(review.entry.target, {
+      kind: "entry",
+      entry_id: "entry-1",
+      revision_id: "entry-revision-1",
+    });
+
+    assert.equal(review.models.length, 1);
+    assert.equal(review.models[0].model_id, "model-1");
+    assert.equal(review.models[0].active.description, "Original");
+    assert.equal(review.models[0].proposed.description, "Updated");
+    assert.deepEqual(review.models[0].target, {
+      kind: "model",
+      entry_id: "entry-1",
+      model_id: "model-1",
+      revision_id: "model-revision-1",
+    });
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should decide the entry revision and each model revision at its own path", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const requests = [];
+    global.fetch = async (url, init = {}) => {
+      requests.push({
+        path: new URL(String(url)).pathname,
+        method: init.method,
+        body: init.body,
+      });
+      return jsonResponse({ state: "active" });
+    };
+
+    await decideEntryReview(
+      "token-123",
+      { kind: "entry", entry_id: "entry-1", revision_id: "entry-revision-1" },
+      "active",
+    );
+    await decideEntryReview(
+      "token-123",
+      {
+        kind: "model",
+        entry_id: "entry-1",
+        model_id: "model-1",
+        revision_id: "model-revision-1",
+      },
+      "rejected",
+    );
+
+    assert.deepEqual(requests, [
+      {
+        path: "/v1/entries/entry-1/revisions/entry-revision-1",
+        method: "PATCH",
+        body: JSON.stringify({ state: "active" }),
+      },
+      {
+        path: "/v1/entries/entry-1/models/model-1/revisions/model-revision-1",
+        method: "PATCH",
+        body: JSON.stringify({ state: "rejected" }),
+      },
+    ]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -284,6 +560,39 @@ function run(id) {
   };
 }
 
+function revisionSummary(id, updatedAt) {
+  return {
+    id,
+    entry_id: "entry-1",
+    parent_revision_id: null,
+    revision_number: null,
+    state: "in_review",
+    entry_state: "active",
+    created_by: "user-1",
+    name: "Entry",
+    published_at: null,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+  };
+}
+
+function modelRevisionSummary(id, modelId, updatedAt) {
+  return {
+    id,
+    entry_id: "entry-1",
+    model_id: modelId,
+    parent_revision_id: null,
+    revision_number: null,
+    state: "in_review",
+    model_state: "active",
+    created_by: "user-1",
+    name: "Model",
+    published_at: null,
+    created_at: updatedAt,
+    updated_at: updatedAt,
+  };
+}
+
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -298,4 +607,29 @@ function restoreEnv(name, value) {
     return;
   }
   process.env[name] = value;
+}
+
+function entryRevision(id, updatedAt, overrides = {}) {
+  return {
+    ...revisionSummary(id, updatedAt),
+    description: null,
+    thumbnail_image_url: null,
+    metadata: {},
+    protein_sequences: [],
+    artifacts: [],
+    ...overrides,
+  };
+}
+
+function modelRevision(id, updatedAt, overrides = {}) {
+  return {
+    ...modelRevisionSummary(id, "model-1", updatedAt),
+    description: null,
+    thumbnail_image_url: null,
+    primary_artifact_id: null,
+    metadata: {},
+    metrics: [],
+    artifacts: [],
+    ...overrides,
+  };
 }

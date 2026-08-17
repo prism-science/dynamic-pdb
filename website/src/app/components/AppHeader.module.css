@@ -370,3 +370,239 @@
     max-width: 96px;
   }
 }
+
+/* Reviews dropdown (notifications-style panel, opens from the right). */
+.reviewMenu {
+  position: relative;
+}
+
+.reviewTrigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.reviewTrigger:hover {
+  background: var(--neutral-bg);
+  color: var(--text);
+}
+
+.reviewTrigger[aria-expanded="true"] {
+  background: var(--neutral-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.reviewTrigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.reviewBadge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.reviewPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.reviewTabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.reviewTab {
+  flex: 1;
+  height: 42px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.reviewTab:hover {
+  color: var(--text);
+}
+
+.reviewTabActive {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.reviewList {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.reviewEmpty {
+  padding: 28px 14px;
+  margin: 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.reviewRow {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+}
+
+.reviewRow + .reviewRow {
+  border-top: 1px solid var(--border);
+}
+
+.reviewRowTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reviewName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reviewName:hover {
+  text-decoration: underline;
+}
+
+.reviewType {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.reviewMeta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Hamburger + left cluster for the slide-out drawer. */
+.hleft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.menuButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+}
+
+.menuButton:hover {
+  background: var(--neutral-bg);
+}
+
+.menuButton[aria-expanded="true"] {
+  background: var(--neutral-bg);
+  border-color: var(--border);
+}
+
+.menuButton i {
+  width: 16px;
+  height: 1.7px;
+  background: var(--text-secondary);
+  border-radius: 2px;
+}
+
+/* Neutral menu links inside the profile dropdown (vs the destructive .menuItem). */
+.menuLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.menuLink:hover {
+  background: var(--neutral-bg);
+}
+
+.menuDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+
+.menuDivider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}

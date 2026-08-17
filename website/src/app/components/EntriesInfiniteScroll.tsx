@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import DeleteButton from "./DeleteButton";
 import styles from "./EntriesBrowser.module.css";
 
 const pageSize = 50;
@@ -31,11 +30,9 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 export default function EntriesInfiniteScroll({
   query,
   initialOffset,
-  currentUserId,
 }: {
   query: string;
   initialOffset: number;
-  currentUserId: string | null;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [offset, setOffset] = useState(initialOffset);
@@ -101,11 +98,7 @@ export default function EntriesInfiniteScroll({
       {entries.length > 0 ? (
         <ul className={styles.grid}>
           {entries.map((entry) => (
-            <EntryCard
-              key={entry.id}
-              entry={entry}
-              canDelete={currentUserId != null && entry.created_by === currentUserId}
-            />
+            <EntryCard key={entry.id} entry={entry} />
           ))}
         </ul>
       ) : null}
@@ -122,18 +115,13 @@ export default function EntriesInfiniteScroll({
 
 function EntryCard({
   entry,
-  canDelete,
 }: {
   entry: Entry;
-  canDelete: boolean;
 }) {
   const updated = formatDate(entry.updated_at);
 
   return (
-    <li
-      className={styles.cardItem}
-      data-has-delete={canDelete ? "true" : undefined}
-    >
+    <li className={styles.cardItem}>
       <Link className={styles.card} href={`/entries/${entry.id}`}>
         <span
           className={styles.thumb}
@@ -158,26 +146,8 @@ function EntryCard({
           ) : null}
         </span>
       </Link>
-      {canDelete ? (
-        <div className={styles.cardDelete}>
-          <DeleteButton
-            action={() => deleteEntry(entry.id)}
-            itemName={entry.name}
-            itemKind="entry"
-          />
-        </div>
-      ) : null}
     </li>
   );
-}
-
-async function deleteEntry(entryId: string): Promise<{ error: string } | void> {
-  const response = await fetch(`/entries/${encodeURIComponent(entryId)}/delete`, {
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    return { error: "Failed to delete the entry." };
-  }
 }
 
 function formatDate(value: string): string | null {

@@ -158,6 +158,36 @@ func (r *ArtifactsRepository) AttachToModelRevision(
 	return nil
 }
 
+func (r *ArtifactsRepository) CopyEntryRevisionLinks(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+) error {
+	query := `insert into entry_revision_artifacts(entry_revision_id, artifact_id)
+			  select $2, artifact_id
+			  from entry_revision_artifacts
+			  where entry_revision_id = $1
+			  on conflict (entry_revision_id, artifact_id) do nothing`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("copy entry revision artifact links: %w", err)
+	}
+	return nil
+}
+
+func (r *ArtifactsRepository) CopyModelRevisionLinks(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+) error {
+	query := `insert into model_revision_artifacts(model_revision_id, artifact_id)
+			  select $2, artifact_id
+			  from model_revision_artifacts
+			  where model_revision_id = $1
+			  on conflict (model_revision_id, artifact_id) do nothing`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("copy model revision artifact links: %w", err)
+	}
+	return nil
+}
+
 func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")

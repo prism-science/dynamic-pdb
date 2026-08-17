@@ -155,6 +155,75 @@ func Test_should_create_and_list_protein_sequence_similarities_when_repository_c
 	assert.WithinDuration(t, finishedAt, *listedRun.FinishedAt, time.Microsecond)
 }
 
+func Test_should_delete_similarities_in_both_directions_and_keep_similarity_run(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "protein-similarity-cleanup-entry", now)
+	artifact := createDBTestArtifact(t, entryRevision.CreatedBy, "protein similarity cleanup", now)
+	require.NoError(t, testDB.ProteinSequences.Create(ctx, entryRevision.ID, artifact.ID, []models.FASTARecord{
+		{Header: "removed", Sequence: "ACDEFGHIK"},
+		{Header: "retained source", Sequence: "LMNPQRSTV"},
+		{Header: "retained target", Sequence: "WYACDEFGH"},
+	}))
+	sequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &entryRevision.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, sequences, 3)
+	run, err := testDB.ProteinSequenceSimilarities.CreateRun(ctx, models.ProteinSequenceSimilarityRun{
+		ID: uuid.New(), Tool: "mmseqs2", State: models.ProteinSequenceSimilarityRunStateSucceeded,
+		CreatedAt: now,
+	})
+	require.NoError(t, err)
+	require.NoError(t, testDB.ProteinSequenceSimilarities.Create(ctx, []models.ProteinSequenceSimilarity{
+		{RunID: run.ID, SourceSequenceID: sequences[0].ID, SimilarSequenceID: sequences[1].ID, Tool: "mmseqs2", Score: 0.9},
+		{RunID: run.ID, SourceSequenceID: sequences[1].ID, SimilarSequenceID: sequences[0].ID, Tool: "mmseqs2", Score: 0.8},
+		{RunID: run.ID, SourceSequenceID: sequences[1].ID, SimilarSequenceID: sequences[2].ID, Tool: "mmseqs2", Score: 0.7},
+	}))
+
+	// when
+	require.NoError(t, testDB.ProteinSequenceSimilarities.DeleteForProteinSequences(
+		ctx,
+		[]uuid.UUID{sequences[0].ID},
+	))
+
+	// then
+	removedSourceSimilarities, err := testDB.ProteinSequenceSimilarities.List(
+		ctx,
+		db.ProteinSequenceSimilarityFilters{SourceSequenceID: &sequences[0].ID},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, removedSourceSimilarities)
+	retainedSimilarities, err := testDB.ProteinSequenceSimilarities.List(
+		ctx,
+		db.ProteinSequenceSimilarityFilters{SourceSequenceID: &sequences[1].ID},
+	)
+	require.NoError(t, err)
+	require.Len(t, retainedSimilarities, 1)
+	assert.Equal(t, sequences[2].ID, retainedSimilarities[0].SimilarSequenceID)
+	runs, err := testDB.ProteinSequenceSimilarities.ListRuns(ctx, db.ProteinSequenceSimilarityRunFilters{})
+	require.NoError(t, err)
+	assert.True(t, similarityRunExists(runs, run.ID))
+
+	require.NoError(t, testDB.ProteinSequenceSimilarities.DeleteForProteinSequences(
+		ctx,
+		[]uuid.UUID{sequences[1].ID},
+	))
+	runs, err = testDB.ProteinSequenceSimilarities.ListRuns(ctx, db.ProteinSequenceSimilarityRunFilters{})
+	require.NoError(t, err)
+	assert.True(t, similarityRunExists(runs, run.ID))
+}
+
+func similarityRunExists(runs []models.ProteinSequenceSimilarityRun, runID uuid.UUID) bool {
+	for _, run := range runs {
+		if run.ID == runID {
+			return true
+		}
+	}
+	return false
+}
+
 func Test_should_create_protein_sequence_similarities_from_staging_when_repository_called(t *testing.T) {
 	// given
 	ctx := context.Background()

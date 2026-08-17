@@ -1,8 +1,9 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getApiBaseUrl } from "./baseUrl";
+import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 type JSONRecord = Record<string, unknown>;
 
@@ -135,7 +136,7 @@ type ListResponse<T> = {
   items: T[];
 };
 
-type Artifact = {
+export type Artifact = {
   id: string;
   name: string;
   level: EntityLevel;
@@ -148,7 +149,7 @@ type Artifact = {
   created_at: string;
 };
 
-type Metric = {
+export type Metric = {
   id: string;
   key: string;
   value: number;
@@ -217,7 +218,7 @@ type CreateRunRequest = {
   artifacts: CreateRunArtifactRequest[];
 };
 
-type BackendCreateModelRequest = {
+type BackendCreateModelData = {
   id?: string;
   name: string;
   description?: string | null;
@@ -230,13 +231,38 @@ type BackendCreateModelRequest = {
 };
 
 type BackendCreateEntryRequest = {
-  id?: string;
-  name: string;
-  description?: string | null;
-  thumbnail_image_url?: string | null;
-  metadata: JSONRecord;
-  artifacts: CreateArtifactRequest[];
-  models: BackendCreateModelRequest[];
+  entry: {
+    id?: string;
+    name: string;
+    description?: string | null;
+    thumbnail_image_url?: string | null;
+    metadata: JSONRecord;
+    artifacts: CreateArtifactRequest[];
+  };
+  model_operations: {
+    op: "add";
+    data: Omit<BackendCreateModelData, "id"> & { model_id?: string };
+  }[];
+};
+
+export type CreateEntryRevisionResult = {
+  entry_id: string;
+  revision_id: string;
+  base_revision_id?: string | null;
+  state: "in_review";
+  model_results: {
+    op: "add";
+    model_id: string;
+    model_revision_id: string;
+  }[];
+};
+
+export type CreateModelRevisionResult = {
+  entry_id: string;
+  model_id: string;
+  revision_id: string;
+  base_revision_id?: string | null;
+  state: "in_review";
 };
 
 export type EntryPageData = {
@@ -289,7 +315,6 @@ export async function listEntries(
       params.append("pdb_id", trimmed);
     }
   }
-
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   const response = await fetchBackend<ListResponse<Entry>>(
     `/v1/entries${suffix}`,
@@ -367,35 +392,514 @@ export type CreateEntryInput = {
   metadata?: CreateEntryMetadata;
 };
 
+/** Creates a model and immediately places its initial revision in review. */
 export async function createModel(
   token: string,
   entryId: string,
   input: CreateModelInput,
-): Promise<void> {
-  await postJSON(
+): Promise<CreateModelRevisionResult> {
+  const modelId = input.id ?? randomUUID();
+  return sendJSON<CreateModelRevisionResult>(
+    "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
-    createModelRequest(input),
+    { model: createModelData({ ...input, id: modelId }) },
   );
 }
 
+/** Creates an entry, its initial revision, and independent model revisions. */
 export async function createEntry(
   token: string,
   input: CreateEntryInput,
-): Promise<void> {
-  await postJSON("/v1/entries", token, createEntryRequest(input));
+): Promise<CreateEntryRevisionResult> {
+  const entryId = input.id ?? randomUUID();
+  return sendJSON<CreateEntryRevisionResult>(
+    "POST",
+    "/v1/entries",
+    token,
+    createEntryRequest({ ...input, id: entryId }),
+  );
 }
 
-async function postJSON(
+// --- Review workflow -------------------------------------------------------
+
+export type RevisionState =
+  | "pending"
+  | "in_review"
+  | "active"
+  | "rejected"
+  | "archived";
+
+export type EntryRevisionSummary = {
+  id: string;
+  entry_id: string;
+  parent_revision_id?: string | null;
+  revision_number?: number | null;
+  state: RevisionState;
+  entry_state: "new" | "active" | "deleted";
+  created_by: string;
+  name: string;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ModelRevisionSummary = {
+  id: string;
+  entry_id: string;
+  model_id: string;
+  parent_revision_id?: string | null;
+  revision_number?: number | null;
+  state: RevisionState;
+  model_state: "new" | "active" | "deleted";
+  created_by: string;
+  name: string;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EntryRevisionGroup = {
+  entry: Entry;
+  entry_revisions: EntryRevisionSummary[];
+  model_revisions: ModelRevisionSummary[];
+};
+
+export type RevisionTarget =
+  | {
+      kind: "entry";
+      entry_id: string;
+      revision_id: string;
+    }
+  | {
+      kind: "model";
+      entry_id: string;
+      model_id: string;
+      revision_id: string;
+    };
+
+/** One row of the queue: always an entry. Everything waiting under it — its own
+ *  revision and each of its model revisions — is decided from that row's card,
+ *  each on its own. The summaries ride along so opening a row costs only the
+ *  revisions it actually shows, not a second pass over the whole queue. */
+export type ReviewQueueItem = {
+  entry_id: string;
+  name: string;
+  submitted_at: string;
+  entry_revisions: EntryRevisionSummary[];
+  model_revisions: ModelRevisionSummary[];
+};
+
+export type ReviewQueuePage = {
+  items: ReviewQueueItem[];
+  /** A full page came back, so there is probably another. The endpoint returns
+   *  no total, so this is the only signal there is. */
+  hasMore: boolean;
+};
+
+
+
+export type EntryRevision = EntryRevisionSummary & {
+  description: string | null;
+  thumbnail_image_url: string | null;
+  metadata: JSONRecord;
+  protein_sequences: ProteinSequence[];
+  artifacts: Artifact[];
+};
+
+export type ModelRevision = ModelRevisionSummary & {
+  description: string | null;
+  thumbnail_image_url: string | null;
+  primary_artifact_id: string | null;
+  metadata: JSONRecord;
+  metrics: Metric[];
+  artifacts: Artifact[];
+};
+
+export type ReviewEntry = EntryRevision;
+export type ReviewModel = ModelRevision;
+
+/** One reviewable thing: the revision waiting for a decision, the published one
+ *  it replaces (null when there is none), and the address to decide it at. */
+export type ReviewPair<T> = {
+  target: RevisionTarget;
+  active: T | null;
+  proposed: T;
+};
+
+export type EntryReview = {
+  entry_id: string;
+  name: string;
+  entry: ReviewPair<ReviewEntry> | null;
+  models: (ReviewPair<ReviewModel> & { model_id: string })[];
+};
+
+export type RevisionDecision = "active" | "rejected";
+
+export async function submitEntryRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  revisionId: string,
+): Promise<void> {
+  await sendJSON(
+    "PATCH",
+    `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/revisions/${encodeURIComponent(revisionId)}`,
+    token,
+    { state: "in_review" },
+  );
+}
+
+export async function submitModelRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  modelId: string,
+  revisionId: string,
+): Promise<void> {
+  await sendJSON(
+    "PATCH",
+    `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/models/${encodeURIComponent(modelId)}/revisions/${encodeURIComponent(
+      revisionId,
+    )}`,
+    token,
+    { state: "in_review" },
+  );
+}
+
+export async function listReviews(
+  token: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<ReviewQueuePage> {
+  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
+  const offset = opts?.offset ?? 0;
+  const groups = await listInReviewGroups(token, limit, offset);
+  // The backend orders groups by their newest revision first and paginates in
+  // that order, so the rows are left exactly as they arrive: re-sorting here
+  // would tear page boundaries apart.
+  const items = groups.map(queueItemFromGroup);
+  return { items, hasMore: items.length === limit };
+}
+
+export async function getEntryReview(
+  token: string,
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
+  return buildEntryReview(adminReaders(token), item);
+}
+
+/** Finds one entry's row without knowing which page it is on. Only the preview
+ *  pages need this: they are opened by URL, with no queue in hand. */
+export async function findReviewItem(
+  token: string,
+  entryId: string,
+): Promise<ReviewQueueItem | null> {
+  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
+    const page = await listReviews(token, {
+      limit: REVIEW_PAGE_SIZE,
+      offset,
+    });
+    const found = page.items.find((item) => item.entry_id === entryId);
+    if (found) {
+      return found;
+    }
+    if (!page.hasMore) {
+      return null;
+    }
+  }
+}
+
+type RevisionReaders = {
+  entry: (entryId: string, revisionId: string) => Promise<EntryRevision>;
+  model: (
+    entryId: string,
+    modelId: string,
+    revisionId: string,
+  ) => Promise<ModelRevision>;
+};
+
+function adminReaders(token: string): RevisionReaders {
+  return {
+    entry: (entryId, revisionId) => getEntryRevision(token, entryId, revisionId),
+    model: (entryId, modelId, revisionId) =>
+      getModelRevision(token, entryId, modelId, revisionId),
+  };
+}
+
+/** An author reads their own revisions through the user-scoped routes; the admin
+ *  ones are refused to anyone but the administrator. */
+function authorReaders(token: string, userId: string): RevisionReaders {
+  return {
+    entry: (entryId, revisionId) =>
+      fetchBackend<EntryRevision>(
+        `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+          entryId,
+        )}/revisions/${encodeURIComponent(revisionId)}`,
+        token,
+      ),
+    model: (entryId, modelId, revisionId) =>
+      fetchBackend<ModelRevision>(
+        `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+          entryId,
+        )}/models/${encodeURIComponent(modelId)}/revisions/${encodeURIComponent(
+          revisionId,
+        )}`,
+        token,
+      ),
+  };
+}
+
+/** An author's own revision, read through the user-scoped route. The admin
+ *  routes refuse everyone but the administrator, so a preview opened by the
+ *  person who submitted it has to come through here. */
+export async function getUserEntryRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  revisionId: string,
+): Promise<EntryRevision> {
+  return authorReaders(token, userId).entry(entryId, revisionId);
+}
+
+export async function getUserModelRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  modelId: string,
+  revisionId: string,
+): Promise<ModelRevision> {
+  return authorReaders(token, userId).model(entryId, modelId, revisionId);
+}
+
+async function buildEntryReview(
+  readers: RevisionReaders,
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
+  const [entry, models] = await Promise.all([
+    item.entry_revisions.length > 0
+      ? entryPair(readers, item.entry_id, item.entry_revisions[0])
+      : null,
+    Promise.all(
+      item.model_revisions.map((revision) => modelPair(readers, revision)),
+    ),
+  ]);
+  return { entry_id: item.entry_id, name: item.name, entry, models };
+}
+
+async function entryPair(
+  readers: RevisionReaders,
+  entryId: string,
+  summary: EntryRevisionSummary,
+): Promise<ReviewPair<EntryRevision>> {
+  const proposed = await readers.entry(entryId, summary.id);
+  const active = proposed.parent_revision_id
+    ? await readers.entry(entryId, proposed.parent_revision_id)
+    : null;
+  return {
+    target: { kind: "entry", entry_id: entryId, revision_id: summary.id },
+    active,
+    proposed,
+  };
+}
+
+async function modelPair(
+  readers: RevisionReaders,
+  summary: ModelRevisionSummary,
+): Promise<ReviewPair<ModelRevision> & { model_id: string }> {
+  const proposed = await readers.model(
+    summary.entry_id,
+    summary.model_id,
+    summary.id,
+  );
+  const active = proposed.parent_revision_id
+    ? await readers.model(
+        summary.entry_id,
+        summary.model_id,
+        proposed.parent_revision_id,
+      )
+    : null;
+  return {
+    model_id: summary.model_id,
+    target: {
+      kind: "model",
+      entry_id: summary.entry_id,
+      model_id: summary.model_id,
+      revision_id: summary.id,
+    },
+    active,
+    proposed,
+  };
+}
+
+/** The author's own submissions in one state, grouped by entry exactly like the
+ *  admin queue so both screens can render from the same shape. */
+export async function listUserSubmissions(
+  token: string,
+  userId: string,
+  state: RevisionState,
+  opts?: { limit?: number; offset?: number },
+): Promise<ReviewQueuePage> {
+  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
+  const offset = opts?.offset ?? 0;
+  const params = new URLSearchParams({
+    state,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    `/v1/users/${encodeURIComponent(userId)}/entries/revisions?${params.toString()}`,
+    token,
+  );
+  const items = response.items.map(queueItemFromGroup);
+  return { items, hasMore: items.length === limit };
+}
+
+export async function getUserSubmission(
+  token: string,
+  userId: string,
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
+  return buildEntryReview(authorReaders(token, userId), item);
+}
+
+export async function findUserSubmissionItem(
+  token: string,
+  userId: string,
+  state: RevisionState,
+  entryId: string,
+): Promise<ReviewQueueItem | null> {
+  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
+    const page = await listUserSubmissions(token, userId, state, {
+      limit: REVIEW_PAGE_SIZE,
+      offset,
+    });
+    const found = page.items.find((candidate) => candidate.entry_id === entryId);
+    if (found) {
+      return found;
+    }
+    if (!page.hasMore) {
+      return null;
+    }
+  }
+}
+
+async function listInReviewGroups(
+  token: string,
+  limit: number,
+  offset: number,
+): Promise<EntryRevisionGroup[]> {
+  const params = new URLSearchParams({
+    state: "in_review",
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    `/v1/entries/revisions?${params.toString()}`,
+    token,
+  );
+  return response.items;
+}
+
+function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
+  return {
+    entry_id: group.entry.id,
+    name: group.entry.name,
+    submitted_at: earliest([
+      ...group.entry_revisions.map((revision) => revision.updated_at),
+      ...group.model_revisions.map((revision) => revision.updated_at),
+    ]),
+    entry_revisions: group.entry_revisions,
+    model_revisions: group.model_revisions,
+  };
+}
+
+function earliest(values: string[]): string {
+  return values.reduce(
+    (soonest, value) => (value < soonest ? value : soonest),
+    values[0] ?? "",
+  );
+}
+
+export async function decideEntryReview(
+  token: string,
+  target: RevisionTarget,
+  state: RevisionDecision,
+): Promise<void> {
+  const path =
+    target.kind === "entry"
+      ? `/v1/entries/${encodeURIComponent(
+          target.entry_id,
+        )}/revisions/${encodeURIComponent(target.revision_id)}`
+      : `/v1/entries/${encodeURIComponent(
+          target.entry_id,
+        )}/models/${encodeURIComponent(
+          target.model_id,
+        )}/revisions/${encodeURIComponent(target.revision_id)}`;
+  await sendJSON(
+    "PATCH",
+    path,
+    token,
+    { state },
+  );
+}
+
+export async function listUserEntryRevisionGroups(
+  token: string,
+  userId: string,
+  state: RevisionState,
+): Promise<EntryRevisionGroup[]> {
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    `/v1/users/${encodeURIComponent(
+      userId,
+    )}/entries/revisions?state=${encodeURIComponent(state)}`,
+    token,
+  );
+  return response.items;
+}
+
+export async function getEntryRevision(
+  token: string,
+  entryId: string,
+  revisionId: string,
+): Promise<EntryRevision> {
+  return fetchBackend<EntryRevision>(
+    `/v1/entries/${encodeURIComponent(entryId)}/revisions/${encodeURIComponent(
+      revisionId,
+    )}`,
+    token,
+  );
+}
+
+export async function getModelRevision(
+  token: string,
+  entryId: string,
+  modelId: string,
+  revisionId: string,
+): Promise<ModelRevision> {
+  return fetchBackend<ModelRevision>(
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+      modelId,
+    )}/revisions/${encodeURIComponent(revisionId)}`,
+    token,
+  );
+}
+
+
+async function sendJSON<T>(
+  method: string,
   path: string,
   token: string,
   input: unknown,
-): Promise<void> {
+): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
+      method,
       cache: "no-store",
       headers: {
         Accept: "application/json",
@@ -417,6 +921,19 @@ async function postJSON(
       response.status,
     );
   }
+  return (await response.json()) as T;
+}
+
+/** Fetches a single entry without its models or artifacts. Cheap enough to
+ *  call per row when a list only needs entry names. */
+export async function getEntry(
+  token: string | undefined,
+  entryId: string,
+): Promise<Entry> {
+  return fetchBackend<Entry>(
+    `/v1/entries/${encodeURIComponent(entryId)}`,
+    token,
+  );
 }
 
 export async function getEntryPageData(
@@ -489,26 +1006,6 @@ export async function getEntryGraph(
   return { entities: data.entities, relations: data.relations };
 }
 
-export async function deleteEntry(
-  token: string,
-  entryId: string,
-): Promise<void> {
-  await deleteBackend(`/v1/entries/${encodeURIComponent(entryId)}`, token);
-}
-
-export async function deleteModel(
-  token: string,
-  entryId: string,
-  modelId: string,
-): Promise<void> {
-  await deleteBackend(
-    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
-      modelId,
-    )}`,
-    token,
-  );
-}
-
 async function fetchModelGraph(
   token: string | undefined,
   entryId: string,
@@ -526,13 +1023,22 @@ async function fetchModelGraph(
 function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest {
   const entities = input.entities ?? [];
   return {
-    id: input.id,
-    name: input.name,
-    description: input.description,
-    thumbnail_image_url: input.thumbnail_image_url,
-    metadata: entryMetadataRequest(input.metadata),
-    artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
-    models: (input.models ?? []).map(createModelRequest),
+    entry: {
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      thumbnail_image_url: input.thumbnail_image_url,
+      metadata: entryMetadataRequest(input.metadata),
+      artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
+    },
+    model_operations: (input.models ?? []).map((model) => {
+      const data = createModelData(model);
+      const { id, ...fields } = data;
+      return {
+        op: "add" as const,
+        data: { ...fields, model_id: id },
+      };
+    }),
   };
 }
 
@@ -570,7 +1076,7 @@ function entryMetadataRequest(metadata?: CreateEntryMetadata): JSONRecord {
   return result;
 }
 
-function createModelRequest(input: CreateModelInput): BackendCreateModelRequest {
+function createModelData(input: CreateModelInput): BackendCreateModelData {
   const entities = input.entities ?? [];
   const relations = input.relations ?? [];
   const artifacts = entities.filter(isArtifactEntity).map(createArtifactRequest);
@@ -664,6 +1170,56 @@ function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] 
       ? [{ id: stableUUID(`${entity.id}:${key}`), key, value }]
       : [],
   );
+}
+
+/** A model revision as the same entity graph the published model page walks, so
+ *  a preview gets the real Data levels and Validation tiles instead of a
+ *  hand-rolled stand-in. A revision carries no runs, so program nodes and their
+ *  edges are absent — nothing that needs levels or metrics depends on them. */
+export function modelRevisionGraph(revision: ModelRevision): EntryGraph {
+  const model = modelFromRevision(revision);
+  const entities = revision.artifacts.map((artifact) =>
+    entityFromArtifact(revision.entry_id, revision.model_id, artifact, model),
+  );
+  const relations: EntityRelation[] = [];
+
+  const metricsEntity = entityFromMetrics(revision.entry_id, model);
+  if (metricsEntity) {
+    entities.push(metricsEntity);
+    if (model.primary_artifact_id) {
+      relations.push({
+        id: stableUUID(
+          `${metricsEntity.id}:${model.primary_artifact_id}:metrics_for`,
+        ),
+        source_entity_id: metricsEntity.id,
+        target_entity_id: model.primary_artifact_id,
+        relation_type: "metrics_for",
+        created_at: model.created_at,
+        updated_at: model.updated_at,
+      });
+    }
+  }
+
+  return { entities, relations };
+}
+
+/** The published-model shape of a revision: same content, addressed by model id
+ *  rather than revision id, which is what the view helpers expect. */
+export function modelFromRevision(revision: ModelRevision): Model {
+  return {
+    id: revision.model_id,
+    entry_id: revision.entry_id,
+    created_by: revision.created_by,
+    name: revision.name,
+    description: revision.description,
+    thumbnail_image_url: revision.thumbnail_image_url,
+    metadata: revision.metadata,
+    primary_artifact_id: revision.primary_artifact_id,
+    metrics: revision.metrics,
+    published_at: revision.published_at,
+    created_at: revision.created_at,
+    updated_at: revision.updated_at,
+  };
 }
 
 function modelGraphFromBackend(
@@ -921,35 +1477,6 @@ function stableUUID(value: string): string {
     12,
     16,
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-async function deleteBackend(path: string, token: string): Promise<void> {
-  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
-
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method: "DELETE",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
-    );
-  }
-
-  if (!response.ok) {
-    throw new ApiRequestError(
-      `Backend responded with ${response.status}`,
-      response.status,
-    );
-  }
 }
 
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {

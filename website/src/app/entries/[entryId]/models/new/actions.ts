@@ -23,5 +23,5 @@ export async function createModelAction(
     };
   }
 
-  redirect(`/entries/${encodeURIComponent(entryId)}#models`);
+  redirect(`/entries/${encodeURIComponent(entryId)}`);
 }

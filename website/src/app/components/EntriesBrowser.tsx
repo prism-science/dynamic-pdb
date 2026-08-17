@@ -1,9 +1,8 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { Entry } from "@/lib/api/entries";
-import { deleteEntryAction } from "@/app/actions/delete";
 
-import DeleteButton from "./DeleteButton";
 import EntriesInfiniteScroll from "./EntriesInfiniteScroll";
 import styles from "./EntriesBrowser.module.css";
 
@@ -22,17 +21,23 @@ export default function EntriesBrowser({
   entries,
   canCreate = false,
   query = "",
-  currentUserId = null,
+  infiniteScroll = true,
+  tabs = null,
+  emptyLabel,
+  title = "Proteins",
 }: {
   entries: Entry[];
   canCreate?: boolean;
   query?: string;
-  currentUserId?: string | null;
+  infiniteScroll?: boolean;
+  tabs?: ReactNode;
+  emptyLabel?: string;
+  title?: string;
 }) {
   return (
     <div className={styles.wrap}>
       <header className={styles.head}>
-        <h1 className={styles.title}>Proteins</h1>
+        <h1 className={styles.title}>{title}</h1>
         {canCreate ? (
           <Link className={styles.addButton} href="/entries/new">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -43,20 +48,16 @@ export default function EntriesBrowser({
         ) : null}
       </header>
 
+      {tabs}
+
       {/* Search moved to the app header; query is still used for the empty
           state so a fruitless search says so. */}
       {entries.length > 0 ? (
         <ul className={styles.grid}>
           {entries.map((entry) => {
             const updated = formatDate(entry.updated_at);
-            const canDelete =
-              currentUserId != null && entry.created_by === currentUserId;
             return (
-              <li
-                key={entry.id}
-                className={styles.cardItem}
-                data-has-delete={canDelete ? "true" : undefined}
-              >
+              <li key={entry.id} className={styles.cardItem}>
                 <Link className={styles.card} href={`/entries/${entry.id}`}>
                   <span
                     className={styles.thumb}
@@ -83,30 +84,21 @@ export default function EntriesBrowser({
                     ) : null}
                   </span>
                 </Link>
-                {canDelete ? (
-                  <div className={styles.cardDelete}>
-                    <DeleteButton
-                      action={deleteEntryAction.bind(null, entry.id)}
-                      itemName={entry.name}
-                      itemKind="entry"
-                    />
-                  </div>
-                ) : null}
               </li>
             );
           })}
         </ul>
       ) : (
         <p className={styles.empty}>
-          {query ? `No entries match "${query}".` : "No entries found."}
+          {query
+            ? `No entries match "${query}".`
+            : (emptyLabel ?? "No entries found.")}
         </p>
       )}
 
-      <EntriesInfiniteScroll
-        query={query}
-        initialOffset={entries.length}
-        currentUserId={currentUserId}
-      />
+      {infiniteScroll ? (
+        <EntriesInfiniteScroll query={query} initialOffset={entries.length} />
+      ) : null}
     </div>
   );
 }

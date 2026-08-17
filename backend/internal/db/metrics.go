@@ -98,6 +98,21 @@ func (r *MetricsRepository) AttachToModelRevision(
 	return nil
 }
 
+func (r *MetricsRepository) CopyModelRevisionLinks(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+) error {
+	query := `insert into model_revision_metrics(model_revision_id, metric_id)
+			  select $2, metric_id
+			  from model_revision_metrics
+			  where model_revision_id = $1
+			  on conflict (model_revision_id, metric_id) do nothing`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("copy model revision metric links: %w", err)
+	}
+	return nil
+}
+
 func metricListQuery(filters MetricFilters) (string, map[string]any, error) {
 	if filters.Limit != nil && *filters.Limit < 0 {
 		return "", nil, errors.New("limit must be non-negative")

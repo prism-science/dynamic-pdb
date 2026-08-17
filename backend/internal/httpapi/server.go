@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,7 @@ type Server struct {
 	authConfig   auth.Config
 	jwt          *auth.JWT
 	database     *db.DB
+	adminUserID  uuid.UUID
 }
 
 func NewServer(
@@ -33,13 +35,22 @@ func NewServer(
 	jwt *auth.JWT,
 	database *db.DB,
 ) *Server {
+	adminUserID, err := uuid.Parse(strings.TrimSpace(authConfig.AdminUserID))
+	if err != nil {
+		adminUserID = uuid.Nil
+	}
 	return &Server{
 		githubClient: githubClient,
 		fileCDN:      fileCDN,
 		authConfig:   authConfig,
 		jwt:          jwt,
 		database:     database,
+		adminUserID:  adminUserID,
 	}
+}
+
+func (s *Server) isAdmin(user *models.User) bool {
+	return s.adminUserID != uuid.Nil && user != nil && user.ID == s.adminUserID
 }
 
 func (s *Server) ExchangeGithubToken(w http.ResponseWriter, r *http.Request) {

@@ -15,13 +15,22 @@ func postJSON(t *testing.T, path string, body any) *http.Response {
 }
 
 func postJSONWithToken(t *testing.T, path string, body any, token string) *http.Response {
+	return jsonRequestWithToken(t, http.MethodPost, path, body, token)
+}
+
+func patchJSONWithToken(t *testing.T, path string, body any, token string) *http.Response {
+	t.Helper()
+	return jsonRequestWithToken(t, http.MethodPatch, path, body, token)
+}
+
+func jsonRequestWithToken(t *testing.T, method, path string, body any, token string) *http.Response {
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 
-	req, err := http.NewRequest(http.MethodPost, testServer.URL+path, &buf)
+	req, err := http.NewRequest(method, testServer.URL+path, &buf)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {

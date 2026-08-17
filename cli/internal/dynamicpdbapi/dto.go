@@ -42,18 +42,45 @@ type entryListResponse struct {
 }
 
 type CreateEntryRequest struct {
+	Entry           CreateEntryData     `json:"entry"`
+	ModelOperations []AddModelOperation `json:"model_operations,omitempty"`
+}
+
+type CreateEntryData struct {
 	ID                *string                 `json:"id,omitempty"`
 	Name              string                  `json:"name"`
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
-	Models            []CreateModelRequest    `json:"models,omitempty"`
+}
+
+type AddModelOperation struct {
+	Op   string       `json:"op"`
+	Data AddModelData `json:"data"`
+}
+
+type AddModelData struct {
+	ModelID           *string                 `json:"model_id,omitempty"`
+	Name              string                  `json:"name"`
+	Description       *string                 `json:"description,omitempty"`
+	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
+	Metadata          map[string]any          `json:"metadata,omitempty"`
+	PrimaryArtifactID *string                 `json:"primary_artifact_id,omitempty"`
+	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
+	Runs              []CreateRunRequest      `json:"runs,omitempty"`
+	Metrics           []CreateMetricRequest   `json:"metrics,omitempty"`
 }
 
 type CreateModelRequest struct {
+	Model CreateModelData `json:"model"`
+}
+
+type CreateModelData struct {
 	ID                *string                 `json:"id,omitempty"`
 	Name              string                  `json:"name"`
+	Description       *string                 `json:"description,omitempty"`
+	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
 	PrimaryArtifactID *string                 `json:"primary_artifact_id,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`

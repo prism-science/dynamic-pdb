@@ -157,6 +157,21 @@ func (r *RunsRepository) AttachToModelRevision(
 	return nil
 }
 
+func (r *RunsRepository) CopyModelRevisionLinks(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+) error {
+	query := `insert into model_revision_runs(model_revision_id, run_id)
+			  select $2, run_id
+			  from model_revision_runs
+			  where model_revision_id = $1
+			  on conflict (model_revision_id, run_id) do nothing`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("copy model revision run links: %w", err)
+	}
+	return nil
+}
+
 func (r *RunsRepository) AttachArtifact(
 	ctx context.Context,
 	runID uuid.UUID,
