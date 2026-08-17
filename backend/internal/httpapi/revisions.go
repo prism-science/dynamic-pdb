@@ -1132,7 +1132,7 @@ func (s *Server) modelRevisionResponse(
 }
 
 func (s *Server) entryRevisionSummary(
-	ctx context.Context,
+	_ context.Context,
 	revision domainmodels.EntryRevision,
 ) (EntryRevisionSummary, error) {
 	return EntryRevisionSummary{
@@ -1145,7 +1145,7 @@ func (s *Server) entryRevisionSummary(
 }
 
 func (s *Server) modelRevisionSummary(
-	ctx context.Context,
+	_ context.Context,
 	revision domainmodels.ModelRevision,
 ) (ModelRevisionSummary, error) {
 	return ModelRevisionSummary{

@@ -102,6 +102,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	s.Equal("independent model", model.Name)
 	s.Require().NotNil(metricByKey(model.Metrics, "r_free"))
 
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	artifactsResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/entries/%s/models/%s/artifacts", entryID, modelID), "",
 	)
@@ -151,6 +152,7 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 		},
 	})
 	entryAfterReplacement := getEntryForTest(s.T(), entryID)
+	//nolint:bodyclose // assertErrorResponse closes the response body.
 	deleteResponse := postJSONWithToken(
 		s.T(), fmt.Sprintf("/v1/entries/%s/models/%s/revisions", entryID, modelID), map[string]any{
 			"model": map[string]any{"state": "deleted"},
@@ -195,10 +197,12 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	newModelRevision := createModelForTest(s.T(), contributorToken, entryID, map[string]any{
 		"model": map[string]any{"name": "contributed model"},
 	})
+	//nolint:bodyclose // assertErrorResponse closes the response body.
 	deleteEntryResponse := postJSONWithToken(
 		s.T(), "/v1/entries/"+entryID.String()+"/revisions",
 		map[string]any{"entry": map[string]any{"state": "deleted"}}, contributorToken,
 	)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", contributorID), contributorToken,
 	)
@@ -272,12 +276,15 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	})
 
 	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	userResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", ownerID), ownerToken,
 	)
 	userGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), userResponse, http.StatusOK)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	adminResponse := getWithToken(s.T(), "/v1/entries/revisions?state=pending", adminToken)
 	adminGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), adminResponse, http.StatusOK)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	otherResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", otherID), otherToken,
 	)
@@ -344,6 +351,7 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "invalid-create-owner", 8107)
 
 	// when
+	//nolint:bodyclose // assertErrorResponse closes the response body.
 	oldShapeResponse := postJSONWithToken(s.T(), "/v1/entries", map[string]any{"name": "old shape"}, ownerToken)
 	unauthenticatedResponse := postJSON(s.T(), "/v1/entries", map[string]any{
 		"entry": map[string]any{"name": "no token"},
@@ -358,6 +366,7 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 
 func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionResponse {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries", request, token)
 	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
 }
@@ -396,6 +405,7 @@ func createEntryRevisionForTest(
 	request map[string]any,
 ) httpapi.CreateEntryRevisionResponse {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/revisions", request, token)
 	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
 }
@@ -407,6 +417,7 @@ func createModelForTest(
 	request map[string]any,
 ) httpapi.CreateModelRevisionResponse {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/models", request, token)
 	return decodeJSONResponse[httpapi.CreateModelRevisionResponse](t, response, http.StatusCreated)
 }
@@ -430,6 +441,7 @@ func createModelRevisionForTest(
 	request map[string]any,
 ) httpapi.CreateModelRevisionResponse {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(
 		t,
 		fmt.Sprintf("/v1/entries/%s/models/%s/revisions", entryID, modelID),
@@ -476,6 +488,7 @@ func updateEntryRevisionStateForTest(
 ) httpapi.EntryRevision {
 	t.Helper()
 	request := map[string]any{"state": state}
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := patchJSONWithToken(t, path, request, token)
 	return decodeJSONResponse[httpapi.EntryRevision](t, response, http.StatusOK)
 }
@@ -486,24 +499,28 @@ func updateModelRevisionStateForTest(
 ) httpapi.ModelRevision {
 	t.Helper()
 	request := map[string]any{"state": state}
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := patchJSONWithToken(t, path, request, token)
 	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
 }
 
 func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevision {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, path, token)
 	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
 }
 
 func getEntryForTest(t *testing.T, entryID uuid.UUID) httpapi.Entry {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, "/v1/entries/"+entryID.String(), "")
 	return decodeJSONResponse[httpapi.Entry](t, response, http.StatusOK)
 }
 
 func getModelForTest(t *testing.T, entryID, modelID uuid.UUID) httpapi.Model {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
 	return decodeJSONResponse[httpapi.Model](t, response, http.StatusOK)
 }
@@ -542,6 +559,7 @@ func issueEntryTokenForGitHubIDForTest(t *testing.T, accessToken string, githubI
 
 func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenResponse {
 	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := ExchangeGithubToken(t, accessToken)
 	return decodeJSONResponse[httpapi.TokenResponse](t, response, http.StatusOK)
 }

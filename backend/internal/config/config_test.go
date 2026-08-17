@@ -194,9 +194,34 @@ auth:
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
 }
 
-func Test_should_read_repository_local_config(t *testing.T) {
+func Test_should_read_local_config_profile(t *testing.T) {
 	// given
-	t.Chdir(filepath.Join("..", ".."))
+	t.Chdir(writeConfig(t, "local", `
+auth:
+  allowed_orgs:
+    - Astera-org
+  github:
+    client_id: local-github-client-id
+    client_secret: local-github-client-secret
+  jwt:
+    secret: sample-secret
+    issuer: dynamic-pdb-backend
+    ttl: 24h
+db:
+  host: localhost
+  port: 5432
+  name: dynamic_pdb_local
+  username: postgres
+  password: password
+  connection_params: sslmode=disable
+cdn:
+  s3:
+    endpoint: http://localhost:9000
+    region: us-west-2
+    bucket: dynamic-pdb
+    access_key_id: local-access-key
+    secret_access_key: local-secret-key
+`))
 
 	// when
 	cfg, err := config.ReadFromFile("local")
