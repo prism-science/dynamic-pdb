@@ -136,6 +136,7 @@ test("should post create entry using the new backend graph shape", async () => {
               name: "model.cif",
               payload: {
                 file_url: "s3://dynamic-pdb/model.cif",
+                sha256: "ABCDEF123456",
                 authors: ["Alice"],
                 affiliation: "Lab",
               },
@@ -188,6 +189,10 @@ test("should post create entry using the new backend graph shape", async () => {
     assert.equal(request.body.entry.id, "entry-1");
     assert.equal(request.body.model_operations[0].op, "add");
     assert.equal(request.body.model_operations[0].data.model_id, "model-1");
+    assert.equal(
+      request.body.model_operations[0].data.idempotency_key,
+      "abcdef123456",
+    );
     assert.equal(
       request.body.model_operations[0].data.primary_artifact_id,
       "model-artifact",
@@ -266,6 +271,7 @@ test("should create and submit model revisions through user routes", async () =>
     assert.deepEqual(requests[0].body.model, {
       id: "model-1",
       name: "Model",
+      idempotency_key: null,
       metadata: {},
       primary_artifact_id: null,
       artifacts: [],

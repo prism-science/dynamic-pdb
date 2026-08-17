@@ -23,6 +23,7 @@ export type StoredFile = {
   authors: string;
   affiliation: string;
   metadata?: Record<string, unknown>;
+  sha256?: string;
   preview?: string;
   url: string;
   extReference?: ExtFileReference;
@@ -76,6 +77,7 @@ export function fileToDraft(file: ParsedFile): StoredFile {
     authors: file.authors,
     affiliation: file.affiliation,
     metadata: file.metadata,
+    sha256: file.sha256,
     preview: httpOnly(file.preview),
     url: file.url,
     extReference: file.extReference,
@@ -93,6 +95,7 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
     authors: file.authors,
     affiliation: file.affiliation,
     metadata: file.metadata,
+    sha256: file.sha256,
     preview: file.preview,
     url: file.url,
     progress: 1,

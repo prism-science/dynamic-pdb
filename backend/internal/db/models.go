@@ -26,15 +26,16 @@ type ModelsRepository struct {
 }
 
 type ModelRevisionFilters struct {
-	ID         *uuid.UUID
-	EntryID    *uuid.UUID
-	ModelID    *uuid.UUID
-	State      *models.RevisionState
-	States     []models.RevisionState
-	ModelState *models.ModelState
-	CreatedBy  *uuid.UUID
-	Limit      *int
-	Offset     *int
+	ID             *uuid.UUID
+	EntryID        *uuid.UUID
+	ModelID        *uuid.UUID
+	State          *models.RevisionState
+	States         []models.RevisionState
+	ModelState     *models.ModelState
+	CreatedBy      *uuid.UUID
+	IdempotencyKey *string
+	Limit          *int
+	Offset         *int
 }
 
 func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
@@ -78,6 +79,7 @@ func (r *ModelsRepository) Create(
 			    description,
 			    thumbnail_image_url,
 			    metadata,
+			    idempotency_key,
 			    created_by,
 			    created_at,
 			    updated_at
@@ -96,13 +98,14 @@ func (r *ModelsRepository) Create(
 			    :description,
 			    :thumbnail_image_url,
 			    cast(:metadata as jsonb),
+			    :idempotency_key,
 			    :created_by,
 			    :created_at,
 			    :updated_at
 			  )
 			  returning id, model_id, parent_revision_id, primary_artifact_id, revision_number,
 			            state, model_state, change_summary, published_at, name, description,
-			            thumbnail_image_url, metadata, created_by, created_at, updated_at`
+			            thumbnail_image_url, metadata, idempotency_key, created_by, created_at, updated_at`
 
 	var row modelRevisionRow
 	args := map[string]any{
@@ -120,6 +123,7 @@ func (r *ModelsRepository) Create(
 		"description":         revision.Description,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
+		"idempotency_key":     revision.IdempotencyKey,
 		"created_by":          revision.CreatedBy,
 		"created_at":          revision.CreatedAt,
 		"updated_at":          revision.UpdatedAt,
@@ -314,7 +318,7 @@ const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_
 			model_revisions.parent_revision_id, model_revisions.primary_artifact_id, model_revisions.revision_number,
 			model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at, model_revisions.name,
 			model_revisions.description, model_revisions.thumbnail_image_url, model_revisions.metadata,
-			model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
+			model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
 
 // GetLive returns the latest non-archived revision of a model.
 func (r *ModelsRepository) GetLive(ctx context.Context, modelID uuid.UUID) (*models.ModelRevision, error) {
@@ -444,11 +448,15 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "model_revisions.created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy
 	}
+	if filters.IdempotencyKey != nil {
+		conditions = append(conditions, "model_revisions.idempotency_key = :idempotency_key")
+		args["idempotency_key"] = *filters.IdempotencyKey
+	}
 	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
 			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
 			         model_revisions.name, model_revisions.description, model_revisions.thumbnail_image_url,
-			         model_revisions.metadata, model_revisions.created_by, model_revisions.created_at,
+			         model_revisions.metadata, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
 			         model_revisions.updated_at
 			  from model_revisions
 			  join models on models.id = model_revisions.model_id`
@@ -490,6 +498,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 		Description:       stringPtrFromSQL(row.Description),
 		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
 		Metadata:          metadata,
+		IdempotencyKey:    stringPtrFromSQL(row.IdempotencyKey),
 		CreatedBy:         row.CreatedBy,
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
@@ -511,6 +520,7 @@ type modelRevisionRow struct {
 	Description       sql.NullString `db:"description"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	Metadata          []byte         `db:"metadata"`
+	IdempotencyKey    sql.NullString `db:"idempotency_key"`
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`

@@ -111,6 +111,34 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, modelArtifactID, httpapi.Output))
 }
 
+func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempotency_key_is_repeated() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "idempotent-model-owner", 8112)
+	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "idempotent model entry"},
+	})
+	modelID := uuid.New()
+	idempotencyKey := "repeatable-model-hash"
+	request := map[string]any{
+		"model": map[string]any{
+			"id": modelID, "name": "idempotent model", "idempotency_key": idempotencyKey,
+		},
+	}
+
+	// when
+	first := createModelForTest(s.T(), ownerToken, entryID, request)
+	activateModelRevisionForTest(s.T(), first)
+	request["model"].(map[string]any)["id"] = uuid.New()
+	second := createModelForTest(s.T(), ownerToken, entryID, request)
+
+	// then
+	s.Equal(first.RevisionId, second.RevisionId)
+	s.Equal(first.ModelId, second.ModelId)
+	s.Equal(idempotencyKey, *second.IdempotencyKey)
+	s.Equal(httpapi.RevisionStateActive, second.State)
+}
+
 func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_revision_activated() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "protein-model-owner", 8102)

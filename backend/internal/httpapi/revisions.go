@@ -1127,7 +1127,7 @@ func (s *Server) modelRevisionResponse(
 		return ModelRevision{}, fmt.Errorf("build model revision summary: %w", err)
 	}
 	return ModelRevision{
-		Id: summary.Id, EntryId: summary.EntryId, ModelId: summary.ModelId, ParentRevisionId: summary.ParentRevisionId,
+		Id: summary.Id, EntryId: summary.EntryId, ModelId: summary.ModelId, IdempotencyKey: summary.IdempotencyKey, ParentRevisionId: summary.ParentRevisionId,
 		RevisionNumber: summary.RevisionNumber, State: summary.State, ModelState: summary.ModelState,
 		CreatedBy: summary.CreatedBy, Name: summary.Name, CreatedAt: summary.CreatedAt, UpdatedAt: summary.UpdatedAt,
 		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
@@ -1156,7 +1156,7 @@ func (s *Server) modelRevisionSummary(
 ) (ModelRevisionSummary, error) {
 	return ModelRevisionSummary{
 		Id: revision.ID, EntryId: revision.EntryID,
-		ModelId: revision.ModelID, ParentRevisionId: revision.ParentRevisionID,
+		ModelId: revision.ModelID, IdempotencyKey: revision.IdempotencyKey, ParentRevisionId: revision.ParentRevisionID,
 		RevisionNumber: revision.RevisionNumber, State: RevisionState(revision.State),
 		ModelState: ModelState(revision.ModelState), CreatedBy: revision.CreatedBy, Name: revision.Name,
 		PublishedAt: revision.PublishedAt,

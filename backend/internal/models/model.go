@@ -29,6 +29,7 @@ type ModelRevision struct {
 	Description       *string
 	ThumbnailImageURL *string
 	Metadata          ModelMetadata
+	IdempotencyKey    *string
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
