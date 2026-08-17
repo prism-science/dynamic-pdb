@@ -5,6 +5,8 @@ import {
   getEntryReview,
   listReviews,
   type EntryReview,
+  type ReviewEntry,
+  type ReviewModel,
   type ReviewQueueItem,
   type RevisionTarget,
 } from "@/lib/api/entries";
@@ -50,7 +52,6 @@ export default async function ReviewInbox({ searchParams }: Props) {
   return (
     <main className={styles.page} aria-label="Review inbox">
       <div className={styles.shell}>
-        <h1 className={styles.title}>Review</h1>
         <div className={styles.inbox}>
           <div className={`${styles.col} ${styles.list}`}>
             <div className={styles.listHead}>
@@ -112,18 +113,36 @@ function Card({
  *  its own decision — the entry and each model are approved or rejected
  *  separately. */
 function Changes({ review }: { review: EntryReview }) {
+  // No published revision behind the entry means nothing for a model to go live
+  // under, and the backend refuses it. Same condition the "new" badge reads, so
+  // what the block says and what its buttons do cannot drift apart.
+  const entryUnpublished = review.entry !== null && review.entry.active === null;
+  const modelsBlockedReason = entryUnpublished
+    ? "Approve the entry first — it has no published revision yet."
+    : null;
+
   return (
     <>
       {review.entry ? (
-        <DiffBlock
-          title="Entry"
-          badge={review.entry.active ? "revision" : "new"}
-          sections={diffEntry(review.entry.active, review.entry.proposed)}
-          target={review.entry.target}
-          previewHref={`/review/preview/${encodeURIComponent(
-            review.entry_id,
-          )}/${encodeURIComponent(review.entry.target.revision_id)}`}
-        />
+        review.entry.proposed.entry_state === "deleted" ? (
+          <DeletionBlock
+            title="Entry"
+            what="entry"
+            target={review.entry.target}
+            removes={entryRemovals(review.entry.active)}
+            publishedHref={`/entries/${encodeURIComponent(review.entry_id)}`}
+          />
+        ) : (
+          <DiffBlock
+            title="Entry"
+            badge={review.entry.active ? "revision" : "new"}
+            sections={diffEntry(review.entry.active, review.entry.proposed)}
+            target={review.entry.target}
+            previewHref={`/review/preview/${encodeURIComponent(
+              review.entry_id,
+            )}/${encodeURIComponent(review.entry.target.revision_id)}`}
+          />
+        )
       ) : null}
 
       {review.models.length > 0 ? (
@@ -135,22 +154,111 @@ function Changes({ review }: { review: EntryReview }) {
         </div>
       ) : null}
 
-      {review.models.map((model) => (
-        <DiffBlock
-          key={model.model_id}
-          title={model.proposed.name}
-          badge={model.active ? "revision" : "new"}
-          sections={diffModel(model.active, model.proposed)}
-          target={model.target}
-          previewHref={`/review/preview/${encodeURIComponent(
-            review.entry_id,
-          )}/models/${encodeURIComponent(
-            model.model_id,
-          )}/${encodeURIComponent(model.target.revision_id)}`}
-        />
-      ))}
+      {review.models.map((model) =>
+        model.proposed.model_state === "deleted" ? (
+          <DeletionBlock
+            key={model.model_id}
+            title={model.proposed.name}
+            what="model"
+            target={model.target}
+            removes={modelRemovals(model.active)}
+            publishedHref={`/entries/${encodeURIComponent(
+              review.entry_id,
+            )}/models/${encodeURIComponent(model.model_id)}`}
+            blockedReason={modelsBlockedReason}
+          />
+        ) : (
+          <DiffBlock
+            key={model.model_id}
+            title={model.proposed.name}
+            badge={model.active ? "revision" : "new"}
+            sections={diffModel(model.active, model.proposed)}
+            target={model.target}
+            blockedReason={modelsBlockedReason}
+            previewHref={`/review/preview/${encodeURIComponent(
+              review.entry_id,
+            )}/models/${encodeURIComponent(
+              model.model_id,
+            )}/${encodeURIComponent(model.target.revision_id)}`}
+          />
+        ),
+      )}
     </>
   );
+}
+
+/** A deletion has nothing to diff: every field of the published revision is on
+ *  its way out. What a reviewer needs is what disappears and why. */
+function DeletionBlock({
+  title,
+  what,
+  target,
+  removes,
+  publishedHref,
+  blockedReason,
+}: {
+  title: string;
+  what: "entry" | "model";
+  target: RevisionTarget;
+  removes: string[];
+  publishedHref: string;
+  blockedReason?: string | null;
+}) {
+  return (
+    <Block
+      title={title}
+      badge="deletion"
+      badgeTone="danger"
+      previewHref={publishedHref}
+      previewLabel="Open published"
+      target={target}
+      blockedReason={blockedReason}
+    >
+      {blockedReason ? (
+        <div className={styles.blocked}>{blockedReason}</div>
+      ) : null}
+      <div className={styles.deleting}>
+        {what === "entry"
+          ? "Approving this takes the entry out of the catalog."
+          : "Approving this takes the model off its entry."}
+      </div>
+      {removes.length > 0 ? (
+        <div className={styles.dgroup}>
+          <div className={styles.dgroupH}>Goes away</div>
+          {removes.map((item) => (
+            <div key={item} className={`${styles.drow} ${styles.removed}`}>
+              <div className={styles.dk}>
+                <span className={styles.sign}>−</span>
+                {item}
+              </div>
+              <div className={styles.dv} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </Block>
+  );
+}
+
+function entryRemovals(active: ReviewEntry | null): string[] {
+  if (!active) return [];
+  const items = active.artifacts.map((artifact) => artifact.name);
+  const sequences = active.protein_sequences.length;
+  if (sequences > 0) {
+    items.push(`${sequences} protein sequence${sequences === 1 ? "" : "s"}`);
+  }
+  return items;
+}
+
+function modelRemovals(active: ReviewModel | null): string[] {
+  if (!active) return [];
+  const items = active.artifacts.map((artifact) => artifact.name);
+  if (active.metrics.length > 0) {
+    items.push(
+      `${active.metrics.length} metric${active.metrics.length === 1 ? "" : "s"}`,
+    );
+  }
+  return items;
 }
 
 function DiffBlock({
@@ -159,12 +267,14 @@ function DiffBlock({
   sections,
   target,
   previewHref,
+  blockedReason,
 }: {
   title: string;
   badge: string;
   sections: DiffSection[];
   target: RevisionTarget;
   previewHref: string;
+  blockedReason?: string | null;
 }) {
   const visible = sections
     .map((section) => ({
@@ -174,7 +284,16 @@ function DiffBlock({
     .filter((section) => section.rows.length > 0);
 
   return (
-    <Block title={title} badge={badge} previewHref={previewHref} target={target}>
+    <Block
+      title={title}
+      badge={badge}
+      previewHref={previewHref}
+      target={target}
+      blockedReason={blockedReason}
+    >
+      {blockedReason ? (
+        <div className={styles.blocked}>{blockedReason}</div>
+      ) : null}
       {visible.length === 0 ? (
         <div className={styles.note}>Nothing changed here.</div>
       ) : (
@@ -194,21 +313,33 @@ function DiffBlock({
 function Block({
   title,
   badge,
+  badgeTone,
   previewHref,
+  previewLabel = "Preview",
   target,
+  blockedReason,
   children,
 }: {
   title: string;
   badge: string;
+  badgeTone?: "danger";
   previewHref: string;
+  previewLabel?: string;
   target: RevisionTarget;
+  blockedReason?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <div className={styles.block}>
       <div className={styles.blockHead}>
         <span className={styles.blockTitle}>{title}</span>
-        <span className={styles.typ}>{badge}</span>
+        <span
+          className={`${styles.typ} ${
+            badgeTone === "danger" ? styles.typDanger : ""
+          }`}
+        >
+          {badge}
+        </span>
         {/* This revision rendered as the page it will become. New tab, so the
             reviewer keeps the queue where it was. */}
         <a
@@ -217,7 +348,7 @@ function Block({
           target="_blank"
           rel="noreferrer"
         >
-          Preview
+          {previewLabel}
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
               d="M6.5 3h6.5v6.5M13 3 7 9M11 10.5V13H3V5h2.5"
@@ -228,7 +359,7 @@ function Block({
             />
           </svg>
         </a>
-        <ReviewDecision target={target} />
+        <ReviewDecision target={target} blockedReason={blockedReason} />
       </div>
       <div className={styles.blockBody}>{children}</div>
     </div>

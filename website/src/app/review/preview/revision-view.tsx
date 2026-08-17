@@ -1,10 +1,24 @@
-import type { Artifact, EntryRevision, ModelRevision } from "@/lib/api/entries";
-import FileList, { type FileItem } from "@/app/components/FileList";
 import {
+  modelRevisionGraph,
+  type Artifact,
+  type EntryRevision,
+  type ModelRevision,
+} from "@/lib/api/entries";
+import { dataTableEntities, getEntityFileURL, structureMaps } from "@/lib/entities";
+import DataTable from "@/app/components/DataTable";
+import FileList, { type FileItem } from "@/app/components/FileList";
+import ResolvedFileLink from "@/app/components/ResolvedFileLink";
+import {
+  buildProvenance,
   entryMetadataFacts,
+  hasModelValidation,
   ImagePlaceholderIcon,
   InfoGrid,
   modelInfoFacts,
+  modelMetadata,
+  modelPreviewURL,
+  ModelValidation,
+  ModelViewerButton,
   modelVitals,
 } from "@/app/entries/[entryId]/entry-view";
 
@@ -109,18 +123,33 @@ export function EntryRevisionPreview({
   );
 }
 
-export function ModelRevisionPreview({ revision }: { revision: ModelRevision }) {
-  const metadata = revision.metadata ?? {};
-  const facts = modelInfoFacts(metadata, null);
+export function ModelRevisionPreview({
+  revision,
+}: {
+  revision: ModelRevision;
+}) {
+  const { entities, relations } = modelRevisionGraph(revision);
+  const provenance = buildProvenance(entities, relations);
+  const model = entities.find((entity) => entity.type === "model") ?? null;
+  const maps = structureMaps(entities);
+  const modelFileURL = model ? getEntityFileURL(model) : null;
+
+  const metadata = modelMetadata(model, revision.metadata);
+  const previewURL = modelPreviewURL(model, revision.thumbnail_image_url);
   const vitals = modelVitals(metadata);
-  const files = fileItems(revision.artifacts);
-  const thumbnail = revision.thumbnail_image_url?.trim() || null;
+  const infoFacts = modelInfoFacts(
+    metadata,
+    model ? provenance.programOf(model.id) : null,
+  );
+  const hasValidation = model ? hasModelValidation(model, provenance) : false;
+  const hasData = dataTableEntities(entities).length > 0;
 
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
-        <Thumb url={thumbnail} />
+        <Thumb url={previewURL} />
         <h1 className={styles.sideName}>{revision.name}</h1>
+
         {vitals.length > 0 ? (
           <dl className={styles.sideVitals}>
             {vitals.map((item) => (
@@ -128,37 +157,60 @@ export function ModelRevisionPreview({ revision }: { revision: ModelRevision }) 
             ))}
           </dl>
         ) : null}
+
+        {model || modelFileURL ? (
+          <div className={styles.sideActions}>
+            {model ? <ModelViewerButton entity={model} maps={maps} /> : null}
+            {modelFileURL ? (
+              <ResolvedFileLink
+                className={styles.sideDownload}
+                href={modelFileURL}
+                download
+                rel="noreferrer"
+                target="_blank"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+                </svg>
+                Download
+              </ResolvedFileLink>
+            ) : null}
+          </div>
+        ) : null}
       </aside>
 
       <div className={styles.content}>
-        {revision.description?.trim() || facts.length > 0 ? (
+        {revision.description?.trim() || infoFacts.length > 0 ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
             {revision.description?.trim() ? (
               <p className={styles.lead}>{revision.description}</p>
             ) : null}
-            <InfoGrid facts={facts} />
+            <InfoGrid facts={infoFacts} />
           </section>
         ) : null}
 
-        {revision.metrics.length > 0 ? (
+        {model && hasValidation ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Validation</h2>
-            <div className={styles.metricGrid}>
-              {revision.metrics.map((metric) => (
-                <div key={metric.id} className={styles.metricTile}>
-                  <div className={styles.metricLabel}>{metric.key}</div>
-                  <div className={styles.metricValue}>{metric.value}</div>
-                </div>
-              ))}
-            </div>
+            <ModelValidation entity={model} provenance={provenance} />
           </section>
         ) : null}
 
-        {files.length > 0 ? (
+        {hasData ? (
           <section className={styles.contentSection}>
-            <h2 className={styles.contentHeading}>Files</h2>
-            <FileList items={files} />
+            <h2 className={styles.contentHeading}>Data</h2>
+            <DataTable entities={entities} />
           </section>
         ) : null}
       </div>

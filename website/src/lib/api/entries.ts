@@ -1006,6 +1006,56 @@ function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] 
   );
 }
 
+/** A model revision as the same entity graph the published model page walks, so
+ *  a preview gets the real Data levels and Validation tiles instead of a
+ *  hand-rolled stand-in. A revision carries no runs, so program nodes and their
+ *  edges are absent — nothing that needs levels or metrics depends on them. */
+export function modelRevisionGraph(revision: ModelRevision): EntryGraph {
+  const model = modelFromRevision(revision);
+  const entities = revision.artifacts.map((artifact) =>
+    entityFromArtifact(revision.entry_id, revision.model_id, artifact, model),
+  );
+  const relations: EntityRelation[] = [];
+
+  const metricsEntity = entityFromMetrics(revision.entry_id, model);
+  if (metricsEntity) {
+    entities.push(metricsEntity);
+    if (model.primary_artifact_id) {
+      relations.push({
+        id: stableUUID(
+          `${metricsEntity.id}:${model.primary_artifact_id}:metrics_for`,
+        ),
+        source_entity_id: metricsEntity.id,
+        target_entity_id: model.primary_artifact_id,
+        relation_type: "metrics_for",
+        created_at: model.created_at,
+        updated_at: model.updated_at,
+      });
+    }
+  }
+
+  return { entities, relations };
+}
+
+/** The published-model shape of a revision: same content, addressed by model id
+ *  rather than revision id, which is what the view helpers expect. */
+export function modelFromRevision(revision: ModelRevision): Model {
+  return {
+    id: revision.model_id,
+    entry_id: revision.entry_id,
+    created_by: revision.created_by,
+    name: revision.name,
+    description: revision.description,
+    thumbnail_image_url: revision.thumbnail_image_url,
+    metadata: revision.metadata,
+    primary_artifact_id: revision.primary_artifact_id,
+    metrics: revision.metrics,
+    published_at: revision.published_at,
+    created_at: revision.created_at,
+    updated_at: revision.updated_at,
+  };
+}
+
 function modelGraphFromBackend(
   entryId: string,
   model: Model,

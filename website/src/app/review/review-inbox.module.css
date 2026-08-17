@@ -11,13 +11,6 @@
   margin: 0 auto;
 }
 
-.title {
-  margin: 0 0 18px;
-  font-size: 32px;
-  font-weight: 500;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-}
 
 .inbox {
   display: grid;
@@ -209,6 +202,17 @@
   font-size: 12.5px;
 }
 
+/* Why this block cannot be decided yet. */
+.blocked {
+  margin: 12px 0 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 12.5px;
+}
+
 .dgroup {
   margin-top: 14px;
 }
@@ -350,9 +354,6 @@
     padding: 24px 14px 64px;
   }
 
-  .title {
-    font-size: 26px;
-  }
 
   .inbox {
     grid-template-columns: 1fr;
@@ -370,3 +371,22 @@
   }
 
 }
+
+.typDanger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+/* A deletion is not an edit: it gets the weight of one. */
+.deleting {
+  margin: 12px 0 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  font-size: 12.5px;
+  font-weight: 530;
+}
+

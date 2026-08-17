@@ -9,11 +9,14 @@ import styles from "./reviews.module.css";
 
 type Props = {
   target: RevisionTarget;
+  /** When set, the decision cannot be made yet and this says why. */
+  blockedReason?: string | null;
 };
 
-export default function ReviewDecision({ target }: Props) {
+export default function ReviewDecision({ target, blockedReason }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const blocked = Boolean(blockedReason);
 
   function approve() {
     setError(null);
@@ -37,7 +40,8 @@ export default function ReviewDecision({ target }: Props) {
         type="button"
         className={`${styles.buttonSm} ${styles.approve}`}
         onClick={approve}
-        disabled={pending}
+        disabled={pending || blocked}
+        title={blockedReason ?? undefined}
       >
         Approve
       </button>
@@ -45,7 +49,8 @@ export default function ReviewDecision({ target }: Props) {
         type="button"
         className={`${styles.buttonSm} ${styles.reject}`}
         onClick={reject}
-        disabled={pending}
+        disabled={pending || blocked}
+        title={blockedReason ?? undefined}
       >
         Reject
       </button>
