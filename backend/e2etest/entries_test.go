@@ -71,7 +71,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	createdModel := entry.ModelResults[0]
 	s.Equal(httpapi.ModelOperationResultOpAdd, createdModel.Op)
 	s.Equal(modelID, createdModel.ModelId)
-	activateEntryRevisionForTest(s.T(), ownerToken, ownerID, entry)
+	activateEntryRevisionForTest(s.T(), entry)
 	publicModelBeforeActivation := getWithToken(s.T(), fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
 	s.Equal(http.StatusNotFound, publicModelBeforeActivation.StatusCode)
 	s.Require().NoError(publicModelBeforeActivation.Body.Close())
@@ -80,11 +80,9 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
 		ownerID, entryID, modelID, createdModel.ModelRevisionId,
 	)
-	pending := getModelRevisionForTest(s.T(), userModelPath, ownerToken)
-	s.Equal(httpapi.RevisionStatePending, pending.State)
-	s.Equal(httpapi.ModelStateActive, pending.ModelState)
-	submitted := updateModelRevisionStateForTest(s.T(), userModelPath, ownerToken, "in_review")
+	submitted := getModelRevisionForTest(s.T(), userModelPath, ownerToken)
 	s.Equal(httpapi.RevisionStateInReview, submitted.State)
+	s.Equal(httpapi.ModelStateActive, submitted.ModelState)
 
 	adminModelPath := fmt.Sprintf(
 		"/v1/entries/%s/models/%s/revisions/%s",
@@ -204,7 +202,7 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(
-		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", contributorID), contributorToken,
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", contributorID), contributorToken,
 	)
 	groups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), response, http.StatusOK)
 
@@ -236,13 +234,12 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
 		ownerID, entryID, modelID, modelRevision.RevisionId,
 	)
-	updateModelRevisionStateForTest(s.T(), modelUserPath, ownerToken, "in_review")
 	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
 		"entry": map[string]any{"name": "updated entry"},
 	})
 
 	// when
-	activateEntryRevisionForTest(s.T(), ownerToken, ownerID, entryRevision)
+	activateEntryRevisionForTest(s.T(), entryRevision)
 	pendingModel := getModelRevisionForTest(s.T(), modelUserPath, ownerToken)
 
 	// then
@@ -269,24 +266,24 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 		"entry": map[string]any{"id": entryID, "name": "revision group entry"},
 	})
 	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
-		"entry": map[string]any{"description": "pending entry change"},
+		"entry": map[string]any{"description": "in-review entry change"},
 	})
 	modelRevision := createModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"id": uuid.New(), "name": "pending model"},
+		"model": map[string]any{"id": uuid.New(), "name": "in-review model"},
 	})
 
 	// when
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	userResponse := getWithToken(
-		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", ownerID), ownerToken,
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", ownerID), ownerToken,
 	)
 	userGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), userResponse, http.StatusOK)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	adminResponse := getWithToken(s.T(), "/v1/entries/revisions?state=pending", adminToken)
+	adminResponse := getWithToken(s.T(), "/v1/entries/revisions?state=in_review", adminToken)
 	adminGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), adminResponse, http.StatusOK)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	otherResponse := getWithToken(
-		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", otherID), otherToken,
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", otherID), otherToken,
 	)
 	otherGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), otherResponse, http.StatusOK)
 
@@ -301,7 +298,7 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	s.True(modelRevisionSummaryContainsID(adminItem.ModelRevisions, modelRevision.RevisionId))
 	s.Nil(entryRevisionGroupByEntryID(otherGroups.Items, entryID))
 
-	forbiddenResponse := getWithToken(s.T(), "/v1/entries/revisions?state=pending", ownerToken)
+	forbiddenResponse := getWithToken(s.T(), "/v1/entries/revisions?state=in_review", ownerToken)
 	s.Equal(http.StatusForbidden, forbiddenResponse.StatusCode)
 	s.Require().NoError(forbiddenResponse.Body.Close())
 	missingStateResponse := getWithToken(s.T(), "/v1/entries/revisions", adminToken)
@@ -332,7 +329,6 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 		"/v1/entries/%s/models/%s/revisions/%s",
 		entryID, modelID, revision.RevisionId,
 	)
-	updateModelRevisionStateForTest(s.T(), userPath, ownerToken, "in_review")
 
 	// when
 	rejected := updateModelRevisionStateForTest(s.T(), adminPath, adminToken, "rejected")
@@ -378,22 +374,15 @@ func createAndActivateEntryForTest(
 ) httpapi.CreateEntryRevisionResponse {
 	t.Helper()
 	created := createEntryForTest(t, ownerToken, request)
-	activateEntryRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	activateEntryRevisionForTest(t, created)
 	return created
 }
 
 func activateEntryRevisionForTest(
 	t *testing.T,
-	ownerToken string,
-	ownerID uuid.UUID,
 	created httpapi.CreateEntryRevisionResponse,
 ) {
 	t.Helper()
-	userPath := fmt.Sprintf(
-		"/v1/users/%s/entries/%s/revisions/%s",
-		ownerID, created.EntryId, created.RevisionId,
-	)
-	updateEntryRevisionStateForTest(t, userPath, ownerToken, "in_review")
 	adminPath := fmt.Sprintf("/v1/entries/%s/revisions/%s", created.EntryId, created.RevisionId)
 	updateEntryRevisionStateForTest(t, adminPath, adminToken, "active")
 }
@@ -430,7 +419,7 @@ func createAndActivateModelForTest(
 ) httpapi.CreateModelRevisionResponse {
 	t.Helper()
 	created := createModelForTest(t, ownerToken, entryID, request)
-	activateModelRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	activateModelRevisionForTest(t, created)
 	return created
 }
 
@@ -459,22 +448,15 @@ func createAndActivateModelRevisionForTest(
 ) httpapi.CreateModelRevisionResponse {
 	t.Helper()
 	created := createModelRevisionForTest(t, ownerToken, entryID, modelID, request)
-	activateModelRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	activateModelRevisionForTest(t, created)
 	return created
 }
 
 func activateModelRevisionForTest(
 	t *testing.T,
-	ownerToken string,
-	ownerID uuid.UUID,
 	created httpapi.CreateModelRevisionResponse,
 ) {
 	t.Helper()
-	userPath := fmt.Sprintf(
-		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
-		ownerID, created.EntryId, created.ModelId, created.RevisionId,
-	)
-	updateModelRevisionStateForTest(t, userPath, ownerToken, "in_review")
 	adminPath := fmt.Sprintf(
 		"/v1/entries/%s/models/%s/revisions/%s",
 		created.EntryId, created.ModelId, created.RevisionId,

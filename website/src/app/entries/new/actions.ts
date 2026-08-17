@@ -2,13 +2,8 @@
 
 import { redirect } from "next/navigation";
 
-import {
-  createEntry,
-  submitEntryRevision,
-  submitModelRevision,
-  type CreateEntryInput,
-} from "@/lib/api/entries";
-import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
+import { createEntry, type CreateEntryInput } from "@/lib/api/entries";
+import { getAuthSession } from "@/lib/auth/session";
 
 export async function createEntryAction(
   input: CreateEntryInput,
@@ -19,28 +14,7 @@ export async function createEntryAction(
   }
 
   try {
-    const userId = userIdFromToken(session.token);
-    if (!userId) {
-      return { error: "Your session does not contain a user ID." };
-    }
-    const result = await createEntry(session.token, input);
-    await Promise.all([
-      submitEntryRevision(
-        session.token,
-        userId,
-        result.entry_id,
-        result.revision_id,
-      ),
-      ...result.model_results.map((model) =>
-        submitModelRevision(
-          session.token,
-          userId,
-          result.entry_id,
-          model.model_id,
-          model.model_revision_id,
-        ),
-      ),
-    ]);
+    await createEntry(session.token, input);
   } catch (error) {
     return {
       error:

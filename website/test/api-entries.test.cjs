@@ -16,6 +16,7 @@ const {
   submitEntryRevision,
   submitModelRevision,
 } = require("../src/lib/api/entries.ts");
+const { REVIEW_PAGE_SIZE } = require("../src/lib/reviewQueue.ts");
 
 test("should list entries with trimmed query and optional authorization", async () => {
   const previousFetch = global.fetch;
@@ -93,7 +94,7 @@ test("should post create entry using the new backend graph shape", async () => {
         {
           entry_id: "entry-1",
           revision_id: "entry-revision-1",
-          state: "pending",
+          state: "in_review",
           model_results: [
             {
               op: "add",
@@ -235,7 +236,7 @@ test("should create and submit model revisions through user routes", async () =>
             entry_id: "entry-1",
             model_id: "model-1",
             revision_id: "model-revision-1",
-            state: "pending",
+            state: "in_review",
           },
           { status: 201 },
         );
@@ -317,16 +318,16 @@ test("should list user revision groups by explicit state", async () => {
   }
 });
 
-test("should flatten revision groups and decide each revision independently", async () => {
+test("should group the review queue by entry and pair each revision with the one it replaces", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
-    const requests = [];
-    global.fetch = async (url, init = {}) => {
-      const path = new URL(String(url)).pathname;
-      requests.push({ path, method: init.method ?? "GET", body: init.body });
-      if (path === "/v1/entries/revisions") {
+    const paths = [];
+    global.fetch = async (url) => {
+      const requested = new URL(String(url));
+      paths.push(`${requested.pathname}${requested.search}`);
+      if (requested.pathname === "/v1/entries/revisions") {
         return jsonResponse({
           items: [
             {
@@ -345,57 +346,113 @@ test("should flatten revision groups and decide each revision independently", as
           ],
         });
       }
-      if (path.endsWith("/revisions/model-revision-1")) {
-        return jsonResponse({
-          ...modelRevisionSummary(
-            "model-revision-1",
-            "model-1",
-            "2026-01-01T02:00:00Z",
-          ),
-          parent_revision_id: "model-revision-active",
-          description: "Updated",
-          thumbnail_image_url: null,
-          primary_artifact_id: null,
-          metadata: {},
-          metrics: [],
-          artifacts: [],
-        });
+      if (requested.pathname.endsWith("/revisions/entry-revision-1")) {
+        return jsonResponse(
+          entryRevision("entry-revision-1", "2026-01-01T01:00:00Z", {
+            description: "Fresh",
+          }),
+        );
       }
-      if (path.endsWith("/revisions/model-revision-active")) {
-        return jsonResponse({
-          ...modelRevisionSummary(
-            "model-revision-active",
-            "model-1",
-            "2025-12-01T00:00:00Z",
-          ),
-          state: "active",
-          description: "Original",
-          thumbnail_image_url: null,
-          primary_artifact_id: null,
-          metadata: {},
-          metrics: [],
-          artifacts: [],
-        });
+      if (requested.pathname.endsWith("/revisions/model-revision-1")) {
+        return jsonResponse(
+          modelRevision("model-revision-1", "2026-01-01T02:00:00Z", {
+            parent_revision_id: "model-revision-active",
+            description: "Updated",
+          }),
+        );
       }
-      if (init.method === "PATCH") {
-        return jsonResponse({ state: "active" });
+      if (requested.pathname.endsWith("/revisions/model-revision-active")) {
+        return jsonResponse(
+          modelRevision("model-revision-active", "2025-12-01T00:00:00Z", {
+            state: "active",
+            description: "Original",
+          }),
+        );
       }
       throw new Error(`unexpected fetch ${url}`);
     };
 
-    const queue = await listReviews("token-123");
-    const comparison = await getEntryReview("token-123", queue[0].target);
-    await decideEntryReview("token-123", queue[0].target, "active");
+    const page = await listReviews("token-123");
+    const review = await getEntryReview("token-123", page.items[0]);
 
-    assert.equal(queue.length, 2);
-    assert.equal(queue[0].target.kind, "model");
-    assert.equal(comparison.models[0].active.description, "Original");
-    assert.equal(comparison.models[0].proposed.description, "Updated");
-    assert.deepEqual(requests.at(-1), {
-      path: "/v1/entries/entry-1/models/model-1/revisions/model-revision-1",
-      method: "PATCH",
-      body: JSON.stringify({ state: "active" }),
+    assert.equal(
+      paths[0],
+      `/v1/entries/revisions?state=in_review&limit=${REVIEW_PAGE_SIZE}&offset=0`,
+    );
+    // One row per entry, never one per revision.
+    assert.equal(page.items.length, 1);
+    assert.equal(page.hasMore, false);
+    // The row is stamped with the earliest thing waiting under it.
+    assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
+
+    // A first revision has nothing published to compare against.
+    assert.equal(review.entry.active, null);
+    assert.equal(review.entry.proposed.description, "Fresh");
+    assert.deepEqual(review.entry.target, {
+      kind: "entry",
+      entry_id: "entry-1",
+      revision_id: "entry-revision-1",
     });
+
+    assert.equal(review.models.length, 1);
+    assert.equal(review.models[0].model_id, "model-1");
+    assert.equal(review.models[0].active.description, "Original");
+    assert.equal(review.models[0].proposed.description, "Updated");
+    assert.deepEqual(review.models[0].target, {
+      kind: "model",
+      entry_id: "entry-1",
+      model_id: "model-1",
+      revision_id: "model-revision-1",
+    });
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should decide the entry revision and each model revision at its own path", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const requests = [];
+    global.fetch = async (url, init = {}) => {
+      requests.push({
+        path: new URL(String(url)).pathname,
+        method: init.method,
+        body: init.body,
+      });
+      return jsonResponse({ state: "active" });
+    };
+
+    await decideEntryReview(
+      "token-123",
+      { kind: "entry", entry_id: "entry-1", revision_id: "entry-revision-1" },
+      "active",
+    );
+    await decideEntryReview(
+      "token-123",
+      {
+        kind: "model",
+        entry_id: "entry-1",
+        model_id: "model-1",
+        revision_id: "model-revision-1",
+      },
+      "rejected",
+    );
+
+    assert.deepEqual(requests, [
+      {
+        path: "/v1/entries/entry-1/revisions/entry-revision-1",
+        method: "PATCH",
+        body: JSON.stringify({ state: "active" }),
+      },
+      {
+        path: "/v1/entries/entry-1/models/model-1/revisions/model-revision-1",
+        method: "PATCH",
+        body: JSON.stringify({ state: "rejected" }),
+      },
+    ]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -550,4 +607,29 @@ function restoreEnv(name, value) {
     return;
   }
   process.env[name] = value;
+}
+
+function entryRevision(id, updatedAt, overrides = {}) {
+  return {
+    ...revisionSummary(id, updatedAt),
+    description: null,
+    thumbnail_image_url: null,
+    metadata: {},
+    protein_sequences: [],
+    artifacts: [],
+    ...overrides,
+  };
+}
+
+function modelRevision(id, updatedAt, overrides = {}) {
+  return {
+    ...modelRevisionSummary(id, "model-1", updatedAt),
+    description: null,
+    thumbnail_image_url: null,
+    primary_artifact_id: null,
+    metadata: {},
+    metrics: [],
+    artifacts: [],
+    ...overrides,
+  };
 }

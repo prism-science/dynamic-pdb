@@ -2,12 +2,8 @@
 
 import { redirect } from "next/navigation";
 
-import {
-  createModel,
-  submitModelRevision,
-  type CreateModelInput,
-} from "@/lib/api/entries";
-import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
+import { createModel, type CreateModelInput } from "@/lib/api/entries";
+import { getAuthSession } from "@/lib/auth/session";
 
 export async function createModelAction(
   entryId: string,
@@ -19,18 +15,7 @@ export async function createModelAction(
   }
 
   try {
-    const userId = userIdFromToken(session.token);
-    if (!userId) {
-      return { error: "Your session does not contain a user ID." };
-    }
-    const result = await createModel(session.token, entryId, input);
-    await submitModelRevision(
-      session.token,
-      userId,
-      result.entry_id,
-      result.model_id,
-      result.revision_id,
-    );
+    await createModel(session.token, entryId, input);
   } catch (error) {
     return {
       error:

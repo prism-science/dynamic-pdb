@@ -249,7 +249,7 @@ export type CreateEntryRevisionResult = {
   entry_id: string;
   revision_id: string;
   base_revision_id?: string | null;
-  state: "pending";
+  state: "in_review";
   model_results: {
     op: "add";
     model_id: string;
@@ -262,7 +262,7 @@ export type CreateModelRevisionResult = {
   model_id: string;
   revision_id: string;
   base_revision_id?: string | null;
-  state: "pending";
+  state: "in_review";
 };
 
 export type EntryPageData = {
@@ -392,7 +392,7 @@ export type CreateEntryInput = {
   metadata?: CreateEntryMetadata;
 };
 
-/** Creates a model and its initial pending revision. */
+/** Creates a model and immediately places its initial revision in review. */
 export async function createModel(
   token: string,
   entryId: string,

@@ -52,7 +52,7 @@ func (s *Server) createEntryRevisionGraph(
 	now := time.Now().UTC()
 	response := CreateEntryRevisionResponse{
 		EntryId:      entryID,
-		State:        CreateEntryRevisionResponseStatePending,
+		State:        CreateEntryRevisionResponseStateInReview,
 		ModelResults: make([]ModelOperationResult, 0),
 	}
 
@@ -73,7 +73,7 @@ func (s *Server) createEntryRevisionGraph(
 			ID:                uuid.New(),
 			EntryID:           entryID,
 			ParentRevisionID:  &base.ID,
-			State:             domainmodels.RevisionStatePending,
+			State:             domainmodels.RevisionStateInReview,
 			EntryState:        base.EntryState,
 			Name:              base.Name,
 			Description:       base.Description,

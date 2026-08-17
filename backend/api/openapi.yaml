@@ -256,8 +256,8 @@ paths:
       operationId: createEntry
       summary: Create an entry and its initial revision
       description: >
-        Atomically creates a new entry, its initial pending entry revision, and
-        a separate pending model revision for every add operation.
+        Atomically creates a new entry, its initial in-review entry revision,
+        and a separate in-review model revision for every add operation.
       security:
         - bearerAuth: []
       requestBody:
@@ -268,7 +268,7 @@ paths:
               $ref: "#/components/schemas/CreateEntryRequest"
       responses:
         "201":
-          description: Entry and initial pending revision created.
+          description: Entry and initial in-review revision created.
           content:
             application/json:
               schema:
@@ -407,7 +407,7 @@ paths:
       operationId: createModel
       summary: Create a model and its initial revision
       description: >
-        Creates a model belonging to the entry and its initial pending model
+        Creates a model belonging to the entry and its initial in-review model
         revision. No entry revision is created.
       security:
         - bearerAuth: []
@@ -426,7 +426,7 @@ paths:
               $ref: "#/components/schemas/CreateModelRequest"
       responses:
         "201":
-          description: Model and initial pending revision created.
+          description: Model and initial in-review revision created.
           content:
             application/json:
               schema:
@@ -718,7 +718,7 @@ paths:
       operationId: createEntryRevision
       summary: Create an entry revision
       description: >
-        Creates a pending revision containing changes to the entry itself.
+        Creates an in-review revision containing changes to the entry itself.
         Model changes are created separately through the model revision API.
       security:
         - bearerAuth: []
@@ -925,7 +925,7 @@ paths:
       operationId: createModelRevision
       summary: Create a model revision
       description: >
-        Creates a pending revision containing changes to the model itself. No
+        Creates an in-review revision containing changes to the model itself. No
         entry revision is created.
       security:
         - bearerAuth: []
@@ -1749,7 +1749,7 @@ components:
           $ref: "#/components/schemas/CreateEntryData"
         model_operations:
           type: array
-          description: Models to create as independent pending revisions.
+          description: Models to create as independent in-review revisions.
           items:
             $ref: "#/components/schemas/AddModelOperation"
 
@@ -2317,7 +2317,7 @@ components:
           nullable: true
         state:
           type: string
-          enum: [pending]
+          enum: [in_review]
         model_results:
           type: array
           description: Model revisions in the same order as model_operations.
@@ -2357,7 +2357,7 @@ components:
           nullable: true
         state:
           type: string
-          enum: [pending]
+          enum: [in_review]
 
     UpdateRevisionStateRequest:
       type: object

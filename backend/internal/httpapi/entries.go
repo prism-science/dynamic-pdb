@@ -114,7 +114,7 @@ func (s *Server) createInitialEntryRevision(
 	now := time.Now().UTC()
 	response := CreateEntryRevisionResponse{
 		EntryId:      entryID,
-		State:        CreateEntryRevisionResponseStatePending,
+		State:        CreateEntryRevisionResponseStateInReview,
 		ModelResults: make([]ModelOperationResult, 0),
 	}
 
@@ -133,7 +133,7 @@ func (s *Server) createInitialEntryRevision(
 		revision, err := s.database.Entries.Create(ctx, domainmodels.EntryRevision{
 			ID:                uuid.New(),
 			EntryID:           entryID,
-			State:             domainmodels.RevisionStatePending,
+			State:             domainmodels.RevisionStateInReview,
 			EntryState:        domainmodels.EntryStateActive,
 			Name:              name,
 			Description:       trimmedStringPtr(req.Entry.Description),
@@ -297,7 +297,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 	response := CreateModelRevisionResponse{
 		EntryId: entryID,
 		ModelId: modelID,
-		State:   CreateModelRevisionResponseStatePending,
+		State:   CreateModelRevisionResponseStateInReview,
 	}
 	err = s.database.Do(ctx, func(ctx context.Context) error {
 		if requireActiveEntry {
@@ -324,7 +324,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 			ID:                uuid.New(),
 			ModelID:           modelID,
 			PrimaryArtifactID: data.PrimaryArtifactId,
-			State:             domainmodels.RevisionStatePending,
+			State:             domainmodels.RevisionStateInReview,
 			ModelState:        domainmodels.ModelStateActive,
 			Name:              name,
 			Description:       trimmedStringPtr(data.Description),
@@ -447,7 +447,7 @@ func (s *Server) createModelRevisionGraph(
 	response := CreateModelRevisionResponse{
 		EntryId: entryID,
 		ModelId: modelID,
-		State:   CreateModelRevisionResponseStatePending,
+		State:   CreateModelRevisionResponseStateInReview,
 	}
 	err := s.database.Do(ctx, func(ctx context.Context) error {
 		base, err := s.activeModelRevisionForMutation(ctx, entryID, modelID)
@@ -465,7 +465,7 @@ func (s *Server) createModelRevisionGraph(
 			ModelID:           base.ModelID,
 			ParentRevisionID:  &base.ID,
 			PrimaryArtifactID: base.PrimaryArtifactID,
-			State:             domainmodels.RevisionStatePending,
+			State:             domainmodels.RevisionStateInReview,
 			ModelState:        domainmodels.ModelStateActive,
 			Name:              base.Name,
 			Description:       base.Description,
