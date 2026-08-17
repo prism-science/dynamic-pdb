@@ -21,7 +21,6 @@ type DB struct {
 	Runs                        *RunsRepository
 	ProteinSequences            *ProteinSequencesRepository
 	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
-	Reviews                     *ReviewsRepository
 
 	sqlx      *sqlx.DB
 	txManager *TxManager
@@ -70,7 +69,6 @@ func NewDB(cfg Config) (*DB, error) {
 		Runs:                        NewRunsRepository(sqlxDB, queriers),
 		ProteinSequences:            NewProteinSequencesRepository(sqlxDB, queriers),
 		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
-		Reviews:                     NewReviewsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		txManager:                   txManager,
 	}, nil

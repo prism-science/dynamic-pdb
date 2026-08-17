@@ -137,6 +137,31 @@ func (r *ProteinSequenceSimilaritiesRepository) UpdateRunState(
 	return nil
 }
 
+func (r *ProteinSequenceSimilaritiesRepository) DeleteForProteinSequences(
+	ctx context.Context,
+	sequenceIDs []uuid.UUID,
+) error {
+	if len(sequenceIDs) == 0 {
+		return nil
+	}
+
+	query, args, err := sqlx.In(
+		`delete from protein_sequence_similarities
+		 where source_sequence_id in (?)
+		    or similar_sequence_id in (?)`,
+		sequenceIDs,
+		sequenceIDs,
+	)
+	if err != nil {
+		return fmt.Errorf("bind protein sequence similarity delete query: %w", err)
+	}
+	query = sqlx.Rebind(sqlx.DOLLAR, query)
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete protein sequence similarities: %w", err)
+	}
+	return nil
+}
+
 func (r *ProteinSequenceSimilaritiesRepository) ListRuns(
 	ctx context.Context,
 	filters ProteinSequenceSimilarityRunFilters,

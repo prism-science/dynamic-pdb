@@ -82,3 +82,61 @@ func Test_should_create_and_list_entry_protein_sequences_when_repository_called(
 	assert.NotEqual(t, uuid.Nil, sequences[0].ID)
 	assert.NotEqual(t, uuid.Nil, sequences[1].ID)
 }
+
+func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revision(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createdBy := createDBTestUser(t)
+	entryID := uuid.New()
+	activeRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID: uuid.New(), EntryID: entryID, State: models.RevisionStateActive,
+		EntryState: models.EntryStateActive, Name: "active protein revision", CreatedBy: createdBy,
+		CreatedAt: now, UpdatedAt: now,
+	})
+	require.NoError(t, err)
+	targetRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID: uuid.New(), EntryID: entryID, ParentRevisionID: &activeRevision.ID,
+		State: models.RevisionStatePending, EntryState: models.EntryStateActive,
+		Name: "target protein revision", CreatedBy: createdBy,
+		CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
+	})
+	require.NoError(t, err)
+	artifact := createDBTestArtifact(t, createdBy, "retained protein artifact", now)
+	require.NoError(t, testDB.ProteinSequences.Create(ctx, activeRevision.ID, artifact.ID, []models.FASTARecord{
+		{Header: "retained", Sequence: "ACDEFGHIK"},
+	}))
+	before, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &activeRevision.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+	require.NoError(t, testDB.ProteinSequences.UpdateProcessingState(
+		ctx,
+		[]uuid.UUID{before[0].ID},
+		models.ProteinSequenceProcessingStateProcessed,
+	))
+
+	// when
+	err = testDB.ProteinSequences.MoveEntryRevisionArtifacts(
+		ctx,
+		activeRevision.ID,
+		targetRevision.ID,
+		[]uuid.UUID{artifact.ID},
+	)
+
+	// then
+	require.NoError(t, err)
+	oldSequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &activeRevision.ID,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, oldSequences)
+	movedSequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &targetRevision.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, movedSequences, 1)
+	assert.Equal(t, before[0].ID, movedSequences[0].ID)
+	assert.Equal(t, models.ProteinSequenceProcessingStateProcessed, movedSequences[0].ProcessingState)
+}

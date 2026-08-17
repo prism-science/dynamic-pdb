@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,4 +30,26 @@ func Test_should_keep_explicit_limit_when_list_entries_limit_is_provided(t *test
 	require.NoError(t, err)
 	require.NotNil(t, got.Limit)
 	assert.Equal(t, limit, *got.Limit)
+}
+
+func Test_should_reject_state_field_when_entry_revision_is_created(t *testing.T) {
+	// given
+	fields := map[string]json.RawMessage{"state": json.RawMessage(`"deleted"`)}
+
+	// when
+	err := validateRevisionFields(fields, entryRevisionFields)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
+
+func Test_should_reject_state_field_when_model_revision_is_created(t *testing.T) {
+	// given
+	fields := map[string]json.RawMessage{"state": json.RawMessage(`"deleted"`)}
+
+	// when
+	err := validateRevisionFields(fields, modelRevisionFields)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
 }

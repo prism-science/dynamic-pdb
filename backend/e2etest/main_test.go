@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chicors "github.com/go-chi/cors"
+	"github.com/google/uuid"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -21,7 +22,9 @@ import (
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
 	storage "dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/services/cdn"
+	"dynamic-pdb/backend/internal/types"
 )
 
 const (
@@ -34,6 +37,7 @@ var (
 	testServer   *httptest.Server
 	githubClient *MockGitHubClient
 	s3Stub       *e2es3.StubServer
+	adminToken   string
 )
 
 type MockGitHubClient struct {
@@ -71,8 +75,24 @@ func TestMain(m *testing.M) {
 		log.Fatalf("e2etest: connect db: %v", err)
 	}
 
+	now := time.Now().UTC()
+	admin, err := database.Users.Create(context.Background(), models.User{
+		ID: uuid.MustParse("8ca59596-c4b4-4f3f-94be-6dd73f76f050"),
+		ExternalRef: types.ExternalRef{
+			Source: "e2etest",
+			Value:  "admin",
+		},
+		DisplayName: "E2E Admin",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err != nil {
+		log.Fatalf("e2etest: create admin: %v", err)
+	}
+
 	authConfig := auth.Config{
 		AllowedOrgs: []string{"Astera-org", "diff-use"},
+		AdminUserID: admin.ID.String(),
 		JWT: auth.JWTConfig{
 			Secret: testJWTSecret,
 			Issuer: testJWTIssuer,
@@ -81,6 +101,10 @@ func TestMain(m *testing.M) {
 	}
 
 	jwt := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL)
+	adminToken, _, err = jwt.Issue(admin.ID)
+	if err != nil {
+		log.Fatalf("e2etest: issue admin token: %v", err)
+	}
 	storageConfig := storage.BucketConfig{
 		Endpoint:        s3Stub.URL(),
 		Region:          "us-east-1",
@@ -112,7 +136,9 @@ func TestMain(m *testing.M) {
 
 	testServer.Close()
 	s3Stub.Close()
-	database.Close()
+	if err := database.Close(); err != nil {
+		log.Printf("e2etest: close database: %v", err)
+	}
 	os.Exit(code)
 }
 

@@ -206,7 +206,7 @@ paths:
     get:
       operationId: listEntries
       summary: List entries
-      description: Lists entries from their current approved, non-deleted revisions.
+      description: Lists entries from their current active revisions.
       security: []
       parameters:
         - name: limit
@@ -256,8 +256,8 @@ paths:
       operationId: createEntry
       summary: Create an entry and its initial revision
       description: >
-        Atomically creates a new entry, its initial draft revision, and any
-        models supplied as add operations.
+        Atomically creates a new entry, its initial pending entry revision, and
+        a separate pending model revision for every add operation.
       security:
         - bearerAuth: []
       requestBody:
@@ -268,7 +268,7 @@ paths:
               $ref: "#/components/schemas/CreateEntryRequest"
       responses:
         "201":
-          description: Entry and initial draft revision created.
+          description: Entry and initial pending revision created.
           content:
             application/json:
               schema:
@@ -296,7 +296,7 @@ paths:
     get:
       operationId: getEntry
       summary: Get entry
-      description: Returns the current approved, non-deleted revision of an entry.
+      description: Returns the current active revision of an entry.
       security: []
       parameters:
         - name: entry_id
@@ -324,7 +324,7 @@ paths:
     get:
       operationId: listSimilarEntries
       summary: List entries with similar protein sequences
-      description: Lists similar entries from their current approved, non-deleted revisions.
+      description: Lists similar entries from their current active revisions.
       security: []
       parameters:
         - name: entry_id
@@ -366,7 +366,7 @@ paths:
     get:
       operationId: listModels
       summary: List models
-      description: Lists non-deleted models from the entry's current approved revision.
+      description: Lists models from their current active revisions.
       security: []
       parameters:
         - name: entry_id
@@ -403,12 +403,64 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    post:
+      operationId: createModel
+      summary: Create a model and its initial revision
+      description: >
+        Creates a model belonging to the entry and its initial pending model
+        revision. No entry revision is created.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRequest"
+      responses:
+        "201":
+          description: Model and initial pending revision created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateModelRevisionResponse"
+        "400":
+          description: Invalid model data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Model ID already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models/{model_id}:
     get:
       operationId: getModel
       summary: Get model
-      description: Returns a non-deleted model from the entry's current approved revision.
+      description: Returns the model's current active revision.
       security: []
       parameters:
         - name: entry_id
@@ -443,7 +495,7 @@ paths:
     get:
       operationId: listArtifacts
       summary: List artifacts
-      description: Lists artifacts from the entry's current approved revision.
+      description: Lists artifacts from the entry's current active revision.
       security: []
       parameters:
         - name: entry_id
@@ -495,7 +547,7 @@ paths:
     get:
       operationId: listModelArtifacts
       summary: List model artifacts
-      description: Lists artifacts from a model in the entry's current approved revision.
+      description: Lists artifacts from the model's current active revision.
       security: []
       parameters:
         - name: entry_id
@@ -558,9 +610,12 @@ paths:
 
   /v1/entries/revisions:
     get:
-      operationId: listEntryRevisions
-      summary: List entry revisions
-      description: Administrator-only collection of entry revisions.
+      operationId: listEntryRevisionGroups
+      summary: List entries with revisions in a state
+      description: >
+        Administrator-only revision collection grouped by entry. An entry is returned
+        when either an entry revision or one of its model revisions has the
+        requested state. Each item contains only revisions matching that state.
       security:
         - bearerAuth: []
       parameters:
@@ -584,11 +639,11 @@ paths:
             minimum: 0
       responses:
         "200":
-          description: Entry revisions found.
+          description: Entries with matching revisions found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionListResponse"
+                $ref: "#/components/schemas/EntryRevisionGroupListResponse"
         "400":
           description: Missing or invalid state filter.
           content:
@@ -663,9 +718,8 @@ paths:
       operationId: createEntryRevision
       summary: Create an entry revision
       description: >
-        Atomically creates a draft entry revision containing the entry field
-        changes and the ordered model operations in the request. No partial
-        revision is created when any operation fails.
+        Creates a pending revision containing changes to the entry itself.
+        Model changes are created separately through the model revision API.
       security:
         - bearerAuth: []
       parameters:
@@ -683,25 +737,19 @@ paths:
               $ref: "#/components/schemas/CreateEntryRevisionRequest"
       responses:
         "201":
-          description: Draft entry revision created.
+          description: Pending entry revision created.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateEntryRevisionResponse"
         "400":
-          description: Invalid entry change or model operation.
+          description: Invalid entry change.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "403":
-          description: Caller cannot create revisions for this entry.
           content:
             application/json:
               schema:
@@ -766,10 +814,10 @@ paths:
                 $ref: "#/components/schemas/Error"
     patch:
       operationId: updateEntryRevisionState
-      summary: Approve or reject an entry revision
+      summary: Activate or reject an entry revision
       description: >
-        Administrator-only. Changes an in-review revision to approved or
-        rejected. A comment is required when rejecting.
+        Administrator-only. Changes a revision from `in_review` to active or
+        rejected.
       security:
         - bearerAuth: []
       requestBody:
@@ -777,7 +825,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReviewRevisionRequest"
+              $ref: "#/components/schemas/UpdateRevisionStateRequest"
       responses:
         "200":
           description: Entry revision updated.
@@ -786,7 +834,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/EntryRevision"
         "400":
-          description: Invalid state transition or missing rejection comment.
+          description: Invalid state transition.
           content:
             application/json:
               schema:
@@ -873,6 +921,64 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    post:
+      operationId: createModelRevision
+      summary: Create a model revision
+      description: >
+        Creates a pending revision containing changes to the model itself. No
+        entry revision is created.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRevisionRequest"
+      responses:
+        "201":
+          description: Pending model revision created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateModelRevisionResponse"
+        "400":
+          description: Invalid model change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry or model not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Revision conflicts with the current active model revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models/{model_id}/revisions/{revision_id}:
     parameters:
@@ -925,13 +1031,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    patch:
+      operationId: updateModelRevisionState
+      summary: Activate or reject a model revision
+      description: >
+        Administrator-only. Changes a model revision from `in_review` to active or
+        rejected.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRevisionStateRequest"
+      responses:
+        "200":
+          description: Model revision updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRevision"
+        "400":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller is not an administrator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Model revision not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Model revision changed since it was loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/users/{user_id}/entries/revisions:
     get:
-      operationId: listUserEntryRevisions
-      summary: List a user's entry revisions
+      operationId: listUserEntryRevisionGroups
+      summary: List a user's entries with revisions in a state
       description: >
-        Lists revisions created by the path user. The authenticated user ID
-        must equal `user_id`.
+        Lists entries for which the path user created an entry revision or
+        model revision in the requested state. Each item contains only matching
+        revisions created by that user. The authenticated user ID must equal
+        `user_id`.
       security:
         - bearerAuth: []
       parameters:
@@ -961,11 +1120,11 @@ paths:
             minimum: 0
       responses:
         "200":
-          description: Entry revisions found.
+          description: Entries with matching revisions found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionListResponse"
+                $ref: "#/components/schemas/EntryRevisionGroupListResponse"
         "400":
           description: Missing or invalid state filter.
           content:
@@ -1102,7 +1261,7 @@ paths:
       operationId: submitUserEntryRevision
       summary: Submit a user's entry revision
       description: >
-        The authenticated user ID must equal `user_id`. Changes a draft or
+        The authenticated user ID must equal `user_id`. Changes a pending or
         rejected revision to `in_review`.
       security:
         - bearerAuth: []
@@ -1271,6 +1430,57 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model revision not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      operationId: submitUserModelRevision
+      summary: Submit a user's model revision
+      description: >
+        The authenticated user ID must equal `user_id`. Changes a pending or
+        rejected model revision to `in_review`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRevisionRequest"
+      responses:
+        "200":
+          description: Model revision updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRevision"
+        "400":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user does not match user_id or own the revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Model revision not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Model revision is not editable.
           content:
             application/json:
               schema:
@@ -1539,7 +1749,7 @@ components:
           $ref: "#/components/schemas/CreateEntryData"
         model_operations:
           type: array
-          description: Only add operations are valid for a new entry.
+          description: Models to create as independent pending revisions.
           items:
             $ref: "#/components/schemas/AddModelOperation"
 
@@ -1914,33 +2124,24 @@ components:
 
     RevisionState:
       type: string
-      enum: [draft, in_review, approved, rejected]
+      enum: [pending, in_review, active, rejected, archived]
 
     EntryState:
       type: string
-      enum: [active, deleted]
+      enum: [new, active, deleted]
 
     ModelState:
       type: string
-      enum: [active, deleted]
+      enum: [new, active, deleted]
 
     CreateEntryRevisionRequest:
       type: object
       description: >
-        Entry changes and ordered model operations applied atomically while
-        creating a draft revision. At least one of `entry` or
-        `model_operations` must be present.
-      anyOf:
-        - required: [entry]
-        - required: [model_operations]
+        Changes to the entry itself. Model changes use the model revision API.
+      required: [entry]
       properties:
         entry:
           $ref: "#/components/schemas/EntryRevisionChange"
-        model_operations:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/ModelOperation"
 
     EntryRevisionChange:
       type: object
@@ -1958,21 +2159,13 @@ components:
         metadata:
           type: object
           additionalProperties: true
-        state:
-          $ref: "#/components/schemas/EntryState"
-          description: Entry state after this revision is approved.
 
-    ModelOperation:
-      oneOf:
-        - $ref: "#/components/schemas/AddModelOperation"
-        - $ref: "#/components/schemas/UpdateModelOperation"
-        - $ref: "#/components/schemas/RemoveModelOperation"
-      discriminator:
-        propertyName: op
-        mapping:
-          add: "#/components/schemas/AddModelOperation"
-          update: "#/components/schemas/UpdateModelOperation"
-          remove: "#/components/schemas/RemoveModelOperation"
+    CreateModelRequest:
+      type: object
+      required: [model]
+      properties:
+        model:
+          $ref: "#/components/schemas/CreateModelData"
 
     AddModelOperation:
       type: object
@@ -2020,24 +2213,53 @@ components:
           items:
             $ref: "#/components/schemas/CreateMetricRequest"
 
-    UpdateModelOperation:
+    CreateModelData:
       type: object
-      required: [op, data]
+      required: [name]
       properties:
-        op:
-          type: string
-          enum: [update]
-        data:
-          $ref: "#/components/schemas/UpdateModelData"
-
-    UpdateModelData:
-      type: object
-      required: [model_id]
-      minProperties: 2
-      properties:
-        model_id:
+        id:
           type: string
           format: uuid
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        primary_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateArtifactRequest"
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateRunRequest"
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMetricRequest"
+
+    CreateModelRevisionRequest:
+      type: object
+      required: [model]
+      properties:
+        model:
+          $ref: "#/components/schemas/ModelRevisionChange"
+
+    ModelRevisionChange:
+      type: object
+      minProperties: 1
+      properties:
         name:
           type: string
           minLength: 1
@@ -2070,24 +2292,6 @@ components:
           items:
             $ref: "#/components/schemas/CreateMetricRequest"
 
-    RemoveModelOperation:
-      type: object
-      required: [op, data]
-      properties:
-        op:
-          type: string
-          enum: [remove]
-        data:
-          $ref: "#/components/schemas/RemoveModelData"
-
-    RemoveModelData:
-      type: object
-      required: [model_id]
-      properties:
-        model_id:
-          type: string
-          format: uuid
-
     SubmitRevisionRequest:
       type: object
       required: [state]
@@ -2095,6 +2299,7 @@ components:
         state:
           type: string
           enum: [in_review]
+          x-enum-varnames: [SubmitRevisionRequestStateInReview]
 
     CreateEntryRevisionResponse:
       type: object
@@ -2112,10 +2317,10 @@ components:
           nullable: true
         state:
           type: string
-          enum: [draft]
+          enum: [pending]
         model_results:
           type: array
-          description: Results in the same order as the requested model operations.
+          description: Model revisions in the same order as model_operations.
           items:
             $ref: "#/components/schemas/ModelOperationResult"
 
@@ -2125,7 +2330,7 @@ components:
       properties:
         op:
           type: string
-          enum: [add, update, remove]
+          enum: [add]
         model_id:
           type: string
           format: uuid
@@ -2133,19 +2338,59 @@ components:
           type: string
           format: uuid
 
-    ReviewRevisionRequest:
+    CreateModelRevisionResponse:
       type: object
-      description: >
-        Administrator decision for an in-review revision. `comment` is required
-        when state is `rejected`.
+      required: [entry_id, model_id, revision_id, state]
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+        model_id:
+          type: string
+          format: uuid
+        revision_id:
+          type: string
+          format: uuid
+        base_revision_id:
+          type: string
+          format: uuid
+          nullable: true
+        state:
+          type: string
+          enum: [pending]
+
+    UpdateRevisionStateRequest:
+      type: object
+      description: Administrator state update for a revision in `in_review`.
       required: [state]
       properties:
         state:
           type: string
-          enum: [approved, rejected]
-        comment:
-          type: string
-          nullable: true
+          enum: [active, rejected]
+
+    EntryRevisionGroupListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryRevisionGroup"
+
+    EntryRevisionGroup:
+      type: object
+      required: [entry, entry_revisions, model_revisions]
+      properties:
+        entry:
+          $ref: "#/components/schemas/EntryInfo"
+        entry_revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryRevisionSummary"
+        model_revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelRevisionSummary"
 
     EntryRevisionListResponse:
       type: object
@@ -2193,9 +2438,6 @@ components:
           format: uuid
         name:
           type: string
-        review_comment:
-          type: string
-          nullable: true
         published_at:
           type: string
           format: date-time
@@ -2209,16 +2451,13 @@ components:
 
     ModelRevisionSummary:
       type: object
-      required: [id, entry_id, entry_revision_id, model_id, model_state, created_by, name, created_at, updated_at]
+      required: [id, entry_id, model_id, state, model_state, created_by, name, created_at, updated_at]
       properties:
         id:
           type: string
           format: uuid
           description: Model revision ID.
         entry_id:
-          type: string
-          format: uuid
-        entry_revision_id:
           type: string
           format: uuid
         model_id:
@@ -2232,6 +2471,8 @@ components:
           type: integer
           minimum: 1
           nullable: true
+        state:
+          $ref: "#/components/schemas/RevisionState"
         model_state:
           $ref: "#/components/schemas/ModelState"
         created_by:
@@ -2239,6 +2480,10 @@ components:
           format: uuid
         name:
           type: string
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -2250,7 +2495,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EntryRevisionSummary"
         - type: object
-          required: [metadata, protein_sequences, artifacts, models]
+          required: [metadata, protein_sequences, artifacts]
           properties:
             description:
               type: string
@@ -2269,12 +2514,6 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Artifact"
-            models:
-              type: array
-              description: Model revisions changed as part of this entry revision.
-              items:
-                $ref: "#/components/schemas/ModelRevision"
-
     ModelRevision:
       allOf:
         - $ref: "#/components/schemas/ModelRevisionSummary"

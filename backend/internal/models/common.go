@@ -7,5 +7,5 @@ const (
 	RevisionStateInReview RevisionState = "in_review"
 	RevisionStateActive   RevisionState = "active"
 	RevisionStateRejected RevisionState = "rejected"
-	RevisionStateDeleted  RevisionState = "deleted"
+	RevisionStateArchived RevisionState = "archived"
 )

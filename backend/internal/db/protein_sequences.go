@@ -123,6 +123,50 @@ func (r *ProteinSequencesRepository) List(
 	return proteinSequencesFromRows(rows), nil
 }
 
+func (r *ProteinSequencesRepository) MoveEntryRevisionArtifacts(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+	sourceArtifactIDs []uuid.UUID,
+) error {
+	if len(sourceArtifactIDs) == 0 {
+		return nil
+	}
+
+	query, args, err := sqlx.In(
+		`update protein_sequences
+		 set entry_revision_id = ?
+		 where entry_revision_id = ?
+		   and source_artifact_id in (?)`,
+		toRevisionID,
+		fromRevisionID,
+		sourceArtifactIDs,
+	)
+	if err != nil {
+		return fmt.Errorf("bind protein sequence revision move query: %w", err)
+	}
+	query = sqlx.Rebind(sqlx.DOLLAR, query)
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("move protein sequences to entry revision: %w", err)
+	}
+	return nil
+}
+
+func (r *ProteinSequencesRepository) Delete(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	query, args, err := sqlx.In(`delete from protein_sequences where id in (?)`, ids)
+	if err != nil {
+		return fmt.Errorf("bind protein sequence delete query: %w", err)
+	}
+	query = sqlx.Rebind(sqlx.DOLLAR, query)
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("delete protein sequences: %w", err)
+	}
+	return nil
+}
+
 func (r *ProteinSequencesRepository) UpdateProcessingState(
 	ctx context.Context,
 	ids []uuid.UUID,

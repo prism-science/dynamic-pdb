@@ -2,10 +2,8 @@ package e2etest
 
 import (
 	"encoding/json"
-	"io"
+	"fmt"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -27,852 +25,505 @@ func TestEntries(t *testing.T) {
 	suite.Run(t, new(EntriesSuite))
 }
 
-func (s *EntriesSuite) Test_should_create_entry_when_request_is_valid() {
+func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_revisions() {
 	// given
-	githubClient.On("GetUser", mock.Anything, "gh-token").
-		Return(github.User{ID: 4201, Login: "entry-creator", Name: "Entry Creator", Email: "entry@example.com"}, nil)
-	githubClient.On("ListOrgs", mock.Anything, "gh-token").
-		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
-
-	tokenResponse := issueTokenForTest(s.T(), "gh-token")
-	creatorID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(tokenResponse.AccessToken)
-	s.Require().NoError(err)
-	description := "Created from UI"
-	authors := []string{"Fermi, G.", "Perutz, M.F."}
-	affiliation := "MRC Laboratory of Molecular Biology, Cambridge"
-	fastaMetadata := readFastaMetadataForTest(s.T(), "testdata/fasta/pdb_4hhb_human_deoxyhemoglobin.fasta")
-	thumbnailImageURL := "https://example.com/entry.png"
-	name := "entry-" + uuid.NewString()
-	pdbID := pdbIDForE2ETest()
-	sequenceArtifactID := uuid.New()
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "independent-revision-owner", 8101)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	entryID := uuid.New()
+	entryArtifactID := uuid.New()
 	modelID := uuid.New()
 	modelArtifactID := uuid.New()
-	runID := uuid.New()
-	rFreeMetricID := uuid.New()
-	rWorkMetricID := uuid.New()
-
-	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name":                name,
-		"description":         description,
-		"thumbnail_image_url": thumbnailImageURL,
-		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": pdbID},
-			"organism":      "Homo sapiens",
-			"method":        "X-ray crystallography",
-		},
-		"artifacts": []map[string]any{
-			artifactRequest(
-				sequenceArtifactID,
-				"4HHB human deoxyhemoglobin FASTA",
-				"L0",
-				"fasta",
-				"https://www.rcsb.org/fasta/entry/4HHB/download",
-				fastaMetadata,
-			),
-		},
-		"models": []map[string]any{
-			{
-				"id":                  modelID,
-				"name":                "X-ray refinement",
-				"description":         "Refinement against crystallographic density",
-				"thumbnail_image_url": thumbnailImageURL,
-				"primary_artifact_id": modelArtifactID,
-				"metadata": map[string]any{
-					"authors":     authors,
-					"affiliation": affiliation,
-					"purpose":     "Refinement",
-					"model_type":  "Single Conformer",
-				},
-				"artifacts": []map[string]any{
-					artifactRequest(
-						modelArtifactID,
-						"4HHB refined deoxyhemoglobin model",
-						"L2",
-						"cif",
-						"https://www.ebi.ac.uk/pdbe/entry-files/download/4hhb.cif",
-						map[string]any{"authors": authors},
-					),
-				},
-				"runs": []map[string]any{
-					{
-						"id":               runID,
-						"name":             "phenix.refine 1.21.2",
-						"software_name":    "phenix.refine",
-						"software_version": "1.21.2",
-						"command":          "phenix.refine model.cif data.mtz",
-						"artifacts": []map[string]any{
-							{"artifact_id": sequenceArtifactID, "direction": "input"},
-							{"artifact_id": modelArtifactID, "direction": "output"},
-						},
-					},
-				},
-				"metrics": []map[string]any{
-					{"id": rFreeMetricID, "key": "r_free", "value": 0.214},
-					{"id": rWorkMetricID, "key": "r_work", "value": 0.187},
-				},
-			},
-		},
-	}, tokenResponse.AccessToken)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusCreated, resp.StatusCode)
-	body, err := io.ReadAll(resp.Body)
-	s.Require().NoError(err)
-	s.Empty(body)
-
-	entriesResp := getWithToken(s.T(), "/v1/entries", "")
-	defer entriesResp.Body.Close()
-	s.Equal(http.StatusOK, entriesResp.StatusCode)
-
-	var entriesBody httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(entriesResp.Body).Decode(&entriesBody))
-	entry := entryInfoByName(entriesBody.Items, name)
-	s.Require().NotNil(entry)
-	s.NotEqual(uuid.Nil, entry.Id)
-	s.Equal(creatorID, entry.CreatedBy)
-	s.Require().NotNil(entry.Description)
-	s.Equal(description, *entry.Description)
-	s.Require().NotNil(entry.ThumbnailImageUrl)
-	s.Equal(thumbnailImageURL, *entry.ThumbnailImageUrl)
-
-	entryPath := "/v1/entries/" + entry.Id.String()
-	entryResp := getWithToken(s.T(), entryPath, "")
-	defer entryResp.Body.Close()
-	s.Equal(http.StatusOK, entryResp.StatusCode)
-
-	var entryBody httpapi.Entry
-	s.Require().NoError(json.NewDecoder(entryResp.Body).Decode(&entryBody))
-	s.Equal(entry.Id, entryBody.Id)
-	s.Equal("Homo sapiens", entryBody.Metadata["organism"])
-	s.Require().Len(entryBody.ProteinSequences, 2)
-	s.Equal(sequenceArtifactID, entryBody.ProteinSequences[0].SourceArtifactId)
-	s.Contains(entryBody.ProteinSequences[0].Sequence, "VLSPADKTNVKAAWGKVGAHAGEYGAEALERM")
-
-	artifactsResp := getWithToken(s.T(), entryPath+"/artifacts", "")
-	defer artifactsResp.Body.Close()
-	s.Equal(http.StatusOK, artifactsResp.StatusCode)
-
-	var artifactsBody httpapi.ArtifactListResponse
-	s.Require().NoError(json.NewDecoder(artifactsResp.Body).Decode(&artifactsBody))
-	s.Require().Len(artifactsBody.Items, 1)
-	sequenceArtifact := artifactByID(artifactsBody.Items, sequenceArtifactID)
-	s.Require().NotNil(sequenceArtifact)
-	s.Equal(httpapi.L0, sequenceArtifact.Level)
-	s.Require().NotNil(sequenceArtifact.Format)
-	s.Equal("fasta", *sequenceArtifact.Format)
-
-	modelsResp := getWithToken(s.T(), entryPath+"/models", "")
-	defer modelsResp.Body.Close()
-	s.Equal(http.StatusOK, modelsResp.StatusCode)
-
-	var modelsBody httpapi.ModelListResponse
-	s.Require().NoError(json.NewDecoder(modelsResp.Body).Decode(&modelsBody))
-	s.Require().Len(modelsBody.Items, 1)
-	s.Equal(modelID, modelsBody.Items[0].Id)
-	s.Equal("X-ray refinement", modelsBody.Items[0].Name)
-	s.Equal(creatorID, modelsBody.Items[0].CreatedBy)
-	s.Require().NotNil(modelsBody.Items[0].PrimaryArtifactId)
-	s.Equal(modelArtifactID, *modelsBody.Items[0].PrimaryArtifactId)
-	s.Require().NotNil(metricByKey(modelsBody.Items[0].Metrics, "r_free"))
-
-	modelResp := getWithToken(s.T(), entryPath+"/models/"+modelID.String(), "")
-	defer modelResp.Body.Close()
-	s.Equal(http.StatusOK, modelResp.StatusCode)
-
-	var modelBody httpapi.Model
-	s.Require().NoError(json.NewDecoder(modelResp.Body).Decode(&modelBody))
-	s.Equal(modelID, modelBody.Id)
-	s.Equal(authors[0], modelBody.Metadata["authors"].([]any)[0])
-	s.Require().NotNil(metricByKey(modelBody.Metrics, "r_work"))
-
-	modelArtifactsResp := getWithToken(s.T(), entryPath+"/models/"+modelID.String()+"/artifacts", "")
-	defer modelArtifactsResp.Body.Close()
-	s.Equal(http.StatusOK, modelArtifactsResp.StatusCode)
-
-	var modelArtifactsBody httpapi.ModelArtifactListResponse
-	s.Require().NoError(json.NewDecoder(modelArtifactsResp.Body).Decode(&modelArtifactsBody))
-	s.Require().NotNil(artifactByID(modelArtifactsBody.Items, modelArtifactID))
-	s.Require().NotNil(runByID(modelArtifactsBody.Runs, runID))
-	s.True(runArtifactLinkExists(modelArtifactsBody.Relations, runID, sequenceArtifactID, httpapi.Input))
-	s.True(runArtifactLinkExists(modelArtifactsBody.Relations, runID, modelArtifactID, httpapi.Output))
-}
-
-func (s *EntriesSuite) Test_should_filter_entries_by_pdb_id_reference() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "entry-pdb-filter-token")
-	matchedName := "entry-pdb-filter-matched-" + uuid.NewString()
-	unmatchedName := "entry-pdb-filter-unmatched-" + uuid.NewString()
-	matchedPDBID := pdbIDForE2ETest()
-	unmatchedPDBID := pdbIDForE2ETest()
-	matchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name": matchedName,
-		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": matchedPDBID},
-		},
-	}, token)
-	defer matchedResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, matchedResp.StatusCode)
-	unmatchedResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name": unmatchedName,
-		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": unmatchedPDBID},
-		},
-	}, token)
-	defer unmatchedResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, unmatchedResp.StatusCode)
-
-	// when
-	resp := getWithToken(s.T(), "/v1/entries?pdb_id="+strings.ToLower(matchedPDBID), "")
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusOK, resp.StatusCode)
-	var body httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	matched := entryInfoByName(body.Items, matchedName)
-	s.Require().NotNil(matched)
-	s.Nil(entryInfoByName(body.Items, unmatchedName))
-	s.Require().NotNil(matched.Metadata)
-	externalRefs, ok := (*matched.Metadata)["external_refs"].(map[string]any)
-	s.Require().True(ok)
-	s.Equal(matchedPDBID, externalRefs["pdb"])
-}
-
-func (s *EntriesSuite) Test_should_return_409_when_active_pdb_id_reference_already_exists() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "entry-pdb-conflict-token")
-	pdbID := pdbIDForE2ETest()
-	firstResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name": "entry-pdb-conflict-first-" + uuid.NewString(),
-		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": pdbID},
-		},
-	}, token)
-	defer firstResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, firstResp.StatusCode)
-
-	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name": "entry-pdb-conflict-second-" + uuid.NewString(),
-		"metadata": map[string]any{
-			"external_refs": map[string]string{"pdb": strings.ToLower(pdbID)},
-		},
-	}, token)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusConflict, resp.StatusCode)
-	var body httpapi.Error
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal("ENTRY_PDB_REF_EXISTS", body.Code)
-}
-
-func pdbIDForE2ETest() string {
-	return "1" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))[:3]
-}
-
-func (s *EntriesSuite) Test_should_filter_entries_when_search_text_matches_revisions_or_sequence() {
-	// given
-	githubClient.On("GetUser", mock.Anything, "gh-token").
-		Return(github.User{ID: 4202, Login: "search-creator", Name: "Search Creator", Email: "search@example.com"}, nil)
-	githubClient.On("ListOrgs", mock.Anything, "gh-token").
-		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
-
-	tokenResponse := issueTokenForTest(s.T(), "gh-token")
-	entrySearchToken := "crambin-" + uuid.NewString()
-	modelSearchToken := "qfit-" + uuid.NewString()
-	affiliationSearchToken := "metadata-lab-" + uuid.NewString()
-	proteinSequence := proteinSequenceTokenForTest(uuid.New())
-	entryName := "entry " + entrySearchToken
-
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"name": entryName,
-		"artifacts": []map[string]any{
-			artifactRequest(uuid.New(), "Protein FASTA", "L0", "fasta", "https://files.example/protein.fasta", map[string]any{
-				"records": []map[string]any{{"header": "search protein", "sequence": "M" + proteinSequence + "K"}},
-			}),
-		},
-		"models": []map[string]any{
-			{
-				"name": "refinement " + modelSearchToken,
-				"metadata": map[string]any{
-					"authors":     []string{"Search Author"},
-					"affiliation": "Open metadata institute " + affiliationSearchToken,
-				},
-			},
-		},
-	}, tokenResponse.AccessToken)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	queries := []string{
-		entrySearchToken,
-		modelSearchToken,
-		affiliationSearchToken,
-		strings.ToLower(proteinSequence),
-	}
-
-	for _, query := range queries {
-		// when
-		searchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(query), "")
-		defer searchResp.Body.Close()
-
-		// then
-		s.Equal(http.StatusOK, searchResp.StatusCode)
-		var searchBody httpapi.EntryListResponse
-		s.Require().NoError(json.NewDecoder(searchResp.Body).Decode(&searchBody))
-		s.Require().NotNil(entryInfoByName(searchBody.Items, entryName))
-	}
-
-	// when
-	missingResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape("missing-"+entrySearchToken), "")
-	defer missingResp.Body.Close()
-
-	// then
-	s.Equal(http.StatusOK, missingResp.StatusCode)
-	var missingBody httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(missingResp.Body).Decode(&missingBody))
-	s.Nil(entryInfoByName(missingBody.Items, entryName))
-}
-
-func (s *EntriesSuite) Test_should_return_401_when_create_entry_called_without_token() {
-	// given
-
-	// when
-	resp := postJSON(s.T(), "/v1/entries", map[string]string{"name": "unauthorized-entry"})
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusUnauthorized, resp.StatusCode)
-}
-
-func (s *EntriesSuite) Test_should_return_entry_when_get_entry_called() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "entry-get-token")
-	entryID := uuid.New()
-	description := "Entry loaded by id"
-	thumbnailURL := "https://example.com/entry-get.png"
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":                  entryID,
-		"name":                "entry-get-" + uuid.NewString(),
-		"description":         description,
-		"thumbnail_image_url": thumbnailURL,
-		"metadata":            map[string]any{"space_group": "P 21 21 21"},
-	}, token)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusOK, resp.StatusCode)
-	var body httpapi.Entry
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(entryID, body.Id)
-	s.Require().NotNil(body.Description)
-	s.Equal(description, *body.Description)
-	s.Require().NotNil(body.ThumbnailImageUrl)
-	s.Equal(thumbnailURL, *body.ThumbnailImageUrl)
-	s.Equal("P 21 21 21", body.Metadata["space_group"])
-}
-
-func (s *EntriesSuite) Test_should_return_404_when_get_entry_misses() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "entry-missing-token")
-
-	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString(), token)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusNotFound, resp.StatusCode)
-	assertErrorResponse(s.T(), resp, "NOT_FOUND", "entry not found")
-}
-
-func (s *EntriesSuite) Test_should_return_model_when_get_model_called() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "model-get-token")
-	entryID := uuid.New()
-	modelID := uuid.New()
 	metricID := uuid.New()
-	description := "Model loaded by id"
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":   entryID,
-		"name": "entry-with-model-" + uuid.NewString(),
-		"models": []map[string]any{
-			{
-				"id":          modelID,
-				"name":        "model loaded by id",
-				"description": description,
-				"metrics":     []map[string]any{{"id": metricID, "key": "r_free", "value": 0.231}},
+	runID := uuid.New()
+
+	// when
+	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"id": entryID, "name": "independent entry",
+			"artifacts": []map[string]any{
+				artifactRequest(entryArtifactID, "entry FASTA", "L0", "fasta", "s3://entry/sequence.fasta", map[string]any{
+					"records": []map[string]any{{"header": "entry", "sequence": "MACDEFGHIK"}},
+				}),
 			},
 		},
-	}, token)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusOK, resp.StatusCode)
-	var body httpapi.Model
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-	s.Equal(modelID, body.Id)
-	s.Equal(entryID, body.EntryId)
-	s.Require().NotNil(body.Description)
-	s.Equal(description, *body.Description)
-	metric := metricByKey(body.Metrics, "r_free")
-	s.Require().NotNil(metric)
-	s.Equal(metricID, metric.Id)
-	s.InDelta(0.231, metric.Value, 0.0001)
-}
-
-func (s *EntriesSuite) Test_should_return_404_when_get_model_misses() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "model-missing-token")
-
-	// when
-	resp := getWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models/"+uuid.NewString(), token)
-	defer resp.Body.Close()
+		"model_operations": []map[string]any{{
+			"op": "add",
+			"data": map[string]any{
+				"model_id": modelID, "name": "independent model", "primary_artifact_id": modelArtifactID,
+				"artifacts": []map[string]any{
+					artifactRequest(modelArtifactID, "model coordinates", "L2", "cif", "s3://model/model.cif", nil),
+				},
+				"metrics": []map[string]any{{"id": metricID, "key": "r_free", "value": 0.21}},
+				"runs": []map[string]any{{
+					"id": runID, "name": "refinement",
+					"artifacts": []map[string]any{
+						{"artifact_id": entryArtifactID, "direction": "input"},
+						{"artifact_id": modelArtifactID, "direction": "output"},
+					},
+				}},
+			},
+		}},
+	})
 
 	// then
-	s.Equal(http.StatusNotFound, resp.StatusCode)
-	assertErrorResponse(s.T(), resp, "NOT_FOUND", "model not found")
+	s.Equal(entryID, entry.EntryId)
+	s.Require().Len(entry.ModelResults, 1)
+	createdModel := entry.ModelResults[0]
+	s.Equal(httpapi.ModelOperationResultOpAdd, createdModel.Op)
+	s.Equal(modelID, createdModel.ModelId)
+	activateEntryRevisionForTest(s.T(), ownerToken, ownerID, entry)
+	publicModelBeforeActivation := getWithToken(s.T(), fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
+	s.Equal(http.StatusNotFound, publicModelBeforeActivation.StatusCode)
+	s.Require().NoError(publicModelBeforeActivation.Body.Close())
+
+	userModelPath := fmt.Sprintf(
+		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
+		ownerID, entryID, modelID, createdModel.ModelRevisionId,
+	)
+	pending := getModelRevisionForTest(s.T(), userModelPath, ownerToken)
+	s.Equal(httpapi.RevisionStatePending, pending.State)
+	s.Equal(httpapi.ModelStateActive, pending.ModelState)
+	submitted := updateModelRevisionStateForTest(s.T(), userModelPath, ownerToken, "in_review")
+	s.Equal(httpapi.RevisionStateInReview, submitted.State)
+
+	adminModelPath := fmt.Sprintf(
+		"/v1/entries/%s/models/%s/revisions/%s",
+		entryID, modelID, createdModel.ModelRevisionId,
+	)
+	active := updateModelRevisionStateForTest(s.T(), adminModelPath, adminToken, "active")
+	s.Equal(httpapi.RevisionStateActive, active.State)
+	s.Equal(httpapi.ModelStateActive, active.ModelState)
+
+	publicEntry := getEntryForTest(s.T(), entryID)
+	s.Equal(ownerID, publicEntry.CreatedBy)
+	s.Require().Len(publicEntry.ProteinSequences, 1)
+	s.Equal(entryArtifactID, publicEntry.ProteinSequences[0].SourceArtifactId)
+	model := getModelForTest(s.T(), entryID, modelID)
+	s.Equal("independent model", model.Name)
+	s.Require().NotNil(metricByKey(model.Metrics, "r_free"))
+
+	artifactsResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/entries/%s/models/%s/artifacts", entryID, modelID), "",
+	)
+	artifacts := decodeJSONResponse[httpapi.ModelArtifactListResponse](s.T(), artifactsResponse, http.StatusOK)
+	s.Require().NotNil(artifactByID(artifacts.Items, modelArtifactID))
+	s.Require().NotNil(runByID(artifacts.Runs, runID))
+	s.True(runArtifactLinkExists(artifacts.Relations, runID, entryArtifactID, httpapi.Input))
+	s.True(runArtifactLinkExists(artifacts.Relations, runID, modelArtifactID, httpapi.Output))
 }
 
-func (s *EntriesSuite) Test_should_delete_entry_when_caller_is_creator() {
+func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_revision_activated() {
 	// given
-	token := issueEntryTokenForTest(s.T(), "entry-delete-owner-token")
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "protein-model-owner", 8102)
 	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "protein model entry"},
+	})
 	modelID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":        entryID,
-		"name":      "entry-delete-owner-" + uuid.NewString(),
-		"artifacts": []map[string]any{artifactRequest(uuid.New(), "entry artifact", "L0", "mtz", "s3://entry/data.mtz", nil)},
-		"models":    []map[string]any{{"id": modelID, "name": "model removed with entry"}},
-	}, token)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
+	initialArtifactID := uuid.New()
+	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
+		"model": map[string]any{
+			"id": modelID, "name": "protein model",
+			"artifacts": []map[string]any{
+				artifactRequest(initialArtifactID, "initial FASTA", "L2", "fasta", "s3://model/initial.fasta", map[string]any{
+					"records": []map[string]any{{"header": "initial", "sequence": "MACDEFGHIK"}},
+				}),
+			},
+		},
+	})
+	initialEntry := getEntryForTest(s.T(), entryID)
+	s.Require().Len(initialEntry.ProteinSequences, 1)
+	initialSequenceID := initialEntry.ProteinSequences[0].Id
 
 	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer deleteResp.Body.Close()
+	renamed := createAndActivateModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
+		"model": map[string]any{"name": "renamed protein model"},
+	})
+	entryAfterRename := getEntryForTest(s.T(), entryID)
+	replacementArtifactID := uuid.New()
+	replaced := createAndActivateModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
+		"model": map[string]any{
+			"artifacts": []map[string]any{
+				artifactRequest(replacementArtifactID, "replacement FASTA", "L2", "fasta", "s3://model/replacement.fasta", map[string]any{
+					"records": []map[string]any{{"header": "replacement", "sequence": "MNPQRSTVWY"}},
+				}),
+			},
+		},
+	})
+	entryAfterReplacement := getEntryForTest(s.T(), entryID)
+	deleteResponse := postJSONWithToken(
+		s.T(), fmt.Sprintf("/v1/entries/%s/models/%s/revisions", entryID, modelID), map[string]any{
+			"model": map[string]any{"state": "deleted"},
+		}, ownerToken)
+	entryAfterRejectedDeletion := getEntryForTest(s.T(), entryID)
 
 	// then
-	s.Equal(http.StatusNoContent, deleteResp.StatusCode)
-	body, err := io.ReadAll(deleteResp.Body)
-	s.Require().NoError(err)
-	s.Empty(body)
+	s.NotEqual(renamed.RevisionId, replaced.RevisionId)
+	s.Require().Len(entryAfterRename.ProteinSequences, 1)
+	s.Equal(initialSequenceID, entryAfterRename.ProteinSequences[0].Id)
+	s.Require().Len(entryAfterReplacement.ProteinSequences, 1)
+	s.NotEqual(initialSequenceID, entryAfterReplacement.ProteinSequences[0].Id)
+	s.Equal(replacementArtifactID, entryAfterReplacement.ProteinSequences[0].SourceArtifactId)
+	s.Equal("MNPQRSTVWY", entryAfterReplacement.ProteinSequences[0].Sequence)
+	assertErrorResponse(s.T(), deleteResponse, "BAD_REQUEST", "revision field \"state\" is not allowed")
+	s.Require().Len(entryAfterRejectedDeletion.ProteinSequences, 1)
+	s.Equal(replacementArtifactID, entryAfterRejectedDeletion.ProteinSequences[0].SourceArtifactId)
+	s.Equal("renamed protein model", getModelForTest(s.T(), entryID, modelID).Name)
+}
 
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusNotFound, getEntryResp.StatusCode)
+func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisions() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-owner", 8110)
+	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-contributor", 8111)
+	contributorID := tokenUserIDForTest(s.T(), contributorToken)
+	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "shared entry"},
+	})
+	modelID := uuid.New()
+	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
+		"model": map[string]any{"id": modelID, "name": "shared model"},
+	})
 
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
-	defer getModelResp.Body.Close()
-	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
+	// when
+	entryRevision := createEntryRevisionForTest(s.T(), contributorToken, entryID, map[string]any{
+		"entry": map[string]any{"description": "contributed entry revision"},
+	})
+	modelRevision := createModelRevisionForTest(s.T(), contributorToken, entryID, modelID, map[string]any{
+		"model": map[string]any{"description": "contributed model revision"},
+	})
+	newModelRevision := createModelForTest(s.T(), contributorToken, entryID, map[string]any{
+		"model": map[string]any{"name": "contributed model"},
+	})
+	deleteEntryResponse := postJSONWithToken(
+		s.T(), "/v1/entries/"+entryID.String()+"/revisions",
+		map[string]any{"entry": map[string]any{"state": "deleted"}}, contributorToken,
+	)
+	response := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", contributorID), contributorToken,
+	)
+	groups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), response, http.StatusOK)
 
-	listModelsResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models", token)
-	defer listModelsResp.Body.Close()
-	s.Equal(http.StatusOK, listModelsResp.StatusCode)
-	var listModelsBody httpapi.ModelListResponse
-	s.Require().NoError(json.NewDecoder(listModelsResp.Body).Decode(&listModelsBody))
-	s.Empty(listModelsBody.Items)
+	// then
+	item := entryRevisionGroupByEntryID(groups.Items, entryID)
+	s.Require().NotNil(item)
+	s.True(entryRevisionSummaryContainsID(item.EntryRevisions, entryRevision.RevisionId))
+	s.True(modelRevisionSummaryContainsID(item.ModelRevisions, modelRevision.RevisionId))
+	s.True(modelRevisionSummaryContainsID(item.ModelRevisions, newModelRevision.RevisionId))
+	assertErrorResponse(s.T(), deleteEntryResponse, "BAD_REQUEST", "revision field \"state\" is not allowed")
+}
 
-	modelArtifactsResp := getWithToken(
-		s.T(),
-		"/v1/entries/"+entryID.String()+"/models/"+modelID.String()+"/artifacts",
+func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_independent() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "separate-lifecycle-owner", 8103)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "original entry"},
+	})
+	modelID := uuid.New()
+	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
+		"model": map[string]any{"id": modelID, "name": "original model"},
+	})
+	modelRevision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
+		"model": map[string]any{"name": "updated model"},
+	})
+	modelUserPath := fmt.Sprintf(
+		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
+		ownerID, entryID, modelID, modelRevision.RevisionId,
+	)
+	updateModelRevisionStateForTest(s.T(), modelUserPath, ownerToken, "in_review")
+	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
+		"entry": map[string]any{"name": "updated entry"},
+	})
+
+	// when
+	activateEntryRevisionForTest(s.T(), ownerToken, ownerID, entryRevision)
+	pendingModel := getModelRevisionForTest(s.T(), modelUserPath, ownerToken)
+
+	// then
+	s.Equal("updated entry", getEntryForTest(s.T(), entryID).Name)
+	s.Equal("original model", getModelForTest(s.T(), entryID, modelID).Name)
+	s.Equal(httpapi.RevisionStateInReview, pendingModel.State)
+
+	adminModelPath := fmt.Sprintf(
+		"/v1/entries/%s/models/%s/revisions/%s",
+		entryID, modelID, modelRevision.RevisionId,
+	)
+	updateModelRevisionStateForTest(s.T(), adminModelPath, adminToken, "active")
+	s.Equal("updated model", getModelForTest(s.T(), entryID, modelID).Name)
+}
+
+func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "revision-group-owner", 8104)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "revision-group-other", 8105)
+	otherID := tokenUserIDForTest(s.T(), otherToken)
+	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "revision group entry"},
+	})
+	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
+		"entry": map[string]any{"description": "pending entry change"},
+	})
+	modelRevision := createModelForTest(s.T(), ownerToken, entryID, map[string]any{
+		"model": map[string]any{"id": uuid.New(), "name": "pending model"},
+	})
+
+	// when
+	userResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", ownerID), ownerToken,
+	)
+	userGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), userResponse, http.StatusOK)
+	adminResponse := getWithToken(s.T(), "/v1/entries/revisions?state=pending", adminToken)
+	adminGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), adminResponse, http.StatusOK)
+	otherResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=pending", otherID), otherToken,
+	)
+	otherGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), otherResponse, http.StatusOK)
+
+	// then
+	userItem := entryRevisionGroupByEntryID(userGroups.Items, entryID)
+	s.Require().NotNil(userItem)
+	s.True(entryRevisionSummaryContainsID(userItem.EntryRevisions, entryRevision.RevisionId))
+	s.True(modelRevisionSummaryContainsID(userItem.ModelRevisions, modelRevision.RevisionId))
+	adminItem := entryRevisionGroupByEntryID(adminGroups.Items, entryID)
+	s.Require().NotNil(adminItem)
+	s.True(entryRevisionSummaryContainsID(adminItem.EntryRevisions, entryRevision.RevisionId))
+	s.True(modelRevisionSummaryContainsID(adminItem.ModelRevisions, modelRevision.RevisionId))
+	s.Nil(entryRevisionGroupByEntryID(otherGroups.Items, entryID))
+
+	forbiddenResponse := getWithToken(s.T(), "/v1/entries/revisions?state=pending", ownerToken)
+	s.Equal(http.StatusForbidden, forbiddenResponse.StatusCode)
+	s.Require().NoError(forbiddenResponse.Body.Close())
+	missingStateResponse := getWithToken(s.T(), "/v1/entries/revisions", adminToken)
+	s.Equal(http.StatusBadRequest, missingStateResponse.StatusCode)
+	s.Require().NoError(missingStateResponse.Body.Close())
+}
+
+func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_changing_active_model() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-rejection-owner", 8106)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	entryID := uuid.New()
+	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"id": entryID, "name": "model rejection entry"},
+	})
+	modelID := uuid.New()
+	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
+		"model": map[string]any{"id": modelID, "name": "active model"},
+	})
+	revision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
+		"model": map[string]any{"name": "proposed model"},
+	})
+	userPath := fmt.Sprintf(
+		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
+		ownerID, entryID, modelID, revision.RevisionId,
+	)
+	adminPath := fmt.Sprintf(
+		"/v1/entries/%s/models/%s/revisions/%s",
+		entryID, modelID, revision.RevisionId,
+	)
+	updateModelRevisionStateForTest(s.T(), userPath, ownerToken, "in_review")
+
+	// when
+	rejected := updateModelRevisionStateForTest(s.T(), adminPath, adminToken, "rejected")
+	resubmitted := updateModelRevisionStateForTest(s.T(), userPath, ownerToken, "in_review")
+	active := updateModelRevisionStateForTest(s.T(), adminPath, adminToken, "active")
+
+	// then
+	s.Equal(httpapi.RevisionStateRejected, rejected.State)
+	s.Equal(httpapi.RevisionStateInReview, resubmitted.State)
+	s.Equal(httpapi.RevisionStateActive, active.State)
+	s.Equal("proposed model", getModelForTest(s.T(), entryID, modelID).Name)
+}
+
+func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentication() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "invalid-create-owner", 8107)
+
+	// when
+	oldShapeResponse := postJSONWithToken(s.T(), "/v1/entries", map[string]any{"name": "old shape"}, ownerToken)
+	unauthenticatedResponse := postJSON(s.T(), "/v1/entries", map[string]any{
+		"entry": map[string]any{"name": "no token"},
+	})
+
+	// then
+	s.Equal(http.StatusBadRequest, oldShapeResponse.StatusCode)
+	assertErrorResponse(s.T(), oldShapeResponse, "BAD_REQUEST", "entry name is required")
+	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
+	s.Require().NoError(unauthenticatedResponse.Body.Close())
+}
+
+func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionResponse {
+	t.Helper()
+	response := postJSONWithToken(t, "/v1/entries", request, token)
+	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
+}
+
+func createAndActivateEntryForTest(
+	t *testing.T,
+	ownerToken string,
+	request map[string]any,
+) httpapi.CreateEntryRevisionResponse {
+	t.Helper()
+	created := createEntryForTest(t, ownerToken, request)
+	activateEntryRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	return created
+}
+
+func activateEntryRevisionForTest(
+	t *testing.T,
+	ownerToken string,
+	ownerID uuid.UUID,
+	created httpapi.CreateEntryRevisionResponse,
+) {
+	t.Helper()
+	userPath := fmt.Sprintf(
+		"/v1/users/%s/entries/%s/revisions/%s",
+		ownerID, created.EntryId, created.RevisionId,
+	)
+	updateEntryRevisionStateForTest(t, userPath, ownerToken, "in_review")
+	adminPath := fmt.Sprintf("/v1/entries/%s/revisions/%s", created.EntryId, created.RevisionId)
+	updateEntryRevisionStateForTest(t, adminPath, adminToken, "active")
+}
+
+func createEntryRevisionForTest(
+	t *testing.T,
+	token string,
+	entryID uuid.UUID,
+	request map[string]any,
+) httpapi.CreateEntryRevisionResponse {
+	t.Helper()
+	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/revisions", request, token)
+	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
+}
+
+func createModelForTest(
+	t *testing.T,
+	token string,
+	entryID uuid.UUID,
+	request map[string]any,
+) httpapi.CreateModelRevisionResponse {
+	t.Helper()
+	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/models", request, token)
+	return decodeJSONResponse[httpapi.CreateModelRevisionResponse](t, response, http.StatusCreated)
+}
+
+func createAndActivateModelForTest(
+	t *testing.T,
+	ownerToken string,
+	entryID uuid.UUID,
+	request map[string]any,
+) httpapi.CreateModelRevisionResponse {
+	t.Helper()
+	created := createModelForTest(t, ownerToken, entryID, request)
+	activateModelRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	return created
+}
+
+func createModelRevisionForTest(
+	t *testing.T,
+	token string,
+	entryID, modelID uuid.UUID,
+	request map[string]any,
+) httpapi.CreateModelRevisionResponse {
+	t.Helper()
+	response := postJSONWithToken(
+		t,
+		fmt.Sprintf("/v1/entries/%s/models/%s/revisions", entryID, modelID),
+		request,
 		token,
 	)
-	defer modelArtifactsResp.Body.Close()
-	s.Equal(http.StatusNotFound, modelArtifactsResp.StatusCode)
+	return decodeJSONResponse[httpapi.CreateModelRevisionResponse](t, response, http.StatusCreated)
 }
 
-func (s *EntriesSuite) Test_should_add_model_to_existing_entry() {
-	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "model-add-owner-token")
-	entryID := uuid.New()
-	baselineArtifactID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id":        entryID,
-		"name":      "entry-add-model-" + uuid.NewString(),
-		"artifacts": []map[string]any{artifactRequest(baselineArtifactID, "baseline data", "L0", "mtz", "s3://entry/data.mtz", nil)},
-	}, ownerToken)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-add-contributor-token", 8110)
-	contributorID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(contributorToken)
-	s.Require().NoError(err)
-	modelID := uuid.New()
-	modelArtifactID := uuid.New()
-	runID := uuid.New()
-	metricID := uuid.New()
-
-	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models", map[string]any{
-		"id":                  modelID,
-		"name":                "added refinement",
-		"description":         "Added to an entry that already existed",
-		"primary_artifact_id": modelArtifactID,
-		"artifacts": []map[string]any{
-			artifactRequest(modelArtifactID, "added model artifact", "L2", "cif", "s3://model/model.cif", nil),
-		},
-		"runs": []map[string]any{
-			{
-				"id":            runID,
-				"name":          "phenix.refine",
-				"software_name": "phenix.refine",
-				"artifacts": []map[string]any{
-					{"artifact_id": baselineArtifactID, "direction": "input"},
-					{"artifact_id": modelArtifactID, "direction": "output"},
-				},
-			},
-		},
-		"metrics": []map[string]any{{"id": metricID, "key": "r_free", "value": 0.231}},
-	}, contributorToken)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusCreated, resp.StatusCode)
-	body, err := io.ReadAll(resp.Body)
-	s.Require().NoError(err)
-	s.Empty(body)
-
-	modelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), "")
-	defer modelResp.Body.Close()
-	s.Equal(http.StatusOK, modelResp.StatusCode)
-	var modelBody httpapi.Model
-	s.Require().NoError(json.NewDecoder(modelResp.Body).Decode(&modelBody))
-	s.Equal("added refinement", modelBody.Name)
-	s.Equal(contributorID, modelBody.CreatedBy)
-	s.Require().NotNil(metricByKey(modelBody.Metrics, "r_free"))
-
-	artifactsResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String()+"/artifacts", "")
-	defer artifactsResp.Body.Close()
-	s.Equal(http.StatusOK, artifactsResp.StatusCode)
-	var artifactsBody httpapi.ModelArtifactListResponse
-	s.Require().NoError(json.NewDecoder(artifactsResp.Body).Decode(&artifactsBody))
-	s.Require().NotNil(artifactByID(artifactsBody.Items, modelArtifactID))
-	s.Require().NotNil(runByID(artifactsBody.Runs, runID))
-	s.True(runArtifactLinkExists(artifactsBody.Relations, runID, baselineArtifactID, httpapi.Input))
-	s.True(runArtifactLinkExists(artifactsBody.Relations, runID, modelArtifactID, httpapi.Output))
+func createAndActivateModelRevisionForTest(
+	t *testing.T,
+	ownerToken string,
+	entryID, modelID uuid.UUID,
+	request map[string]any,
+) httpapi.CreateModelRevisionResponse {
+	t.Helper()
+	created := createModelRevisionForTest(t, ownerToken, entryID, modelID, request)
+	activateModelRevisionForTest(t, ownerToken, tokenUserIDForTest(t, ownerToken), created)
+	return created
 }
 
-func (s *EntriesSuite) Test_should_return_404_when_adding_model_to_missing_entry() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "model-add-missing-entry-token")
-
-	// when
-	resp := postJSONWithToken(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
-		"name": "model for a missing entry",
-	}, token)
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusNotFound, resp.StatusCode)
-	assertErrorResponse(s.T(), resp, "NOT_FOUND", "entry not found")
+func activateModelRevisionForTest(
+	t *testing.T,
+	ownerToken string,
+	ownerID uuid.UUID,
+	created httpapi.CreateModelRevisionResponse,
+) {
+	t.Helper()
+	userPath := fmt.Sprintf(
+		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
+		ownerID, created.EntryId, created.ModelId, created.RevisionId,
+	)
+	updateModelRevisionStateForTest(t, userPath, ownerToken, "in_review")
+	adminPath := fmt.Sprintf(
+		"/v1/entries/%s/models/%s/revisions/%s",
+		created.EntryId, created.ModelId, created.RevisionId,
+	)
+	updateModelRevisionStateForTest(t, adminPath, adminToken, "active")
 }
 
-func (s *EntriesSuite) Test_should_return_401_when_adding_model_without_token() {
-	// given
-
-	// when
-	resp := postJSON(s.T(), "/v1/entries/"+uuid.NewString()+"/models", map[string]any{
-		"name": "unauthorized model",
-	})
-	defer resp.Body.Close()
-
-	// then
-	s.Equal(http.StatusUnauthorized, resp.StatusCode)
+func updateEntryRevisionStateForTest(
+	t *testing.T,
+	path, token, state string,
+) httpapi.EntryRevision {
+	t.Helper()
+	request := map[string]any{"state": state}
+	response := patchJSONWithToken(t, path, request, token)
+	return decodeJSONResponse[httpapi.EntryRevision](t, response, http.StatusOK)
 }
 
-func (s *EntriesSuite) Test_should_return_400_when_added_model_is_invalid() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "model-add-invalid-token")
-	entryID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id": entryID, "name": "entry-add-model-invalid-" + uuid.NewString(),
-	}, token)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	tests := []struct {
-		name    string
-		request map[string]any
-		message string
-	}{
-		{name: "missing model name", request: map[string]any{"name": "   "}, message: "model name is required"},
-		{name: "nil model id", request: map[string]any{"id": uuid.Nil, "name": "nil model id"}, message: "model id is required"},
-		{
-			name: "nil artifact id",
-			request: map[string]any{
-				"name":      "model with nil artifact",
-				"artifacts": []map[string]any{{"id": uuid.Nil, "name": "artifact", "level": "L2"}},
-			},
-			message: "artifact id is required",
-		},
-		{
-			name: "nil metric id",
-			request: map[string]any{
-				"name":    "model with nil metric",
-				"metrics": []map[string]any{{"id": uuid.Nil, "key": "r_free", "value": 0.2}},
-			},
-			message: "metric id is required",
-		},
-		{
-			name: "nil run id",
-			request: map[string]any{
-				"name": "model with nil run",
-				"runs": []map[string]any{{"id": uuid.Nil, "name": "run"}},
-			},
-			message: "run id is required",
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			// when
-			resp := postJSONWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models", tt.request, token)
-			defer resp.Body.Close()
-
-			// then
-			s.Equal(http.StatusBadRequest, resp.StatusCode)
-			assertErrorResponse(s.T(), resp, "BAD_REQUEST", tt.message)
-		})
-	}
+func updateModelRevisionStateForTest(
+	t *testing.T,
+	path, token, state string,
+) httpapi.ModelRevision {
+	t.Helper()
+	request := map[string]any{"state": state}
+	response := patchJSONWithToken(t, path, request, token)
+	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
 }
 
-func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_entry() {
-	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "entry-delete-forbidden-owner")
-	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-delete-forbidden-other", 8101)
-	entryID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id": entryID, "name": "entry-delete-forbidden-" + uuid.NewString(),
-	}, ownerToken)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String(), otherToken)
-	defer deleteResp.Body.Close()
-
-	// then
-	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), ownerToken)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusOK, getEntryResp.StatusCode)
+func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevision {
+	t.Helper()
+	response := getWithToken(t, path, token)
+	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
 }
 
-func (s *EntriesSuite) Test_should_delete_model_when_caller_is_creator() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "model-delete-owner-token")
-	entryID := uuid.New()
-	modelID := uuid.New()
-	modelArtifactID := uuid.New()
-	searchToken := "modeldelete" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	entryName := "entry-kept-after-model-delete-" + uuid.NewString()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id": entryID, "name": entryName,
-		"models": []map[string]any{
-			{
-				"id":   modelID,
-				"name": "model " + searchToken,
-				"artifacts": []map[string]any{
-					artifactRequest(modelArtifactID, "artifact "+searchToken, "L2", "cif", "s3://model/model.cif", nil),
-				},
-			},
-		},
-	}, token)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
-	defer deleteResp.Body.Close()
-
-	// then
-	s.Equal(http.StatusNoContent, deleteResp.StatusCode)
-	body, err := io.ReadAll(deleteResp.Body)
-	s.Require().NoError(err)
-	s.Empty(body)
-
-	getEntryResp := getWithToken(s.T(), "/v1/entries/"+entryID.String(), token)
-	defer getEntryResp.Body.Close()
-	s.Equal(http.StatusOK, getEntryResp.StatusCode)
-
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), token)
-	defer getModelResp.Body.Close()
-	s.Equal(http.StatusNotFound, getModelResp.StatusCode)
-
-	modelArtifactsResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String()+"/artifacts", token)
-	defer modelArtifactsResp.Body.Close()
-	s.Equal(http.StatusNotFound, modelArtifactsResp.StatusCode)
-
-	searchResp := getWithToken(s.T(), "/v1/entries?query="+url.QueryEscape(searchToken), "")
-	defer searchResp.Body.Close()
-	s.Equal(http.StatusOK, searchResp.StatusCode)
-	var searchBody httpapi.EntryListResponse
-	s.Require().NoError(json.NewDecoder(searchResp.Body).Decode(&searchBody))
-	s.Nil(entryInfoByName(searchBody.Items, entryName))
+func getEntryForTest(t *testing.T, entryID uuid.UUID) httpapi.Entry {
+	t.Helper()
+	response := getWithToken(t, "/v1/entries/"+entryID.String(), "")
+	return decodeJSONResponse[httpapi.Entry](t, response, http.StatusOK)
 }
 
-func (s *EntriesSuite) Test_should_return_403_when_non_creator_deletes_model() {
-	// given
-	ownerToken := issueEntryTokenForTest(s.T(), "model-delete-forbidden-owner")
-	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-delete-forbidden-other", 8102)
-	entryID := uuid.New()
-	modelID := uuid.New()
-	createResp := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"id": entryID, "name": "entry-with-forbidden-model-delete-" + uuid.NewString(),
-		"models": []map[string]any{{"id": modelID, "name": "model kept after forbidden delete"}},
-	}, ownerToken)
-	defer createResp.Body.Close()
-	s.Require().Equal(http.StatusCreated, createResp.StatusCode)
-
-	// when
-	deleteResp := deleteWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), otherToken)
-	defer deleteResp.Body.Close()
-
-	// then
-	s.Equal(http.StatusForbidden, deleteResp.StatusCode)
-	getModelResp := getWithToken(s.T(), "/v1/entries/"+entryID.String()+"/models/"+modelID.String(), ownerToken)
-	defer getModelResp.Body.Close()
-	s.Equal(http.StatusOK, getModelResp.StatusCode)
+func getModelForTest(t *testing.T, entryID, modelID uuid.UUID) httpapi.Model {
+	t.Helper()
+	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
+	return decodeJSONResponse[httpapi.Model](t, response, http.StatusOK)
 }
 
-func (s *EntriesSuite) Test_should_return_400_when_create_entry_graph_is_invalid() {
-	// given
-	token := issueEntryTokenForTest(s.T(), "entry-validation-token")
+func decodeJSONResponse[T any](t *testing.T, response *http.Response, expectedStatus int) T {
+	t.Helper()
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
+	require.Equal(t, expectedStatus, response.StatusCode)
+	var body T
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+	return body
+}
 
-	tests := []struct {
-		name    string
-		request map[string]any
-		message string
-	}{
-		{name: "nil entry id", request: map[string]any{"id": uuid.Nil, "name": "invalid nil id"}, message: "entry id is required"},
-		{
-			name: "empty model name",
-			request: map[string]any{
-				"name": "entry with empty model", "models": []map[string]any{{"name": "   "}},
-			},
-			message: "model name is required",
-		},
-		{
-			name: "nil entry artifact id",
-			request: map[string]any{
-				"name":      "entry with nil artifact",
-				"artifacts": []map[string]any{{"id": uuid.Nil, "name": "artifact", "level": "L0"}},
-			},
-			message: "artifact id is required",
-		},
-		{
-			name: "empty artifact name",
-			request: map[string]any{
-				"name":      "entry with empty artifact",
-				"artifacts": []map[string]any{{"id": uuid.New(), "name": "   ", "level": "L0"}},
-			},
-			message: "artifact name is required",
-		},
-		{
-			name: "nil metric id",
-			request: map[string]any{
-				"name": "entry with nil metric",
-				"models": []map[string]any{{
-					"name": "model", "metrics": []map[string]any{{"id": uuid.Nil, "key": "r_free", "value": 0.2}},
-				}},
-			},
-			message: "metric id is required",
-		},
-		{
-			name: "empty metric key",
-			request: map[string]any{
-				"name": "entry with empty metric key",
-				"models": []map[string]any{{
-					"name": "model", "metrics": []map[string]any{{"id": uuid.New(), "key": "   ", "value": 0.2}},
-				}},
-			},
-			message: "metric key is required",
-		},
-		{
-			name: "nil run id",
-			request: map[string]any{
-				"name":   "entry with nil run",
-				"models": []map[string]any{{"name": "model", "runs": []map[string]any{{"id": uuid.Nil, "name": "run"}}}},
-			},
-			message: "run id is required",
-		},
-		{
-			name: "empty run name",
-			request: map[string]any{
-				"name":   "entry with empty run",
-				"models": []map[string]any{{"name": "model", "runs": []map[string]any{{"id": uuid.New(), "name": "   "}}}},
-			},
-			message: "run name is required",
-		},
-		{
-			name: "nil run artifact id",
-			request: map[string]any{
-				"name": "entry with nil run artifact",
-				"models": []map[string]any{{
-					"name": "model",
-					"runs": []map[string]any{{
-						"id": uuid.New(), "name": "run",
-						"artifacts": []map[string]any{{"artifact_id": uuid.Nil, "direction": "input"}},
-					}},
-				}},
-			},
-			message: "run artifact artifact_id is required",
-		},
-		{
-			name: "empty run artifact direction",
-			request: map[string]any{
-				"name": "entry with empty run direction",
-				"models": []map[string]any{{
-					"name": "model",
-					"runs": []map[string]any{{
-						"id": uuid.New(), "name": "run",
-						"artifacts": []map[string]any{{"artifact_id": uuid.New(), "direction": ""}},
-					}},
-				}},
-			},
-			message: "run artifact direction is required",
-		},
-		{
-			name: "invalid entry metadata",
-			request: map[string]any{
-				"name": "entry with invalid metadata", "metadata": map[string]any{"resolution": "not-a-number"},
-			},
-			message: "decode entry metadata",
-		},
-		{
-			name: "invalid model metadata",
-			request: map[string]any{
-				"name":   "entry with invalid model metadata",
-				"models": []map[string]any{{"name": "model", "metadata": map[string]any{"atom_count": "not-a-number"}}},
-			},
-			message: "decode model metadata",
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			// when
-			resp := postJSONWithToken(s.T(), "/v1/entries", tt.request, token)
-			defer resp.Body.Close()
-
-			// then
-			s.Equal(http.StatusBadRequest, resp.StatusCode)
-			assertErrorResponse(s.T(), resp, "BAD_REQUEST", tt.message)
-		})
-	}
+func tokenUserIDForTest(t *testing.T, token string) uuid.UUID {
+	t.Helper()
+	userID, err := auth.NewJWT(testJWTSecret, testJWTIssuer, testJWTTTL).Parse(token)
+	require.NoError(t, err)
+	return userID
 }
 
 func issueEntryTokenForTest(t *testing.T, accessToken string) string {
@@ -891,75 +542,38 @@ func issueEntryTokenForGitHubIDForTest(t *testing.T, accessToken string, githubI
 
 func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenResponse {
 	t.Helper()
-	resp := ExchangeGithubToken(t, accessToken)
-	defer resp.Body.Close()
-
-	var body httpapi.TokenResponse
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	return body
+	response := ExchangeGithubToken(t, accessToken)
+	return decodeJSONResponse[httpapi.TokenResponse](t, response, http.StatusOK)
 }
 
-func readFastaMetadataForTest(t *testing.T, filePath string) map[string]any {
-	t.Helper()
-	body, err := os.ReadFile(filePath)
-	require.NoError(t, err)
-
-	records := make([]map[string]any, 0, 2)
-	var sequence strings.Builder
-	var header string
-	var pdbID string
-
-	appendRecord := func() {
-		if sequence.Len() == 0 {
-			return
-		}
-		records = append(records, map[string]any{"header": header, "sequence": sequence.String()})
-		sequence.Reset()
-	}
-
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, ">") {
-			appendRecord()
-			header = strings.TrimSpace(strings.TrimPrefix(line, ">"))
-			if pdbID == "" {
-				fields := strings.Fields(header)
-				require.NotEmpty(t, fields)
-				pdbID = strings.Split(fields[0], "_")[0]
-			}
-			continue
-		}
-		sequence.WriteString(line)
-	}
-	appendRecord()
-
-	require.NotEmpty(t, pdbID)
-	require.NotEmpty(t, records)
-	return map[string]any{"pdb_id": pdbID, "records": records, "organism": "Homo sapiens"}
-}
-
-func proteinSequenceTokenForTest(id uuid.UUID) string {
-	const alphabet = "ACDEFGHIKLMNPQRSTVWY"
-
-	var token strings.Builder
-	token.Grow(len(id))
-	for _, value := range id {
-		token.WriteByte(alphabet[int(value)%len(alphabet)])
-	}
-	return token.String()
-}
-
-func entryInfoByName(entries []httpapi.EntryInfo, name string) *httpapi.EntryInfo {
-	for index := range entries {
-		if entries[index].Name == name {
-			return &entries[index]
+func entryRevisionGroupByEntryID(
+	items []httpapi.EntryRevisionGroup,
+	entryID uuid.UUID,
+) *httpapi.EntryRevisionGroup {
+	for index := range items {
+		if items[index].Entry.Id == entryID {
+			return &items[index]
 		}
 	}
 	return nil
+}
+
+func entryRevisionSummaryContainsID(items []httpapi.EntryRevisionSummary, revisionID uuid.UUID) bool {
+	for _, item := range items {
+		if item.Id == revisionID {
+			return true
+		}
+	}
+	return false
+}
+
+func modelRevisionSummaryContainsID(items []httpapi.ModelRevisionSummary, revisionID uuid.UUID) bool {
+	for _, item := range items {
+		if item.Id == revisionID {
+			return true
+		}
+	}
+	return false
 }
 
 func artifactByID(artifacts []httpapi.Artifact, id uuid.UUID) *httpapi.Artifact {
@@ -1022,8 +636,11 @@ func artifactRequest(
 
 func assertErrorResponse(t *testing.T, response *http.Response, code, message string) {
 	t.Helper()
+	defer func() {
+		require.NoError(t, response.Body.Close())
+	}()
 	var body httpapi.Error
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
 	require.Equal(t, code, body.Code)
-	require.Contains(t, body.Message, message)
+	require.Contains(t, strings.ToLower(body.Message), strings.ToLower(message))
 }

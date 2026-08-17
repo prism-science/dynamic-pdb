@@ -20,12 +20,12 @@ import (
 )
 
 type Server struct {
-	githubClient   github.Client
-	fileCDN        cdn.Service
-	authConfig     auth.Config
-	jwt            *auth.JWT
-	database       *db.DB
-	reviewerUserID uuid.UUID
+	githubClient github.Client
+	fileCDN      cdn.Service
+	authConfig   auth.Config
+	jwt          *auth.JWT
+	database     *db.DB
+	adminUserID  uuid.UUID
 }
 
 func NewServer(
@@ -35,25 +35,22 @@ func NewServer(
 	jwt *auth.JWT,
 	database *db.DB,
 ) *Server {
-	// reviewer_user_id is a temporary hardcoded reviewer; an empty or invalid
-	// value leaves it as uuid.Nil, which denies all approve/reject requests.
-	reviewerUserID, err := uuid.Parse(strings.TrimSpace(authConfig.ReviewerUserID))
+	adminUserID, err := uuid.Parse(strings.TrimSpace(authConfig.AdminUserID))
 	if err != nil {
-		reviewerUserID = uuid.Nil
+		adminUserID = uuid.Nil
 	}
 	return &Server{
-		githubClient:   githubClient,
-		fileCDN:        fileCDN,
-		authConfig:     authConfig,
-		jwt:            jwt,
-		database:       database,
-		reviewerUserID: reviewerUserID,
+		githubClient: githubClient,
+		fileCDN:      fileCDN,
+		authConfig:   authConfig,
+		jwt:          jwt,
+		database:     database,
+		adminUserID:  adminUserID,
 	}
 }
 
-// isReviewer reports whether the given user is the configured reviewer.
-func (s *Server) isReviewer(user *models.User) bool {
-	return s.reviewerUserID != uuid.Nil && user != nil && user.ID == s.reviewerUserID
+func (s *Server) isAdmin(user *models.User) bool {
+	return s.adminUserID != uuid.Nil && user != nil && user.ID == s.adminUserID
 }
 
 func (s *Server) ExchangeGithubToken(w http.ResponseWriter, r *http.Request) {
