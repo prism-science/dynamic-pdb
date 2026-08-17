@@ -19,13 +19,41 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/entries", request.URL.Path)
 		assert.Equal(t, "Bearer jwt-token", request.Header.Get("Authorization"))
+		var body map[string]any
+		err := json.NewDecoder(request.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"entry": map[string]any{
+				"name": "5amf",
+			},
+			"model_operations": []any{
+				map[string]any{
+					"op": "add",
+					"data": map[string]any{
+						"model_id": "model-1",
+						"name":     "model",
+					},
+				},
+			},
+		}, body)
 		response.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 	client := NewClient(server.URL, "jwt-token")
 
 	// when
-	err := client.CreateEntry(context.Background(), CreateEntryRequest{Name: "5amf"})
+	err := client.CreateEntry(context.Background(), CreateEntryRequest{
+		Entry: CreateEntryData{Name: "5amf"},
+		ModelOperations: []AddModelOperation{
+			{
+				Op: "add",
+				Data: AddModelData{
+					ModelID: ptr("model-1"),
+					Name:    "model",
+				},
+			},
+		},
+	})
 
 	// then
 	require.NoError(t, err)
@@ -70,13 +98,21 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/entries/entry-1/models", request.URL.Path)
 		assert.Equal(t, "Bearer jwt-token", request.Header.Get("Authorization"))
+		var body map[string]any
+		err := json.NewDecoder(request.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"model": map[string]any{
+				"name": "model",
+			},
+		}, body)
 		response.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 	client := NewClient(server.URL, "jwt-token")
 
 	// when
-	err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Name: "model"})
+	err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Name: "model"}})
 
 	// then
 	require.NoError(t, err)
@@ -104,4 +140,8 @@ func Test_should_decode_s3_xml_error_when_upload_part_failed(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, backendError.Status)
 	assert.Equal(t, "RequestTimeout", backendError.Code)
 	assert.Equal(t, "Your socket connection to the server was not read from or written to within the timeout period.", backendError.Message)
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }

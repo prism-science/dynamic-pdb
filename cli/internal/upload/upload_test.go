@@ -43,7 +43,8 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Equal(t, 6, summary.Artifacts)
 	assert.Equal(t, uploadStatePath(manifestPath), summary.StatePath)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	entry := dynamicPDBClient.entries[0]
+	entryRequest := dynamicPDBClient.entries[0]
+	entry := entryRequest.Entry
 	assert.Equal(t, "5AMF", entry.Name)
 	require.NotNil(t, entry.Description)
 	assert.Equal(t, "example structure", *entry.Description)
@@ -60,7 +61,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Len(t, entry.Artifacts, 1)
 	require.NotNil(t, entry.Artifacts[0].URI)
 	assert.Equal(t, "https://www.rcsb.test/fasta/entry/5AMF", *entry.Artifacts[0].URI)
-	assert.Empty(t, entry.Models)
+	assert.Len(t, entryRequest.ModelOperations, 2)
 	models := modelRequests(dynamicPDBClient.models)
 	require.Len(t, models, 2)
 	assert.Equal(t, []string{"Nelson, R.", "Sawaya, M.R."}, models[0].Metadata["authors"])
@@ -249,7 +250,7 @@ func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *test
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Name)
+	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Name)
 	state := readState(t, summary.StatePath)
 	assert.NotEmpty(t, state.Entries["5AMF"].EntryID)
 }
@@ -286,7 +287,7 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 	assert.Equal(t, existingEntryID, dynamicPDBClient.models[0].entryID)
 	state := readState(t, summary.StatePath)
 	assert.Equal(t, existingEntryID, state.Entries["5AMF"].EntryID)
-	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), state.Entries["5AMF"].UploadedModelIDs)
+	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelData{dynamicPDBClient.models[0].model}), state.Entries["5AMF"].UploadedModelIDs)
 }
 
 func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_conflict(t *testing.T) {
@@ -328,7 +329,7 @@ func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_con
 	assert.Equal(t, existingEntryID, dynamicPDBClient.models[0].entryID)
 	state := readState(t, summary.StatePath)
 	assert.Equal(t, existingEntryID, state.Entries["5AMF"].EntryID)
-	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelRequest{dynamicPDBClient.models[0].request}), state.Entries["5AMF"].UploadedModelIDs)
+	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelData{dynamicPDBClient.models[0].model}), state.Entries["5AMF"].UploadedModelIDs)
 }
 
 func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
@@ -356,7 +357,7 @@ func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Name)
+	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Name)
 	updatedState := readState(t, statePath)
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["5AMF"].Status)
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["6ABC"].Status)
@@ -643,7 +644,7 @@ type fakeDynamicPDBClient struct {
 
 type createdModel struct {
 	entryID string
-	request dynamicpdbapi.CreateModelRequest
+	model   dynamicpdbapi.CreateModelData
 }
 
 func (b *fakeDynamicPDBClient) ListEntries(_ context.Context, params dynamicpdbapi.ListEntriesParams) ([]dynamicpdbapi.Entry, error) {
@@ -682,13 +683,33 @@ func (b *fakeDynamicPDBClient) CreateEntry(_ context.Context, request dynamicpdb
 		return b.createEntryError
 	}
 	b.entries = append(b.entries, request)
+	entryID := "entry-id"
+	if request.Entry.ID != nil {
+		entryID = *request.Entry.ID
+	}
+	for _, operation := range request.ModelOperations {
+		b.models = append(b.models, createdModel{
+			entryID: entryID,
+			model: dynamicpdbapi.CreateModelData{
+				ID:                operation.Data.ModelID,
+				Name:              operation.Data.Name,
+				Description:       operation.Data.Description,
+				ThumbnailImageURL: operation.Data.ThumbnailImageURL,
+				Metadata:          operation.Data.Metadata,
+				PrimaryArtifactID: operation.Data.PrimaryArtifactID,
+				Artifacts:         operation.Data.Artifacts,
+				Runs:              operation.Data.Runs,
+				Metrics:           operation.Data.Metrics,
+			},
+		})
+	}
 	return nil
 }
 
 func (b *fakeDynamicPDBClient) CreateModel(_ context.Context, entryID string, request dynamicpdbapi.CreateModelRequest) error {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	b.models = append(b.models, createdModel{entryID: entryID, request: request})
+	b.models = append(b.models, createdModel{entryID: entryID, model: request.Model})
 	return nil
 }
 
@@ -1135,10 +1156,10 @@ func uploadFilenames(uploadRequests []dynamicpdbapi.CreateFileUploadRequest) []s
 	return filenames
 }
 
-func modelRequests(models []createdModel) []dynamicpdbapi.CreateModelRequest {
-	requests := make([]dynamicpdbapi.CreateModelRequest, 0, len(models))
+func modelRequests(models []createdModel) []dynamicpdbapi.CreateModelData {
+	requests := make([]dynamicpdbapi.CreateModelData, 0, len(models))
 	for _, model := range models {
-		requests = append(requests, model.request)
+		requests = append(requests, model.model)
 	}
 	return requests
 }
