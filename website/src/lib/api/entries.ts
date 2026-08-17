@@ -477,9 +477,10 @@ export type RevisionTarget =
       revision_id: string;
     };
 
+/** One row of the queue: always an entry. Everything waiting under it — its own
+ *  revision and each of its model revisions — is decided from that row's card,
+ *  each on its own. */
 export type ReviewQueueItem = {
-  key: string;
-  target: RevisionTarget;
   entry_id: string;
   name: string;
   submitted_at: string;
@@ -505,18 +506,19 @@ export type ModelRevision = ModelRevisionSummary & {
 export type ReviewEntry = EntryRevision;
 export type ReviewModel = ModelRevision;
 
+/** One reviewable thing: the revision waiting for a decision, the published one
+ *  it replaces (null when there is none), and the address to decide it at. */
+export type ReviewPair<T> = {
+  target: RevisionTarget;
+  active: T | null;
+  proposed: T;
+};
+
 export type EntryReview = {
   entry_id: string;
-  target: RevisionTarget;
-  entry: {
-    active: ReviewEntry | null;
-    proposed: ReviewEntry | null;
-  };
-  models: {
-    model_id: string;
-    active: ReviewModel | null;
-    proposed: ReviewModel;
-  }[];
+  name: string;
+  entry: ReviewPair<ReviewEntry> | null;
+  models: (ReviewPair<ReviewModel> & { model_id: string })[];
 };
 
 export type RevisionDecision = "active" | "rejected";
@@ -557,94 +559,103 @@ export async function submitModelRevision(
 }
 
 export async function listReviews(token: string): Promise<ReviewQueueItem[]> {
-  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
-    "/v1/entries/revisions?state=in_review",
-    token,
-  );
-  return response.items
-    .flatMap((group) => [
-      ...group.entry_revisions.map((revision) => ({
-        key: revisionKey("entry", revision.entry_id, revision.id),
-        target: {
-          kind: "entry" as const,
-          entry_id: revision.entry_id,
-          revision_id: revision.id,
-        },
-        entry_id: revision.entry_id,
-        name: group.entry.name,
-        submitted_at: revision.updated_at,
-      })),
-      ...group.model_revisions.map((revision) => ({
-        key: revisionKey("model", revision.entry_id, revision.id),
-        target: {
-          kind: "model" as const,
-          entry_id: revision.entry_id,
-          model_id: revision.model_id,
-          revision_id: revision.id,
-        },
-        entry_id: revision.entry_id,
-        name: group.entry.name,
-        submitted_at: revision.updated_at,
-      })),
-    ])
-    .sort(
-      (left, right) =>
-        new Date(right.submitted_at).getTime() -
-        new Date(left.submitted_at).getTime(),
-    );
+  const groups = await listInReviewGroups(token);
+  return groups
+    .map((group) => ({
+      entry_id: group.entry.id,
+      name: group.entry.name,
+      submitted_at: earliest([
+        ...group.entry_revisions.map((revision) => revision.updated_at),
+        ...group.model_revisions.map((revision) => revision.updated_at),
+      ]),
+    }))
+    .sort((left, right) => left.submitted_at.localeCompare(right.submitted_at));
 }
 
 export async function getEntryReview(
   token: string,
-  target: RevisionTarget,
-): Promise<EntryReview> {
-  if (target.kind === "entry") {
-    const proposed = await getAdminEntryRevision(
-      token,
-      target.entry_id,
-      target.revision_id,
-    );
-    const active = proposed.parent_revision_id
-      ? await getAdminEntryRevision(
-          token,
-          target.entry_id,
-          proposed.parent_revision_id,
-        )
-      : null;
-    return {
-      entry_id: target.entry_id,
-      target,
-      entry: { active, proposed },
-      models: [],
-    };
+  entryId: string,
+): Promise<EntryReview | null> {
+  const groups = await listInReviewGroups(token);
+  const group = groups.find((candidate) => candidate.entry.id === entryId);
+  if (!group) {
+    return null;
   }
 
-  const proposed = await getAdminModelRevision(
+  const [entry, models] = await Promise.all([
+    group.entry_revisions.length > 0
+      ? entryPair(token, entryId, group.entry_revisions[0])
+      : null,
+    Promise.all(
+      group.model_revisions.map((revision) => modelPair(token, revision)),
+    ),
+  ]);
+
+  return { entry_id: entryId, name: group.entry.name, entry, models };
+}
+
+async function entryPair(
+  token: string,
+  entryId: string,
+  summary: EntryRevisionSummary,
+): Promise<ReviewPair<EntryRevision>> {
+  const proposed = await getEntryRevision(token, entryId, summary.id);
+  const active = proposed.parent_revision_id
+    ? await getEntryRevision(token, entryId, proposed.parent_revision_id)
+    : null;
+  return {
+    target: { kind: "entry", entry_id: entryId, revision_id: summary.id },
+    active,
+    proposed,
+  };
+}
+
+async function modelPair(
+  token: string,
+  summary: ModelRevisionSummary,
+): Promise<ReviewPair<ModelRevision> & { model_id: string }> {
+  const proposed = await getModelRevision(
     token,
-    target.entry_id,
-    target.model_id,
-    target.revision_id,
+    summary.entry_id,
+    summary.model_id,
+    summary.id,
   );
   const active = proposed.parent_revision_id
-    ? await getAdminModelRevision(
+    ? await getModelRevision(
         token,
-        target.entry_id,
-        target.model_id,
+        summary.entry_id,
+        summary.model_id,
         proposed.parent_revision_id,
       )
     : null;
   return {
-    entry_id: target.entry_id,
-    target,
-    entry: { active: null, proposed: null },
-    models: [
-      {
-        model_id: target.model_id,
-        active,
-        proposed,
-      },
-    ],
+    model_id: summary.model_id,
+    target: {
+      kind: "model",
+      entry_id: summary.entry_id,
+      model_id: summary.model_id,
+      revision_id: summary.id,
+    },
+    active,
+    proposed,
   };
+}
+
+async function listInReviewGroups(
+  token: string,
+): Promise<EntryRevisionGroup[]> {
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    "/v1/entries/revisions?state=in_review",
+    token,
+  );
+  return response.items;
+}
+
+function earliest(values: string[]): string {
+  return values.reduce(
+    (soonest, value) => (value < soonest ? value : soonest),
+    values[0] ?? "",
+  );
 }
 
 export async function decideEntryReview(
@@ -684,7 +695,7 @@ export async function listUserEntryRevisionGroups(
   return response.items;
 }
 
-async function getAdminEntryRevision(
+export async function getEntryRevision(
   token: string,
   entryId: string,
   revisionId: string,
@@ -697,7 +708,7 @@ async function getAdminEntryRevision(
   );
 }
 
-async function getAdminModelRevision(
+export async function getModelRevision(
   token: string,
   entryId: string,
   modelId: string,
@@ -711,13 +722,6 @@ async function getAdminModelRevision(
   );
 }
 
-function revisionKey(
-  kind: RevisionTarget["kind"],
-  entryId: string,
-  revisionId: string,
-): string {
-  return `${kind}:${entryId}:${revisionId}`;
-}
 
 async function sendJSON<T>(
   method: string,

@@ -42,9 +42,9 @@ export default async function ReviewInbox({ searchParams }: Props) {
   const requested = firstValue(params.sel);
 
   const selected =
-    queue.find((item) => item.key === requested) ?? queue[0] ?? null;
+    queue.find((item) => item.entry_id === requested) ?? queue[0] ?? null;
   const review = selected
-    ? await loadReview(session.token, selected.target)
+    ? await loadReview(session.token, selected.entry_id)
     : null;
 
   return (
@@ -56,7 +56,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
             <div className={styles.listHead}>
               <h2 className={styles.listTitle}>To review</h2>
               <div className={styles.sub}>
-                {queue.length} item{queue.length === 1 ? "" : "s"} waiting
+                {queue.length} entr{queue.length === 1 ? "y" : "ies"} waiting
               </div>
             </div>
             {queue.length === 0 ? (
@@ -64,10 +64,10 @@ export default async function ReviewInbox({ searchParams }: Props) {
             ) : (
               queue.map((item) => (
                 <Link
-                  key={item.key}
-                  href={`/review?sel=${encodeURIComponent(item.key)}`}
+                  key={item.entry_id}
+                  href={`/review?sel=${encodeURIComponent(item.entry_id)}`}
                   className={`${styles.row} ${
-                    item.key === selected?.key ? styles.rowSel : ""
+                    item.entry_id === selected?.entry_id ? styles.rowSel : ""
                   }`}
                 >
                   <div className={styles.rowName}>{item.name}</div>
@@ -102,38 +102,34 @@ function Card({
   return (
     <div className={styles.pvScroll}>
       <div className={styles.pvTitle}>{item.name}</div>
-      <div className={styles.pvSub}>
-        submitted {formatDate(item.submitted_at)}
-      </div>
-
-      <div className={styles.toolbar}>
-        <ReviewDecision target={review.target} />
-      </div>
 
       <Changes review={review} />
     </div>
   );
 }
 
-/** What is being decided: only what was actually submitted. An entry nobody
- *  touched is not part of the submission and is not drawn. */
+/** What is being decided: only what was actually submitted. Every block carries
+ *  its own decision — the entry and each model are approved or rejected
+ *  separately. */
 function Changes({ review }: { review: EntryReview }) {
-  const proposedEntry = review.entry.proposed;
-
   return (
     <>
-      {proposedEntry ? (
+      {review.entry ? (
         <DiffBlock
           title="Entry"
           badge={review.entry.active ? "revision" : "new"}
-          sections={diffEntry(review.entry.active, proposedEntry)}
+          sections={diffEntry(review.entry.active, review.entry.proposed)}
+          target={review.entry.target}
+          previewHref={`/review/preview/${encodeURIComponent(
+            review.entry_id,
+          )}/${encodeURIComponent(review.entry.target.revision_id)}`}
         />
       ) : null}
 
       {review.models.length > 0 ? (
         <div className={styles.sect}>
           <span className={styles.sectH}>
-            {proposedEntry ? "Models in review" : "Models"}
+            {review.entry ? "Models in review" : "Models"}
           </span>
           <span className={styles.sectLine} />
         </div>
@@ -145,6 +141,12 @@ function Changes({ review }: { review: EntryReview }) {
           title={model.proposed.name}
           badge={model.active ? "revision" : "new"}
           sections={diffModel(model.active, model.proposed)}
+          target={model.target}
+          previewHref={`/review/preview/${encodeURIComponent(
+            review.entry_id,
+          )}/models/${encodeURIComponent(
+            model.model_id,
+          )}/${encodeURIComponent(model.target.revision_id)}`}
         />
       ))}
     </>
@@ -155,10 +157,14 @@ function DiffBlock({
   title,
   badge,
   sections,
+  target,
+  previewHref,
 }: {
   title: string;
   badge: string;
   sections: DiffSection[];
+  target: RevisionTarget;
+  previewHref: string;
 }) {
   const visible = sections
     .map((section) => ({
@@ -168,7 +174,7 @@ function DiffBlock({
     .filter((section) => section.rows.length > 0);
 
   return (
-    <Block title={title} badge={badge}>
+    <Block title={title} badge={badge} previewHref={previewHref} target={target}>
       {visible.length === 0 ? (
         <div className={styles.note}>Nothing changed here.</div>
       ) : (
@@ -188,10 +194,14 @@ function DiffBlock({
 function Block({
   title,
   badge,
+  previewHref,
+  target,
   children,
 }: {
   title: string;
   badge: string;
+  previewHref: string;
+  target: RevisionTarget;
   children: React.ReactNode;
 }) {
   return (
@@ -199,6 +209,26 @@ function Block({
       <div className={styles.blockHead}>
         <span className={styles.blockTitle}>{title}</span>
         <span className={styles.typ}>{badge}</span>
+        {/* This revision rendered as the page it will become. New tab, so the
+            reviewer keeps the queue where it was. */}
+        <a
+          className={styles.previewLink}
+          href={previewHref}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Preview
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M6.5 3h6.5v6.5M13 3 7 9M11 10.5V13H3V5h2.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </a>
+        <ReviewDecision target={target} />
       </div>
       <div className={styles.blockBody}>{children}</div>
     </div>
@@ -289,10 +319,10 @@ async function loadQueue(token: string): Promise<ReviewQueueItem[]> {
 
 async function loadReview(
   token: string,
-  target: RevisionTarget,
+  entryId: string,
 ): Promise<EntryReview | null> {
   try {
-    return await getEntryReview(token, target);
+    return await getEntryReview(token, entryId);
   } catch (error) {
     if (error instanceof ApiRequestError) return null;
     throw error;

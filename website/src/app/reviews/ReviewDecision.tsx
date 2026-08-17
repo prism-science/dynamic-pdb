@@ -32,27 +32,24 @@ export default function ReviewDecision({ target }: Props) {
   }
 
   return (
-    <div className={styles.decision}>
-      <div className={styles.decisionButtons}>
-        <button
-          type="button"
-          className={`${styles.button} ${styles.approve}`}
-          onClick={approve}
-          disabled={pending}
-        >
-          Approve submission
-        </button>
-        <button
-          type="button"
-          className={`${styles.button} ${styles.reject}`}
-          onClick={reject}
-          disabled={pending}
-        >
-          Reject submission
-        </button>
-      </div>
-
-      {error ? <p className={styles.decisionError}>{error}</p> : null}
+    <div className={styles.decisionInline}>
+      <button
+        type="button"
+        className={`${styles.buttonSm} ${styles.approve}`}
+        onClick={approve}
+        disabled={pending}
+      >
+        Approve
+      </button>
+      <button
+        type="button"
+        className={`${styles.buttonSm} ${styles.reject}`}
+        onClick={reject}
+        disabled={pending}
+      >
+        Reject
+      </button>
+      {error ? <span className={styles.decisionErrorInline}>{error}</span> : null}
     </div>
   );
 }

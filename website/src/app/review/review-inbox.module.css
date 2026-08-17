@@ -7,7 +7,7 @@
 }
 
 .shell {
-  width: min(1240px, 100%);
+  width: min(var(--content-max), 100%);
   margin: 0 auto;
 }
 
@@ -104,27 +104,40 @@
   padding: 24px 26px 40px;
 }
 
+/* The card header needs its own rule: without it the first block sits right
+   under the name. The models below get that separation from their section
+   divider, which is why only the entry block looked cramped. */
 .pvTitle {
   font-size: 22px;
   font-weight: 640;
   letter-spacing: -0.01em;
-  margin: 2px 0;
-}
-
-.pvSub {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin: 18px 0 22px;
-  padding-bottom: 18px;
+  margin: 2px 0 0;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
+}
+
+.pvTitle + .block {
+  margin-top: 22px;
+}
+
+.previewLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.previewLink:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .sect {
@@ -160,7 +173,8 @@
 .blockHead {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
@@ -355,7 +369,4 @@
     gap: 2px;
   }
 
-  .toolbar {
-    flex-direction: column;
-  }
 }
