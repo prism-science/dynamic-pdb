@@ -15,10 +15,24 @@ export default function ReviewQueue({
   initialItems,
   initialHasMore,
   selectedEntryId,
+  heading,
+  headingSlot,
+  feedPath,
+  hrefPath,
+  emptyLabel = "Nothing is waiting for your review.",
 }: {
   initialItems: ReviewQueueItem[];
   initialHasMore: boolean;
   selectedEntryId: string | null;
+  /** Column heading. Omitted when headingSlot carries the tabs instead. */
+  heading?: string;
+  headingSlot?: React.ReactNode;
+  /** Where further pages come from, query string included. */
+  feedPath: string;
+  /** Where a row links to; `sel` is appended. A path, not a callback: a server
+   *  component cannot hand a function to a client one. */
+  hrefPath: string;
+  emptyLabel?: string;
 }) {
   const [items, setItems] = useState(initialItems);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -47,11 +61,12 @@ export default function ReviewQueue({
     }
     setLoading(true);
     try {
+      const separator = feedPath.includes("?") ? "&" : "?";
       const params = new URLSearchParams({
         limit: String(REVIEW_PAGE_SIZE),
         offset: String(items.length),
       });
-      const response = await fetch(`/review/feed?${params.toString()}`, {
+      const response = await fetch(`${feedPath}${separator}${params.toString()}`, {
         cache: "no-store",
       });
       if (!response.ok) {
@@ -72,7 +87,7 @@ export default function ReviewQueue({
     } finally {
       setLoading(false);
     }
-  }, [hasMore, items.length, loading]);
+  }, [feedPath, hasMore, items.length, loading]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -94,23 +109,16 @@ export default function ReviewQueue({
   return (
     <div className={`${styles.col} ${styles.list}`} ref={columnRef}>
       <div className={styles.listHead}>
-        <h2 className={styles.listTitle}>To review</h2>
-        <div className={styles.sub}>
-          {items.length === 0
-            ? "nothing waiting"
-            : `${items.length}${hasMore ? "+" : ""} entr${
-                items.length === 1 && !hasMore ? "y" : "ies"
-              } waiting`}
-        </div>
+        {headingSlot ?? <h2 className={styles.listTitle}>{heading}</h2>}
       </div>
 
       {items.length === 0 ? (
-        <p className={styles.empty}>Nothing is waiting for your review.</p>
+        <p className={styles.empty}>{emptyLabel}</p>
       ) : (
         items.map((item) => (
           <Link
             key={item.entry_id}
-            href={`/review?sel=${encodeURIComponent(item.entry_id)}`}
+            href={rowHref(hrefPath, item.entry_id)}
             className={`${styles.row} ${
               item.entry_id === selectedEntryId ? styles.rowSel : ""
             }`}
@@ -136,4 +144,9 @@ function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+}
+
+function rowHref(hrefPath: string, entryId: string): string {
+  const separator = hrefPath.includes("?") ? "&" : "?";
+  return `${hrefPath}${separator}sel=${encodeURIComponent(entryId)}`;
 }

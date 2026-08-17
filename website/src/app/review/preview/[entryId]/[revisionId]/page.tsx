@@ -3,11 +3,18 @@ import { notFound } from "next/navigation";
 import {
   ApiRequestError,
   findReviewItem,
+  findUserSubmissionItem,
   getEntryReview,
   getEntryRevision,
+  getUserEntryRevision,
+  getUserSubmission,
   type ModelRevision,
 } from "@/lib/api/entries";
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
+import {
+  getAuthSession,
+  getCurrentUserId,
+  userIdFromToken,
+} from "@/lib/auth/session";
 import { isConfiguredAdmin } from "@/app/reviews/admin";
 
 import {
@@ -21,18 +28,25 @@ type Props = {
   params: Promise<{ entryId: string; revisionId: string }>;
 };
 
+// Reachable by the administrator reviewing the submission and by the author who
+// made it. Which one decides where the revision is read from: the admin routes
+// refuse anyone else, the user-scoped ones refuse anyone but the owner.
 export default async function EntryRevisionPreviewPage({ params }: Props) {
   const { entryId, revisionId } = await params;
   const session = await getAuthSession();
   if (!session) {
     notFound();
   }
-  if (!isConfiguredAdmin(await getCurrentUserId())) {
+  const isAdmin = isConfiguredAdmin(await getCurrentUserId());
+  const userId = userIdFromToken(session.token);
+  if (!isAdmin && !userId) {
     notFound();
   }
 
   const revision = await load(() =>
-    getEntryRevision(session.token, entryId, revisionId),
+    isAdmin
+      ? getEntryRevision(session.token, entryId, revisionId)
+      : getUserEntryRevision(session.token, userId as string, entryId, revisionId),
   );
   if (!revision) {
     notFound();
@@ -40,7 +54,11 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
 
   // The models that would go live alongside this revision: whatever is waiting
   // under the same entry. Assembled here, not asked of the backend.
-  const models = await modelsInReview(session.token, entryId);
+  const models = await modelsInReview(
+    session.token,
+    entryId,
+    isAdmin ? null : (userId as string),
+  );
 
   return (
     <RevisionPreviewFrame kind="entry" name={revision.name}>
@@ -52,11 +70,19 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
 async function modelsInReview(
   token: string,
   entryId: string,
+  authorId: string | null,
 ): Promise<ModelRevision[]> {
-  const item = await load(() => findReviewItem(token, entryId));
-  if (!item) {
-    return [];
+  if (authorId) {
+    const item = await load(() =>
+      findUserSubmissionItem(token, authorId, "in_review", entryId),
+    );
+    if (!item) return [];
+    const submission = await load(() => getUserSubmission(token, authorId, item));
+    return submission ? submission.models.map((model) => model.proposed) : [];
   }
+
+  const item = await load(() => findReviewItem(token, entryId));
+  if (!item) return [];
   const review = await load(() => getEntryReview(token, item));
   return review ? review.models.map((model) => model.proposed) : [];
 }

@@ -1,6 +1,6 @@
-import { ApiRequestError, listReviews } from "@/lib/api/entries";
 import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
 import { isConfiguredAdmin } from "@/app/reviews/admin";
+import { hasReviewWork } from "@/app/reviews/count";
 
 import HeaderBar, { type HeaderReviews, type HeaderUser } from "./HeaderBar";
 
@@ -20,31 +20,9 @@ export default async function AppHeader() {
 
   const userId = await getCurrentUserId();
   const isReviewer = isConfiguredAdmin(userId);
-  const queue = isReviewer
-    ? await loadReviewCount(session.token)
-    : { toReviewCount: 0, toReviewCountCapped: false };
+  const hasWork =
+    isReviewer && userId ? await hasReviewWork(session.token, userId) : false;
 
-  const reviews: HeaderReviews = { ...queue, isReviewer };
+  const reviews: HeaderReviews = { isReviewer, hasWork };
   return <HeaderBar user={user} reviews={reviews} />;
-}
-
-/** The queue has no total to ask for, so the badge counts one capped page and
- *  admits when there are more rather than pretending the cap is the total. */
-const BADGE_CAP = 99;
-
-async function loadReviewCount(
-  token: string,
-): Promise<{ toReviewCount: number; toReviewCountCapped: boolean }> {
-  try {
-    const page = await listReviews(token, { limit: BADGE_CAP });
-    return {
-      toReviewCount: page.items.length,
-      toReviewCountCapped: page.hasMore,
-    };
-  } catch (error) {
-    if (error instanceof ApiRequestError) {
-      return { toReviewCount: 0, toReviewCountCapped: false };
-    }
-    throw error;
-  }
 }

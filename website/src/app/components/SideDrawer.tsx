@@ -27,8 +27,7 @@ export default function SideDrawer({ open, onClose, reviews }: Props) {
   }, [open, onClose]);
 
   const isReviewer = reviews?.isReviewer ?? false;
-  const toReviewCount = reviews?.toReviewCount ?? 0;
-  const capped = reviews?.toReviewCountCapped ?? false;
+  const hasWork = reviews?.hasWork ?? false;
 
   return (
     <>
@@ -44,7 +43,7 @@ export default function SideDrawer({ open, onClose, reviews }: Props) {
       >
         <div className={styles.group}>Browse</div>
         <Link href="/entries" className={styles.item} onClick={onClose}>
-          Entries
+          My entries
         </Link>
 
         <div className={styles.spacer} />
@@ -53,12 +52,9 @@ export default function SideDrawer({ open, onClose, reviews }: Props) {
           <div className={styles.adminWrap}>
             <div className={styles.group}>Admin</div>
             <Link href="/review" className={styles.item} onClick={onClose}>
-              To review
-              {toReviewCount > 0 ? (
-                <span className={styles.count}>
-                  {toReviewCount}
-                  {capped ? "+" : ""}
-                </span>
+              Reviews
+              {hasWork ? (
+                <span className={styles.navDot} aria-label="waiting" />
               ) : null}
             </Link>
             <div className={styles.role}>

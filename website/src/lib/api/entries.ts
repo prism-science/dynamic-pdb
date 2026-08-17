@@ -581,16 +581,7 @@ export async function listReviews(
   // The backend orders groups by their newest revision first and paginates in
   // that order, so the rows are left exactly as they arrive: re-sorting here
   // would tear page boundaries apart.
-  const items = groups.map((group) => ({
-    entry_id: group.entry.id,
-    name: group.entry.name,
-    submitted_at: earliest([
-      ...group.entry_revisions.map((revision) => revision.updated_at),
-      ...group.model_revisions.map((revision) => revision.updated_at),
-    ]),
-    entry_revisions: group.entry_revisions,
-    model_revisions: group.model_revisions,
-  }));
+  const items = groups.map(queueItemFromGroup);
   return { items, hasMore: items.length === limit };
 }
 
@@ -598,15 +589,7 @@ export async function getEntryReview(
   token: string,
   item: ReviewQueueItem,
 ): Promise<EntryReview> {
-  const [entry, models] = await Promise.all([
-    item.entry_revisions.length > 0
-      ? entryPair(token, item.entry_id, item.entry_revisions[0])
-      : null,
-    Promise.all(
-      item.model_revisions.map((revision) => modelPair(token, revision)),
-    ),
-  ]);
-  return { entry_id: item.entry_id, name: item.name, entry, models };
+  return buildEntryReview(adminReaders(token), item);
 }
 
 /** Finds one entry's row without knowing which page it is on. Only the preview
@@ -630,14 +613,91 @@ export async function findReviewItem(
   }
 }
 
-async function entryPair(
+type RevisionReaders = {
+  entry: (entryId: string, revisionId: string) => Promise<EntryRevision>;
+  model: (
+    entryId: string,
+    modelId: string,
+    revisionId: string,
+  ) => Promise<ModelRevision>;
+};
+
+function adminReaders(token: string): RevisionReaders {
+  return {
+    entry: (entryId, revisionId) => getEntryRevision(token, entryId, revisionId),
+    model: (entryId, modelId, revisionId) =>
+      getModelRevision(token, entryId, modelId, revisionId),
+  };
+}
+
+/** An author reads their own revisions through the user-scoped routes; the admin
+ *  ones are refused to anyone but the administrator. */
+function authorReaders(token: string, userId: string): RevisionReaders {
+  return {
+    entry: (entryId, revisionId) =>
+      fetchBackend<EntryRevision>(
+        `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+          entryId,
+        )}/revisions/${encodeURIComponent(revisionId)}`,
+        token,
+      ),
+    model: (entryId, modelId, revisionId) =>
+      fetchBackend<ModelRevision>(
+        `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
+          entryId,
+        )}/models/${encodeURIComponent(modelId)}/revisions/${encodeURIComponent(
+          revisionId,
+        )}`,
+        token,
+      ),
+  };
+}
+
+/** An author's own revision, read through the user-scoped route. The admin
+ *  routes refuse everyone but the administrator, so a preview opened by the
+ *  person who submitted it has to come through here. */
+export async function getUserEntryRevision(
   token: string,
+  userId: string,
+  entryId: string,
+  revisionId: string,
+): Promise<EntryRevision> {
+  return authorReaders(token, userId).entry(entryId, revisionId);
+}
+
+export async function getUserModelRevision(
+  token: string,
+  userId: string,
+  entryId: string,
+  modelId: string,
+  revisionId: string,
+): Promise<ModelRevision> {
+  return authorReaders(token, userId).model(entryId, modelId, revisionId);
+}
+
+async function buildEntryReview(
+  readers: RevisionReaders,
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
+  const [entry, models] = await Promise.all([
+    item.entry_revisions.length > 0
+      ? entryPair(readers, item.entry_id, item.entry_revisions[0])
+      : null,
+    Promise.all(
+      item.model_revisions.map((revision) => modelPair(readers, revision)),
+    ),
+  ]);
+  return { entry_id: item.entry_id, name: item.name, entry, models };
+}
+
+async function entryPair(
+  readers: RevisionReaders,
   entryId: string,
   summary: EntryRevisionSummary,
 ): Promise<ReviewPair<EntryRevision>> {
-  const proposed = await getEntryRevision(token, entryId, summary.id);
+  const proposed = await readers.entry(entryId, summary.id);
   const active = proposed.parent_revision_id
-    ? await getEntryRevision(token, entryId, proposed.parent_revision_id)
+    ? await readers.entry(entryId, proposed.parent_revision_id)
     : null;
   return {
     target: { kind: "entry", entry_id: entryId, revision_id: summary.id },
@@ -647,18 +707,16 @@ async function entryPair(
 }
 
 async function modelPair(
-  token: string,
+  readers: RevisionReaders,
   summary: ModelRevisionSummary,
 ): Promise<ReviewPair<ModelRevision> & { model_id: string }> {
-  const proposed = await getModelRevision(
-    token,
+  const proposed = await readers.model(
     summary.entry_id,
     summary.model_id,
     summary.id,
   );
   const active = proposed.parent_revision_id
-    ? await getModelRevision(
-        token,
+    ? await readers.model(
         summary.entry_id,
         summary.model_id,
         proposed.parent_revision_id,
@@ -677,6 +735,58 @@ async function modelPair(
   };
 }
 
+/** The author's own submissions in one state, grouped by entry exactly like the
+ *  admin queue so both screens can render from the same shape. */
+export async function listUserSubmissions(
+  token: string,
+  userId: string,
+  state: RevisionState,
+  opts?: { limit?: number; offset?: number },
+): Promise<ReviewQueuePage> {
+  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
+  const offset = opts?.offset ?? 0;
+  const params = new URLSearchParams({
+    state,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+    `/v1/users/${encodeURIComponent(userId)}/entries/revisions?${params.toString()}`,
+    token,
+  );
+  const items = response.items.map(queueItemFromGroup);
+  return { items, hasMore: items.length === limit };
+}
+
+export async function getUserSubmission(
+  token: string,
+  userId: string,
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
+  return buildEntryReview(authorReaders(token, userId), item);
+}
+
+export async function findUserSubmissionItem(
+  token: string,
+  userId: string,
+  state: RevisionState,
+  entryId: string,
+): Promise<ReviewQueueItem | null> {
+  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
+    const page = await listUserSubmissions(token, userId, state, {
+      limit: REVIEW_PAGE_SIZE,
+      offset,
+    });
+    const found = page.items.find((candidate) => candidate.entry_id === entryId);
+    if (found) {
+      return found;
+    }
+    if (!page.hasMore) {
+      return null;
+    }
+  }
+}
+
 async function listInReviewGroups(
   token: string,
   limit: number,
@@ -692,6 +802,19 @@ async function listInReviewGroups(
     token,
   );
   return response.items;
+}
+
+function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
+  return {
+    entry_id: group.entry.id,
+    name: group.entry.name,
+    submitted_at: earliest([
+      ...group.entry_revisions.map((revision) => revision.updated_at),
+      ...group.model_revisions.map((revision) => revision.updated_at),
+    ]),
+    entry_revisions: group.entry_revisions,
+    model_revisions: group.model_revisions,
+  };
 }
 
 function earliest(values: string[]): string {

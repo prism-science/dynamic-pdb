@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { ApiRequestError, decideEntryReview } from "@/lib/api/entries";
 import type { RevisionTarget } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { REVIEW_COUNT_TAG } from "./count";
 
 type ActionResult = { error: string } | void;
 
@@ -40,9 +41,10 @@ export async function approveSubmissionAction(
     return { error: messageForStatus(error, "Failed to approve.") };
   }
 
-  // Revalidate the whole tree so the header count (in the root layout) and the
-  // public entries list both refresh.
+  // Revalidate the whole tree so the public entries list refreshes, and drop the
+  // cached badge count: revalidatePath does not reach into unstable_cache.
   revalidatePath("/", "layout");
+  revalidateTag(REVIEW_COUNT_TAG);
 }
 
 export async function rejectSubmissionAction(
@@ -60,4 +62,5 @@ export async function rejectSubmissionAction(
   }
 
   revalidatePath("/", "layout");
+  revalidateTag(REVIEW_COUNT_TAG);
 }

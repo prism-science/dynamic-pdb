@@ -10,8 +10,7 @@ type Props = {
   subLabel: string | null;
   initial: string;
   isReviewer?: boolean;
-  toReviewCount?: number;
-  toReviewCountCapped?: boolean;
+  hasWork?: boolean;
 };
 
 export default function UserMenu({
@@ -19,8 +18,7 @@ export default function UserMenu({
   subLabel,
   initial,
   isReviewer = false,
-  toReviewCount = 0,
-  toReviewCountCapped = false,
+  hasWork = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,12 +91,9 @@ export default function UserMenu({
               className={styles.menuLink}
               onClick={() => setOpen(false)}
             >
-              <span>To review</span>
-              {toReviewCount > 0 ? (
-                <span className={styles.menuCount}>
-                  {toReviewCount}
-                  {toReviewCountCapped ? "+" : ""}
-                </span>
+              <span>Reviews</span>
+              {hasWork ? (
+                <span className={styles.menuDot} aria-label="waiting" />
               ) : null}
             </Link>
           ) : null}

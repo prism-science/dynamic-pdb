@@ -62,14 +62,6 @@
   color: var(--text);
 }
 
-.count {
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--accent);
-  border-radius: 999px;
-  padding: 1px 7px;
-}
 
 .spacer {
   flex: 1;
@@ -87,6 +79,15 @@
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.navDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .dot {

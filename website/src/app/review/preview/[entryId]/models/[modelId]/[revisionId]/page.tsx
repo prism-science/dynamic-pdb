@@ -1,7 +1,15 @@
 import { notFound } from "next/navigation";
 
-import { ApiRequestError, getModelRevision } from "@/lib/api/entries";
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
+import {
+  ApiRequestError,
+  getModelRevision,
+  getUserModelRevision,
+} from "@/lib/api/entries";
+import {
+  getAuthSession,
+  getCurrentUserId,
+  userIdFromToken,
+} from "@/lib/auth/session";
 import { isConfiguredAdmin } from "@/app/reviews/admin";
 
 import {
@@ -21,13 +29,23 @@ export default async function ModelRevisionPreviewPage({ params }: Props) {
   if (!session) {
     notFound();
   }
-  if (!isConfiguredAdmin(await getCurrentUserId())) {
+  const isAdmin = isConfiguredAdmin(await getCurrentUserId());
+  const userId = userIdFromToken(session.token);
+  if (!isAdmin && !userId) {
     notFound();
   }
 
   let revision;
   try {
-    revision = await getModelRevision(session.token, entryId, modelId, revisionId);
+    revision = isAdmin
+      ? await getModelRevision(session.token, entryId, modelId, revisionId)
+      : await getUserModelRevision(
+          session.token,
+          userId as string,
+          entryId,
+          modelId,
+          revisionId,
+        );
   } catch (error) {
     if (error instanceof ApiRequestError) notFound();
     throw error;

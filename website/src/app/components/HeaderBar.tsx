@@ -15,11 +15,9 @@ export type HeaderUser = {
 };
 
 export type HeaderReviews = {
-  /** Number of revisions waiting for a decision. */
-  toReviewCount: number;
-  /** The count is a capped page, not a total: render it as "N+". */
-  toReviewCountCapped: boolean;
   isReviewer: boolean;
+  /** Something is waiting. Deliberately not a count: see reviews/count.ts. */
+  hasWork: boolean;
 };
 
 type Props = {
@@ -55,8 +53,7 @@ export default function HeaderBar({ user, reviews }: Props) {
               subLabel={user.subLabel}
               initial={user.initial}
               isReviewer={reviews?.isReviewer ?? false}
-              toReviewCount={reviews?.toReviewCount ?? 0}
-              toReviewCountCapped={reviews?.toReviewCountCapped ?? false}
+              hasWork={reviews?.hasWork ?? false}
             />
           ) : (
             <LoginButton />
