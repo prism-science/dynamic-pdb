@@ -53,6 +53,18 @@
   margin-top: 1px;
 }
 
+
+
+
+
+.sentinel {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .row {
   display: block;
   padding: 13px 16px;

@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 
 import { getApiBaseUrl } from "./baseUrl";
+import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 type JSONRecord = Record<string, unknown>;
 
@@ -479,12 +480,24 @@ export type RevisionTarget =
 
 /** One row of the queue: always an entry. Everything waiting under it — its own
  *  revision and each of its model revisions — is decided from that row's card,
- *  each on its own. */
+ *  each on its own. The summaries ride along so opening a row costs only the
+ *  revisions it actually shows, not a second pass over the whole queue. */
 export type ReviewQueueItem = {
   entry_id: string;
   name: string;
   submitted_at: string;
+  entry_revisions: EntryRevisionSummary[];
+  model_revisions: ModelRevisionSummary[];
 };
+
+export type ReviewQueuePage = {
+  items: ReviewQueueItem[];
+  /** A full page came back, so there is probably another. The endpoint returns
+   *  no total, so this is the only signal there is. */
+  hasMore: boolean;
+};
+
+
 
 export type EntryRevision = EntryRevisionSummary & {
   description: string | null;
@@ -558,40 +571,63 @@ export async function submitModelRevision(
   );
 }
 
-export async function listReviews(token: string): Promise<ReviewQueueItem[]> {
-  const groups = await listInReviewGroups(token);
-  return groups
-    .map((group) => ({
-      entry_id: group.entry.id,
-      name: group.entry.name,
-      submitted_at: earliest([
-        ...group.entry_revisions.map((revision) => revision.updated_at),
-        ...group.model_revisions.map((revision) => revision.updated_at),
-      ]),
-    }))
-    .sort((left, right) => left.submitted_at.localeCompare(right.submitted_at));
+export async function listReviews(
+  token: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<ReviewQueuePage> {
+  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
+  const offset = opts?.offset ?? 0;
+  const groups = await listInReviewGroups(token, limit, offset);
+  // The backend orders groups by their newest revision first and paginates in
+  // that order, so the rows are left exactly as they arrive: re-sorting here
+  // would tear page boundaries apart.
+  const items = groups.map((group) => ({
+    entry_id: group.entry.id,
+    name: group.entry.name,
+    submitted_at: earliest([
+      ...group.entry_revisions.map((revision) => revision.updated_at),
+      ...group.model_revisions.map((revision) => revision.updated_at),
+    ]),
+    entry_revisions: group.entry_revisions,
+    model_revisions: group.model_revisions,
+  }));
+  return { items, hasMore: items.length === limit };
 }
 
 export async function getEntryReview(
   token: string,
-  entryId: string,
-): Promise<EntryReview | null> {
-  const groups = await listInReviewGroups(token);
-  const group = groups.find((candidate) => candidate.entry.id === entryId);
-  if (!group) {
-    return null;
-  }
-
+  item: ReviewQueueItem,
+): Promise<EntryReview> {
   const [entry, models] = await Promise.all([
-    group.entry_revisions.length > 0
-      ? entryPair(token, entryId, group.entry_revisions[0])
+    item.entry_revisions.length > 0
+      ? entryPair(token, item.entry_id, item.entry_revisions[0])
       : null,
     Promise.all(
-      group.model_revisions.map((revision) => modelPair(token, revision)),
+      item.model_revisions.map((revision) => modelPair(token, revision)),
     ),
   ]);
+  return { entry_id: item.entry_id, name: item.name, entry, models };
+}
 
-  return { entry_id: entryId, name: group.entry.name, entry, models };
+/** Finds one entry's row without knowing which page it is on. Only the preview
+ *  pages need this: they are opened by URL, with no queue in hand. */
+export async function findReviewItem(
+  token: string,
+  entryId: string,
+): Promise<ReviewQueueItem | null> {
+  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
+    const page = await listReviews(token, {
+      limit: REVIEW_PAGE_SIZE,
+      offset,
+    });
+    const found = page.items.find((item) => item.entry_id === entryId);
+    if (found) {
+      return found;
+    }
+    if (!page.hasMore) {
+      return null;
+    }
+  }
 }
 
 async function entryPair(
@@ -643,9 +679,16 @@ async function modelPair(
 
 async function listInReviewGroups(
   token: string,
+  limit: number,
+  offset: number,
 ): Promise<EntryRevisionGroup[]> {
+  const params = new URLSearchParams({
+    state: "in_review",
+    limit: String(limit),
+    offset: String(offset),
+  });
   const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
-    "/v1/entries/revisions?state=in_review",
+    `/v1/entries/revisions?${params.toString()}`,
     token,
   );
   return response.items;

@@ -16,6 +16,11 @@ import (
 	domainmodels "dynamic-pdb/backend/internal/models"
 )
 
+// Without a limit the grouped revision queue returns every group there is, and
+// it is the one listing that grows without bound. Callers that want everything
+// have to page for it.
+const defaultRevisionGroupListLimit = 50
+
 func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
 	payload, err := decodeCreateEntryRevisionPayload(r)
 	if err != nil {
@@ -879,10 +884,11 @@ func (s *Server) listEntryRevisionGroups(
 	if offset != nil {
 		start = min(*offset, len(groups))
 	}
-	end := len(groups)
+	pageLimit := defaultRevisionGroupListLimit
 	if limit != nil {
-		end = min(start+*limit, end)
+		pageLimit = *limit
 	}
+	end := min(start+pageLimit, len(groups))
 	groups = groups[start:end]
 
 	items := make([]EntryRevisionGroup, 0, len(groups))

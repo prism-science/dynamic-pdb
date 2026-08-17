@@ -11,6 +11,7 @@ type Props = {
   initial: string;
   isReviewer?: boolean;
   toReviewCount?: number;
+  toReviewCountCapped?: boolean;
 };
 
 export default function UserMenu({
@@ -19,6 +20,7 @@ export default function UserMenu({
   initial,
   isReviewer = false,
   toReviewCount = 0,
+  toReviewCountCapped = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,7 +95,10 @@ export default function UserMenu({
             >
               <span>To review</span>
               {toReviewCount > 0 ? (
-                <span className={styles.menuCount}>{toReviewCount}</span>
+                <span className={styles.menuCount}>
+                  {toReviewCount}
+                  {toReviewCountCapped ? "+" : ""}
+                </span>
               ) : null}
             </Link>
           ) : null}

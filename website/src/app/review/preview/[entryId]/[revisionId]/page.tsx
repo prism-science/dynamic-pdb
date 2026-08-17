@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import {
   ApiRequestError,
+  findReviewItem,
   getEntryReview,
   getEntryRevision,
   type ModelRevision,
@@ -52,7 +53,11 @@ async function modelsInReview(
   token: string,
   entryId: string,
 ): Promise<ModelRevision[]> {
-  const review = await load(() => getEntryReview(token, entryId));
+  const item = await load(() => findReviewItem(token, entryId));
+  if (!item) {
+    return [];
+  }
+  const review = await load(() => getEntryReview(token, item));
   return review ? review.models.map((model) => model.proposed) : [];
 }
 

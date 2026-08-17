@@ -1,13 +1,13 @@
-import Link from "next/link";
-
 import {
   ApiRequestError,
+  findReviewItem,
   getEntryReview,
   listReviews,
   type EntryReview,
   type ReviewEntry,
   type ReviewModel,
   type ReviewQueueItem,
+  type ReviewQueuePage,
   type RevisionTarget,
 } from "@/lib/api/entries";
 import {
@@ -20,6 +20,8 @@ import {
 import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
 import ReviewDecision from "@/app/reviews/ReviewDecision";
 import { isConfiguredAdmin } from "@/app/reviews/admin";
+import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
+import ReviewQueue from "./ReviewQueue";
 
 import styles from "./review-inbox.module.css";
 
@@ -39,46 +41,29 @@ export default async function ReviewInbox({ searchParams }: Props) {
     return <Shell>You don&apos;t have review access.</Shell>;
   }
 
-  const queue = await loadQueue(session.token);
   const params = (await searchParams) ?? {};
   const requested = firstValue(params.sel);
 
-  const selected =
-    queue.find((item) => item.entry_id === requested) ?? queue[0] ?? null;
+  const [queue, requestedItem] = await Promise.all([
+    loadQueue(session.token),
+    // A deep link can point at a row far down the queue, past what the column
+    // has loaded, so the card is resolved by id rather than from the page.
+    requested ? loadItem(session.token, requested) : Promise.resolve(null),
+  ]);
+  const selected = requestedItem ?? queue.items[0] ?? null;
   const review = selected
-    ? await loadReview(session.token, selected.entry_id)
+    ? await loadReview(session.token, selected)
     : null;
 
   return (
     <main className={styles.page} aria-label="Review inbox">
       <div className={styles.shell}>
         <div className={styles.inbox}>
-          <div className={`${styles.col} ${styles.list}`}>
-            <div className={styles.listHead}>
-              <h2 className={styles.listTitle}>To review</h2>
-              <div className={styles.sub}>
-                {queue.length} entr{queue.length === 1 ? "y" : "ies"} waiting
-              </div>
-            </div>
-            {queue.length === 0 ? (
-              <p className={styles.empty}>Nothing is waiting for your review.</p>
-            ) : (
-              queue.map((item) => (
-                <Link
-                  key={item.entry_id}
-                  href={`/review?sel=${encodeURIComponent(item.entry_id)}`}
-                  className={`${styles.row} ${
-                    item.entry_id === selected?.entry_id ? styles.rowSel : ""
-                  }`}
-                >
-                  <div className={styles.rowName}>{item.name}</div>
-                  <div className={styles.rowMeta}>
-                    submitted {formatDate(item.submitted_at)}
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
+          <ReviewQueue
+            initialItems={queue.items}
+            initialHasMore={queue.hasMore}
+            selectedEntryId={selected?.entry_id ?? null}
+          />
 
           <div className={`${styles.col} ${styles.preview}`}>
             {selected && review ? (
@@ -439,26 +424,40 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-async function loadQueue(token: string): Promise<ReviewQueueItem[]> {
+async function loadQueue(token: string): Promise<ReviewQueuePage> {
   try {
-    return await listReviews(token);
+    return await listReviews(token, { limit: REVIEW_PAGE_SIZE });
   } catch (error) {
-    if (error instanceof ApiRequestError) return [];
+    if (error instanceof ApiRequestError) return { items: [], hasMore: false };
+    throw error;
+  }
+}
+
+async function loadItem(
+  token: string,
+  entryId: string,
+): Promise<ReviewQueueItem | null> {
+  try {
+    return await findReviewItem(token, entryId);
+  } catch (error) {
+    if (error instanceof ApiRequestError) return null;
     throw error;
   }
 }
 
 async function loadReview(
   token: string,
-  entryId: string,
+  item: ReviewQueueItem,
 ): Promise<EntryReview | null> {
   try {
-    return await getEntryReview(token, entryId);
+    return await getEntryReview(token, item);
   } catch (error) {
     if (error instanceof ApiRequestError) return null;
     throw error;
   }
 }
+
+
 
 function round(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);

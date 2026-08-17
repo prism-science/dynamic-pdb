@@ -28,6 +28,7 @@ export default function SideDrawer({ open, onClose, reviews }: Props) {
 
   const isReviewer = reviews?.isReviewer ?? false;
   const toReviewCount = reviews?.toReviewCount ?? 0;
+  const capped = reviews?.toReviewCountCapped ?? false;
 
   return (
     <>
@@ -54,7 +55,10 @@ export default function SideDrawer({ open, onClose, reviews }: Props) {
             <Link href="/review" className={styles.item} onClick={onClose}>
               To review
               {toReviewCount > 0 ? (
-                <span className={styles.count}>{toReviewCount}</span>
+                <span className={styles.count}>
+                  {toReviewCount}
+                  {capped ? "+" : ""}
+                </span>
               ) : null}
             </Link>
             <div className={styles.role}>
