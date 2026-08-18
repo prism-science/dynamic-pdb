@@ -64,6 +64,9 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Len(t, entryRequest.ModelOperations, 2)
 	models := modelRequests(dynamicPDBClient.models)
 	require.Len(t, models, 2)
+	require.NotNil(t, models[1].IdempotencyKey)
+	require.NotNil(t, models[1].Artifacts[0].SHA256)
+	assert.Equal(t, *models[1].Artifacts[0].SHA256, *models[1].IdempotencyKey)
 	assert.Equal(t, []string{"Nelson, R.", "Sawaya, M.R."}, models[0].Metadata["authors"])
 	assert.Equal(t, "Howard Hughes Medical Institute, UCLA, USA.", models[0].Metadata["affiliation"])
 	assert.Equal(t, 1383, models[0].Metadata["atom_count"])
@@ -285,6 +288,9 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 	assert.Empty(t, dynamicPDBClient.entries)
 	require.Len(t, dynamicPDBClient.models, 1)
 	assert.Equal(t, existingEntryID, dynamicPDBClient.models[0].entryID)
+	require.NotNil(t, dynamicPDBClient.models[0].model.IdempotencyKey)
+	require.NotNil(t, dynamicPDBClient.models[0].model.Artifacts[0].SHA256)
+	assert.Equal(t, *dynamicPDBClient.models[0].model.Artifacts[0].SHA256, *dynamicPDBClient.models[0].model.IdempotencyKey)
 	state := readState(t, summary.StatePath)
 	assert.Equal(t, existingEntryID, state.Entries["5AMF"].EntryID)
 	assert.Equal(t, modelIDs([]dynamicpdbapi.CreateModelData{dynamicPDBClient.models[0].model}), state.Entries["5AMF"].UploadedModelIDs)
@@ -696,6 +702,7 @@ func (b *fakeDynamicPDBClient) CreateEntry(_ context.Context, request dynamicpdb
 				Description:       operation.Data.Description,
 				ThumbnailImageURL: operation.Data.ThumbnailImageURL,
 				Metadata:          operation.Data.Metadata,
+				IdempotencyKey:    operation.Data.IdempotencyKey,
 				PrimaryArtifactID: operation.Data.PrimaryArtifactID,
 				Artifacts:         operation.Data.Artifacts,
 				Runs:              operation.Data.Runs,

@@ -450,7 +450,6 @@ type uploadedModel struct {
 	RunIDs        []string
 	MetricIDs     []string
 	ArtifactCount int
-	Model         dynamicpdbapi.CreateModelData
 	Operation     dynamicpdbapi.AddModelOperation
 }
 
@@ -513,41 +512,44 @@ func (u *Uploader) uploadModel(
 	if name == "" {
 		name = model.ID
 	}
-	modelData := dynamicpdbapi.CreateModelData{
-		ID:                &modelIDPtr,
-		Name:              name,
-		Metadata:          metadata,
-		PrimaryArtifactID: &primaryArtifactID,
-		Artifacts:         modelArtifacts,
-		Runs:              modelRuns(modelArtifactRefs, program),
-		Metrics:           metrics,
-	}
+	idempotencyKey := modelArtifacts[0].SHA256
+	runs := modelRuns(modelArtifactRefs, program)
 	modelOperation := dynamicpdbapi.AddModelOperation{
 		Op: "add",
 		Data: dynamicpdbapi.AddModelData{
-			ModelID:           modelData.ID,
-			Name:              modelData.Name,
-			Description:       modelData.Description,
-			ThumbnailImageURL: modelData.ThumbnailImageURL,
-			Metadata:          modelData.Metadata,
-			PrimaryArtifactID: modelData.PrimaryArtifactID,
-			Artifacts:         modelData.Artifacts,
-			Runs:              modelData.Runs,
-			Metrics:           modelData.Metrics,
+			ModelID:           &modelIDPtr,
+			Name:              name,
+			Metadata:          metadata,
+			IdempotencyKey:    idempotencyKey,
+			PrimaryArtifactID: &primaryArtifactID,
+			Artifacts:         modelArtifacts,
+			Runs:              runs,
+			Metrics:           metrics,
 		},
 	}
 	if create {
-		if err := u.dynamicPDBClient.CreateModel(ctx, entryID, dynamicpdbapi.CreateModelRequest{Model: modelData}); err != nil {
+		request := dynamicpdbapi.CreateModelRequest{
+			Model: dynamicpdbapi.CreateModelData{
+				ID:                &modelIDPtr,
+				Name:              name,
+				Metadata:          metadata,
+				IdempotencyKey:    idempotencyKey,
+				PrimaryArtifactID: &primaryArtifactID,
+				Artifacts:         modelArtifacts,
+				Runs:              runs,
+				Metrics:           metrics,
+			},
+		}
+		if err := u.dynamicPDBClient.CreateModel(ctx, entryID, request); err != nil {
 			return uploadedModel{}, false, err
 		}
 	}
 	return uploadedModel{
 		ModelID:       modelID,
 		ArtifactIDs:   artifactIDs(modelArtifacts),
-		RunIDs:        runIDs(modelData.Runs),
+		RunIDs:        runIDs(runs),
 		MetricIDs:     metricIDs(metrics),
 		ArtifactCount: len(modelArtifacts),
-		Model:         modelData,
 		Operation:     modelOperation,
 	}, true, nil
 }
