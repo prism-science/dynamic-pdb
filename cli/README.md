@@ -282,6 +282,10 @@ metadata:
 ./cli/bin/dynamic-pdb upload start /path/to/data/dynamic-pdb.manifest.yaml
 ```
 
+For a recognized Sampleworks result folder, `upload start` can take the folder
+path directly. The CLI writes `dynamic-pdb.manifest.yaml` inside that folder,
+prints the generated path, and then uploads from that manifest.
+
 During upload the CLI shows progress in the terminal. It also writes a JSON
 upload state next to the manifest:
 

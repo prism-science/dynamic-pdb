@@ -631,20 +631,21 @@ func (u *Uploader) uploadArtifact(
 	if level == "" {
 		level = "L1"
 	}
+	format := artifactFormat(artifact, payload)
 	request := dynamicpdbapi.CreateArtifactRequest{
 		ID:        artifactID,
 		Name:      name,
 		Level:     level,
 		URI:       stringPtr(artifactURI),
 		SHA256:    stringPtr(payload.SHA256),
-		Format:    stringPtr(payload.Format),
+		Format:    stringPtr(format),
 		SizeBytes: int64Ptr(payload.Size),
 		Metadata:  payload.Metadata,
 	}
 	ref := uploadedArtifactRef{
 		ManifestID: artifact.ID,
 		ArtifactID: artifactID,
-		Format:     payload.Format,
+		Format:     format,
 	}
 	return uploadedArtifact{Request: request, Payload: payload, Ref: ref}, true, nil
 }
@@ -1633,6 +1634,14 @@ func artifactName(artifact manifest.Artifact, payload extractorapi.Artifact) (st
 		return name, nil
 	}
 	return "", fmt.Errorf("artifact %s has no name and resolved source has no filename", artifact.ID)
+}
+
+func artifactFormat(artifact manifest.Artifact, payload extractorapi.Artifact) string {
+	format := strings.TrimSpace(artifact.Format)
+	if format != "" {
+		return format
+	}
+	return payload.Format
 }
 
 func stringPtr(value string) *string {

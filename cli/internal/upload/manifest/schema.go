@@ -29,6 +29,7 @@ type Artifact struct {
 	Name   string `yaml:"name,omitempty"`
 	Source Source `yaml:"source"`
 	Level  string `yaml:"level,omitempty"`
+	Format string `yaml:"format,omitempty"`
 }
 
 type ModelPattern struct {

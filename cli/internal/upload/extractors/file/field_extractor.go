@@ -32,15 +32,16 @@ func (e FieldExtractor) Extract(
 	extract manifest.Extract,
 ) (any, bool, error) {
 	for _, fileSource := range source.Files {
-		fileSource = strings.ReplaceAll(fileSource, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
-		contents, ok, err := e.localContents(fileSource)
-		if err != nil {
-			return nil, false, err
+		for _, fileSource := range pdbIDFileSources(fileSource, pdbID) {
+			contents, ok, err := e.localContents(fileSource)
+			if err != nil {
+				return nil, false, err
+			}
+			if !ok {
+				continue
+			}
+			return extractFromContents(contents, pdbID, extract)
 		}
-		if !ok {
-			continue
-		}
-		return extractFromContents(contents, pdbID, extract)
 	}
 	return nil, false, nil
 }

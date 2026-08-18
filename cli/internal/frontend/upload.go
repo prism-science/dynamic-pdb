@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"dynamic-pdb/cli/internal/config"
@@ -21,11 +23,11 @@ const uploadHelp = `Upload Dynamic PDB datasets.
 
 Usage:
   dynamic-pdb upload manifest init <data-folder> [flags]
-  dynamic-pdb upload start <manifest-path>
+  dynamic-pdb upload start <manifest-path|data-folder>
 
 Subcommands:
   manifest init  create a manifest draft from a data folder
-  start          upload entries and files described by a manifest
+  start          upload entries and files described by a manifest or recognized data folder
 
 Init flags:
   --out <path>              manifest output path
@@ -105,7 +107,7 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	fs := pflag.NewFlagSet("upload start", pflag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path> [flags]")
+		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path|data-folder> [flags]")
 		fs.PrintDefaults()
 	}
 	concurrency := 1
@@ -119,8 +121,14 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path> [flags]")
+		fmt.Fprintln(stderr, "usage: dynamic-pdb upload start <manifest-path|data-folder> [flags]")
 		return 2
+	}
+
+	manifestPath, err := resolveUploadManifestPath(fs.Arg(0), stdout)
+	if err != nil {
+		fmt.Fprintln(stderr, "dynamic-pdb upload start:", err)
+		return 1
 	}
 
 	dataHome, err := paths.DataHome()
@@ -149,7 +157,7 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		concurrency,
 		uploadPartConcurrency,
 	)
-	summary, err := uploader.Upload(ctx, fs.Arg(0))
+	summary, err := uploader.Upload(ctx, manifestPath)
 	if err != nil {
 		fmt.Fprintln(stderr, "dynamic-pdb upload start:", err)
 		return 1
@@ -165,6 +173,31 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}
 	}
 	return 0
+}
+
+func resolveUploadManifestPath(inputPath string, stdout io.Writer) (string, error) {
+	info, err := os.Stat(inputPath)
+	if err != nil {
+		return inputPath, nil
+	}
+	if !info.IsDir() {
+		return inputPath, nil
+	}
+	outputPath := filepath.Join(inputPath, manifest.SampleWorksDefaultFilename)
+	writtenPath, _, stats, err := manifest.InitSampleWorks(inputPath, outputPath)
+	if err != nil {
+		return "", err
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"Detected Sampleworks data folder; wrote manifest %s (PDB IDs: %d, local files: %d).\n",
+		writtenPath,
+		stats.PDBIDs,
+		stats.LocalFiles,
+	); err != nil {
+		return "", fmt.Errorf("write Sampleworks manifest summary: %w", err)
+	}
+	return writtenPath, nil
 }
 
 func isHelpArgs(args []string) bool {
