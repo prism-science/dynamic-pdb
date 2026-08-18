@@ -48,21 +48,34 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	root := repoRoot(t)
 	binaryPath := buildCLI(t, root)
 	backendBinaryPath := buildBackend(t, root)
+	pdbID := integrationPDBID()
+	pdbIDLower := strings.ToLower(pdbID)
 	dataRoot := t.TempDir()
-	writeFile(t, dataRoot, "Rerefined/final_model/5amf_020.pdb", integrationPDBModelText())
-	writeFile(t, dataRoot, "Rerefined/final_model/5amf_020.log", "LOG\n")
+	writeFile(t, dataRoot, fmt.Sprintf("Rerefined/final_model/%s_020.pdb", pdbIDLower), integrationPDBModelTextWithNonce())
+	writeFile(t, dataRoot, fmt.Sprintf("Rerefined/final_model/%s_020.log", pdbIDLower), "LOG\n")
 	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
 
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL())
-	rcsb := newRCSBStub(t)
+	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
+	rcsb := newRCSBStub(t, pdbID)
 	defer rcsb.Close()
 
 	// when
-	initOutput := runCLI(t, binaryPath, nil, "upload", "manifest", "init", dataRoot, "--out", manifestPath)
+	initOutput := runCLI(
+		t,
+		binaryPath,
+		nil,
+		"upload",
+		"manifest",
+		"init",
+		dataRoot,
+		"--out",
+		manifestPath,
+		"--include-rcsb-model",
+	)
 	dataHome := t.TempDir()
 	writeConfig(t, dataHome, backend.URL, auth.AccessToken)
 	uploadOutput := runCLI(t, binaryPath, []string{
@@ -77,12 +90,13 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Contains(t, initOutput, "PDB IDs: 1")
 	assert.Contains(t, initOutput, "Local files: 2")
 	assert.Contains(t, uploadOutput, "Uploaded 1 entries, 2 models, 6 artifacts.")
+	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
 
 	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
 
 	entry := getJSON[entryResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID, auth.AccessToken)
-	assert.Equal(t, "5AMF", entry.Name)
+	assert.Equal(t, pdbID, entry.Name)
 	require.NotNil(t, entry.Description)
 	assert.Equal(t, "example structure", *entry.Description)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
@@ -91,14 +105,14 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Equal(t, "P 21 21 21", entry.Metadata["space_group"])
 	externalRefs, ok := entry.Metadata["external_refs"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "5AMF", externalRefs["pdb"])
+	assert.Equal(t, pdbID, externalRefs["pdb"])
 	require.NotNil(t, entry.ThumbnailImageURL)
-	assert.Contains(t, *entry.ThumbnailImageURL, "5amf_assembly-1.jpeg")
+	assert.Contains(t, *entry.ThumbnailImageURL, pdbIDLower+"_assembly-1.jpeg")
 	require.Len(t, entry.ProteinSequences, 1)
 	assert.Equal(t, "ACDE", entry.ProteinSequences[0].Sequence)
 
 	entryArtifacts := getJSON[artifactListResponse](t, backend.URL+"/v1/entries/"+entry.ID+"/artifacts", auth.AccessToken)
-	assertArtifactNames(t, entryArtifacts.Items, []string{"5amf.fasta"})
+	assertArtifactNames(t, entryArtifacts.Items, []string{pdbIDLower + ".fasta"})
 
 	models := getJSON[modelListResponse](t, backend.URL+"/v1/entries/"+entry.ID+"/models", auth.AccessToken)
 	require.Len(t, models.Items, 2)
@@ -118,7 +132,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 			assert.Equal(t, 164.0, model.Metadata["modeled_residues"])
 			assert.Equal(t, 1.0, model.Metadata["unique_protein_chains"])
 			assert.Equal(t, []any{"ATP"}, model.Metadata["ligands"])
-			assert.Equal(t, []string{"5amf-sf.cif", "5amf.cif"}, names)
+			assert.Equal(t, []string{pdbIDLower + "-sf.cif", pdbIDLower + ".cif"}, names)
 			require.Len(t, artifacts.Runs, 1)
 			assert.Equal(t, "REFMAC", artifacts.Runs[0].Name)
 			require.NotNil(t, artifacts.Runs[0].SoftwareVersion)
@@ -131,8 +145,8 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 			assert.Equal(t, 1.0, model.Metadata["unique_protein_chains"])
 			assert.Equal(t, []any{"ATP"}, model.Metadata["ligands"])
 		}
-		if slices.Contains(names, "5amf_020.log") {
-			assert.Equal(t, []string{"5amf-sf.cif", "5amf_020.log", "5amf_020.pdb"}, names)
+		if slices.Contains(names, pdbIDLower+"_020.log") {
+			assert.Equal(t, []string{pdbIDLower + "-sf.cif", pdbIDLower + "_020.log", pdbIDLower + "_020.pdb"}, names)
 			require.Len(t, artifacts.Runs, 1)
 			assert.Equal(t, "PHENIX", artifacts.Runs[0].Name)
 			require.NotNil(t, artifacts.Runs[0].SoftwareVersion)
@@ -143,20 +157,20 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	}
 
 	uploadedFilenames := s3.uploadFilenames()
-	assert.Equal(t, 1, countString(uploadedFilenames, "5amf_assembly-1.jpeg"))
-	assert.Equal(t, 0, countString(uploadedFilenames, "5amf.fasta"))
-	assert.Equal(t, 0, countString(uploadedFilenames, "5amf.cif"))
-	assert.Equal(t, 0, countString(uploadedFilenames, "5amf-sf.cif"))
-	assert.Equal(t, 1, countString(uploadedFilenames, "5amf_020.pdb"))
-	assert.Equal(t, 1, countString(uploadedFilenames, "5amf_020.log"))
-	assert.False(t, slices.Contains(uploadedFilenames, "5amf_020.mtz"))
+	assert.Equal(t, 1, countString(uploadedFilenames, pdbIDLower+"_assembly-1.jpeg"))
+	assert.Equal(t, 0, countString(uploadedFilenames, pdbIDLower+".fasta"))
+	assert.Equal(t, 0, countString(uploadedFilenames, pdbIDLower+".cif"))
+	assert.Equal(t, 0, countString(uploadedFilenames, pdbIDLower+"-sf.cif"))
+	assert.Equal(t, 1, countString(uploadedFilenames, pdbIDLower+"_020.pdb"))
+	assert.Equal(t, 1, countString(uploadedFilenames, pdbIDLower+"_020.log"))
+	assert.False(t, slices.Contains(uploadedFilenames, pdbIDLower+"_020.mtz"))
 
 	paths := rcsb.paths()
-	assert.Contains(t, paths, "/rest/v1/core/entry/5AMF")
-	assert.Contains(t, paths, "/download/5AMF.cif")
-	assert.Contains(t, paths, "/images/structures/am/5amf/5amf_assembly-1.jpeg")
-	assert.Equal(t, 1, countString(paths, "/download/5AMF-sf.cif"))
-	assert.Contains(t, paths, "/fasta/entry/5AMF")
+	assert.Contains(t, paths, "/rest/v1/core/entry/"+pdbID)
+	assert.Contains(t, paths, "/download/"+pdbID+".cif")
+	assert.Contains(t, paths, fmt.Sprintf("/images/structures/%s/%s/%s_assembly-1.jpeg", pdbIDLower[1:3], pdbIDLower, pdbIDLower))
+	assert.Equal(t, 0, countString(paths, "/download/"+pdbID+"-sf.cif"))
+	assert.Contains(t, paths, "/fasta/entry/"+pdbID)
 }
 
 func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t *testing.T) {
@@ -179,7 +193,7 @@ func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL())
+	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
 	brokenRCSB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "RCSB is down", http.StatusInternalServerError)
 	}))
@@ -276,7 +290,7 @@ type backendProcess struct {
 	URL string
 }
 
-func startBackend(t *testing.T, root string, binaryPath string, s3URL string) backendProcess {
+func startBackend(t *testing.T, root string, binaryPath string, s3URL string, adminUserID string) backendProcess {
 	t.Helper()
 	addr := freeAddress(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -287,6 +301,7 @@ func startBackend(t *testing.T, root string, binaryPath string, s3URL string) ba
 		"DYNAMIC_PDB_SERVER_ADDR="+addr,
 		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
 		"DYNAMIC_PDB_DB_MAX_OPEN_CONNECTIONS=1",
+		"DYNAMIC_PDB_AUTH_ADMIN_USER_ID="+adminUserID,
 		"DYNAMIC_PDB_CDN_S3_ENDPOINT="+s3URL,
 		"DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID=AKIAEXAMPLE",
 		"DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY=secret",
@@ -429,12 +444,14 @@ func (s *s3Stub) uploadFilenames() []string {
 type rcsbStub struct {
 	server *httptest.Server
 	mu     sync.Mutex
+	pdbID  string
+	nonce  string
 	seen   []string
 }
 
-func newRCSBStub(t *testing.T) *rcsbStub {
+func newRCSBStub(t *testing.T, pdbID string) *rcsbStub {
 	t.Helper()
-	stub := &rcsbStub{}
+	stub := &rcsbStub{pdbID: pdbID, nonce: uuid.NewString()}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.handle))
 	return stub
 }
@@ -452,8 +469,9 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 	s.seen = append(s.seen, r.URL.Path)
 	s.mu.Unlock()
 
+	pdbIDLower := strings.ToLower(s.pdbID)
 	switch r.URL.Path {
-	case "/rest/v1/core/entry/5AMF":
+	case "/rest/v1/core/entry/" + s.pdbID:
 		writeJSON(w, map[string]any{
 			"struct": map[string]any{"title": "example structure"},
 			"exptl":  []map[string]any{{"method": "X-RAY DIFFRACTION"}},
@@ -475,12 +493,12 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 			},
 			"pubmed": map[string]any{"rcsb_pubmed_affiliation_info": []string{"Howard Hughes Medical Institute, UCLA, USA."}},
 		})
-	case "/rest/v1/core/polymer_entity/5AMF/1":
+	case "/rest/v1/core/polymer_entity/" + s.pdbID + "/1":
 		writeJSON(w, map[string]any{
 			"rcsb_entity_source_organism": []map[string]any{{"ncbi_scientific_name": "Homo sapiens"}},
 		})
-	case "/download/5AMF.cif":
-		writeText(w, `data_5amf
+	case "/download/" + s.pdbID + ".cif":
+		writeText(w, `data_`+pdbIDLower+`
 loop_
 _software.name
 _software.classification
@@ -488,12 +506,12 @@ _software.version
 _software.citation_id
 _software.pdbx_ordinal
 REFMAC refinement 5.2.0005 ? 1
-`)
-	case "/download/5AMF-sf.cif":
-		writeText(w, "data_5amf_sf\n")
-	case "/fasta/entry/5AMF":
-		writeText(w, ">5amf\nACDE\n")
-	case "/images/structures/am/5amf/5amf_assembly-1.jpeg":
+`+s.nonce+"\n")
+	case "/download/" + s.pdbID + "-sf.cif":
+		writeText(w, "data_"+pdbIDLower+"_sf\n")
+	case "/fasta/entry/" + s.pdbID:
+		writeText(w, ">"+pdbIDLower+"\nACDE\n")
+	case fmt.Sprintf("/images/structures/%s/%s/%s_assembly-1.jpeg", pdbIDLower[1:3], pdbIDLower, pdbIDLower):
 		writeText(w, "jpeg")
 	case "/graphql":
 		writeJSON(w, map[string]any{
@@ -521,6 +539,26 @@ func (s *rcsbStub) paths() []string {
 
 type entryListResponse struct {
 	Items []entryInfo `json:"items"`
+}
+
+type entryRevisionGroupListResponse struct {
+	Items []entryRevisionGroupResponse `json:"items"`
+}
+
+type entryRevisionGroupResponse struct {
+	EntryRevisions []entryRevisionSummaryResponse `json:"entry_revisions"`
+	ModelRevisions []modelRevisionSummaryResponse `json:"model_revisions"`
+}
+
+type entryRevisionSummaryResponse struct {
+	ID      string `json:"id"`
+	EntryID string `json:"entry_id"`
+}
+
+type modelRevisionSummaryResponse struct {
+	ID      string `json:"id"`
+	EntryID string `json:"entry_id"`
+	ModelID string `json:"model_id"`
 }
 
 type entryInfo struct {
@@ -597,6 +635,59 @@ func getJSON[T any](t *testing.T, url string, token string) T {
 	var result T
 	require.NoError(t, json.Unmarshal(body, &result))
 	return result
+}
+
+func patchJSON(t *testing.T, url string, token string, body any, expectedStatus int) {
+	t.Helper()
+	var payload bytes.Buffer
+	require.NoError(t, json.NewEncoder(&payload).Encode(body))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, url, &payload)
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, response.Body.Close())
+	}()
+	responseBody, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, expectedStatus, response.StatusCode, string(responseBody))
+}
+
+func activateUserRevisions(t *testing.T, backendURL string, token string, userID string) {
+	t.Helper()
+	groups := getJSON[entryRevisionGroupListResponse](
+		t,
+		backendURL+"/v1/users/"+userID+"/entries/revisions?state=in_review",
+		token,
+	)
+	for _, group := range groups.Items {
+		for _, revision := range group.EntryRevisions {
+			patchJSON(
+				t,
+				fmt.Sprintf("%s/v1/entries/%s/revisions/%s", backendURL, revision.EntryID, revision.ID),
+				token,
+				map[string]any{"state": "active"},
+				http.StatusOK,
+			)
+		}
+		for _, revision := range group.ModelRevisions {
+			patchJSON(
+				t,
+				fmt.Sprintf(
+					"%s/v1/entries/%s/models/%s/revisions/%s",
+					backendURL,
+					revision.EntryID,
+					revision.ModelID,
+					revision.ID,
+				),
+				token,
+				map[string]any{"state": "active"},
+				http.StatusOK,
+			)
+		}
+	}
 }
 
 func entryForUser(t *testing.T, entries []entryInfo, userID string) entryInfo {
@@ -714,6 +805,15 @@ func integrationPDBModelText() string {
 		"HETATM    4  C1  ATP B 101      14.104  13.207   9.447  1.00 20.00           C\n" +
 		"HETATM    5  O   HOH B 201      15.104  13.207   9.447  1.00 20.00           O\n" +
 		"HETATM    6  H1  ATP B 101      16.104  13.207   9.447  1.00 20.00           H\n"
+}
+
+func integrationPDBModelTextWithNonce() string {
+	return "REMARK   1 " + uuid.NewString() + "\n" + integrationPDBModelText()
+}
+
+func integrationPDBID() string {
+	compactUUID := strings.ReplaceAll(uuid.NewString(), "-", "")
+	return "9" + strings.ToUpper(compactUUID[:3])
 }
 
 func assertArtifactNames(t *testing.T, artifacts []artifactResponse, names []string) {
