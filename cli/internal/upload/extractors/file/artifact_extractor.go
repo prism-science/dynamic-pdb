@@ -34,16 +34,28 @@ func (e ArtifactExtractor) Extract(
 	artifact manifest.Artifact,
 ) (extractors.Artifact, bool, error) {
 	for _, fileSource := range artifact.Source.Files {
-		fileSource = strings.ReplaceAll(fileSource, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
-		payload, ok, err := e.localArtifact(fileSource)
-		if err != nil {
-			return extractors.Artifact{}, false, err
-		}
-		if ok {
-			return payload, true, nil
+		for _, fileSource := range pdbIDFileSources(fileSource, pdbID) {
+			payload, ok, err := e.localArtifact(fileSource)
+			if err != nil {
+				return extractors.Artifact{}, false, err
+			}
+			if ok {
+				return payload, true, nil
+			}
 		}
 	}
 	return extractors.Artifact{}, false, nil
+}
+
+func pdbIDFileSources(source string, pdbID string) []string {
+	lowerPDBID := strings.ToLower(strings.TrimSpace(pdbID))
+	sources := []string{strings.ReplaceAll(source, templatePDBID, lowerPDBID)}
+	upperPDBID := strings.ToUpper(lowerPDBID)
+	upperSource := strings.ReplaceAll(source, templatePDBID, upperPDBID)
+	if upperSource != sources[0] {
+		sources = append(sources, upperSource)
+	}
+	return sources
 }
 
 func (e ArtifactExtractor) localArtifact(source string) (extractors.Artifact, bool, error) {

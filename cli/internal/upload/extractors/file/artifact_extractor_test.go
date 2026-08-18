@@ -38,6 +38,35 @@ func Test_should_extract_local_artifact_when_file_exists(t *testing.T) {
 	assert.Empty(t, artifact.Contents)
 }
 
+func Test_should_build_lowercase_and_uppercase_pdb_id_file_sources(t *testing.T) {
+	// when
+	sources := pdbIDFileSources("models/{{ pdb_id }}_model.pdb", "5AMF")
+
+	// then
+	assert.Equal(t, []string{"models/5amf_model.pdb", "models/5AMF_model.pdb"}, sources)
+}
+
+func Test_should_extract_zip_artifact_when_pdb_id_path_is_uppercase(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	contents := []byte("MODEL\n")
+	writeTestZip(t, dataRoot, "models.zip", map[string][]byte{
+		"models/5AMF_model.pdb": contents,
+	})
+	extractor := NewArtifactExtractor(dataRoot)
+
+	// when
+	artifact, ok, err := extractor.Extract(context.Background(), "5amf", manifest.Artifact{
+		Source: manifest.Source{Files: []string{"models.zip#models/{{ pdb_id }}_model.pdb"}},
+	})
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "5AMF_model.pdb", artifact.Filename)
+	assert.Equal(t, filepath.Join(dataRoot, "models.zip")+"#models/5AMF_model.pdb", artifact.LocalPath)
+}
+
 func Test_should_extract_zip_artifact_when_entry_exists(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()

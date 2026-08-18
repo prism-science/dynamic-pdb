@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"dynamic-pdb/cli/internal/upload/extractors"
 	"dynamic-pdb/cli/internal/upload/manifest"
@@ -27,10 +26,11 @@ func (e ImageExtractor) Extract(
 	source manifest.Source,
 ) (extractors.Image, bool, error) {
 	for _, fileSource := range source.Files {
-		fileSource = strings.ReplaceAll(fileSource, templatePDBID, strings.ToLower(strings.TrimSpace(pdbID)))
-		image, ok, err := e.localImage(fileSource)
-		if err != nil || ok {
-			return image, ok, err
+		for _, fileSource := range pdbIDFileSources(fileSource, pdbID) {
+			image, ok, err := e.localImage(fileSource)
+			if err != nil || ok {
+				return image, ok, err
+			}
 		}
 	}
 	return extractors.Image{}, false, nil
