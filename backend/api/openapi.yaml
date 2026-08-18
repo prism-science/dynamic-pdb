@@ -1846,6 +1846,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        idempotency_key:
+          type: string
+          nullable: true
         primary_artifact_id:
           type: string
           format: uuid

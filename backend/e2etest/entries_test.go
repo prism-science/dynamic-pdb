@@ -119,7 +119,7 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 		"entry": map[string]any{"id": entryID, "name": "idempotent model entry"},
 	})
 	modelID := uuid.New()
-	idempotencyKey := "repeatable-model-hash"
+	idempotencyKey := uuid.NewString()
 	request := map[string]any{
 		"model": map[string]any{
 			"id": modelID, "name": "idempotent model", "idempotency_key": idempotencyKey,
