@@ -31,7 +31,11 @@ func NewUsersRepository(database *sqlx.DB, queriers *QuerierProvider) *UsersRepo
 func (r *UsersRepository) Create(ctx context.Context, user models.User) (*models.User, error) {
 	query := `insert into users(id, source, external_ref, email, display_name, avatar_url, created_at, updated_at)
 			  values (:id, :source, :external_ref, :email, :display_name, :avatar_url, :created_at, :updated_at)
-			  on conflict (source, external_ref) do update set source = excluded.source
+			  on conflict (source, external_ref) do update set
+				email = coalesce(nullif(excluded.email, ''), users.email),
+				display_name = coalesce(nullif(excluded.display_name, ''), users.display_name),
+				avatar_url = coalesce(nullif(excluded.avatar_url, ''), users.avatar_url),
+				updated_at = excluded.updated_at
 			  returning id, source, external_ref, email, display_name, avatar_url, created_at, updated_at`
 
 	stmt, err := r.queriers.Querier(ctx, r.db).PrepareNamedContext(ctx, query)
