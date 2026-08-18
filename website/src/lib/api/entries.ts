@@ -13,6 +13,7 @@ export type Entry = {
   name: string;
   description: string | null;
   thumbnail_image_url: string | null;
+  idempotency_key?: string | null;
   metadata?: JSONRecord;
   protein_sequences?: ProteinSequence[];
   published_at?: string | null;
@@ -223,6 +224,7 @@ type BackendCreateModelData = {
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
+  idempotency_key?: string | null;
   metadata: JSONRecord;
   primary_artifact_id: string | null;
   artifacts: CreateArtifactRequest[];
@@ -262,7 +264,8 @@ export type CreateModelRevisionResult = {
   model_id: string;
   revision_id: string;
   base_revision_id?: string | null;
-  state: "in_review";
+  idempotency_key?: string | null;
+  state: RevisionState;
 };
 
 export type EntryPageData = {
@@ -366,6 +369,7 @@ export type CreateModelInput = {
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
+  idempotency_key?: string | null;
   entities?: CreateEntityInput[];
   relations?: CreateEntityRelationInput[];
   /** Judgements a file cannot state about itself: what the run was for and
@@ -448,6 +452,7 @@ export type ModelRevisionSummary = {
   id: string;
   entry_id: string;
   model_id: string;
+  idempotency_key?: string | null;
   parent_revision_id?: string | null;
   revision_number?: number | null;
   state: RevisionState;
@@ -1088,6 +1093,9 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     name: input.name,
     description: input.description,
     thumbnail_image_url: input.thumbnail_image_url,
+    idempotency_key:
+      stringOrNull(input.idempotency_key) ??
+      modelRevisionIdempotencyKey(artifacts, primaryModelEntity?.id ?? null),
     metadata: {
       ...modelMetadataFromEntity(primaryModelEntity),
       ...(input.metadata ?? {}),
@@ -1116,6 +1124,24 @@ function createArtifactRequest(entity: CreateEntityInput): CreateArtifactRequest
     size_bytes: numberOrNull(payload.size),
     metadata,
   };
+}
+
+function modelRevisionIdempotencyKey(
+  artifacts: CreateArtifactRequest[],
+  primaryArtifactId: string | null,
+): string | null {
+  const primary = artifacts.find((artifact) => artifact.id === primaryArtifactId);
+  return (
+    idempotencyKeyFromSHA256(primary?.sha256) ??
+    idempotencyKeyFromSHA256(
+      artifacts.find((artifact) => stringOrNull(artifact.sha256))?.sha256,
+    )
+  );
+}
+
+function idempotencyKeyFromSHA256(sha256: string | null | undefined): string | null {
+  const trimmed = stringOrNull(sha256)?.toLowerCase();
+  return trimmed ?? null;
 }
 
 function createRunRequest(

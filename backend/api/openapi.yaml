@@ -1846,6 +1846,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        idempotency_key:
+          type: string
+          nullable: true
         primary_artifact_id:
           type: string
           format: uuid
@@ -2193,6 +2196,9 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
         metadata:
           type: object
           additionalProperties: true
@@ -2227,6 +2233,9 @@ components:
           type: string
           nullable: true
         thumbnail_image_url:
+          type: string
+          nullable: true
+        idempotency_key:
           type: string
           nullable: true
         metadata:
@@ -2267,6 +2276,9 @@ components:
           type: string
           nullable: true
         thumbnail_image_url:
+          type: string
+          nullable: true
+        idempotency_key:
           type: string
           nullable: true
         metadata:
@@ -2355,9 +2367,11 @@ components:
           type: string
           format: uuid
           nullable: true
-        state:
+        idempotency_key:
           type: string
-          enum: [in_review]
+          nullable: true
+        state:
+          $ref: "#/components/schemas/RevisionState"
 
     UpdateRevisionStateRequest:
       type: object
@@ -2463,6 +2477,9 @@ components:
         model_id:
           type: string
           format: uuid
+        idempotency_key:
+          type: string
+          nullable: true
         parent_revision_id:
           type: string
           format: uuid

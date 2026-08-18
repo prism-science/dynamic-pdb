@@ -176,7 +176,8 @@ func (s *Server) UpdateEntryRevisionState(
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator access is required")
 		return
 	}
-	if req.State != UpdateRevisionStateRequestStateActive && req.State != UpdateRevisionStateRequestStateRejected {
+	state := domainmodels.RevisionState(req.State)
+	if state != domainmodels.RevisionStateActive && state != domainmodels.RevisionStateRejected {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "state must be active or rejected")
 		return
 	}
@@ -200,7 +201,7 @@ func (s *Server) UpdateEntryRevisionState(
 	}
 
 	err = s.database.Do(r.Context(), func(ctx context.Context) error {
-		if req.State == UpdateRevisionStateRequestStateRejected {
+		if state == domainmodels.RevisionStateRejected {
 			if _, err := s.database.Entries.RejectRevision(ctx, entryID, revisionID); err != nil {
 				return fmt.Errorf("reject entry revision: %w", err)
 			}
@@ -532,7 +533,8 @@ func (s *Server) UpdateModelRevisionState(
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator access is required")
 		return
 	}
-	if request.State != UpdateRevisionStateRequestStateActive && request.State != UpdateRevisionStateRequestStateRejected {
+	state := domainmodels.RevisionState(request.State)
+	if state != domainmodels.RevisionStateActive && state != domainmodels.RevisionStateRejected {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "state must be active or rejected")
 		return
 	}
@@ -555,7 +557,7 @@ func (s *Server) UpdateModelRevisionState(
 	}
 
 	err = s.database.Do(r.Context(), func(ctx context.Context) error {
-		if request.State == UpdateRevisionStateRequestStateRejected {
+		if state == domainmodels.RevisionStateRejected {
 			if _, err := s.database.Models.RejectRevision(ctx, revisionID); err != nil {
 				return fmt.Errorf("reject model revision: %w", err)
 			}
@@ -1127,7 +1129,7 @@ func (s *Server) modelRevisionResponse(
 		return ModelRevision{}, fmt.Errorf("build model revision summary: %w", err)
 	}
 	return ModelRevision{
-		Id: summary.Id, EntryId: summary.EntryId, ModelId: summary.ModelId, ParentRevisionId: summary.ParentRevisionId,
+		Id: summary.Id, EntryId: summary.EntryId, ModelId: summary.ModelId, IdempotencyKey: summary.IdempotencyKey, ParentRevisionId: summary.ParentRevisionId,
 		RevisionNumber: summary.RevisionNumber, State: summary.State, ModelState: summary.ModelState,
 		CreatedBy: summary.CreatedBy, Name: summary.Name, CreatedAt: summary.CreatedAt, UpdatedAt: summary.UpdatedAt,
 		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
@@ -1156,7 +1158,7 @@ func (s *Server) modelRevisionSummary(
 ) (ModelRevisionSummary, error) {
 	return ModelRevisionSummary{
 		Id: revision.ID, EntryId: revision.EntryID,
-		ModelId: revision.ModelID, ParentRevisionId: revision.ParentRevisionID,
+		ModelId: revision.ModelID, IdempotencyKey: revision.IdempotencyKey, ParentRevisionId: revision.ParentRevisionID,
 		RevisionNumber: revision.RevisionNumber, State: RevisionState(revision.State),
 		ModelState: ModelState(revision.ModelState), CreatedBy: revision.CreatedBy, Name: revision.Name,
 		PublishedAt: revision.PublishedAt,

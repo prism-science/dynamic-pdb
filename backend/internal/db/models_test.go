@@ -23,6 +23,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	affiliation := "Department of Chemistry, Boston University"
 	purpose := models.ModelPurposeRefinement
 	modelType := models.StructureModelTypeMulticonformer
+	idempotencyKey := uuid.NewString()
 	revision := models.ModelRevision{
 		ID:                uuid.New(),
 		ModelID:           uuid.New(),
@@ -37,9 +38,10 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 			ModelType:   &modelType,
 			Ligands:     []string{"HEM"},
 		},
-		CreatedBy: createdBy,
-		CreatedAt: now,
-		UpdatedAt: now,
+		IdempotencyKey: &idempotencyKey,
+		CreatedBy:      createdBy,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	// when
@@ -67,6 +69,8 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	require.NotNil(t, got.Metadata.ModelType)
 	assert.Equal(t, modelType, *got.Metadata.ModelType)
 	assert.Equal(t, []string{"HEM"}, got.Metadata.Ligands)
+	require.NotNil(t, got.IdempotencyKey)
+	assert.Equal(t, idempotencyKey, *got.IdempotencyKey)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
 	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
 	newModelState := models.ModelStateNew
@@ -89,6 +93,67 @@ func Test_should_return_not_found_when_models_get_misses(t *testing.T) {
 
 	// then
 	require.ErrorIs(t, err, db.ErrModelRevisionNotFound)
+}
+
+func Test_should_allow_duplicate_model_revision_idempotency_key_when_revision_is_not_active(t *testing.T) {
+	// given
+	entryRevision := createDBTestEntryRevision(t, "idempotent-model-entry", time.Now().UTC())
+	createdBy := createDBTestUser(t)
+	now := time.Now().UTC()
+	modelID := uuid.New()
+	idempotencyKey := uuid.NewString()
+	first := models.ModelRevision{
+		ID:             uuid.New(),
+		ModelID:        modelID,
+		State:          models.RevisionStatePending,
+		Name:           "first idempotent model revision",
+		IdempotencyKey: &idempotencyKey,
+		CreatedBy:      createdBy,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	second := first
+	second.ID = uuid.New()
+	second.Name = "second idempotent model revision"
+
+	// when
+	_, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, first)
+	require.NoError(t, err)
+	createdDuplicate, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, second)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, second.ID, createdDuplicate.ID)
+}
+
+func Test_should_reject_duplicate_active_model_revision_idempotency_key(t *testing.T) {
+	// given
+	entryRevision := createDBTestEntryRevision(t, "active-idempotent-model-entry", time.Now().UTC())
+	createdBy := createDBTestUser(t)
+	now := time.Now().UTC()
+	idempotencyKey := uuid.NewString()
+	first := models.ModelRevision{
+		ID:             uuid.New(),
+		ModelID:        uuid.New(),
+		State:          models.RevisionStateActive,
+		Name:           "first active idempotent model revision",
+		IdempotencyKey: &idempotencyKey,
+		CreatedBy:      createdBy,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	second := first
+	second.ID = uuid.New()
+	second.ModelID = uuid.New()
+	second.Name = "second active idempotent model revision"
+
+	// when
+	_, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, first)
+	require.NoError(t, err)
+	_, err = testDB.Models.Create(context.Background(), entryRevision.EntryID, second)
+
+	// then
+	require.Error(t, err)
 }
 
 func Test_should_list_model_revisions_for_entry_with_pagination_when_models_list_called(t *testing.T) {

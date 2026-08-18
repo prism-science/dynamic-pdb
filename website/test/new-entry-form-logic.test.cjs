@@ -110,6 +110,7 @@ test("should preserve Ext provenance when linked file becomes an entity", () => 
 
   assert.equal(linked.source, "ext");
   assert.equal(linked.uploadStatus, "uploaded");
+  assert.equal(entity.payload.sha256, "sha-123");
   assert.match(linked.url, new RegExp(`^ext://${experimentId}\\?`));
   assert.deepEqual(entity.payload.metadata, {
     detector: "eiger",
@@ -121,6 +122,7 @@ test("should preserve Ext provenance when linked file becomes an entity", () => 
     },
   });
   assert.deepEqual(restored.extReference, linked.extReference);
+  assert.equal(restored.sha256, "sha-123");
   assert.deepEqual(Array.from(extFileKeys([restored])), [
     "/mnt/diffuse-shared/model.cif\u0000sha-123",
   ]);

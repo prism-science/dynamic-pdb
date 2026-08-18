@@ -48,6 +48,10 @@ export function toEntity(file: ParsedFile) {
     ...(file.size > 0 ? { size: file.size } : {}),
     ...(metadata ? { metadata } : {}),
   };
+  const sha256 = file.sha256 ?? file.extReference?.sha256;
+  if (sha256) {
+    payload.sha256 = sha256;
+  }
   if (entityType === "data") {
     payload.type = file.type;
   }
@@ -321,10 +325,22 @@ export async function parseFile(file: File, level: EntityLevel): Promise<ParsedF
       // keep the file without metadata on parse failure
     }
   }
+  try {
+    base.sha256 = await fileSHA256(file);
+  } catch {
+    // Browsers without Web Crypto can still submit the file without dedupe.
+  }
   if (type === "image") {
     base.preview = URL.createObjectURL(file);
   }
   return base;
+}
+
+async function fileSHA256(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export async function parseModelFile(file: File): Promise<ParsedFile> {
@@ -346,6 +362,7 @@ export function extFileToParsed(
     authors: "",
     affiliation: "",
     metadata: file.metadata,
+    sha256: file.sha256,
     url: extFileReferenceURL(experimentId, file),
     progress: 1,
     uploadStatus: "uploaded",

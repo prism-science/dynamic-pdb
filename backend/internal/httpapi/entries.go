@@ -295,11 +295,26 @@ func (s *Server) createInitialModelRevisionForEntry(
 	}
 	now := time.Now().UTC()
 	response := CreateModelRevisionResponse{
-		EntryId: entryID,
-		ModelId: modelID,
-		State:   CreateModelRevisionResponseStateInReview,
+		EntryId:        entryID,
+		IdempotencyKey: modelRevisionIdempotencyKeyFromCreateModelData(data),
+		ModelId:        modelID,
+		State:          RevisionStateInReview,
 	}
 	err = s.database.Do(ctx, func(ctx context.Context) error {
+		if response.IdempotencyKey != nil {
+			activeState := domainmodels.RevisionStateActive
+			existing, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
+				State:          &activeState,
+				IdempotencyKey: response.IdempotencyKey,
+			})
+			if err == nil {
+				response = createModelRevisionResponseFromModel(*existing)
+				return nil
+			}
+			if !errors.Is(err, db.ErrModelRevisionNotFound) {
+				return fmt.Errorf("check model revision idempotency key: %w", err)
+			}
+		}
 		if requireActiveEntry {
 			activeState := domainmodels.RevisionStateActive
 			activeEntryState := domainmodels.EntryStateActive
@@ -330,6 +345,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 			Description:       trimmedStringPtr(data.Description),
 			ThumbnailImageURL: trimmedStringPtr(data.ThumbnailImageUrl),
 			Metadata:          metadata,
+			IdempotencyKey:    response.IdempotencyKey,
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
@@ -366,6 +382,7 @@ func createModelDataFromAddOperation(data AddModelData) CreateModelData {
 		Description:       data.Description,
 		ThumbnailImageUrl: data.ThumbnailImageUrl,
 		Metadata:          data.Metadata,
+		IdempotencyKey:    data.IdempotencyKey,
 		PrimaryArtifactId: data.PrimaryArtifactId,
 		Artifacts:         data.Artifacts,
 		Runs:              data.Runs,
@@ -445,9 +462,10 @@ func (s *Server) createModelRevisionGraph(
 	}
 	now := time.Now().UTC()
 	response := CreateModelRevisionResponse{
-		EntryId: entryID,
-		ModelId: modelID,
-		State:   CreateModelRevisionResponseStateInReview,
+		EntryId:        entryID,
+		IdempotencyKey: modelRevisionIdempotencyKeyFromChange(data),
+		ModelId:        modelID,
+		State:          RevisionStateInReview,
 	}
 	err := s.database.Do(ctx, func(ctx context.Context) error {
 		base, err := s.activeModelRevisionForMutation(ctx, entryID, modelID)
@@ -455,6 +473,20 @@ func (s *Server) createModelRevisionGraph(
 			return fmt.Errorf("get active model revision: %w", err)
 		}
 		response.BaseRevisionId = &base.ID
+		if response.IdempotencyKey != nil {
+			activeState := domainmodels.RevisionStateActive
+			existing, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
+				State:          &activeState,
+				IdempotencyKey: response.IdempotencyKey,
+			})
+			if err == nil {
+				response = createModelRevisionResponseFromModel(*existing)
+				return nil
+			}
+			if !errors.Is(err, db.ErrModelRevisionNotFound) {
+				return fmt.Errorf("check model revision idempotency key: %w", err)
+			}
+		}
 		artifacts, err := s.createArtifacts(ctx, data.Artifacts, createdBy, now)
 		if err != nil {
 			return fmt.Errorf("create model artifacts: %w", err)
@@ -471,6 +503,7 @@ func (s *Server) createModelRevisionGraph(
 			Description:       base.Description,
 			ThumbnailImageURL: base.ThumbnailImageURL,
 			Metadata:          base.Metadata,
+			IdempotencyKey:    response.IdempotencyKey,
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
@@ -540,6 +573,17 @@ func (s *Server) createModelRevisionGraph(
 		return CreateModelRevisionResponse{}, fmt.Errorf("create model revision graph: %w", err)
 	}
 	return response, nil
+}
+
+func createModelRevisionResponseFromModel(revision domainmodels.ModelRevision) CreateModelRevisionResponse {
+	return CreateModelRevisionResponse{
+		BaseRevisionId: revision.ParentRevisionID,
+		EntryId:        revision.EntryID,
+		IdempotencyKey: revision.IdempotencyKey,
+		ModelId:        revision.ModelID,
+		RevisionId:     revision.ID,
+		State:          RevisionState(revision.State),
+	}
 }
 
 func (s *Server) activeModelRevisionForMutation(
@@ -1131,7 +1175,7 @@ func modelResponseFromRevision(revision domainmodels.ModelRevision, metrics []do
 	}
 	return Model{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
 		Name: revision.Name, Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
-		Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
+		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
 		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricResponsesFromModels(metrics)}, nil
 }
 
@@ -1274,6 +1318,14 @@ func trimmedStringPtr(value *string) *string {
 	return &trimmed
 }
 
+func modelRevisionIdempotencyKeyFromCreateModelData(data CreateModelData) *string {
+	return trimmedStringPtr(data.IdempotencyKey)
+}
+
+func modelRevisionIdempotencyKeyFromChange(change ModelRevisionChange) *string {
+	return trimmedStringPtr(change.IdempotencyKey)
+}
+
 func ptr[T any](value T) *T { return &value }
 
 type createEntryRevisionPayload struct {
@@ -1335,7 +1387,7 @@ var entryRevisionFields = map[string]struct{}{
 
 var modelRevisionFields = map[string]struct{}{
 	"name": {}, "description": {}, "thumbnail_image_url": {}, "metadata": {},
-	"primary_artifact_id": {}, "artifacts": {}, "runs": {}, "metrics": {},
+	"idempotency_key": {}, "primary_artifact_id": {}, "artifacts": {}, "runs": {}, "metrics": {},
 }
 
 func validateRevisionFields(fields map[string]json.RawMessage, allowed map[string]struct{}) error {

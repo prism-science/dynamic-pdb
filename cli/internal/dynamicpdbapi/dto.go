@@ -66,6 +66,7 @@ type AddModelData struct {
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
+	IdempotencyKey    *string                 `json:"idempotency_key,omitempty"`
 	PrimaryArtifactID *string                 `json:"primary_artifact_id,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
 	Runs              []CreateRunRequest      `json:"runs,omitempty"`
@@ -82,6 +83,7 @@ type CreateModelData struct {
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
+	IdempotencyKey    *string                 `json:"idempotency_key,omitempty"`
 	PrimaryArtifactID *string                 `json:"primary_artifact_id,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
 	Runs              []CreateRunRequest      `json:"runs,omitempty"`

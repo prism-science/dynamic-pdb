@@ -33,12 +33,13 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL())
+	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
 
 	sourceEntryID := uuid.NewString()
 	similarEntryID := uuid.NewString()
 	createProteinEntry(t, backend.URL, auth.AccessToken, sourceEntryID, "mmseqs-source", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY")
 	createProteinEntry(t, backend.URL, auth.AccessToken, similarEntryID, "mmseqs-similar", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWF")
+	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
 
 	// when
 	runMMseqsJobContainer(t, root, mmseqsJobImage, cacheDir)
@@ -130,20 +131,22 @@ func createProteinEntry(t *testing.T, backendURL string, token string, entryID s
 
 	artifactID := uuid.NewString()
 	body := map[string]any{
-		"id":   entryID,
-		"name": name,
-		"artifacts": []map[string]any{
-			{
-				"id":     artifactID,
-				"name":   name + ".fasta",
-				"level":  "L0",
-				"format": "fasta",
-				"uri":    "s3://dynamic-pdb/" + artifactID + ".fasta",
-				"metadata": map[string]any{
-					"records": []map[string]any{
-						{
-							"header":   name + ":A",
-							"sequence": sequence,
+		"entry": map[string]any{
+			"id":   entryID,
+			"name": name,
+			"artifacts": []map[string]any{
+				{
+					"id":     artifactID,
+					"name":   name + ".fasta",
+					"level":  "L0",
+					"format": "fasta",
+					"uri":    "s3://dynamic-pdb/" + artifactID + ".fasta",
+					"metadata": map[string]any{
+						"records": []map[string]any{
+							{
+								"header":   name + ":A",
+								"sequence": sequence,
+							},
 						},
 					},
 				},

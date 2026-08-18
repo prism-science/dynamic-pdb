@@ -16,6 +16,7 @@ export type ParsedFile = {
   authors: string;
   affiliation: string;
   metadata?: Record<string, unknown>;
+  sha256?: string;
   preview?: string;
   url: string;
   progress: number;
