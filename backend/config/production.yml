@@ -1,7 +1,7 @@
 server:
   addr: ":8080"
 auth:
-  admin_user_id: ""
+  admin_user_ids: []
   allowed_orgs:
     - Astera-org
     - diff-use
