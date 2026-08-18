@@ -43,6 +43,13 @@ type Summary struct {
 	StatePath string
 }
 
+type UploadOptions struct {
+	Include         []string
+	Skip            []string
+	OverrideInclude bool
+	OverrideSkip    bool
+}
+
 type Uploader struct {
 	dynamicPDBClient dynamicpdbapi.Client
 	rcsb             rcsb.Client
@@ -71,7 +78,7 @@ func New(
 	}
 }
 
-func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, error) {
+func (u *Uploader) Upload(ctx context.Context, manifestPath string, options ...UploadOptions) (Summary, error) {
 	if strings.TrimSpace(manifestPath) == "" {
 		return Summary{}, errors.New("manifest path is required")
 	}
@@ -124,7 +131,8 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string) (Summary, er
 		return Summary{}, fmt.Errorf("upload state has unfinished entries %s; fix the failed upload and remove those entries from %s before restarting", strings.Join(uploadingEntries, ", "), statePath)
 	}
 
-	selectedPDBIDs := filteredPDBIDs(pdbIDs, uploadingManifest.Filter)
+	uploadFilter := appliedUploadFilter(uploadingManifest.Filter, options...)
+	selectedPDBIDs := filteredPDBIDs(pdbIDs, uploadFilter)
 	pendingPDBIDs := pendingPDBIDs(selectedPDBIDs, state)
 	if err := u.progress.Start(len(pendingPDBIDs)); err != nil {
 		return Summary{}, fmt.Errorf("start upload progress: %w", err)
@@ -1317,6 +1325,19 @@ func manifestEntry(uploadingManifest manifest.Manifest) (manifest.Entry, error) 
 	default:
 		return manifest.Entry{}, errors.New("manifest entries with multiple templates are not supported yet")
 	}
+}
+
+func appliedUploadFilter(filter manifest.Filter, options ...UploadOptions) manifest.Filter {
+	merged := filter
+	for _, option := range options {
+		if option.OverrideInclude {
+			merged.Include = append([]string(nil), option.Include...)
+		}
+		if option.OverrideSkip {
+			merged.Skip = append([]string(nil), option.Skip...)
+		}
+	}
+	return merged
 }
 
 func filteredPDBIDs(pdbIDs []string, filter manifest.Filter) []string {

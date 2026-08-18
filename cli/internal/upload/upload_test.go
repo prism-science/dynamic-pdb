@@ -258,6 +258,58 @@ func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *test
 	assert.NotEmpty(t, state.Entries["5AMF"].EntryID)
 }
 
+func Test_should_override_manifest_include_when_upload_include_option_is_set(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
+	writeFile(t, dataRoot, "models/6abc_model.pdb", "MODEL\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	writeFilterManifest(t, manifestPath, dataRoot)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(
+		context.Background(),
+		manifestPath,
+		UploadOptions{Include: []string{"6ABC"}, OverrideInclude: true},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Entries)
+	assert.Equal(t, 1, summary.Skipped)
+	require.Len(t, dynamicPDBClient.entries, 1)
+	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Name)
+}
+
+func Test_should_override_manifest_skip_when_upload_skip_option_is_set(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb", "MODEL\n")
+	writeFile(t, dataRoot, "models/6abc_model.pdb", "MODEL\n")
+	manifestPath := filepath.Join(t.TempDir(), "dynamic-pdb.manifest.yaml")
+	uploadManifest := simpleManifest(dataRoot)
+	uploadManifest.Filter.Skip = []string{"5AMF"}
+	writeTestManifest(t, manifestPath, uploadManifest)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+	rcsbClient := fakeRCSB{}
+
+	// when
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(
+		context.Background(),
+		manifestPath,
+		UploadOptions{Skip: []string{"6ABC"}, OverrideSkip: true},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Entries)
+	assert.Equal(t, 1, summary.Skipped)
+	require.Len(t, dynamicPDBClient.entries, 1)
+	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Name)
+}
+
 func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()
