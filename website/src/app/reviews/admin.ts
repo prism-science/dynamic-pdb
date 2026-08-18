@@ -3,6 +3,7 @@ import "server-only";
 const localAdminUserIds: string[] = [];
 const productionAdminUserIds: string[] = [
   "5b8670ac-41c9-4e1d-a436-da6daa2a8c22",
+  "346945af-0e29-470c-9d39-67cbaa7a8e43",
 ];
 
 // TODO: Replace this temporary frontend-only allowlist with an authenticated
