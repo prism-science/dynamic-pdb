@@ -25,7 +25,7 @@ type Server struct {
 	authConfig   auth.Config
 	jwt          *auth.JWT
 	database     *db.DB
-	adminUserID  uuid.UUID
+	adminUserIDs map[uuid.UUID]struct{}
 }
 
 func NewServer(
@@ -35,22 +35,34 @@ func NewServer(
 	jwt *auth.JWT,
 	database *db.DB,
 ) *Server {
-	adminUserID, err := uuid.Parse(strings.TrimSpace(authConfig.AdminUserID))
-	if err != nil {
-		adminUserID = uuid.Nil
-	}
 	return &Server{
 		githubClient: githubClient,
 		fileCDN:      fileCDN,
 		authConfig:   authConfig,
 		jwt:          jwt,
 		database:     database,
-		adminUserID:  adminUserID,
+		adminUserIDs: parseAdminUserIDs(authConfig),
 	}
 }
 
 func (s *Server) isAdmin(user *models.User) bool {
-	return s.adminUserID != uuid.Nil && user != nil && user.ID == s.adminUserID
+	if user == nil {
+		return false
+	}
+	_, ok := s.adminUserIDs[user.ID]
+	return ok
+}
+
+func parseAdminUserIDs(authConfig auth.Config) map[uuid.UUID]struct{} {
+	adminUserIDs := make(map[uuid.UUID]struct{})
+	for _, value := range authConfig.AdminUserIDs {
+		adminUserID, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		adminUserIDs[adminUserID] = struct{}{}
+	}
+	return adminUserIDs
 }
 
 func (s *Server) ExchangeGithubToken(w http.ResponseWriter, r *http.Request) {

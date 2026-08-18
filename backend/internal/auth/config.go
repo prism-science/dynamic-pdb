@@ -20,7 +20,7 @@ type Config struct {
 	GitHub      GitHubOAuthConfig `mapstructure:"github"`
 	JWT         JWTConfig         `mapstructure:"jwt"`
 
-	// AdminUserID is a temporary hardcoded administrator allowed to activate or
+	// AdminUserIDs are configured administrators allowed to activate or
 	// reject revisions. Empty disables administrative state changes.
-	AdminUserID string `mapstructure:"admin_user_id"`
+	AdminUserIDs []string `mapstructure:"admin_user_ids"`
 }
