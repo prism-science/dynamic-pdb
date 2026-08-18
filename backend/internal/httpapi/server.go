@@ -133,6 +133,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	displayName := githubDisplayName(githubUser)
 	now := time.Now().UTC()
 	persisted, err := s.database.Users.Create(r.Context(), models.User{
 		ID: uuid.New(),
@@ -141,7 +142,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 			Value:  strconv.FormatInt(githubUser.ID, 10),
 		},
 		Email:       githubUser.Email,
-		DisplayName: githubUser.Name,
+		DisplayName: displayName,
 		AvatarURL:   githubUser.AvatarURL,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -163,10 +164,18 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		TokenType:   Bearer,
 		AccessToken: token,
 		ExpiresAt:   expiresAt,
-		Name:        githubUser.Name,
+		Name:        displayName,
 		Email:       githubUser.Email,
 		Login:       githubUser.Login,
 	})
+}
+
+func githubDisplayName(githubUser github.User) string {
+	name := strings.TrimSpace(githubUser.Name)
+	if name != "" {
+		return name
+	}
+	return githubUser.Login
 }
 
 func (s *Server) isInAllowedOrg(orgs []github.Organization) bool {

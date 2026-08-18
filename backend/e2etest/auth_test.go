@@ -58,6 +58,27 @@ func (s *AuthSuite) Test_should_return_token_when_github_user_belongs_to_allowed
 	s.NoError(err, "subject should be a valid UUID")
 }
 
+func (s *AuthSuite) Test_should_return_login_as_name_when_github_name_is_empty() {
+	// given
+	githubClient.On("GetUser", mock.Anything, "gh-token").
+		Return(github.User{ID: 4201, Login: "octocat"}, nil)
+	githubClient.On("ListOrgs", mock.Anything, "gh-token").
+		Return([]github.Organization{{ID: 1, Login: "Astera-org"}}, nil)
+
+	// when
+	resp := ExchangeGithubToken(s.T(), "gh-token")
+	defer resp.Body.Close()
+
+	// then
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var body httpapi.TokenResponse
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	s.Equal("octocat", body.Name)
+	s.Equal("", body.Email)
+	s.Equal("octocat", body.Login)
+}
+
 func (s *AuthSuite) Test_should_return_token_when_github_code_exchange_succeeds() {
 	// given
 	githubClient.On("ExchangeCode", mock.Anything, "code-123", "https://example.com/auth/github/callback").

@@ -60,15 +60,17 @@ func Test_should_return_empty_strings_when_create_called_without_optional_fields
 	assert.Equal(t, "", created.AvatarURL)
 }
 
-func Test_should_return_existing_user_when_create_hits_external_ref_conflict(t *testing.T) {
+func Test_should_update_profile_fields_when_create_hits_external_ref_conflict(t *testing.T) {
 	// given
 	originalID := uuid.New()
 	externalRef := uuid.NewString()
 	originalTime := time.Now().UTC()
-	original, err := testDB.Users.Create(context.Background(), models.User{
+	_, err := testDB.Users.Create(context.Background(), models.User{
 		ID:          originalID,
 		ExternalRef: types.ExternalRef{Source: "github", Value: externalRef},
 		Email:       "old@example.com",
+		DisplayName: "Old Name",
+		AvatarURL:   "https://avatars.example/old.png",
 		CreatedAt:   originalTime,
 		UpdatedAt:   originalTime,
 	})
@@ -80,6 +82,8 @@ func Test_should_return_existing_user_when_create_hits_external_ref_conflict(t *
 		ID:          uuid.New(),
 		ExternalRef: types.ExternalRef{Source: "github", Value: externalRef},
 		Email:       "new@example.com",
+		DisplayName: "New Name",
+		AvatarURL:   "https://avatars.example/new.png",
 		CreatedAt:   newTime,
 		UpdatedAt:   newTime,
 	})
@@ -87,8 +91,45 @@ func Test_should_return_existing_user_when_create_hits_external_ref_conflict(t *
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, originalID, result.ID)
-	assert.Equal(t, "old@example.com", result.Email)
-	assert.Equal(t, original.CreatedAt.Unix(), result.CreatedAt.Unix())
+	assert.Equal(t, "new@example.com", result.Email)
+	assert.Equal(t, "New Name", result.DisplayName)
+	assert.Equal(t, "https://avatars.example/new.png", result.AvatarURL)
+	assert.Equal(t, originalTime.Unix(), result.CreatedAt.Unix())
+	assert.Equal(t, newTime.Unix(), result.UpdatedAt.Unix())
+}
+
+func Test_should_keep_existing_email_when_create_conflict_has_empty_email(t *testing.T) {
+	// given
+	originalID := uuid.New()
+	externalRef := uuid.NewString()
+	originalTime := time.Now().UTC()
+	_, err := testDB.Users.Create(context.Background(), models.User{
+		ID:          originalID,
+		ExternalRef: types.ExternalRef{Source: "github", Value: externalRef},
+		Email:       "known@example.com",
+		DisplayName: "Old Name",
+		CreatedAt:   originalTime,
+		UpdatedAt:   originalTime,
+	})
+	require.NoError(t, err)
+
+	// when
+	newTime := originalTime.Add(time.Hour)
+	result, err := testDB.Users.Create(context.Background(), models.User{
+		ID:          uuid.New(),
+		ExternalRef: types.ExternalRef{Source: "github", Value: externalRef},
+		DisplayName: "New Name",
+		CreatedAt:   newTime,
+		UpdatedAt:   newTime,
+	})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, originalID, result.ID)
+	assert.Equal(t, "known@example.com", result.Email)
+	assert.Equal(t, "New Name", result.DisplayName)
+	assert.Equal(t, originalTime.Unix(), result.CreatedAt.Unix())
+	assert.Equal(t, newTime.Unix(), result.UpdatedAt.Unix())
 }
 
 func Test_should_return_user_when_get_finds_row(t *testing.T) {
