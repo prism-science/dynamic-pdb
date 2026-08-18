@@ -22,6 +22,8 @@ func Test_should_show_upload_help_when_no_upload_subcommand_given(t *testing.T) 
 	// then
 	assert.Equal(t, 0, exitCode)
 	assert.Contains(t, stdout.String(), "dynamic-pdb upload manifest init <data-folder>")
+	assert.Contains(t, stdout.String(), "--include <pdb-id>")
+	assert.Contains(t, stdout.String(), "--skip <pdb-id>")
 	assert.Empty(t, stderr.String())
 }
 

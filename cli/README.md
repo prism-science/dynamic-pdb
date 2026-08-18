@@ -282,6 +282,16 @@ metadata:
 ./cli/bin/dynamic-pdb upload start /path/to/data/dynamic-pdb.manifest.yaml
 ```
 
+To temporarily filter an upload without editing the manifest, pass `--include`
+or `--skip`. These flags override the corresponding manifest `filter.include`
+and `filter.skip` lists:
+
+```bash
+./cli/bin/dynamic-pdb upload start /path/to/data/dynamic-pdb.manifest.yaml \
+  --include 1YJO,5AMF \
+  --skip 6ABC
+```
+
 For a recognized Sampleworks result folder, `upload start` can take the folder
 path directly. The CLI writes `dynamic-pdb.manifest.yaml` inside that folder,
 prints the generated path, and then uploads from that manifest.

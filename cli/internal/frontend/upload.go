@@ -23,7 +23,7 @@ const uploadHelp = `Upload Dynamic PDB datasets.
 
 Usage:
   dynamic-pdb upload manifest init <data-folder> [flags]
-  dynamic-pdb upload start <manifest-path|data-folder>
+  dynamic-pdb upload start <manifest-path|data-folder> [flags]
 
 Subcommands:
   manifest init  create a manifest draft from a data folder
@@ -35,7 +35,9 @@ Init flags:
 
 Start flags:
   -j, --concurrency <n>              number of entries to upload in parallel (default 1)
-      --upload-part-concurrency <n>  number of multipart upload parts per file to upload in parallel (default 1)`
+      --upload-part-concurrency <n>  number of multipart upload parts per file to upload in parallel (default 1)
+      --include <pdb-id>[,...]       PDB IDs to upload, overriding manifest filter.include
+      --skip <pdb-id>[,...]          PDB IDs to skip, overriding manifest filter.skip`
 
 func Upload(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelpArgs(args) {
@@ -112,8 +114,12 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	concurrency := 1
 	uploadPartConcurrency := 1
+	var includePDBIDs []string
+	var skipPDBIDs []string
 	fs.IntVarP(&concurrency, "concurrency", "j", concurrency, "number of entries to upload in parallel")
 	fs.IntVar(&uploadPartConcurrency, "upload-part-concurrency", uploadPartConcurrency, "number of multipart upload parts per file to upload in parallel")
+	fs.StringSliceVar(&includePDBIDs, "include", nil, "PDB IDs to upload, overriding manifest filter.include")
+	fs.StringSliceVar(&skipPDBIDs, "skip", nil, "PDB IDs to skip, overriding manifest filter.skip")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			return 0
@@ -157,7 +163,16 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		concurrency,
 		uploadPartConcurrency,
 	)
-	summary, err := uploader.Upload(ctx, manifestPath)
+	uploadOptions := upload.UploadOptions{}
+	if fs.Changed("include") {
+		uploadOptions.Include = includePDBIDs
+		uploadOptions.OverrideInclude = true
+	}
+	if fs.Changed("skip") {
+		uploadOptions.Skip = skipPDBIDs
+		uploadOptions.OverrideSkip = true
+	}
+	summary, err := uploader.Upload(ctx, manifestPath, uploadOptions)
 	if err != nil {
 		fmt.Fprintln(stderr, "dynamic-pdb upload start:", err)
 		return 1
