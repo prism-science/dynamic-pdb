@@ -79,6 +79,36 @@ func Test_should_create_manifest_with_rcsb_model_when_upload_manifest_init_flag_
 	assert.Contains(t, string(contents), "- '{{ pdb_id }}_020.pdb'")
 }
 
+func Test_should_create_sampleworks_manifest_when_upload_start_points_to_folder(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	runDir := filepath.Join(dataRoot, "results", "rf3", "rf3", "1VME_0.25occA_0.75occB")
+	require.NoError(t, os.MkdirAll(filepath.Join(runDir, "trajectory"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "job_metadata.json"), []byte("{}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "losses.txt"), []byte("step,loss\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "refined.cif"), []byte("data_1VME\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(runDir, "run.log"), []byte("ok\n"), 0o644))
+	var stdout bytes.Buffer
+
+	// when
+	manifestPath, err := resolveUploadManifestPath(dataRoot, &stdout)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dataRoot, "dynamic-pdb.manifest.yaml"), manifestPath)
+	assert.FileExists(t, manifestPath)
+	assert.Contains(t, stdout.String(), "Detected Sampleworks data folder")
+	contents, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "Sampleworks 0.25occA 0.75occB")
+	assert.Contains(t, string(contents), "{{ pdb_id }}_0.25occA_0.75occB/refined.cif")
+	assert.Contains(t, string(contents), "format: structure_factors_cif")
+	assert.Contains(t, string(contents), "id: log_1")
+	assert.NotContains(t, string(contents), "id: job_metadata")
+	assert.NotContains(t, string(contents), "id: losses")
+	assert.NotContains(t, string(contents), "id: run_log")
+}
+
 func Test_should_fail_upload_start_when_user_is_not_authenticated(t *testing.T) {
 	// given
 	t.Setenv("XDG_DATA_HOME", t.TempDir())

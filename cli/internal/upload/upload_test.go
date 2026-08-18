@@ -370,6 +370,27 @@ func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
 	assert.Equal(t, "entry-5amf", updatedState.Entries["5AMF"].EntryID)
 }
 
+func Test_should_use_manifest_artifact_format_when_set(t *testing.T) {
+	// given
+	artifact := manifest.Artifact{
+		ID:     "starting_structure",
+		Format: "structure_factors_cif",
+	}
+	payload := extractorapi.Artifact{Format: "cif"}
+
+	// when
+	format := artifactFormat(artifact, payload)
+	direction, ok := runArtifactDirection(uploadedArtifactRef{
+		ManifestID: artifact.ID,
+		Format:     format,
+	})
+
+	// then
+	assert.Equal(t, "structure_factors_cif", format)
+	require.True(t, ok)
+	assert.Equal(t, "input", direction)
+}
+
 func Test_should_upload_entries_in_parallel_when_concurrency_is_greater_than_one(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()
