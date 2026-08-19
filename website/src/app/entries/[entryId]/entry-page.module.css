@@ -386,13 +386,19 @@
   white-space: nowrap;
 }
 
+/* Two metric columns on a full-width table would take a third of the row each.
+   The name column claims the surplus instead — in auto table layout the cell
+   asking for 100% absorbs whatever is left, so the metrics collapse to their
+   own content plus padding and sit together on the right. */
 .modelTableModelHead {
+  width: 100%;
   text-align: left;
   padding: 10px 14px;
   font-size: 12px;
 }
 
 .modelTableMetricHead {
+  width: 1%;
   text-align: right;
 }
 
