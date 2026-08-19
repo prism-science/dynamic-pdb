@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import LandingSearch from "./components/LandingSearch";
+
 import styles from "./landing.module.css";
 
 /**
@@ -14,29 +16,31 @@ import styles from "./landing.module.css";
 const PLACEHOLDER = {
   counts: {
     // L0: raw source datasets (HDF5 diffraction, raw images, cryo-EM particles).
-    // Expected to be 0 for a while — today we only hold MTZs.
+    // Genuinely zero, not a placeholder — today we only hold MTZs — so this one
+    // is printed exactly.
     rawSource: 0,
     // L1: MTZ reflections, CCP4 / MRC / DSN6 maps, NXS diffuse-scattering maps.
-    processed: 1284,
+    processed: 225505,
     // L2: computed structural models.
-    computedModels: 3912,
+    computedModels: 225505,
   },
   // Top 5 by count; the bar track is the L1 total, so the bars are comparable
   // to each other and show what share of the registry each experiment is.
+  // Shares are invented, but they add up to the L1 total above.
   byExperiment: [
-    { label: "X-ray", count: 1102 },
-    { label: "CryoEM", count: 96 },
-    { label: "Diffuse scattering", count: 54 },
-    { label: "NMR", count: 22 },
-    { label: "Other", count: 10 },
+    { label: "X-ray", count: 208940 },
+    { label: "CryoEM", count: 12180 },
+    { label: "NMR", count: 3410 },
+    { label: "Diffuse scattering", count: 610 },
+    { label: "Other", count: 365 },
   ],
   // Top 5 by count; same idea against the L2 total.
   byAnalysis: [
-    { label: "qFit3", count: 1640 },
-    { label: "PHENIX", count: 1205 },
-    { label: "Sampleworks", count: 712 },
-    { label: "NMR", count: 210 },
-    { label: "Other", count: 145 },
+    { label: "qFit3", count: 96420 },
+    { label: "PHENIX", count: 74180 },
+    { label: "Sampleworks", count: 38905 },
+    { label: "NMR", count: 11600 },
+    { label: "Other", count: 4400 },
   ],
   latest: [
     { entry: "7APT", modelType: "Multiconformer", experiment: "X-ray", time: "01:43 PM 2026-08-17" },
@@ -50,16 +54,39 @@ const PLACEHOLDER = {
 
 // Shown under the search field as the kinds of thing that can be typed into it.
 // Inert for now; each becomes a link to /browse?query=<term> once we wire them.
+// One per kind of thing that can be searched: an entry id, a protein, the
+// software that produced a model, a collection condition, a data type. Clicking
+// one fills the search field; see LandingSearch.
 const SAMPLE_SEARCHES = [
-  "2X68",
-  "Cyp3",
+  "6T0K",
+  "FKBP51",
   "qFit",
   "room temperature",
   "diffuse scattering",
-  "Sampleworks",
 ];
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+
+/**
+ * Print a headline count as a round approximation.
+ *
+ * These totals come from a periodic snapshot, not a live query, so an exact
+ * figure on a card this size would claim a precision we do not have. Rounding
+ * is always *down* to a coarse step, which keeps the trailing "+" literally
+ * true however stale the snapshot gets — the registry only grows. The steps are
+ * deliberately blunt, one whole unit of the magnitude, so the figure reads as
+ * an order of size rather than as a measurement. Anything under a thousand is
+ * printed as-is: there is nothing to round, and a real zero should read as zero
+ * rather than as an approximation.
+ */
+function approximateCount(value: number): string {
+  if (value < 1000) {
+    return numberFormatter.format(value);
+  }
+  const step = value >= 100000 ? 100000 : value >= 10000 ? 10000 : 1000;
+  const rounded = Math.floor(value / step) * step;
+  return `${numberFormatter.format(rounded / 1000)}K+`;
+}
 
 export default function Home() {
   const experimentTotal = sum(PLACEHOLDER.byExperiment);
@@ -75,44 +102,31 @@ export default function Home() {
           ensemble models are deposited, versioned, and validated against it.
         </p>
 
-        {/* A plain GET form, so search works before any JavaScript arrives and
-            lands on the same list the header search does. */}
-        <form className={styles.search} action="/browse" method="get" role="search">
-          <input
-            className={styles.searchInput}
-            type="search"
-            name="query"
-            placeholder="Entry ID, PDB ID, protein, ligand, software, or modeler…"
-            aria-label="Search the registry"
-          />
-          <button type="submit" className={styles.searchButton}>
-            Search
-          </button>
-        </form>
-
-        <p className={styles.samples}>
-          <span className={styles.samplesLead}>Try</span>
-          {SAMPLE_SEARCHES.map((term) => (
-            <span key={term} className={styles.sample}>
-              {term}
-            </span>
-          ))}
-        </p>
+        {/* A plain GET form, so search still works before any JavaScript
+            arrives and lands on the same list the header search does. */}
+        <LandingSearch samples={SAMPLE_SEARCHES} />
       </section>
 
-      <section className={styles.counts} aria-label="Registry totals">
-        <CountCard
-          value={PLACEHOLDER.counts.rawSource}
-          label="Raw Source Experimental Datasets"
-        />
-        <CountCard
-          value={PLACEHOLDER.counts.processed}
-          label="Processed Experimental Datasets"
-        />
-        <CountCard
-          value={PLACEHOLDER.counts.computedModels}
-          label="Computed Structural Models"
-        />
+      <section aria-label="Registry totals">
+        <div className={styles.counts}>
+          <CountCard
+            value={PLACEHOLDER.counts.rawSource}
+            label="Raw Source Experimental Datasets"
+          />
+          <CountCard
+            value={PLACEHOLDER.counts.processed}
+            label="Processed Experimental Datasets"
+          />
+          <CountCard
+            value={PLACEHOLDER.counts.computedModels}
+            label="Computed Structural Models"
+          />
+        </div>
+        {/* Says once, quietly, what the rounded figures already imply, so the
+            numbers do not have to carry the caveat themselves. */}
+        <p className={styles.countsNote}>
+          Totals from the latest snapshot, refreshed periodically.
+        </p>
       </section>
 
       <section className={styles.panels}>
@@ -165,7 +179,7 @@ export default function Home() {
 function CountCard({ value, label }: { value: number; label: string }) {
   return (
     <div className={styles.countCard}>
-      <div className={styles.countValue}>{numberFormatter.format(value)}</div>
+      <div className={styles.countValue}>{approximateCount(value)}</div>
       <div className={styles.countLabel}>{label}</div>
     </div>
   );

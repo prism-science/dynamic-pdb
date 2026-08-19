@@ -32,16 +32,22 @@
 }
 
 /* On the landing page the search is the page's main act, so it is centred and
-   full width here; every other page keeps the compact field in the header. */
+   full width here; every other page keeps the compact field in the header.
+   A grid rather than a row because the example terms below belong to the field,
+   not to the field and the button together: putting them in the input's column
+   makes them start and stop exactly where it does. */
 .search {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 12px;
   width: min(640px, 100%);
   margin-top: 34px;
 }
 
 .searchInput {
-  flex: 1 1 auto;
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   height: 46px;
   padding: 0 16px;
@@ -64,7 +70,8 @@
 }
 
 .searchButton {
-  flex: none;
+  grid-column: 2;
+  grid-row: 1;
   height: 46px;
   padding: 0 24px;
   border: 1px solid var(--accent);
@@ -87,27 +94,45 @@
   box-shadow: var(--ring);
 }
 
-/* Muted rather than link-coloured on purpose: these are not wired up yet, and
-   a purple chip that does nothing when clicked is worse than a quiet one. */
+/* Row two of the search grid, in the input's column only, so the row is
+   centred under the field rather than under the field and the button. */
 .samples {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
-  gap: 6px 14px;
-  margin: 14px 0 0;
+  gap: 6px 10px;
+  margin: 0;
   font-size: 12.5px;
   color: var(--text-muted);
 }
 
-.samplesLead {
-  font-weight: 600;
-}
-
 .sample {
-  padding: 2px 9px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-muted);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.sample:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sample:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 /* ---------------------------------------------------------------- counts -- */
@@ -117,6 +142,13 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-top: 52px;
+}
+
+.countsNote {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 
 .countCard {
@@ -306,10 +338,16 @@
   }
 
   .search {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .searchButton {
+    grid-column: 1;
+    grid-row: 2;
     width: 100%;
+  }
+
+  .samples {
+    grid-row: 3;
   }
 }
