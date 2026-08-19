@@ -1199,7 +1199,7 @@ function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] 
 }
 
 /** A model revision as the same entity graph the published model page walks, so
- *  a preview gets the real Data levels and Validation tiles instead of a
+ *  a preview gets the real Data levels and Evaluations tiles instead of a
  *  hand-rolled stand-in. A revision carries no runs, so program nodes and their
  *  edges are absent — nothing that needs levels or metrics depends on them. */
 export function modelRevisionGraph(revision: ModelRevision): EntryGraph {

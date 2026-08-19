@@ -175,70 +175,52 @@
   }
 }
 
+/* Figures, not charts. The tiles size to their own content and sit in a row
+   rather than stretching across a four-column grid: there are usually two of
+   them, and a stretched grid left each number marooned in a quarter of the
+   width. min-width keeps the columns lined up when the labels differ. */
 .metricGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px 46px;
   width: min(720px, 100%);
 }
 
 .metricTile {
-  min-width: 0;
+  min-width: 96px;
 }
 
 .metricLabel {
   font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
   color: var(--text-muted);
 }
 
 .metricValue {
-  margin: 3px 0 7px;
+  margin: 8px 0 0;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: 23px;
   font-weight: 600;
   line-height: 1;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-.metricBar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  overflow: hidden;
+.metricValue[data-status="warn"] {
+  color: var(--warning-fg);
 }
 
-.metricBarFill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--text-muted);
-}
-
-.metricBarFill[data-status="good"] {
-  background: var(--success-fg);
-}
-
-.metricBarFill[data-status="warn"] {
-  background: var(--warning-fg);
-}
-
-.metricBarFill[data-status="bad"] {
-  background: var(--danger-fg);
-}
-
-.metricHint {
-  margin-top: 6px;
-  font-size: 10px;
-  color: var(--text-muted);
+.metricValue[data-status="bad"] {
+  color: var(--danger-fg);
 }
 
 @media (max-width: 560px) {
 
 .metricGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 20px;
+    gap: 18px 30px;
   }
 }
 

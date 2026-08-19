@@ -19,13 +19,13 @@ import PipelineModal from "@/app/components/PipelineModal";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
-  hasModelValidation,
+  hasModelEvaluations,
   ImagePlaceholderIcon,
   InfoGrid,
   modelInfoFacts,
   modelMetadata,
   modelPreviewURL,
-  ModelValidation,
+  ModelEvaluations,
   ModelViewerButton,
   modelVitals,
 } from "../../entry-view";
@@ -67,7 +67,9 @@ export default async function ModelPage({
   );
 
   const hasData = dataTableEntities(data.entities).length > 0;
-  const hasValidation = model ? hasModelValidation(model, provenance) : false;
+  const hasEvaluations = model
+    ? hasModelEvaluations(model, provenance)
+    : false;
 
   // The chain crosses model boundaries: this model's input was some other
   // model's output, and /models/{id}/artifacts only carries relations for this
@@ -153,10 +155,10 @@ export default async function ModelPage({
               </section>
             ) : null}
 
-            {model && hasValidation ? (
-              <section id="validation" className={styles.contentSection}>
-                <h2 className={styles.contentHeading}>Validation</h2>
-                <ModelValidation entity={model} provenance={provenance} />
+            {model && hasEvaluations ? (
+              <section id="evaluations" className={styles.contentSection}>
+                <h2 className={styles.contentHeading}>Evaluations</h2>
+                <ModelEvaluations entity={model} provenance={provenance} />
               </section>
             ) : null}
 
