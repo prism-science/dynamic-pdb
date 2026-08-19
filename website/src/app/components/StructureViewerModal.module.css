@@ -1,5 +1,10 @@
 /* Ported from ext: thumbnail button + centered overlay modal. */
 
+/* The primary action wherever a model is shown: opening the structure is what
+   people came for. So it is the one filled accent button on the screen, with
+   Download and Pipeline outlined beside it — hierarchy stated rather than
+   implied. It used to be filled with --surface-muted, which next to two white
+   buttons read as a pressed state on the least important control. */
 .structureThumb {
   display: flex;
   align-items: center;
@@ -8,10 +13,11 @@
   width: 100%;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -20,9 +26,9 @@
 }
 
 .structureThumb:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: #fff;
 }
 
 .structureThumb:focus-visible {
