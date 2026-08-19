@@ -1,11 +1,17 @@
 import styles from "./AppFooter.module.css";
 
 /**
- * Site footer, on every page.
+ * Site footer.
  *
- * The attribution names three organisations. None of them is linked yet: the
- * Prism site is not live, and the other two are left as plain text until we
- * agree on the URLs.
+ * The design's attribution sentence, kept word for word, but broken across two
+ * lines at its own hinge: what the registry is and who backs it, then the chain
+ * of organisations behind that backer. In one flat line the reader met three
+ * organisations at once and could not tell which of them runs the thing; split
+ * this way the sentence keeps its meaning and gains a shape.
+ *
+ * Radial and the Astera Institute are linked. Prism is not: prismscience.org
+ * does not resolve yet — the design notes as much — and a footer link that dies
+ * is worse than a name in plain text. One href away when the site goes up.
  */
 export default function AppFooter() {
   return (
@@ -19,9 +25,24 @@ export default function AppFooter() {
           width={28}
           height={28}
         />
-        <p className={styles.text}>
-          The Dynamic PDB is a community resource that is supported by Prism, a
-          program of Radial, a division of the Astera Institute.
+        {/* One sentence, one paragraph: the break is presentational, so the
+            first half is a block-level span rather than a second <p>. */}
+        <p className={styles.copy}>
+          <span className={styles.lead}>
+            The Dynamic PDB is a community resource that is supported by{" "}
+            <span className={styles.org}>Prism</span>,
+          </span>
+          <span className={styles.tail}>
+            a program of{" "}
+            <a className={styles.link} href="https://radial.org">
+              Radial
+            </a>
+            , a division of the{" "}
+            <a className={styles.link} href="https://astera.org">
+              Astera Institute
+            </a>
+            .
+          </span>
         </p>
       </div>
     </footer>

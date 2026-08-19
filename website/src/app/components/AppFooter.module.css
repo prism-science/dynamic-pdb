@@ -21,12 +21,52 @@
   height: 28px;
 }
 
-.text {
+.copy {
   margin: 0;
-  max-width: 620px;
-  font-size: 12px;
+  max-width: 640px;
+  font-size: 12.5px;
   line-height: 1.55;
+}
+
+/* Block, so the rest of the sentence starts on its own line without a <br> and
+   without splitting one sentence into two paragraphs. */
+.lead {
+  display: block;
+  color: var(--text-secondary);
+}
+
+.tail {
   color: var(--text-muted);
+}
+
+/* The three names are the only things worth picking out of the line. Prism has
+   no link yet, so it is weighted rather than coloured — the same emphasis the
+   linked names get, minus the affordance. */
+.org {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.link {
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease;
+}
+
+.link:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.link:focus-visible {
+  outline: none;
+  border-radius: 3px;
+  box-shadow: var(--ring);
 }
 
 @media (max-width: 720px) {
