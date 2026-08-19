@@ -789,7 +789,7 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(28, 25, 23, 0.42);
+  background: rgba(26, 30, 42, 0.42);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -1266,7 +1266,7 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(28, 25, 23, 0.38);
+  background: rgba(26, 30, 42, 0.38);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   animation: backdropIn 140ms ease;
@@ -1427,7 +1427,7 @@
 }
 
 .previewCanvas {
-  background: var(--bg);
+  background: var(--surface-muted);
 }
 
 .previewEmpty,

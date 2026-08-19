@@ -17,18 +17,21 @@
 
 .column {
   min-width: 0;
-  padding: 14px;
 }
 
 .column + .column {
   border-left: 1px solid var(--border);
 }
 
+/* The three heads line up into one strip across the top, so the grid reads as a
+   table with a header row rather than as three stacked cards. */
 .columnHead {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
 }
 
 .levelBadge {
@@ -56,10 +59,8 @@
 .cells {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   max-height: 440px;
   overflow-y: auto;
-  padding-right: 4px;
 }
 
 .cells::-webkit-scrollbar {
@@ -75,30 +76,40 @@
   scrollbar-width: thin;
 }
 
+/* Rows, not cards. Each of these used to be a bordered, rounded, tinted card
+   inside the bordered, rounded grid — a window in a window, seven frames where
+   one would do — and it carried a third copy of the level the column head and
+   its badge already state. What is left is the pair that matters: what kind of
+   artifact it is, and its name. */
 .cell {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--lvl);
-  border-radius: var(--radius);
-  background: var(--surface-muted);
+  padding: 11px 14px;
+  border: 0;
+  background: none;
   color: var(--text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    box-shadow 120ms ease;
+  transition: background 120ms ease;
+}
+
+.cell + .cell {
+  border-top: 1px solid var(--border);
 }
 
 .cell:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: 0 6px 16px rgba(59, 166, 241, 0.1);
+  background: var(--accent-soft);
+}
+
+/* The row has no border of its own to recolour, so focus needs saying outright.
+   Inset, because an outline would be clipped by the grid's overflow. */
+.cell:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .cell:disabled {

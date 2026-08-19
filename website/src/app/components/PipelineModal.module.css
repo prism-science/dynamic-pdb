@@ -38,7 +38,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(28, 25, 23, 0.45);
+  background: rgba(26, 30, 42, 0.45);
 }
 
 .card {
@@ -53,18 +53,20 @@
   box-shadow: var(--shadow-md);
 }
 
+/* The tinted strip, like every other dialog header in the app. */
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px 14px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--dialog-border);
+  background: var(--dialog-bg);
 }
 
 .title {
   min-width: 0;
-  color: var(--text);
+  color: var(--dialog-fg);
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
@@ -75,15 +77,15 @@
 /* Kept identical to .close in FilePreviewModal.module.css: the two overlays
    stack on each other, so a differently drawn dismiss would be obvious. */
 .close {
-  flex-shrink: 0;
   width: 32px;
   height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--border);
+  flex-shrink: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-secondary);
+  background: transparent;
+  color: var(--dialog-fg-muted);
   cursor: pointer;
   font: inherit;
   font-size: 18px;
@@ -94,15 +96,24 @@
 }
 
 .close:hover {
-  background: var(--surface-muted);
-  color: var(--text);
+  background: var(--dialog-hover);
+  color: var(--dialog-fg);
 }
 
-/* The graph owns this box, so its wheel handling never fights the page. */
+.close:focus-visible {
+  outline: none;
+  box-shadow: var(--dialog-ring);
+}
+
+/* The graph owns this box, so its wheel handling never fights the page.
+   White, not the muted surface: the lineage nodes are themselves drawn on
+   --surface-muted (LineageFlow.module.css mirrors the L0-L3 cells of the entry
+   table), so a muted canvas left the cards sitting on their own colour and the
+   graph read as one flat field. */
 .body {
   flex: 1 1 auto;
   min-height: 0;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .loading {

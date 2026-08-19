@@ -5,7 +5,7 @@
 /* When the Layers bar is present, the outer frame moves to the wrapper so the
    bar and the canvas read as one panel (the canvas drops its own frame). */
 .structureViewer[data-has-bar="true"] {
-  border: 1px solid #e3dfd6;
+  border: 1px solid #e1e3ee;
   border-radius: var(--radius-lg, 12px);
   overflow: hidden;
   background: var(--surface, #fff);
@@ -17,7 +17,7 @@
   height: min(78vh, 780px);
   min-height: 560px;
   border-radius: var(--radius-lg, 12px);
-  border: 1px solid var(--border, #e4e7ec);
+  border: 1px solid var(--border, #eaebf4);
   background: var(--surface, #fff);
   overflow: hidden;
 }
@@ -69,12 +69,12 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--border, #e4e7ec);
+  border: 1px solid var(--border, #eaebf4);
   border-radius: var(--radius-sm, 6px);
   background: var(--surface, #fff);
-  color: var(--text-secondary, #475467);
+  color: var(--text-secondary, #3d414f);
   cursor: pointer;
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(16, 24, 40, 0.06));
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(26, 30, 42, 0.06));
   transition:
     border-color 120ms ease,
     background 120ms ease,
@@ -82,46 +82,47 @@
 }
 
 .structureControlButton:hover {
-  border-color: var(--accent, #175cd3);
-  background: var(--accent-soft, #eff4ff);
-  color: var(--accent, #175cd3);
+  border-color: var(--accent, #663be4);
+  background: var(--accent-soft, #f1edfd);
+  color: var(--accent, #663be4);
 }
 
 .structureControlButton:focus-visible {
   outline: none;
-  border-color: var(--accent, #175cd3);
-  box-shadow: var(--ring, 0 0 0 3px rgba(23, 92, 211, 0.16));
+  border-color: var(--accent, #663be4);
+  box-shadow: var(--ring, 0 0 0 3px rgba(102, 59, 228, 0.2));
 }
 
 .structureControlButtonActive {
-  border-color: var(--accent, #175cd3);
-  background: var(--accent, #175cd3);
+  border-color: var(--accent, #663be4);
+  background: var(--accent, #663be4);
   color: #fff;
 }
 
 .structureControlButtonActive:hover {
-  background: var(--accent-hover, #1849b3);
+  background: var(--accent-hover, #5730c7);
   color: #fff;
 }
 
-/* Maps bar above the viewer, matching Mol*'s own light theme: warm greys
-   (#eeece7 panel / #f3f2ee control), burnt-orange accent (#ae5d04), muted
-   labels (#9c835f), dark values (#332b1f), Helvetica, flat, square corners. */
+/* Maps bar above the viewer, keeping Mol*'s flat light-theme shape but in the
+   Prism palette: brand tint chrome (#eaebf4 panel / #f4f5fa control), brand
+   purple accent (#663be4), grey labels (#5f616b), ink values (#1a1e2a),
+   Helvetica, flat, square corners. */
 .layerBar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
   padding: 6px 10px;
-  background: #f5f3ef;
-  border-bottom: 1px solid #e6e3da;
+  background: #f4f5fa;
+  border-bottom: 1px solid #e1e3ee;
   font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial, sans-serif;
   font-size: 13px;
-  color: #332b1f;
+  color: #1a1e2a;
 }
 
 .layerBarLabel {
-  color: #332b1f;
+  color: #1a1e2a;
   font-weight: 700;
 }
 
@@ -136,10 +137,10 @@
   min-width: 150px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #ddd7ca;
+  border: 1px solid #d5d7e4;
   border-radius: 0;
-  background: #fbfaf7;
-  color: #332b1f;
+  background: #fafbfd;
+  color: #1a1e2a;
   font: inherit;
   cursor: pointer;
   outline-offset: -1px;
@@ -147,9 +148,9 @@
 
 .mapMenuTrigger:hover:not(:disabled),
 .mapMenuTrigger[data-open="true"] {
-  color: #ae5d04;
-  background: #f1eee8;
-  border-color: #c9c2b3;
+  color: #663be4;
+  background: #f1edfd;
+  border-color: #c3c6d8;
 }
 
 .mapMenuTrigger:disabled {
@@ -167,7 +168,7 @@
 
 .mapMenuChevron {
   flex: none;
-  color: #9c835f;
+  color: #5f616b;
 }
 
 .mapMenuList {
@@ -177,9 +178,9 @@
   z-index: 20;
   min-width: 220px;
   padding: 3px;
-  background: #f5f3ef;
-  border: 1px solid #ddd7ca;
-  box-shadow: 0 6px 18px rgba(51, 43, 31, 0.14);
+  background: #f4f5fa;
+  border: 1px solid #d5d7e4;
+  box-shadow: 0 6px 18px rgba(26, 30, 42, 0.14);
 }
 
 .mapMenuRow {
@@ -193,8 +194,8 @@
   margin-top: 1px;
   border: none;
   border-radius: 0;
-  background: #fbfaf7;
-  color: #332b1f;
+  background: #fafbfd;
+  color: #1a1e2a;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -206,9 +207,9 @@
 }
 
 .mapMenuRow:hover:not(:disabled) {
-  color: #ae5d04;
-  background: #f1eee8;
-  outline: 1px solid #c9c2b3;
+  color: #663be4;
+  background: #f1edfd;
+  outline: 1px solid #c3c6d8;
 }
 
 .mapMenuRow:disabled {
@@ -216,15 +217,15 @@
 }
 
 .mapMenuRow[data-active="true"] {
-  color: #332b1f;
+  color: #1a1e2a;
 }
 
 .mapMenuRow[data-active="true"] .layerEye {
-  color: #ae5d04;
+  color: #663be4;
 }
 
 .mapMenuRow[data-error="true"] {
-  color: #b42318;
+  color: #b4231d;
 }
 
 .mapMenuRowName {
@@ -241,8 +242,8 @@
   width: 14px;
   height: 14px;
   flex: none;
-  border: 2px solid #d8d3c8;
-  border-top-color: #ae5d04;
+  border: 2px solid #d5d7e4;
+  border-top-color: #663be4;
   border-radius: 50%;
   animation: layerSpin 700ms linear infinite;
 }
@@ -262,7 +263,7 @@
   justify-content: center;
   gap: 10px;
   background: var(--surface, #fff);
-  color: var(--text-muted, #667085);
+  color: var(--text-muted, #5f616b);
   font-size: 13px;
 }
 
@@ -270,8 +271,8 @@
   width: 18px;
   height: 18px;
   flex: none;
-  border: 2px solid #d8d3c8;
-  border-top-color: #ae5d04;
+  border: 2px solid #d5d7e4;
+  border-top-color: #663be4;
   border-radius: 50%;
   animation: layerSpin 700ms linear infinite;
 }
@@ -291,7 +292,7 @@
   margin: 0;
   padding: 0 16px;
   font-size: 13px;
-  color: var(--text-muted, #667085);
+  color: var(--text-muted, #5f616b);
   text-align: center;
   pointer-events: none;
 }

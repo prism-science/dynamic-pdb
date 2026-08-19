@@ -6,8 +6,9 @@ import styles from "./AppHeader.module.css";
 
 // Search sits with the account controls as a narrow field that widens on focus.
 // The widening is pure CSS (:focus-within), so there is no open/close state to
-// keep in sync. It is still a plain GET form to "/" — submitting from anywhere
-// means "search the registry", and lands on the list with results.
+// keep in sync. It is still a plain GET form, now aimed at /browse —
+// submitting from anywhere means "search the registry", and lands on the
+// list with results.
 export default function HeaderSearch() {
   const router = useRouter();
   const query = useSearchParams().get("query")?.trim() ?? "";
@@ -18,7 +19,7 @@ export default function HeaderSearch() {
       // An active query holds the field open after focus leaves: collapsing it
       // would hide the term the results on screen are answering.
       data-active={query ? "true" : undefined}
-      action="/"
+      action="/browse"
       method="get"
       role="search"
     >
@@ -38,7 +39,7 @@ export default function HeaderSearch() {
         <button
           type="button"
           className={styles.searchClear}
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/browse")}
           aria-label="Clear search"
           title="Clear search"
         >

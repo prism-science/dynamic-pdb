@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import "molstar/build/viewer/molstar.css";
+import "./molstar-skin.scss";
 import "./globals.css";
 import AppHeader from "./components/AppHeader";
 
 export const metadata: Metadata = {
   title: "dynamic-pdb",
   description: "Dynamic PDB workflows.",
-  icons: { icon: "/dynamic-pdb-mark.svg" },
+  icons: {
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

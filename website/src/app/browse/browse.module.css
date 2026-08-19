@@ -1,0 +1,18 @@
+.page {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 42px 24px 80px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.entriesShell {
+  width: min(var(--content-max), 100%);
+  margin: 0 auto;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 24px 14px 64px;
+  }
+}

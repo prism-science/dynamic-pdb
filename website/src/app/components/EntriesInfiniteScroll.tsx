@@ -60,7 +60,10 @@ export default function EntriesInfiniteScroll({
       if (query.trim()) {
         params.set("query", query.trim());
       }
-      const response = await fetch(`/entries/feed?${params.toString()}`, {
+      // /browse/feed, not /entries/feed: the latter pages the signed-in
+      // author's own submissions and needs a `state` parameter this scroll has
+      // no business knowing about.
+      const response = await fetch(`/browse/feed?${params.toString()}`, {
         cache: "no-store",
       });
       if (!response.ok) {

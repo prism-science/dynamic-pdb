@@ -22,6 +22,16 @@ type SortState = {
   asc: boolean;
 } | null;
 
+/**
+ * Columns of the model table.
+ *
+ * Every column here is drawn for every model, empty or not, so a metric that is
+ * never deposited costs a permanently blank column and a sort control that does
+ * nothing. CC and RSCC were exactly that, so they are not listed. They are still
+ * read from the payload and still shown on the model page and in the file
+ * preview, both of which drop a metric when its value is missing — adding a
+ * column back here is a one-entry change if depositions start carrying them.
+ */
 const metricColumns: {
   key: MetricKey;
   label: string;
@@ -39,18 +49,6 @@ const metricColumns: {
     label: "R-free",
     lowerBetter: true,
     status: (v) => (v < 0.25 ? "good" : v < 0.3 ? "warn" : "bad"),
-  },
-  {
-    key: "cc",
-    label: "CC",
-    lowerBetter: false,
-    status: (v) => (v >= 0.9 ? "good" : v >= 0.8 ? "warn" : "bad"),
-  },
-  {
-    key: "rscc",
-    label: "RSCC",
-    lowerBetter: false,
-    status: (v) => (v >= 0.9 ? "good" : v >= 0.8 ? "warn" : "bad"),
   },
 ];
 

@@ -5,7 +5,7 @@ export default function AuthBrand() {
     <div className={styles.signInBrand}>
       <img
         className={styles.signInLogo}
-        src="/dynamic-pdb-mark.svg"
+        src="/prism-mark-ink.png"
         alt=""
         width={64}
         height={64}

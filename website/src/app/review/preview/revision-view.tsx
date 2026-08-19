@@ -11,13 +11,13 @@ import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
   entryMetadataFacts,
-  hasModelValidation,
+  hasModelEvaluations,
   ImagePlaceholderIcon,
   InfoGrid,
   modelInfoFacts,
   modelMetadata,
   modelPreviewURL,
-  ModelValidation,
+  ModelEvaluations,
   ModelViewerButton,
   modelVitals,
 } from "@/app/entries/[entryId]/entry-view";
@@ -141,7 +141,9 @@ export function ModelRevisionPreview({
     metadata,
     model ? provenance.programOf(model.id) : null,
   );
-  const hasValidation = model ? hasModelValidation(model, provenance) : false;
+  const hasEvaluations = model
+    ? hasModelEvaluations(model, provenance)
+    : false;
   const hasData = dataTableEntities(entities).length > 0;
 
   return (
@@ -200,10 +202,10 @@ export function ModelRevisionPreview({
           </section>
         ) : null}
 
-        {model && hasValidation ? (
+        {model && hasEvaluations ? (
           <section className={styles.contentSection}>
-            <h2 className={styles.contentHeading}>Validation</h2>
-            <ModelValidation entity={model} provenance={provenance} />
+            <h2 className={styles.contentHeading}>Evaluations</h2>
+            <ModelEvaluations entity={model} provenance={provenance} />
           </section>
         ) : null}
 

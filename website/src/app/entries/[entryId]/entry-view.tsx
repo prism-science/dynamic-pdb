@@ -173,46 +173,45 @@ type MetricStatus = "good" | "warn" | "bad";
 type MetricSpec = {
   key: keyof MetricsPayload;
   label: string;
-  direction: "lower" | "higher";
-  scaleMax: number;
+  /**
+   * Whether the value falls inside the accepted range, used to colour it.
+   *
+   * This is all that is left of the chart these tiles used to draw. That bar
+   * filled with `value / scaleMax`, so a worse R-factor drew a longer bar --
+   * the opposite of how a filled bar reads -- and needed a "lower is better"
+   * caption under it to be understood at all. The figure alone carries the
+   * reading; the threshold only decides whether it is worth colouring.
+   */
   status: (value: number) => MetricStatus;
 };
 
-// Direction, scale, and quality thresholds are fixed properties of each
-// crystallographic metric (R-factors: lower is better; correlation
-// coefficients: higher is better), not stored in the payload.
+// Quality thresholds are fixed properties of each crystallographic metric
+// (R-factors: lower is better; correlation coefficients: higher is better),
+// not stored in the payload.
 const modelMetricTiles: MetricSpec[] = [
   {
     key: "r_work",
     label: "R-work",
-    direction: "lower",
-    scaleMax: 0.4,
     status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
   },
   {
     key: "r_free",
     label: "R-free",
-    direction: "lower",
-    scaleMax: 0.4,
     status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
   },
   {
     key: "rscc",
     label: "RSCC",
-    direction: "higher",
-    scaleMax: 1,
     status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
   },
   {
     key: "cc",
     label: "CC",
-    direction: "higher",
-    scaleMax: 1,
     status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
   },
 ];
 
-export function ModelValidation({
+export function ModelEvaluations({
   entity,
   provenance,
 }: {
@@ -234,22 +233,18 @@ export function ModelValidation({
     <div className={styles.metricGrid}>
       {tiles.map((tile) => {
         const value = merged[tile.key] as number;
-        const fill = Math.max(0, Math.min(1, value / tile.scaleMax));
+        const status = tile.status(value);
         return (
           <div key={tile.key} className={styles.metricTile}>
             <div className={styles.metricLabel}>{tile.label}</div>
-            <div className={styles.metricValue}>
+            {/* Only a value outside its range is coloured. A page where every
+                number is green says nothing; one amber figure is the whole
+                report. */}
+            <div
+              className={styles.metricValue}
+              data-status={status === "good" ? undefined : status}
+            >
               {metricFormatter.format(value)}
-            </div>
-            <div className={styles.metricBar}>
-              <span
-                className={styles.metricBarFill}
-                data-status={tile.status(value)}
-                style={{ width: `${fill * 100}%` }}
-              />
-            </div>
-            <div className={styles.metricHint}>
-              {tile.direction === "lower" ? "↓ better" : "↑ better"}
             </div>
           </div>
         );
@@ -258,7 +253,7 @@ export function ModelValidation({
   );
 }
 
-export function hasModelValidation(entity: Entity, provenance: Provenance) {
+export function hasModelEvaluations(entity: Entity, provenance: Provenance) {
   const merged: MetricsPayload = {};
   for (const metric of provenance.metricsOf(entity.id)) {
     Object.assign(merged, metric.payload as MetricsPayload);
@@ -367,7 +362,7 @@ function rcsbStructureURL(pdb: string): string | undefined {
 
 // What the model contains: bare counts, which belong next to the thumbnail as
 // vitals — the same role "310 residues" plays on the entry — rather than as
-// tiles competing with the validation metrics.
+// tiles competing with the evaluation metrics.
 // Counts only. Ligand codes are a named fact, not a measurement, so they go in
 // the Info block with the rest of the labelled values instead of borrowing a
 // "Label: value" shape no other line in the rail uses.
