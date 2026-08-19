@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import "./molstar-skin.scss";
 import "./globals.css";
 import AppHeader from "./components/AppHeader";
-import AppFooter from "./components/AppFooter";
 
 export const metadata: Metadata = {
   title: "dynamic-pdb",
@@ -21,7 +20,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <AppHeader />
         <div className="appContent">{children}</div>
-        <AppFooter />
       </body>
     </html>
   );

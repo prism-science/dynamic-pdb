@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import AppFooter from "./components/AppFooter";
 import LandingSearch from "./components/LandingSearch";
 
 import styles from "./landing.module.css";
@@ -93,86 +94,96 @@ export default function Home() {
   const analysisTotal = sum(PLACEHOLDER.byAnalysis);
 
   return (
-    <main className={styles.page}>
-      <section className={styles.hero}>
-        <h1 className={styles.title}>The Dynamic PDB</h1>
-        <p className={styles.tagline}>
-          The Dynamic PDB is a living, open, registry for heterogeneity-aware
-          structural biology: one experimental dataset is held fixed, and
-          ensemble models are deposited, versioned, and validated against it.
-        </p>
+    // The footer lives here rather than in the root layout: as a second flex
+    // item under `body` it competes with `.appContent`, which is allowed to
+    // shrink (min-height: 0, needed by the full-height review layouts), and on
+    // /browse that shrinking stopped the infinite scroll from ever reaching its
+    // sentinel. Keeping it to this page sidesteps that until the app shell can
+    // carry a footer properly.
+    <>
+      <main className={styles.page}>
+        <section className={styles.hero}>
+          <h1 className={styles.title}>The Dynamic PDB</h1>
+          <p className={styles.tagline}>
+            The Dynamic PDB is a living, open, registry for heterogeneity-aware
+            structural biology: one experimental dataset is held fixed, and
+            ensemble models are deposited, versioned, and validated against it.
+          </p>
 
-        {/* A plain GET form, so search still works before any JavaScript
-            arrives and lands on the same list the header search does. */}
-        <LandingSearch samples={SAMPLE_SEARCHES} />
-      </section>
+          {/* A plain GET form, so search still works before any JavaScript
+              arrives and lands on the same list the header search does. */}
+          <LandingSearch samples={SAMPLE_SEARCHES} />
+        </section>
 
-      <section aria-label="Registry totals">
-        <div className={styles.counts}>
-          <CountCard
-            value={PLACEHOLDER.counts.rawSource}
-            label="Raw Source Experimental Datasets"
+        <section aria-label="Registry totals">
+          <div className={styles.counts}>
+            <CountCard
+              value={PLACEHOLDER.counts.rawSource}
+              label="Raw Source Experimental Datasets"
+            />
+            <CountCard
+              value={PLACEHOLDER.counts.processed}
+              label="Processed Experimental Datasets"
+            />
+            <CountCard
+              value={PLACEHOLDER.counts.computedModels}
+              label="Computed Structural Models"
+            />
+          </div>
+          {/* Says once, quietly, what the rounded figures already imply, so the
+              numbers do not have to carry the caveat themselves. */}
+          <p className={styles.countsNote}>
+            Totals from the latest snapshot, refreshed periodically.
+          </p>
+        </section>
+
+        <section className={styles.panels}>
+          <Breakdown
+            heading="Datasets By Experiment (L1)"
+            rows={PLACEHOLDER.byExperiment}
+            total={experimentTotal}
           />
-          <CountCard
-            value={PLACEHOLDER.counts.processed}
-            label="Processed Experimental Datasets"
+          <Breakdown
+            heading="Datasets By Analysis (L2)"
+            rows={PLACEHOLDER.byAnalysis}
+            total={analysisTotal}
           />
-          <CountCard
-            value={PLACEHOLDER.counts.computedModels}
-            label="Computed Structural Models"
-          />
-        </div>
-        {/* Says once, quietly, what the rounded figures already imply, so the
-            numbers do not have to carry the caveat themselves. */}
-        <p className={styles.countsNote}>
-          Totals from the latest snapshot, refreshed periodically.
-        </p>
-      </section>
+        </section>
 
-      <section className={styles.panels}>
-        <Breakdown
-          heading="Datasets By Experiment (L1)"
-          rows={PLACEHOLDER.byExperiment}
-          total={experimentTotal}
-        />
-        <Breakdown
-          heading="Datasets By Analysis (L2)"
-          rows={PLACEHOLDER.byAnalysis}
-          total={analysisTotal}
-        />
-      </section>
-
-      <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Latest depositions</h2>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">Entry</th>
-                <th scope="col">Model Type</th>
-                <th scope="col">Experiment Type</th>
-                <th scope="col" className={styles.tableTime}>
-                  Time
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {PLACEHOLDER.latest.map((row) => (
-                <tr key={row.entry}>
-                  <td className={styles.tableEntry}>{row.entry}</td>
-                  <td>{row.modelType}</td>
-                  <td>{row.experiment}</td>
-                  <td className={styles.tableTime}>{row.time}</td>
+        <section className={styles.panel}>
+          <h2 className={styles.panelHeading}>Latest depositions</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">Entry</th>
+                  <th scope="col">Model Type</th>
+                  <th scope="col">Experiment Type</th>
+                  <th scope="col" className={styles.tableTime}>
+                    Time
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Link className={styles.browseAll} href="/browse">
-          Browse all entries →
-        </Link>
-      </section>
-    </main>
+              </thead>
+              <tbody>
+                {PLACEHOLDER.latest.map((row) => (
+                  <tr key={row.entry}>
+                    <td className={styles.tableEntry}>{row.entry}</td>
+                    <td>{row.modelType}</td>
+                    <td>{row.experiment}</td>
+                    <td className={styles.tableTime}>{row.time}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Link className={styles.browseAll} href="/browse">
+            Browse all entries →
+          </Link>
+        </section>
+      </main>
+
+      <AppFooter />
+    </>
   );
 }
 
