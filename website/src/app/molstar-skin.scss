@@ -1,0 +1,53 @@
+// Mol* ships its skin as Sass with a single configurable colour module, and its
+// own dark/blue themes are written exactly this way: `@use 'base/colors' with
+// (...)` followed by `@use 'base/base'`. Everything else in the skin — control
+// fills, borders, hovers, entity states, the sequence strip — is derived from
+// these few values, so setting them is enough to move the whole viewer onto the
+// brand palette without touching a line of Mol*'s CSS.
+//
+// The stock light skin is literally the RGB inverse of the dark one, which is
+// where its sand-and-ochre cast comes from: invert(#111318) is #eeece7 and
+// invert(#51A2FB) is #ae5d04. Those were the values our own viewer chrome used
+// to copy.
+@use 'molstar/lib/mol-plugin-ui/skin/base/colors' with (
+    // Panel ground. Kept at the brand tint so the viewer chrome and the modal
+    // header above it are the same colour; every control fill and border is a
+    // step off this.
+    $default-background: #eaebf4,
+    $font-color: #1a1e2a,
+
+    // Was ochre. Hovers, the sequence numbering and highlighted rows.
+    $hover-font-color: #663be4,
+    $entity-current-font-color: #663be4,
+    $msp-btn-commit-on-font-color: #663be4,
+    $entity-badge-font-color: #5f616b,
+
+    $msp-btn-remove-background: #b4231d,
+    $msp-btn-remove-hover-font-color: #ffffff,
+
+    $log-message: #0e7c57,
+    $log-info: #5f616b,
+    $log-warning: #8a6414,
+    $log-error: #b4231d,
+
+    $logo-background: rgba(255, 255, 255, 0.75),
+
+    // Light theme: "lower contrast" means lighten. Same value the stock light
+    // skin uses by default.
+    $color-adjust-sign: 1,
+);
+
+@use 'molstar/lib/mol-plugin-ui/skin/base/base';
+
+/* Mol*'s transfer-function editor (the volume/density curve control) is the one
+   place in the skin that hardcodes colours instead of reading the colour module,
+   so the sand canvas and its ochre point hover survive the retheme. Everything
+   else here is Mol*'s, unchanged. The red delete button and blue info dot are
+   left alone: those are signals, not chrome. */
+.msp-plugin .msp-canvas {
+  background-color: #f4f5fa;
+}
+
+.msp-plugin .msp-canvas circle:hover {
+  fill: #663be4;
+}
