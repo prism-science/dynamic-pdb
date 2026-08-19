@@ -33,15 +33,29 @@
   --neutral-bg: #eaebf4;
   --neutral-fg: #3d414f;
 
-  /* The header is an ink block: the brand's dark bar across the top of a white
-     page. Scoped to the bar itself — the dropdowns it opens are page-level
-     surfaces and stay light. */
+  /* Chrome: the dark bars that frame the white content. Scoped to those bars —
+     the dropdowns and panels they open are page-level surfaces and stay light. */
   --header-bg: #1a1e2a;
   --header-fg: #ffffff;
   --header-fg-muted: #a8abb8;
   --header-border: rgba(255, 255, 255, 0.12);
   --header-hover: rgba(255, 255, 255, 0.08);
   --header-field: rgba(255, 255, 255, 0.06);
+
+  /* A dialog's title bar is chrome too, but it belongs to the window rather than
+     to the page: one step down the tint ramp from Mol*'s own panels, so the
+     structure viewer's bar and the chrome it sits on read as one surface, and
+     dark enough against white to mark where the dialog starts.
+     Own tokens rather than the --header-* ones because this ground is light:
+     text stays ink and the accent keeps working (5:1), so controls behave the
+     way they do everywhere else on a light surface. */
+  --dialog-bg: #e1e3ee;
+  --dialog-fg: #1a1e2a;
+  --dialog-fg-muted: #3d414f;
+  --dialog-border: #d5d7e4;
+  --dialog-hover: #d5d7e4;
+  --dialog-field: #ffffff;
+  --dialog-ring: var(--ring);
 
   /* Data-maturity level palette (L0 raw -> L3 evaluations): one monochrome ramp
      from the brand tint to the brand ink, with the brand purple only at the top

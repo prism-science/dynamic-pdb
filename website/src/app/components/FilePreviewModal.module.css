@@ -40,13 +40,14 @@
   box-shadow: none;
 }
 
-/* Header in the Mol* light skin, one step darker than the density-map bar below
-   it, so the chrome descends into the canvas instead of sitting on it as a white
-   slab. Kept low so it does not compete with the structure. */
+/* Same tinted bar as every other dialog, just shorter: over a full-bleed canvas
+   the strip has to stay out of the way. It is one step darker than the Mol*
+   chrome directly below it, so the two sit as bar-then-panel rather than as one
+   flat field. */
 .cardFull .head {
   padding: 0 0 0 14px;
-  border-bottom: 1px solid #d5d7e4;
-  background: #e1e3ee;
+  border-bottom: 1px solid var(--dialog-border);
+  background: var(--dialog-bg);
 }
 
 .cardFull .title {
@@ -54,34 +55,32 @@
     sans-serif;
   font-size: 13px;
   font-weight: 700;
-  color: #1a1e2a;
+  color: var(--dialog-fg);
 }
 
 .cardFull .actions {
   gap: 0;
 }
 
-/* Mol*'s own button shape, repainted in the brand tint: control fill (#eaebf4),
-   no border, and a hover of #e1e3ee with the brand purple accent and a hairline
-   outline. Structure follows molstar/build/viewer/theme/light.css. */
+/* Mol*'s square button shape, since it sits on Mol*'s own bar: white fill,
+   accent on hover. */
 .cardFull .download {
   height: 24px;
   margin-right: 10px;
   padding: 0 9px;
   border: none;
   border-radius: 0;
-  background: #eaebf4;
-  color: #1a1e2a;
+  background: var(--dialog-field);
+  color: var(--dialog-fg);
   font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
     sans-serif;
   font-size: 12px;
 }
 
 .cardFull .download:hover {
-  background: #e1e3ee;
-  color: #663be4;
-  outline: 1px solid #c3c6d8;
-  outline-offset: -1px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  outline: none;
 }
 
 /* Flush to the corner: no inset, no rounding, no border of its own. */
@@ -91,28 +90,31 @@
   border: 0;
   border-radius: 0;
   background: none;
-  color: #1a1e2a;
+  color: var(--dialog-fg-muted);
   font-size: 20px;
 }
 
 .cardFull .close:hover {
-  background: #d5d7e4;
-  color: #663be4;
+  background: var(--dialog-hover);
+  color: var(--dialog-fg);
 }
 
+/* The tinted strip: it tells you which window you are in and puts a hard edge
+   at the top of the card, without the weight of the page's own ink bar. */
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px 14px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--dialog-border);
+  background: var(--dialog-bg);
 }
 
 .title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--dialog-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -125,58 +127,51 @@
   flex-shrink: 0;
 }
 
-/* Outlined, not filled — the same button the model page shows in its hero, so
-   Download reads the same everywhere and sits level with Copy beside it. */
-.download {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* White pills on the tinted strip, the same outlined control the app uses on
+   any light surface: hairline border, accent on hover. Copy and Download are
+   drawn identically so they sit level. */
+.download,
+.copy {
   height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--dialog-border);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-secondary);
+  background: var(--dialog-field);
+  color: var(--dialog-fg);
   font-size: 12px;
   font-weight: 600;
-  text-decoration: none;
   transition:
     border-color 120ms ease,
     color 120ms ease,
     background 120ms ease;
 }
 
-.download:hover {
-  border-color: var(--accent);
-  color: var(--accent-hover);
-  background: var(--accent-soft);
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
 }
 
 .copy {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease;
 }
 
+.download:hover,
 .copy:hover {
   border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent-hover);
 }
 
-.copy:focus-visible {
+.copy:focus-visible,
+.download:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: var(--ring);
+  box-shadow: var(--dialog-ring);
 }
 
 .close {
@@ -184,10 +179,10 @@
   height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-secondary);
+  background: transparent;
+  color: var(--dialog-fg-muted);
   cursor: pointer;
   font: inherit;
   font-size: 18px;
@@ -198,8 +193,13 @@
 }
 
 .close:hover {
-  background: var(--surface-muted);
-  color: var(--text);
+  background: var(--dialog-hover);
+  color: var(--dialog-fg);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow: var(--dialog-ring);
 }
 
 .body {

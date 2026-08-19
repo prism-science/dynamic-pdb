@@ -76,15 +76,15 @@
   padding: 0;
 }
 
-/* Header in the Mol* light skin, one step darker than the density-map bar below
-   it, so the chrome descends into the canvas instead of sitting on it as a white
-   slab. */
+/* The same tinted strip the file preview puts over its viewer, so both routes
+   into a structure open the same window, one step darker than Mol*'s own chrome
+   right below it. */
 .structureOverlayCard .chartOverlayHead {
   flex: none;
   margin: 0;
   padding: 0 0 0 14px;
-  border-bottom: 1px solid #d5d7e4;
-  background: #e1e3ee;
+  border-bottom: 1px solid var(--dialog-border);
+  background: var(--dialog-bg);
 }
 
 .structureOverlayCard .chartOverlayTitle {
@@ -92,7 +92,7 @@
     sans-serif;
   font-size: 13px;
   font-weight: 700;
-  color: #1a1e2a;
+  color: var(--dialog-fg);
 }
 
 .structureOverlayCard .headActions {
@@ -101,10 +101,8 @@
   flex-shrink: 0;
 }
 
-/* Mol*'s own button shape, repainted in the brand tint: control fill (#eaebf4),
-   no border, and a hover of #e1e3ee with the brand purple accent and a hairline
-   outline. Same values as the file preview uses, so both routes into the viewer
-   match. */
+/* Mol*'s square button shape on the tinted strip. Same values as the file
+   preview uses, so both routes into the viewer match. */
 .structureOverlayCard .download {
   display: inline-flex;
   align-items: center;
@@ -113,8 +111,8 @@
   margin-right: 10px;
   padding: 0 9px;
   border: none;
-  background: #eaebf4;
-  color: #1a1e2a;
+  background: var(--dialog-field);
+  color: var(--dialog-fg);
   font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
     sans-serif;
   font-size: 12px;
@@ -126,10 +124,9 @@
 }
 
 .structureOverlayCard .download:hover {
-  background: #e1e3ee;
-  color: #663be4;
-  outline: 1px solid #c3c6d8;
-  outline-offset: -1px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  outline: none;
 }
 
 /* Flush to the corner: no inset, no rounding, no border of its own. */
@@ -139,13 +136,13 @@
   border: 0;
   border-radius: 0;
   background: none;
-  color: #1a1e2a;
+  color: var(--dialog-fg-muted);
   font-size: 20px;
 }
 
 .structureOverlayCard .closeButton:hover {
-  background: #d5d7e4;
-  color: #663be4;
+  background: var(--dialog-hover);
+  color: var(--dialog-fg);
 }
 
 .structureOverlayBody {
