@@ -54,13 +54,19 @@ const PLACEHOLDER = {
       { label: "BUSTER", count: 2956 },
     ],
   },
+  // Real, most recently updated first, five of them — the cut belongs to the
+  // query this will become, so there is nothing here to slice at render time.
+  // `entryId` is carried but unused: it is where the Entry column will link once
+  // we wire the table up, so that change touches only the markup.
+  //
+  // The export's `model_name` is dropped — every row of it reads "Ensemble
+  // refinement model", which the Model Type column already says.
   latest: [
-    { entry: "7APT", modelType: "Multiconformer", experiment: "X-ray", time: "01:43 PM 2026-08-17" },
-    { entry: "6XQ1", modelType: "Ensemble", experiment: "CryoEM", time: "11:02 AM 2026-08-17" },
-    { entry: "4KTU", modelType: "Multiconformer", experiment: "NMR", time: "09:18 AM 2026-08-16" },
-    { entry: "3LZT", modelType: "Ensemble", experiment: "Diffuse scattering", time: "04:55 PM 2026-08-15" },
-    { entry: "1TQN", modelType: "Multiconformer", experiment: "X-ray", time: "10:31 AM 2026-08-15" },
-    { entry: "5NW3", modelType: "Ensemble", experiment: "Neutron", time: "02:07 PM 2026-08-14" },
+    { entry: "5RGD", entryId: "d777266b-6d64-4848-bdb3-9ffd1a4db39a", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.787Z" },
+    { entry: "6ZBX", entryId: "059f1a59-41c1-42b1-86b3-0dd99a046cd3", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.207Z" },
+    { entry: "8H2V", entryId: "2bb891d8-5a34-442f-b470-fe5b8d4ec35d", modelType: "Ensemble", experiment: "Other", updatedAt: "2026-08-13T14:44:19.235Z" },
+    { entry: "7ATM", entryId: "8b68663f-5d6f-4108-9ce5-33122959ea70", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:19.195Z" },
+    { entry: "7CCW", entryId: "d9dcd7a6-58a8-4cfa-bde7-697a935818bb", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:18.789Z" },
   ],
 };
 
@@ -78,6 +84,39 @@ const SAMPLE_SEARCHES = [
 ];
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+
+/**
+ * Deposit timestamps, pinned to UTC and printed to the second.
+ *
+ * UTC because the string is produced during the server render: formatting in
+ * whatever zone the server happens to run in would make the page say different
+ * things on different machines. The column header carries the UTC so the reader
+ * is not left guessing.
+ *
+ * To the second because a bulk import lands its models inside the same minute —
+ * these ten span eight seconds — and a minute-resolution column would print ten
+ * identical times, which makes the ordering look arbitrary.
+ */
+const depositTime = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+
+// en-CA for the YYYY-MM-DD the design asks for.
+const depositDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "UTC",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function formatDepositedAt(iso: string): string {
+  const at = new Date(iso);
+  return `${depositTime.format(at)} ${depositDate.format(at)}`;
+}
 
 /**
  * Print a headline count as a round approximation.
@@ -166,7 +205,7 @@ export default function Home() {
                   <th scope="col">Model Type</th>
                   <th scope="col">Experiment Type</th>
                   <th scope="col" className={styles.tableTime}>
-                    Time
+                    Time (UTC)
                   </th>
                 </tr>
               </thead>
@@ -176,7 +215,9 @@ export default function Home() {
                     <td className={styles.tableEntry}>{row.entry}</td>
                     <td>{row.modelType}</td>
                     <td>{row.experiment}</td>
-                    <td className={styles.tableTime}>{row.time}</td>
+                    <td className={styles.tableTime}>
+                      {formatDepositedAt(row.updatedAt)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
