@@ -755,7 +755,7 @@ export default function NewEntryForm({
           Reset form
         </button>
         <div className={styles.actionsRight}>
-          <a className={styles.secondary} href="/">
+          <a className={styles.secondary} href="/browse">
             Cancel
           </a>
           <button type="submit" className={styles.primary} disabled={!canSubmit}>

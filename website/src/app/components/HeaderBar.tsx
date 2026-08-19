@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import styles from "./AppHeader.module.css";
 import HeaderSearch from "./HeaderSearch";
@@ -25,27 +26,70 @@ type Props = {
   reviews: HeaderReviews | null;
 };
 
+/**
+ * Main navigation, left aligned on every page.
+ *
+ * Only Browse has a page behind it. The other three are rendered as plain
+ * text rather than dead links, so nothing looks clickable that is not.
+ */
+const NAV = [
+  { label: "Browse", href: "/browse" },
+  { label: "Download", href: null },
+  { label: "Docs", href: null },
+  { label: "About", href: null },
+] as const;
+
 export default function HeaderBar({ user, reviews }: Props) {
+  const pathname = usePathname();
+  // The landing page carries its own centred search, so the header does not
+  // repeat it there.
+  const isLanding = pathname === "/";
+
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
-        <Link href="/" className={styles.brand} aria-label="Dynamic PDB home">
-          <img
-            className={styles.brandLogo}
-            src="/prism-mark-white.png"
-            alt=""
-            width={32}
-            height={32}
-          />
-          <span className={styles.brandText}>Dynamic PDB</span>
-        </Link>
+        <div className={styles.left}>
+          <Link href="/" className={styles.brand} aria-label="Dynamic PDB home">
+            <img
+              className={styles.brandLogo}
+              src="/prism-mark-white.png"
+              alt=""
+              width={32}
+              height={32}
+            />
+            <span className={styles.brandText}>Dynamic PDB</span>
+          </Link>
+
+          <nav className={styles.nav} aria-label="Main">
+            {NAV.map((item) =>
+              item.href ? (
+                <Link
+                  key={item.label}
+                  className={styles.navLink}
+                  href={item.href}
+                  aria-current={
+                    pathname.startsWith(item.href) ? "page" : undefined
+                  }
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <span key={item.label} className={styles.navPending}>
+                  {item.label}
+                </span>
+              ),
+            )}
+          </nav>
+        </div>
 
         <div className={styles.actions}>
           {/* useSearchParams needs a boundary so the rest of the header is not
               pulled out of static rendering with it. */}
-          <Suspense fallback={<div className={styles.search} />}>
-            <HeaderSearch />
-          </Suspense>
+          {isLanding ? null : (
+            <Suspense fallback={<div className={styles.search} />}>
+              <HeaderSearch />
+            </Suspense>
+          )}
 
           {user ? (
             <UserMenu

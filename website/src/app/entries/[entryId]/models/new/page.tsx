@@ -43,7 +43,7 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
       <div className={styles.shell}>
         <Breadcrumbs
           items={[
-            { label: "Entries", href: "/" },
+            { label: "Entries", href: "/browse" },
             { label: data.entry.name, href: entryHref },
             { label: "New model" },
           ]}

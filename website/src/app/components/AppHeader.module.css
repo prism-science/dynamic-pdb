@@ -16,6 +16,52 @@
   height: 100%;
 }
 
+/* Brand plus the main navigation, kept together at the left edge; the account
+   controls stay opposite them. */
+.left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.navLink {
+  color: var(--header-fg-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+
+.navLink:hover,
+.navLink[aria-current="page"] {
+  color: var(--header-fg);
+}
+
+/* Download, Docs and About have no page behind them yet. They are rendered as
+   text rather than as links, so nothing looks clickable that is not. */
+.navPending {
+  color: var(--header-fg-muted);
+  opacity: 0.5;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* The bar is already carrying the search field and the account; below this the
+   nav is what gives way. The landing page still links through to Browse. */
+@media (max-width: 820px) {
+  .nav {
+    display: none;
+  }
+}
+
 .brand {
   flex-shrink: 0;
   display: inline-flex;

@@ -32,7 +32,7 @@ export default async function NewEntryPage({ searchParams }: NewEntryPageProps) 
     <main className={styles.page}>
       <div className={styles.shell}>
         <Breadcrumbs
-          items={[{ label: "Proteins", href: "/" }, { label: "New entry" }]}
+          items={[{ label: "Proteins", href: "/browse" }, { label: "New entry" }]}
         />
         <h1 className={styles.title}>New entry</h1>
         <NewEntryForm extExperimentId={experimentID || null} />

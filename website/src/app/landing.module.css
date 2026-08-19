@@ -1,0 +1,315 @@
+.page {
+  flex: 1 1 auto;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+  padding: 56px 0 88px;
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ hero -- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.tagline {
+  width: min(660px, 100%);
+  margin: 16px 0 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* On the landing page the search is the page's main act, so it is centred and
+   full width here; every other page keeps the compact field in the header. */
+.search {
+  display: flex;
+  gap: 10px;
+  width: min(640px, 100%);
+  margin-top: 34px;
+}
+
+.searchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 46px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.searchButton {
+  flex: none;
+  height: 46px;
+  padding: 0 24px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.searchButton:hover {
+  background: var(--accent-hover);
+}
+
+.searchButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Muted rather than link-coloured on purpose: these are not wired up yet, and
+   a purple chip that does nothing when clicked is worse than a quiet one. */
+.samples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.samplesLead {
+  font-weight: 600;
+}
+
+.sample {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+/* ---------------------------------------------------------------- counts -- */
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 52px;
+}
+
+.countCard {
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+}
+
+.countValue {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.countLabel {
+  margin-top: 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- panels -- */
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.panel {
+  margin-top: 16px;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Inside the two-column grid the panels are already spaced by the gap. */
+.panels .panel {
+  margin-top: 0;
+}
+
+.panelHeading {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breakdownHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.breakdownLabel {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.breakdownCount {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* --------------------------------------------------- latest depositions -- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  padding: 0 14px 9px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 14px 11px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tableEntry {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The timestamp is the one column that should hug the right edge, so the rest
+   of the row can size to its content. */
+.table .tableTime {
+  width: 1%;
+  padding-right: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.browseAll {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.browseAll:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------ responsive -- */
+
+@media (max-width: 860px) {
+  .counts,
+  .panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panels .panel + .panel {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: calc(100% - 28px);
+    padding: 36px 0 64px;
+  }
+
+  .title {
+    font-size: 32px;
+  }
+
+  .search {
+    flex-direction: column;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+}

@@ -90,7 +90,7 @@ export default async function ModelPage({
       <div className={styles.record}>
         <Breadcrumbs
           items={[
-            { label: "Entries", href: "/" },
+            { label: "Entries", href: "/browse" },
             { label: data.entry.name, href: `/entries/${data.entry.id}` },
             { label: data.model.name },
           ]}

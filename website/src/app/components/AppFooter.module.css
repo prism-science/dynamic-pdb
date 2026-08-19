@@ -1,0 +1,36 @@
+.footer {
+  flex: none;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+  padding: 18px 0;
+}
+
+.logo {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.text {
+  margin: 0;
+  max-width: 620px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+  .inner {
+    width: calc(100% - 28px);
+  }
+}

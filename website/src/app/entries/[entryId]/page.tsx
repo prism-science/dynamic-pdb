@@ -62,7 +62,7 @@ export default async function EntryPage({
     <main className={styles.page} aria-label={`${data.entry.name} entry`}>
       <div className={styles.record}>
         <Breadcrumbs
-          items={[{ label: "Entries", href: "/" }, { label: data.entry.name }]}
+          items={[{ label: "Entries", href: "/browse" }, { label: data.entry.name }]}
         />
 
         <div className={styles.layout}>
