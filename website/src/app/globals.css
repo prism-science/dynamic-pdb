@@ -1,44 +1,67 @@
+/* Prism brand kit: white, #1A1E2A ink, #5F616B grey, #EAEBF4 tint, and #663BE4
+   purple used *very* sparingly — it is the only saturated colour in the neutral
+   system, reserved for the accent (links, primary buttons, focus rings) and the
+   top data-maturity level. Everything else is a cool grey stepped between the
+   ink and the tint. Status colours stay green/amber/red so approved, pending
+   and rejected remain readable at a glance, but are tuned to the cool base. */
 :root {
-  --bg: #fafaf9;
-  --surface: #ffffff;
-  --surface-muted: #f5f5f4;
-  --border: #e8e6e5;
-  --border-strong: #d6d3d1;
-  --text: #0c0a09;
-  --text-secondary: #44403c;
-  --text-muted: #78716c;
-  --accent: #3ba6f1;
-  --accent-hover: #3398e1;
-  --accent-soft: #eff9ff;
-  --success-bg: #ecfdf3;
-  --success-fg: #067647;
-  --success-border: #abefc6;
-  --danger-bg: #fef3f2;
-  --danger-fg: #b42318;
-  --danger-border: #fecdca;
-  --warning-bg: #fffaeb;
-  --warning-fg: #b54708;
-  --warning-border: #fedf89;
-  --neutral-bg: #f5f5f4;
-  --neutral-fg: #44403c;
+  --brand-ink: #1a1e2a;
+  --brand-grey: #5f616b;
+  --brand-tint: #eaebf4;
+  --brand-purple: #663be4;
 
-  /* Data-maturity level palette (L0 raw -> L3 evaluations) */
-  --l0: #78716c;
-  --l0-soft: #f5f5f4;
-  --l1: #0d9488;
-  --l1-soft: #eefbf9;
-  --l2: #3ba6f1;
-  --l2-soft: #eff9ff;
-  --l3: #8b5cf6;
-  --l3-soft: #f5f2ff;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-muted: #f2f3f8;
+  --border: #eaebf4;
+  --border-strong: #d5d7e4;
+  --text: #1a1e2a;
+  --text-secondary: #3d414f;
+  --text-muted: #5f616b;
+  --accent: #663be4;
+  --accent-hover: #5730c7;
+  --accent-soft: #f1edfd;
+  --success-bg: #e7f6f0;
+  --success-fg: #0e7c57;
+  --success-border: #b2e2cf;
+  --danger-bg: #fbecea;
+  --danger-fg: #b4231d;
+  --danger-border: #f2c7c3;
+  --warning-bg: #fbf3e1;
+  --warning-fg: #8a6414;
+  --warning-border: #ead8a5;
+  --neutral-bg: #eaebf4;
+  --neutral-fg: #3d414f;
+
+  /* The header is an ink block: the brand's dark bar across the top of a white
+     page. Scoped to the bar itself — the dropdowns it opens are page-level
+     surfaces and stay light. */
+  --header-bg: #1a1e2a;
+  --header-fg: #ffffff;
+  --header-fg-muted: #a8abb8;
+  --header-border: rgba(255, 255, 255, 0.12);
+  --header-hover: rgba(255, 255, 255, 0.08);
+  --header-field: rgba(255, 255, 255, 0.06);
+
+  /* Data-maturity level palette (L0 raw -> L3 evaluations): one monochrome ramp
+     from the brand tint to the brand ink, with the brand purple only at the top
+     level so the accent stays rare. */
+  --l0: #666a7b;
+  --l0-soft: #f2f3f8;
+  --l1: #4a4f63;
+  --l1-soft: #eaecf3;
+  --l2: #2a2f40;
+  --l2-soft: #e3e5ef;
+  --l3: #663be4;
+  --l3-soft: #f1edfd;
 
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 12px;
-  --shadow-xs: 0 1px 0 rgba(28, 25, 23, 0.02);
-  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.06);
-  --shadow-md: 0 16px 40px rgba(28, 25, 23, 0.08);
-  --ring: 0 0 0 3px rgba(59, 166, 241, 0.18);
+  --shadow-xs: 0 1px 0 rgba(26, 30, 42, 0.02);
+  --shadow-sm: 0 1px 2px rgba(26, 30, 42, 0.06);
+  --shadow-md: 0 16px 40px rgba(26, 30, 42, 0.08);
+  --ring: 0 0 0 3px rgba(102, 59, 228, 0.2);
   --header-height: 56px;
   --content-max: 1120px;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter",
@@ -104,10 +127,8 @@ header[class*="AppHeader_header"] {
   top: 0;
   z-index: 50;
   height: var(--header-height);
-  background: rgba(250, 250, 249, 0.88);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
 }
 
 /* The bar stays full-bleed; its contents sit in the same column as the page, so
@@ -130,7 +151,7 @@ header[class*="AppHeader_header"] [class*="AppHeader_brand"] {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  color: var(--text);
+  color: var(--header-fg);
   text-decoration: none;
 }
 
@@ -141,7 +162,7 @@ header[class*="AppHeader_header"] [class*="AppHeader_brandLogo"] {
 }
 
 header[class*="AppHeader_header"] [class*="AppHeader_brandText"] {
-  color: var(--text);
+  color: var(--header-fg);
   font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 600;
@@ -158,7 +179,7 @@ header[class*="AppHeader_header"] [class*="AppHeader_menuTrigger"] {
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--text);
+  color: var(--header-fg);
   font: inherit;
 }
 
@@ -178,7 +199,7 @@ header[class*="AppHeader_header"] [class*="AppHeader_avatar"] {
 header[class*="AppHeader_header"] [class*="AppHeader_userName"] {
   max-width: 180px;
   overflow: hidden;
-  color: var(--text);
+  color: var(--header-fg);
   font-size: 13px;
   font-weight: 500;
   text-overflow: ellipsis;

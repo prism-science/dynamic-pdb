@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(28, 25, 23, 0.55);
+  background: rgba(26, 30, 42, 0.55);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -21,7 +21,7 @@
   overflow: hidden;
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 24px 64px rgba(28, 25, 23, 0.28);
+  box-shadow: 0 24px 64px rgba(26, 30, 42, 0.28);
 }
 
 .head {

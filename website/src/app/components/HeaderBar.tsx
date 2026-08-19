@@ -32,7 +32,7 @@ export default function HeaderBar({ user, reviews }: Props) {
         <Link href="/" className={styles.brand} aria-label="Dynamic PDB home">
           <img
             className={styles.brandLogo}
-            src="/dynamic-pdb-mark.svg"
+            src="/prism-mark-white.png"
             alt=""
             width={32}
             height={32}

@@ -6,7 +6,7 @@
   min-width: 0;
   /* One step darker than the rows: the card reads as a recess opened under
      its row, not as more table. The defline band above stays its own grey. */
-  background: var(--bg);
+  background: var(--surface-muted);
 }
 
 /* Defline band and switcher: the same recipe as SequenceView, where one
@@ -174,12 +174,12 @@
 /* Both sides of the comparison are tinted, as asked: same residue green,
    different red, gap columns grey. */
 .match {
-  background: #d9f2df;
+  background: #dcf1e7;
   border-radius: 2px;
 }
 
 .diff {
-  background: #fde8e6;
+  background: #fae0dd;
   border-radius: 2px;
 }
 

@@ -351,7 +351,7 @@
 .old {
   padding: 0 3px;
   border-radius: 3px;
-  background: #fee4e2;
+  background: #f8dedb;
   color: var(--danger-fg);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
@@ -360,7 +360,7 @@
 .new {
   padding: 0 3px;
   border-radius: 3px;
-  background: #d1fadf;
+  background: #e2f5ee;
   color: var(--success-fg);
 }
 
@@ -384,7 +384,7 @@
 
 .down {
   background: var(--accent-soft);
-  color: #0b6fb3;
+  color: #663be4;
 }
 
 .emptyPane {

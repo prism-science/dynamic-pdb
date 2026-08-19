@@ -8,7 +8,10 @@ import AppHeader from "./components/AppHeader";
 export const metadata: Metadata = {
   title: "dynamic-pdb",
   description: "Dynamic PDB workflows.",
-  icons: { icon: "/dynamic-pdb-mark.svg" },
+  icons: {
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

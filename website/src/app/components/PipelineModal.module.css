@@ -38,7 +38,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(28, 25, 23, 0.45);
+  background: rgba(26, 30, 42, 0.45);
 }
 
 .card {
@@ -102,7 +102,7 @@
 .body {
   flex: 1 1 auto;
   min-height: 0;
-  background: var(--bg);
+  background: var(--surface-muted);
 }
 
 .loading {

@@ -43,7 +43,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(28, 25, 23, 0.55);
+  background: rgba(26, 30, 42, 0.55);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -55,7 +55,7 @@
   padding: 16px 20px 20px;
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 24px 64px rgba(28, 25, 23, 0.28);
+  box-shadow: 0 24px 64px rgba(26, 30, 42, 0.28);
 }
 
 /* A structure takes the whole window: no frame, no padding, the canvas is the
@@ -83,8 +83,8 @@
   flex: none;
   margin: 0;
   padding: 0 0 0 14px;
-  border-bottom: 1px solid #d8d3c8;
-  background: #e6e3da;
+  border-bottom: 1px solid #d5d7e4;
+  background: #e1e3ee;
 }
 
 .structureOverlayCard .chartOverlayTitle {
@@ -92,7 +92,7 @@
     sans-serif;
   font-size: 13px;
   font-weight: 700;
-  color: #332b1f;
+  color: #1a1e2a;
 }
 
 .structureOverlayCard .headActions {
@@ -101,9 +101,10 @@
   flex-shrink: 0;
 }
 
-/* Mol*'s own button: their control fill (#eeece7), no border, and their hover —
-   #e9e6e0 with the ochre accent and a hairline outline. Same values as the file
-   preview uses, so both routes into the viewer match. */
+/* Mol*'s own button shape, repainted in the brand tint: control fill (#eaebf4),
+   no border, and a hover of #e1e3ee with the brand purple accent and a hairline
+   outline. Same values as the file preview uses, so both routes into the viewer
+   match. */
 .structureOverlayCard .download {
   display: inline-flex;
   align-items: center;
@@ -112,8 +113,8 @@
   margin-right: 10px;
   padding: 0 9px;
   border: none;
-  background: #eeece7;
-  color: #332b1f;
+  background: #eaebf4;
+  color: #1a1e2a;
   font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial,
     sans-serif;
   font-size: 12px;
@@ -125,9 +126,9 @@
 }
 
 .structureOverlayCard .download:hover {
-  background: #e9e6e0;
-  color: #ae5d04;
-  outline: 1px solid #c9c3b3;
+  background: #e1e3ee;
+  color: #663be4;
+  outline: 1px solid #c3c6d8;
   outline-offset: -1px;
 }
 
@@ -138,13 +139,13 @@
   border: 0;
   border-radius: 0;
   background: none;
-  color: #332b1f;
+  color: #1a1e2a;
   font-size: 20px;
 }
 
 .structureOverlayCard .closeButton:hover {
-  background: #d8d3c8;
-  color: #ae5d04;
+  background: #d5d7e4;
+  color: #663be4;
 }
 
 .structureOverlayBody {

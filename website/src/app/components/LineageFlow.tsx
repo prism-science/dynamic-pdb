@@ -58,8 +58,8 @@ const COMPACT: Metrics = {
 
 export const ROW_PITCH = FULL.rowPitch;
 
-const TRUNK_STROKE = "#8f8a86";
-const BRANCH_STROKE = "#cfcbc8";
+const TRUNK_STROKE = "#8a8d9b";
+const BRANCH_STROKE = "#d5d7e4";
 
 type FlowNodeData = {
   node: LineageNode;
