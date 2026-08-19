@@ -55,6 +55,7 @@ export default async function EntryPage({
 
   const hasFiles = files.length > 0;
   const hasModels = data.models.length > 0;
+  const canAddModel = session !== null;
   const entryFacts = entryMetadataFacts(data.entry.metadata);
 
   return (
@@ -127,12 +128,18 @@ export default async function EntryPage({
             <section id="models" className={styles.contentSection}>
               <div className={styles.contentSectionHead}>
                 <h2 className={styles.contentHeading}>Models</h2>
-                <a
-                  className={styles.addModelLink}
-                  href={`/entries/${encodeURIComponent(data.entry.id)}/models/new`}
-                >
-                  Add model
-                </a>
+                {/* The page behind this link redirects anonymous visitors to
+                    the login, so offering it signed-out was a dead end. Same
+                    rule as the entries list, which hides its create button
+                    unless the session can actually use it. */}
+                {canAddModel ? (
+                  <a
+                    className={styles.addModelLink}
+                    href={`/entries/${encodeURIComponent(data.entry.id)}/models/new`}
+                  >
+                    Add model
+                  </a>
+                ) : null}
               </div>
               {hasModels ? (
                 <SortableModelList
@@ -144,8 +151,9 @@ export default async function EntryPage({
                 />
               ) : (
                 <p className={styles.modelsEmpty}>
-                  No models yet. Add the first refinement or prediction built
-                  from this entry&apos;s data.
+                  {canAddModel
+                    ? "No models yet. Add the first refinement or prediction built from this entry's data."
+                    : "No models yet."}
                 </p>
               )}
             </section>
