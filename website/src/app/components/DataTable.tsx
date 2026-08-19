@@ -53,7 +53,6 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
                 type="button"
                 key={entity.id}
                 className={styles.cell}
-                data-level={level}
                 onClick={() => setSelected(entity)}
                 title="Open preview"
               >
