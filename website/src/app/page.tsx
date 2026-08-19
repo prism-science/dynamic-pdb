@@ -25,26 +25,25 @@ const PLACEHOLDER = {
     // L2: computed structural models.
     computedModels: 225505,
   },
-  // Top 5 by count. `total` is the whole level, not the sum of the rows: the
+  // Top rows by count. `total` is the whole level, not the sum of the rows: the
   // bar track is the level, so each bar reads as that slice's share of the
-  // registry rather than as a bar against the biggest row. The top 5 need not
-  // add up to it — whatever is left is simply not shown.
+  // registry rather than as a bar against the biggest row. The rows need not add
+  // up to it — whatever falls outside the top is simply not drawn.
   //
-  // Still invented, though the shares are plausible and do add up to the L1
-  // total.
+  // Real, exported from the registry. The export also carried a third row,
+  // neutron scattering with a count of 1, which is left out: a row for a single
+  // dataset says less than the space it takes. That is the one model missing
+  // from the 225,505.
   byExperiment: {
     total: 225505,
     rows: [
-      { label: "X-ray", count: 208940 },
-      { label: "CryoEM", count: 12180 },
-      { label: "NMR", count: 3410 },
-      { label: "Diffuse scattering", count: 610 },
-      { label: "Other", count: 365 },
+      { label: "X-ray", count: 225477 },
+      { label: "Other", count: 27 },
     ],
   },
-  // These five are real, exported from the registry. They cover 219,785 of the
-  // 225,505 L2 models; the remaining 5,720 sit outside the top 5 and are not
-  // drawn, which is why the bars do not fill the row.
+  // Real too. These five cover 219,785 of the 225,505 L2 models; the remaining
+  // 5,720 sit outside the top 5 and are not drawn, which is why the bars do not
+  // fill the row.
   byAnalysis: {
     total: 225505,
     rows: [
@@ -194,6 +193,13 @@ export default function Home() {
   );
 }
 
+function barWidth(count: number, total: number): string {
+  if (count <= 0 || total <= 0) {
+    return "0";
+  }
+  return `max(3px, ${(count / total) * 100}%)`;
+}
+
 function CountCard({ value, label }: { value: number; label: string }) {
   return (
     <div className={styles.countCard}>
@@ -224,10 +230,14 @@ function Breakdown({
                 {numberFormatter.format(row.count)}
               </span>
             </div>
+            {/* A share this lopsided — one row is 99.99% of the level, the
+                next is 0.01% — rounds to less than a pixel, and an empty track
+                reads as zero rather than as "very few". Anything non-zero keeps
+                a hairline; the exact count is right above it either way. */}
             <div className={styles.bar}>
               <span
                 className={styles.barFill}
-                style={{ width: `${total > 0 ? (row.count / total) * 100 : 0}%` }}
+                style={{ width: barWidth(row.count, total) }}
               />
             </div>
           </li>

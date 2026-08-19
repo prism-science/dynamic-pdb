@@ -178,6 +178,9 @@
 
 /* ---------------------------------------------------------------- panels -- */
 
+/* The two panels stay the same size whatever they hold: they are a pair, and a
+   pair of cards with different heights reads as broken. The short one simply
+   carries the empty space. */
 .panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
