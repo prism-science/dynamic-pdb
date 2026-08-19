@@ -217,6 +217,12 @@
   list-style: none;
 }
 
+/* The rows are flex children; min-width lets a long label be truncated by the
+   label rule instead of stretching the track. */
+.breakdownRow {
+  min-width: 0;
+}
+
 .breakdownHead {
   display: flex;
   align-items: baseline;
@@ -226,8 +232,12 @@
 }
 
 .breakdownLabel {
+  min-width: 0;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .breakdownCount {

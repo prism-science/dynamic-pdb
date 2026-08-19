@@ -25,24 +25,36 @@ const PLACEHOLDER = {
     // L2: computed structural models.
     computedModels: 225505,
   },
-  // Top 5 by count; the bar track is the L1 total, so the bars are comparable
-  // to each other and show what share of the registry each experiment is.
-  // Shares are invented, but they add up to the L1 total above.
-  byExperiment: [
-    { label: "X-ray", count: 208940 },
-    { label: "CryoEM", count: 12180 },
-    { label: "NMR", count: 3410 },
-    { label: "Diffuse scattering", count: 610 },
-    { label: "Other", count: 365 },
-  ],
-  // Top 5 by count; same idea against the L2 total.
-  byAnalysis: [
-    { label: "qFit3", count: 96420 },
-    { label: "PHENIX", count: 74180 },
-    { label: "Sampleworks", count: 38905 },
-    { label: "NMR", count: 11600 },
-    { label: "Other", count: 4400 },
-  ],
+  // Top 5 by count. `total` is the whole level, not the sum of the rows: the
+  // bar track is the level, so each bar reads as that slice's share of the
+  // registry rather than as a bar against the biggest row. The top 5 need not
+  // add up to it — whatever is left is simply not shown.
+  //
+  // Still invented, though the shares are plausible and do add up to the L1
+  // total.
+  byExperiment: {
+    total: 225505,
+    rows: [
+      { label: "X-ray", count: 208940 },
+      { label: "CryoEM", count: 12180 },
+      { label: "NMR", count: 3410 },
+      { label: "Diffuse scattering", count: 610 },
+      { label: "Other", count: 365 },
+    ],
+  },
+  // These five are real, exported from the registry. They cover 219,785 of the
+  // 225,505 L2 models; the remaining 5,720 sit outside the top 5 and are not
+  // drawn, which is why the bars do not fill the row.
+  byAnalysis: {
+    total: 225505,
+    rows: [
+      { label: "PHENIX", count: 120125 },
+      { label: "qFit", count: 59577 },
+      { label: "REFMAC", count: 31616 },
+      { label: "CNS", count: 5511 },
+      { label: "BUSTER", count: 2956 },
+    ],
+  },
   latest: [
     { entry: "7APT", modelType: "Multiconformer", experiment: "X-ray", time: "01:43 PM 2026-08-17" },
     { entry: "6XQ1", modelType: "Ensemble", experiment: "CryoEM", time: "11:02 AM 2026-08-17" },
@@ -90,9 +102,6 @@ function approximateCount(value: number): string {
 }
 
 export default function Home() {
-  const experimentTotal = sum(PLACEHOLDER.byExperiment);
-  const analysisTotal = sum(PLACEHOLDER.byAnalysis);
-
   return (
     // The footer lives here rather than in the root layout: as a second flex
     // item under `body` it competes with `.appContent`, which is allowed to
@@ -140,13 +149,11 @@ export default function Home() {
         <section className={styles.panels}>
           <Breakdown
             heading="Datasets By Experiment (L1)"
-            rows={PLACEHOLDER.byExperiment}
-            total={experimentTotal}
+            {...PLACEHOLDER.byExperiment}
           />
           <Breakdown
             heading="Datasets By Analysis (L2)"
-            rows={PLACEHOLDER.byAnalysis}
-            total={analysisTotal}
+            {...PLACEHOLDER.byAnalysis}
           />
         </section>
 
@@ -217,9 +224,6 @@ function Breakdown({
                 {numberFormatter.format(row.count)}
               </span>
             </div>
-            {/* The track is the whole level, so a row reads as this
-                experiment's share of it rather than as a bar against the
-                largest row. */}
             <div className={styles.bar}>
               <span
                 className={styles.barFill}
@@ -231,8 +235,4 @@ function Breakdown({
       </ul>
     </div>
   );
-}
-
-function sum(rows: { count: number }[]): number {
-  return rows.reduce((total, row) => total + row.count, 0);
 }
