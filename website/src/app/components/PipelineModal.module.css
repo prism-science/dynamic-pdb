@@ -105,11 +105,15 @@
   box-shadow: var(--dialog-ring);
 }
 
-/* The graph owns this box, so its wheel handling never fights the page. */
+/* The graph owns this box, so its wheel handling never fights the page.
+   White, not the muted surface: the lineage nodes are themselves drawn on
+   --surface-muted (LineageFlow.module.css mirrors the L0-L3 cells of the entry
+   table), so a muted canvas left the cards sitting on their own colour and the
+   graph read as one flat field. */
 .body {
   flex: 1 1 auto;
   min-height: 0;
-  background: var(--surface-muted);
+  background: var(--surface);
 }
 
 .loading {
