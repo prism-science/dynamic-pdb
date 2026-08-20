@@ -1,0 +1,72 @@
+/* The frame is the About page's, kept in step with it deliberately: these two
+   are the same kind of page, and a reader moving between them should not feel
+   the layout shift. It is copied rather than shared because there are only two
+   of them; when Docs lands and there are three, the frame belongs in one
+   module they all import. */
+.page {
+  flex: 1 1 auto;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+  padding: 56px 0 88px;
+  color: var(--text);
+}
+
+.title {
+  width: min(660px, 100%);
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.prose {
+  width: min(660px, 100%);
+  margin-top: 20px;
+}
+
+.lead {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.note {
+  margin: 18px 0 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* nowrap because the line otherwise breaks inside the address, at the hyphen
+   in "prism-core": half an email address at the end of a line reads as a typo.
+   It fits a 320px viewport whole, so there is nothing to lose by keeping it
+   together. */
+.email {
+  color: var(--accent);
+  white-space: nowrap;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease;
+}
+
+.email:hover {
+  border-bottom-color: currentColor;
+}
+
+.email:focus-visible {
+  outline: none;
+  border-radius: 2px;
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: calc(100% - 28px);
+    padding: 36px 0 64px;
+  }
+
+  .title {
+    font-size: 26px;
+  }
+}

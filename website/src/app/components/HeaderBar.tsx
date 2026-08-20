@@ -29,12 +29,12 @@ type Props = {
 /**
  * Main navigation, left aligned on every page.
  *
- * Download and Docs have no page behind them yet and are rendered as plain
- * text rather than dead links, so nothing looks clickable that is not.
+ * Docs has no page behind it yet and is rendered as plain text rather than a
+ * dead link, so nothing looks clickable that is not.
  */
 const NAV = [
   { label: "Browse", href: "/browse" },
-  { label: "Download", href: null },
+  { label: "Download", href: "/download" },
   { label: "Docs", href: null },
   { label: "About", href: "/about" },
 ] as const;
