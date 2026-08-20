@@ -1,0 +1,112 @@
+/* The frame is the About and Download pages', copied a third time. Three is
+   where this stops being tolerable: the next page of this kind should arrive
+   with .page/.title/.prose lifted into one module all of them import. Kept
+   identical in the meantime so the three do not drift apart. */
+.page {
+  flex: 1 1 auto;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+  padding: 56px 0 88px;
+  color: var(--text);
+}
+
+.title {
+  width: min(660px, 100%);
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+/* Same measure as the other two pages. It holds the longest command line here
+   whole — the install one-liner is the widest at roughly 50 characters — so no
+   code block scrolls at this width. */
+.prose {
+  width: min(660px, 100%);
+  margin-top: 20px;
+}
+
+.lead {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+/* Sections, not shouted labels: this page is read top to bottom, and the
+   headings are waypoints in that reading. Ink and 18px, with the space above
+   doing the separating rather than a rule. */
+.heading {
+  margin: 40px 0 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* One step down from .heading, for the parts of a section that each have their
+   own example under them. */
+.subheading {
+  margin: 26px 0 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.body {
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* Commands are meant to be copied, so the block is quiet: a tinted panel with
+   a hairline, no traffic-light chrome, and horizontal scroll if a line does
+   overrun rather than a wrap that hides where the command ends. */
+.pre {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  /* Tighter than the prose around it: the manifest example is forty lines, and
+     at prose leading it filled a screen on its own. */
+  line-height: 1.55;
+  white-space: pre;
+}
+
+/* Inline code carries a tint but no border: at this size a border on a
+   three-character flag reads as a button. */
+.code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.flags {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.flags li + li {
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: calc(100% - 28px);
+    padding: 36px 0 64px;
+  }
+
+  .title {
+    font-size: 26px;
+  }
+}

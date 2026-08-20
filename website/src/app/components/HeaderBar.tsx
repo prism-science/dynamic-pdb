@@ -29,13 +29,14 @@ type Props = {
 /**
  * Main navigation, left aligned on every page.
  *
- * Docs has no page behind it yet and is rendered as plain text rather than a
- * dead link, so nothing looks clickable that is not.
+ * All four have a page behind them now, so the branch that rendered a pending
+ * item as plain text is gone along with its style. Git has it if a fifth item
+ * ever arrives ahead of its page.
  */
 const NAV = [
   { label: "Browse", href: "/browse" },
   { label: "Download", href: "/download" },
-  { label: "Docs", href: null },
+  { label: "Docs", href: "/docs" },
   { label: "About", href: "/about" },
 ] as const;
 
@@ -61,24 +62,18 @@ export default function HeaderBar({ user, reviews }: Props) {
           </Link>
 
           <nav className={styles.nav} aria-label="Main">
-            {NAV.map((item) =>
-              item.href ? (
-                <Link
-                  key={item.label}
-                  className={styles.navLink}
-                  href={item.href}
-                  aria-current={
-                    pathname.startsWith(item.href) ? "page" : undefined
-                  }
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span key={item.label} className={styles.navPending}>
-                  {item.label}
-                </span>
-              ),
-            )}
+            {NAV.map((item) => (
+              <Link
+                key={item.label}
+                className={styles.navLink}
+                href={item.href}
+                aria-current={
+                  pathname.startsWith(item.href) ? "page" : undefined
+                }
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
 
