@@ -1,5 +1,13 @@
 import Link from "next/link";
 
+import {
+  ApiRequestError,
+  getEntry,
+  listModels,
+  type Entry,
+  type Model,
+} from "@/lib/api/entries";
+import { getAuthSession } from "@/lib/auth/session";
 import AppFooter from "./components/AppFooter";
 import LandingSearch from "./components/LandingSearch";
 
@@ -9,10 +17,10 @@ import styles from "./landing.module.css";
  * Everything on this page that counts something is a placeholder.
  *
  * The real figures are backend queries we have not built yet — totals per data
- * level, a group-by over L1 experiment types, a group-by over the software that
- * produced each L2 model, and the most recently updated entries. They are kept
- * together here, shaped the way the API will return them, so wiring them up is
- * a matter of deleting this block and passing the fetched values in.
+ * level, a group-by over L1 experiment types, and a group-by over the software
+ * that produced each L2 model. They are kept together here, shaped the way the
+ * API will return them, so wiring them up is a matter of deleting this block
+ * and passing the fetched values in.
  */
 const PLACEHOLDER = {
   counts: {
@@ -69,25 +77,6 @@ const PLACEHOLDER = {
       { label: "BUSTER", count: 2956, query: "BUSTER" },
     ],
   },
-  // Real, most recently updated first, five of them — the cut belongs to the
-  // query this will become, so there is nothing here to slice at render time.
-  //
-  // A row is a deposition, and a deposition is a model: the time in it is the
-  // model revision's own `updated_at`, not the entry's. So `modelId` is what
-  // the row opens, with `entryId` only along for the path. Both were read back
-  // off /v1/entries/{id}/models, matching each row's timestamp to the model
-  // revision that carries it — every one landed on that entry's Ensemble
-  // model, which is what the Model Type column says.
-  //
-  // The export's `model_name` is dropped — every row of it reads "Ensemble
-  // refinement model", which the Model Type column already says.
-  latest: [
-    { entry: "5RGD", entryId: "d777266b-6d64-4848-bdb3-9ffd1a4db39a", modelId: "67b9feb4-1557-4d1d-af81-ba323153629e", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.787Z" },
-    { entry: "6ZBX", entryId: "059f1a59-41c1-42b1-86b3-0dd99a046cd3", modelId: "f1559ec6-35f0-4191-a5d4-2b46c860da23", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.207Z" },
-    { entry: "8H2V", entryId: "2bb891d8-5a34-442f-b470-fe5b8d4ec35d", modelId: "1cd6239e-e2b3-4dc4-85a0-120b206ba5e3", modelType: "Ensemble", experiment: "Other", updatedAt: "2026-08-13T14:44:19.235Z" },
-    { entry: "7ATM", entryId: "8b68663f-5d6f-4108-9ce5-33122959ea70", modelId: "7af069f6-1423-452c-bce3-b1c44689cf0d", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:19.195Z" },
-    { entry: "7CCW", entryId: "d9dcd7a6-58a8-4cfa-bde7-697a935818bb", modelId: "25bb1b47-3a53-477a-8571-4b32638930bb", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:18.789Z" },
-  ],
 };
 
 // Shown under the search field as the kinds of thing that can be typed into it.
@@ -140,6 +129,15 @@ const depositDate = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+type LatestDeposition = {
+  entry: string;
+  entryId: string;
+  modelId: string;
+  modelType: string;
+  experiment: string;
+  updatedAt: string;
+};
+
 function formatDepositedAt(iso: string): string {
   const at = new Date(iso);
   return `${depositTime.format(at)} ${depositDate.format(at)}`;
@@ -166,7 +164,9 @@ function approximateCount(value: number): string {
   return `${numberFormatter.format(rounded / 1000)}K+`;
 }
 
-export default function Home() {
+export default async function Home() {
+  const latest = await loadLatestDepositions();
+
   return (
     // The footer lives here rather than in the root layout: as a second flex
     // item under `body` it competes with `.appContent`, which is allowed to
@@ -237,36 +237,42 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {PLACEHOLDER.latest.map((row) => (
-                  // The whole row opens the model it describes, but it holds
-                  // one link, not four: the anchor below is stretched over the
-                  // row in CSS. Four cells wrapped in four copies of the same
-                  // href would read the same destination four times to a
-                  // screen reader and give the keyboard four stops to get past
-                  // one row.
-                  <tr key={row.entry} className={styles.tableRow}>
-                    <td className={styles.tableEntry}>
-                      {/* The id is the link's text because it is the row's
-                          name, but it is not dressed as a link: the row is the
-                          target, and underlining one cell inside it would say
-                          the click has to land there. The label says the entry
-                          and the destination is a model inside it, so the
-                          accessible name spells that out. */}
-                      <Link
-                        className={styles.rowLink}
-                        href={`/entries/${row.entryId}/models/${row.modelId}`}
-                        aria-label={`${row.entry} — ${row.modelType.toLowerCase()} model`}
-                      >
-                        {row.entry}
-                      </Link>
-                    </td>
-                    <td>{row.modelType}</td>
-                    <td>{row.experiment}</td>
-                    <td className={styles.tableTime}>
-                      {formatDepositedAt(row.updatedAt)}
-                    </td>
+                {latest.length > 0 ? (
+                  latest.map((row) => (
+                    // The whole row opens the model it describes, but it holds
+                    // one link, not four: the anchor below is stretched over the
+                    // row in CSS. Four cells wrapped in four copies of the same
+                    // href would read the same destination four times to a
+                    // screen reader and give the keyboard four stops to get past
+                    // one row.
+                    <tr key={row.modelId} className={styles.tableRow}>
+                      <td className={styles.tableEntry}>
+                        {/* The id is the link's text because it is the row's
+                            name, but it is not dressed as a link: the row is the
+                            target, and underlining one cell inside it would say
+                            the click has to land there. The label says the entry
+                            and the destination is a model inside it, so the
+                            accessible name spells that out. */}
+                        <Link
+                          className={styles.rowLink}
+                          href={`/entries/${row.entryId}/models/${row.modelId}`}
+                          aria-label={`${row.entry} — ${row.modelType.toLowerCase()} model`}
+                        >
+                          {row.entry}
+                        </Link>
+                      </td>
+                      <td>{row.modelType}</td>
+                      <td>{row.experiment}</td>
+                      <td className={styles.tableTime}>
+                        {formatDepositedAt(row.updatedAt)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4}>No depositions yet.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -279,6 +285,71 @@ export default function Home() {
       <AppFooter />
     </>
   );
+}
+
+async function loadLatestDepositions(): Promise<LatestDeposition[]> {
+  const session = await getAuthSession();
+  try {
+    const models = await listModels(session?.token, { limit: 5, offset: 0 });
+    const entries = await Promise.all(
+      models.map((model) => getEntry(session?.token, model.entry_id)),
+    );
+    return models.map((model, index) =>
+      latestDepositionFromModel(model, entries[index]),
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function latestDepositionFromModel(
+  model: Model,
+  entry: Entry,
+): LatestDeposition {
+  return {
+    entry: entryLabel(entry),
+    entryId: model.entry_id,
+    modelId: model.id,
+    modelType:
+      stringMetadataValue(model.metadata ?? {}, "model_type") ?? "Unknown",
+    experiment: experimentLabel(
+      stringMetadataValue(entry.metadata ?? {}, "method"),
+    ),
+    updatedAt: model.updated_at,
+  };
+}
+
+function entryLabel(entry: Entry): string {
+  const externalRefs = entry.metadata?.external_refs;
+  if (isRecord(externalRefs)) {
+    const pdbID = stringMetadataValue(externalRefs, "pdb");
+    if (pdbID) {
+      return pdbID.toUpperCase();
+    }
+  }
+  return entry.name;
+}
+
+function experimentLabel(method: string | null): string {
+  if (method === "X-ray crystallography") {
+    return "X-ray";
+  }
+  return method ?? "Other";
+}
+
+function stringMetadataValue(
+  metadata: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function barWidth(count: number, total: number): string {

@@ -32,6 +32,7 @@ type ModelRevisionFilters struct {
 	State          *models.RevisionState
 	States         []models.RevisionState
 	ModelState     *models.ModelState
+	EntryState     *models.EntryState
 	CreatedBy      *uuid.UUID
 	IdempotencyKey *string
 	Limit          *int
@@ -428,13 +429,12 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		args["state"] = string(*filters.State)
 	}
 	if filters.ModelState != nil {
-		conditions = append(conditions, `exists (
-			select 1
-			from models m
-			where m.id = model_revisions.model_id
-			  and m.state = :model_state
-		)`)
+		conditions = append(conditions, "models.state = :model_state")
 		args["model_state"] = string(*filters.ModelState)
+	}
+	if filters.EntryState != nil {
+		conditions = append(conditions, "entries.state = :entry_state")
+		args["entry_state"] = string(*filters.EntryState)
 	}
 	if len(filters.States) > 0 {
 		states := make([]string, 0, len(filters.States))
@@ -460,6 +460,9 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 			         model_revisions.updated_at
 			  from model_revisions
 			  join models on models.id = model_revisions.model_id`
+	if filters.EntryState != nil {
+		query += "\njoin entries on entries.id = models.entry_id"
+	}
 	if len(conditions) > 0 {
 		query += "\nwhere " + strings.Join(conditions, "\n  and ")
 	}

@@ -32,6 +32,28 @@ func Test_should_keep_explicit_limit_when_list_entries_limit_is_provided(t *test
 	assert.Equal(t, limit, *got.Limit)
 }
 
+func Test_should_apply_default_limit_when_list_models_across_entries_limit_is_missing(t *testing.T) {
+	// given
+	// when
+	got, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{})
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, got.Limit)
+	assert.Equal(t, defaultEntryListLimit, *got.Limit)
+}
+
+func Test_should_reject_negative_offset_when_list_models_across_entries_offset_is_provided(t *testing.T) {
+	// given
+	offset := -1
+
+	// when
+	_, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{Offset: &offset})
+
+	// then
+	require.Error(t, err)
+}
+
 func Test_should_reject_state_field_when_entry_revision_is_created(t *testing.T) {
 	// given
 	fields := map[string]json.RawMessage{"state": json.RawMessage(`"deleted"`)}

@@ -779,6 +779,38 @@ func (s *Server) ListSimilarEntries(
 	writeJSON(w, http.StatusOK, SimilarEntryListResponse{Items: items, Limit: params.Limit, Offset: params.Offset})
 }
 
+func (s *Server) ListModelsAcrossEntries(
+	w http.ResponseWriter,
+	r *http.Request,
+	params ListModelsAcrossEntriesParams,
+) {
+	filters, err := modelFiltersFromParams(params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
+		return
+	}
+	activeState := domainmodels.RevisionStateActive
+	activeEntryState := domainmodels.EntryStateActive
+	activeModelState := domainmodels.ModelStateActive
+	filters.State = &activeState
+	filters.EntryState = &activeEntryState
+	filters.ModelState = &activeModelState
+
+	revisions, err := s.database.Models.List(r.Context(), filters)
+	if err != nil {
+		slog.Error("list models across entries failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+		return
+	}
+	response, err := s.modelListResponseFromRevisions(r.Context(), revisions)
+	if err != nil {
+		slog.Error("build model list response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
 	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
@@ -806,23 +838,32 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
+	response, err := s.modelListResponseFromRevisions(r.Context(), revisions)
+	if err != nil {
+		slog.Error("build model list response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) modelListResponseFromRevisions(
+	ctx context.Context,
+	revisions []domainmodels.ModelRevision,
+) (ModelListResponse, error) {
 	items := make([]Model, 0, len(revisions))
 	for _, revision := range revisions {
-		metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &revision.ID})
+		metrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &revision.ID})
 		if err != nil {
-			slog.Error("list model metrics failed", "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
-			return
+			return ModelListResponse{}, fmt.Errorf("list model metrics: %w", err)
 		}
 		item, err := modelResponseFromRevision(revision, metrics)
 		if err != nil {
-			slog.Error("build model response failed", "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
-			return
+			return ModelListResponse{}, fmt.Errorf("build model response: %w", err)
 		}
 		items = append(items, item)
 	}
-	writeJSON(w, http.StatusOK, ModelListResponse{Items: items})
+	return ModelListResponse{Items: items}, nil
 }
 
 func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
@@ -1068,6 +1109,21 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, 
 	if params.PdbId != nil {
 		filters.PDBIDs = *params.PdbId
 	}
+	return filters, nil
+}
+
+func modelFiltersFromParams(params ListModelsAcrossEntriesParams) (db.ModelRevisionFilters, error) {
+	if params.Limit != nil && *params.Limit < 0 {
+		return db.ModelRevisionFilters{}, errors.New("limit must be non-negative")
+	}
+	if params.Offset != nil && *params.Offset < 0 {
+		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
+	}
+	limit := params.Limit
+	if limit == nil {
+		limit = ptr(defaultEntryListLimit)
+	}
+	filters := db.ModelRevisionFilters{Limit: limit, Offset: params.Offset}
 	return filters, nil
 }
 

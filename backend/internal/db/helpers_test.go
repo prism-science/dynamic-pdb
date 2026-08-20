@@ -52,6 +52,27 @@ func createDBTestEntryRevision(t *testing.T, name string, createdAt time.Time) *
 	return revision
 }
 
+func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.Time) *models.EntryRevision {
+	t.Helper()
+
+	createdBy := createDBTestUser(t)
+	revision, err := testDB.Entries.Create(context.Background(), models.EntryRevision{
+		ID:         uuid.New(),
+		EntryID:    uuid.New(),
+		State:      models.RevisionStateInReview,
+		EntryState: models.EntryStateActive,
+		Name:       name + "-" + uuid.NewString(),
+		CreatedBy:  createdBy,
+		CreatedAt:  createdAt,
+		UpdatedAt:  createdAt,
+	})
+	require.NoError(t, err)
+
+	active, err := testDB.Entries.ActivateRevision(context.Background(), revision.EntryID, revision.ID)
+	require.NoError(t, err)
+	return active
+}
+
 func createDBTestModelRevision(
 	t *testing.T,
 	entryID uuid.UUID,
@@ -72,6 +93,32 @@ func createDBTestModelRevision(
 	})
 	require.NoError(t, err)
 	return revision
+}
+
+func createDBTestActiveModelRevision(
+	t *testing.T,
+	entryID uuid.UUID,
+	name string,
+	createdAt time.Time,
+) *models.ModelRevision {
+	t.Helper()
+
+	createdBy := createDBTestUser(t)
+	revision, err := testDB.Models.Create(context.Background(), entryID, models.ModelRevision{
+		ID:         uuid.New(),
+		ModelID:    uuid.New(),
+		State:      models.RevisionStateInReview,
+		ModelState: models.ModelStateActive,
+		Name:       name + "-" + uuid.NewString(),
+		CreatedBy:  createdBy,
+		CreatedAt:  createdAt,
+		UpdatedAt:  createdAt,
+	})
+	require.NoError(t, err)
+
+	active, err := testDB.Models.ActivateRevision(context.Background(), revision.ID)
+	require.NoError(t, err)
+	return active
 }
 
 func createDBTestArtifact(t *testing.T, createdBy uuid.UUID, name string, createdAt time.Time) *models.Artifact {

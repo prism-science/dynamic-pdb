@@ -11,6 +11,7 @@ const {
   getEntryReview,
   getModelPageData,
   listEntries,
+  listModels,
   listReviews,
   listUserEntryRevisionGroups,
   submitEntryRevision,
@@ -36,6 +37,36 @@ test("should list entries with trimmed query and optional authorization", async 
     assert.equal(requestedURL, "https://backend.example/v1/entries?query=hemoglobin");
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
     assert.deepEqual(entries, [{ id: "entry-1", name: "Entry 1" }]);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should list models with pagination and optional authorization", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    let requestedURL = "";
+    let requestedHeaders = {};
+    global.fetch = async (url, init) => {
+      requestedURL = String(url);
+      requestedHeaders = init.headers;
+      return jsonResponse({ items: [{ id: "model-1", name: "Model 1" }] });
+    };
+
+    const models = await listModels("token-123", {
+      limit: 5,
+      offset: 10,
+    });
+
+    assert.equal(
+      requestedURL,
+      "https://backend.example/v1/models?limit=5&offset=10",
+    );
+    assert.equal(requestedHeaders.Authorization, "Bearer token-123");
+    assert.deepEqual(models, [{ id: "model-1", name: "Model 1" }]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
