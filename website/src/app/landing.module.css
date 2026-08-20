@@ -109,7 +109,11 @@
   color: var(--text-muted);
 }
 
+/* inline-block so the pill's vertical padding actually holds the box open —
+   on an inline element it would paint outside the line box and the pills would
+   overlap the row above. */
 .sample {
+  display: inline-block;
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -117,6 +121,7 @@
   color: var(--text-secondary);
   font: inherit;
   font-size: 12.5px;
+  text-decoration: none;
   cursor: pointer;
   transition:
     background 120ms ease,
@@ -338,6 +343,44 @@
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--text);
+}
+
+/* The row is the target, and the anchor in its first cell is what covers it:
+   ::after is stretched to the row's box, so a click on the timestamp opens the
+   same model as a click on the id. The row is the containing block for that,
+   hence the relative position here.
+   Keyboard and screen reader see the plain link in the first cell; the overlay
+   is invisible to both. The trade is mouse text selection inside the row,
+   which the overlay swallows — a fair price for five rows of index. */
+.tableRow {
+  position: relative;
+}
+
+/* The whole row lights up, and nothing inside it does. Highlighting one cell
+   would say the click has to land on that cell; the tint says the row is one
+   thing, which is what it is — a deposition. */
+.tableRow:hover,
+.tableRow:focus-within {
+  background: var(--accent-soft);
+}
+
+.rowLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* Keyboard focus is the exception: the ring has to sit on something, and the
+   link's own text is the only thing it can sit on. */
+.rowLink:focus-visible {
+  outline: none;
+  border-radius: 3px;
+  box-shadow: var(--ring);
 }
 
 /* The timestamp is the one column that should hug the right edge, so the rest
