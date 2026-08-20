@@ -16,7 +16,7 @@ func Test_should_apply_default_limit_when_list_entries_limit_is_missing(t *testi
 	// then
 	require.NoError(t, err)
 	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultEntryListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, *got.Limit)
 }
 
 func Test_should_keep_explicit_limit_when_list_entries_limit_is_provided(t *testing.T) {
@@ -40,7 +40,7 @@ func Test_should_apply_default_limit_when_list_models_across_entries_limit_is_mi
 	// then
 	require.NoError(t, err)
 	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultEntryListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, *got.Limit)
 }
 
 func Test_should_reject_negative_offset_when_list_models_across_entries_offset_is_provided(t *testing.T) {
@@ -52,6 +52,28 @@ func Test_should_reject_negative_offset_when_list_models_across_entries_offset_i
 
 	// then
 	require.Error(t, err)
+}
+
+func Test_should_apply_default_limit_when_list_artifacts_limit_is_missing(t *testing.T) {
+	// given
+	// when
+	got, err := artifactFiltersFromParams(ListArtifactsParams{})
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, got.Limit)
+	assert.Equal(t, defaultListLimit, *got.Limit)
+}
+
+func Test_should_apply_default_limit_when_list_model_artifacts_limit_is_missing(t *testing.T) {
+	// given
+	// when
+	got, err := modelArtifactFiltersFromParams(ListModelArtifactsParams{})
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, got.Limit)
+	assert.Equal(t, defaultListLimit, *got.Limit)
 }
 
 func Test_should_reject_state_field_when_entry_revision_is_created(t *testing.T) {

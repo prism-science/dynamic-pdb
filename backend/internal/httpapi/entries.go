@@ -24,7 +24,7 @@ var (
 )
 
 const (
-	defaultEntryListLimit         = 50
+	defaultListLimit              = 50
 	minProteinSequenceQueryLength = 8
 	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
 )
@@ -760,9 +760,10 @@ func (s *Server) ListSimilarEntries(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
+	limit := limitOrDefault(params.Limit)
 	entries, err := s.database.ProteinSequenceSimilarities.ListSimilarEntries(r.Context(), db.SimilarEntryFilters{
 		EntryID: entryID,
-		Limit:   params.Limit,
+		Limit:   limit,
 		Offset:  params.Offset,
 	})
 	if err != nil {
@@ -776,7 +777,7 @@ func (s *Server) ListSimilarEntries(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
-	writeJSON(w, http.StatusOK, SimilarEntryListResponse{Items: items, Limit: params.Limit, Offset: params.Offset})
+	writeJSON(w, http.StatusOK, SimilarEntryListResponse{Items: items, Limit: limit, Offset: params.Offset})
 }
 
 func (s *Server) ListModelsAcrossEntries(
@@ -826,11 +827,12 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 	}
 	activeState := domainmodels.RevisionStateActive
 	activeModelState := domainmodels.ModelStateActive
+	limit := limitOrDefault(params.Limit)
 	revisions, err := s.database.Models.List(r.Context(), db.ModelRevisionFilters{
 		EntryID:    &entryID,
 		State:      &activeState,
 		ModelState: &activeModelState,
-		Limit:      params.Limit,
+		Limit:      limit,
 		Offset:     params.Offset,
 	})
 	if err != nil {
@@ -1099,9 +1101,7 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, 
 		return db.EntryRevisionFilters{}, errors.New("offset must be non-negative")
 	}
 	limit := params.Limit
-	if limit == nil {
-		limit = ptr(defaultEntryListLimit)
-	}
+	limit = limitOrDefault(limit)
 	filters := db.EntryRevisionFilters{Limit: limit, Offset: params.Offset}
 	if params.Query != nil {
 		filters.Query = strings.TrimSpace(*params.Query)
@@ -1120,9 +1120,7 @@ func modelFiltersFromParams(params ListModelsAcrossEntriesParams) (db.ModelRevis
 		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
 	}
 	limit := params.Limit
-	if limit == nil {
-		limit = ptr(defaultEntryListLimit)
-	}
+	limit = limitOrDefault(limit)
 	filters := db.ModelRevisionFilters{Limit: limit, Offset: params.Offset}
 	return filters, nil
 }
@@ -1144,7 +1142,7 @@ func artifactFiltersFromParams(params ListArtifactsParams) (db.ArtifactFilters, 
 	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
 		return db.ArtifactFilters{}, errors.New("invalid pagination")
 	}
-	filters := db.ArtifactFilters{Limit: params.Limit, Offset: params.Offset}
+	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	if params.Levels != nil {
 		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
 		for _, level := range *params.Levels {
@@ -1158,7 +1156,7 @@ func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.Artifac
 	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
 		return db.ArtifactFilters{}, errors.New("invalid pagination")
 	}
-	filters := db.ArtifactFilters{Limit: params.Limit, Offset: params.Offset}
+	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	if params.Levels != nil {
 		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
 		for _, level := range *params.Levels {
@@ -1380,6 +1378,13 @@ func modelRevisionIdempotencyKeyFromCreateModelData(data CreateModelData) *strin
 
 func modelRevisionIdempotencyKeyFromChange(change ModelRevisionChange) *string {
 	return trimmedStringPtr(change.IdempotencyKey)
+}
+
+func limitOrDefault(limit *int) *int {
+	if limit != nil {
+		return limit
+	}
+	return ptr(defaultListLimit)
 }
 
 func ptr[T any](value T) *T { return &value }

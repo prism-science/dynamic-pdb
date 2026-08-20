@@ -123,7 +123,7 @@ func (s *Server) ListEntryRevisionGroups(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	s.listEntryRevisionGroups(w, r, state, nil, params.Limit, params.Offset)
+	s.listEntryRevisionGroups(w, r, state, nil, limitOrDefault(params.Limit), params.Offset)
 }
 
 func (s *Server) ListEntryRevisionsForEntry(
@@ -141,7 +141,7 @@ func (s *Server) ListEntryRevisionsForEntry(
 	}
 	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{
 		EntryID: &entryID,
-		Limit:   params.Limit,
+		Limit:   limitOrDefault(params.Limit),
 		Offset:  params.Offset,
 	})
 }
@@ -498,7 +498,7 @@ func (s *Server) ListModelRevisionsForModel(
 	s.listModelRevisionSummaries(w, r, db.ModelRevisionFilters{
 		EntryID: &entryID,
 		ModelID: &modelID,
-		Limit:   params.Limit,
+		Limit:   limitOrDefault(params.Limit),
 		Offset:  params.Offset,
 	})
 }
@@ -612,7 +612,7 @@ func (s *Server) ListUserEntryRevisionGroups(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	s.listEntryRevisionGroups(w, r, state, &userID, params.Limit, params.Offset)
+	s.listEntryRevisionGroups(w, r, state, &userID, limitOrDefault(params.Limit), params.Offset)
 }
 
 func (s *Server) ListUserEntryRevisionsForEntry(
@@ -631,7 +631,7 @@ func (s *Server) ListUserEntryRevisionsForEntry(
 	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{
 		EntryID:   &entryID,
 		CreatedBy: &userID,
-		Limit:     params.Limit,
+		Limit:     limitOrDefault(params.Limit),
 		Offset:    params.Offset,
 	})
 }
@@ -765,7 +765,7 @@ func (s *Server) ListUserModelRevisionsForModel(
 		EntryID:   &entryID,
 		ModelID:   &modelID,
 		CreatedBy: &userID,
-		Limit:     params.Limit,
+		Limit:     limitOrDefault(params.Limit),
 		Offset:    params.Offset,
 	})
 }
