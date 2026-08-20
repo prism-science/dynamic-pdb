@@ -29,14 +29,14 @@ type Props = {
 /**
  * Main navigation, left aligned on every page.
  *
- * Only Browse has a page behind it. The other three are rendered as plain
+ * Download and Docs have no page behind them yet and are rendered as plain
  * text rather than dead links, so nothing looks clickable that is not.
  */
 const NAV = [
   { label: "Browse", href: "/browse" },
   { label: "Download", href: null },
   { label: "Docs", href: null },
-  { label: "About", href: null },
+  { label: "About", href: "/about" },
 ] as const;
 
 export default function HeaderBar({ user, reviews }: Props) {

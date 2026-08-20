@@ -37,21 +37,36 @@ const PLACEHOLDER = {
   byExperiment: {
     total: 225505,
     rows: [
-      { label: "X-ray", count: 225477 },
-      { label: "Other", count: 27 },
+      // `query` is what the row searches for, kept separate from the label so a
+      // shortened label can still search the full term. "X-ray" matches the
+      // stored method "X-ray crystallography": the index is a tsvector, and the
+      // parser splits the hyphenated word, so the shorter term is a prefix of
+      // the same token set rather than a different string.
+      { label: "X-ray", count: 225477, query: "X-ray" },
+      // An aggregate of everything outside the top rows: there is no term that
+      // means it, so the row does not link. Search cannot answer "the rows I
+      // did not draw", and a link that lands on an empty list is worse than a
+      // row that never offered.
+      { label: "Other", count: 27, query: null },
     ],
   },
   // Real too. These five cover 219,785 of the 225,505 L2 models; the remaining
   // 5,720 sit outside the top 5 and are not drawn, which is why the bars do not
   // fill the row.
+  //
+  // Each label is also its search term. Note that these searches come back
+  // empty today: entry_search_index covers entry and model revision metadata,
+  // and the software that produced a model is a program node in the run graph,
+  // which is not indexed. Wiring the rows is this page's half of the feature —
+  // indexing program names is a separate backend change.
   byAnalysis: {
     total: 225505,
     rows: [
-      { label: "PHENIX", count: 120125 },
-      { label: "qFit", count: 59577 },
-      { label: "REFMAC", count: 31616 },
-      { label: "CNS", count: 5511 },
-      { label: "BUSTER", count: 2956 },
+      { label: "PHENIX", count: 120125, query: "PHENIX" },
+      { label: "qFit", count: 59577, query: "qFit" },
+      { label: "REFMAC", count: 31616, query: "REFMAC" },
+      { label: "CNS", count: 5511, query: "CNS" },
+      { label: "BUSTER", count: 2956, query: "BUSTER" },
     ],
   },
   // Real, most recently updated first, five of them — the cut belongs to the
@@ -250,13 +265,20 @@ function CountCard({ value, label }: { value: number; label: string }) {
   );
 }
 
+type BreakdownRow = {
+  label: string;
+  count: number;
+  /** What the row searches for, or null when the row is not a search term. */
+  query: string | null;
+};
+
 function Breakdown({
   heading,
   rows,
   total,
 }: {
   heading: string;
-  rows: { label: string; count: number }[];
+  rows: BreakdownRow[];
   total: number;
 }) {
   return (
@@ -265,25 +287,56 @@ function Breakdown({
       <ul className={styles.breakdown}>
         {rows.map((row) => (
           <li key={row.label} className={styles.breakdownRow}>
-            <div className={styles.breakdownHead}>
-              <span className={styles.breakdownLabel}>{row.label}</span>
-              <span className={styles.breakdownCount}>
-                {numberFormatter.format(row.count)}
-              </span>
-            </div>
-            {/* A share this lopsided — one row is 99.99% of the level, the
-                next is 0.01% — rounds to less than a pixel, and an empty track
-                reads as zero rather than as "very few". Anything non-zero keeps
-                a hairline; the exact count is right above it either way. */}
-            <div className={styles.bar}>
-              <span
-                className={styles.barFill}
-                style={{ width: barWidth(row.count, total) }}
-              />
-            </div>
+            <BreakdownBody row={row} total={total} />
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * A row's contents, wrapped in a link to the same list the search field lands
+ * on when the row names something searchable.
+ *
+ * The whole row is the target — label, count and bar — rather than the label
+ * alone: the count and the bar are the same fact said twice more, so making
+ * only the words clickable would leave most of the row inert for no reason.
+ * A row with no term (see `query` in the data above) is rendered as the plain
+ * markup it was before, so nothing looks clickable that is not.
+ */
+function BreakdownBody({ row, total }: { row: BreakdownRow; total: number }) {
+  const body = (
+    <>
+      <div className={styles.breakdownHead}>
+        <span className={styles.breakdownLabel}>{row.label}</span>
+        <span className={styles.breakdownCount}>
+          {numberFormatter.format(row.count)}
+        </span>
+      </div>
+      {/* A share this lopsided — one row is 99.99% of the level, the
+          next is 0.01% — rounds to less than a pixel, and an empty track
+          reads as zero rather than as "very few". Anything non-zero keeps
+          a hairline; the exact count is right above it either way. */}
+      <div className={styles.bar}>
+        <span
+          className={styles.barFill}
+          style={{ width: barWidth(row.count, total) }}
+        />
+      </div>
+    </>
+  );
+
+  if (!row.query) {
+    return body;
+  }
+
+  return (
+    <Link
+      className={styles.breakdownLink}
+      href={`/browse?query=${encodeURIComponent(row.query)}`}
+    >
+      {body}
+    </Link>
   );
 }

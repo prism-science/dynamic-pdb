@@ -45,8 +45,8 @@
   color: var(--header-fg);
 }
 
-/* Download, Docs and About have no page behind them yet. They are rendered as
-   text rather than as links, so nothing looks clickable that is not. */
+/* Download and Docs have no page behind them yet. They are rendered as text
+   rather than as links, so nothing looks clickable that is not. */
 .navPending {
   color: var(--header-fg-muted);
   opacity: 0.5;
