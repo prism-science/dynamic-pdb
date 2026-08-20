@@ -37,44 +37,71 @@ const PLACEHOLDER = {
   byExperiment: {
     total: 225505,
     rows: [
-      { label: "X-ray", count: 225477 },
-      { label: "Other", count: 27 },
+      // `query` is what the row searches for, kept separate from the label so a
+      // shortened label can still search the full term. "X-ray" matches the
+      // stored method "X-ray crystallography": the index is a tsvector, and the
+      // parser splits the hyphenated word, so the shorter term is a prefix of
+      // the same token set rather than a different string.
+      { label: "X-ray", count: 225477, query: "X-ray" },
+      // An aggregate of everything outside the top rows: there is no term that
+      // means it, so the row does not link. Search cannot answer "the rows I
+      // did not draw", and a link that lands on an empty list is worse than a
+      // row that never offered.
+      { label: "Other", count: 27, query: null },
     ],
   },
   // Real too. These five cover 219,785 of the 225,505 L2 models; the remaining
   // 5,720 sit outside the top 5 and are not drawn, which is why the bars do not
   // fill the row.
+  //
+  // Each label is also its search term. Note that these searches come back
+  // empty today: entry_search_index covers entry and model revision metadata,
+  // and the software that produced a model is a program node in the run graph,
+  // which is not indexed. Wiring the rows is this page's half of the feature —
+  // indexing program names is a separate backend change.
   byAnalysis: {
     total: 225505,
     rows: [
-      { label: "PHENIX", count: 120125 },
-      { label: "qFit", count: 59577 },
-      { label: "REFMAC", count: 31616 },
-      { label: "CNS", count: 5511 },
-      { label: "BUSTER", count: 2956 },
+      { label: "PHENIX", count: 120125, query: "PHENIX" },
+      { label: "qFit", count: 59577, query: "qFit" },
+      { label: "REFMAC", count: 31616, query: "REFMAC" },
+      { label: "CNS", count: 5511, query: "CNS" },
+      { label: "BUSTER", count: 2956, query: "BUSTER" },
     ],
   },
   // Real, most recently updated first, five of them — the cut belongs to the
   // query this will become, so there is nothing here to slice at render time.
-  // `entryId` is carried but unused: it is where the Entry column will link once
-  // we wire the table up, so that change touches only the markup.
+  //
+  // A row is a deposition, and a deposition is a model: the time in it is the
+  // model revision's own `updated_at`, not the entry's. So `modelId` is what
+  // the row opens, with `entryId` only along for the path. Both were read back
+  // off /v1/entries/{id}/models, matching each row's timestamp to the model
+  // revision that carries it — every one landed on that entry's Ensemble
+  // model, which is what the Model Type column says.
   //
   // The export's `model_name` is dropped — every row of it reads "Ensemble
   // refinement model", which the Model Type column already says.
   latest: [
-    { entry: "5RGD", entryId: "d777266b-6d64-4848-bdb3-9ffd1a4db39a", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.787Z" },
-    { entry: "6ZBX", entryId: "059f1a59-41c1-42b1-86b3-0dd99a046cd3", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.207Z" },
-    { entry: "8H2V", entryId: "2bb891d8-5a34-442f-b470-fe5b8d4ec35d", modelType: "Ensemble", experiment: "Other", updatedAt: "2026-08-13T14:44:19.235Z" },
-    { entry: "7ATM", entryId: "8b68663f-5d6f-4108-9ce5-33122959ea70", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:19.195Z" },
-    { entry: "7CCW", entryId: "d9dcd7a6-58a8-4cfa-bde7-697a935818bb", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:18.789Z" },
+    { entry: "5RGD", entryId: "d777266b-6d64-4848-bdb3-9ffd1a4db39a", modelId: "67b9feb4-1557-4d1d-af81-ba323153629e", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.787Z" },
+    { entry: "6ZBX", entryId: "059f1a59-41c1-42b1-86b3-0dd99a046cd3", modelId: "f1559ec6-35f0-4191-a5d4-2b46c860da23", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:21.207Z" },
+    { entry: "8H2V", entryId: "2bb891d8-5a34-442f-b470-fe5b8d4ec35d", modelId: "1cd6239e-e2b3-4dc4-85a0-120b206ba5e3", modelType: "Ensemble", experiment: "Other", updatedAt: "2026-08-13T14:44:19.235Z" },
+    { entry: "7ATM", entryId: "8b68663f-5d6f-4108-9ce5-33122959ea70", modelId: "7af069f6-1423-452c-bce3-b1c44689cf0d", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:19.195Z" },
+    { entry: "7CCW", entryId: "d9dcd7a6-58a8-4cfa-bde7-697a935818bb", modelId: "25bb1b47-3a53-477a-8571-4b32638930bb", modelType: "Ensemble", experiment: "X-ray", updatedAt: "2026-08-13T14:44:18.789Z" },
   ],
 };
 
 // Shown under the search field as the kinds of thing that can be typed into it.
-// Inert for now; each becomes a link to /browse?query=<term> once we wire them.
-// One per kind of thing that can be searched: an entry id, a protein, the
-// software that produced a model, a collection condition, a data type. Clicking
-// one fills the search field; see LandingSearch.
+// One per kind: an entry id, a protein, the software that produced a model, a
+// collection condition, a data type. Each is a link that runs its own search;
+// see LandingSearch.
+//
+// The last three answer only by accident today. The index covers entry and
+// model revision metadata: a program name lives on a node in the run graph and
+// is not indexed at all, a collection condition has no field to live in, and
+// "diffuse scattering" is not one of the two values the method enum holds. Any
+// of them can still hit if the words happen to sit in an entry's name or
+// description. They stay as they are: the row is a claim about what the field
+// is for, and the index is the side that has to catch up.
 const SAMPLE_SEARCHES = [
   "6T0K",
   "FKBP51",
@@ -211,8 +238,28 @@ export default function Home() {
               </thead>
               <tbody>
                 {PLACEHOLDER.latest.map((row) => (
-                  <tr key={row.entry}>
-                    <td className={styles.tableEntry}>{row.entry}</td>
+                  // The whole row opens the model it describes, but it holds
+                  // one link, not four: the anchor below is stretched over the
+                  // row in CSS. Four cells wrapped in four copies of the same
+                  // href would read the same destination four times to a
+                  // screen reader and give the keyboard four stops to get past
+                  // one row.
+                  <tr key={row.entry} className={styles.tableRow}>
+                    <td className={styles.tableEntry}>
+                      {/* The id is the link's text because it is the row's
+                          name, but it is not dressed as a link: the row is the
+                          target, and underlining one cell inside it would say
+                          the click has to land there. The label says the entry
+                          and the destination is a model inside it, so the
+                          accessible name spells that out. */}
+                      <Link
+                        className={styles.rowLink}
+                        href={`/entries/${row.entryId}/models/${row.modelId}`}
+                        aria-label={`${row.entry} — ${row.modelType.toLowerCase()} model`}
+                      >
+                        {row.entry}
+                      </Link>
+                    </td>
                     <td>{row.modelType}</td>
                     <td>{row.experiment}</td>
                     <td className={styles.tableTime}>
@@ -250,13 +297,20 @@ function CountCard({ value, label }: { value: number; label: string }) {
   );
 }
 
+type BreakdownRow = {
+  label: string;
+  count: number;
+  /** What the row searches for, or null when the row is not a search term. */
+  query: string | null;
+};
+
 function Breakdown({
   heading,
   rows,
   total,
 }: {
   heading: string;
-  rows: { label: string; count: number }[];
+  rows: BreakdownRow[];
   total: number;
 }) {
   return (
@@ -265,25 +319,56 @@ function Breakdown({
       <ul className={styles.breakdown}>
         {rows.map((row) => (
           <li key={row.label} className={styles.breakdownRow}>
-            <div className={styles.breakdownHead}>
-              <span className={styles.breakdownLabel}>{row.label}</span>
-              <span className={styles.breakdownCount}>
-                {numberFormatter.format(row.count)}
-              </span>
-            </div>
-            {/* A share this lopsided — one row is 99.99% of the level, the
-                next is 0.01% — rounds to less than a pixel, and an empty track
-                reads as zero rather than as "very few". Anything non-zero keeps
-                a hairline; the exact count is right above it either way. */}
-            <div className={styles.bar}>
-              <span
-                className={styles.barFill}
-                style={{ width: barWidth(row.count, total) }}
-              />
-            </div>
+            <BreakdownBody row={row} total={total} />
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * A row's contents, wrapped in a link to the same list the search field lands
+ * on when the row names something searchable.
+ *
+ * The whole row is the target — label, count and bar — rather than the label
+ * alone: the count and the bar are the same fact said twice more, so making
+ * only the words clickable would leave most of the row inert for no reason.
+ * A row with no term (see `query` in the data above) is rendered as the plain
+ * markup it was before, so nothing looks clickable that is not.
+ */
+function BreakdownBody({ row, total }: { row: BreakdownRow; total: number }) {
+  const body = (
+    <>
+      <div className={styles.breakdownHead}>
+        <span className={styles.breakdownLabel}>{row.label}</span>
+        <span className={styles.breakdownCount}>
+          {numberFormatter.format(row.count)}
+        </span>
+      </div>
+      {/* A share this lopsided — one row is 99.99% of the level, the
+          next is 0.01% — rounds to less than a pixel, and an empty track
+          reads as zero rather than as "very few". Anything non-zero keeps
+          a hairline; the exact count is right above it either way. */}
+      <div className={styles.bar}>
+        <span
+          className={styles.barFill}
+          style={{ width: barWidth(row.count, total) }}
+        />
+      </div>
+    </>
+  );
+
+  if (!row.query) {
+    return body;
+  }
+
+  return (
+    <Link
+      className={styles.breakdownLink}
+      href={`/browse?query=${encodeURIComponent(row.query)}`}
+    >
+      {body}
+    </Link>
   );
 }
