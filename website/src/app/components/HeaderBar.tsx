@@ -45,6 +45,10 @@ export default function HeaderBar({ user, reviews }: Props) {
   // The landing page carries its own centred search, so the header does not
   // repeat it there.
   const isLanding = pathname === "/";
+  // Signed out there is nothing to deposit into, and on the form itself the
+  // button would only reload the page the author is already filling in — and
+  // take their typing with it.
+  const canDeposit = user != null && pathname !== "/entries/new";
 
   return (
     <header className={styles.header}>
@@ -78,6 +82,29 @@ export default function HeaderBar({ user, reviews }: Props) {
         </div>
 
         <div className={styles.actions}>
+          {canDeposit ? (
+            <Link
+              className={styles.newEntry}
+              href="/entries/new"
+              aria-label="New entry"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              {/* Dropped on a narrow bar; the plus carries it from there. */}
+              <span className={styles.newEntryLabel}>New entry</span>
+            </Link>
+          ) : null}
+
           {/* useSearchParams needs a boundary so the rest of the header is not
               pulled out of static rendering with it. */}
           {isLanding ? null : (

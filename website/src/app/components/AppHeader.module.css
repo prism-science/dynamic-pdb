@@ -201,6 +201,64 @@
   min-width: 0;
 }
 
+/* Deposit entry point, in the language of the bar rather than shouting over it:
+   same hairline and field tint as the search it sits beside. The accent is the
+   only saturated colour in this system and is kept rare, so it shows up here
+   only on hover — the same way the search field marks focus. */
+.newEntry {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 11px;
+  border: 1px solid var(--header-border);
+  border-radius: 999px;
+  background: var(--header-field);
+  color: var(--header-fg);
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.newEntry:hover {
+  background: var(--header-hover);
+  border-color: var(--accent);
+}
+
+.newEntry:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Narrow bar: the label goes before the search gives up any more width, and
+   the pill collapses to the plus. aria-label on the link keeps it named. */
+@media (max-width: 720px) {
+  .newEntry {
+    width: 34px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+
+  .newEntryLabel {
+    display: none;
+  }
+}
+
+/* Below this the bar is already full with the brand, the field and the account
+   name — the pill would only push them into each other. Depositing stays one
+   tap away in the account menu's My entries, which carries its own button. */
+@media (max-width: 600px) {
+  .newEntry {
+    display: none;
+  }
+}
+
 .menu {
   position: relative;
 }
