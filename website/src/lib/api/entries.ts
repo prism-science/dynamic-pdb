@@ -326,6 +326,28 @@ export async function listEntries(
   return response.items;
 }
 
+export async function listModels(
+  token?: string,
+  opts?: {
+    limit?: number | null;
+    offset?: number | null;
+  },
+): Promise<Model[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit != null) {
+    params.set("limit", String(opts.limit));
+  }
+  if (opts?.offset != null) {
+    params.set("offset", String(opts.offset));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const response = await fetchBackend<ListResponse<Model>>(
+    `/v1/models${suffix}`,
+    token,
+  );
+  return response.items;
+}
+
 // Entries whose protein sequences a similarity run matched against this
 // entry's, best overall score first. Scoring and ordering belong to the
 // backend; the frontend only presents them.

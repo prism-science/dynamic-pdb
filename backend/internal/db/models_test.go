@@ -181,6 +181,36 @@ func Test_should_list_model_revisions_for_entry_with_pagination_when_models_list
 	assert.Equal(t, second.ID, got[0].ID)
 }
 
+func Test_should_list_active_model_revisions_across_active_entries_when_models_list_called(t *testing.T) {
+	// given
+	now := time.Now().UTC()
+	firstEntryRevision := createDBTestActiveEntryRevision(t, "rolling-models-entry-first", now)
+	secondEntryRevision := createDBTestActiveEntryRevision(t, "rolling-models-entry-second", now.Add(time.Second))
+	inactiveEntryRevision := createDBTestEntryRevision(t, "rolling-models-inactive-entry", now.Add(2*time.Second))
+	firstModelRevision := createDBTestActiveModelRevision(t, firstEntryRevision.EntryID, "first active model", now)
+	secondModelRevision := createDBTestActiveModelRevision(t, secondEntryRevision.EntryID, "second active model", now.Add(time.Second))
+	_ = createDBTestModelRevision(t, firstEntryRevision.EntryID, "pending model", now.Add(2*time.Second))
+	_ = createDBTestActiveModelRevision(t, inactiveEntryRevision.EntryID, "inactive entry model", now.Add(3*time.Second))
+	activeState := models.RevisionStateActive
+	activeEntryState := models.EntryStateActive
+	activeModelState := models.ModelStateActive
+
+	// when
+	got, err := testDB.Models.List(context.Background(), db.ModelRevisionFilters{
+		State:      &activeState,
+		EntryState: &activeEntryState,
+		ModelState: &activeModelState,
+	})
+
+	// then
+	require.NoError(t, err)
+	gotIDs := make([]uuid.UUID, 0, len(got))
+	for _, revision := range got {
+		gotIDs = append(gotIDs, revision.ID)
+	}
+	assert.ElementsMatch(t, []uuid.UUID{firstModelRevision.ID, secondModelRevision.ID}, gotIDs)
+}
+
 func Test_should_return_error_when_models_list_called_with_negative_limit(t *testing.T) {
 	// given
 	limit := -1
