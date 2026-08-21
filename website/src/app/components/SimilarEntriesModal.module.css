@@ -88,10 +88,17 @@
   font-size: 13px;
 }
 
+/* The head stays put while the rows scroll under it — sticky against .body,
+   which is this dialog's scroll container. The rule under it has to be an
+   inset shadow: in a collapsed table the border belongs to the table, so it
+   scrolls away and leaves the stuck head sitting edgeless on the rows. */
 .table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 10px 14px;
   background: var(--surface-muted);
-  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 -1px 0 var(--border);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
