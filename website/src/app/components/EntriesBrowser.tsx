@@ -24,7 +24,6 @@ export default function EntriesBrowser({
   infiniteScroll = true,
   tabs = null,
   emptyLabel,
-  title = "Proteins",
 }: {
   entries: Entry[];
   canCreate?: boolean;
@@ -32,21 +31,21 @@ export default function EntriesBrowser({
   infiniteScroll?: boolean;
   tabs?: ReactNode;
   emptyLabel?: string;
-  title?: string;
 }) {
   return (
     <div className={styles.wrap}>
-      <header className={styles.head}>
-        <h1 className={styles.title}>{title}</h1>
-        {canCreate ? (
+      {/* No page title here: the list is the whole page, so a "Proteins"
+          heading only repeated what the surrounding chrome already says. */}
+      {canCreate ? (
+        <header className={styles.head}>
           <Link className={styles.addButton} href="/entries/new">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
             </svg>
             New entry
           </Link>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
 
       {tabs}
 

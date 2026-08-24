@@ -348,7 +348,10 @@
 .modelTableWrap {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* clip, not hidden: `hidden` would make this a scroll container, and the
+     sticky head below would then anchor to a box that never scrolls instead of
+     to the page. `clip` still rounds the corners off the head. */
+  overflow: clip;
   background: var(--surface);
 }
 
@@ -358,11 +361,18 @@
   font-size: 13px;
 }
 
+/* The page is the scroll container here, and the app bar owns the top of it,
+   so the head parks just below the bar and the rows run under it. Inset shadow
+   instead of border-bottom for the same reason as in the similar-proteins
+   dialog: a collapsed table's border scrolls with the table. */
 .modelTableModelHead,
 .modelTableMetricHead {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 2;
   padding: 0;
   background: var(--surface-muted);
-  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 -1px 0 var(--border);
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
