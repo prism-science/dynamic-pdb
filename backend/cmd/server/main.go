@@ -72,6 +72,7 @@ func run() int {
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(corsMiddleware(env))
+	router.Use(httpapi.RequestBodyLimitMiddleware(httpapi.MaxRequestBodyBytes))
 	httpapi.HandlerWithOptions(srv, httpapi.ChiServerOptions{
 		BaseRouter: router,
 		Middlewares: []httpapi.MiddlewareFunc{
