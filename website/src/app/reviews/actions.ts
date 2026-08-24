@@ -44,7 +44,7 @@ export async function approveSubmissionAction(
   // Revalidate the whole tree so the public entries list refreshes, and drop the
   // cached badge count: revalidatePath does not reach into unstable_cache.
   revalidatePath("/", "layout");
-  revalidateTag(REVIEW_COUNT_TAG);
+  revalidateTag(REVIEW_COUNT_TAG, "max");
 }
 
 export async function rejectSubmissionAction(
@@ -62,5 +62,5 @@ export async function rejectSubmissionAction(
   }
 
   revalidatePath("/", "layout");
-  revalidateTag(REVIEW_COUNT_TAG);
+  revalidateTag(REVIEW_COUNT_TAG, "max");
 }
