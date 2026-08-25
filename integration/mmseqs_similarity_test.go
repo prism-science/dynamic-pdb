@@ -33,7 +33,7 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
+	backend := startBackend(t, root, backendBinaryPath, s3.URL())
 
 	sourceEntryID := uuid.NewString()
 	similarEntryID := uuid.NewString()

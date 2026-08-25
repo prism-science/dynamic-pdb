@@ -43,7 +43,7 @@ type Summary struct {
 	StatePath string
 }
 
-type UploadOptions struct {
+type Options struct {
 	Include         []string
 	Skip            []string
 	OverrideInclude bool
@@ -78,7 +78,7 @@ func New(
 	}
 }
 
-func (u *Uploader) Upload(ctx context.Context, manifestPath string, options ...UploadOptions) (Summary, error) {
+func (u *Uploader) Upload(ctx context.Context, manifestPath string, options ...Options) (Summary, error) {
 	if strings.TrimSpace(manifestPath) == "" {
 		return Summary{}, errors.New("manifest path is required")
 	}
@@ -1327,7 +1327,7 @@ func manifestEntry(uploadingManifest manifest.Manifest) (manifest.Entry, error) 
 	}
 }
 
-func appliedUploadFilter(filter manifest.Filter, options ...UploadOptions) manifest.Filter {
+func appliedUploadFilter(filter manifest.Filter, options ...Options) manifest.Filter {
 	merged := filter
 	for _, option := range options {
 		if option.OverrideInclude {

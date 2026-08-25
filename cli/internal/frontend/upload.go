@@ -163,7 +163,7 @@ func uploadStart(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		concurrency,
 		uploadPartConcurrency,
 	)
-	uploadOptions := upload.UploadOptions{}
+	uploadOptions := upload.Options{}
 	if fs.Changed("include") {
 		uploadOptions.Include = includePDBIDs
 		uploadOptions.OverrideInclude = true

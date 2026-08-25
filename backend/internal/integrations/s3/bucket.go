@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -143,7 +143,8 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, s
 
 	partSize, partCount := PartPlan(size)
 	parts := make([]PresignedPart, 0, partCount)
-	for partNumber := 1; partNumber <= partCount; partNumber++ {
+	partNumber := int32(1)
+	for range partCount {
 		req, presignErr := b.presignUploadPart(ctx, key, uploadID, size, partSize, partNumber)
 		if presignErr != nil {
 			if abortErr := b.AbortMultipartUpload(ctx, key, uploadID); abortErr != nil {
@@ -151,7 +152,8 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, s
 			}
 			return MultipartUploadGrant{}, fmt.Errorf("s3: presign upload part %d: %w", partNumber, presignErr)
 		}
-		parts = append(parts, PresignedPart{PartNumber: int32(partNumber), URL: req.URL})
+		parts = append(parts, PresignedPart{PartNumber: partNumber, URL: req.URL})
+		partNumber++
 	}
 
 	return MultipartUploadGrant{
@@ -167,7 +169,7 @@ func (b *RemoteBucket) presignUploadPart(
 	ctx context.Context,
 	key, uploadID string,
 	fileSize, partSize int64,
-	partNumber int,
+	partNumber int32,
 ) (*v4.PresignedHTTPRequest, error) {
 	return b.presigner.PresignUploadPart(ctx, uploadPartInput(
 		b.config.Bucket,
@@ -181,7 +183,7 @@ func (b *RemoteBucket) presignUploadPart(
 	})
 }
 
-func uploadPartInput(bucket, key, uploadID string, fileSize, partSize int64, partNumber int) *awss3.UploadPartInput {
+func uploadPartInput(bucket, key, uploadID string, fileSize, partSize int64, partNumber int32) *awss3.UploadPartInput {
 	contentLength := partSize
 	if remaining := fileSize - int64(partNumber-1)*partSize; remaining < contentLength {
 		contentLength = remaining
@@ -190,7 +192,7 @@ func uploadPartInput(bucket, key, uploadID string, fileSize, partSize int64, par
 		Bucket:        aws.String(bucket),
 		Key:           aws.String(key),
 		UploadId:      aws.String(uploadID),
-		PartNumber:    aws.Int32(int32(partNumber)),
+		PartNumber:    aws.Int32(partNumber),
 		ContentLength: aws.Int64(contentLength),
 	}
 }

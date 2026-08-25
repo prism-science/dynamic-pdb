@@ -59,7 +59,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
+	backend := startBackend(t, root, backendBinaryPath, s3.URL())
 	rcsb := newRCSBStub(t, pdbID)
 	defer rcsb.Close()
 
@@ -193,7 +193,7 @@ func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t
 	auth := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
-	backend := startBackend(t, root, backendBinaryPath, s3.URL(), auth.UserID)
+	backend := startBackend(t, root, backendBinaryPath, s3.URL())
 	brokenRCSB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "RCSB is down", http.StatusInternalServerError)
 	}))
@@ -270,6 +270,17 @@ func seedUserAndIssueToken(t *testing.T, database integrationDB) testAuth {
 		now,
 	)
 	require.NoError(t, err)
+	result, err := database.Conn.Exec(
+		`insert into user_roles(user_id, role_id, granted_by)
+		 select $1, roles.id, $1
+		 from roles
+		 where roles.key = 'reviewer'`,
+		userID,
+	)
+	require.NoError(t, err)
+	assignedRoles, err := result.RowsAffected()
+	require.NoError(t, err)
+	require.Equal(t, int64(1), assignedRoles)
 
 	claims := jwt.RegisteredClaims{
 		Subject:   userID.String(),
@@ -290,7 +301,7 @@ type backendProcess struct {
 	URL string
 }
 
-func startBackend(t *testing.T, root string, binaryPath string, s3URL string, adminUserID string) backendProcess {
+func startBackend(t *testing.T, root string, binaryPath string, s3URL string) backendProcess {
 	t.Helper()
 	addr := freeAddress(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -301,7 +312,6 @@ func startBackend(t *testing.T, root string, binaryPath string, s3URL string, ad
 		"DYNAMIC_PDB_SERVER_ADDR="+addr,
 		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
 		"DYNAMIC_PDB_DB_MAX_OPEN_CONNECTIONS=1",
-		"DYNAMIC_PDB_AUTH_ADMIN_USER_IDS="+adminUserID,
 		"DYNAMIC_PDB_CDN_S3_ENDPOINT="+s3URL,
 		"DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID=AKIAEXAMPLE",
 		"DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY=secret",
