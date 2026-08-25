@@ -272,7 +272,7 @@ func Test_should_override_manifest_include_when_upload_include_option_is_set(t *
 	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(
 		context.Background(),
 		manifestPath,
-		UploadOptions{Include: []string{"6ABC"}, OverrideInclude: true},
+		Options{Include: []string{"6ABC"}, OverrideInclude: true},
 	)
 
 	// then
@@ -299,7 +299,7 @@ func Test_should_override_manifest_skip_when_upload_skip_option_is_set(t *testin
 	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 1).Upload(
 		context.Background(),
 		manifestPath,
-		UploadOptions{Skip: []string{"6ABC"}, OverrideSkip: true},
+		Options{Skip: []string{"6ABC"}, OverrideSkip: true},
 	)
 
 	// then

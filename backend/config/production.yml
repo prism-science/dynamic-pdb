@@ -1,9 +1,6 @@
 server:
   addr: ":8080"
 auth:
-  admin_user_ids:
-    - 5b8670ac-41c9-4e1d-a436-da6daa2a8c22
-    - 346945af-0e29-470c-9d39-67cbaa7a8e43
   allowed_orgs:
     - Astera-org
     - diff-use

@@ -7,7 +7,9 @@ const { NextRequest } = require("next/server");
 const loginRoute = require("../src/app/auth/github/login/route.ts");
 const callbackRoute = require("../src/app/auth/github/callback/route.ts");
 const {
+  authPermissionsCookieName,
   oauthStateCookieName,
+  permissionsFromCookie,
   serializeOAuthState,
 } = require("../src/lib/auth/session.ts");
 
@@ -44,6 +46,7 @@ test("should exchange github callback code and set auth cookies", async () => {
           expires_at: "2030-01-02T03:04:05.000Z",
           login: "octocat",
           name: "Octo Cat",
+          permissions: ["revisions.approve", "revisions.reject"],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );
@@ -69,6 +72,10 @@ test("should exchange github callback code and set auth cookies", async () => {
     assert.match(setCookie, /dynamic_pdb_auth_token=jwt-token/);
     assert.match(setCookie, /dynamic_pdb_auth_login=octocat/);
     assert.match(setCookie, /dynamic_pdb_auth_name=Octo%20Cat/);
+    assert.deepEqual(
+      permissionsFromCookie(cookieValue(setCookie, authPermissionsCookieName)),
+      ["revisions.approve", "revisions.reject"],
+    );
     assert.match(setCookie, /dynamic_pdb_auth_state=/);
   } finally {
     global.fetch = previousFetch;
@@ -150,6 +157,12 @@ function parseOAuthStateCookie(setCookie) {
   const match = setCookie.match(new RegExp(`${oauthStateCookieName}=([^;]+)`));
   assert.ok(match, `missing ${oauthStateCookieName} cookie`);
   return JSON.parse(decodeURIComponent(decodeURIComponent(match[1])));
+}
+
+function cookieValue(setCookie, name) {
+  const match = setCookie.match(new RegExp(`${name}=([^;]+)`));
+  assert.ok(match, `missing ${name} cookie`);
+  return decodeURIComponent(match[1]);
 }
 
 function restoreEnv(name, value) {

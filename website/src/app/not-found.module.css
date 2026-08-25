@@ -1,0 +1,78 @@
+/* The About page's frame, for the same reason it borrowed the landing page's:
+   moving between pages should not shift the page under the reader. */
+.page {
+  flex: 1 1 auto;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+  padding: 56px 0 88px;
+  color: var(--text);
+}
+
+.code {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+/* Matches About's 32px rather than the landing page's 44px: this heads a page
+   inside the site, it is not the name of the database. */
+.title {
+  width: min(660px, 100%);
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.note {
+  width: min(660px, 100%);
+  margin: 18px 0 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 26px 0 0;
+  font-size: 15px;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease;
+}
+
+.link:hover {
+  border-bottom-color: currentColor;
+}
+
+.link:focus-visible {
+  outline: none;
+  border-radius: 2px;
+  box-shadow: var(--ring);
+}
+
+/* Same weight as the breadcrumb separator, which is the other place on the
+   site where a dot stands between two links. */
+.sep {
+  color: var(--border-strong);
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: calc(100% - 28px);
+    padding: 36px 0 64px;
+  }
+
+  .title {
+    font-size: 26px;
+  }
+}

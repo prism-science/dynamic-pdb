@@ -1,7 +1,6 @@
 server:
   addr: ":8080"
 auth:
-  admin_user_ids: []
   allowed_orgs:
     - Astera-org
     - diff-use
@@ -30,5 +29,7 @@ cdn:
     bucket: dynamic-pdb
     access_key_id: ""
     secret_access_key: ""
+    upload_max_file_size: 1073741824
+    upload_url_ttl: 15m
   cloudfront:
     base_url: ""

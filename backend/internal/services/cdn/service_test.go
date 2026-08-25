@@ -20,7 +20,7 @@ func Test_should_return_s3_object_url_when_cloudfront_is_not_configured(t *testi
 			PartSize:  64 * 1024 * 1024,
 		},
 	}
-	service, err := NewService(bucket, Config{})
+	service, err := NewService(bucket, testConfig())
 	require.NoError(t, err)
 
 	// when
@@ -48,8 +48,9 @@ func Test_should_rewrite_s3_object_url_when_cloudfront_is_configured(t *testing.
 	}
 	service, err := NewService(bucket, Config{
 		S3: s3.BucketConfig{
-			Region: "us-west-1",
-			Bucket: "dynamic-pdb-data",
+			Region:            "us-west-1",
+			Bucket:            "dynamic-pdb-data",
+			UploadMaxFileSize: 1 << 30,
 		},
 		CloudFront: CloudFrontConfig{
 			BaseURL: "https://files.dynamicpdb.com",
@@ -75,8 +76,9 @@ func Test_should_reject_s3_object_url_from_another_bucket(t *testing.T) {
 	}
 	service, err := NewService(bucket, Config{
 		S3: s3.BucketConfig{
-			Region: "us-west-1",
-			Bucket: "dynamic-pdb-data",
+			Region:            "us-west-1",
+			Bucket:            "dynamic-pdb-data",
+			UploadMaxFileSize: 1 << 30,
 		},
 		CloudFront: CloudFrontConfig{
 			BaseURL: "https://files.dynamicpdb.com",
@@ -101,8 +103,9 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 	}
 	service, err := NewService(bucket, Config{
 		S3: s3.BucketConfig{
-			Endpoint: "http://localhost:9000/storage",
-			Bucket:   "dynamic-pdb",
+			Endpoint:          "http://localhost:9000/storage",
+			Bucket:            "dynamic-pdb",
+			UploadMaxFileSize: 1 << 30,
 		},
 		CloudFront: CloudFrontConfig{
 			BaseURL: "https://files.example.com",
@@ -121,7 +124,7 @@ func Test_should_derive_path_style_s3_origin_from_custom_endpoint(t *testing.T) 
 func Test_should_reject_invalid_file_upload_before_calling_s3(t *testing.T) {
 	// given
 	bucket := &bucketStub{}
-	service, err := NewService(bucket, Config{})
+	service, err := NewService(bucket, testConfig())
 	require.NoError(t, err)
 	file := validFileUpload()
 	file.OriginalFilename = ".."
@@ -131,6 +134,23 @@ func Test_should_reject_invalid_file_upload_before_calling_s3(t *testing.T) {
 
 	// then
 	require.ErrorIs(t, err, ErrInvalidFileUpload)
+	assert.Zero(t, bucket.presignCalls)
+}
+
+func Test_should_reject_file_upload_before_calling_s3_when_size_exceeds_limit(t *testing.T) {
+	// given
+	bucket := &bucketStub{}
+	cfg := testConfig()
+	cfg.S3.UploadMaxFileSize = 41
+	service, err := NewService(bucket, cfg)
+	require.NoError(t, err)
+	file := validFileUpload()
+
+	// when
+	_, err = service.CreateUpload(context.Background(), file)
+
+	// then
+	require.ErrorIs(t, err, ErrFileTooLarge)
 	assert.Zero(t, bucket.presignCalls)
 }
 
@@ -188,7 +208,7 @@ func Test_should_reject_invalid_key_segment_when_building_object_key(t *testing.
 func Test_should_proxy_complete_and_abort_to_s3(t *testing.T) {
 	// given
 	bucket := &bucketStub{}
-	service, err := NewService(bucket, Config{})
+	service, err := NewService(bucket, testConfig())
 	require.NoError(t, err)
 	parts := []CompletedPart{
 		{PartNumber: 2, ETag: `"etag-2"`},
@@ -217,6 +237,10 @@ func validFileUpload() FileUpload {
 		OriginalFilename: "model.cif",
 		Size:             42,
 	}
+}
+
+func testConfig() Config {
+	return Config{S3: s3.BucketConfig{UploadMaxFileSize: 1 << 30}}
 }
 
 type bucketStub struct {

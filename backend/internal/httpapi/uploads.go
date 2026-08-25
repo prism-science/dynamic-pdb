@@ -57,6 +57,9 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 
 	grant, err := s.fileCDN.CreateUpload(r.Context(), fileUpload)
 	switch {
+	case errors.Is(err, cdn.ErrFileTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "file exceeds maximum upload size")
+		return
 	case errors.Is(err, cdn.ErrInvalidFileUpload):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid file upload path")
 		return

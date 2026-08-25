@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { ApiRequestError, listReviews } from "@/lib/api/entries";
+import { hasReviewAccess } from "@/lib/auth/permissions";
+import { getAuthSession } from "@/lib/auth/session";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
-import { isConfiguredAdmin } from "@/app/reviews/admin";
 
 const maxLimit = 100;
 
-/** Pages the review queue for the inbox's left column. The queue is admin-only,
+/** Pages the review queue for the inbox's left column. The queue is reviewer-only,
  *  so this checks the session rather than proxying it blind. */
 export async function GET(request: Request) {
   const session = await getAuthSession();
   if (!session) {
     return NextResponse.json({ items: [] }, { status: 401 });
   }
-  if (!isConfiguredAdmin(await getCurrentUserId())) {
+  if (!hasReviewAccess(session.permissions)) {
     return NextResponse.json({ items: [] }, { status: 403 });
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 
 import { extFileKey, type ExtExperiment } from "@/lib/api/ext";
 import { uploadFileToObjectStorage } from "@/lib/api/uploads";
@@ -65,6 +65,16 @@ export default function ModelDraftFields({
   // Tracks the draft that is currently on screen, for the guards below.
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  // Field ids come from useId, not from draft.id: the draft id is a
+  // crypto.randomUUID() minted where the draft is created, and the add-model
+  // form seeds one in its initial state — so it is generated once on the server
+  // and again on the client, and the two never match. React does not patch
+  // mismatched attributes, which left the rendered `for` pointing at an id no
+  // input carried: clicking a label focused nothing. useId is stable across the
+  // two renders and unique per instance, which is what these ids need to be.
+  // draft.id stays the model's identity for uploads and keys.
+  const fieldId = useId();
 
   const hasModel = draft.files.some(isModelFile);
 
@@ -135,11 +145,11 @@ export default function ModelDraftFields({
       <div className={styles.identityRow}>
         <div className={styles.identityMain}>
           <div className={styles.field}>
-            <label className={styles.subLabel} htmlFor={`${draft.id}-name`}>
+            <label className={styles.subLabel} htmlFor={`${fieldId}-name`}>
               Name
             </label>
             <input
-              id={`${draft.id}-name`}
+              id={`${fieldId}-name`}
               className={styles.input}
               value={draft.name}
               onChange={(event) =>
@@ -154,11 +164,11 @@ export default function ModelDraftFields({
           </div>
 
           <div className={styles.field}>
-            <label className={styles.subLabel} htmlFor={`${draft.id}-desc`}>
+            <label className={styles.subLabel} htmlFor={`${fieldId}-desc`}>
               Description
             </label>
             <input
-              id={`${draft.id}-desc`}
+              id={`${fieldId}-desc`}
               className={styles.input}
               value={draft.description}
               onChange={(event) =>
@@ -176,11 +186,11 @@ export default function ModelDraftFields({
               model, like its name — not a separate stage of the form. */}
           <div className={styles.identityChoices}>
             <div className={styles.field}>
-              <label className={styles.subLabel} htmlFor={`${draft.id}-purpose`}>
+              <label className={styles.subLabel} htmlFor={`${fieldId}-purpose`}>
                 Purpose
               </label>
               <select
-                id={`${draft.id}-purpose`}
+                id={`${fieldId}-purpose`}
                 className={styles.select}
                 value={draft.purpose}
                 onChange={(event) =>
@@ -199,11 +209,11 @@ export default function ModelDraftFields({
               </select>
             </div>
             <div className={styles.field}>
-              <label className={styles.subLabel} htmlFor={`${draft.id}-type`}>
+              <label className={styles.subLabel} htmlFor={`${fieldId}-type`}>
                 Model type
               </label>
               <select
-                id={`${draft.id}-type`}
+                id={`${fieldId}-type`}
                 className={styles.select}
                 value={draft.modelType}
                 onChange={(event) =>

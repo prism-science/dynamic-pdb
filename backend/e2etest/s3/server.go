@@ -15,6 +15,7 @@ type StubServer struct {
 	createPath       string
 	completePath     string
 	completeUploadID string
+	ifNoneMatch      string
 	completeBody     string
 	abortPath        string
 	abortUploadID    string
@@ -27,6 +28,7 @@ type Requests struct {
 	CreatePath       string
 	CompletePath     string
 	CompleteUploadID string
+	IfNoneMatch      string
 	CompleteBody     string
 	AbortPath        string
 	AbortUploadID    string
@@ -54,6 +56,7 @@ func (s *StubServer) Reset() {
 	s.createPath = ""
 	s.completePath = ""
 	s.completeUploadID = ""
+	s.ifNoneMatch = ""
 	s.completeBody = ""
 	s.abortPath = ""
 	s.abortUploadID = ""
@@ -83,6 +86,7 @@ func (s *StubServer) Requests() Requests {
 		CreatePath:       s.createPath,
 		CompletePath:     s.completePath,
 		CompleteUploadID: s.completeUploadID,
+		IfNoneMatch:      s.ifNoneMatch,
 		CompleteBody:     s.completeBody,
 		AbortPath:        s.abortPath,
 		AbortUploadID:    s.abortUploadID,
@@ -126,6 +130,7 @@ func (s *StubServer) handleCompleteMultipartUpload(w http.ResponseWriter, r *htt
 	s.mu.Lock()
 	s.completePath = r.URL.Path
 	s.completeUploadID = r.URL.Query().Get("uploadId")
+	s.ifNoneMatch = r.Header.Get("If-None-Match")
 	s.completeBody = string(body)
 	s.mu.Unlock()
 

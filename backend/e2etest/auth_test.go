@@ -46,6 +46,8 @@ func (s *AuthSuite) Test_should_return_token_when_github_user_belongs_to_allowed
 	s.Equal("Octo Cat", body.Name)
 	s.Equal("octo@example.com", body.Email)
 	s.Equal("octocat", body.Login)
+	s.NotNil(body.Permissions)
+	s.Empty(body.Permissions)
 
 	parsed, err := jwt.ParseWithClaims(body.AccessToken, &jwt.RegisteredClaims{}, func(*jwt.Token) (any, error) {
 		return []byte(testJWTSecret), nil
@@ -103,6 +105,8 @@ func (s *AuthSuite) Test_should_return_token_when_github_code_exchange_succeeds(
 	s.Equal("Octo Cat", body.Name)
 	s.Equal("octo@example.com", body.Email)
 	s.Equal("octocat", body.Login)
+	s.NotNil(body.Permissions)
+	s.Empty(body.Permissions)
 }
 
 func (s *AuthSuite) Test_should_return_same_subject_when_github_exchange_called_twice_for_same_account() {

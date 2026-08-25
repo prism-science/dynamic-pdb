@@ -11,25 +11,29 @@ import type {
   ReviewModel,
   RevisionTarget,
 } from "@/lib/api/entries";
+import type { ReviewPermissions } from "@/lib/auth/permissions";
 import ReviewDecision from "@/app/reviews/ReviewDecision";
 
 import styles from "./review-inbox.module.css";
 
-/** The submission card, shared by the admin queue and the author's own
+/** The submission card, shared by the reviewer queue and the author's own
  *  submissions. The two differ only in whether the blocks can be decided, so
- *  that is the one prop: everything else — the diff, the badges, the preview
- *  links — is identical by construction rather than by copy. */
+ *  everything else is identical by construction rather than by copy. */
 type Props = {
   title: string;
   review: EntryReview;
-  decidable: boolean;
+  reviewPermissions: ReviewPermissions | null;
 };
 
-export default function SubmissionCard({ title, review, decidable }: Props) {
+export default function SubmissionCard({
+  title,
+  review,
+  reviewPermissions,
+}: Props) {
   return (
     <div className={styles.pvScroll}>
       <div className={styles.pvTitle}>{title}</div>
-      <Changes review={review} decidable={decidable} />
+      <Changes review={review} reviewPermissions={reviewPermissions} />
     </div>
   );
 }
@@ -39,17 +43,17 @@ export default function SubmissionCard({ title, review, decidable }: Props) {
  *  separately. */
 function Changes({
   review,
-  decidable,
+  reviewPermissions,
 }: {
   review: EntryReview;
-  decidable: boolean;
+  reviewPermissions: ReviewPermissions | null;
 }) {
   // No published revision behind the entry means nothing for a model to go live
   // under, and the backend refuses it. Same condition the "new" badge reads, so
   // what the block says and what its buttons do cannot drift apart.
   const entryUnpublished = review.entry !== null && review.entry.active === null;
   const modelsBlockedReason =
-    decidable && entryUnpublished
+    reviewPermissions && entryUnpublished
       ? "Approve the entry first — it has no published revision yet."
       : null;
 
@@ -58,7 +62,7 @@ function Changes({
       {review.entry ? (
         review.entry.proposed.entry_state === "deleted" ? (
           <DeletionBlock
-            decidable={decidable}
+            reviewPermissions={reviewPermissions}
             title="Entry"
             what="entry"
             target={review.entry.target}
@@ -67,7 +71,7 @@ function Changes({
           />
         ) : (
           <DiffBlock
-            decidable={decidable}
+            reviewPermissions={reviewPermissions}
             title="Entry"
             badge={review.entry.active ? "revision" : "new"}
             sections={diffEntry(review.entry.active, review.entry.proposed)}
@@ -91,7 +95,7 @@ function Changes({
       {review.models.map((model) =>
         model.proposed.model_state === "deleted" ? (
           <DeletionBlock
-            decidable={decidable}
+            reviewPermissions={reviewPermissions}
             key={model.model_id}
             title={model.proposed.name}
             what="model"
@@ -104,7 +108,7 @@ function Changes({
           />
         ) : (
           <DiffBlock
-            decidable={decidable}
+            reviewPermissions={reviewPermissions}
             key={model.model_id}
             title={model.proposed.name}
             badge={model.active ? "revision" : "new"}
@@ -132,7 +136,7 @@ function DeletionBlock({
   removes,
   publishedHref,
   blockedReason,
-  decidable,
+  reviewPermissions,
 }: {
   title: string;
   what: "entry" | "model";
@@ -140,13 +144,13 @@ function DeletionBlock({
   removes: string[];
   publishedHref: string;
   blockedReason?: string | null;
-  decidable: boolean;
+  reviewPermissions: ReviewPermissions | null;
 }) {
   return (
     <Block
       title={title}
       badge="deletion"
-      decidable={decidable}
+      reviewPermissions={reviewPermissions}
       badgeTone="danger"
       previewHref={publishedHref}
       previewLabel="Open published"
@@ -207,7 +211,7 @@ function DiffBlock({
   target,
   previewHref,
   blockedReason,
-  decidable,
+  reviewPermissions,
 }: {
   title: string;
   badge: string;
@@ -215,7 +219,7 @@ function DiffBlock({
   target: RevisionTarget;
   previewHref: string;
   blockedReason?: string | null;
-  decidable: boolean;
+  reviewPermissions: ReviewPermissions | null;
 }) {
   const visible = sections
     .map((section) => ({
@@ -231,7 +235,7 @@ function DiffBlock({
       previewHref={previewHref}
       target={target}
       blockedReason={blockedReason}
-      decidable={decidable}
+      reviewPermissions={reviewPermissions}
     >
       {blockedReason ? (
         <div className={styles.blocked}>{blockedReason}</div>
@@ -260,7 +264,7 @@ function Block({
   previewLabel = "Preview",
   target,
   blockedReason,
-  decidable,
+  reviewPermissions,
   children,
 }: {
   title: string;
@@ -270,7 +274,7 @@ function Block({
   previewLabel?: string;
   target: RevisionTarget;
   blockedReason?: string | null;
-  decidable: boolean;
+  reviewPermissions: ReviewPermissions | null;
   children: React.ReactNode;
 }) {
   return (
@@ -303,8 +307,13 @@ function Block({
             />
           </svg>
         </a>
-        {decidable ? (
-          <ReviewDecision target={target} blockedReason={blockedReason} />
+        {reviewPermissions ? (
+          <ReviewDecision
+            target={target}
+            canApprove={reviewPermissions.canApprove}
+            canReject={reviewPermissions.canReject}
+            blockedReason={blockedReason}
+          />
         ) : null}
       </div>
       <div className={styles.blockBody}>{children}</div>

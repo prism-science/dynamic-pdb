@@ -19,8 +19,4 @@ type Config struct {
 	AllowedOrgs []string          `mapstructure:"allowed_orgs"`
 	GitHub      GitHubOAuthConfig `mapstructure:"github"`
 	JWT         JWTConfig         `mapstructure:"jwt"`
-
-	// AdminUserIDs are configured administrators allowed to activate or
-	// reject revisions. Empty disables administrative state changes.
-	AdminUserIDs []string `mapstructure:"admin_user_ids"`
 }

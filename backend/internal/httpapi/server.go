@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
 	"dynamic-pdb/backend/internal/auth"
@@ -24,8 +26,22 @@ type Server struct {
 	fileCDN      cdn.Service
 	authConfig   auth.Config
 	jwt          *auth.JWT
+	authorizer   auth.Authorizer
 	database     *db.DB
-	adminUserIDs map[uuid.UUID]struct{}
+}
+
+func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
+	resolveClientIP := middleware.ClientIPFromRemoteAddr
+	if env == "production" {
+		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
+	}
+
+	limitRequests := httprate.LimitBy(100, 10*time.Second, func(r *http.Request) (string, error) {
+		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
+	})
+	return func(next http.Handler) http.Handler {
+		return resolveClientIP(limitRequests(next))
+	}
 }
 
 func NewServer(
@@ -40,29 +56,9 @@ func NewServer(
 		fileCDN:      fileCDN,
 		authConfig:   authConfig,
 		jwt:          jwt,
+		authorizer:   auth.NewAuthorizer(database),
 		database:     database,
-		adminUserIDs: parseAdminUserIDs(authConfig),
 	}
-}
-
-func (s *Server) isAdmin(user *models.User) bool {
-	if user == nil {
-		return false
-	}
-	_, ok := s.adminUserIDs[user.ID]
-	return ok
-}
-
-func parseAdminUserIDs(authConfig auth.Config) map[uuid.UUID]struct{} {
-	adminUserIDs := make(map[uuid.UUID]struct{})
-	for _, value := range authConfig.AdminUserIDs {
-		adminUserID, err := uuid.Parse(strings.TrimSpace(value))
-		if err != nil {
-			continue
-		}
-		adminUserIDs[adminUserID] = struct{}{}
-	}
-	return adminUserIDs
 }
 
 func (s *Server) ExchangeGithubToken(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +149,19 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	effectivePermissions, err := s.database.Permissions.List(r.Context(), db.PermissionFilters{
+		UserID: &persisted.ID,
+	})
+	if err != nil {
+		slog.Error("load user permissions failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load user permissions")
+		return
+	}
+	permissionKeys := make([]string, 0, len(effectivePermissions))
+	for _, permission := range effectivePermissions {
+		permissionKeys = append(permissionKeys, string(permission.Key))
+	}
+
 	token, expiresAt, err := s.jwt.Issue(persisted.ID)
 	if err != nil {
 		slog.Error("issue jwt failed", "err", err)
@@ -167,6 +176,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		Name:        displayName,
 		Email:       githubUser.Email,
 		Login:       githubUser.Login,
+		Permissions: permissionKeys,
 	})
 }
 

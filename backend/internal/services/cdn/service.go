@@ -45,7 +45,10 @@ type CompletedPart struct {
 	ETag       string
 }
 
-var ErrInvalidFileUpload = errors.New("cdn: invalid file upload")
+var (
+	ErrFileTooLarge      = errors.New("cdn: file exceeds maximum upload size")
+	ErrInvalidFileUpload = errors.New("cdn: invalid file upload")
+)
 
 type invalidFileUploadError struct {
 	err error
@@ -64,9 +67,10 @@ func (e *invalidFileUploadError) Is(target error) bool {
 }
 
 type service struct {
-	bucket        s3.Bucket
-	bucketBaseURL *url.URL
-	publicBaseURL *url.URL
+	bucket            s3.Bucket
+	uploadMaxFileSize int64
+	bucketBaseURL     *url.URL
+	publicBaseURL     *url.URL
 }
 
 var _ Service = (*service)(nil)
@@ -75,10 +79,13 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 	if bucket == nil {
 		return nil, errors.New("cdn: S3 bucket is required")
 	}
+	if cfg.S3.UploadMaxFileSize <= 0 {
+		return nil, errors.New("cdn: upload max file size must be positive")
+	}
 
 	publicBaseURL := strings.TrimSpace(cfg.CloudFront.BaseURL)
 	if publicBaseURL == "" {
-		return &service{bucket: bucket}, nil
+		return &service{bucket: bucket, uploadMaxFileSize: cfg.S3.UploadMaxFileSize}, nil
 	}
 
 	parsedPublicBaseURL, err := parseBaseURL("CloudFront base URL", publicBaseURL)
@@ -91,9 +98,10 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 	}
 
 	return &service{
-		bucket:        bucket,
-		bucketBaseURL: bucketBaseURL,
-		publicBaseURL: parsedPublicBaseURL,
+		bucket:            bucket,
+		uploadMaxFileSize: cfg.S3.UploadMaxFileSize,
+		bucketBaseURL:     bucketBaseURL,
+		publicBaseURL:     parsedPublicBaseURL,
 	}, nil
 }
 
@@ -102,6 +110,14 @@ func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGran
 		return UploadGrant{}, &invalidFileUploadError{
 			err: errors.New("size must be greater than zero"),
 		}
+	}
+	if file.Size > s.uploadMaxFileSize {
+		return UploadGrant{}, fmt.Errorf(
+			"%w: size %d exceeds maximum %d",
+			ErrFileTooLarge,
+			file.Size,
+			s.uploadMaxFileSize,
+		)
 	}
 	key, err := objectKey(file)
 	if err != nil {

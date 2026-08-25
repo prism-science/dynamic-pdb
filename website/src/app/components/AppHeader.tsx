@@ -1,6 +1,6 @@
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
-import { isConfiguredAdmin } from "@/app/reviews/admin";
 import { hasReviewWork } from "@/app/reviews/count";
+import { hasReviewAccess } from "@/lib/auth/permissions";
+import { getAuthSession, userIdFromToken } from "@/lib/auth/session";
 
 import HeaderBar, { type HeaderReviews, type HeaderUser } from "./HeaderBar";
 
@@ -18,8 +18,8 @@ export default async function AppHeader() {
     initial: (session.name || handle || "?").charAt(0).toUpperCase(),
   };
 
-  const userId = await getCurrentUserId();
-  const isReviewer = isConfiguredAdmin(userId);
+  const userId = userIdFromToken(session.token);
+  const isReviewer = hasReviewAccess(session.permissions);
   const hasWork =
     isReviewer && userId ? await hasReviewWork(session.token, userId) : false;
 

@@ -25,7 +25,7 @@ type SearchParamValue = string | string[] | undefined;
 type Props = { searchParams?: Promise<Record<string, SearchParamValue>> };
 
 /** The author's side of review: the same two-pane reading of a submission the
- *  administrator gets, minus the decision. Published entries are not here —
+ *  reviewer gets, minus the decision. Published entries are not here —
  *  those are the public catalog. */
 export default async function MyEntriesPage({ searchParams }: Props) {
   const session = await getAuthSession();
@@ -74,7 +74,7 @@ export default async function MyEntriesPage({ searchParams }: Props) {
           <SubmissionCard
             title={selected.name}
             review={submission}
-            decidable={false}
+            reviewPermissions={null}
           />
         ) : (
           <div className={styles.emptyPane}>Select a submission.</div>

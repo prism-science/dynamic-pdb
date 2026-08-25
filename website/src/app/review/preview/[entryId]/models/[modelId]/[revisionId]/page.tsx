@@ -7,10 +7,9 @@ import {
 } from "@/lib/api/entries";
 import {
   getAuthSession,
-  getCurrentUserId,
   userIdFromToken,
 } from "@/lib/auth/session";
-import { isConfiguredAdmin } from "@/app/reviews/admin";
+import { hasReviewAccess } from "@/lib/auth/permissions";
 
 import {
   ModelRevisionPreview,
@@ -29,15 +28,15 @@ export default async function ModelRevisionPreviewPage({ params }: Props) {
   if (!session) {
     notFound();
   }
-  const isAdmin = isConfiguredAdmin(await getCurrentUserId());
+  const isReviewer = hasReviewAccess(session.permissions);
   const userId = userIdFromToken(session.token);
-  if (!isAdmin && !userId) {
+  if (!isReviewer && !userId) {
     notFound();
   }
 
   let revision;
   try {
-    revision = isAdmin
+    revision = isReviewer
       ? await getModelRevision(session.token, entryId, modelId, revisionId)
       : await getUserModelRevision(
           session.token,

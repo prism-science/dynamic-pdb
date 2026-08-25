@@ -14,6 +14,7 @@ type BackendTokenResponse = {
   expires_at: string;
   login: string;
   name: string;
+  permissions: string[];
 };
 
 type BackendErrorResponse = {
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest) {
     expiresAt: new Date(backendTokenResult.value.expires_at),
     login: backendTokenResult.value.login,
     name: backendTokenResult.value.name,
+    permissions: backendTokenResult.value.permissions,
   });
   return response;
 }
@@ -138,7 +140,11 @@ async function exchangeBackendToken(
       payload.expires_at.length === 0 ||
       typeof payload.login !== "string" ||
       payload.login.length === 0 ||
-      typeof payload.name !== "string"
+      typeof payload.name !== "string" ||
+      !Array.isArray(payload.permissions) ||
+      !payload.permissions.every(
+        (permission) => typeof permission === "string",
+      )
     ) {
       return {
         ok: false,
