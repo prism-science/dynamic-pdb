@@ -106,11 +106,13 @@ func TestMain(m *testing.M) {
 		log.Fatalf("e2etest: issue admin token: %v", err)
 	}
 	storageConfig := storage.BucketConfig{
-		Endpoint:        s3Stub.URL(),
-		Region:          "us-east-1",
-		Bucket:          "dynamic-pdb",
-		AccessKeyID:     "AKIAEXAMPLE",
-		SecretAccessKey: "secret",
+		Endpoint:          s3Stub.URL(),
+		Region:            "us-east-1",
+		Bucket:            "dynamic-pdb",
+		AccessKeyID:       "AKIAEXAMPLE",
+		SecretAccessKey:   "secret",
+		UploadMaxFileSize: 1 << 30,
+		UploadURLTTL:      15 * time.Minute,
 	}
 	fileUploadBucket, err := storage.NewBucket(context.Background(), storageConfig)
 	if err != nil {

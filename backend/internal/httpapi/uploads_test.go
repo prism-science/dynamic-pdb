@@ -171,6 +171,27 @@ func Test_should_return_400_when_cdn_rejects_file_upload(t *testing.T) {
 	assert.Equal(t, 1, fileCDN.createCalls)
 }
 
+func Test_should_return_413_when_file_size_exceeds_upload_limit(t *testing.T) {
+	// given
+	fileCDN := &uploadCDNStub{createErr: cdn.ErrFileTooLarge}
+	server := &Server{fileCDN: fileCDN}
+	req := uploadJSONRequest(t, map[string]any{
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        1 << 30,
+	})
+	rec := httptest.NewRecorder()
+
+	// when
+	server.CreateFileUpload(rec, req)
+
+	// then
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Equal(t, 1, fileCDN.createCalls)
+	assert.Contains(t, rec.Body.String(), `"code":"FILE_TOO_LARGE"`)
+}
+
 func Test_should_complete_file_upload_when_complete_request_is_valid(t *testing.T) {
 	// given
 	fileCDN := &uploadCDNStub{}

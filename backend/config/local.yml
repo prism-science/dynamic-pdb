@@ -30,5 +30,7 @@ cdn:
     bucket: dynamic-pdb
     access_key_id: ""
     secret_access_key: ""
+    upload_max_file_size: 1073741824
+    upload_url_ttl: 15m
   cloudfront:
     base_url: ""

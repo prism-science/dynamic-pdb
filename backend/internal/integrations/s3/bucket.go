@@ -10,9 +10,9 @@ import (
 	"path"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	multipartMinPartSize  = 64 * 1024 * 1024
-	MultipartMaxParts     = 10_000
-	multipartUploadURLTTL = 12 * time.Hour
+	multipartMinPartSize = 64 * 1024 * 1024
+	MultipartMaxParts    = 10_000
 )
 
 type Bucket interface {
@@ -45,6 +44,12 @@ func NewBucket(ctx context.Context, cfg BucketConfig) (*RemoteBucket, error) {
 	}
 	if strings.TrimSpace(cfg.Bucket) == "" {
 		return nil, fmt.Errorf("s3: bucket is required")
+	}
+	if cfg.UploadMaxFileSize <= 0 {
+		return nil, fmt.Errorf("s3: upload max file size must be positive")
+	}
+	if cfg.UploadURLTTL <= 0 {
+		return nil, fmt.Errorf("s3: upload URL TTL must be positive")
 	}
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
@@ -91,14 +96,15 @@ type CompletedPart struct {
 
 func PartPlan(size int64) (partSize int64, partCount int) {
 	partSize = int64(multipartMinPartSize)
+	if size <= 0 {
+		return partSize, 1
+	}
 	if size > partSize*int64(MultipartMaxParts) {
 		const mib = 1024 * 1024
-		partSize = ((size+int64(MultipartMaxParts)-1)/int64(MultipartMaxParts) + mib - 1) / mib * mib
+		minimumPartSize := (size-1)/int64(MultipartMaxParts) + 1
+		partSize = ((minimumPartSize-1)/mib + 1) * mib
 	}
-	partCount = int((size + partSize - 1) / partSize)
-	if partCount < 1 {
-		partCount = 1
-	}
+	partCount = int((size-1)/partSize + 1)
 	return partSize, partCount
 }
 
@@ -108,6 +114,13 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, s
 	}
 	if size <= 0 {
 		return MultipartUploadGrant{}, errors.New("s3: file size must be greater than zero")
+	}
+	if size > b.config.UploadMaxFileSize {
+		return MultipartUploadGrant{}, fmt.Errorf(
+			"s3: file size %d exceeds configured maximum %d",
+			size,
+			b.config.UploadMaxFileSize,
+		)
 	}
 
 	objectURL, err := b.objectURL(key)
@@ -131,14 +144,7 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, s
 	partSize, partCount := PartPlan(size)
 	parts := make([]PresignedPart, 0, partCount)
 	for partNumber := 1; partNumber <= partCount; partNumber++ {
-		req, presignErr := b.presigner.PresignUploadPart(ctx, &awss3.UploadPartInput{
-			Bucket:     aws.String(b.config.Bucket),
-			Key:        aws.String(key),
-			UploadId:   aws.String(uploadID),
-			PartNumber: aws.Int32(int32(partNumber)),
-		}, func(opts *awss3.PresignOptions) {
-			opts.Expires = multipartUploadURLTTL
-		})
+		req, presignErr := b.presignUploadPart(ctx, key, uploadID, size, partSize, partNumber)
 		if presignErr != nil {
 			if abortErr := b.AbortMultipartUpload(ctx, key, uploadID); abortErr != nil {
 				slog.Error("abort multipart upload after presign failure", "err", abortErr, "key", key, "upload_id", uploadID)
@@ -155,6 +161,38 @@ func (b *RemoteBucket) PresignMultipartUpload(ctx context.Context, key string, s
 		PartSize:  partSize,
 		Parts:     parts,
 	}, nil
+}
+
+func (b *RemoteBucket) presignUploadPart(
+	ctx context.Context,
+	key, uploadID string,
+	fileSize, partSize int64,
+	partNumber int,
+) (*v4.PresignedHTTPRequest, error) {
+	return b.presigner.PresignUploadPart(ctx, uploadPartInput(
+		b.config.Bucket,
+		key,
+		uploadID,
+		fileSize,
+		partSize,
+		partNumber,
+	), func(opts *awss3.PresignOptions) {
+		opts.Expires = b.config.UploadURLTTL
+	})
+}
+
+func uploadPartInput(bucket, key, uploadID string, fileSize, partSize int64, partNumber int) *awss3.UploadPartInput {
+	contentLength := partSize
+	if remaining := fileSize - int64(partNumber-1)*partSize; remaining < contentLength {
+		contentLength = remaining
+	}
+	return &awss3.UploadPartInput{
+		Bucket:        aws.String(bucket),
+		Key:           aws.String(key),
+		UploadId:      aws.String(uploadID),
+		PartNumber:    aws.Int32(int32(partNumber)),
+		ContentLength: aws.Int64(contentLength),
+	}
 }
 
 func (b *RemoteBucket) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error {

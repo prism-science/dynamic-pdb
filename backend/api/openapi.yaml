@@ -138,6 +138,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          description: File exceeds the configured upload size limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/files/complete:
     post:
       operationId: completeFileUpload

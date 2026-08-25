@@ -41,6 +41,8 @@ cdn:
     bucket: dynamic-pdb-test
     access_key_id: file-access-key
     secret_access_key: file-secret-key
+    upload_max_file_size: 1073741824
+    upload_url_ttl: 15m
   cloudfront:
     base_url: https://files.example.com
 `
@@ -86,6 +88,8 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 	assert.Equal(t, "http://localhost:9000", cfg.CDN.S3.Endpoint)
 	assert.Equal(t, "us-west-2", cfg.CDN.S3.Region)
 	assert.Equal(t, "dynamic-pdb-test", cfg.CDN.S3.Bucket)
+	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
+	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.example.com", cfg.CDN.CloudFront.BaseURL)
 }
 
@@ -244,6 +248,8 @@ cdn:
     bucket: dynamic-pdb
     access_key_id: local-access-key
     secret_access_key: local-secret-key
+    upload_max_file_size: 1073741824
+    upload_url_ttl: 15m
 `))
 
 	// when
@@ -256,6 +262,8 @@ cdn:
 	assert.Equal(t, "sample-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "dynamic_pdb_local", cfg.DB.Name)
 	assert.Equal(t, "dynamic-pdb", cfg.CDN.S3.Bucket)
+	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
+	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 }
 
 func Test_should_reject_repository_production_config_without_auth_secret_env_vars(t *testing.T) {
@@ -287,5 +295,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
 	assert.Equal(t, "dynamic-pdb-data", cfg.CDN.S3.Bucket)
+	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
+	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 }
