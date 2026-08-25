@@ -47,6 +47,7 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
 	assert.Equal(t, artifactID.String(), fileCDN.createdFile.ArtifactID)
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
@@ -58,6 +59,28 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 	assert.Equal(t, fileCDN.grant.UploadID, body.UploadId)
 	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.ObjectUrl)
 	assert.Len(t, body.Parts, 1)
+}
+
+func Test_should_return_legacy_error_shape_when_create_file_upload_request_is_invalid(t *testing.T) {
+	// given
+	fileCDN := &uploadCDNStub{}
+	server := &Server{fileCDN: fileCDN}
+	req := uploadJSONRequest(t, map[string]any{
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        0,
+	})
+	rec := httptest.NewRecorder()
+
+	// when
+	server.CreateFileUpload(rec, req)
+
+	// then
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, `{"code":"BAD_REQUEST","message":"size must be greater than zero"}`, rec.Body.String())
+	assert.Zero(t, fileCDN.createCalls)
 }
 
 func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testing.T) {
