@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
 	"dynamic-pdb/backend/internal/auth"
@@ -26,6 +28,20 @@ type Server struct {
 	jwt          *auth.JWT
 	database     *db.DB
 	adminUserIDs map[uuid.UUID]struct{}
+}
+
+func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
+	resolveClientIP := middleware.ClientIPFromRemoteAddr
+	if env == "production" {
+		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
+	}
+
+	limitRequests := httprate.LimitBy(100, 10*time.Second, func(r *http.Request) (string, error) {
+		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
+	})
+	return func(next http.Handler) http.Handler {
+		return resolveClientIP(limitRequests(next))
+	}
 }
 
 func NewServer(
