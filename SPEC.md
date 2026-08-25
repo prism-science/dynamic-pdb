@@ -1,203 +1,168 @@
-# Dynamic PDB
+# Dynamic PDB Specification
 
-## Overview
+## 1. Why it exists
 
-Dynamic PDB is a scientific data registry for structural biology. It connects source measurements, processed datasets, structural models, and model-quality metrics into a single traceable workflow.
+### Problem
 
-Unlike a traditional structure archive, Dynamic PDB allows the same source dataset to be reprocessed and interpreted by multiple algorithms over time. Researchers can see how each model was produced and how well it explains the underlying measurement data.
+Structural models change and improve over time. Without one registry, it is hard
+to find the data recorded with each Model and compare their quality scores.
 
-## Purpose
+### Users
 
-The project provides a central place to:
+- **Visitors** find, inspect, and download public data.
+- **Depositors** submit datasets and models.
+- **Reviewers** approve or reject submissions.
 
-* register source datasets;
-* store processed data and structural models;
-* track input-to-output relationships;
-* compare multiple structural models against the same source data;
-* preserve software, parameters, and logs required to reproduce a result;
-* rerun improved algorithms on existing datasets.
+### Value
 
-## Core structure
+Dynamic PDB keeps raw data, models, processing runs, and quality metrics in one
+traceable history. Researchers can follow how a structure evolves and compare
+each model by its recorded scores.
 
-### Entry
+### Scope
 
-An Entry represents one baseline source dataset.
+Dynamic PDB is a registry, not a modeling service. It stores or references
+results; it does not run model building or refinement. Files can be downloaded
+one at a time. Bulk download is not implemented.
 
-The baseline is the least-processed data available, such as raw diffraction images or an existing MTZ file. If the baseline dataset changes, a new Entry is created.
+## 2. How it works
 
-### Model
+### Core concepts
 
-A Model groups related processing or modeling work inside an Entry, for example:
+Dynamic PDB records:
 
-* diffraction-data processing;
-* refinement;
-* qFit analysis;
-* Sampleworks analysis;
-* molecular-dynamics simulation;
-* parameter sweep.
+- **Data:** a stored file or external file reference.
+- **Run:** a program execution with its software, version, inputs, and outputs.
+- **Model:** a structural model produced outside Dynamic PDB.
+- **Metrics:** numeric quality scores attached to a Model.
 
-### Entity
+An Entry groups related Data and Models. A Revision is a reviewable snapshot of
+an Entry or Model. Data and results use four levels:
 
-An Entity is an individual data object stored in the system.
+| Level | Meaning |
+| --- | --- |
+| L0 | Raw source data, including FASTA. |
+| L1 | Processed experimental data, such as MTZ or maps. |
+| L2 | Structural models, such as PDB or mmCIF. |
+| L3 | Evaluations and validation results. |
 
-Every Entity belongs to an Entry and may also belong to a Model.
+### Browse and search
 
-### Entity Relation
+Browsing is public. Search covers approved Entries, Models, Artifacts, and their
+metadata. Unapproved revisions stay private.
 
-Entity Relations describe dependencies between objects:
+### Entries and models
 
-```text
-processed_from
-generated_from
-refined_from
-evaluates
-```
+An Entry page shows metadata, source files, Models, and similar proteins. A
+Model page shows its files, data levels, metrics, download link, and processing
+pipeline.
 
-This creates a graph showing exactly which inputs produced each output.
+### Structure viewer and quality metrics
 
-## Data levels
+Mol* displays PDB and mmCIF structures.
 
-Dynamic PDB uses the L0–L3 data maturity model.
+The UI displays R-work, R-free, RSCC, and CC when supplied. Values outside fixed
+quality thresholds are highlighted:
 
-### L0 — Raw source data
+| Metric | Warning | Bad |
+| --- | --- | --- |
+| R-work, R-free | `>= 0.25` | `>= 0.30` |
+| RSCC, CC | `< 0.90` | `< 0.80` |
 
-Original instrument output.
+### Web submission
 
-Examples:
+A signed-in user can create an Entry or add a Model. Files may be local, an HTTP
+URL, or from public Ext. Known file fields prefill metadata, runs, and metrics.
+Each Model needs exactly one PDB or mmCIF file. The form saves unfinished Entries
+in the browser. New Entries and Models enter review.
 
-```text
-HDF5 diffraction datasets
-raw diffraction images
-cryo-EM particles
-```
+### Batch upload with the CLI
 
-### L1 — Processed source data
-
-Measurements extracted or reconstructed from raw data.
-
-Examples:
-
-```text
-MTZ reflection files
-CCP4 / MRC / DSN6 density maps
-NXS diffuse-scattering maps
-```
-
-### L2 — Structural models
-
-Atomic interpretations of the source data.
-
-Examples:
+The CLI follows one visible plan:
 
 ```text
-PDB
-CIF
-mmCIF
-single-conformer models
-multiconformer models
-MD ensembles and trajectories
+login -> scan folder -> review YAML manifest -> upload
 ```
 
-### L3 — Model-to-data evaluations
+The CLI scans folders and ZIP archives, groups files by PDB ID, and can import
+from RCSB. YAML rules extract JSON, CSV, TSV, PDB, or mmCIF values. Uploads
+support concurrency, filters, and restart from a local state log.
 
-Measurements of how well a model explains source data.
+### Files and provenance
 
-Examples:
+PostgreSQL stores file metadata. Bytes live in S3, at an HTTP URL, or in Ext.
+Clients upload up to 1 GiB directly through presigned S3 URLs.
+
+A Run describes one program execution: the software, its version, input files,
+and output files. The Model page shows these Runs as a pipeline graph.
+
+### Revisions and review
+
+Every submitted Entry and Model is a separate revision:
 
 ```text
-Rwork
-Rfree
-CC
-RSCC
-Clashscore
-Ramachandran outlier percentage
-Side-chain outlier percentage
+in review -> active -> archived (when replaced with newer version)
+in review -> rejected
 ```
 
-The proposal explicitly requires model geometry metrics and source-fit metrics to be stored for structural models.
+Public reads return only the active revision. Reviewers use a diff and preview
+to decide each Entry and Model separately. A new Entry must be approved before
+its Models. Depositors see their own under-review and rejected work.
 
-## Typical workflow
+### Similar proteins
 
-```text
-Raw diffraction images
-        ↓
-Reflection data and density maps
-        ↓
-Atomic or ensemble models
-        ↓
-Model-to-data evaluation metrics
-```
+An Entry page suggests Entries with similar protein sequences. This helps
+researchers find related structures and compare their Models. Each match shows
+identity, coverage, score, and alignment. A daily MMseqs job calculates the
+matches from FASTA files in active Entries.
 
-Another supported workflow starts with existing PDB data:
+### Authentication and permissions
 
-```text
-MTZ + existing model
-        ↓
-Sampleworks / qFit / refinement / MD
-        ↓
-New structural models
-        ↓
-Comparison against the original source data
-```
+Public reads need no account. Writes require GitHub login and membership in an
+allowed organization: `Astera-org` or `diff-use`.
 
-The system must support multiple processed datasets and multiple models derived from the same baseline source data.
+The backend exchanges GitHub authorization for its own JWT. The website keeps it
+in an HTTP-only cookie; the CLI keeps it in local config. Separate permissions
+control approval and rejection.
 
-## Stored files
+## 3. Architecture and deployment
 
-Each Entity can reference a primary file and optional supporting files.
+### Runtime architecture
 
-```text
-Primary files:
-.h5
-.mtz
-.nxs
-.ccp4
-.mrc
-.dsn6
-.pdb
-.cif
-.mmcif
-MD trajectory formats
+Dynamic PDB has two clients and one backend:
 
-Supporting files:
-processing logs
-parameter files
-configuration files
-validation reports
-software output
-```
+- The **Next.js website** provides the interactive UI.
+- The **Go CLI** provides batch submission.
+- The **backend** handles catalog data, authentication, submission, and review.
 
-Supporting files preserve the exact algorithm, parameters, inputs, and outputs used to create an Entity.
+The backend stores catalog data, revisions, provenance, and similarities in
+PostgreSQL. Scientific files live in S3 and are served through CloudFront.
+The browser and CLI upload files directly to S3 using URLs issued by the backend.
 
-## Database structure
+### Production
 
-```text
-entries
-models
-entities
-entity_relations
-```
+Helm deploys these workloads to the `dynamicpdb` Kubernetes namespace:
 
-```text
-Entry
-├── Models
-├── Entities
-└── Entity Relations
-```
+- two website pods;
+- two backend pods;
+- two S3 proxy pods for CLI installers and releases;
+- a Flyway Job for database migrations;
+- a daily MMseqs CronJob with a persistent 16 GiB cache.
 
-The `entities` table stores the data level, type, name, metadata, file references, and scientific properties of each object.
+Traefik exposes everything on `dynamicpdb.com`:
 
-The `entity_relations` table forms the provenance graph connecting input data, processing results, models, and evaluations.
+| Path | Destination |
+| --- | --- |
+| `/` | Website |
+| `/api` | Backend |
+| `/install.sh`, `/releases`, `/config` | S3 proxy |
 
-## Main result
+PostgreSQL and S3 run outside this chart. Kubernetes Secrets provide their
+credentials and the application secrets.
 
-Dynamic PDB provides a living view of structural biology data:
+### Delivery
 
-```text
-source data
-→ processing history
-→ structural interpretations
-→ measurable model quality
-```
+GitHub Actions tests the affected code. A successful `main` build pushes images
+tagged with the commit SHA to Harbor. ArgoCD deploys that SHA with Helm.
 
-Instead of publishing one final structure and leaving it unchanged, researchers can continuously add improved models and compare them against the same source evidence.
+A `v*` tag publishes CLI archives for Linux and macOS to the release S3 bucket.
