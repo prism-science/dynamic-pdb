@@ -13,6 +13,8 @@ import (
 
 type DB struct {
 	Users                       *UsersRepository
+	Roles                       *RolesRepository
+	Permissions                 *PermissionsRepository
 	Entries                     *EntriesRepository
 	EntrySearch                 *EntrySearchIndexRepository
 	Models                      *ModelsRepository
@@ -61,6 +63,8 @@ func NewDB(cfg Config) (*DB, error) {
 	queriers := DefaultQuerierProvider
 	return &DB{
 		Users:                       NewUsersRepository(sqlxDB, queriers),
+		Roles:                       NewRolesRepository(sqlxDB, queriers),
+		Permissions:                 NewPermissionsRepository(sqlxDB, queriers),
 		Entries:                     NewEntriesRepository(sqlxDB, queriers),
 		EntrySearch:                 NewEntrySearchIndexRepository(sqlxDB, queriers),
 		Models:                      NewModelsRepository(sqlxDB, queriers),

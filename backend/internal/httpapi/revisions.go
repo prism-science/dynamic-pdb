@@ -111,7 +111,7 @@ func (s *Server) ListEntryRevisionGroups(
 	r *http.Request,
 	params ListEntryRevisionGroupsParams,
 ) {
-	if !s.requireAdmin(w, r) {
+	if !s.requireReviewer(w, r) {
 		return
 	}
 	state := domainmodels.RevisionState(params.State)
@@ -132,7 +132,7 @@ func (s *Server) ListEntryRevisionsForEntry(
 	entryID uuid.UUID,
 	params ListEntryRevisionsForEntryParams,
 ) {
-	if !s.requireAdmin(w, r) {
+	if !s.requireReviewer(w, r) {
 		return
 	}
 	if err := validatePagination(params.Limit, params.Offset); err != nil {
@@ -151,7 +151,7 @@ func (s *Server) GetEntryRevision(
 	r *http.Request,
 	entryID, revisionID uuid.UUID,
 ) {
-	if !s.requireAdmin(w, r) {
+	if !s.requireReviewer(w, r) {
 		return
 	}
 	s.writeEntryRevision(w, r, entryID, revisionID, nil)
@@ -167,18 +167,21 @@ func (s *Server) UpdateEntryRevisionState(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	admin, ok := UserFromContext(r.Context())
+	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
-		return
-	}
-	if !s.isAdmin(admin) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator access is required")
 		return
 	}
 	state := domainmodels.RevisionState(req.State)
 	if state != domainmodels.RevisionStateActive && state != domainmodels.RevisionStateRejected {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "state must be active or rejected")
+		return
+	}
+	permission := domainmodels.PermissionKeyRevisionsApprove
+	if state == domainmodels.RevisionStateRejected {
+		permission = domainmodels.PermissionKeyRevisionsReject
+	}
+	if !s.requirePermission(w, r, user.ID, permission) {
 		return
 	}
 
@@ -488,7 +491,7 @@ func (s *Server) ListModelRevisionsForModel(
 	entryID, modelID uuid.UUID,
 	params ListModelRevisionsForModelParams,
 ) {
-	if !s.requireAdmin(w, r) {
+	if !s.requireReviewer(w, r) {
 		return
 	}
 	if err := validatePagination(params.Limit, params.Offset); err != nil {
@@ -508,7 +511,7 @@ func (s *Server) GetModelRevision(
 	r *http.Request,
 	entryID, modelID, revisionID uuid.UUID,
 ) {
-	if !s.requireAdmin(w, r) {
+	if !s.requireReviewer(w, r) {
 		return
 	}
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, nil)
@@ -524,18 +527,21 @@ func (s *Server) UpdateModelRevisionState(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	admin, ok := UserFromContext(r.Context())
+	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
-		return
-	}
-	if !s.isAdmin(admin) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator access is required")
 		return
 	}
 	state := domainmodels.RevisionState(request.State)
 	if state != domainmodels.RevisionStateActive && state != domainmodels.RevisionStateRejected {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "state must be active or rejected")
+		return
+	}
+	permission := domainmodels.PermissionKeyRevisionsApprove
+	if state == domainmodels.RevisionStateRejected {
+		permission = domainmodels.PermissionKeyRevisionsReject
+	}
+	if !s.requirePermission(w, r, user.ID, permission) {
 		return
 	}
 
@@ -781,14 +787,45 @@ func (s *Server) GetUserModelRevision(
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, &userID)
 }
 
-func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) requireReviewer(w http.ResponseWriter, r *http.Request) bool {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return false
 	}
-	if !s.isAdmin(user) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator access is required")
+
+	allowed, err := s.authorizer.HasRole(r.Context(), user.ID, domainmodels.RoleKeyReviewer)
+	if err != nil {
+		slog.Error("reviewer authorization failed", "err", err, "user_id", user.ID)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
+		return false
+	}
+	if !allowed {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "reviewer access is required")
+		return false
+	}
+	return true
+}
+
+func (s *Server) requirePermission(
+	w http.ResponseWriter,
+	r *http.Request,
+	userID uuid.UUID,
+	permission domainmodels.PermissionKey,
+) bool {
+	allowed, err := s.authorizer.Can(r.Context(), userID, permission)
+	if err != nil {
+		slog.Error(
+			"permission authorization failed",
+			"err", err,
+			"user_id", userID,
+			"permission", permission,
+		)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
+		return false
+	}
+	if !allowed {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "required permission is missing")
 		return false
 	}
 	return true

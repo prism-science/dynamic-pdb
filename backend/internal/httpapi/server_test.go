@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -10,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -71,35 +72,83 @@ func Test_should_reject_request_when_global_ip_limit_was_exceeded(t *testing.T) 
 	assert.Equal(t, http.StatusTooManyRequests, recorder.Code)
 }
 
-func Test_should_identify_admin_when_user_id_is_in_admin_user_ids(t *testing.T) {
+func Test_should_check_reviewer_role_when_review_access_required(t *testing.T) {
 	// given
-	adminUserID := uuid.MustParse("8ca59596-c4b4-4f3f-94be-6dd73f76f050")
-	otherAdminUserID := uuid.MustParse("5a8ed753-5eb0-483f-b9f8-a8c58b191017")
-	server := NewServer(nil, nil, auth.Config{
-		AdminUserIDs: []string{
-			adminUserID.String(),
-			otherAdminUserID.String(),
-		},
-	}, nil, nil)
+	userID := uuid.New()
+	authorizer := &authorizerStub{hasRoleResult: true}
+	server := &Server{authorizer: authorizer}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request = request.WithContext(WithUser(request.Context(), &models.User{ID: userID}))
+	recorder := httptest.NewRecorder()
 
 	// when
-	got := server.isAdmin(&models.User{ID: otherAdminUserID})
+	allowed := server.requireReviewer(recorder, request)
 
 	// then
-	assert.True(t, got)
+	assert.True(t, allowed)
+	assert.Equal(t, userID, authorizer.userID)
+	assert.Equal(t, models.RoleKeyReviewer, authorizer.role)
 }
 
-func Test_should_not_identify_admin_when_user_id_is_not_configured(t *testing.T) {
-	// given
-	server := NewServer(nil, nil, auth.Config{
-		AdminUserIDs: []string{
-			"8ca59596-c4b4-4f3f-94be-6dd73f76f050",
-		},
-	}, nil, nil)
+func Test_should_check_matching_permission_when_entry_revision_state_updated(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      string
+		permission models.PermissionKey
+	}{
+		{name: "approve", state: "active", permission: models.PermissionKeyRevisionsApprove},
+		{name: "reject", state: "rejected", permission: models.PermissionKeyRevisionsReject},
+	}
 
-	// when
-	got := server.isAdmin(&models.User{ID: uuid.MustParse("5a8ed753-5eb0-483f-b9f8-a8c58b191017")})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// given
+			userID := uuid.New()
+			authorizer := &authorizerStub{}
+			server := &Server{authorizer: authorizer}
+			request := httptest.NewRequest(
+				http.MethodPatch,
+				"/",
+				strings.NewReader(`{"state":"`+test.state+`"}`),
+			)
+			request = request.WithContext(WithUser(request.Context(), &models.User{ID: userID}))
+			recorder := httptest.NewRecorder()
 
-	// then
-	assert.False(t, got)
+			// when
+			server.UpdateEntryRevisionState(recorder, request, uuid.New(), uuid.New())
+
+			// then
+			assert.Equal(t, http.StatusForbidden, recorder.Code)
+			assert.Equal(t, userID, authorizer.userID)
+			assert.Equal(t, test.permission, authorizer.permission)
+		})
+	}
+}
+
+type authorizerStub struct {
+	hasRoleResult bool
+	canResult     bool
+	userID        uuid.UUID
+	role          models.RoleKey
+	permission    models.PermissionKey
+}
+
+func (s *authorizerStub) HasRole(
+	_ context.Context,
+	userID uuid.UUID,
+	role models.RoleKey,
+) (bool, error) {
+	s.userID = userID
+	s.role = role
+	return s.hasRoleResult, nil
+}
+
+func (s *authorizerStub) Can(
+	_ context.Context,
+	userID uuid.UUID,
+	permission models.PermissionKey,
+) (bool, error) {
+	s.userID = userID
+	s.permission = permission
+	return s.canResult, nil
 }

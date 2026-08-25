@@ -7,8 +7,11 @@ import {
   type ReviewQueueItem,
   type ReviewQueuePage,
 } from "@/lib/api/entries";
-import { getAuthSession, getCurrentUserId } from "@/lib/auth/session";
-import { isConfiguredAdmin } from "@/app/reviews/admin";
+import {
+  hasReviewAccess,
+  reviewPermissionsFor,
+} from "@/lib/auth/permissions";
+import { getAuthSession } from "@/lib/auth/session";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 import ReviewQueue from "./ReviewQueue";
 import SubmissionCard from "./submission-view";
@@ -26,10 +29,10 @@ export default async function ReviewInbox({ searchParams }: Props) {
     return <Shell>Sign in to review.</Shell>;
   }
 
-  const userId = await getCurrentUserId();
-  if (!isConfiguredAdmin(userId)) {
+  if (!hasReviewAccess(session.permissions)) {
     return <Shell>You don&apos;t have review access.</Shell>;
   }
+  const reviewPermissions = reviewPermissionsFor(session.permissions);
 
   const params = (await searchParams) ?? {};
   const requested = firstValue(params.sel);
@@ -61,7 +64,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
           <SubmissionCard
             title={selected.name}
             review={review}
-            decidable
+            reviewPermissions={reviewPermissions}
           />
         ) : (
           <div className={styles.emptyPane}>Select an entry to review.</div>

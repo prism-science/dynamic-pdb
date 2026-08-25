@@ -665,7 +665,7 @@ paths:
       operationId: listEntryRevisionGroups
       summary: List entries with revisions in a state
       description: >
-        Administrator-only revision collection grouped by entry. An entry is returned
+        Reviewer-only revision collection grouped by entry. An entry is returned
         when either an entry revision or one of its model revisions has the
         requested state. Each item contains only revisions matching that state.
       security:
@@ -710,7 +710,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the reviewer role.
           content:
             application/json:
               schema:
@@ -720,7 +720,7 @@ paths:
     get:
       operationId: listEntryRevisionsForEntry
       summary: List revisions of an entry
-      description: Administrator-only revision history of one entry.
+      description: Reviewer-only revision history of one entry.
       security:
         - bearerAuth: []
       parameters:
@@ -757,7 +757,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the reviewer role.
           content:
             application/json:
               schema:
@@ -838,7 +838,7 @@ paths:
     get:
       operationId: getEntryRevision
       summary: Get an entry revision
-      description: Administrator-only access to a specific entry revision.
+      description: Reviewer-only access to a specific entry revision.
       security:
         - bearerAuth: []
       responses:
@@ -855,7 +855,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the reviewer role.
           content:
             application/json:
               schema:
@@ -870,8 +870,8 @@ paths:
       operationId: updateEntryRevisionState
       summary: Activate or reject an entry revision
       description: >
-        Administrator-only. Changes a revision from `in_review` to active or
-        rejected.
+        Changes a revision from `in_review` to active or rejected. Activating
+        requires `revisions.approve`; rejecting requires `revisions.reject`.
       security:
         - bearerAuth: []
       requestBody:
@@ -900,7 +900,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the required permission.
           content:
             application/json:
               schema:
@@ -922,7 +922,7 @@ paths:
     get:
       operationId: listModelRevisionsForModel
       summary: List revisions of a model
-      description: Administrator-only revision history of one model.
+      description: Reviewer-only revision history of one model.
       security:
         - bearerAuth: []
       parameters:
@@ -965,7 +965,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the reviewer role.
           content:
             application/json:
               schema:
@@ -1058,7 +1058,7 @@ paths:
     get:
       operationId: getModelRevision
       summary: Get a model revision
-      description: Administrator-only access to a specific model revision.
+      description: Reviewer-only access to a specific model revision.
       security:
         - bearerAuth: []
       responses:
@@ -1075,7 +1075,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the reviewer role.
           content:
             application/json:
               schema:
@@ -1090,8 +1090,8 @@ paths:
       operationId: updateModelRevisionState
       summary: Activate or reject a model revision
       description: >
-        Administrator-only. Changes a model revision from `in_review` to active or
-        rejected.
+        Changes a model revision from `in_review` to active or rejected. Activating
+        requires `revisions.approve`; rejecting requires `revisions.reject`.
       security:
         - bearerAuth: []
       requestBody:
@@ -1120,7 +1120,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller is not an administrator.
+          description: Caller does not have the required permission.
           content:
             application/json:
               schema:
@@ -1691,7 +1691,7 @@ components:
 
     TokenResponse:
       type: object
-      required: [token_type, access_token, expires_at, name, email, login]
+      required: [token_type, access_token, expires_at, name, email, login, permissions]
       properties:
         token_type:
           type: string
@@ -1707,6 +1707,10 @@ components:
           type: string
         login:
           type: string
+        permissions:
+          type: array
+          items:
+            type: string
 
     EntryListResponse:
       type: object
@@ -2433,7 +2437,7 @@ components:
 
     UpdateRevisionStateRequest:
       type: object
-      description: Administrator state update for a revision in `in_review`.
+      description: Permission-controlled state update for a revision in `in_review`.
       required: [state]
       properties:
         state:

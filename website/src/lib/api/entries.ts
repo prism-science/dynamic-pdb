@@ -616,7 +616,7 @@ export async function getEntryReview(
   token: string,
   item: ReviewQueueItem,
 ): Promise<EntryReview> {
-  return buildEntryReview(adminReaders(token), item);
+  return buildEntryReview(reviewerReaders(token), item);
 }
 
 /** Finds one entry's row without knowing which page it is on. Only the preview
@@ -649,7 +649,7 @@ type RevisionReaders = {
   ) => Promise<ModelRevision>;
 };
 
-function adminReaders(token: string): RevisionReaders {
+function reviewerReaders(token: string): RevisionReaders {
   return {
     entry: (entryId, revisionId) => getEntryRevision(token, entryId, revisionId),
     model: (entryId, modelId, revisionId) =>
@@ -657,8 +657,8 @@ function adminReaders(token: string): RevisionReaders {
   };
 }
 
-/** An author reads their own revisions through the user-scoped routes; the admin
- *  ones are refused to anyone but the administrator. */
+/** An author reads their own revisions through the user-scoped routes; the
+ *  reviewer ones are refused to anyone without review access. */
 function authorReaders(token: string, userId: string): RevisionReaders {
   return {
     entry: (entryId, revisionId) =>
@@ -680,8 +680,8 @@ function authorReaders(token: string, userId: string): RevisionReaders {
   };
 }
 
-/** An author's own revision, read through the user-scoped route. The admin
- *  routes refuse everyone but the administrator, so a preview opened by the
+/** An author's own revision, read through the user-scoped route. The reviewer
+ *  routes refuse everyone without review access, so a preview opened by the
  *  person who submitted it has to come through here. */
 export async function getUserEntryRevision(
   token: string,

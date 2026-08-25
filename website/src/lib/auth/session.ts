@@ -11,12 +11,14 @@ const oauthStateMaxAgeSeconds = 10 * 60;
 export const authTokenCookieName = "dynamic_pdb_auth_token";
 export const authLoginCookieName = "dynamic_pdb_auth_login";
 export const authNameCookieName = "dynamic_pdb_auth_name";
+export const authPermissionsCookieName = "dynamic_pdb_auth_permissions";
 export const oauthStateCookieName = "dynamic_pdb_auth_state";
 
 export type AuthSession = {
   token: string;
   login: string | null;
   name: string | null;
+  permissions: string[];
 };
 
 export type OAuthState = {
@@ -29,6 +31,7 @@ export type PersistedAuth = {
   expiresAt: Date;
   login: string;
   name: string;
+  permissions: string[];
 };
 
 export async function getAuthSession(): Promise<AuthSession | null> {
@@ -42,22 +45,10 @@ export async function getAuthSession(): Promise<AuthSession | null> {
     token,
     login: cookieStore.get(authLoginCookieName)?.value ?? null,
     name: cookieStore.get(authNameCookieName)?.value ?? null,
+    permissions: permissionsFromCookie(
+      cookieStore.get(authPermissionsCookieName)?.value,
+    ),
   };
-}
-
-/**
- * Read the current user's id (the JWT `sub` claim) from the session token.
- *
- * The backend verifies the token signature on every request; here we only need
- * the subject to decide which cards belong to the signed-in user, so we decode
- * the payload without re-verifying.
- */
-export async function getCurrentUserId(): Promise<string | null> {
-  const session = await getAuthSession();
-  if (!session) {
-    return null;
-  }
-  return userIdFromToken(session.token);
 }
 
 export function userIdFromToken(token: string): string | null {
@@ -189,12 +180,40 @@ export function setAuthCookies(
     name: authNameCookieName,
     value: value.name,
   });
+  response.cookies.set({
+    ...baseCookie,
+    name: authPermissionsCookieName,
+    value: Buffer.from(JSON.stringify(value.permissions), "utf8").toString(
+      "base64url",
+    ),
+  });
 }
 
 export function clearAuthCookies(response: NextResponse): void {
   clearCookie(response, authTokenCookieName);
   clearCookie(response, authLoginCookieName);
   clearCookie(response, authNameCookieName);
+  clearCookie(response, authPermissionsCookieName);
+}
+
+export function permissionsFromCookie(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (permission): permission is string => typeof permission === "string",
+    );
+  } catch {
+    return [];
+  }
 }
 
 function clearCookie(response: NextResponse, name: string): void {

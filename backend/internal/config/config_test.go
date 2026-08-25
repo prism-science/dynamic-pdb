@@ -14,9 +14,6 @@ import (
 
 const sampleYAML = `
 auth:
-  admin_user_ids:
-    - 8ca59596-c4b4-4f3f-94be-6dd73f76f050
-    - 5a8ed753-5eb0-483f-b9f8-a8c58b191017
   allowed_orgs:
     - org-a
     - org-b
@@ -74,10 +71,6 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, []string{
-		"8ca59596-c4b4-4f3f-94be-6dd73f76f050",
-		"5a8ed753-5eb0-483f-b9f8-a8c58b191017",
-	}, cfg.Auth.AdminUserIDs)
 	assert.Equal(t, []string{"org-a", "org-b"}, cfg.Auth.AllowedOrgs)
 	assert.Equal(t, "file-client-id", cfg.Auth.GitHub.ClientID)
 	assert.Equal(t, "file-client-secret", cfg.Auth.GitHub.ClientSecret)
@@ -91,22 +84,6 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.example.com", cfg.CDN.CloudFront.BaseURL)
-}
-
-func Test_should_override_admin_user_ids_from_env_var(t *testing.T) {
-	// given
-	t.Chdir(writeSampleConfig(t))
-	t.Setenv("DYNAMIC_PDB_AUTH_ADMIN_USER_IDS", "0d68ecbb-1a74-41e7-96d7-307b350859d8,9346b7df-f2bd-4a84-b861-d3fad748635e")
-
-	// when
-	cfg, err := config.ReadFromFile("test")
-
-	// then
-	require.NoError(t, err)
-	assert.Equal(t, []string{
-		"0d68ecbb-1a74-41e7-96d7-307b350859d8",
-		"9346b7df-f2bd-4a84-b861-d3fad748635e",
-	}, cfg.Auth.AdminUserIDs)
 }
 
 func Test_should_override_jwt_secret_from_env_var(t *testing.T) {

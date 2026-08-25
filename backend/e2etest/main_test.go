@@ -89,10 +89,23 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create admin: %v", err)
 	}
+	adminRoles, err := database.Roles.List(context.Background(), db.RoleFilters{
+		Keys: []models.RoleKey{models.RoleKeyAdmin, models.RoleKeyReviewer},
+	})
+	if err != nil {
+		log.Fatalf("e2etest: list admin roles: %v", err)
+	}
+	if len(adminRoles) != 2 {
+		log.Fatalf("e2etest: expected admin and reviewer roles, got %d", len(adminRoles))
+	}
+	for _, role := range adminRoles {
+		if err := database.Roles.AssignToUser(context.Background(), admin.ID, role.ID, nil); err != nil {
+			log.Fatalf("e2etest: assign %s role: %v", role.Key, err)
+		}
+	}
 
 	authConfig := auth.Config{
-		AllowedOrgs:  []string{"Astera-org", "diff-use"},
-		AdminUserIDs: []string{admin.ID.String()},
+		AllowedOrgs: []string{"Astera-org", "diff-use"},
 		JWT: auth.JWTConfig{
 			Secret: testJWTSecret,
 			Issuer: testJWTIssuer,

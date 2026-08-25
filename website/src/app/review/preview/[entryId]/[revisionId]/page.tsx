@@ -12,10 +12,9 @@ import {
 } from "@/lib/api/entries";
 import {
   getAuthSession,
-  getCurrentUserId,
   userIdFromToken,
 } from "@/lib/auth/session";
-import { isConfiguredAdmin } from "@/app/reviews/admin";
+import { hasReviewAccess } from "@/lib/auth/permissions";
 
 import {
   EntryRevisionPreview,
@@ -28,8 +27,8 @@ type Props = {
   params: Promise<{ entryId: string; revisionId: string }>;
 };
 
-// Reachable by the administrator reviewing the submission and by the author who
-// made it. Which one decides where the revision is read from: the admin routes
+// Reachable by the reviewer of the submission and by the author who made it.
+// Which one decides where the revision is read from: the reviewer routes
 // refuse anyone else, the user-scoped ones refuse anyone but the owner.
 export default async function EntryRevisionPreviewPage({ params }: Props) {
   const { entryId, revisionId } = await params;
@@ -37,14 +36,14 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
   if (!session) {
     notFound();
   }
-  const isAdmin = isConfiguredAdmin(await getCurrentUserId());
+  const isReviewer = hasReviewAccess(session.permissions);
   const userId = userIdFromToken(session.token);
-  if (!isAdmin && !userId) {
+  if (!isReviewer && !userId) {
     notFound();
   }
 
   const revision = await load(() =>
-    isAdmin
+    isReviewer
       ? getEntryRevision(session.token, entryId, revisionId)
       : getUserEntryRevision(session.token, userId as string, entryId, revisionId),
   );
@@ -57,7 +56,7 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
   const models = await modelsInReview(
     session.token,
     entryId,
-    isAdmin ? null : (userId as string),
+    isReviewer ? null : (userId as string),
   );
 
   return (

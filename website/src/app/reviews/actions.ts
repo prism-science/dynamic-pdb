@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 
 import { ApiRequestError, decideEntryReview } from "@/lib/api/entries";
 import type { RevisionTarget } from "@/lib/api/entries";
+import { reviewPermissionsFor } from "@/lib/auth/permissions";
 import { getAuthSession } from "@/lib/auth/session";
 import { REVIEW_COUNT_TAG } from "./count";
 
@@ -12,7 +13,7 @@ type ActionResult = { error: string } | void;
 function messageForStatus(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 403) {
-      return "Only the administrator can approve or reject.";
+      return "You don't have permission to make this decision.";
     }
     if (error.status === 404) {
       return "This submission is no longer in the queue.";
@@ -34,6 +35,9 @@ export async function approveSubmissionAction(
   if (!session) {
     return { error: "You must be signed in to review." };
   }
+  if (!reviewPermissionsFor(session.permissions).canApprove) {
+    return { error: "You don't have permission to approve." };
+  }
 
   try {
     await decideEntryReview(session.token, target, "active");
@@ -53,6 +57,9 @@ export async function rejectSubmissionAction(
   const session = await getAuthSession();
   if (!session) {
     return { error: "You must be signed in to review." };
+  }
+  if (!reviewPermissionsFor(session.permissions).canReject) {
+    return { error: "You don't have permission to reject." };
   }
 
   try {
