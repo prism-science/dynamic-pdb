@@ -17,7 +17,7 @@ spec:
           name: branch-head-plugin
         input:
           parameters:
-            repo: diff-use/dynamic-pdb
+            repo: prism-science/dynamic-pdb
             branch: main
         requeueAfterSeconds: 600
   template:
@@ -30,7 +30,7 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://github.com/diff-use/dynamic-pdb
+        repoURL: https://github.com/prism-science/dynamic-pdb
         targetRevision: "{{ .sha }}"
         path: deploy
         helm:

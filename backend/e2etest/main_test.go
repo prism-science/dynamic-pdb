@@ -105,7 +105,7 @@ func TestMain(m *testing.M) {
 	}
 
 	authConfig := auth.Config{
-		AllowedOrgs: []string{"Astera-org", "diff-use"},
+		AllowedOrgs: []string{"Astera-org", "prism-science"},
 		JWT: auth.JWTConfig{
 			Secret: testJWTSecret,
 			Issuer: testJWTIssuer,
