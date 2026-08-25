@@ -25,6 +25,10 @@ var (
 
 const (
 	defaultListLimit              = 50
+	maxListLimit                  = 100
+	maxListFilterValues           = 100
+	maxEntrySearchQueryLength     = 256
+	maxEntryPDBIDLength           = 64
 	minProteinSequenceQueryLength = 8
 	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
 )
@@ -1100,14 +1104,12 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, 
 	if params.Offset != nil && *params.Offset < 0 {
 		return db.EntryRevisionFilters{}, errors.New("offset must be non-negative")
 	}
-	limit := params.Limit
-	limit = limitOrDefault(limit)
-	filters := db.EntryRevisionFilters{Limit: limit, Offset: params.Offset}
+	filters := db.EntryRevisionFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	if params.Query != nil {
-		filters.Query = strings.TrimSpace(*params.Query)
+		filters.Query = boundedString(strings.TrimSpace(*params.Query), maxEntrySearchQueryLength)
 	}
 	if params.PdbId != nil {
-		filters.PDBIDs = *params.PdbId
+		filters.PDBIDs = boundedSearchFilterValues(*params.PdbId)
 	}
 	return filters, nil
 }
@@ -1119,9 +1121,7 @@ func modelFiltersFromParams(params ListModelsAcrossEntriesParams) (db.ModelRevis
 	if params.Offset != nil && *params.Offset < 0 {
 		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
 	}
-	limit := params.Limit
-	limit = limitOrDefault(limit)
-	filters := db.ModelRevisionFilters{Limit: limit, Offset: params.Offset}
+	filters := db.ModelRevisionFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	return filters, nil
 }
 
@@ -1144,10 +1144,7 @@ func artifactFiltersFromParams(params ListArtifactsParams) (db.ArtifactFilters, 
 	}
 	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	if params.Levels != nil {
-		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
-		for _, level := range *params.Levels {
-			filters.Levels = append(filters.Levels, domainmodels.ArtifactLevel(level))
-		}
+		filters.Levels = boundedArtifactLevels(*params.Levels)
 	}
 	return filters, nil
 }
@@ -1158,10 +1155,7 @@ func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.Artifac
 	}
 	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
 	if params.Levels != nil {
-		filters.Levels = make([]domainmodels.ArtifactLevel, 0, len(*params.Levels))
-		for _, level := range *params.Levels {
-			filters.Levels = append(filters.Levels, domainmodels.ArtifactLevel(level))
-		}
+		filters.Levels = boundedArtifactLevels(*params.Levels)
 	}
 	return filters, nil
 }
@@ -1381,10 +1375,39 @@ func modelRevisionIdempotencyKeyFromChange(change ModelRevisionChange) *string {
 }
 
 func limitOrDefault(limit *int) *int {
-	if limit != nil {
-		return limit
+	if limit == nil {
+		return ptr(defaultListLimit)
 	}
-	return ptr(defaultListLimit)
+	return ptr(min(*limit, maxListLimit))
+}
+
+func boundedSearchFilterValues(values []string) []string {
+	valueCount := min(len(values), maxListFilterValues)
+	bounded := make([]string, 0, valueCount)
+	for _, value := range values[:valueCount] {
+		bounded = append(bounded, boundedString(strings.TrimSpace(value), maxEntryPDBIDLength))
+	}
+	return bounded
+}
+
+func boundedArtifactLevels(values []ArtifactLevel) []domainmodels.ArtifactLevel {
+	valueCount := min(len(values), maxListFilterValues)
+	bounded := make([]domainmodels.ArtifactLevel, 0, valueCount)
+	for _, value := range values[:valueCount] {
+		bounded = append(bounded, domainmodels.ArtifactLevel(value))
+	}
+	return bounded
+}
+
+func boundedString(value string, maxLength int) string {
+	runeCount := 0
+	for index := range value {
+		if runeCount == maxLength {
+			return value[:index]
+		}
+		runeCount++
+	}
+	return value
 }
 
 func ptr[T any](value T) *T { return &value }

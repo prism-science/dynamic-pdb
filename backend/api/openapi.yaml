@@ -222,6 +222,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of entries to skip.
@@ -235,14 +236,17 @@ paths:
           required: false
           schema:
             type: string
+            maxLength: 256
         - name: pdb_id
           in: query
           description: PDB IDs to match against entry metadata.external_refs.pdb.
           required: false
           schema:
             type: array
+            maxItems: 100
             items:
               type: string
+              maxLength: 64
           style: form
           explode: true
       responses:
@@ -347,6 +351,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of similar entries to skip.
@@ -382,6 +387,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of models to skip.
@@ -424,6 +430,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of models to skip.
@@ -554,6 +561,7 @@ paths:
           explode: true
           schema:
             type: array
+            maxItems: 100
             items:
               $ref: "#/components/schemas/ArtifactLevel"
         - name: limit
@@ -563,6 +571,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of artifacts to skip.
@@ -613,6 +622,7 @@ paths:
           explode: true
           schema:
             type: array
+            maxItems: 100
             items:
               $ref: "#/components/schemas/ArtifactLevel"
         - name: limit
@@ -622,6 +632,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           description: Number of artifacts to skip.
@@ -672,6 +683,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
@@ -724,6 +736,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
@@ -931,6 +944,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
@@ -1153,6 +1167,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
@@ -1213,6 +1228,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
@@ -1384,6 +1400,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100
         - name: offset
           in: query
           required: false
