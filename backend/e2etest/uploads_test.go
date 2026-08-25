@@ -81,6 +81,7 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	requests = s3Stub.Requests()
 	s.Equal("/dynamic-pdb/"+grant.Key, requests.CompletePath)
 	s.Equal(grant.UploadId, requests.CompleteUploadID)
+	s.Equal("*", requests.IfNoneMatch)
 	s.Contains(requests.CompleteBody, "<PartNumber>1</PartNumber>")
 	s.Contains(requests.CompleteBody, "<PartNumber>2</PartNumber>")
 	s.Less(strings.Index(requests.CompleteBody, "<PartNumber>1</PartNumber>"), strings.Index(requests.CompleteBody, "<PartNumber>2</PartNumber>"))
