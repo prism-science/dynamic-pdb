@@ -7,22 +7,39 @@
   border-bottom: 1px solid var(--header-border);
 }
 
-/* The header's layout lives in globals.css, which reaches these hashed class
-   names through header[class*="AppHeader_header"] [class*="AppHeader_inner"] —
-   an element plus two attribute selectors, so it outranks anything written
-   here no matter the order. This rule exists only so the class name is emitted
-   and that selector has something to match. Change the layout in globals.css. */
+/* The bar stays full-bleed; its contents sit in the same column as the page, so
+   the logo lines up with the page title and the account with the button
+   opposite it. Width, not padding: the page column is min(1120, 100% - 2 x
+   24px), and only repeating that expression makes both edges agree at every
+   viewport width. */
 .inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(var(--content-max), calc(100% - 48px));
   height: 100%;
+  margin: 0 auto;
+}
+
+/* Follows the page, which drops to 14px side padding at this width. */
+@media (max-width: 720px) {
+  .inner {
+    width: calc(100% - 28px);
+  }
 }
 
 /* Brand plus the main navigation, kept together at the left edge; the account
-   controls stay opposite them. */
+   controls stay opposite them.
+   Does not shrink: the brand inside it does not either, so a shrinking .left
+   would just let the wordmark slide under the search field instead of making
+   the bar narrower. What gives way when the bar runs short is the account
+   name on the other side — see .actions. */
 .left {
   display: flex;
   align-items: center;
   gap: 24px;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .nav {
@@ -59,6 +76,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  color: var(--header-fg);
   text-decoration: none;
 }
 
@@ -193,8 +211,11 @@
   white-space: nowrap;
 }
 
+/* Shrinkable, unlike .left: the search field and the pill are flex: none and
+   the avatar does not shrink either, so all of it lands on the account name,
+   which is set to ellipsize. That makes the bar degrade at any width rather
+   than at the ones we thought to write a breakpoint for. */
 .actions {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -259,19 +280,30 @@
   }
 }
 
+/* min-width: 0 because this wrapper, not the button, is the flex item inside
+   .actions: without it the wrapper's automatic minimum size is the button's
+   full width, the account name never reaches its ellipsis, and the bar
+   overflows sideways on a narrow phone instead. */
 .menu {
   position: relative;
+  min-width: 0;
 }
 
+/* max-width so the button is bound by the wrapper above rather than by its own
+   content: the wrapper is the flex item that shrinks, and without this the
+   button keeps its intrinsic width and hangs out of it. Together the two let
+   the account name ellipsize instead of pushing the bar sideways. */
 .menuTrigger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   height: 38px;
   padding: 0 10px 0 6px;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
+  color: var(--header-fg);
   font: inherit;
   cursor: pointer;
   min-width: 0;
@@ -464,6 +496,16 @@
   }
 }
 
+/* Phone widths: the wordmark goes. Below this the field and the account cannot
+   both keep their room with it there, and of the three it is the one whose job
+   something else already does — the prism mark is still the link home, and the
+   brand link keeps its aria-label. */
+@media (max-width: 440px) {
+  .brandText {
+    display: none;
+  }
+}
+
 /* Reviews dropdown (notifications-style panel, opens from the right). */
 .reviewMenu {
   position: relative;
@@ -623,45 +665,6 @@
   margin-top: 2px;
   font-size: 12px;
   color: var(--text-muted);
-}
-
-/* Hamburger + left cluster for the slide-out drawer. */
-.hleft {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.menuButton {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  flex: none;
-}
-
-.menuButton:hover {
-  background: var(--header-hover);
-}
-
-.menuButton[aria-expanded="true"] {
-  background: var(--header-hover);
-  border-color: var(--header-border);
-}
-
-.menuButton i {
-  width: 16px;
-  height: 1.7px;
-  background: var(--header-fg);
-  border-radius: 2px;
 }
 
 /* Neutral menu links inside the profile dropdown (vs the destructive .menuItem). */
