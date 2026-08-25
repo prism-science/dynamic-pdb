@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"dynamic-pdb/backend/internal/httpapi"
 )
 
 func postJSON(t *testing.T, path string, body any) *http.Response {
@@ -32,7 +34,8 @@ func jsonRequestWithToken(t *testing.T, method, path string, body any, token str
 
 	req, err := http.NewRequest(method, testServer.URL+path, &buf)
 	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", httpapi.JSONAPIMediaType)
+	req.Header.Set("Content-Type", httpapi.JSONAPIMediaType)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -46,6 +49,7 @@ func getWithToken(t *testing.T, path string, token string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, testServer.URL+path, nil)
 	require.NoError(t, err)
+	req.Header.Set("Accept", httpapi.JSONAPIMediaType)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -59,6 +63,7 @@ func deleteWithToken(t *testing.T, path string, token string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodDelete, testServer.URL+path, nil)
 	require.NoError(t, err)
+	req.Header.Set("Accept", httpapi.JSONAPIMediaType)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

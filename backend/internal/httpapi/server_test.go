@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,7 +73,7 @@ func Test_should_reject_request_when_global_ip_limit_was_exceeded(t *testing.T) 
 	assert.Equal(t, http.StatusTooManyRequests, recorder.Code)
 }
 
-func Test_should_return_application_json_when_liveness_probe_is_called(t *testing.T) {
+func Test_should_return_json_api_media_type_when_liveness_probe_is_called(t *testing.T) {
 	// given
 	handler := Handler((*Server)(nil))
 	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
@@ -83,11 +84,11 @@ func Test_should_return_application_json_when_liveness_probe_is_called(t *testin
 
 	// then
 	require.Equal(t, http.StatusOK, recorder.Code)
-	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"status":"ok"}`, recorder.Body.String())
 }
 
-func Test_should_write_legacy_error_shape_when_error_response_is_written(t *testing.T) {
+func Test_should_write_json_api_media_type_when_error_response_is_written(t *testing.T) {
 	// given
 	recorder := httptest.NewRecorder()
 
@@ -96,13 +97,15 @@ func Test_should_write_legacy_error_shape_when_error_response_is_written(t *test
 
 	// then
 	require.Equal(t, http.StatusNotFound, recorder.Code)
-	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"code":"NOT_FOUND","message":"entry not found"}`, recorder.Body.String())
 }
 
-func Test_should_return_text_plain_when_generated_path_parameter_binding_fails(t *testing.T) {
+func Test_should_return_json_error_when_generated_path_parameter_binding_fails(t *testing.T) {
 	// given
-	handler := Handler((*Server)(nil))
+	handler := HandlerWithOptions((*Server)(nil), ChiServerOptions{
+		ErrorHandlerFunc: RouteErrorHandler,
+	})
 	request := httptest.NewRequest(http.MethodGet, "/v1/entries/not-a-uuid", nil)
 	recorder := httptest.NewRecorder()
 
@@ -111,13 +114,18 @@ func Test_should_return_text_plain_when_generated_path_parameter_binding_fails(t
 
 	// then
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	assert.Equal(t, "text/plain; charset=utf-8", recorder.Header().Get("Content-Type"))
-	assert.Contains(t, recorder.Body.String(), "entry_id")
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	var body Error
+	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&body))
+	assert.Equal(t, "BAD_REQUEST", body.Code)
+	assert.Contains(t, body.Message, "entry_id")
 }
 
-func Test_should_return_text_plain_when_generated_query_parameter_binding_fails(t *testing.T) {
+func Test_should_return_json_error_when_generated_query_parameter_binding_fails(t *testing.T) {
 	// given
-	handler := Handler((*Server)(nil))
+	handler := HandlerWithOptions((*Server)(nil), ChiServerOptions{
+		ErrorHandlerFunc: RouteErrorHandler,
+	})
 	request := httptest.NewRequest(http.MethodGet, "/v1/entries?limit=bad", nil)
 	recorder := httptest.NewRecorder()
 
@@ -126,8 +134,11 @@ func Test_should_return_text_plain_when_generated_query_parameter_binding_fails(
 
 	// then
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	assert.Equal(t, "text/plain; charset=utf-8", recorder.Header().Get("Content-Type"))
-	assert.Contains(t, recorder.Body.String(), "limit")
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	var body Error
+	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&body))
+	assert.Equal(t, "BAD_REQUEST", body.Code)
+	assert.Contains(t, body.Message, "limit")
 }
 
 func Test_should_check_reviewer_role_when_review_access_required(t *testing.T) {

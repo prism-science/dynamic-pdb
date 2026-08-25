@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { getApiBaseUrl } from "./baseUrl";
+import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 type JSONRecord = Record<string, unknown>;
@@ -929,8 +929,8 @@ async function sendJSON<T>(
       method,
       cache: "no-store",
       headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
+        Accept: jsonApiMediaType,
+        "Content-Type": jsonApiMediaType,
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(input),
@@ -1530,7 +1530,7 @@ function stableUUID(value: string): string {
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
 
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: jsonApiMediaType };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }

@@ -216,8 +216,13 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, Error{Code: code, Message: message})
 }
 
+// RouteErrorHandler writes parameter binding errors from the generated router.
+func RouteErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
+	writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", JSONAPIMediaType)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		slog.Error("write json response failed", "err", err)

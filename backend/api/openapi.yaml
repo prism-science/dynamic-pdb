@@ -11,7 +11,7 @@ paths:
         "200":
           description: Service is alive.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ProbeResponse"
 
@@ -22,13 +22,13 @@ paths:
         "200":
           description: Service is ready.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ProbeResponse"
         "503":
           description: Service is not ready.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ProbeResponse"
 
@@ -39,32 +39,32 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/GitHubExchangeRequest"
       responses:
         "200":
           description: JWT issued.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: GitHub access token is invalid or expired.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: GitHub account does not belong to any allowed organization.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -75,32 +75,32 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/GitHubCodeExchangeRequest"
       responses:
         "200":
           description: JWT issued.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: GitHub authorization code is invalid or expired.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: GitHub account does not belong to any allowed organization.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -116,32 +116,32 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CreateFileUploadRequest"
       responses:
         "200":
           description: File upload created; presigned part URLs returned.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/FileUploadGrantResponse"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "413":
           description: File exceeds the configured upload size limit.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
   /v1/files/complete:
@@ -156,26 +156,26 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CompleteFileUploadRequest"
       responses:
         "200":
           description: File upload completed.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/CompleteFileUploadResponse"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -189,7 +189,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/AbortFileUploadRequest"
       responses:
@@ -198,13 +198,13 @@ paths:
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -253,13 +253,13 @@ paths:
         "200":
           description: Entries found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryListResponse"
         "400":
           description: Invalid filters.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
@@ -273,32 +273,32 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CreateEntryRequest"
       responses:
         "201":
           description: Entry and initial in-review revision created.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/CreateEntryRevisionResponse"
         "400":
           description: Invalid request.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Entry with the same active PDB reference already exists.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -320,13 +320,13 @@ paths:
         "200":
           description: Entry found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Entry"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -363,13 +363,13 @@ paths:
         "200":
           description: Similar entries found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/SimilarEntryListResponse"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -399,13 +399,13 @@ paths:
         "200":
           description: Models found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelListResponse"
         "400":
           description: Invalid filters.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -442,13 +442,13 @@ paths:
         "200":
           description: Models found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelListResponse"
         "400":
           description: Invalid filters.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
@@ -469,38 +469,38 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CreateModelRequest"
       responses:
         "201":
           description: Model and initial in-review revision created.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/CreateModelRevisionResponse"
         "400":
           description: Invalid model data.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model ID already exists.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -529,13 +529,13 @@ paths:
         "200":
           description: Model found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Model"
         "404":
           description: Model not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -583,13 +583,13 @@ paths:
         "200":
           description: Artifacts found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ArtifactListResponse"
         "400":
           description: Invalid filters.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -644,19 +644,19 @@ paths:
         "200":
           description: Model artifacts found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelArtifactListResponse"
         "400":
           description: Invalid filters.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -694,25 +694,25 @@ paths:
         "200":
           description: Entries with matching revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionGroupListResponse"
         "400":
           description: Missing or invalid state filter.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the reviewer role.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -747,25 +747,25 @@ paths:
         "200":
           description: Entry revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionListResponse"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the reviewer role.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
@@ -786,38 +786,38 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CreateEntryRevisionRequest"
       responses:
         "201":
           description: Pending entry revision created.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/CreateEntryRevisionResponse"
         "400":
           description: Invalid entry change.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Revision conflicts with the current published revision.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -845,25 +845,25 @@ paths:
         "200":
           description: Entry revision found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevision"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the reviewer role.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
@@ -877,44 +877,44 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/UpdateRevisionStateRequest"
       responses:
         "200":
           description: Entry revision updated.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevision"
         "400":
           description: Invalid state transition.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the required permission.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Entry revision changed since it was loaded.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -955,25 +955,25 @@ paths:
         "200":
           description: Model revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevisionListResponse"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the reviewer role.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
@@ -1000,38 +1000,38 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/CreateModelRevisionRequest"
       responses:
         "201":
           description: Pending model revision created.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/CreateModelRevisionResponse"
         "400":
           description: Invalid model change.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry or model not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Revision conflicts with the current active model revision.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -1065,25 +1065,25 @@ paths:
         "200":
           description: Model revision found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevision"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the reviewer role.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
@@ -1097,44 +1097,44 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/UpdateRevisionStateRequest"
       responses:
         "200":
           description: Model revision updated.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevision"
         "400":
           description: Invalid state transition.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Caller does not have the required permission.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision changed since it was loaded.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
   /v1/users/{user_id}/entries/revisions:
@@ -1178,25 +1178,25 @@ paths:
         "200":
           description: Entries with matching revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionGroupListResponse"
         "400":
           description: Missing or invalid state filter.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -1239,25 +1239,25 @@ paths:
         "200":
           description: Entry revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionListResponse"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -1293,25 +1293,25 @@ paths:
         "200":
           description: Entry revision found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevision"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
@@ -1325,44 +1325,44 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/SubmitRevisionRequest"
       responses:
         "200":
           description: Entry revision updated.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevision"
         "400":
           description: Invalid state transition.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id or own the revision.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Entry revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Entry revision is not editable.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -1411,25 +1411,25 @@ paths:
         "200":
           description: Model revisions found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevisionListResponse"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 
@@ -1471,25 +1471,25 @@ paths:
         "200":
           description: Model revision found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevision"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
@@ -1503,44 +1503,44 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/vnd.api+json:
             schema:
               $ref: "#/components/schemas/SubmitRevisionRequest"
       responses:
         "200":
           description: Model revision updated.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevision"
         "400":
           description: Invalid state transition.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Authenticated user does not match user_id or own the revision.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Model revision not found.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision is not editable.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
 components:

@@ -26,7 +26,7 @@ func Test_should_reject_request_when_declared_body_exceeds_limit(t *testing.T) {
 	// then
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 	assert.False(t, nextCalled)
-	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	assert.JSONEq(
 		t,
 		`{"code":"REQUEST_BODY_TOO_LARGE","message":"request body exceeds 1 MiB limit"}`,

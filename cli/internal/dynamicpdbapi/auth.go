@@ -65,8 +65,8 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 	if err != nil {
 		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: create GitHub token exchange request: %w", err)
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", jsonAPIMediaType)
+	request.Header.Set("Accept", jsonAPIMediaType)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {

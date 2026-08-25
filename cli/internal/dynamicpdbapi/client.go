@@ -148,8 +148,8 @@ func (c *RemoteClient) postJSON(ctx context.Context, path string, payload any, e
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", jsonAPIMediaType)
+	request.Header.Set("Content-Type", jsonAPIMediaType)
 	request.Header.Set("Authorization", bearerToken(c.token))
 
 	response, err := c.httpClient.Do(request)
@@ -171,7 +171,7 @@ func (c *RemoteClient) getJSON(ctx context.Context, path string, expectedStatus 
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", jsonAPIMediaType)
 	if strings.TrimSpace(c.token) != "" {
 		request.Header.Set("Authorization", bearerToken(c.token))
 	}

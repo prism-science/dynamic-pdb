@@ -18,6 +18,8 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/entries", request.URL.Path)
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Accept"))
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Content-Type"))
 		assert.Equal(t, "Bearer jwt-token", request.Header.Get("Authorization"))
 		var body map[string]any
 		err := json.NewDecoder(request.Body).Decode(&body)
@@ -64,9 +66,10 @@ func Test_should_send_pdb_id_filters_when_list_entries_called(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, "/v1/entries", request.URL.Path)
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Accept"))
 		assert.Equal(t, []string{"1YJO", "1YJP"}, request.URL.Query()["pdb_id"])
 		assert.Equal(t, "Bearer jwt-token", request.Header.Get("Authorization"))
-		response.Header().Set("Content-Type", "application/json")
+		response.Header().Set("Content-Type", jsonAPIMediaType)
 		err := json.NewEncoder(response).Encode(map[string]any{
 			"items": []map[string]any{
 				{
@@ -97,6 +100,8 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/entries/entry-1/models", request.URL.Path)
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Accept"))
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Content-Type"))
 		assert.Equal(t, "Bearer jwt-token", request.Header.Get("Authorization"))
 		var body map[string]any
 		err := json.NewDecoder(request.Body).Decode(&body)

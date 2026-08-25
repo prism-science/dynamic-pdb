@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getApiBaseUrl } from "@/lib/api/baseUrl";
+import { getApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
 import { getAuthSession } from "@/lib/auth/session";
 
 export async function proxyUploadControlRequest(
@@ -28,12 +28,12 @@ export async function proxyUploadControlRequest(
   }
 
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: jsonApiMediaType,
     Authorization: `Bearer ${session.token}`,
   };
   if (body != null && body.length > 0) {
     headers["Content-Type"] =
-      request.headers.get("content-type") ?? "application/json";
+      request.headers.get("content-type") ?? jsonApiMediaType;
   }
 
   let response: Response;

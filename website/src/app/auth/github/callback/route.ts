@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getApiBaseUrl } from "@/lib/api/baseUrl";
+import { getApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
 import {
   clearOAuthStateCookie,
   getPublicOrigin,
@@ -95,7 +95,8 @@ async function exchangeBackendToken(
     response = await fetch(`${getApiBaseUrl()}/v1/auth/github/code/exchange`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        Accept: jsonApiMediaType,
+        "Content-Type": jsonApiMediaType,
       },
       body: JSON.stringify({
         code,

@@ -140,7 +140,8 @@ func TestMain(m *testing.M) {
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())
 	httpapi.HandlerWithOptions(server, httpapi.ChiServerOptions{
-		BaseRouter: router,
+		BaseRouter:       router,
+		ErrorHandlerFunc: httpapi.RouteErrorHandler,
 		Middlewares: []httpapi.MiddlewareFunc{
 			httpapi.AuthMiddleware(jwt, database),
 		},

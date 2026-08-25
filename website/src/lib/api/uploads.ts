@@ -1,3 +1,5 @@
+import { jsonApiMediaType } from "./baseUrl";
+
 export type FileUploadContext = {
   entryId: string;
   modelId?: string | null;
@@ -135,10 +137,10 @@ async function postJSON<T = unknown>(path: string, body?: unknown): Promise<T> {
     cache: "no-store",
     headers:
       body === undefined
-        ? { Accept: "application/json" }
+        ? { Accept: jsonApiMediaType }
         : {
-            Accept: "application/json",
-            "Content-Type": "application/json",
+            Accept: jsonApiMediaType,
+            "Content-Type": jsonApiMediaType,
           },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

@@ -47,7 +47,7 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
 	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
 	assert.Equal(t, artifactID.String(), fileCDN.createdFile.ArtifactID)
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
@@ -78,7 +78,7 @@ func Test_should_return_legacy_error_shape_when_create_file_upload_request_is_in
 
 	// then
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
 	assert.JSONEq(t, `{"code":"BAD_REQUEST","message":"size must be greater than zero"}`, rec.Body.String())
 	assert.Zero(t, fileCDN.createCalls)
 }
@@ -361,7 +361,8 @@ func uploadJSONRequest(t *testing.T, body map[string]any) *http.Request {
 	var buf bytes.Buffer
 	require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	req := httptest.NewRequest(http.MethodPost, "/v1/files", &buf)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", JSONAPIMediaType)
+	req.Header.Set("Content-Type", JSONAPIMediaType)
 	return req
 }
 

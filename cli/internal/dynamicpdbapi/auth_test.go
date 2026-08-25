@@ -19,6 +19,8 @@ func Test_should_exchange_github_token_for_dynamic_pdb_token(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/auth/github/exchange", request.URL.Path)
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Accept"))
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Content-Type"))
 		var body struct {
 			AccessToken string `json:"access_token"`
 		}
