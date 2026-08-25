@@ -214,6 +214,7 @@ func (b *RemoteBucket) CompleteMultipartUpload(ctx context.Context, key, uploadI
 		Bucket:          aws.String(b.config.Bucket),
 		Key:             aws.String(key),
 		UploadId:        aws.String(uploadID),
+		IfNoneMatch:     aws.String("*"),
 		MultipartUpload: &s3types.CompletedMultipartUpload{Parts: completed},
 	}); err != nil {
 		return fmt.Errorf("s3: complete multipart upload %q: %w", key, err)
