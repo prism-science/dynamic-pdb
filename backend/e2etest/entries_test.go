@@ -669,6 +669,9 @@ func assertErrorResponse(t *testing.T, response *http.Response, code, message st
 	}()
 	var body httpapi.Error
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
-	require.Equal(t, code, body.Code)
-	require.Contains(t, strings.ToLower(body.Message), strings.ToLower(message))
+	require.Len(t, body.Errors, 1)
+	require.NotNil(t, body.Errors[0].Code)
+	require.NotNil(t, body.Errors[0].Detail)
+	require.Equal(t, code, *body.Errors[0].Code)
+	require.Contains(t, strings.ToLower(*body.Errors[0].Detail), strings.ToLower(message))
 }

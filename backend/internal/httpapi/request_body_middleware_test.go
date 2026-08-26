@@ -29,7 +29,7 @@ func Test_should_reject_request_when_declared_body_exceeds_limit(t *testing.T) {
 	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	assert.JSONEq(
 		t,
-		`{"code":"REQUEST_BODY_TOO_LARGE","message":"request body exceeds 1 MiB limit"}`,
+		`{"errors":[{"status":"413","code":"REQUEST_BODY_TOO_LARGE","detail":"request body exceeds 1 MiB limit"}]}`,
 		recorder.Body.String(),
 	)
 }

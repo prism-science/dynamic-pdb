@@ -237,7 +237,9 @@ func (s *AuthSuite) Test_should_map_github_code_exchange_errors_to_http_response
 
 			var body httpapi.Error
 			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-			s.Equal(tt.errorCode, body.Code)
+			s.Require().Len(body.Errors, 1)
+			s.Require().NotNil(body.Errors[0].Code)
+			s.Equal(tt.errorCode, *body.Errors[0].Code)
 		})
 	}
 }
@@ -282,7 +284,9 @@ func (s *AuthSuite) Test_should_return_500_when_github_user_or_org_lookup_fails(
 
 			var body httpapi.Error
 			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-			s.Equal("INTERNAL_ERROR", body.Code)
+			s.Require().Len(body.Errors, 1)
+			s.Require().NotNil(body.Errors[0].Code)
+			s.Equal("INTERNAL_ERROR", *body.Errors[0].Code)
 		})
 	}
 }

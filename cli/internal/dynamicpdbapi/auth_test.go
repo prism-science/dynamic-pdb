@@ -56,9 +56,14 @@ func Test_should_return_unauthorized_when_backend_rejects_github_account(t *test
 	// given
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusForbidden)
-		if err := json.NewEncoder(response).Encode(map[string]string{
-			"code":    "FORBIDDEN",
-			"message": "user is not in an allowed organization",
+		if err := json.NewEncoder(response).Encode(map[string]any{
+			"errors": []map[string]string{
+				{
+					"status": "403",
+					"code":   "FORBIDDEN",
+					"detail": "user is not in an allowed organization",
+				},
+			},
 		}); err != nil {
 			assert.NoError(t, err)
 		}

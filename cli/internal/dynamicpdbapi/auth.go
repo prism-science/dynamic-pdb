@@ -95,7 +95,20 @@ func decodeError(status int, body []byte) error {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var jsonAPIPayload struct {
+		Errors []struct {
+			Code   string `json:"code"`
+			Title  string `json:"title"`
+			Detail string `json:"detail"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &jsonAPIPayload); err == nil && len(jsonAPIPayload.Errors) > 0 {
+		payload.Code = jsonAPIPayload.Errors[0].Code
+		payload.Message = jsonAPIPayload.Errors[0].Detail
+		if payload.Message == "" {
+			payload.Message = jsonAPIPayload.Errors[0].Title
+		}
+	} else if err := json.Unmarshal(body, &payload); err != nil {
 		var xmlPayload struct {
 			Code    string `xml:"Code"`
 			Message string `xml:"Message"`

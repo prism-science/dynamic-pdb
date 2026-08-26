@@ -98,7 +98,11 @@ func Test_should_write_json_api_media_type_when_error_response_is_written(t *tes
 	// then
 	require.Equal(t, http.StatusNotFound, recorder.Code)
 	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
-	assert.JSONEq(t, `{"code":"NOT_FOUND","message":"entry not found"}`, recorder.Body.String())
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"404","code":"NOT_FOUND","detail":"entry not found"}]}`,
+		recorder.Body.String(),
+	)
 }
 
 func Test_should_return_json_error_when_generated_path_parameter_binding_fails(t *testing.T) {
@@ -117,8 +121,12 @@ func Test_should_return_json_error_when_generated_path_parameter_binding_fails(t
 	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	var body Error
 	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&body))
-	assert.Equal(t, "BAD_REQUEST", body.Code)
-	assert.Contains(t, body.Message, "entry_id")
+	require.Len(t, body.Errors, 1)
+	assert.Equal(t, "400", body.Errors[0].Status)
+	require.NotNil(t, body.Errors[0].Code)
+	require.NotNil(t, body.Errors[0].Detail)
+	assert.Equal(t, "BAD_REQUEST", *body.Errors[0].Code)
+	assert.Contains(t, *body.Errors[0].Detail, "entry_id")
 }
 
 func Test_should_return_json_error_when_generated_query_parameter_binding_fails(t *testing.T) {
@@ -137,8 +145,12 @@ func Test_should_return_json_error_when_generated_query_parameter_binding_fails(
 	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
 	var body Error
 	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&body))
-	assert.Equal(t, "BAD_REQUEST", body.Code)
-	assert.Contains(t, body.Message, "limit")
+	require.Len(t, body.Errors, 1)
+	assert.Equal(t, "400", body.Errors[0].Status)
+	require.NotNil(t, body.Errors[0].Code)
+	require.NotNil(t, body.Errors[0].Detail)
+	assert.Equal(t, "BAD_REQUEST", *body.Errors[0].Code)
+	assert.Contains(t, *body.Errors[0].Detail, "limit")
 }
 
 func Test_should_check_reviewer_role_when_review_access_required(t *testing.T) {

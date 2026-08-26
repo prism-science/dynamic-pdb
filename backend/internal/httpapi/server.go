@@ -213,7 +213,15 @@ func (s *Server) Readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, Error{Code: code, Message: message})
+	writeJSON(w, status, Error{
+		Errors: []ErrorObject{
+			{
+				Status: strconv.Itoa(status),
+				Code:   &code,
+				Detail: &message,
+			},
+		},
+	})
 }
 
 // RouteErrorHandler writes parameter binding errors from the generated router.

@@ -79,7 +79,11 @@ func Test_should_return_legacy_error_shape_when_create_file_upload_request_is_in
 	// then
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
-	assert.JSONEq(t, `{"code":"BAD_REQUEST","message":"size must be greater than zero"}`, rec.Body.String())
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"400","code":"BAD_REQUEST","detail":"size must be greater than zero"}]}`,
+		rec.Body.String(),
+	)
 	assert.Zero(t, fileCDN.createCalls)
 }
 

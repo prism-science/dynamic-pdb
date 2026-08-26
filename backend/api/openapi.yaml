@@ -1553,11 +1553,24 @@ components:
   schemas:
     Error:
       type: object
-      required: [code, message]
+      required: [errors]
       properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorObject"
+
+    ErrorObject:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
         code:
           type: string
-        message:
+        title:
+          type: string
+        detail:
           type: string
 
     ProbeResponse:

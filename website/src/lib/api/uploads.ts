@@ -164,8 +164,20 @@ async function responseError(response: Response): Promise<string> {
     return `HTTP ${response.status}`;
   }
   try {
-    const body = JSON.parse(text) as { error?: string; message?: string };
-    return body.error ?? body.message ?? `HTTP ${response.status}`;
+    const body = JSON.parse(text) as {
+      error?: string;
+      message?: string;
+      errors?: Array<{ code?: string; title?: string; detail?: string }>;
+    };
+    const error = body.errors?.[0];
+    return (
+      error?.detail ??
+      error?.title ??
+      error?.code ??
+      body.error ??
+      body.message ??
+      `HTTP ${response.status}`
+    );
   } catch {
     return text;
   }
