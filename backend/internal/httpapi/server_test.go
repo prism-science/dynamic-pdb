@@ -153,6 +153,107 @@ func Test_should_return_json_error_when_generated_query_parameter_binding_fails(
 	assert.Contains(t, *body.Errors[0].Detail, "limit")
 }
 
+func Test_should_reject_request_body_when_content_type_is_not_json_api(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/github/code/exchange", strings.NewReader(`{}`))
+	request.Header.Set("Accept", JSONAPIMediaType)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusUnsupportedMediaType, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"415","code":"UNSUPPORTED_MEDIA_TYPE","detail":"request Content-Type must be application/vnd.api+json"}]}`,
+		recorder.Body.String(),
+	)
+}
+
+func Test_should_reject_request_body_when_content_type_is_missing(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/github/code/exchange", strings.NewReader(`{}`))
+	request.Header.Set("Accept", JSONAPIMediaType)
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusUnsupportedMediaType, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+}
+
+func Test_should_reject_request_body_when_json_api_content_type_has_unsupported_parameter(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodPost, "/v1/auth/github/code/exchange", strings.NewReader(`{}`))
+	request.Header.Set("Accept", JSONAPIMediaType)
+	request.Header.Set("Content-Type", JSONAPIMediaType+"; charset=utf-8")
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusUnsupportedMediaType, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+}
+
+func Test_should_reject_request_when_accept_header_does_not_allow_json_api(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	request.Header.Set("Accept", "application/json")
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusNotAcceptable, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"406","code":"NOT_ACCEPTABLE","detail":"request Accept header must allow application/vnd.api+json"}]}`,
+		recorder.Body.String(),
+	)
+}
+
+func Test_should_allow_request_when_accept_header_allows_any_media_type(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	request.Header.Set("Accept", "*/*")
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+}
+
+func Test_should_allow_request_when_accept_header_is_missing(t *testing.T) {
+	// given
+	handler := MediaTypeMiddleware()(Handler((*Server)(nil)))
+	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, request)
+
+	// then
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+}
+
 func Test_should_check_reviewer_role_when_review_access_required(t *testing.T) {
 	// given
 	userID := uuid.New()

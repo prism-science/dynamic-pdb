@@ -73,6 +73,7 @@ func run() int {
 	router.Use(middleware.Logger)
 	router.Use(corsMiddleware(env))
 	router.Use(httpapi.GlobalRateLimitMiddleware(env))
+	router.Use(httpapi.MediaTypeMiddleware())
 	router.Use(httpapi.RequestBodyLimitMiddleware(httpapi.MaxRequestBodyBytes))
 	httpapi.HandlerWithOptions(srv, httpapi.ChiServerOptions{
 		BaseRouter:       router,

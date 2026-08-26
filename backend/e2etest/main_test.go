@@ -139,6 +139,7 @@ func TestMain(m *testing.M) {
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())
+	router.Use(httpapi.MediaTypeMiddleware())
 	httpapi.HandlerWithOptions(server, httpapi.ChiServerOptions{
 		BaseRouter:       router,
 		ErrorHandlerFunc: httpapi.RouteErrorHandler,
