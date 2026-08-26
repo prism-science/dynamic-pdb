@@ -108,7 +108,7 @@ func Test_should_return_orgs_when_list_orgs_responds_with_200(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 			{"id": 1, "login": "Astera-org"},
-			{"id": 2, "login": "diff-use"}
+			{"id": 2, "login": "prism-science"}
 		]`))
 	}))
 	defer server.Close()
@@ -121,7 +121,7 @@ func Test_should_return_orgs_when_list_orgs_responds_with_200(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []github.Organization{
 		{ID: 1, Login: "Astera-org"},
-		{ID: 2, Login: "diff-use"},
+		{ID: 2, Login: "prism-science"},
 	}, orgs)
 }
 

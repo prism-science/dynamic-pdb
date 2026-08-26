@@ -3,7 +3,7 @@ server:
 auth:
   allowed_orgs:
     - Astera-org
-    - diff-use
+    - prism-science
   github:
     client_id: local-github-client-id
     client_secret: local-github-client-secret
