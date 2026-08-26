@@ -32,8 +32,7 @@ export async function proxyUploadControlRequest(
     Authorization: `Bearer ${session.token}`,
   };
   if (body != null && body.length > 0) {
-    headers["Content-Type"] =
-      request.headers.get("content-type") ?? jsonApiMediaType;
+    headers["Content-Type"] = jsonApiMediaType;
   }
 
   let response: Response;

@@ -13,6 +13,8 @@ const {
   serializeOAuthState,
 } = require("../src/lib/auth/session.ts");
 
+const jsonApiMediaType = "application/vnd.api+json";
+
 test("should redirect github login and persist matching oauth state", async () => {
   const request = new NextRequest("https://app.example/auth/github/login?return_to=/entries/new");
 
@@ -37,9 +39,11 @@ test("should exchange github callback code and set auth cookies", async () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
     let requestedURL = "";
     let requestedBody = null;
+    let requestedHeaders = {};
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedBody = JSON.parse(init.body);
+      requestedHeaders = init.headers;
       return new Response(
         JSON.stringify({
           access_token: "jwt-token",
@@ -48,7 +52,7 @@ test("should exchange github callback code and set auth cookies", async () => {
           name: "Octo Cat",
           permissions: ["revisions.approve", "revisions.reject"],
         }),
-        { status: 200, headers: { "content-type": "application/json" } },
+        { status: 200, headers: { "content-type": jsonApiMediaType } },
       );
     };
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
@@ -68,6 +72,8 @@ test("should exchange github callback code and set auth cookies", async () => {
       code: "code-123",
       redirect_uri: "https://app.example/auth/github/callback",
     });
+    assert.equal(requestedHeaders.Accept, jsonApiMediaType);
+    assert.equal(requestedHeaders["Content-Type"], jsonApiMediaType);
     const setCookie = response.headers.get("set-cookie");
     assert.match(setCookie, /dynamic_pdb_auth_token=jwt-token/);
     assert.match(setCookie, /dynamic_pdb_auth_login=octocat/);
@@ -101,7 +107,7 @@ test("should redirect callback to forbidden when backend returns 403", async () 
     global.fetch = async () =>
       new Response(JSON.stringify({ code: "FORBIDDEN", message: "no org" }), {
         status: 403,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": jsonApiMediaType },
       });
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
       state: "state-123",
@@ -131,7 +137,7 @@ test("should redirect callback to backend_exchange_failed when backend response 
     global.fetch = async () =>
       new Response(JSON.stringify({ access_token: "" }), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": jsonApiMediaType },
       });
     const cookie = `${oauthStateCookieName}=${serializeOAuthState({
       state: "state-123",

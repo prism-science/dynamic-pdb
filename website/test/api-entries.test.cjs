@@ -19,6 +19,8 @@ const {
 } = require("../src/lib/api/entries.ts");
 const { REVIEW_PAGE_SIZE } = require("../src/lib/reviewQueue.ts");
 
+const jsonApiMediaType = "application/vnd.api+json";
+
 test("should list entries with trimmed query and optional authorization", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -35,6 +37,7 @@ test("should list entries with trimmed query and optional authorization", async 
     const entries = await listEntries("token-123", { query: "  hemoglobin  " });
 
     assert.equal(requestedURL, "https://backend.example/v1/entries?query=hemoglobin");
+    assert.equal(requestedHeaders.Accept, jsonApiMediaType);
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
     assert.deepEqual(entries, [{ id: "entry-1", name: "Entry 1" }]);
   } finally {
@@ -65,6 +68,7 @@ test("should list models with pagination and optional authorization", async () =
       requestedURL,
       "https://backend.example/v1/models?limit=5&offset=10",
     );
+    assert.equal(requestedHeaders.Accept, jsonApiMediaType);
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
     assert.deepEqual(models, [{ id: "model-1", name: "Model 1" }]);
   } finally {
@@ -203,6 +207,8 @@ test("should post create entry using the new backend graph shape", async () => {
     assert.equal(result.revision_id, "entry-revision-1");
     assert.equal(result.model_results[0].model_revision_id, "model-revision-1");
     assert.equal(request.url, "https://backend.example/v1/entries");
+    assert.equal(request.init.headers.Accept, jsonApiMediaType);
+    assert.equal(request.init.headers["Content-Type"], jsonApiMediaType);
     assert.equal(request.init.headers.Authorization, "Bearer token-123");
     assert.equal(request.body.entities, undefined);
     assert.deepEqual(request.body.entry.artifacts, [
@@ -263,6 +269,7 @@ test("should create and submit model revisions through user routes", async () =>
       const request = {
         url: String(url),
         method: init.method,
+        headers: init.headers,
         body: JSON.parse(init.body),
       };
       requests.push(request);
@@ -321,6 +328,14 @@ test("should create and submit model revisions through user routes", async () =>
       { state: "in_review" },
       { state: "in_review" },
     ]);
+    assert.deepEqual(
+      requests.map((request) => request.headers.Accept),
+      [jsonApiMediaType, jsonApiMediaType, jsonApiMediaType],
+    );
+    assert.deepEqual(
+      requests.map((request) => request.headers["Content-Type"]),
+      [jsonApiMediaType, jsonApiMediaType, jsonApiMediaType],
+    );
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -457,6 +472,7 @@ test("should decide the entry revision and each model revision at its own path",
       requests.push({
         path: new URL(String(url)).pathname,
         method: init.method,
+        headers: init.headers,
         body: init.body,
       });
       return jsonResponse({ state: "active" });
@@ -482,11 +498,21 @@ test("should decide the entry revision and each model revision at its own path",
       {
         path: "/v1/entries/entry-1/revisions/entry-revision-1",
         method: "PATCH",
+        headers: {
+          Accept: jsonApiMediaType,
+          "Content-Type": jsonApiMediaType,
+          Authorization: "Bearer token-123",
+        },
         body: JSON.stringify({ state: "active" }),
       },
       {
         path: "/v1/entries/entry-1/models/model-1/revisions/model-revision-1",
         method: "PATCH",
+        headers: {
+          Accept: jsonApiMediaType,
+          "Content-Type": jsonApiMediaType,
+          Authorization: "Bearer token-123",
+        },
         body: JSON.stringify({ state: "rejected" }),
       },
     ]);
@@ -633,7 +659,7 @@ function modelRevisionSummary(id, modelId, updatedAt) {
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": jsonApiMediaType },
     ...init,
   });
 }

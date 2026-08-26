@@ -171,7 +171,8 @@ func postJSON(t *testing.T, url string, token string, body any) *http.Response {
 
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, &payload)
 	require.NoError(t, err)
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", jsonAPIMediaType)
+	request.Header.Set("Content-Type", jsonAPIMediaType)
 	request.Header.Set("Authorization", "Bearer "+token)
 
 	response, err := http.DefaultClient.Do(request)
