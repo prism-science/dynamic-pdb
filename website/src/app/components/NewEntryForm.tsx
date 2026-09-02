@@ -438,7 +438,6 @@ export default function NewEntryForm({
           method: metadata.method.trim() || null,
           space_group: metadata.spaceGroup.trim() || null,
         },
-        id: entryId,
         name: name.trim(),
         description: description.trim() || null,
         thumbnail_image_url: thumbUrl,

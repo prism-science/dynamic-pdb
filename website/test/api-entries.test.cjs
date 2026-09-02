@@ -211,7 +211,6 @@ test("should post create entry using the new backend graph shape", async () => {
     };
 
     const result = await createEntry("token-123", {
-      id: "entry-1",
       name: "Entry",
       entities: [
         {
@@ -229,7 +228,6 @@ test("should post create entry using the new backend graph shape", async () => {
       ],
       models: [
         {
-          id: "model-1",
           name: "Model",
           entities: [
             {
@@ -291,9 +289,9 @@ test("should post create entry using the new backend graph shape", async () => {
         metadata: { records: [{ header: "A", sequence: "AC" }] },
       },
     ]);
-    assert.equal(request.body.entry.id, "entry-1");
+    assert.equal("id" in request.body.entry, false);
     assert.equal(request.body.model_operations[0].op, "add");
-    assert.equal(request.body.model_operations[0].data.model_id, "model-1");
+    assert.equal("model_id" in request.body.model_operations[0].data, false);
     assert.equal(
       request.body.model_operations[0].data.idempotency_key,
       "abcdef123456",
@@ -359,7 +357,6 @@ test("should create and submit model revisions through user routes", async () =>
     };
 
     const result = await createModel("token-123", "entry-1", {
-      id: "model-1",
       name: "Model",
     });
     await submitModelRevision(
@@ -372,7 +369,6 @@ test("should create and submit model revisions through user routes", async () =>
 
     assert.equal(requests[0].url, "https://backend.example/v1/entries/entry-1/models");
     assert.deepEqual(requests[0].body.model, {
-      id: "model-1",
       name: "Model",
       idempotency_key: null,
       metadata: {},

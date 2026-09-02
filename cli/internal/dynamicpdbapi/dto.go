@@ -42,8 +42,16 @@ type CreateEntryRequest struct {
 	ModelOperations []AddModelOperation `json:"model_operations,omitempty"`
 }
 
+type CreateEntryResult struct {
+	EntryID      string                   `json:"entry_id"`
+	ModelResults []CreateEntryModelResult `json:"model_results"`
+}
+
+type CreateEntryModelResult struct {
+	ModelID string `json:"model_id"`
+}
+
 type CreateEntryData struct {
-	ID                *string                 `json:"id,omitempty"`
 	Name              string                  `json:"name"`
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
@@ -57,7 +65,6 @@ type AddModelOperation struct {
 }
 
 type AddModelData struct {
-	ModelID           *string                 `json:"model_id,omitempty"`
 	Name              string                  `json:"name"`
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
@@ -73,8 +80,11 @@ type CreateModelRequest struct {
 	Model CreateModelData `json:"model"`
 }
 
+type CreateModelResult struct {
+	ModelID string `json:"model_id"`
+}
+
 type CreateModelData struct {
-	ID                *string                 `json:"id,omitempty"`
 	Name              string                  `json:"name"`
 	Description       *string                 `json:"description,omitempty"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`

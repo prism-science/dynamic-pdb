@@ -46,6 +46,25 @@ func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRe
 	}
 }
 
+func (r *ModelsRepository) NextID(ctx context.Context, entryID string) (string, error) {
+	querier := r.queriers.Querier(ctx, r.db)
+	var lockedEntryID string
+	if err := querier.GetContext(ctx, &lockedEntryID, `select id from entries where id = $1 for update`, entryID); err != nil {
+		return "", fmt.Errorf("lock entry for model ID generation: %w", err)
+	}
+
+	var modelNumber int
+	if err := querier.GetContext(ctx, &modelNumber, `select count(*) + 1 from models where entry_id = $1`, entryID); err != nil {
+		return "", fmt.Errorf("get next model number: %w", err)
+	}
+
+	modelID, err := models.NewModelID(lockedEntryID, modelNumber)
+	if err != nil {
+		return "", fmt.Errorf("generate model ID: %w", err)
+	}
+	return modelID, nil
+}
+
 func (r *ModelsRepository) Create(
 	ctx context.Context,
 	entryID string,

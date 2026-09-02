@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
@@ -286,7 +286,6 @@ type CreateRunRequest = {
 };
 
 type BackendCreateModelData = {
-  id?: string;
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
@@ -300,7 +299,6 @@ type BackendCreateModelData = {
 
 type BackendCreateEntryRequest = {
   entry: {
-    id?: string;
     name: string;
     description?: string | null;
     thumbnail_image_url?: string | null;
@@ -309,7 +307,7 @@ type BackendCreateEntryRequest = {
   };
   model_operations: {
     op: "add";
-    data: Omit<BackendCreateModelData, "id"> & { model_id?: string };
+    data: BackendCreateModelData;
   }[];
 };
 
@@ -453,7 +451,6 @@ export type CreateEntityRelationInput = {
 };
 
 export type CreateModelInput = {
-  id?: string;
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
@@ -474,7 +471,6 @@ export type CreateEntryMetadata = {
 };
 
 export type CreateEntryInput = {
-  id?: string;
   name: string;
   description?: string | null;
   thumbnail_image_url?: string | null;
@@ -490,12 +486,11 @@ export async function createModel(
   entryId: string,
   input: CreateModelInput,
 ): Promise<CreateModelRevisionResult> {
-  const modelId = input.id ?? randomUUID();
   const document = await sendJSON<JSONAPIDataDocument<CreateModelRevisionResult>>(
     "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
-    { model: createModelData({ ...input, id: modelId }) },
+    { model: createModelData(input) },
   );
   return attributesFromDocument(document);
 }
@@ -505,12 +500,11 @@ export async function createEntry(
   token: string,
   input: CreateEntryInput,
 ): Promise<CreateEntryRevisionResult> {
-  const entryId = input.id ?? randomUUID();
   const document = await sendJSON<JSONAPIDataDocument<CreateEntryRevisionResult>>(
     "POST",
     "/v1/entries",
     token,
-    createEntryRequest({ ...input, id: entryId }),
+    createEntryRequest(input),
   );
   return attributesFromDocument(document);
 }
@@ -1165,21 +1159,16 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
   const entities = input.entities ?? [];
   return {
     entry: {
-      id: input.id,
       name: input.name,
       description: input.description,
       thumbnail_image_url: input.thumbnail_image_url,
       metadata: entryMetadataRequest(input.metadata),
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
     },
-    model_operations: (input.models ?? []).map((model) => {
-      const data = createModelData(model);
-      const { id, ...fields } = data;
-      return {
-        op: "add" as const,
-        data: { ...fields, model_id: id },
-      };
-    }),
+    model_operations: (input.models ?? []).map((model) => ({
+      op: "add" as const,
+      data: createModelData(model),
+    })),
   };
 }
 
@@ -1225,7 +1214,6 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     entities.find((entity) => entity.type === "model") ?? null;
 
   return {
-    id: input.id,
     name: input.name,
     description: input.description,
     thumbnail_image_url: input.thumbnail_image_url,
