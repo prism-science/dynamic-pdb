@@ -29,14 +29,14 @@ func Test_should_exchange_github_token_for_dynamic_pdb_token(t *testing.T) {
 			return
 		}
 		assert.Equal(t, "github-token", body.AccessToken)
-		if err := json.NewEncoder(response).Encode(TokenResponse{
+		if err := json.NewEncoder(response).Encode(jsonAPIResourceDocument("auth_tokens", "", TokenResponse{
 			TokenType:   "Bearer",
 			AccessToken: "jwt-token",
 			ExpiresAt:   expiresAt,
 			Name:        "Octo Cat",
 			Email:       "octocat@example.test",
 			Login:       "octocat",
-		}); err != nil {
+		})); err != nil {
 			assert.NoError(t, err)
 		}
 	}))

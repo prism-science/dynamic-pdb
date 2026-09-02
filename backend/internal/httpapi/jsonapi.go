@@ -69,6 +69,7 @@ func acceptsJSONAPIMediaType(values []string) bool {
 }
 
 const (
+	// #nosec G101 -- JSON:API type name, not a credential.
 	jsonAPITypeAuthTokens             = "auth_tokens"
 	jsonAPITypeFileUploads            = "file_uploads"
 	jsonAPITypeEntryRevisionResults   = "entry_revision_results"

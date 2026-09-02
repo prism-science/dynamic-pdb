@@ -80,8 +80,8 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 		return TokenResponse{}, decodeError(response.StatusCode, body)
 	}
 
-	var token TokenResponse
-	if err := json.Unmarshal(body, &token); err != nil {
+	token, err := decodeAttributes[TokenResponse](body)
+	if err != nil {
 		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: decode GitHub token exchange response: %w", err)
 	}
 	if token.TokenType == "" || token.AccessToken == "" || token.ExpiresAt.IsZero() || token.Login == "" {

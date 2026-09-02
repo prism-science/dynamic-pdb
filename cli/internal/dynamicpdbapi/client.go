@@ -74,11 +74,11 @@ func (c *RemoteClient) ListEntries(ctx context.Context, params ListEntriesParams
 	if err != nil {
 		return nil, fmt.Errorf("dynamicpdbapi: list entries: %w", err)
 	}
-	var response entryListResponse
-	if err := json.Unmarshal(body, &response); err != nil {
+	entries, err := decodeAttributeCollection[Entry](body)
+	if err != nil {
 		return nil, fmt.Errorf("dynamicpdbapi: decode entry list: %w", err)
 	}
-	return response.Items, nil
+	return entries, nil
 }
 
 func (c *RemoteClient) CreateModel(ctx context.Context, entryID string, request CreateModelRequest) error {
@@ -97,8 +97,8 @@ func (c *RemoteClient) CreateFileUpload(ctx context.Context, request CreateFileU
 	if err != nil {
 		return FileUploadGrantResponse{}, fmt.Errorf("dynamicpdbapi: create file upload: %w", err)
 	}
-	var grant FileUploadGrantResponse
-	if err := json.Unmarshal(body, &grant); err != nil {
+	grant, err := decodeAttributes[FileUploadGrantResponse](body)
+	if err != nil {
 		return FileUploadGrantResponse{}, fmt.Errorf("dynamicpdbapi: decode file upload grant: %w", err)
 	}
 	if grant.Key == "" || grant.UploadID == "" || grant.ObjectURL == "" || grant.PartSize <= 0 || len(grant.Parts) == 0 {
