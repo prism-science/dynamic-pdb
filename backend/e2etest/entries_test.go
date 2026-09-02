@@ -29,9 +29,9 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "independent-revision-owner", 8101)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	entryArtifactID := uuid.New()
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	modelArtifactID := uuid.New()
 	metricID := uuid.New()
 	runID := uuid.New()
@@ -114,11 +114,11 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempotency_key_is_repeated() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "idempotent-model-owner", 8112)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "idempotent model entry"},
 	})
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	idempotencyKey := uuid.NewString()
 	request := map[string]any{
 		"model": map[string]any{
@@ -129,7 +129,7 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 	// when
 	first := createModelForTest(s.T(), ownerToken, entryID, request)
 	activateModelRevisionForTest(s.T(), first)
-	request["model"].(map[string]any)["id"] = uuid.New()
+	request["model"].(map[string]any)["id"] = "model-" + uuid.NewString()
 	second := createModelForTest(s.T(), ownerToken, entryID, request)
 
 	// then
@@ -142,11 +142,11 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_revision_activated() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "protein-model-owner", 8102)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "protein model entry"},
 	})
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	initialArtifactID := uuid.New()
 	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{
@@ -204,11 +204,11 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-owner", 8110)
 	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-contributor", 8111)
 	contributorID := tokenUserIDForTest(s.T(), contributorToken)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "shared entry"},
 	})
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{"id": modelID, "name": "shared model"},
 	})
@@ -225,7 +225,7 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	})
 	//nolint:bodyclose // assertErrorResponse closes the response body.
 	deleteEntryResponse := postJSONWithToken(
-		s.T(), "/v1/entries/"+entryID.String()+"/revisions",
+		s.T(), "/v1/entries/"+entryID+"/revisions",
 		map[string]any{"entry": map[string]any{"state": "deleted"}}, contributorToken,
 	)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
@@ -247,11 +247,11 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "separate-lifecycle-owner", 8103)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "original entry"},
 	})
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{"id": modelID, "name": "original model"},
 	})
@@ -289,7 +289,7 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "revision-group-other", 8105)
 	otherID := tokenUserIDForTest(s.T(), otherToken)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "revision group entry"},
 	})
@@ -297,7 +297,7 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 		"entry": map[string]any{"description": "in-review entry change"},
 	})
 	modelRevision := createModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"id": uuid.New(), "name": "in-review model"},
+		"model": map[string]any{"id": "model-" + uuid.NewString(), "name": "in-review model"},
 	})
 
 	// when
@@ -338,11 +338,11 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-rejection-owner", 8106)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{"id": entryID, "name": "model rejection entry"},
 	})
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{"id": modelID, "name": "active model"},
 	})
@@ -419,12 +419,12 @@ func activateEntryRevisionForTest(
 func createEntryRevisionForTest(
 	t *testing.T,
 	token string,
-	entryID uuid.UUID,
+	entryID string,
 	request map[string]any,
 ) httpapi.CreateEntryRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/revisions", request, token)
+	response := postJSONWithToken(t, "/v1/entries/"+entryID+"/revisions", request, token)
 	document := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](t, response, http.StatusCreated)
 	return document.Data.Attributes
 }
@@ -432,12 +432,12 @@ func createEntryRevisionForTest(
 func createModelForTest(
 	t *testing.T,
 	token string,
-	entryID uuid.UUID,
+	entryID string,
 	request map[string]any,
 ) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/models", request, token)
+	response := postJSONWithToken(t, "/v1/entries/"+entryID+"/models", request, token)
 	document := decodeJSONResponse[httpapi.CreateModelRevisionDocument](t, response, http.StatusCreated)
 	return document.Data.Attributes
 }
@@ -445,7 +445,7 @@ func createModelForTest(
 func createAndActivateModelForTest(
 	t *testing.T,
 	ownerToken string,
-	entryID uuid.UUID,
+	entryID string,
 	request map[string]any,
 ) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
@@ -457,7 +457,7 @@ func createAndActivateModelForTest(
 func createModelRevisionForTest(
 	t *testing.T,
 	token string,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 	request map[string]any,
 ) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
@@ -475,7 +475,7 @@ func createModelRevisionForTest(
 func createAndActivateModelRevisionForTest(
 	t *testing.T,
 	ownerToken string,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 	request map[string]any,
 ) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
@@ -534,10 +534,10 @@ type entryForTest struct {
 	ProteinSequences []httpapi.ProteinSequence
 }
 
-func getEntryForTest(t *testing.T, entryID uuid.UUID) entryForTest {
+func getEntryForTest(t *testing.T, entryID string) entryForTest {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	response := getWithToken(t, "/v1/entries/"+entryID.String(), "")
+	response := getWithToken(t, "/v1/entries/"+entryID, "")
 	document := decodeJSONResponse[httpapi.EntryDocument](t, response, http.StatusOK)
 	return entryForTest{
 		CreatedBy:        document.Data.Relationships.CreatedBy.Data.Id,
@@ -565,7 +565,7 @@ func proteinSequencesFromEntryDocumentForTest(document httpapi.EntryDocument) []
 	return sequences
 }
 
-func getModelForTest(t *testing.T, entryID, modelID uuid.UUID) httpapi.ModelAttributes {
+func getModelForTest(t *testing.T, entryID, modelID string) httpapi.ModelAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
@@ -649,7 +649,7 @@ func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenAttributes
 
 func entryRevisionGroupByEntryID(
 	items []httpapi.EntryRevisionGroupAttributes,
-	entryID uuid.UUID,
+	entryID string,
 ) *httpapi.EntryRevisionGroupAttributes {
 	for index := range items {
 		if items[index].Entry.Id == entryID {

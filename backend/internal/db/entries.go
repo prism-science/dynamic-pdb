@@ -27,7 +27,7 @@ type EntriesRepository struct {
 
 type EntryRevisionFilters struct {
 	ID              *uuid.UUID
-	EntryID         *uuid.UUID
+	EntryID         *string
 	State           *models.RevisionState
 	States          []models.RevisionState
 	EntryState      *models.EntryState
@@ -41,7 +41,8 @@ type EntryRevisionFilters struct {
 
 func (r *EntriesRepository) SetRevisionState(
 	ctx context.Context,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 	from []models.RevisionState,
 	to models.RevisionState,
 ) (*models.EntryRevision, error) {
@@ -69,7 +70,8 @@ func (r *EntriesRepository) SetRevisionState(
 
 func (r *EntriesRepository) ActivateRevision(
 	ctx context.Context,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 ) (*models.EntryRevision, error) {
 	querier := r.queriers.Querier(ctx, r.db)
 	if _, err := querier.ExecContext(
@@ -114,7 +116,8 @@ func (r *EntriesRepository) ActivateRevision(
 
 func (r *EntriesRepository) RejectRevision(
 	ctx context.Context,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 ) (*models.EntryRevision, error) {
 	query := `update entry_revisions
 			  set state = 'rejected',
@@ -285,7 +288,7 @@ func (r *EntriesRepository) List(
 
 // GetLive returns the latest non-archived revision of an entry. Because an
 // update is always a brand-new entry, there is at most one such revision.
-func (r *EntriesRepository) GetLive(ctx context.Context, entryID uuid.UUID) (*models.EntryRevision, error) {
+func (r *EntriesRepository) GetLive(ctx context.Context, entryID string) (*models.EntryRevision, error) {
 	revisions, err := r.List(ctx, EntryRevisionFilters{
 		EntryID: &entryID,
 		States:  liveRevisionStates,
@@ -533,7 +536,7 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 
 type entryRevisionRow struct {
 	ID                uuid.UUID      `db:"id"`
-	EntryID           uuid.UUID      `db:"entry_id"`
+	EntryID           string         `db:"entry_id"`
 	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
 	RevisionNumber    sql.NullInt64  `db:"revision_number"`
 	State             string         `db:"state"`

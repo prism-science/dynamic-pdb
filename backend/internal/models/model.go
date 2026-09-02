@@ -7,8 +7,8 @@ import (
 )
 
 type Model struct {
-	ID        uuid.UUID
-	EntryID   uuid.UUID
+	ID        string
+	EntryID   string
 	State     ModelState
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
@@ -16,8 +16,8 @@ type Model struct {
 
 type ModelRevision struct {
 	ID                uuid.UUID
-	EntryID           uuid.UUID
-	ModelID           uuid.UUID
+	EntryID           string
+	ModelID           string
 	ParentRevisionID  *uuid.UUID
 	PrimaryArtifactID *uuid.UUID
 	RevisionNumber    *int

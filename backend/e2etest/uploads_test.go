@@ -24,8 +24,8 @@ func TestUploads(t *testing.T) {
 func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_requests_are_valid() {
 	// given
 	token := issueEntryTokenForTest(s.T(), "upload-token")
-	entryID := uuid.New()
-	modelID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
+	modelID := "model-" + uuid.NewString()
 	artifactID := uuid.New()
 	fileSize := int64(64*1024*1024 + 1)
 
@@ -46,7 +46,7 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grantDocument))
 	grant := grantDocument.Data.Attributes
 	s.Equal(
-		entryID.String()+"/models/"+modelID.String()+"/artifacts/"+artifactID.String()+"/model.cif",
+		entryID+"/models/"+modelID+"/artifacts/"+artifactID.String()+"/model.cif",
 		grant.Key,
 	)
 	s.Equal("upload-id", grant.UploadId)

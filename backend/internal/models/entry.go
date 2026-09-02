@@ -7,7 +7,7 @@ import (
 )
 
 type Entry struct {
-	ID        uuid.UUID
+	ID        string
 	State     EntryState
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
@@ -15,7 +15,7 @@ type Entry struct {
 
 type EntryRevision struct {
 	ID                uuid.UUID
-	EntryID           uuid.UUID
+	EntryID           string
 	ParentRevisionID  *uuid.UUID
 	RevisionNumber    *int
 	State             RevisionState

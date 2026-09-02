@@ -27,8 +27,8 @@ type ModelsRepository struct {
 
 type ModelRevisionFilters struct {
 	ID             *uuid.UUID
-	EntryID        *uuid.UUID
-	ModelID        *uuid.UUID
+	EntryID        *string
+	ModelID        *string
 	State          *models.RevisionState
 	States         []models.RevisionState
 	ModelState     *models.ModelState
@@ -48,7 +48,7 @@ func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRe
 
 func (r *ModelsRepository) Create(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	revision models.ModelRevision,
 ) (*models.ModelRevision, error) {
 	metadata, err := marshalJSON(revision.Metadata)
@@ -322,7 +322,7 @@ const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_
 			model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
 
 // GetLive returns the latest non-archived revision of a model.
-func (r *ModelsRepository) GetLive(ctx context.Context, modelID uuid.UUID) (*models.ModelRevision, error) {
+func (r *ModelsRepository) GetLive(ctx context.Context, modelID string) (*models.ModelRevision, error) {
 	revisions, err := r.List(ctx, ModelRevisionFilters{
 		ModelID: &modelID,
 		States:  liveRevisionStates,
@@ -510,8 +510,8 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 
 type modelRevisionRow struct {
 	ID                uuid.UUID      `db:"id"`
-	EntryID           uuid.UUID      `db:"entry_id"`
-	ModelID           uuid.UUID      `db:"model_id"`
+	EntryID           string         `db:"entry_id"`
+	ModelID           string         `db:"model_id"`
 	ParentRevisionID  uuid.NullUUID  `db:"parent_revision_id"`
 	PrimaryArtifactID uuid.NullUUID  `db:"primary_artifact_id"`
 	RevisionNumber    sql.NullInt64  `db:"revision_number"`

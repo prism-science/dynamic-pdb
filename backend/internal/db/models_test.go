@@ -26,7 +26,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	idempotencyKey := uuid.NewString()
 	revision := models.ModelRevision{
 		ID:                uuid.New(),
-		ModelID:           uuid.New(),
+		ModelID:           "model-primary",
 		State:             models.RevisionStatePending,
 		Name:              "qFit run " + uuid.NewString(),
 		Description:       &description,
@@ -100,7 +100,7 @@ func Test_should_allow_duplicate_model_revision_idempotency_key_when_revision_is
 	entryRevision := createDBTestEntryRevision(t, "idempotent-model-entry", time.Now().UTC())
 	createdBy := createDBTestUser(t)
 	now := time.Now().UTC()
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	idempotencyKey := uuid.NewString()
 	first := models.ModelRevision{
 		ID:             uuid.New(),
@@ -134,7 +134,7 @@ func Test_should_reject_duplicate_active_model_revision_idempotency_key(t *testi
 	idempotencyKey := uuid.NewString()
 	first := models.ModelRevision{
 		ID:             uuid.New(),
-		ModelID:        uuid.New(),
+		ModelID:        "model-" + uuid.NewString(),
 		State:          models.RevisionStateActive,
 		Name:           "first active idempotent model revision",
 		IdempotencyKey: &idempotencyKey,
@@ -144,7 +144,7 @@ func Test_should_reject_duplicate_active_model_revision_idempotency_key(t *testi
 	}
 	second := first
 	second.ID = uuid.New()
-	second.ModelID = uuid.New()
+	second.ModelID = "model-" + uuid.NewString()
 	second.Name = "second active idempotent model revision"
 
 	// when
@@ -228,7 +228,7 @@ func Test_should_activate_only_target_model_revision_when_models_activate_revisi
 	entryRevision := createDBTestEntryRevision(t, "submission-entry", time.Now().UTC())
 	createdBy := createDBTestUser(t)
 	now := time.Now().UTC()
-	modelID := uuid.New()
+	modelID := "model-" + uuid.NewString()
 	revisionNumber := 1
 	active, err := testDB.Models.Create(ctx, entryRevision.EntryID, models.ModelRevision{
 		ID:             uuid.New(),

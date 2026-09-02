@@ -18,7 +18,7 @@ import (
 
 const defaultRevisionGroupListLimit = 50
 
-func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID string) {
 	payload, err := decodeCreateEntryRevisionPayload(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -44,7 +44,7 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 
 func (s *Server) createEntryRevisionGraph(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	payload createEntryRevisionPayload,
 	createdBy uuid.UUID,
 ) (CreateEntryRevisionAttributes, error) {
@@ -132,7 +132,7 @@ func (s *Server) ListEntryRevisionGroups(
 func (s *Server) ListEntryRevisionsForEntry(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID uuid.UUID,
+	entryID string,
 	params ListEntryRevisionsForEntryParams,
 ) {
 	if !s.requireReviewer(w, r) {
@@ -152,7 +152,8 @@ func (s *Server) ListEntryRevisionsForEntry(
 func (s *Server) GetEntryRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 ) {
 	if !s.requireReviewer(w, r) {
 		return
@@ -163,7 +164,8 @@ func (s *Server) GetEntryRevision(
 func (s *Server) UpdateEntryRevisionState(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 ) {
 	var req UpdateRevisionStateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -491,7 +493,7 @@ func (s *Server) reindexActiveEntry(ctx context.Context, revision domainmodels.E
 func (s *Server) ListModelRevisionsForModel(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 	params ListModelRevisionsForModelParams,
 ) {
 	if !s.requireReviewer(w, r) {
@@ -512,7 +514,8 @@ func (s *Server) ListModelRevisionsForModel(
 func (s *Server) GetModelRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, modelID, revisionID uuid.UUID,
+	entryID, modelID string,
+	revisionID uuid.UUID,
 ) {
 	if !s.requireReviewer(w, r) {
 		return
@@ -523,7 +526,8 @@ func (s *Server) GetModelRevision(
 func (s *Server) UpdateModelRevisionState(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, modelID, revisionID uuid.UUID,
+	entryID, modelID string,
+	revisionID uuid.UUID,
 ) {
 	var request UpdateRevisionStateRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -627,7 +631,8 @@ func (s *Server) ListUserEntryRevisionGroups(
 func (s *Server) ListUserEntryRevisionsForEntry(
 	w http.ResponseWriter,
 	r *http.Request,
-	userID, entryID uuid.UUID,
+	userID uuid.UUID,
+	entryID string,
 	params ListUserEntryRevisionsForEntryParams,
 ) {
 	if !s.requirePathUser(w, r, userID) {
@@ -648,7 +653,9 @@ func (s *Server) ListUserEntryRevisionsForEntry(
 func (s *Server) GetUserEntryRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	userID, entryID, revisionID uuid.UUID,
+	userID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 ) {
 	if !s.requirePathUser(w, r, userID) {
 		return
@@ -659,7 +666,9 @@ func (s *Server) GetUserEntryRevision(
 func (s *Server) SubmitUserModelRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	userID, entryID, modelID, revisionID uuid.UUID,
+	userID uuid.UUID,
+	entryID, modelID string,
+	revisionID uuid.UUID,
 ) {
 	var request SubmitRevisionRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -706,7 +715,8 @@ func (s *Server) SubmitUserModelRevision(
 func (s *Server) ListUserModelRevisionsForModel(
 	w http.ResponseWriter,
 	r *http.Request,
-	userID, entryID, modelID uuid.UUID,
+	userID uuid.UUID,
+	entryID, modelID string,
 	params ListUserModelRevisionsForModelParams,
 ) {
 	if !s.requirePathUser(w, r, userID) {
@@ -728,7 +738,9 @@ func (s *Server) ListUserModelRevisionsForModel(
 func (s *Server) GetUserModelRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	userID, entryID, modelID, revisionID uuid.UUID,
+	userID uuid.UUID,
+	entryID, modelID string,
+	revisionID uuid.UUID,
 ) {
 	if !s.requirePathUser(w, r, userID) {
 		return
@@ -807,7 +819,7 @@ func validateRevisionState(state domainmodels.RevisionState) error {
 }
 
 type entryRevisionGroup struct {
-	entryID        uuid.UUID
+	entryID        string
 	entryRevisions []domainmodels.EntryRevision
 	modelRevisions []domainmodels.ModelRevision
 	latestCreated  int64
@@ -839,7 +851,7 @@ func (s *Server) listEntryRevisionGroups(
 		return
 	}
 
-	groupsByEntryID := make(map[uuid.UUID]*entryRevisionGroup)
+	groupsByEntryID := make(map[string]*entryRevisionGroup)
 	for _, revision := range entryRevisions {
 		group := groupsByEntryID[revision.EntryID]
 		if group == nil {
@@ -866,7 +878,7 @@ func (s *Server) listEntryRevisionGroups(
 		if groups[i].latestCreated != groups[j].latestCreated {
 			return groups[i].latestCreated > groups[j].latestCreated
 		}
-		return groups[i].entryID.String() < groups[j].entryID.String()
+		return groups[i].entryID < groups[j].entryID
 	})
 	start := 0
 	if offset != nil {
@@ -991,7 +1003,8 @@ func (s *Server) listModelRevisionSummaries(
 func (s *Server) writeEntryRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, revisionID uuid.UUID,
+	entryID string,
+	revisionID uuid.UUID,
 	createdBy *uuid.UUID,
 ) {
 	filters := db.EntryRevisionFilters{ID: &revisionID, EntryID: &entryID, CreatedBy: createdBy}
@@ -1023,7 +1036,8 @@ func (s *Server) writeEntryRevision(
 func (s *Server) writeModelRevision(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, modelID, revisionID uuid.UUID,
+	entryID, modelID string,
+	revisionID uuid.UUID,
 	createdBy *uuid.UUID,
 ) {
 	revision, err := s.database.Models.Get(r.Context(), db.ModelRevisionFilters{
