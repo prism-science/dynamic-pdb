@@ -8,7 +8,7 @@ import styles from "./docs.module.css";
 export default function ApiReference() {
   const host = useRef<HTMLDivElement>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const specUrl = "/api/openapi";
+  const specUrl = "/api/openapi.yaml";
 
   useEffect(() => {
     let cancelled = false;
