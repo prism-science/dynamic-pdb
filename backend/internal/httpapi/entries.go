@@ -114,10 +114,10 @@ func (s *Server) createInitialEntryRevision(
 	if name == "" {
 		return CreateEntryRevisionAttributes{}, invalidRequest("entry name is required")
 	}
-	entryID := uuid.New()
+	entryID := uuid.NewString()
 	if req.Entry.Id != nil {
-		entryID = *req.Entry.Id
-		if entryID == uuid.Nil {
+		entryID = strings.TrimSpace(*req.Entry.Id)
+		if entryID == "" {
 			return CreateEntryRevisionAttributes{}, invalidRequest("entry id is required")
 		}
 	}
@@ -248,7 +248,7 @@ func applyEntryRevisionChange(
 	return nil
 }
 
-func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID string) {
 	var request CreateModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -275,7 +275,7 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 
 func (s *Server) createInitialModelRevision(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	data CreateModelData,
 	createdBy uuid.UUID,
 ) (CreateModelRevisionAttributes, error) {
@@ -284,7 +284,7 @@ func (s *Server) createInitialModelRevision(
 
 func (s *Server) createInitialModelRevisionForPendingEntry(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	data CreateModelData,
 	createdBy uuid.UUID,
 ) (CreateModelRevisionAttributes, error) {
@@ -293,7 +293,7 @@ func (s *Server) createInitialModelRevisionForPendingEntry(
 
 func (s *Server) createInitialModelRevisionForEntry(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	data CreateModelData,
 	createdBy uuid.UUID,
 	requireActiveEntry bool,
@@ -302,10 +302,10 @@ func (s *Server) createInitialModelRevisionForEntry(
 	if name == "" {
 		return CreateModelRevisionAttributes{}, invalidRequest("model name is required")
 	}
-	modelID := uuid.New()
+	modelID := uuid.NewString()
 	if data.Id != nil {
-		modelID = *data.Id
-		if modelID == uuid.Nil {
+		modelID = strings.TrimSpace(*data.Id)
+		if modelID == "" {
 			return CreateModelRevisionAttributes{}, invalidRequest("model id is required")
 		}
 	}
@@ -443,7 +443,7 @@ func (s *Server) attachModelArtifacts(
 	return nil
 }
 
-func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, entryID, modelID string) {
 	payload, err := decodeCreateModelRevisionPayload(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -470,7 +470,7 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 
 func (s *Server) createModelRevisionGraph(
 	ctx context.Context,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 	payload createModelRevisionPayload,
 	createdBy uuid.UUID,
 ) (CreateModelRevisionAttributes, error) {
@@ -603,7 +603,7 @@ func (s *Server) createModelRevisionGraph(
 
 func (s *Server) activeModelRevisionForMutation(
 	ctx context.Context,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 ) (*domainmodels.ModelRevision, error) {
 	activeState := domainmodels.RevisionStateActive
 	revision, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
@@ -701,7 +701,7 @@ func (s *Server) createModelRuns(
 func (s *Server) ensurePDBReferenceAvailable(
 	ctx context.Context,
 	metadata domainmodels.EntryMetadata,
-	excludeEntryID *uuid.UUID,
+	excludeEntryID *string,
 ) error {
 	pdbID := strings.TrimSpace(metadata.ExternalRefs[domainmodels.EntrySourcePDB])
 	if pdbID == "" {
@@ -727,7 +727,7 @@ func (s *Server) ensurePDBReferenceAvailable(
 	return nil
 }
 
-func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.UUID) {
+func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string) {
 	revision, err := s.activeEntryRevision(r.Context(), entryID)
 	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
@@ -802,7 +802,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 func (s *Server) ListSimilarEntries(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID uuid.UUID,
+	entryID string,
 	params ListSimilarEntriesParams,
 ) {
 	if params.Limit != nil && *params.Limit < 0 {
@@ -899,7 +899,7 @@ func (s *Server) ListModelsAcrossEntries(
 	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
 }
 
-func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
+func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID string, params ListModelsParams) {
 	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
 		return
@@ -936,7 +936,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
 }
 
-func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
+func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID string) {
 	revision, err := s.activeModelRevision(r.Context(), entryID, modelID)
 	if errors.Is(err, db.ErrModelRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
@@ -968,7 +968,7 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 	})
 }
 
-func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListArtifactsParams) {
+func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID string, params ListArtifactsParams) {
 	revision, err := s.activeEntryRevision(r.Context(), entryID)
 	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: []ArtifactData{}})
@@ -1011,7 +1011,7 @@ func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID u
 func (s *Server) ListModelArtifacts(
 	w http.ResponseWriter,
 	r *http.Request,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 	params ListModelArtifactsParams,
 ) {
 	revision, err := s.activeModelRevision(r.Context(), entryID, modelID)
@@ -1392,7 +1392,7 @@ func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.Artifac
 	return filters, nil
 }
 
-func (s *Server) activeEntryRevision(ctx context.Context, entryID uuid.UUID) (*domainmodels.EntryRevision, error) {
+func (s *Server) activeEntryRevision(ctx context.Context, entryID string) (*domainmodels.EntryRevision, error) {
 	activeState := domainmodels.RevisionStateActive
 	activeEntry := domainmodels.EntryStateActive
 	revision, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{
@@ -1406,7 +1406,7 @@ func (s *Server) activeEntryRevision(ctx context.Context, entryID uuid.UUID) (*d
 
 func (s *Server) activeModelRevision(
 	ctx context.Context,
-	entryID, modelID uuid.UUID,
+	entryID, modelID string,
 ) (*domainmodels.ModelRevision, error) {
 	if _, err := s.activeEntryRevision(ctx, entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
 		return nil, db.ErrModelRevisionNotFound

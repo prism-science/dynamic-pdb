@@ -282,7 +282,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         "200":
           description: Entry found.
@@ -407,7 +406,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           description: Maximum number of similar entries to return.
@@ -490,7 +488,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -541,7 +538,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           description: Maximum number of models to return.
@@ -585,14 +581,12 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: model_id
           in: path
           description: Model ID.
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         "200":
           description: Model found.
@@ -621,7 +615,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: levels
           in: query
           description: Artifact levels to include.
@@ -676,14 +669,12 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: model_id
           in: path
           description: Model ID.
           required: true
           schema:
             type: string
-            format: uuid
         - name: levels
           in: query
           description: Artifact levels to include.
@@ -801,7 +792,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           required: false
@@ -855,7 +845,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -901,7 +890,6 @@ paths:
         required: true
         schema:
           type: string
-          format: uuid
       - name: revision_id
         in: path
         required: true
@@ -1007,13 +995,11 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: model_id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           required: false
@@ -1067,13 +1053,11 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: model_id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -1119,13 +1103,11 @@ paths:
         required: true
         schema:
           type: string
-          format: uuid
       - name: model_id
         in: path
         required: true
         schema:
           type: string
-          format: uuid
       - name: revision_id
         in: path
         required: true
@@ -1302,7 +1284,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           required: false
@@ -1355,7 +1336,6 @@ paths:
         required: true
         schema:
           type: string
-          format: uuid
       - name: revision_id
         in: path
         required: true
@@ -1419,13 +1399,11 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: model_id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           required: false
@@ -1478,13 +1456,11 @@ paths:
         required: true
         schema:
           type: string
-          format: uuid
       - name: model_id
         in: path
         required: true
         schema:
           type: string
-          format: uuid
       - name: revision_id
         in: path
         required: true
@@ -1690,7 +1666,6 @@ components:
           type: string
         id:
           type: string
-          format: uuid
         attributes:
           $ref: "#/components/schemas/EntryInfoAttributes"
 
@@ -1713,7 +1688,6 @@ components:
           type: string
         id:
           type: string
-          format: uuid
         attributes:
           $ref: "#/components/schemas/SimilarEntryAttributes"
 
@@ -1751,7 +1725,6 @@ components:
           type: string
         id:
           type: string
-          format: uuid
         attributes:
           $ref: "#/components/schemas/ModelAttributes"
 
@@ -1855,7 +1828,6 @@ components:
           type: string
         id:
           type: string
-          format: uuid
         attributes:
           $ref: "#/components/schemas/EntryRevisionGroupAttributes"
 
@@ -1945,11 +1917,9 @@ components:
       properties:
         entry_id:
           type: string
-          format: uuid
           description: Entry identifier that owns this file.
         model_id:
           type: string
-          format: uuid
           nullable: true
           description: Model identifier for model-level files; null for entry-level files.
         artifact_id:
@@ -2090,7 +2060,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         created_by:
           type: string
           format: uuid
@@ -2169,7 +2138,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         name:
           type: string
           minLength: 1
@@ -2193,7 +2161,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         created_by:
           type: string
           format: uuid
@@ -2243,7 +2210,6 @@ components:
           enum: [entries]
         id:
           type: string
-          format: uuid
         attributes:
           $ref: "#/components/schemas/EntryAttributes"
         relationships:
@@ -2383,10 +2349,8 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         entry_id:
           type: string
-          format: uuid
         created_by:
           type: string
           format: uuid
@@ -2715,7 +2679,6 @@ components:
       properties:
         model_id:
           type: string
-          format: uuid
         name:
           type: string
           minLength: 1
@@ -2754,7 +2717,6 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         name:
           type: string
           minLength: 1
@@ -2848,7 +2810,6 @@ components:
       properties:
         entry_id:
           type: string
-          format: uuid
         revision_id:
           type: string
           format: uuid
@@ -2874,7 +2835,6 @@ components:
           enum: [add]
         model_id:
           type: string
-          format: uuid
         model_revision_id:
           type: string
           format: uuid
@@ -2885,10 +2845,8 @@ components:
       properties:
         entry_id:
           type: string
-          format: uuid
         model_id:
           type: string
-          format: uuid
         revision_id:
           type: string
           format: uuid
@@ -2936,7 +2894,6 @@ components:
           description: Entry revision ID.
         entry_id:
           type: string
-          format: uuid
         parent_revision_id:
           type: string
           format: uuid
@@ -2975,10 +2932,8 @@ components:
           description: Model revision ID.
         entry_id:
           type: string
-          format: uuid
         model_id:
           type: string
-          format: uuid
         idempotency_key:
           type: string
           nullable: true

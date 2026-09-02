@@ -24,7 +24,7 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	organism := "Homo sapiens"
 	revision := models.EntryRevision{
 		ID:                uuid.New(),
-		EntryID:           uuid.New(),
+		EntryID:           "entry-1abc",
 		State:             models.RevisionStatePending,
 		Name:              "entry-" + uuid.NewString(),
 		Description:       &description,
@@ -199,7 +199,7 @@ func Test_should_archive_previous_active_revision_when_entry_revision_activated(
 	// given
 	ctx := context.Background()
 	createdBy := createDBTestUser(t)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	now := time.Now().UTC()
 	revisionNumber := 1
 	active, err := testDB.Entries.Create(ctx, models.EntryRevision{
@@ -263,7 +263,7 @@ func proteinSequenceTokenForTest(id uuid.UUID) string {
 	return token.String()
 }
 
-func entryRevisionListContainsEntryID(revisions []models.EntryRevision, entryID uuid.UUID) bool {
+func entryRevisionListContainsEntryID(revisions []models.EntryRevision, entryID string) bool {
 	for _, revision := range revisions {
 		if revision.EntryID == entryID {
 			return true
@@ -303,7 +303,7 @@ func dbTestEntryRevisionWithPDBID(
 
 	return models.EntryRevision{
 		ID:      uuid.New(),
-		EntryID: uuid.New(),
+		EntryID: "entry-" + uuid.NewString(),
 		State:   state,
 		Name:    name + "-" + uuid.NewString(),
 		Metadata: models.EntryMetadata{

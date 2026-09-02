@@ -18,7 +18,7 @@ type EntrySearchIndexRepository struct {
 }
 
 type entrySearchIndexRow struct {
-	EntryID    uuid.UUID `db:"entry_id"`
+	EntryID    string    `db:"entry_id"`
 	ModelType  string    `db:"model_type"`
 	ModelID    string    `db:"model_id"`
 	UpdatedAt  time.Time `db:"updated_at"`
@@ -67,7 +67,7 @@ func (r *EntrySearchIndexRepository) IndexModelRevision(
 
 func (r *EntrySearchIndexRepository) DeleteEntryRevision(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	revisionID uuid.UUID,
 ) error {
 	if err := r.deleteSearchRow(ctx, entryID, entrySearchModelTypeEntryRevision, revisionID.String()); err != nil {
@@ -76,7 +76,7 @@ func (r *EntrySearchIndexRepository) DeleteEntryRevision(
 	return nil
 }
 
-func (r *EntrySearchIndexRepository) DeleteEntry(ctx context.Context, entryID uuid.UUID) error {
+func (r *EntrySearchIndexRepository) DeleteEntry(ctx context.Context, entryID string) error {
 	query := `delete from entry_search_index where entry_id = $1`
 	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, entryID); err != nil {
 		return fmt.Errorf("delete entry search rows: %w", err)
@@ -111,7 +111,7 @@ func (r *EntrySearchIndexRepository) saveSearchRow(ctx context.Context, row entr
 
 func (r *EntrySearchIndexRepository) deleteSearchRow(
 	ctx context.Context,
-	entryID uuid.UUID,
+	entryID string,
 	modelType string,
 	modelID string,
 ) error {

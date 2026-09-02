@@ -291,7 +291,7 @@ func createPipelineTestEntryRevision(t *testing.T, database *db.DB, name string,
 	createdBy := createPipelineTestUser(t, database)
 	revision, err := database.Entries.Create(context.Background(), models.EntryRevision{
 		ID:        uuid.New(),
-		EntryID:   uuid.New(),
+		EntryID:   "entry-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
 		Name:      name + "-" + uuid.NewString(),
 		CreatedBy: createdBy,

@@ -41,7 +41,7 @@ func createDBTestEntryRevision(t *testing.T, name string, createdAt time.Time) *
 	createdBy := createDBTestUser(t)
 	revision, err := testDB.Entries.Create(context.Background(), models.EntryRevision{
 		ID:        uuid.New(),
-		EntryID:   uuid.New(),
+		EntryID:   "entry-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
 		Name:      name + "-" + uuid.NewString(),
 		CreatedBy: createdBy,
@@ -58,7 +58,7 @@ func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.T
 	createdBy := createDBTestUser(t)
 	revision, err := testDB.Entries.Create(context.Background(), models.EntryRevision{
 		ID:         uuid.New(),
-		EntryID:    uuid.New(),
+		EntryID:    "entry-" + uuid.NewString(),
 		State:      models.RevisionStateInReview,
 		EntryState: models.EntryStateActive,
 		Name:       name + "-" + uuid.NewString(),
@@ -75,7 +75,7 @@ func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.T
 
 func createDBTestModelRevision(
 	t *testing.T,
-	entryID uuid.UUID,
+	entryID string,
 	name string,
 	createdAt time.Time,
 ) *models.ModelRevision {
@@ -84,7 +84,7 @@ func createDBTestModelRevision(
 	createdBy := createDBTestUser(t)
 	revision, err := testDB.Models.Create(context.Background(), entryID, models.ModelRevision{
 		ID:        uuid.New(),
-		ModelID:   uuid.New(),
+		ModelID:   "model-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
 		Name:      name + "-" + uuid.NewString(),
 		CreatedBy: createdBy,
@@ -97,7 +97,7 @@ func createDBTestModelRevision(
 
 func createDBTestActiveModelRevision(
 	t *testing.T,
-	entryID uuid.UUID,
+	entryID string,
 	name string,
 	createdAt time.Time,
 ) *models.ModelRevision {
@@ -106,7 +106,7 @@ func createDBTestActiveModelRevision(
 	createdBy := createDBTestUser(t)
 	revision, err := testDB.Models.Create(context.Background(), entryID, models.ModelRevision{
 		ID:         uuid.New(),
-		ModelID:    uuid.New(),
+		ModelID:    "model-" + uuid.NewString(),
 		State:      models.RevisionStateInReview,
 		ModelState: models.ModelStateActive,
 		Name:       name + "-" + uuid.NewString(),

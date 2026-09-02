@@ -33,7 +33,7 @@ type ProteinSequenceSimilarityFilters struct {
 }
 
 type SimilarEntryFilters struct {
-	EntryID uuid.UUID
+	EntryID string
 	Limit   *int
 	Offset  *int
 }
@@ -421,7 +421,7 @@ func (r *ProteinSequenceSimilaritiesRepository) ListSimilarEntries(
 	}
 
 	entries := make([]models.SimilarEntry, 0)
-	entryIndexes := map[uuid.UUID]int{}
+	entryIndexes := map[string]int{}
 	for _, row := range rows {
 		entryIndex, ok := entryIndexes[row.EntryID]
 		if !ok {
@@ -518,7 +518,7 @@ func proteinSequenceSimilarityListQuery(
 }
 
 func similarEntryListQuery(filters SimilarEntryFilters) (string, map[string]any, error) {
-	if filters.EntryID == uuid.Nil {
+	if strings.TrimSpace(filters.EntryID) == "" {
 		return "", nil, errors.New("entry id is required")
 	}
 	if filters.Limit != nil && *filters.Limit < 0 {
@@ -743,7 +743,7 @@ type proteinSequenceSimilarityCreateParams struct {
 type similarEntryMatchRow struct {
 	EntryScore                      float64        `db:"entry_score"`
 	EntryRevisionID                 uuid.UUID      `db:"entry_revision_id"`
-	EntryID                         uuid.UUID      `db:"entry_id"`
+	EntryID                         string         `db:"entry_id"`
 	ParentRevisionID                uuid.NullUUID  `db:"parent_revision_id"`
 	RevisionNumber                  sql.NullInt64  `db:"revision_number"`
 	EntryState                      string         `db:"entry_state"`

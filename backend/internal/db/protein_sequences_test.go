@@ -88,7 +88,7 @@ func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revisi
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createdBy := createDBTestUser(t)
-	entryID := uuid.New()
+	entryID := "entry-" + uuid.NewString()
 	activeRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
 		ID: uuid.New(), EntryID: entryID, State: models.RevisionStateActive,
 		EntryState: models.EntryStateActive, Name: "active protein revision", CreatedBy: createdBy,

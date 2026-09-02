@@ -110,7 +110,7 @@ func Test_should_return_json_error_when_generated_path_parameter_binding_fails(t
 	handler := HandlerWithOptions((*Server)(nil), ChiServerOptions{
 		ErrorHandlerFunc: RouteErrorHandler,
 	})
-	request := httptest.NewRequest(http.MethodGet, "/v1/entries/not-a-uuid", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/entries/text-entry/revisions/not-a-uuid", nil)
 	recorder := httptest.NewRecorder()
 
 	// when
@@ -126,7 +126,7 @@ func Test_should_return_json_error_when_generated_path_parameter_binding_fails(t
 	require.NotNil(t, body.Errors[0].Code)
 	require.NotNil(t, body.Errors[0].Detail)
 	assert.Equal(t, "BAD_REQUEST", *body.Errors[0].Code)
-	assert.Contains(t, *body.Errors[0].Detail, "entry_id")
+	assert.Contains(t, *body.Errors[0].Detail, "revision_id")
 }
 
 func Test_should_return_json_error_when_generated_query_parameter_binding_fails(t *testing.T) {
@@ -297,7 +297,7 @@ func Test_should_check_matching_permission_when_entry_revision_state_updated(t *
 			recorder := httptest.NewRecorder()
 
 			// when
-			server.UpdateEntryRevisionState(recorder, request, uuid.New(), uuid.New())
+			server.UpdateEntryRevisionState(recorder, request, uuid.NewString(), uuid.New())
 
 			// then
 			assert.Equal(t, http.StatusForbidden, recorder.Code)

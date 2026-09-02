@@ -18,7 +18,7 @@ import (
 
 func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t *testing.T) {
 	// given
-	entryID := uuid.New()
+	entryID := "entry-upload"
 	artifactID := uuid.New()
 	fileCDN := &uploadCDNStub{
 		grant: cdn.UploadGrant{
@@ -48,7 +48,7 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
-	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
+	assert.Equal(t, entryID, fileCDN.createdFile.EntryID)
 	assert.Equal(t, artifactID.String(), fileCDN.createdFile.ArtifactID)
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
 	assert.Equal(t, int64(42), fileCDN.createdFile.Size)
@@ -113,9 +113,9 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 			},
 		},
 		{
-			name: "nil entry id",
+			name: "empty entry id",
 			body: map[string]any{
-				"entry_id":    uuid.Nil,
+				"entry_id":    "",
 				"artifact_id": uuid.New(),
 				"filename":    "model.cif",
 				"size":        1,
@@ -131,11 +131,11 @@ func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testin
 			},
 		},
 		{
-			name: "nil model id pointer",
+			name: "empty model id",
 			body: map[string]any{
 				"entry_id":    uuid.New(),
 				"artifact_id": uuid.New(),
-				"model_id":    uuid.Nil,
+				"model_id":    "",
 				"filename":    "model.cif",
 				"size":        1,
 			},

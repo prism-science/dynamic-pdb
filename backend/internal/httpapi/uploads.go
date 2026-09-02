@@ -27,8 +27,8 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entryID := req.EntryId
-	if entryID == uuid.Nil {
+	entryID := strings.TrimSpace(req.EntryId)
+	if entryID == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "entry_id is required")
 		return
 	}
@@ -39,16 +39,15 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	modelID := ""
 	if req.ModelId != nil {
-		parsedModelID := *req.ModelId
-		if parsedModelID == uuid.Nil {
+		modelID = strings.TrimSpace(*req.ModelId)
+		if modelID == "" {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "model_id is invalid")
 			return
 		}
-		modelID = parsedModelID.String()
 	}
 
 	fileUpload := cdn.FileUpload{
-		EntryID:          entryID.String(),
+		EntryID:          entryID,
 		ModelID:          modelID,
 		ArtifactID:       artifactID.String(),
 		OriginalFilename: req.Filename,

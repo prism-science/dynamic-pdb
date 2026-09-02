@@ -97,7 +97,7 @@ func Test_should_remove_all_entry_text_when_entry_search_index_delete_called(t *
 	assertEntryRevisionSearchDoesNotContain(ctx, t, token, entryRevision.EntryID)
 }
 
-func assertEntryRevisionSearchContains(ctx context.Context, t *testing.T, query string, entryID uuid.UUID) {
+func assertEntryRevisionSearchContains(ctx context.Context, t *testing.T, query string, entryID string) {
 	t.Helper()
 
 	revisions, err := testDB.Entries.List(ctx, db.EntryRevisionFilters{Query: query})
@@ -105,7 +105,7 @@ func assertEntryRevisionSearchContains(ctx context.Context, t *testing.T, query 
 	assert.True(t, entryRevisionListContainsEntryID(revisions, entryID))
 }
 
-func assertEntryRevisionSearchDoesNotContain(ctx context.Context, t *testing.T, query string, entryID uuid.UUID) {
+func assertEntryRevisionSearchDoesNotContain(ctx context.Context, t *testing.T, query string, entryID string) {
 	t.Helper()
 
 	revisions, err := testDB.Entries.List(ctx, db.EntryRevisionFilters{Query: query})
