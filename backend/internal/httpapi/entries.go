@@ -390,17 +390,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 }
 
 func createModelDataFromAddOperation(data AddModelData) CreateModelData {
-	return CreateModelData{
-		Name:              data.Name,
-		Description:       data.Description,
-		ThumbnailImageUrl: data.ThumbnailImageUrl,
-		Metadata:          data.Metadata,
-		IdempotencyKey:    data.IdempotencyKey,
-		PrimaryArtifactId: data.PrimaryArtifactId,
-		Artifacts:         data.Artifacts,
-		Runs:              data.Runs,
-		Metrics:           data.Metrics,
-	}
+	return CreateModelData(data)
 }
 
 func (s *Server) createArtifacts(
