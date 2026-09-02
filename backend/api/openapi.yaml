@@ -1,41 +1,97 @@
 openapi: 3.0.3
 info:
-  title: dynamic-pdb backend API
-  version: 0.0.0
+  title: Dynamic PDB API
+  version: 1.0.0
+  description: |
+    Dynamic PDB exposes deposited structural biology data, derived models, the
+    programs that produced them, and evaluation metrics through a versioned
+    JSON:API interface.
+
+    Published entries can be read without authentication. Mutating operations —
+    including deposits, model submissions, and review decisions — require a
+    bearer token obtained through GitHub sign-in.
+
+    Every request and response is a JSON:API document: send and accept
+    `application/vnd.api+json`.
+servers:
+  - url: https://dynamicpdb.com/api
+    description: Production
+
+tags:
+  - name: Entries
+    description: |
+      An entry groups the raw data, the models built from it, and the metrics
+      measured against them. Reads return the current active revision.
+  - name: Models
+    description: |
+      Structural models produced outside the registry, each carrying its
+      quality scores as a flat list of key and value.
+  - name: Revisions
+    description: Revision queues, diffs, and review decisions. Reviewer role only.
+  - name: Files
+    description: |
+      Multipart upload. Bytes never pass through the API — the client
+      presigns, PUTs each part, then completes or aborts the upload.
+  - name: Users
+    description: Your own revisions and the state review left them in.
+  - name: Authentication
+    description: Exchanging a GitHub authorization for a backend JWT.
+  - name: Health
+    x-scalar-ignore: true
+    description: Liveness and readiness probes.
 
 paths:
+  /openapi.yaml:
+    get:
+      tags: [Health]
+      operationId: getOpenAPISpec
+      summary: OpenAPI description
+      x-scalar-ignore: true
+      responses:
+        "200":
+          description: OpenAPI description.
+          content:
+            application/yaml:
+              schema:
+                type: string
+
   /livez:
     get:
+      tags: [Health]
       operationId: livez
+      x-scalar-ignore: true
       responses:
         "200":
           description: Service is alive.
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ProbeResponse"
+                $ref: "#/components/schemas/ProbeDocument"
 
   /readyz:
     get:
+      tags: [Health]
       operationId: readyz
+      x-scalar-ignore: true
       responses:
         "200":
           description: Service is ready.
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ProbeResponse"
+                $ref: "#/components/schemas/ProbeDocument"
         "503":
           description: Service is not ready.
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ProbeResponse"
+                $ref: "#/components/schemas/ProbeDocument"
 
   /v1/auth/github/exchange:
     post:
+      tags: [Authentication]
       operationId: exchangeGithubToken
-      summary: Exchange a GitHub access token for a backend JWT
+      summary: Exchange GitHub token
       requestBody:
         required: true
         content:
@@ -48,7 +104,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/TokenResponse"
+                $ref: "#/components/schemas/TokenDocument"
         "400":
           description: Invalid request.
           content:
@@ -62,7 +118,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: GitHub account does not belong to any allowed organization.
+          description: Access denied.
           content:
             application/vnd.api+json:
               schema:
@@ -70,8 +126,9 @@ paths:
 
   /v1/auth/github/code/exchange:
     post:
+      tags: [Authentication]
       operationId: exchangeGithubCode
-      summary: Exchange a GitHub authorization code for a backend JWT
+      summary: Exchange GitHub code
       requestBody:
         required: true
         content:
@@ -84,7 +141,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/TokenResponse"
+                $ref: "#/components/schemas/TokenDocument"
         "400":
           description: Invalid request.
           content:
@@ -98,7 +155,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: GitHub account does not belong to any allowed organization.
+          description: Access denied.
           content:
             application/vnd.api+json:
               schema:
@@ -106,8 +163,9 @@ paths:
 
   /v1/files:
     post:
+      tags: [Files]
       operationId: createFileUpload
-      summary: Create a file upload and presign its parts
+      summary: Create file upload
       description: >
         Creates a multipart upload and returns a presigned PUT URL for every
         part. The client uploads each part, then calls the complete endpoint.
@@ -125,7 +183,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/FileUploadGrantResponse"
+                $ref: "#/components/schemas/FileUploadGrantDocument"
         "400":
           description: Invalid request.
           content:
@@ -146,8 +204,9 @@ paths:
                 $ref: "#/components/schemas/Error"
   /v1/files/complete:
     post:
+      tags: [Files]
       operationId: completeFileUpload
-      summary: Complete a file upload
+      summary: Complete file upload
       description: >
         Assembles the uploaded parts into the final object. The client sends the
         part number and ETag returned by each part upload.
@@ -165,7 +224,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/CompleteFileUploadResponse"
+                $ref: "#/components/schemas/CompleteFileUploadDocument"
         "400":
           description: Invalid request.
           content:
@@ -181,8 +240,9 @@ paths:
 
   /v1/files/abort:
     post:
+      tags: [Files]
       operationId: abortFileUpload
-      summary: Abort a file upload
+      summary: Abort file upload
       description: Cancels an in-progress file upload and discards any parts already uploaded.
       security:
         - bearerAuth: []
@@ -208,8 +268,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/entries/{entry_id}:
+    get:
+      tags: [Entries]
+      operationId: getEntry
+      summary: Get entry
+      description: Returns the current active revision of an entry.
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Entry found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/EntryDocument"
+        "404":
+          description: Entry not found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /v1/entries:
     get:
+      tags: [Entries]
       operationId: listEntries
       summary: List entries
       description: Lists entries from their current active revisions.
@@ -255,7 +345,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryListResponse"
+                $ref: "#/components/schemas/EntryCollectionDocument"
         "400":
           description: Invalid filters.
           content:
@@ -263,8 +353,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
+      tags: [Entries]
       operationId: createEntry
-      summary: Create an entry and its initial revision
+      summary: Create entry
       description: >
         Atomically creates a new entry, its initial in-review entry revision,
         and a separate in-review model revision for every add operation.
@@ -282,7 +373,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/CreateEntryRevisionResponse"
+                $ref: "#/components/schemas/CreateEntryRevisionDocument"
         "400":
           description: Invalid request.
           content:
@@ -302,38 +393,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /v1/entries/{entry_id}:
-    get:
-      operationId: getEntry
-      summary: Get entry
-      description: Returns the current active revision of an entry.
-      security: []
-      parameters:
-        - name: entry_id
-          in: path
-          description: Entry ID.
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Entry found.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Entry"
-        "404":
-          description: Entry not found.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
   /v1/entries/{entry_id}/similar-entries:
     get:
+      tags: [Entries]
       operationId: listSimilarEntries
-      summary: List entries with similar protein sequences
+      summary: List similar entries
       description: Lists similar entries from their current active revisions.
       security: []
       parameters:
@@ -365,7 +429,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/SimilarEntryListResponse"
+                $ref: "#/components/schemas/SimilarEntryCollectionDocument"
         "404":
           description: Entry not found.
           content:
@@ -375,6 +439,7 @@ paths:
 
   /v1/models:
     get:
+      tags: [Models]
       operationId: listModelsAcrossEntries
       summary: List models
       description: Lists models from their current active revisions across active entries.
@@ -401,7 +466,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelListResponse"
+                $ref: "#/components/schemas/ModelCollectionDocument"
         "400":
           description: Invalid filters.
           content:
@@ -410,9 +475,63 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models:
+    post:
+      tags: [Entries]
+      operationId: createModel
+      summary: Create entry model
+      description: >
+        Creates a model belonging to the entry and its initial in-review model
+        revision. No entry revision is created.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRequest"
+      responses:
+        "201":
+          description: Model and initial in-review revision created.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/CreateModelRevisionDocument"
+        "400":
+          description: Invalid model data.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Model ID already exists.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
+      tags: [Entries]
       operationId: listModels
-      summary: List models
+      summary: List entry models
       description: Lists models from their current active revisions.
       security: []
       parameters:
@@ -444,61 +563,9 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelListResponse"
+                $ref: "#/components/schemas/ModelCollectionDocument"
         "400":
           description: Invalid filters.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    post:
-      operationId: createModel
-      summary: Create a model and its initial revision
-      description: >
-        Creates a model belonging to the entry and its initial in-review model
-        revision. No entry revision is created.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: entry_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/vnd.api+json:
-            schema:
-              $ref: "#/components/schemas/CreateModelRequest"
-      responses:
-        "201":
-          description: Model and initial in-review revision created.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/CreateModelRevisionResponse"
-        "400":
-          description: Invalid model data.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "404":
-          description: Entry not found.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Model ID already exists.
           content:
             application/vnd.api+json:
               schema:
@@ -506,8 +573,9 @@ paths:
 
   /v1/entries/{entry_id}/models/{model_id}:
     get:
+      tags: [Entries]
       operationId: getModel
-      summary: Get model
+      summary: Get entry model
       description: Returns the model's current active revision.
       security: []
       parameters:
@@ -531,7 +599,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/Model"
+                $ref: "#/components/schemas/ModelDocument"
         "404":
           description: Model not found.
           content:
@@ -541,8 +609,9 @@ paths:
 
   /v1/entries/{entry_id}/artifacts:
     get:
+      tags: [Entries]
       operationId: listArtifacts
-      summary: List artifacts
+      summary: List entry artifacts
       description: Lists artifacts from the entry's current active revision.
       security: []
       parameters:
@@ -585,7 +654,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ArtifactListResponse"
+                $ref: "#/components/schemas/ArtifactCollectionDocument"
         "400":
           description: Invalid filters.
           content:
@@ -595,6 +664,7 @@ paths:
 
   /v1/entries/{entry_id}/models/{model_id}/artifacts:
     get:
+      tags: [Entries]
       operationId: listModelArtifacts
       summary: List model artifacts
       description: Lists artifacts from the model's current active revision.
@@ -646,7 +716,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelArtifactListResponse"
+                $ref: "#/components/schemas/ModelArtifactCollectionDocument"
         "400":
           description: Invalid filters.
           content:
@@ -662,8 +732,9 @@ paths:
 
   /v1/entries/revisions:
     get:
+      tags: [Revisions]
       operationId: listEntryRevisionGroups
-      summary: List entries with revisions in a state
+      summary: List all revisions
       description: >
         Reviewer-only revision collection grouped by entry. An entry is returned
         when either an entry revision or one of its model revisions has the
@@ -696,7 +767,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionGroupListResponse"
+                $ref: "#/components/schemas/EntryRevisionGroupCollectionDocument"
         "400":
           description: Missing or invalid state filter.
           content:
@@ -718,8 +789,9 @@ paths:
 
   /v1/entries/{entry_id}/revisions:
     get:
+      tags: [Revisions]
       operationId: listEntryRevisionsForEntry
-      summary: List revisions of an entry
+      summary: List entry revisions
       description: Reviewer-only revision history of one entry.
       security:
         - bearerAuth: []
@@ -749,7 +821,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionListResponse"
+                $ref: "#/components/schemas/EntryRevisionSummaryCollectionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -769,8 +841,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
+      tags: [Revisions]
       operationId: createEntryRevision
-      summary: Create an entry revision
+      summary: Create entry revision
       description: >
         Creates an in-review revision containing changes to the entry itself.
         Model changes are created separately through the model revision API.
@@ -795,7 +868,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/CreateEntryRevisionResponse"
+                $ref: "#/components/schemas/CreateEntryRevisionDocument"
         "400":
           description: Invalid entry change.
           content:
@@ -836,8 +909,9 @@ paths:
           type: string
           format: uuid
     get:
+      tags: [Revisions]
       operationId: getEntryRevision
-      summary: Get an entry revision
+      summary: Get entry revision
       description: Reviewer-only access to a specific entry revision.
       security:
         - bearerAuth: []
@@ -847,7 +921,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevision"
+                $ref: "#/components/schemas/EntryRevisionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -867,8 +941,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
+      tags: [Revisions]
       operationId: updateEntryRevisionState
-      summary: Activate or reject an entry revision
+      summary: Update entry revision
       description: >
         Changes a revision from `in_review` to active or rejected. Activating
         requires `revisions.approve`; rejecting requires `revisions.reject`.
@@ -886,7 +961,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevision"
+                $ref: "#/components/schemas/EntryRevisionDocument"
         "400":
           description: Invalid state transition.
           content:
@@ -920,8 +995,9 @@ paths:
 
   /v1/entries/{entry_id}/models/{model_id}/revisions:
     get:
+      tags: [Revisions]
       operationId: listModelRevisionsForModel
-      summary: List revisions of a model
+      summary: List model revisions
       description: Reviewer-only revision history of one model.
       security:
         - bearerAuth: []
@@ -957,7 +1033,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevisionListResponse"
+                $ref: "#/components/schemas/ModelRevisionSummaryCollectionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -977,8 +1053,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
+      tags: [Revisions]
       operationId: createModelRevision
-      summary: Create a model revision
+      summary: Create model revision
       description: >
         Creates an in-review revision containing changes to the model itself. No
         entry revision is created.
@@ -1009,7 +1086,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/CreateModelRevisionResponse"
+                $ref: "#/components/schemas/CreateModelRevisionDocument"
         "400":
           description: Invalid model change.
           content:
@@ -1056,8 +1133,9 @@ paths:
           type: string
           format: uuid
     get:
+      tags: [Revisions]
       operationId: getModelRevision
-      summary: Get a model revision
+      summary: Get model revision
       description: Reviewer-only access to a specific model revision.
       security:
         - bearerAuth: []
@@ -1067,7 +1145,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevision"
+                $ref: "#/components/schemas/ModelRevisionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1087,8 +1165,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
+      tags: [Revisions]
       operationId: updateModelRevisionState
-      summary: Activate or reject a model revision
+      summary: Update model revision
       description: >
         Changes a model revision from `in_review` to active or rejected. Activating
         requires `revisions.approve`; rejecting requires `revisions.reject`.
@@ -1106,7 +1185,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevision"
+                $ref: "#/components/schemas/ModelRevisionDocument"
         "400":
           description: Invalid state transition.
           content:
@@ -1139,8 +1218,9 @@ paths:
                 $ref: "#/components/schemas/Error"
   /v1/users/{user_id}/entries/revisions:
     get:
+      tags: [Users]
       operationId: listUserEntryRevisionGroups
-      summary: List a user's entries with revisions in a state
+      summary: List all revisions
       description: >
         Lists entries for which the path user created an entry revision or
         model revision in the requested state. Each item contains only matching
@@ -1180,7 +1260,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionGroupListResponse"
+                $ref: "#/components/schemas/EntryRevisionGroupCollectionDocument"
         "400":
           description: Missing or invalid state filter.
           content:
@@ -1202,8 +1282,9 @@ paths:
 
   /v1/users/{user_id}/entries/{entry_id}/revisions:
     get:
+      tags: [Users]
       operationId: listUserEntryRevisionsForEntry
-      summary: List a user's revisions of an entry
+      summary: List entry revisions
       description: >
         Lists the path user's revisions of one entry. The authenticated user ID
         must equal `user_id`.
@@ -1241,7 +1322,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevisionListResponse"
+                $ref: "#/components/schemas/EntryRevisionSummaryCollectionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1282,8 +1363,9 @@ paths:
           type: string
           format: uuid
     get:
+      tags: [Users]
       operationId: getUserEntryRevision
-      summary: Get a user's entry revision
+      summary: Get entry revision
       description: >
         Returns a revision created by the path user. The authenticated user ID
         must equal `user_id`.
@@ -1295,7 +1377,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/EntryRevision"
+                $ref: "#/components/schemas/EntryRevisionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1314,62 +1396,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-    patch:
-      operationId: submitUserEntryRevision
-      summary: Submit a user's entry revision
-      description: >
-        The authenticated user ID must equal `user_id`. Changes a pending or
-        rejected revision to `in_review`.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/vnd.api+json:
-            schema:
-              $ref: "#/components/schemas/SubmitRevisionRequest"
-      responses:
-        "200":
-          description: Entry revision updated.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/EntryRevision"
-        "400":
-          description: Invalid state transition.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "403":
-          description: Authenticated user does not match user_id or own the revision.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "404":
-          description: Entry revision not found.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "409":
-          description: Entry revision is not editable.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
   /v1/users/{user_id}/entries/{entry_id}/models/{model_id}/revisions:
     get:
+      tags: [Users]
       operationId: listUserModelRevisionsForModel
-      summary: List a user's revisions of a model
+      summary: List model revisions
       description: >
         Lists the path user's revisions of one model. The authenticated user ID
         must equal `user_id`.
@@ -1413,7 +1445,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevisionListResponse"
+                $ref: "#/components/schemas/ModelRevisionSummaryCollectionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1460,8 +1492,9 @@ paths:
           type: string
           format: uuid
     get:
+      tags: [Users]
       operationId: getUserModelRevision
-      summary: Get a user's model revision
+      summary: Get model revision
       description: >
         Returns a revision created by the path user. The authenticated user ID
         must equal `user_id`.
@@ -1473,7 +1506,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevision"
+                $ref: "#/components/schemas/ModelRevisionDocument"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1493,8 +1526,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     patch:
+      tags: [Users]
       operationId: submitUserModelRevision
-      summary: Submit a user's model revision
+      summary: Submit model revision
       description: >
         The authenticated user ID must equal `user_id`. Changes a pending or
         rejected model revision to `in_review`.
@@ -1512,7 +1546,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelRevision"
+                $ref: "#/components/schemas/ModelRevisionDocument"
         "400":
           description: Invalid state transition.
           content:
@@ -1573,12 +1607,337 @@ components:
         detail:
           type: string
 
-    ProbeResponse:
+    ProbeMeta:
       type: object
       required: [status]
       properties:
         status:
           type: string
+
+    ProbeDocument:
+      type: object
+      required: [meta]
+      properties:
+        meta:
+          $ref: "#/components/schemas/ProbeMeta"
+
+    TokenDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/TokenData"
+
+    TokenData:
+      type: object
+      required: [type, attributes]
+      properties:
+        type:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/TokenAttributes"
+
+    FileUploadGrantDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/FileUploadGrantData"
+
+    FileUploadGrantData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/FileUploadGrantAttributes"
+
+    CompleteFileUploadDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CompleteFileUploadData"
+
+    CompleteFileUploadData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/CompleteFileUploadAttributes"
+
+    EntryCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryInfoData"
+
+    EntryInfoData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryInfoAttributes"
+
+    SimilarEntryCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarEntryData"
+        meta:
+          $ref: "#/components/schemas/SimilarEntryCollectionMeta"
+
+    SimilarEntryData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/SimilarEntryAttributes"
+
+    SimilarEntryCollectionMeta:
+      type: object
+      properties:
+        limit:
+          type: integer
+          minimum: 0
+        offset:
+          type: integer
+          minimum: 0
+
+    ModelCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelData"
+
+    ModelDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ModelData"
+
+    ModelData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/ModelAttributes"
+
+    ArtifactCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactData"
+
+    ArtifactData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/ArtifactAttributes"
+
+    ModelArtifactCollectionDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactData"
+        meta:
+          $ref: "#/components/schemas/ModelArtifactCollectionMeta"
+
+    ModelArtifactCollectionMeta:
+      type: object
+      required: [runs, relations]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
+        relations:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunArtifact"
+
+    CreateEntryRevisionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CreateEntryRevisionData"
+
+    CreateEntryRevisionData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/CreateEntryRevisionAttributes"
+
+    CreateModelRevisionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CreateModelRevisionData"
+
+    CreateModelRevisionData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/CreateModelRevisionAttributes"
+
+    EntryRevisionGroupCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryRevisionGroupData"
+
+    EntryRevisionGroupData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryRevisionGroupAttributes"
+
+    EntryRevisionSummaryCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryRevisionSummaryData"
+
+    EntryRevisionSummaryData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryRevisionSummaryAttributes"
+
+    ModelRevisionSummaryCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelRevisionSummaryData"
+
+    ModelRevisionSummaryData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
+
+    EntryRevisionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/EntryRevisionData"
+
+    EntryRevisionData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryRevisionAttributes"
+
+    ModelRevisionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ModelRevisionData"
+
+    ModelRevisionData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/ModelRevisionAttributes"
 
     CreateFileUploadRequest:
       type: object
@@ -1606,7 +1965,7 @@ components:
           format: int64
           description: Total size in bytes of the file to upload.
 
-    FileUploadGrantResponse:
+    FileUploadGrantAttributes:
       type: object
       required: [key, upload_id, object_url, part_size, parts]
       properties:
@@ -1667,7 +2026,7 @@ components:
           type: string
           description: ETag returned in the response header when the part was uploaded.
 
-    CompleteFileUploadResponse:
+    CompleteFileUploadAttributes:
       type: object
       required: [key]
       properties:
@@ -1702,7 +2061,7 @@ components:
         redirect_uri:
           type: string
 
-    TokenResponse:
+    TokenAttributes:
       type: object
       required: [token_type, access_token, expires_at, name, email, login, permissions]
       properties:
@@ -1725,16 +2084,7 @@ components:
           items:
             type: string
 
-    EntryListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/EntryInfo"
-
-    EntryInfo:
+    EntryInfoAttributes:
       type: object
       required: [id, created_by, name, created_at, updated_at]
       properties:
@@ -1766,27 +2116,12 @@ components:
           type: string
           format: date-time
 
-    SimilarEntryListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/SimilarEntry"
-        limit:
-          type: integer
-          minimum: 0
-        offset:
-          type: integer
-          minimum: 0
-
-    SimilarEntry:
+    SimilarEntryAttributes:
       type: object
       required: [entry, score, matches]
       properties:
         entry:
-          $ref: "#/components/schemas/EntryInfo"
+          $ref: "#/components/schemas/EntryInfoAttributes"
         score:
           type: number
           format: double
@@ -1888,16 +2223,161 @@ components:
           items:
             $ref: "#/components/schemas/ProteinSequence"
 
-    ModelListResponse:
+    EntryDocument:
       type: object
-      required: [items]
+      required: [data]
       properties:
-        items:
+        data:
+          $ref: "#/components/schemas/EntryData"
+        included:
           type: array
           items:
-            $ref: "#/components/schemas/Model"
+            $ref: "#/components/schemas/EntryProteinSequenceData"
 
-    Model:
+    EntryData:
+      type: object
+      required: [type, id, attributes, relationships]
+      properties:
+        type:
+          type: string
+          enum: [entries]
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryAttributes"
+        relationships:
+          $ref: "#/components/schemas/EntryRelationships"
+
+    EntryAttributes:
+      type: object
+      required: [name, metadata, created_at, updated_at]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        thumbnail_image_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EntryRelationships:
+      type: object
+      required: [created_by, protein_sequences]
+      properties:
+        created_by:
+          $ref: "#/components/schemas/EntryCreatedByRelationship"
+        protein_sequences:
+          $ref: "#/components/schemas/EntryProteinSequencesRelationship"
+
+    EntryCreatedByRelationship:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/EntryCreatedByIdentifier"
+
+    EntryProteinSequencesRelationship:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryProteinSequenceIdentifier"
+
+    EntryCreatedByIdentifier:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [users]
+        id:
+          type: string
+          format: uuid
+
+    EntryProteinSequenceIdentifier:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [protein_sequences]
+        id:
+          type: string
+          format: uuid
+
+    EntryProteinSequenceData:
+      type: object
+      required: [type, id, attributes, relationships]
+      properties:
+        type:
+          type: string
+          enum: [protein_sequences]
+        id:
+          type: string
+          format: uuid
+        attributes:
+          $ref: "#/components/schemas/EntryProteinSequenceAttributes"
+        relationships:
+          $ref: "#/components/schemas/EntryProteinSequenceRelationships"
+
+    EntryProteinSequenceAttributes:
+      type: object
+      required: [record_index, header, sequence, created_at]
+      properties:
+        record_index:
+          type: integer
+          minimum: 0
+        header:
+          type: string
+        sequence:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    EntryProteinSequenceRelationships:
+      type: object
+      required: [source_artifact]
+      properties:
+        source_artifact:
+          $ref: "#/components/schemas/EntryProteinSequenceSourceArtifactRelationship"
+
+    EntryProteinSequenceSourceArtifactRelationship:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/EntrySourceArtifactIdentifier"
+
+    EntrySourceArtifactIdentifier:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [artifacts]
+        id:
+          type: string
+          format: uuid
+
+    ModelAttributes:
       type: object
       required: [id, entry_id, created_by, name, metadata, created_at, updated_at, metrics]
       properties:
@@ -1980,7 +2460,7 @@ components:
           type: object
           additionalProperties: true
 
-    Artifact:
+    ArtifactAttributes:
       type: object
       required: [id, name, level, metadata, created_by, created_at]
       properties:
@@ -2013,32 +2493,6 @@ components:
         created_at:
           type: string
           format: date-time
-
-    ArtifactListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/Artifact"
-
-    ModelArtifactListResponse:
-      type: object
-      required: [items, runs, relations]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/Artifact"
-        runs:
-          type: array
-          items:
-            $ref: "#/components/schemas/Run"
-        relations:
-          type: array
-          items:
-            $ref: "#/components/schemas/RunArtifact"
 
     CreateRunRequest:
       type: object
@@ -2388,7 +2842,7 @@ components:
           enum: [in_review]
           x-enum-varnames: [SubmitRevisionRequestStateInReview]
 
-    CreateEntryRevisionResponse:
+    CreateEntryRevisionAttributes:
       type: object
       required: [entry_id, revision_id, state, model_results]
       properties:
@@ -2425,7 +2879,7 @@ components:
           type: string
           format: uuid
 
-    CreateModelRevisionResponse:
+    CreateModelRevisionAttributes:
       type: object
       required: [entry_id, model_id, revision_id, state]
       properties:
@@ -2457,49 +2911,22 @@ components:
           type: string
           enum: [active, rejected]
 
-    EntryRevisionGroupListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/EntryRevisionGroup"
-
-    EntryRevisionGroup:
+    EntryRevisionGroupAttributes:
       type: object
       required: [entry, entry_revisions, model_revisions]
       properties:
         entry:
-          $ref: "#/components/schemas/EntryInfo"
+          $ref: "#/components/schemas/EntryInfoAttributes"
         entry_revisions:
           type: array
           items:
-            $ref: "#/components/schemas/EntryRevisionSummary"
+            $ref: "#/components/schemas/EntryRevisionSummaryAttributes"
         model_revisions:
           type: array
           items:
-            $ref: "#/components/schemas/ModelRevisionSummary"
+            $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
 
-    EntryRevisionListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/EntryRevisionSummary"
-
-    ModelRevisionListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/ModelRevisionSummary"
-
-    EntryRevisionSummary:
+    EntryRevisionSummaryAttributes:
       type: object
       required: [id, entry_id, state, entry_state, created_by, name, created_at, updated_at]
       properties:
@@ -2538,7 +2965,7 @@ components:
           type: string
           format: date-time
 
-    ModelRevisionSummary:
+    ModelRevisionSummaryAttributes:
       type: object
       required: [id, entry_id, model_id, state, model_state, created_by, name, created_at, updated_at]
       properties:
@@ -2583,9 +3010,9 @@ components:
           type: string
           format: date-time
 
-    EntryRevision:
+    EntryRevisionAttributes:
       allOf:
-        - $ref: "#/components/schemas/EntryRevisionSummary"
+        - $ref: "#/components/schemas/EntryRevisionSummaryAttributes"
         - type: object
           required: [metadata, protein_sequences, artifacts]
           properties:
@@ -2605,10 +3032,10 @@ components:
             artifacts:
               type: array
               items:
-                $ref: "#/components/schemas/Artifact"
-    ModelRevision:
+                $ref: "#/components/schemas/ArtifactAttributes"
+    ModelRevisionAttributes:
       allOf:
-        - $ref: "#/components/schemas/ModelRevisionSummary"
+        - $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
         - type: object
           required: [metadata, metrics, artifacts]
           properties:
@@ -2632,4 +3059,4 @@ components:
             artifacts:
               type: array
               items:
-                $ref: "#/components/schemas/Artifact"
+                $ref: "#/components/schemas/ArtifactAttributes"

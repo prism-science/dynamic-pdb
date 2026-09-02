@@ -1,30 +1,741 @@
-/* The frame is the About and Download pages', copied a third time. Three is
-   where this stops being tolerable: the next page of this kind should arrive
-   with .page/.title/.prose lifted into one module all of them import. Kept
-   identical in the meantime so the three do not drift apart. */
+
 .page {
+    --docs-rail: 288px;
+    --docs-bar: 47px;
+    --docs-key: 72px;
+
   flex: 1 1 auto;
-  width: min(var(--content-max), calc(100% - 48px));
-  margin: 0 auto;
-  padding: 56px 0 88px;
+  display: flex;
+  flex-direction: column;
   color: var(--text);
 }
 
-.title {
-  width: min(660px, 100%);
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+.barOuter {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 40;
+  flex: none;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
-/* Same measure as the other two pages. It holds the longest command line here
-   whole — the install one-liner is the widest at roughly 50 characters — so no
-   code block scrolls at this width. */
+.bar {
+  display: flex;
+  align-items: stretch;
+  width: min(var(--content-max), calc(100% - 48px));
+  height: 46px;
+  margin: 0 auto;
+}
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 26px;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 530;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabOn,
+.tabOn:hover {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tabOn::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tab:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: var(--ring);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+
+.shell {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.rail {
+  flex: none;
+  width: var(--docs-rail);
+  padding: 28px 24px 48px 0;
+  border-right: 1px solid var(--border);
+}
+
+.railInner {
+  position: sticky;
+  top: calc(var(--header-height) + var(--docs-bar) + 24px);
+  max-height: calc(100vh - var(--header-height) - var(--docs-bar) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.body p {
+  text-wrap: pretty;
+}
+
+.item + .item {
+  margin-top: 2px;
+}
+
+.children {
+  margin: 2px 0 6px 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.navChild {
+  font-size: 12.5px;
+}
+
+.navLink {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.navLink:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.navLinkOn,
+.navLinkOn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.navLink:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+
+.scalar {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.scalar :global(.references-layout) {
+  --refs-viewport-offset: calc(var(--header-height) + var(--docs-bar)) !important;
+  --refs-viewport-height: calc(
+    100vh - var(--header-height) - var(--docs-bar)
+  ) !important;
+}
+
+.scalar :global(.references-layout > aside) {
+  top: calc(var(--header-height) + var(--docs-bar)) !important;
+  height: calc(100vh - var(--header-height) - var(--docs-bar)) !important;
+}
+
+
+.scalar :global(.scalar-card) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.scalar-card > * + *) {
+  border-top: 0 !important;
+}
+
+.scalar :global(.scalar-card-header),
+.scalar :global(.scalar-card-footer) {
+  --scalar-background-1: var(--bg);
+  --scalar-background-2: transparent;
+  --scalar-background-3: var(--surface-muted);
+  --scalar-color-1: var(--text);
+  --scalar-color-2: var(--text-muted);
+  --scalar-color-3: var(--text-muted);
+  --scalar-border-color: var(--border);
+
+  padding: 0 0 8px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+  font-weight: 550 !important;
+}
+
+.scalar :global(.scalar-card-footer) {
+  padding: 10px 0 0 !important;
+}
+
+.scalar :global(.scalar-card-content:not(.scalar-card-header):not(.scalar-card-footer)) {
+  --scalar-background-1: var(--header-bg);
+  --scalar-background-2: var(--header-bg);
+  --scalar-background-3: var(--header-hover);
+  --scalar-color-1: #e6e7ee;
+  --scalar-color-2: var(--header-fg-muted);
+  --scalar-color-3: var(--header-fg-muted);
+  --scalar-border-color: var(--header-border);
+
+  border: 0 !important;
+  border-radius: var(--radius) !important;
+  background: var(--header-bg) !important;
+}
+
+
+.scalar :global(.introduction-section .section-content) {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.scalar :global(.introduction-section .section-columns) {
+  display: contents !important;
+}
+
+.scalar :global(.introduction-section .section-header-wrapper) {
+  order: 1 !important;
+}
+
+.scalar :global(.introduction-section .section-column:first-child) {
+  order: 2 !important;
+}
+
+.scalar :global(.introduction-section .section-content > div:first-child) {
+  order: 3 !important;
+}
+
+.scalar :global(.introduction-section .section-column:last-child) {
+  order: 4 !important;
+}
+
+.scalar :global(.introduction-section .section-content > div:first-child) {
+  display: grid !important;
+  grid-template-columns: var(--docs-key) minmax(0, 1fr) !important;
+  gap: 0 24px !important;
+  align-items: baseline !important;
+  margin: 24px 0 0 !important;
+  padding: 12px 0 !important;
+  border-top: 1px solid var(--border) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.scalar :global(.introduction-section .section-content > div:first-child)::before {
+  content: "Version" / "Version";
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.scalar :global(.introduction-section .section-content > div:first-child .badge) {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+}
+
+.scalar
+  :global(.introduction-section .section-content > div:first-child .badge + .badge) {
+  display: none !important;
+}
+
+.scalar :global(.introduction-card) {
+  display: block !important;
+  margin-top: 0 !important;
+  border-top: 0 !important;
+}
+
+.scalar :global(.introduction-card-item) {
+  display: grid !important;
+  grid-template-columns: var(--docs-key) minmax(0, 1fr) !important;
+  gap: 0 24px !important;
+  align-items: baseline !important;
+  padding: 12px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.introduction-card-item > label) {
+  grid-column: 1 !important;
+  grid-row: 1 / -1 !important;
+  display: block !important;
+  height: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+}
+
+.scalar :global(.introduction-card-item > *:not(label)) {
+  grid-column: 2 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .border) {
+  display: contents !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .border > *) {
+  display: block !important;
+  width: 100% !important;
+  cursor: default !important;
+  pointer-events: none !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .border),
+.scalar :global(.scalar-reference-intro-server .border *) {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .border svg) {
+  display: none !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .border > .scalar-app) {
+  display: none !important;
+}
+
+.scalar :global(.scalar-reference-intro-server .markdown) {
+  display: none !important;
+}
+
+.scalar :global(.scalar-reference-intro-auth),
+.scalar :global(.scalar-reference-intro-clients) {
+  display: none !important;
+}
+
+.scalar :global(.examples .response-card),
+.scalar :global(.examples .request-card-simple > :not(.request-header)) {
+  display: none !important;
+}
+
+.scalar :global(.operation-layout) {
+  grid-template-areas: "badge" "heading" "examples" "description" "details" !important;
+}
+
+.scalar
+  :global(
+    .examples
+      .request-card-simple:not(.scalar-card-header):not(.scalar-card-footer)
+  ) {
+  padding: 2px 0 14px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.examples .request-header) {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 10px !important;
+}
+
+.scalar :global(.examples),
+.scalar :global(.endpoints-card) {
+  --scalar-color-blue: var(--text-muted);
+  --scalar-color-green: var(--accent);
+  --scalar-color-orange: var(--accent);
+  --scalar-color-red: var(--accent);
+  --scalar-color-purple: var(--accent);
+  --scalar-color-yellow: var(--accent);
+}
+
+.scalar :global(.examples .request-method),
+.scalar :global(.endpoints-card .endpoint-method) {
+  min-width: 44px !important;
+  justify-content: flex-start !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.scalar :global(.examples .operation-path),
+.scalar :global(.endpoints-card .endpoint-path) {
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+}
+
+.scalar :global(.examples .operation-path em) {
+  color: var(--text-muted) !important;
+  font-style: normal !important;
+}
+
+
+.scalar :global(.operation-details .request-body-header),
+.scalar :global(.operation-details > div > div:first-child) {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+  margin: 36px 0 2px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: var(--text-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.09em !important;
+  text-transform: uppercase !important;
+}
+
+.scalar :global(.request-body-title) {
+  font-size: 0 !important;
+}
+
+.scalar :global(.request-body-title)::before {
+  content: "Request body" / "Request body";
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+}
+
+.scalar :global([data-testid="request-body-schema-name"]) {
+  display: none !important;
+}
+
+.scalar :global(.request-body-title > span) {
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--text-muted) !important;
+}
+
+.scalar :global(.request-body-header > div:last-child) {
+  align-items: baseline !important;
+}
+
+.scalar :global(.request-body-required) {
+  display: none !important;
+}
+
+.scalar :global(.operation-details .selected-content-type) {
+  display: none !important;
+}
+
+.scalar :global(.operation-details .schema-card),
+.scalar :global(.operation-details .schema-properties) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.operation-details .children),
+.scalar :global(.operation-details .children > .schema-card),
+.scalar :global(.operation-details .schema-properties) {
+  display: contents !important;
+}
+
+.scalar :global(.operation-details li.property) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: baseline !important;
+  padding: 9px 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.scalar :global(.operation-details .property-heading) {
+  order: 0 !important;
+  flex: 1 1 auto !important;
+  display: flex !important;
+  align-items: baseline !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+}
+
+.scalar :global(.operation-details .property-description) {
+  order: 2 !important;
+  flex: 1 1 100% !important;
+}
+
+.scalar :global(.operation-details .property-enum) {
+  order: 3 !important;
+  flex: 1 1 100% !important;
+}
+
+.scalar :global(.operation-details .schema-properties > ul) {
+  order: 4 !important;
+  flex: 1 1 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+
+.scalar :global(.operation-details .children .schema-properties > ul) {
+  margin: 6px 0 -9px !important;
+  padding-left: 18px !important;
+  border-left: 1px solid var(--border) !important;
+}
+
+.scalar :global(.operation-details .property-name) {
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: var(--text) !important;
+}
+
+.scalar
+  :global(
+    li.property:has(
+        > .children > .schema-card > .schema-properties > .schema-card-title
+      )
+      > .property-heading
+      > .property-name
+  ) {
+  cursor: pointer !important;
+}
+
+.scalar
+  :global(
+    li.property:has(
+        > .children > .schema-card > .schema-properties > .schema-card-title
+      )
+      > .property-heading
+      > .property-name:hover
+  ) {
+  color: var(--accent) !important;
+}
+
+.scalar :global(.operation-details .property-required) {
+  margin: 0 0 0 auto !important;
+  color: var(--accent) !important;
+  font-size: 11.5px !important;
+  font-weight: 400 !important;
+}
+
+.scalar
+  :global(.operation-details .property-heading:not(:has(.property-required)))::after {
+  content: "optional" / "optional";
+  margin-left: auto;
+  color: var(--border-strong);
+  font-size: 11.5px;
+}
+
+.scalar :global(.operation-details .property-detail) {
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  background: var(--surface-muted) !important;
+  color: var(--text-muted) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+}
+
+.scalar :global(.operation-details .property-detail.property-detail-truncate) {
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: 12.5px !important;
+}
+
+.scalar :global(.operation-details .property-detail-prefix) {
+  color: var(--text-muted) !important;
+}
+
+.scalar
+  :global(.operation-details .property-detail:not(.property-detail-truncate))::before {
+  display: none !important;
+}
+
+.scalar :global(.operation-details .schema-card-title) {
+  order: 1 !important;
+  flex: none !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  margin-left: 12px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  font-size: 0 !important;
+}
+
+.scalar :global(.operation-details .schema-card-title:hover) {
+  color: var(--accent) !important;
+}
+
+.scalar :global(.operation-details .schema-card-title > svg) {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.scalar :global(.operation-details .property-enum-property-names) {
+  display: none !important;
+}
+
+.scalar :global(.operation-details .property-enum-values) {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  margin: 6px 0 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+
+.scalar :global(.operation-details .property-enum-value) {
+  padding: 1px 7px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  background: var(--bg) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  color: var(--text-secondary) !important;
+}
+
+.scalar :global(.operation-details .property-enum-value)::before,
+.scalar :global(.operation-details .property-enum-value)::after,
+.scalar :global(.operation-details .property-enum-value-content)::before,
+.scalar :global(.operation-details .property-enum-value-content)::after,
+.scalar :global(.operation-details .property-enum-value-label)::before,
+.scalar :global(.operation-details .property-enum-value-label)::after {
+  display: none !important;
+  content: none !important;
+}
+
+.scalar :global(.endpoints-card) {
+  border-top: 1px solid var(--border) !important;
+}
+
+.scalar
+  :global(
+    .endpoints-card
+      .scalar-card-content:not(.scalar-card-header):not(.scalar-card-footer)
+  ) {
+  --scalar-background-1: var(--bg);
+  --scalar-background-2: transparent;
+  --scalar-background-3: transparent;
+  --scalar-color-1: var(--text);
+  --scalar-color-2: var(--text-muted);
+  --scalar-color-3: var(--text-muted);
+  --scalar-border-color: var(--border);
+
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(.endpoints-card .endpoints) {
+  padding: 0 !important;
+}
+
+.scalar :global(.endpoints-card .endpoint) {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 10px !important;
+  padding: 9px 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.scalar :global(a[href^="https://www.scalar.com"]) {
+  display: none;
+}
+
+.fallback {
+  width: min(560px, 100%);
+  padding: 48px 0;
+  margin: 0 auto;
+}
+
+.fallbackTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.fallbackBody {
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease;
+}
+
+.link:hover {
+  border-bottom-color: currentColor;
+}
+
+
 .prose {
   width: min(660px, 100%);
-  margin-top: 20px;
+  padding: 32px 40px 88px;
+  box-sizing: content-box;
 }
 
 .lead {
@@ -33,34 +744,29 @@
   line-height: 1.65;
 }
 
-/* Sections, not shouted labels: this page is read top to bottom, and the
-   headings are waypoints in that reading. Ink and 18px, with the space above
-   doing the separating rather than a rule. */
 .heading {
-  margin: 40px 0 0;
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  scroll-margin-top: calc(var(--header-height) + var(--docs-bar) + 20px);
 }
 
-/* One step down from .heading, for the parts of a section that each have their
-   own example under them. */
 .subheading {
   margin: 26px 0 0;
   font-size: 15px;
   font-weight: 650;
+  scroll-margin-top: calc(var(--header-height) + var(--docs-bar) + 20px);
 }
 
-.body {
+.bodyText {
   margin: 14px 0 0;
   color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.65;
 }
 
-/* Commands are meant to be copied, so the block is quiet: a tinted panel with
-   a hairline, no traffic-light chrome, and horizontal scroll if a line does
-   overrun rather than a wrap that hides where the command ends. */
 .pre {
   margin: 14px 0 0;
   padding: 12px 14px;
@@ -71,14 +777,10 @@
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 12.5px;
-  /* Tighter than the prose around it: the manifest example is forty lines, and
-     at prose leading it filled a screen on its own. */
   line-height: 1.55;
   white-space: pre;
 }
 
-/* Inline code carries a tint but no border: at this size a border on a
-   three-character flag reads as a button. */
 .code {
   padding: 1px 5px;
   border-radius: 4px;
@@ -100,13 +802,27 @@
   margin-top: 10px;
 }
 
-@media (max-width: 720px) {
-  .page {
+
+@media (max-width: 900px) {
+  .bar {
     width: calc(100% - 28px);
-    padding: 36px 0 64px;
   }
 
-  .title {
-    font-size: 26px;
+
+  .shell {
+    width: calc(100% - 28px);
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .prose {
+    width: 100%;
+    padding: 28px 0 64px;
+  }
+
+  .heading {
+    font-size: 20px;
   }
 }

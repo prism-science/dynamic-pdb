@@ -8,13 +8,13 @@ const {
   createEntry,
   createModel,
   decideEntryReview,
+  getEntry,
   getEntryReview,
   getModelPageData,
   listEntries,
   listModels,
   listReviews,
   listUserEntryRevisionGroups,
-  submitEntryRevision,
   submitModelRevision,
 } = require("../src/lib/api/entries.ts");
 const { REVIEW_PAGE_SIZE } = require("../src/lib/reviewQueue.ts");
@@ -31,7 +31,7 @@ test("should list entries with trimmed query and optional authorization", async 
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse({ items: [{ id: "entry-1", name: "Entry 1" }] });
+      return jsonResponse(collectionDocument("entries", [{ id: "entry-1", name: "Entry 1" }]));
     };
 
     const entries = await listEntries("token-123", { query: "  hemoglobin  " });
@@ -56,7 +56,7 @@ test("should list models with pagination and optional authorization", async () =
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse({ items: [{ id: "model-1", name: "Model 1" }] });
+      return jsonResponse(collectionDocument("models", [{ id: "model-1", name: "Model 1" }]));
     };
 
     const models = await listModels("token-123", {
@@ -77,6 +77,71 @@ test("should list models with pagination and optional authorization", async () =
   }
 });
 
+test("should get entry from json api document", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    let requestedURL = "";
+    let requestedHeaders = {};
+    global.fetch = async (url, init) => {
+      requestedURL = String(url);
+      requestedHeaders = init.headers;
+      return jsonResponse(entryDocument({
+        id: "entry-1",
+        created_by: "user-1",
+        name: "Entry",
+        description: "Description",
+        thumbnail_image_url: "https://cdn.example/entry.png",
+        metadata: { method: "X-ray crystallography" },
+        protein_sequences: [
+          {
+            id: "sequence-1",
+            source_artifact_id: "artifact-1",
+            record_index: 0,
+            header: "chain A",
+            sequence: "ACDE",
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+        published_at: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+      }));
+    };
+
+    const entry = await getEntry("token-123", "entry-1");
+
+    assert.equal(requestedURL, "https://backend.example/v1/entries/entry-1");
+    assert.equal(requestedHeaders.Accept, jsonApiMediaType);
+    assert.equal(requestedHeaders.Authorization, "Bearer token-123");
+    assert.deepEqual(entry, {
+      id: "entry-1",
+      created_by: "user-1",
+      name: "Entry",
+      description: "Description",
+      thumbnail_image_url: "https://cdn.example/entry.png",
+      metadata: { method: "X-ray crystallography" },
+      protein_sequences: [
+        {
+          id: "sequence-1",
+          source_artifact_id: "artifact-1",
+          record_index: 0,
+          header: "chain A",
+          sequence: "ACDE",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      published_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
 test("should list entries with pdb id filters", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -85,7 +150,7 @@ test("should list entries with pdb id filters", async () => {
     let requestedURL = "";
     global.fetch = async (url) => {
       requestedURL = String(url);
-      return jsonResponse({ items: [] });
+      return jsonResponse(collectionDocument("entries", []));
     };
 
     await listEntries(undefined, { pdbIds: [" 1YJO ", "1YJP"] });
@@ -126,7 +191,9 @@ test("should post create entry using the new backend graph shape", async () => {
     global.fetch = async (url, init) => {
       request = { url: String(url), init, body: JSON.parse(init.body) };
       return jsonResponse(
-        {
+        resourceDocument(
+          "entry_revision_results",
+          {
           entry_id: "entry-1",
           revision_id: "entry-revision-1",
           state: "in_review",
@@ -138,6 +205,7 @@ test("should post create entry using the new backend graph shape", async () => {
             },
           ],
         },
+        ),
         { status: 201 },
       );
     };
@@ -275,16 +343,19 @@ test("should create and submit model revisions through user routes", async () =>
       requests.push(request);
       if (request.method === "POST") {
         return jsonResponse(
-          {
+          resourceDocument(
+            "model_revision_results",
+            {
             entry_id: "entry-1",
             model_id: "model-1",
             revision_id: "model-revision-1",
             state: "in_review",
           },
+          ),
           { status: 201 },
         );
       }
-      return jsonResponse({ state: "in_review" });
+      return jsonResponse(resourceDocument("entry_revisions", entryRevision("entry-revision-1", "2026-01-01T00:00:00Z")));
     };
 
     const result = await createModel("token-123", "entry-1", {
@@ -297,12 +368,6 @@ test("should create and submit model revisions through user routes", async () =>
       result.entry_id,
       result.model_id,
       result.revision_id,
-    );
-    await submitEntryRevision(
-      "token-123",
-      "user-1",
-      "entry-1",
-      "entry-revision-1",
     );
 
     assert.equal(requests[0].url, "https://backend.example/v1/entries/entry-1/models");
@@ -320,21 +385,16 @@ test("should create and submit model revisions through user routes", async () =>
       requests[1].url,
       "https://backend.example/v1/users/user-1/entries/entry-1/models/model-1/revisions/model-revision-1",
     );
-    assert.equal(
-      requests[2].url,
-      "https://backend.example/v1/users/user-1/entries/entry-1/revisions/entry-revision-1",
-    );
     assert.deepEqual(requests.slice(1).map((request) => request.body), [
-      { state: "in_review" },
       { state: "in_review" },
     ]);
     assert.deepEqual(
       requests.map((request) => request.headers.Accept),
-      [jsonApiMediaType, jsonApiMediaType, jsonApiMediaType],
+      [jsonApiMediaType, jsonApiMediaType],
     );
     assert.deepEqual(
       requests.map((request) => request.headers["Content-Type"]),
-      [jsonApiMediaType, jsonApiMediaType, jsonApiMediaType],
+      [jsonApiMediaType, jsonApiMediaType],
     );
   } finally {
     global.fetch = previousFetch;
@@ -350,7 +410,7 @@ test("should list user revision groups by explicit state", async () => {
     let requestedURL = "";
     global.fetch = async (url) => {
       requestedURL = String(url);
-      return jsonResponse({ items: [{ entry: { id: "entry-1" } }] });
+      return jsonResponse(collectionDocument("entry_revision_groups", [{ entry: { id: "entry-1" } }]));
     };
 
     const groups = await listUserEntryRevisionGroups(
@@ -380,8 +440,9 @@ test("should group the review queue by entry and pair each revision with the one
       const requested = new URL(String(url));
       paths.push(`${requested.pathname}${requested.search}`);
       if (requested.pathname === "/v1/entries/revisions") {
-        return jsonResponse({
-          items: [
+        return jsonResponse(collectionDocument(
+          "entry_revision_groups",
+          [
             {
               entry: { id: "entry-1", name: "Entry" },
               entry_revisions: [
@@ -396,29 +457,38 @@ test("should group the review queue by entry and pair each revision with the one
               ],
             },
           ],
-        });
+        ));
       }
       if (requested.pathname.endsWith("/revisions/entry-revision-1")) {
         return jsonResponse(
-          entryRevision("entry-revision-1", "2026-01-01T01:00:00Z", {
-            description: "Fresh",
-          }),
+          resourceDocument(
+            "entry_revisions",
+            entryRevision("entry-revision-1", "2026-01-01T01:00:00Z", {
+              description: "Fresh",
+            }),
+          ),
         );
       }
       if (requested.pathname.endsWith("/revisions/model-revision-1")) {
         return jsonResponse(
-          modelRevision("model-revision-1", "2026-01-01T02:00:00Z", {
-            parent_revision_id: "model-revision-active",
-            description: "Updated",
-          }),
+          resourceDocument(
+            "model_revisions",
+            modelRevision("model-revision-1", "2026-01-01T02:00:00Z", {
+              parent_revision_id: "model-revision-active",
+              description: "Updated",
+            }),
+          ),
         );
       }
       if (requested.pathname.endsWith("/revisions/model-revision-active")) {
         return jsonResponse(
-          modelRevision("model-revision-active", "2025-12-01T00:00:00Z", {
-            state: "active",
-            description: "Original",
-          }),
+          resourceDocument(
+            "model_revisions",
+            modelRevision("model-revision-active", "2025-12-01T00:00:00Z", {
+              state: "active",
+              description: "Original",
+            }),
+          ),
         );
       }
       throw new Error(`unexpected fetch ${url}`);
@@ -475,7 +545,7 @@ test("should decide the entry revision and each model revision at its own path",
         headers: init.headers,
         body: init.body,
       });
-      return jsonResponse({ state: "active" });
+      return jsonResponse(resourceDocument("entry_revisions", entryRevision("entry-revision-1", "2026-01-01T00:00:00Z", { state: "active" })));
     };
 
     await decideEntryReview(
@@ -549,20 +619,20 @@ test("should build model page entities from model artifacts and runs", async () 
     global.fetch = async (url) => {
       const path = new URL(String(url)).pathname;
       if (path === "/v1/entries/entry-1") {
-        return jsonResponse(entry);
+        return jsonResponse(entryDocument(entry));
       }
       if (path === "/v1/entries/entry-1/models/model-1") {
-        return jsonResponse(model);
+        return jsonResponse(resourceDocument("models", model));
       }
       if (path === "/v1/entries/entry-1/models/model-1/artifacts") {
-        return jsonResponse({
-          items: [artifact("model-artifact", "model.cif", "L2", "mmcif")],
-          runs: [run("program-1")],
-          relations: [
+        return jsonResponse(modelArtifactDocument(
+          [artifact("model-artifact", "model.cif", "L2", "mmcif")],
+          [run("program-1")],
+          [
             { run_id: "program-1", artifact_id: "baseline", direction: "input", position: null },
             { run_id: "program-1", artifact_id: "model-artifact", direction: "output", position: null },
           ],
-        });
+        ));
       }
       throw new Error(`unexpected fetch ${url}`);
     };
@@ -662,6 +732,85 @@ function jsonResponse(body, init = {}) {
     headers: { "content-type": jsonApiMediaType },
     ...init,
   });
+}
+
+function resourceDocument(type, attributes) {
+  return {
+    data: {
+      type,
+      id: attributes.id ?? attributes.revision_id ?? attributes.model_revision_id,
+      attributes,
+    },
+  };
+}
+
+function collectionDocument(type, items) {
+  return {
+    data: items.map((attributes) => ({
+      type,
+      id: attributes.id ?? attributes.entry?.id,
+      attributes,
+    })),
+  };
+}
+
+function modelArtifactDocument(artifacts, runs, relations) {
+  return {
+    data: artifacts.map((attributes) => ({
+      type: "artifacts",
+      id: attributes.id,
+      attributes,
+    })),
+    meta: { runs, relations },
+  };
+}
+
+function entryDocument(entry) {
+  const proteinSequences = entry.protein_sequences ?? [];
+  return {
+    data: {
+      type: "entries",
+      id: entry.id,
+      attributes: {
+        name: entry.name,
+        description: entry.description,
+        thumbnail_image_url: entry.thumbnail_image_url,
+        metadata: entry.metadata ?? {},
+        published_at: entry.published_at ?? null,
+        created_at: entry.created_at,
+        updated_at: entry.updated_at,
+      },
+      relationships: {
+        created_by: {
+          data: { type: "users", id: entry.created_by ?? "user-1" },
+        },
+        protein_sequences: {
+          data: proteinSequences.map((sequence) => ({
+            type: "protein_sequences",
+            id: sequence.id,
+          })),
+        },
+      },
+    },
+    included: proteinSequences.map((sequence) => ({
+      type: "protein_sequences",
+      id: sequence.id,
+      attributes: {
+        record_index: sequence.record_index,
+        header: sequence.header,
+        sequence: sequence.sequence,
+        created_at: sequence.created_at,
+      },
+      relationships: {
+        source_artifact: {
+          data: {
+            type: "artifacts",
+            id: sequence.source_artifact_id,
+          },
+        },
+      },
+    })),
+  };
 }
 
 function restoreEnv(name, value) {

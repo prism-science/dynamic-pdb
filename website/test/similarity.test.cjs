@@ -24,7 +24,7 @@ test("should list similar entries with pagination and authorization", async () =
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse({ items: [{ entry: { id: "e2" }, score: 0.9, matches: [] }] });
+      return jsonResponse(collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.9, matches: [] }]));
     };
 
     const items = await listSimilarEntries("token-123", "entry-1", {
@@ -163,5 +163,15 @@ function jsonResponse(body) {
     ok: true,
     status: 200,
     json: async () => body,
+  };
+}
+
+function collectionDocument(type, items) {
+  return {
+    data: items.map((attributes) => ({
+      type,
+      id: attributes.entry.id,
+      attributes,
+    })),
   };
 }

@@ -76,12 +76,19 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 			Url:        part.URL,
 		})
 	}
-	writeJSON(w, http.StatusOK, FileUploadGrantResponse{
+	attributes := FileUploadGrantAttributes{
 		Key:       grant.Key,
 		UploadId:  grant.UploadID,
 		ObjectUrl: grant.ObjectURL,
 		PartSize:  grant.PartSize,
 		Parts:     parts,
+	}
+	writeJSON(w, http.StatusOK, FileUploadGrantDocument{
+		Data: FileUploadGrantData{
+			Type:       jsonAPITypeFileUploads,
+			Id:         attributes.UploadId,
+			Attributes: attributes,
+		},
 	})
 }
 
@@ -121,7 +128,14 @@ func (s *Server) CompleteFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to complete file upload")
 		return
 	}
-	writeJSON(w, http.StatusOK, CompleteFileUploadResponse{Key: req.Key})
+	attributes := CompleteFileUploadAttributes{Key: req.Key}
+	writeJSON(w, http.StatusOK, CompleteFileUploadDocument{
+		Data: CompleteFileUploadData{
+			Type:       jsonAPITypeFileUploads,
+			Id:         attributes.Key,
+			Attributes: attributes,
+		},
+	})
 }
 
 func (s *Server) AbortFileUpload(w http.ResponseWriter, r *http.Request) {

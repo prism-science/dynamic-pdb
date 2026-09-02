@@ -17,9 +17,18 @@ type BackendTokenResponse = {
   permissions: string[];
 };
 
+type BackendTokenDocument = {
+  data: {
+    attributes: BackendTokenResponse;
+  };
+};
+
 type BackendErrorResponse = {
-  code?: string;
-  message?: string;
+  errors?: Array<{
+    code?: string;
+    title?: string;
+    detail?: string;
+  }>;
 };
 
 type LoginErrorCode =
@@ -133,8 +142,10 @@ async function exchangeBackendToken(
   }
 
   try {
-    const payload = JSON.parse(bodyText) as BackendTokenResponse;
+    const document = JSON.parse(bodyText) as Partial<BackendTokenDocument>;
+    const payload = document.data?.attributes;
     if (
+      !payload ||
       typeof payload.access_token !== "string" ||
       payload.access_token.length === 0 ||
       typeof payload.expires_at !== "string" ||
@@ -187,10 +198,12 @@ function formatBackendErrorDetail(status: number, bodyText: string): string {
 
   try {
     const payload = JSON.parse(bodyText) as BackendErrorResponse;
+    const error = payload.errors?.[0];
     const parts = [
       `status=${status}`,
-      payload.code ? `code=${payload.code}` : null,
-      payload.message ? `message=${payload.message}` : null,
+      error?.code ? `code=${error.code}` : null,
+      error?.detail ? `detail=${error.detail}` : null,
+      error?.title ? `title=${error.title}` : null,
     ].filter(Boolean);
     return parts.join("; ");
   } catch {

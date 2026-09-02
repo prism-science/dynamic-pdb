@@ -191,6 +191,15 @@ type similarEntryListResponse struct {
 	Items []similarEntryResponse `json:"items"`
 }
 
+func (r *similarEntryListResponse) UnmarshalJSON(data []byte) error {
+	items, err := jsonAPICollectionAttributes[similarEntryResponse](data)
+	if err != nil {
+		return err
+	}
+	r.Items = items
+	return nil
+}
+
 type similarEntryResponse struct {
 	Entry   entryInfo                 `json:"entry"`
 	Score   float64                   `json:"score"`

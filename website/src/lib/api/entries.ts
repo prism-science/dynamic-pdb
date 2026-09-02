@@ -57,6 +57,53 @@ export type ProteinSequence = {
   created_at: string;
 };
 
+type EntryDocument = {
+  data: EntryData;
+  included?: EntryProteinSequenceData[];
+};
+
+type EntryData = {
+  type: "entries";
+  id: string;
+  attributes: EntryAttributes;
+  relationships: EntryRelationships;
+};
+
+type EntryAttributes = {
+  name: string;
+  description: string | null;
+  thumbnail_image_url: string | null;
+  metadata: JSONRecord;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type EntryRelationships = {
+  created_by: {
+    data: { type: "users"; id: string };
+  };
+  protein_sequences: {
+    data: { type: "protein_sequences"; id: string }[];
+  };
+};
+
+type EntryProteinSequenceData = {
+  type: "protein_sequences";
+  id: string;
+  attributes: {
+    record_index: number;
+    header: string;
+    sequence: string;
+    created_at: string;
+  };
+  relationships: {
+    source_artifact: {
+      data: { type: "artifacts"; id: string };
+    };
+  };
+};
+
 export type SimilarEntryMatch = {
   source_sequence_id: string;
   similar_sequence: ProteinSequence;
@@ -133,8 +180,19 @@ export type EntityRelation = {
   updated_at: string;
 };
 
-type ListResponse<T> = {
-  items: T[];
+type JSONAPIData<T> = {
+  type: string;
+  id?: string;
+  attributes: T;
+};
+
+type JSONAPIDataDocument<T> = {
+  data: JSONAPIData<T>;
+};
+
+type JSONAPIDataCollectionDocument<T> = {
+  data: JSONAPIData<T>[];
+  meta?: JSONRecord;
 };
 
 export type Artifact = {
@@ -181,6 +239,14 @@ type ModelArtifactListResponse = {
   items: Artifact[];
   runs: Run[];
   relations: RunArtifact[];
+};
+
+type ModelArtifactCollectionDocument = {
+  data: JSONAPIData<Artifact>[];
+  meta: {
+    runs: Run[];
+    relations: RunArtifact[];
+  };
 };
 
 type CreateArtifactRequest = {
@@ -319,11 +385,11 @@ export async function listEntries(
     }
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
-  const response = await fetchBackend<ListResponse<Entry>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<Entry>>(
     `/v1/entries${suffix}`,
     token,
   );
-  return response.items;
+  return attributesFromCollection(document);
 }
 
 export async function listModels(
@@ -341,11 +407,11 @@ export async function listModels(
     params.set("offset", String(opts.offset));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
-  const response = await fetchBackend<ListResponse<Model>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<Model>>(
     `/v1/models${suffix}`,
     token,
   );
-  return response.items;
+  return attributesFromCollection(document);
 }
 
 // Entries whose protein sequences a similarity run matched against this
@@ -365,11 +431,11 @@ export async function listSimilarEntries(
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
-  const response = await fetchBackend<ListResponse<SimilarEntry>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<SimilarEntry>>(
     `/v1/entries/${encodeURIComponent(entryId)}/similar-entries${suffix}`,
     token,
   );
-  return response.items;
+  return attributesFromCollection(document);
 }
 
 export type CreateEntityInput = {
@@ -425,12 +491,13 @@ export async function createModel(
   input: CreateModelInput,
 ): Promise<CreateModelRevisionResult> {
   const modelId = input.id ?? randomUUID();
-  return sendJSON<CreateModelRevisionResult>(
+  const document = await sendJSON<JSONAPIDataDocument<CreateModelRevisionResult>>(
     "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
     { model: createModelData({ ...input, id: modelId }) },
   );
+  return attributesFromDocument(document);
 }
 
 /** Creates an entry, its initial revision, and independent model revisions. */
@@ -439,12 +506,13 @@ export async function createEntry(
   input: CreateEntryInput,
 ): Promise<CreateEntryRevisionResult> {
   const entryId = input.id ?? randomUUID();
-  return sendJSON<CreateEntryRevisionResult>(
+  const document = await sendJSON<JSONAPIDataDocument<CreateEntryRevisionResult>>(
     "POST",
     "/v1/entries",
     token,
     createEntryRequest({ ...input, id: entryId }),
   );
+  return attributesFromDocument(document);
 }
 
 // --- Review workflow -------------------------------------------------------
@@ -563,22 +631,6 @@ export type EntryReview = {
 
 export type RevisionDecision = "active" | "rejected";
 
-export async function submitEntryRevision(
-  token: string,
-  userId: string,
-  entryId: string,
-  revisionId: string,
-): Promise<void> {
-  await sendJSON(
-    "PATCH",
-    `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
-      entryId,
-    )}/revisions/${encodeURIComponent(revisionId)}`,
-    token,
-    { state: "in_review" },
-  );
-}
-
 export async function submitModelRevision(
   token: string,
   userId: string,
@@ -661,21 +713,25 @@ function reviewerReaders(token: string): RevisionReaders {
  *  reviewer ones are refused to anyone without review access. */
 function authorReaders(token: string, userId: string): RevisionReaders {
   return {
-    entry: (entryId, revisionId) =>
-      fetchBackend<EntryRevision>(
+    entry: async (entryId, revisionId) =>
+      attributesFromDocument(
+        await fetchBackend<JSONAPIDataDocument<EntryRevision>>(
         `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
           entryId,
         )}/revisions/${encodeURIComponent(revisionId)}`,
         token,
       ),
-    model: (entryId, modelId, revisionId) =>
-      fetchBackend<ModelRevision>(
+      ),
+    model: async (entryId, modelId, revisionId) =>
+      attributesFromDocument(
+        await fetchBackend<JSONAPIDataDocument<ModelRevision>>(
         `/v1/users/${encodeURIComponent(userId)}/entries/${encodeURIComponent(
           entryId,
         )}/models/${encodeURIComponent(modelId)}/revisions/${encodeURIComponent(
           revisionId,
         )}`,
         token,
+      ),
       ),
   };
 }
@@ -777,11 +833,11 @@ export async function listUserSubmissions(
     limit: String(limit),
     offset: String(offset),
   });
-  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
     `/v1/users/${encodeURIComponent(userId)}/entries/revisions?${params.toString()}`,
     token,
   );
-  const items = response.items.map(queueItemFromGroup);
+  const items = attributesFromCollection(document).map(queueItemFromGroup);
   return { items, hasMore: items.length === limit };
 }
 
@@ -824,11 +880,11 @@ async function listInReviewGroups(
     limit: String(limit),
     offset: String(offset),
   });
-  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
     `/v1/entries/revisions?${params.toString()}`,
     token,
   );
-  return response.items;
+  return attributesFromCollection(document);
 }
 
 function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
@@ -879,13 +935,13 @@ export async function listUserEntryRevisionGroups(
   userId: string,
   state: RevisionState,
 ): Promise<EntryRevisionGroup[]> {
-  const response = await fetchBackend<ListResponse<EntryRevisionGroup>>(
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
     `/v1/users/${encodeURIComponent(
       userId,
     )}/entries/revisions?state=${encodeURIComponent(state)}`,
     token,
   );
-  return response.items;
+  return attributesFromCollection(document);
 }
 
 export async function getEntryRevision(
@@ -893,12 +949,11 @@ export async function getEntryRevision(
   entryId: string,
   revisionId: string,
 ): Promise<EntryRevision> {
-  return fetchBackend<EntryRevision>(
-    `/v1/entries/${encodeURIComponent(entryId)}/revisions/${encodeURIComponent(
-      revisionId,
-    )}`,
+  const document = await fetchBackend<JSONAPIDataDocument<EntryRevision>>(
+    `/v1/entries/${encodeURIComponent(entryId)}/revisions/${encodeURIComponent(revisionId)}`,
     token,
   );
+  return attributesFromDocument(document);
 }
 
 export async function getModelRevision(
@@ -907,12 +962,13 @@ export async function getModelRevision(
   modelId: string,
   revisionId: string,
 ): Promise<ModelRevision> {
-  return fetchBackend<ModelRevision>(
+  const document = await fetchBackend<JSONAPIDataDocument<ModelRevision>>(
     `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
       modelId,
     )}/revisions/${encodeURIComponent(revisionId)}`,
     token,
   );
+  return attributesFromDocument(document);
 }
 
 
@@ -957,10 +1013,11 @@ export async function getEntry(
   token: string | undefined,
   entryId: string,
 ): Promise<Entry> {
-  return fetchBackend<Entry>(
+  const document = await fetchBackend<EntryDocument>(
     `/v1/entries/${encodeURIComponent(entryId)}`,
     token,
   );
+  return entryFromDocument(document);
 }
 
 export async function getEntryPageData(
@@ -968,26 +1025,28 @@ export async function getEntryPageData(
   entryId: string,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, models, entryArtifacts] = await Promise.all([
-    fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
-    fetchBackend<ListResponse<Model>>(
+  const [entry, modelsDocument, entryArtifactsDocument] = await Promise.all([
+    getEntry(token, entryId),
+    fetchBackend<JSONAPIDataCollectionDocument<Model>>(
       `/v1/entries/${encodedEntryId}/models`,
       token,
     ),
-    fetchBackend<ListResponse<Artifact>>(
+    fetchBackend<JSONAPIDataCollectionDocument<Artifact>>(
       `/v1/entries/${encodedEntryId}/artifacts`,
       token,
     ),
   ]);
+  const models = attributesFromCollection(modelsDocument);
+  const entryArtifacts = attributesFromCollection(entryArtifactsDocument);
   const modelGraphs = await Promise.all(
-    models.items.map((model) => fetchModelGraph(token, entry.id, model)),
+    models.map((model) => fetchModelGraph(token, entry.id, model)),
   );
 
   return {
     entry,
-    models: models.items,
+    models,
     entities: [
-      ...entryArtifacts.items.map((artifact) =>
+      ...entryArtifacts.map((artifact) =>
         entityFromArtifact(entry.id, null, artifact),
       ),
       ...modelGraphs.flatMap((graph) => graph.entities),
@@ -1003,13 +1062,14 @@ export async function getModelPageData(
 ): Promise<ModelPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
   const encodedModelId = encodeURIComponent(modelId);
-  const [entry, model] = await Promise.all([
-    fetchBackend<Entry>(`/v1/entries/${encodedEntryId}`, token),
-    fetchBackend<Model>(
+  const [entry, modelDocument] = await Promise.all([
+    getEntry(token, entryId),
+    fetchBackend<JSONAPIDataDocument<Model>>(
       `/v1/entries/${encodedEntryId}/models/${encodedModelId}`,
       token,
     ),
   ]);
+  const model = attributesFromDocument(modelDocument);
   const graph = await fetchModelGraph(token, entry.id, model);
 
   return {
@@ -1033,18 +1093,72 @@ export async function getEntryGraph(
   return { entities: data.entities, relations: data.relations };
 }
 
+function attributesFromDocument<T>(document: JSONAPIDataDocument<T>): T {
+  return document.data.attributes;
+}
+
+function attributesFromCollection<T>(
+  document: JSONAPIDataCollectionDocument<T>,
+): T[] {
+  return document.data.map((item) => item.attributes);
+}
+
+function modelArtifactListFromDocument(
+  document: ModelArtifactCollectionDocument,
+): ModelArtifactListResponse {
+  return {
+    items: attributesFromCollection(document),
+    runs: document.meta.runs,
+    relations: document.meta.relations,
+  };
+}
+
+function entryFromDocument(document: EntryDocument): Entry {
+  const data = document.data;
+  const attributes = data.attributes;
+  const sequencesById = new Map(
+    (document.included ?? [])
+      .filter((included) => included.type === "protein_sequences")
+      .map((included) => [included.id, included]),
+  );
+  const proteinSequences = data.relationships.protein_sequences.data
+    .map((identifier) => sequencesById.get(identifier.id))
+    .filter((sequence): sequence is EntryProteinSequenceData => sequence != null)
+    .map((sequence) => ({
+      id: sequence.id,
+      source_artifact_id: sequence.relationships.source_artifact.data.id,
+      record_index: sequence.attributes.record_index,
+      header: sequence.attributes.header,
+      sequence: sequence.attributes.sequence,
+      created_at: sequence.attributes.created_at,
+    }));
+
+  return {
+    id: data.id,
+    created_by: data.relationships.created_by.data.id,
+    name: attributes.name,
+    description: attributes.description,
+    thumbnail_image_url: attributes.thumbnail_image_url,
+    metadata: attributes.metadata,
+    protein_sequences: proteinSequences,
+    published_at: attributes.published_at,
+    created_at: attributes.created_at,
+    updated_at: attributes.updated_at,
+  };
+}
+
 async function fetchModelGraph(
   token: string | undefined,
   entryId: string,
   model: Model,
 ): Promise<EntryGraph> {
-  const response = await fetchBackend<ModelArtifactListResponse>(
+  const document = await fetchBackend<ModelArtifactCollectionDocument>(
     `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
       model.id,
     )}/artifacts`,
     token,
   );
-  return modelGraphFromBackend(entryId, model, response);
+  return modelGraphFromBackend(entryId, model, modelArtifactListFromDocument(document));
 }
 
 function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest {

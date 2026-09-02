@@ -53,12 +53,14 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
 	assert.Equal(t, int64(42), fileCDN.createdFile.Size)
 
-	var body FileUploadGrantResponse
+	var body FileUploadGrantDocument
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
-	assert.Equal(t, fileCDN.grant.Key, body.Key)
-	assert.Equal(t, fileCDN.grant.UploadID, body.UploadId)
-	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.ObjectUrl)
-	assert.Len(t, body.Parts, 1)
+	assert.Equal(t, jsonAPITypeFileUploads, body.Data.Type)
+	assert.Equal(t, fileCDN.grant.UploadID, body.Data.Id)
+	assert.Equal(t, fileCDN.grant.Key, body.Data.Attributes.Key)
+	assert.Equal(t, fileCDN.grant.UploadID, body.Data.Attributes.UploadId)
+	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.Data.Attributes.ObjectUrl)
+	assert.Len(t, body.Data.Attributes.Parts, 1)
 }
 
 func Test_should_return_legacy_error_shape_when_create_file_upload_request_is_invalid(t *testing.T) {

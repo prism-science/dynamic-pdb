@@ -63,17 +63,21 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 		}
 	}
 
-	items := make([]EntryInfo, 0, len(revisions))
+	items := make([]EntryInfoData, 0, len(revisions))
 	for _, revision := range revisions {
-		item, err := entryInfoResponseFromRevision(revision)
+		item, err := entryInfoAttributesFromRevision(revision)
 		if err != nil {
 			slog.Error("build entry info response failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
 			return
 		}
-		items = append(items, item)
+		items = append(items, EntryInfoData{
+			Type:       jsonAPITypeEntries,
+			Id:         item.Id,
+			Attributes: item,
+		})
 	}
-	writeJSON(w, http.StatusOK, EntryListResponse{Items: items})
+	writeJSON(w, http.StatusOK, EntryCollectionDocument{Data: items})
 }
 
 func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
@@ -92,33 +96,39 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	if s.writeMutationError(w, err, "create entry") {
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	writeJSON(w, http.StatusCreated, CreateEntryRevisionDocument{
+		Data: CreateEntryRevisionData{
+			Type:       jsonAPITypeEntryRevisionResults,
+			Id:         result.RevisionId,
+			Attributes: result,
+		},
+	})
 }
 
 func (s *Server) createInitialEntryRevision(
 	ctx context.Context,
 	req CreateEntryRequest,
 	createdBy uuid.UUID,
-) (CreateEntryRevisionResponse, error) {
+) (CreateEntryRevisionAttributes, error) {
 	name := strings.TrimSpace(req.Entry.Name)
 	if name == "" {
-		return CreateEntryRevisionResponse{}, invalidRequest("entry name is required")
+		return CreateEntryRevisionAttributes{}, invalidRequest("entry name is required")
 	}
 	entryID := uuid.New()
 	if req.Entry.Id != nil {
 		entryID = *req.Entry.Id
 		if entryID == uuid.Nil {
-			return CreateEntryRevisionResponse{}, invalidRequest("entry id is required")
+			return CreateEntryRevisionAttributes{}, invalidRequest("entry id is required")
 		}
 	}
 	metadata, err := entryMetadataFromRequest(req.Entry.Metadata)
 	if err != nil {
-		return CreateEntryRevisionResponse{}, fmt.Errorf("decode initial entry metadata: %w", err)
+		return CreateEntryRevisionAttributes{}, fmt.Errorf("decode initial entry metadata: %w", err)
 	}
 	now := time.Now().UTC()
-	response := CreateEntryRevisionResponse{
+	attributes := CreateEntryRevisionAttributes{
 		EntryId:      entryID,
-		State:        CreateEntryRevisionResponseStateInReview,
+		State:        CreateEntryRevisionAttributesStateInReview,
 		ModelResults: make([]ModelOperationResult, 0),
 	}
 
@@ -150,7 +160,7 @@ func (s *Server) createInitialEntryRevision(
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
 		}
-		response.RevisionId = revision.ID
+		attributes.RevisionId = revision.ID
 
 		if req.Entry.Artifacts != nil {
 			for _, artifactRequest := range *req.Entry.Artifacts {
@@ -177,7 +187,7 @@ func (s *Server) createInitialEntryRevision(
 				if err != nil {
 					return fmt.Errorf("create model from add operation: %w", err)
 				}
-				response.ModelResults = append(response.ModelResults, ModelOperationResult{
+				attributes.ModelResults = append(attributes.ModelResults, ModelOperationResult{
 					Op:              ModelOperationResultOpAdd,
 					ModelId:         model.ModelId,
 					ModelRevisionId: model.RevisionId,
@@ -188,9 +198,9 @@ func (s *Server) createInitialEntryRevision(
 		return nil
 	})
 	if err != nil {
-		return CreateEntryRevisionResponse{}, fmt.Errorf("create initial entry graph: %w", err)
+		return CreateEntryRevisionAttributes{}, fmt.Errorf("create initial entry graph: %w", err)
 	}
-	return response, nil
+	return attributes, nil
 }
 
 func applyEntryRevisionChange(
@@ -254,7 +264,13 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID uui
 	if s.writeMutationError(w, err, "create model") {
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
+		Data: CreateModelRevisionData{
+			Type:       jsonAPITypeModelRevisionResults,
+			Id:         result.RevisionId,
+			Attributes: result,
+		},
+	})
 }
 
 func (s *Server) createInitialModelRevision(
@@ -262,7 +278,7 @@ func (s *Server) createInitialModelRevision(
 	entryID uuid.UUID,
 	data CreateModelData,
 	createdBy uuid.UUID,
-) (CreateModelRevisionResponse, error) {
+) (CreateModelRevisionAttributes, error) {
 	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, true)
 }
 
@@ -271,7 +287,7 @@ func (s *Server) createInitialModelRevisionForPendingEntry(
 	entryID uuid.UUID,
 	data CreateModelData,
 	createdBy uuid.UUID,
-) (CreateModelRevisionResponse, error) {
+) (CreateModelRevisionAttributes, error) {
 	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, false)
 }
 
@@ -281,38 +297,38 @@ func (s *Server) createInitialModelRevisionForEntry(
 	data CreateModelData,
 	createdBy uuid.UUID,
 	requireActiveEntry bool,
-) (CreateModelRevisionResponse, error) {
+) (CreateModelRevisionAttributes, error) {
 	name := strings.TrimSpace(data.Name)
 	if name == "" {
-		return CreateModelRevisionResponse{}, invalidRequest("model name is required")
+		return CreateModelRevisionAttributes{}, invalidRequest("model name is required")
 	}
 	modelID := uuid.New()
 	if data.Id != nil {
 		modelID = *data.Id
 		if modelID == uuid.Nil {
-			return CreateModelRevisionResponse{}, invalidRequest("model id is required")
+			return CreateModelRevisionAttributes{}, invalidRequest("model id is required")
 		}
 	}
 	metadata, err := modelMetadataFromRequest(data.Metadata)
 	if err != nil {
-		return CreateModelRevisionResponse{}, fmt.Errorf("decode model metadata: %w", err)
+		return CreateModelRevisionAttributes{}, fmt.Errorf("decode model metadata: %w", err)
 	}
 	now := time.Now().UTC()
-	response := CreateModelRevisionResponse{
+	attributes := CreateModelRevisionAttributes{
 		EntryId:        entryID,
 		IdempotencyKey: modelRevisionIdempotencyKeyFromCreateModelData(data),
 		ModelId:        modelID,
 		State:          RevisionStateInReview,
 	}
 	err = s.database.Do(ctx, func(ctx context.Context) error {
-		if response.IdempotencyKey != nil {
+		if attributes.IdempotencyKey != nil {
 			activeState := domainmodels.RevisionStateActive
 			existing, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
 				State:          &activeState,
-				IdempotencyKey: response.IdempotencyKey,
+				IdempotencyKey: attributes.IdempotencyKey,
 			})
 			if err == nil {
-				response = createModelRevisionResponseFromModel(*existing)
+				attributes = createModelRevisionAttributesFromRevision(*existing)
 				return nil
 			}
 			if !errors.Is(err, db.ErrModelRevisionNotFound) {
@@ -349,7 +365,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 			Description:       trimmedStringPtr(data.Description),
 			ThumbnailImageURL: trimmedStringPtr(data.ThumbnailImageUrl),
 			Metadata:          metadata,
-			IdempotencyKey:    response.IdempotencyKey,
+			IdempotencyKey:    attributes.IdempotencyKey,
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
@@ -357,7 +373,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
 		}
-		response.RevisionId = revision.ID
+		attributes.RevisionId = revision.ID
 		if err := s.attachModelArtifacts(ctx, revision.ID, artifacts); err != nil {
 			return fmt.Errorf("attach model artifacts: %w", err)
 		}
@@ -374,9 +390,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 		return nil
 	})
 	if err != nil {
-		return CreateModelRevisionResponse{}, fmt.Errorf("create initial model revision: %w", err)
+		return CreateModelRevisionAttributes{}, fmt.Errorf("create initial model revision: %w", err)
 	}
-	return response, nil
+	return attributes, nil
 }
 
 func createModelDataFromAddOperation(data AddModelData) CreateModelData {
@@ -443,7 +459,13 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 	if s.writeMutationError(w, err, "create model revision") {
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
+		Data: CreateModelRevisionData{
+			Type:       jsonAPITypeModelRevisionResults,
+			Id:         result.RevisionId,
+			Attributes: result,
+		},
+	})
 }
 
 func (s *Server) createModelRevisionGraph(
@@ -451,21 +473,21 @@ func (s *Server) createModelRevisionGraph(
 	entryID, modelID uuid.UUID,
 	payload createModelRevisionPayload,
 	createdBy uuid.UUID,
-) (CreateModelRevisionResponse, error) {
+) (CreateModelRevisionAttributes, error) {
 	if err := validateRevisionFields(payload.ModelFields, modelRevisionFields); err != nil {
-		return CreateModelRevisionResponse{}, err
+		return CreateModelRevisionAttributes{}, err
 	}
 	if len(payload.ModelFields) == 0 {
-		return CreateModelRevisionResponse{}, invalidRequest("model change must contain at least one field")
+		return CreateModelRevisionAttributes{}, invalidRequest("model change must contain at least one field")
 	}
 	data := payload.Request.Model
 	for _, field := range []string{"artifacts", "metrics", "runs"} {
 		if raw, present := payload.ModelFields[field]; present && isJSONNull(raw) {
-			return CreateModelRevisionResponse{}, invalidRequest("model %s cannot be null", field)
+			return CreateModelRevisionAttributes{}, invalidRequest("model %s cannot be null", field)
 		}
 	}
 	now := time.Now().UTC()
-	response := CreateModelRevisionResponse{
+	attributes := CreateModelRevisionAttributes{
 		EntryId:        entryID,
 		IdempotencyKey: modelRevisionIdempotencyKeyFromChange(data),
 		ModelId:        modelID,
@@ -476,15 +498,15 @@ func (s *Server) createModelRevisionGraph(
 		if err != nil {
 			return fmt.Errorf("get active model revision: %w", err)
 		}
-		response.BaseRevisionId = &base.ID
-		if response.IdempotencyKey != nil {
+		attributes.BaseRevisionId = &base.ID
+		if attributes.IdempotencyKey != nil {
 			activeState := domainmodels.RevisionStateActive
 			existing, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
 				State:          &activeState,
-				IdempotencyKey: response.IdempotencyKey,
+				IdempotencyKey: attributes.IdempotencyKey,
 			})
 			if err == nil {
-				response = createModelRevisionResponseFromModel(*existing)
+				attributes = createModelRevisionAttributesFromRevision(*existing)
 				return nil
 			}
 			if !errors.Is(err, db.ErrModelRevisionNotFound) {
@@ -507,7 +529,7 @@ func (s *Server) createModelRevisionGraph(
 			Description:       base.Description,
 			ThumbnailImageURL: base.ThumbnailImageURL,
 			Metadata:          base.Metadata,
-			IdempotencyKey:    response.IdempotencyKey,
+			IdempotencyKey:    attributes.IdempotencyKey,
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
@@ -557,7 +579,7 @@ func (s *Server) createModelRevisionGraph(
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
 		}
-		response.RevisionId = created.ID
+		attributes.RevisionId = created.ID
 		if err := s.copyOrAttachModelRevisionContents(
 			ctx,
 			base.ID,
@@ -574,20 +596,9 @@ func (s *Server) createModelRevisionGraph(
 		return nil
 	})
 	if err != nil {
-		return CreateModelRevisionResponse{}, fmt.Errorf("create model revision graph: %w", err)
+		return CreateModelRevisionAttributes{}, fmt.Errorf("create model revision graph: %w", err)
 	}
-	return response, nil
-}
-
-func createModelRevisionResponseFromModel(revision domainmodels.ModelRevision) CreateModelRevisionResponse {
-	return CreateModelRevisionResponse{
-		BaseRevisionId: revision.ParentRevisionID,
-		EntryId:        revision.EntryID,
-		IdempotencyKey: revision.IdempotencyKey,
-		ModelId:        revision.ModelID,
-		RevisionId:     revision.ID,
-		State:          RevisionState(revision.State),
-	}
+	return attributes, nil
 }
 
 func (s *Server) activeModelRevisionForMutation(
@@ -733,13 +744,59 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID uuid.U
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
-	entry, err := entryResponseFromRevision(*revision, sequences)
+	metadata, err := metadataFromValue(revision.Metadata)
 	if err != nil {
 		slog.Error("build entry response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
-	writeJSON(w, http.StatusOK, entry)
+	included := make([]EntryProteinSequenceData, 0, len(sequences))
+	sequenceIdentifiers := make([]EntryProteinSequenceIdentifier, 0, len(sequences))
+	for _, sequence := range sequences {
+		included = append(included, EntryProteinSequenceData{
+			Type: EntryProteinSequenceDataTypeProteinSequences,
+			Id:   sequence.ID,
+			Attributes: EntryProteinSequenceAttributes{
+				RecordIndex: sequence.RecordIndex,
+				Header:      sequence.Header,
+				Sequence:    sequence.Sequence,
+				CreatedAt:   sequence.CreatedAt,
+			},
+			Relationships: EntryProteinSequenceRelationships{
+				SourceArtifact: EntryProteinSequenceSourceArtifactRelationship{
+					Data: EntrySourceArtifactIdentifier{Type: Artifacts, Id: sequence.SourceArtifactID},
+				},
+			},
+		})
+		sequenceIdentifiers = append(sequenceIdentifiers, EntryProteinSequenceIdentifier{
+			Type: EntryProteinSequenceIdentifierTypeProteinSequences,
+			Id:   sequence.ID,
+		})
+	}
+	writeJSON(w, http.StatusOK, EntryDocument{
+		Data: EntryData{
+			Type: Entries,
+			Id:   revision.EntryID,
+			Attributes: EntryAttributes{
+				Name:              revision.Name,
+				Description:       revision.Description,
+				ThumbnailImageUrl: revision.ThumbnailImageURL,
+				Metadata:          metadata,
+				PublishedAt:       revision.PublishedAt,
+				CreatedAt:         revision.CreatedAt,
+				UpdatedAt:         revision.UpdatedAt,
+			},
+			Relationships: EntryRelationships{
+				CreatedBy: EntryCreatedByRelationship{
+					Data: EntryCreatedByIdentifier{Type: Users, Id: revision.CreatedBy},
+				},
+				ProteinSequences: EntryProteinSequencesRelationship{
+					Data: sequenceIdentifiers,
+				},
+			},
+		},
+		Included: &included,
+	})
 }
 
 func (s *Server) ListSimilarEntries(
@@ -775,13 +832,39 @@ func (s *Server) ListSimilarEntries(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
-	items, err := similarEntryResponsesFromModels(entries)
-	if err != nil {
-		slog.Error("build similar entry response failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
-		return
+	data := make([]SimilarEntryData, 0, len(entries))
+	for _, entry := range entries {
+		info, err := entryInfoAttributesFromRevision(entry.Entry)
+		if err != nil {
+			slog.Error("build similar entry response failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
+			return
+		}
+		matches := make([]ProteinSequenceSimilarityMatch, 0, len(entry.Matches))
+		for _, match := range entry.Matches {
+			matches = append(matches, ProteinSequenceSimilarityMatch{
+				SourceSequenceId: match.SourceSequenceID,
+				SimilarSequence:  proteinSequenceFromModel(match.SimilarSequence),
+				Score:            match.Similarity.Score,
+				Tool:             match.Similarity.Tool,
+				Metadata:         mapFromNil(match.Similarity.Metadata),
+				CreatedAt:        match.Similarity.CreatedAt,
+			})
+		}
+		item := SimilarEntryAttributes{Entry: info, Score: entry.Score, Matches: matches}
+		data = append(data, SimilarEntryData{
+			Type:       jsonAPITypeSimilarEntries,
+			Id:         item.Entry.Id,
+			Attributes: item,
+		})
 	}
-	writeJSON(w, http.StatusOK, SimilarEntryListResponse{Items: items, Limit: limit, Offset: params.Offset})
+	writeJSON(w, http.StatusOK, SimilarEntryCollectionDocument{
+		Data: data,
+		Meta: &SimilarEntryCollectionMeta{
+			Limit:  limit,
+			Offset: params.Offset,
+		},
+	})
 }
 
 func (s *Server) ListModelsAcrossEntries(
@@ -807,13 +890,13 @@ func (s *Server) ListModelsAcrossEntries(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	response, err := s.modelListResponseFromRevisions(r.Context(), revisions)
+	response, err := s.modelAttributesFromRevisions(r.Context(), revisions)
 	if err != nil {
 		slog.Error("build model list response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
 }
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListModelsParams) {
@@ -822,7 +905,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 		return
 	}
 	if _, err := s.activeEntryRevision(r.Context(), entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
-		writeJSON(w, http.StatusOK, ModelListResponse{Items: []Model{}})
+		writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes([]ModelAttributes{}))
 		return
 	} else if err != nil {
 		slog.Error("get entry for models failed", "err", err)
@@ -844,32 +927,13 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID uuid
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	response, err := s.modelListResponseFromRevisions(r.Context(), revisions)
+	response, err := s.modelAttributesFromRevisions(r.Context(), revisions)
 	if err != nil {
 		slog.Error("build model list response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
-}
-
-func (s *Server) modelListResponseFromRevisions(
-	ctx context.Context,
-	revisions []domainmodels.ModelRevision,
-) (ModelListResponse, error) {
-	items := make([]Model, 0, len(revisions))
-	for _, revision := range revisions {
-		metrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &revision.ID})
-		if err != nil {
-			return ModelListResponse{}, fmt.Errorf("list model metrics: %w", err)
-		}
-		item, err := modelResponseFromRevision(revision, metrics)
-		if err != nil {
-			return ModelListResponse{}, fmt.Errorf("build model response: %w", err)
-		}
-		items = append(items, item)
-	}
-	return ModelListResponse{Items: items}, nil
+	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
 }
 
 func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID uuid.UUID) {
@@ -889,19 +953,25 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
-	model, err := modelResponseFromRevision(*revision, metrics)
+	model, err := modelAttributesFromRevision(*revision, metrics)
 	if err != nil {
 		slog.Error("build model response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
-	writeJSON(w, http.StatusOK, model)
+	writeJSON(w, http.StatusOK, ModelDocument{
+		Data: ModelData{
+			Type:       jsonAPITypeModels,
+			Id:         model.Id,
+			Attributes: model,
+		},
+	})
 }
 
 func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID uuid.UUID, params ListArtifactsParams) {
 	revision, err := s.activeEntryRevision(r.Context(), entryID)
 	if errors.Is(err, db.ErrEntryRevisionNotFound) {
-		writeJSON(w, http.StatusOK, ArtifactListResponse{Items: []Artifact{}})
+		writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: []ArtifactData{}})
 		return
 	}
 	if err != nil {
@@ -921,13 +991,21 @@ func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID u
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
-	items, err := artifactResponsesFromModels(artifacts)
+	items, err := artifactAttributesFromModels(artifacts)
 	if err != nil {
 		slog.Error("build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
-	writeJSON(w, http.StatusOK, ArtifactListResponse{Items: items})
+	data := make([]ArtifactData, 0, len(items))
+	for _, item := range items {
+		data = append(data, ArtifactData{
+			Type:       jsonAPITypeArtifacts,
+			Id:         item.Id,
+			Attributes: item,
+		})
+	}
+	writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: data})
 }
 
 func (s *Server) ListModelArtifacts(
@@ -970,7 +1048,7 @@ func (s *Server) ListModelArtifacts(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
-	artifactItems, err := artifactResponsesFromModels(artifacts)
+	artifactItems, err := artifactAttributesFromModels(artifacts)
 	if err != nil {
 		slog.Error("build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
@@ -978,13 +1056,27 @@ func (s *Server) ListModelArtifacts(
 	}
 	runItems := make([]Run, 0, len(runs))
 	for _, run := range runs {
-		runItems = append(runItems, runResponseFromModel(run))
+		runItems = append(runItems, runFromModel(run))
 	}
 	relationItems := make([]RunArtifact, 0, len(links))
 	for _, link := range links {
-		relationItems = append(relationItems, runArtifactResponseFromModel(link))
+		relationItems = append(relationItems, runArtifactFromLink(link))
 	}
-	writeJSON(w, http.StatusOK, ModelArtifactListResponse{Items: artifactItems, Runs: runItems, Relations: relationItems})
+	artifactData := make([]ArtifactData, 0, len(artifactItems))
+	for _, item := range artifactItems {
+		artifactData = append(artifactData, ArtifactData{
+			Type:       jsonAPITypeArtifacts,
+			Id:         item.Id,
+			Attributes: item,
+		})
+	}
+	writeJSON(w, http.StatusOK, ModelArtifactCollectionDocument{
+		Data: artifactData,
+		Meta: ModelArtifactCollectionMeta{
+			Runs:      runItems,
+			Relations: relationItems,
+		},
+	})
 }
 
 func (s *Server) createArtifact(
@@ -1097,6 +1189,146 @@ func (s *Server) saveProteinSequencesIfFASTA(
 	return nil
 }
 
+func modelCollectionDocumentFromAttributes(models []ModelAttributes) ModelCollectionDocument {
+	items := make([]ModelData, 0, len(models))
+	for _, item := range models {
+		items = append(items, ModelData{
+			Type:       jsonAPITypeModels,
+			Id:         item.Id,
+			Attributes: item,
+		})
+	}
+	return ModelCollectionDocument{Data: items}
+}
+
+func createModelRevisionAttributesFromRevision(revision domainmodels.ModelRevision) CreateModelRevisionAttributes {
+	return CreateModelRevisionAttributes{
+		BaseRevisionId: revision.ParentRevisionID,
+		EntryId:        revision.EntryID,
+		IdempotencyKey: revision.IdempotencyKey,
+		ModelId:        revision.ModelID,
+		RevisionId:     revision.ID,
+		State:          RevisionState(revision.State),
+	}
+}
+
+func (s *Server) modelAttributesFromRevisions(
+	ctx context.Context,
+	revisions []domainmodels.ModelRevision,
+) ([]ModelAttributes, error) {
+	items := make([]ModelAttributes, 0, len(revisions))
+	for _, revision := range revisions {
+		metrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &revision.ID})
+		if err != nil {
+			return nil, fmt.Errorf("list model metrics: %w", err)
+		}
+		item, err := modelAttributesFromRevision(revision, metrics)
+		if err != nil {
+			return nil, fmt.Errorf("build model response: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (EntryInfoAttributes, error) {
+	metadata, err := metadataFromValue(revision.Metadata)
+	if err != nil {
+		return EntryInfoAttributes{}, fmt.Errorf("build entry metadata response: %w", err)
+	}
+	return EntryInfoAttributes{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Name: revision.Name,
+		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: &metadata,
+		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
+}
+
+func modelAttributesFromRevision(revision domainmodels.ModelRevision, metrics []domainmodels.Metric) (ModelAttributes, error) {
+	metadata, err := metadataFromValue(revision.Metadata)
+	if err != nil {
+		return ModelAttributes{}, fmt.Errorf("build model metadata response: %w", err)
+	}
+	return ModelAttributes{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
+		Name: revision.Name, Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
+		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
+		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics)}, nil
+}
+
+func artifactAttributesFromModels(artifacts []domainmodels.Artifact) ([]ArtifactAttributes, error) {
+	items := make([]ArtifactAttributes, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		item, err := artifactAttributesFromModel(artifact)
+		if err != nil {
+			return nil, fmt.Errorf("build artifact response: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func artifactAttributesFromModel(artifact domainmodels.Artifact) (ArtifactAttributes, error) {
+	metadata, err := metadataFromValue(artifact.Metadata)
+	if err != nil {
+		return ArtifactAttributes{}, fmt.Errorf("build artifact metadata response: %w", err)
+	}
+	return ArtifactAttributes{Id: artifact.ID, Name: artifact.Name, Level: ArtifactLevel(artifact.Level), Uri: artifact.URI,
+		Sha256: artifact.SHA256, Format: artifact.Format, SizeBytes: artifact.SizeBytes, Metadata: metadata,
+		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt}, nil
+}
+
+func metricsFromModels(metrics []domainmodels.Metric) []Metric {
+	items := make([]Metric, 0, len(metrics))
+	for _, metric := range metrics {
+		items = append(items, Metric{Id: metric.ID, Key: string(metric.Key), Value: metric.Value, CreatedAt: metric.CreatedAt})
+	}
+	return items
+}
+
+func runFromModel(run domainmodels.Run) Run {
+	return Run{Id: run.ID, Name: run.Name, SoftwareName: run.SoftwareName, SoftwareVersion: run.SoftwareVersion,
+		Command: run.Command, Parameters: mapFromNil(run.Parameters), Metadata: mapFromNil(run.Metadata),
+		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, CreatedBy: run.CreatedBy,
+		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt}
+}
+
+func runArtifactFromLink(link db.RunArtifactLink) RunArtifact {
+	return RunArtifact{RunId: link.RunID, ArtifactId: link.ArtifactID, Direction: RunArtifactDirection(link.Direction)}
+}
+
+func proteinSequencesFromModels(sequences []domainmodels.ProteinSequence) []ProteinSequence {
+	items := make([]ProteinSequence, 0, len(sequences))
+	for _, sequence := range sequences {
+		items = append(items, proteinSequenceFromModel(sequence))
+	}
+	return items
+}
+
+func proteinSequenceFromModel(sequence domainmodels.ProteinSequence) ProteinSequence {
+	return ProteinSequence{Id: sequence.ID, SourceArtifactId: sequence.SourceArtifactID,
+		RecordIndex: sequence.RecordIndex, Header: sequence.Header, Sequence: sequence.Sequence,
+		CreatedAt: sequence.CreatedAt}
+}
+
+func metadataFromValue(value any) (map[string]interface{}, error) {
+	if value == nil {
+		return map[string]interface{}{}, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal metadata: %w", err)
+	}
+	metadata := map[string]interface{}{}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("unmarshal metadata: %w", err)
+	}
+	return metadata, nil
+}
+
+func mapFromNil(value map[string]any) map[string]interface{} {
+	if value == nil {
+		return map[string]interface{}{}
+	}
+	return value
+}
+
 func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, error) {
 	if params.Limit != nil && *params.Limit < 0 {
 		return db.EntryRevisionFilters{}, errors.New("limit must be non-negative")
@@ -1192,114 +1424,6 @@ func (s *Server) activeModelRevision(
 	return revision, nil
 }
 
-func entryInfoResponseFromRevision(revision domainmodels.EntryRevision) (EntryInfo, error) {
-	metadata, err := metadataResponseFromValue(revision.Metadata)
-	if err != nil {
-		return EntryInfo{}, fmt.Errorf("build entry metadata response: %w", err)
-	}
-	return EntryInfo{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Name: revision.Name,
-		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: &metadata,
-		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
-}
-
-func entryResponseFromRevision(
-	revision domainmodels.EntryRevision,
-	sequences []domainmodels.ProteinSequence,
-) (Entry, error) {
-	metadata, err := metadataResponseFromValue(revision.Metadata)
-	if err != nil {
-		return Entry{}, fmt.Errorf("build entry metadata response: %w", err)
-	}
-	return Entry{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Name: revision.Name,
-		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: metadata,
-		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt,
-		ProteinSequences: proteinSequenceResponsesFromModels(sequences)}, nil
-}
-
-func modelResponseFromRevision(revision domainmodels.ModelRevision, metrics []domainmodels.Metric) (Model, error) {
-	metadata, err := metadataResponseFromValue(revision.Metadata)
-	if err != nil {
-		return Model{}, fmt.Errorf("build model metadata response: %w", err)
-	}
-	return Model{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
-		Name: revision.Name, Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
-		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
-		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricResponsesFromModels(metrics)}, nil
-}
-
-func artifactResponsesFromModels(artifacts []domainmodels.Artifact) ([]Artifact, error) {
-	items := make([]Artifact, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		item, err := artifactResponseFromModel(artifact)
-		if err != nil {
-			return nil, fmt.Errorf("build artifact response: %w", err)
-		}
-		items = append(items, item)
-	}
-	return items, nil
-}
-
-func artifactResponseFromModel(artifact domainmodels.Artifact) (Artifact, error) {
-	metadata, err := metadataResponseFromValue(artifact.Metadata)
-	if err != nil {
-		return Artifact{}, fmt.Errorf("build artifact metadata response: %w", err)
-	}
-	return Artifact{Id: artifact.ID, Name: artifact.Name, Level: ArtifactLevel(artifact.Level), Uri: artifact.URI,
-		Sha256: artifact.SHA256, Format: artifact.Format, SizeBytes: artifact.SizeBytes, Metadata: metadata,
-		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt}, nil
-}
-
-func metricResponsesFromModels(metrics []domainmodels.Metric) []Metric {
-	items := make([]Metric, 0, len(metrics))
-	for _, metric := range metrics {
-		items = append(items, Metric{Id: metric.ID, Key: string(metric.Key), Value: metric.Value, CreatedAt: metric.CreatedAt})
-	}
-	return items
-}
-
-func runResponseFromModel(run domainmodels.Run) Run {
-	return Run{Id: run.ID, Name: run.Name, SoftwareName: run.SoftwareName, SoftwareVersion: run.SoftwareVersion,
-		Command: run.Command, Parameters: mapFromNil(run.Parameters), Metadata: mapFromNil(run.Metadata),
-		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, CreatedBy: run.CreatedBy,
-		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt}
-}
-
-func runArtifactResponseFromModel(link db.RunArtifactLink) RunArtifact {
-	return RunArtifact{RunId: link.RunID, ArtifactId: link.ArtifactID, Direction: RunArtifactDirection(link.Direction)}
-}
-
-func proteinSequenceResponsesFromModels(sequences []domainmodels.ProteinSequence) []ProteinSequence {
-	items := make([]ProteinSequence, 0, len(sequences))
-	for _, sequence := range sequences {
-		items = append(items, proteinSequenceResponseFromModel(sequence))
-	}
-	return items
-}
-
-func proteinSequenceResponseFromModel(sequence domainmodels.ProteinSequence) ProteinSequence {
-	return ProteinSequence{Id: sequence.ID, SourceArtifactId: sequence.SourceArtifactID,
-		RecordIndex: sequence.RecordIndex, Header: sequence.Header, Sequence: sequence.Sequence,
-		CreatedAt: sequence.CreatedAt}
-}
-
-func similarEntryResponsesFromModels(entries []domainmodels.SimilarEntry) ([]SimilarEntry, error) {
-	items := make([]SimilarEntry, 0, len(entries))
-	for _, entry := range entries {
-		info, err := entryInfoResponseFromRevision(entry.Entry)
-		if err != nil {
-			return nil, fmt.Errorf("build similar entry info response: %w", err)
-		}
-		matches := make([]ProteinSequenceSimilarityMatch, 0, len(entry.Matches))
-		for _, match := range entry.Matches {
-			matches = append(matches, ProteinSequenceSimilarityMatch{SourceSequenceId: match.SourceSequenceID,
-				SimilarSequence: proteinSequenceResponseFromModel(match.SimilarSequence), Score: match.Similarity.Score,
-				Tool: match.Similarity.Tool, Metadata: mapFromNil(match.Similarity.Metadata), CreatedAt: match.Similarity.CreatedAt})
-		}
-		items = append(items, SimilarEntry{Entry: info, Score: entry.Score, Matches: matches})
-	}
-	return items, nil
-}
-
 func entryMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.EntryMetadata, error) {
 	if metadata == nil {
 		return domainmodels.EntryMetadata{}, nil
@@ -1331,28 +1455,6 @@ func decodeMetadataRequest(metadata map[string]interface{}, dest any) error {
 		return fmt.Errorf("unmarshal metadata: %w", err)
 	}
 	return nil
-}
-
-func metadataResponseFromValue(value any) (map[string]interface{}, error) {
-	if value == nil {
-		return map[string]interface{}{}, nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("marshal metadata: %w", err)
-	}
-	metadata := map[string]interface{}{}
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return nil, fmt.Errorf("unmarshal metadata: %w", err)
-	}
-	return metadata, nil
-}
-
-func mapFromNil(value map[string]any) map[string]interface{} {
-	if value == nil {
-		return map[string]interface{}{}
-	}
-	return value
 }
 
 func trimmedStringPtr(value *string) *string {

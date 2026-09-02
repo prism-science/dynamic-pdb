@@ -20,6 +20,12 @@ type FileUploadPart = {
   url: string;
 };
 
+type JSONAPIResourceDocument<T> = {
+  data: {
+    attributes: T;
+  };
+};
+
 type CompletedFileUploadPart = {
   part_number: number;
   etag: string;
@@ -150,7 +156,12 @@ async function postJSON<T = unknown>(path: string, body?: unknown): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
   }
-  return (await response.json()) as T;
+  const document = (await response.json()) as JSONAPIResourceDocument<T>;
+  return attributesFromDocument(document);
+}
+
+function attributesFromDocument<T>(document: JSONAPIResourceDocument<T>): T {
+  return document.data.attributes;
 }
 
 async function responseError(response: Response): Promise<string> {

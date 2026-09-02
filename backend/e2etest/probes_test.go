@@ -46,9 +46,9 @@ func getProbe(t *testing.T, path string) *http.Response {
 	return resp
 }
 
-func decodeProbe(t *testing.T, resp *http.Response) httpapi.ProbeResponse {
+func decodeProbe(t *testing.T, resp *http.Response) httpapi.ProbeMeta {
 	t.Helper()
-	var body httpapi.ProbeResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	return body
+	var document httpapi.ProbeDocument
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&document))
+	return document.Meta
 }

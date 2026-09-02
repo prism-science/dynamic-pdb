@@ -101,7 +101,7 @@ test("should abort upload when complete endpoint fails", async () => {
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
     completeStatus: 500,
-    completeBody: { error: "complete failed" },
+    completeBody: { errors: [{ detail: "complete failed" }] },
     xhrResults: [{ status: 200, headers: { etag: '"etag-1"' } }],
   });
   try {
@@ -172,12 +172,16 @@ function installUploadFakes({
     if (path === "/files") {
       calls.create = JSON.parse(init.body);
       calls.createHeaders = init.headers;
-      return jsonResponse(grant);
+      return jsonResponse(resourceDocument("file_uploads", grant.upload_id, grant));
     }
     if (path === "/files/complete") {
       calls.complete = JSON.parse(init.body);
       calls.completeHeaders = init.headers;
-      return jsonResponse(completeBody, { status: completeStatus });
+      const body =
+        completeStatus >= 400
+          ? completeBody
+          : resourceDocument("file_uploads", completeBody.key ?? calls.complete.key, completeBody);
+      return jsonResponse(body, { status: completeStatus });
     }
     if (path === "/files/abort") {
       calls.abort = JSON.parse(init.body);
@@ -245,4 +249,8 @@ function jsonResponse(body, init = {}) {
     headers: { "content-type": jsonApiMediaType },
     ...init,
   });
+}
+
+function resourceDocument(type, id, attributes) {
+  return { data: { type, id, attributes } };
 }

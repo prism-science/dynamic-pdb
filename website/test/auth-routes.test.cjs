@@ -45,13 +45,13 @@ test("should exchange github callback code and set auth cookies", async () => {
       requestedBody = JSON.parse(init.body);
       requestedHeaders = init.headers;
       return new Response(
-        JSON.stringify({
+        JSON.stringify(tokenDocument({
           access_token: "jwt-token",
           expires_at: "2030-01-02T03:04:05.000Z",
           login: "octocat",
           name: "Octo Cat",
           permissions: ["revisions.approve", "revisions.reject"],
-        }),
+        })),
         { status: 200, headers: { "content-type": jsonApiMediaType } },
       );
     };
@@ -105,7 +105,7 @@ test("should redirect callback to forbidden when backend returns 403", async () 
   try {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
     global.fetch = async () =>
-      new Response(JSON.stringify({ code: "FORBIDDEN", message: "no org" }), {
+      new Response(JSON.stringify({ errors: [{ code: "FORBIDDEN", detail: "no org" }] }), {
         status: 403,
         headers: { "content-type": jsonApiMediaType },
       });
@@ -135,7 +135,7 @@ test("should redirect callback to backend_exchange_failed when backend response 
   try {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
     global.fetch = async () =>
-      new Response(JSON.stringify({ access_token: "" }), {
+      new Response(JSON.stringify(tokenDocument({ access_token: "" })), {
         status: 200,
         headers: { "content-type": jsonApiMediaType },
       });
@@ -169,6 +169,15 @@ function cookieValue(setCookie, name) {
   const match = setCookie.match(new RegExp(`${name}=([^;]+)`));
   assert.ok(match, `missing ${name} cookie`);
   return decodeURIComponent(match[1]);
+}
+
+function tokenDocument(attributes) {
+  return {
+    data: {
+      type: "auth_tokens",
+      attributes,
+    },
+  };
 }
 
 function restoreEnv(name, value) {

@@ -85,7 +85,7 @@ func Test_should_return_json_api_media_type_when_liveness_probe_is_called(t *tes
 	// then
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
-	assert.JSONEq(t, `{"status":"ok"}`, recorder.Body.String())
+	assert.JSONEq(t, `{"meta":{"status":"ok"}}`, recorder.Body.String())
 }
 
 func Test_should_write_json_api_media_type_when_error_response_is_written(t *testing.T) {

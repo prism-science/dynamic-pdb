@@ -16,7 +16,7 @@ test("should page the similar feed with bounded limit and offset", async () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ items: [{ entry: { id: "e2" }, score: 0.5, matches: [] }] }),
+        json: async () => collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.5, matches: [] }]),
       };
     };
 
@@ -36,6 +36,16 @@ test("should page the similar feed with bounded limit and offset", async () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;
   }
 });
+
+function collectionDocument(type, items) {
+  return {
+    data: items.map((attributes) => ({
+      type,
+      id: attributes.entry.id,
+      attributes,
+    })),
+  };
+}
 
 test("should answer with an empty page when the backend fails", async () => {
   const previousFetch = global.fetch;

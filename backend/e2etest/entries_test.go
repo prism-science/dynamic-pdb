@@ -104,7 +104,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	artifactsResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/entries/%s/models/%s/artifacts", entryID, modelID), "",
 	)
-	artifacts := decodeJSONResponse[httpapi.ModelArtifactListResponse](s.T(), artifactsResponse, http.StatusOK)
+	artifacts := decodeModelArtifactCollectionForTest(s.T(), artifactsResponse)
 	s.Require().NotNil(artifactByID(artifacts.Items, modelArtifactID))
 	s.Require().NotNil(runByID(artifacts.Runs, runID))
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, entryArtifactID, httpapi.Input))
@@ -232,10 +232,10 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	response := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", contributorID), contributorToken,
 	)
-	groups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), response, http.StatusOK)
+	groups := decodeEntryRevisionGroupsForTest(s.T(), response)
 
 	// then
-	item := entryRevisionGroupByEntryID(groups.Items, entryID)
+	item := entryRevisionGroupByEntryID(groups, entryID)
 	s.Require().NotNil(item)
 	s.True(entryRevisionSummaryContainsID(item.EntryRevisions, entryRevision.RevisionId))
 	s.True(modelRevisionSummaryContainsID(item.ModelRevisions, modelRevision.RevisionId))
@@ -305,26 +305,26 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	userResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", ownerID), ownerToken,
 	)
-	userGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), userResponse, http.StatusOK)
+	userGroups := decodeEntryRevisionGroupsForTest(s.T(), userResponse)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	adminResponse := getWithToken(s.T(), "/v1/entries/revisions?state=in_review", adminToken)
-	adminGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), adminResponse, http.StatusOK)
+	adminGroups := decodeEntryRevisionGroupsForTest(s.T(), adminResponse)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	otherResponse := getWithToken(
 		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", otherID), otherToken,
 	)
-	otherGroups := decodeJSONResponse[httpapi.EntryRevisionGroupListResponse](s.T(), otherResponse, http.StatusOK)
+	otherGroups := decodeEntryRevisionGroupsForTest(s.T(), otherResponse)
 
 	// then
-	userItem := entryRevisionGroupByEntryID(userGroups.Items, entryID)
+	userItem := entryRevisionGroupByEntryID(userGroups, entryID)
 	s.Require().NotNil(userItem)
 	s.True(entryRevisionSummaryContainsID(userItem.EntryRevisions, entryRevision.RevisionId))
 	s.True(modelRevisionSummaryContainsID(userItem.ModelRevisions, modelRevision.RevisionId))
-	adminItem := entryRevisionGroupByEntryID(adminGroups.Items, entryID)
+	adminItem := entryRevisionGroupByEntryID(adminGroups, entryID)
 	s.Require().NotNil(adminItem)
 	s.True(entryRevisionSummaryContainsID(adminItem.EntryRevisions, entryRevision.RevisionId))
 	s.True(modelRevisionSummaryContainsID(adminItem.ModelRevisions, modelRevision.RevisionId))
-	s.Nil(entryRevisionGroupByEntryID(otherGroups.Items, entryID))
+	s.Nil(entryRevisionGroupByEntryID(otherGroups, entryID))
 
 	forbiddenResponse := getWithToken(s.T(), "/v1/entries/revisions?state=in_review", ownerToken)
 	s.Equal(http.StatusForbidden, forbiddenResponse.StatusCode)
@@ -388,18 +388,19 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
 }
 
-func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionResponse {
+func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries", request, token)
-	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
+	document := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](t, response, http.StatusCreated)
+	return document.Data.Attributes
 }
 
 func createAndActivateEntryForTest(
 	t *testing.T,
 	ownerToken string,
 	request map[string]any,
-) httpapi.CreateEntryRevisionResponse {
+) httpapi.CreateEntryRevisionAttributes {
 	t.Helper()
 	created := createEntryForTest(t, ownerToken, request)
 	activateEntryRevisionForTest(t, created)
@@ -408,7 +409,7 @@ func createAndActivateEntryForTest(
 
 func activateEntryRevisionForTest(
 	t *testing.T,
-	created httpapi.CreateEntryRevisionResponse,
+	created httpapi.CreateEntryRevisionAttributes,
 ) {
 	t.Helper()
 	adminPath := fmt.Sprintf("/v1/entries/%s/revisions/%s", created.EntryId, created.RevisionId)
@@ -420,11 +421,12 @@ func createEntryRevisionForTest(
 	token string,
 	entryID uuid.UUID,
 	request map[string]any,
-) httpapi.CreateEntryRevisionResponse {
+) httpapi.CreateEntryRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/revisions", request, token)
-	return decodeJSONResponse[httpapi.CreateEntryRevisionResponse](t, response, http.StatusCreated)
+	document := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](t, response, http.StatusCreated)
+	return document.Data.Attributes
 }
 
 func createModelForTest(
@@ -432,11 +434,12 @@ func createModelForTest(
 	token string,
 	entryID uuid.UUID,
 	request map[string]any,
-) httpapi.CreateModelRevisionResponse {
+) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries/"+entryID.String()+"/models", request, token)
-	return decodeJSONResponse[httpapi.CreateModelRevisionResponse](t, response, http.StatusCreated)
+	document := decodeJSONResponse[httpapi.CreateModelRevisionDocument](t, response, http.StatusCreated)
+	return document.Data.Attributes
 }
 
 func createAndActivateModelForTest(
@@ -444,7 +447,7 @@ func createAndActivateModelForTest(
 	ownerToken string,
 	entryID uuid.UUID,
 	request map[string]any,
-) httpapi.CreateModelRevisionResponse {
+) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
 	created := createModelForTest(t, ownerToken, entryID, request)
 	activateModelRevisionForTest(t, created)
@@ -456,7 +459,7 @@ func createModelRevisionForTest(
 	token string,
 	entryID, modelID uuid.UUID,
 	request map[string]any,
-) httpapi.CreateModelRevisionResponse {
+) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(
@@ -465,7 +468,8 @@ func createModelRevisionForTest(
 		request,
 		token,
 	)
-	return decodeJSONResponse[httpapi.CreateModelRevisionResponse](t, response, http.StatusCreated)
+	document := decodeJSONResponse[httpapi.CreateModelRevisionDocument](t, response, http.StatusCreated)
+	return document.Data.Attributes
 }
 
 func createAndActivateModelRevisionForTest(
@@ -473,7 +477,7 @@ func createAndActivateModelRevisionForTest(
 	ownerToken string,
 	entryID, modelID uuid.UUID,
 	request map[string]any,
-) httpapi.CreateModelRevisionResponse {
+) httpapi.CreateModelRevisionAttributes {
 	t.Helper()
 	created := createModelRevisionForTest(t, ownerToken, entryID, modelID, request)
 	activateModelRevisionForTest(t, created)
@@ -482,7 +486,7 @@ func createAndActivateModelRevisionForTest(
 
 func activateModelRevisionForTest(
 	t *testing.T,
-	created httpapi.CreateModelRevisionResponse,
+	created httpapi.CreateModelRevisionAttributes,
 ) {
 	t.Helper()
 	adminPath := fmt.Sprintf(
@@ -495,44 +499,78 @@ func activateModelRevisionForTest(
 func updateEntryRevisionStateForTest(
 	t *testing.T,
 	path, token, state string,
-) httpapi.EntryRevision {
+) httpapi.EntryRevisionAttributes {
 	t.Helper()
 	request := map[string]any{"state": state}
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := patchJSONWithToken(t, path, request, token)
-	return decodeJSONResponse[httpapi.EntryRevision](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.EntryRevisionDocument](t, response, http.StatusOK)
+	return document.Data.Attributes
 }
 
 func updateModelRevisionStateForTest(
 	t *testing.T,
 	path, token, state string,
-) httpapi.ModelRevision {
+) httpapi.ModelRevisionAttributes {
 	t.Helper()
 	request := map[string]any{"state": state}
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := patchJSONWithToken(t, path, request, token)
-	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.ModelRevisionDocument](t, response, http.StatusOK)
+	return document.Data.Attributes
 }
 
-func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevision {
+func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevisionAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, path, token)
-	return decodeJSONResponse[httpapi.ModelRevision](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.ModelRevisionDocument](t, response, http.StatusOK)
+	return document.Data.Attributes
 }
 
-func getEntryForTest(t *testing.T, entryID uuid.UUID) httpapi.Entry {
+type entryForTest struct {
+	CreatedBy        uuid.UUID
+	Name             string
+	ProteinSequences []httpapi.ProteinSequence
+}
+
+func getEntryForTest(t *testing.T, entryID uuid.UUID) entryForTest {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, "/v1/entries/"+entryID.String(), "")
-	return decodeJSONResponse[httpapi.Entry](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.EntryDocument](t, response, http.StatusOK)
+	return entryForTest{
+		CreatedBy:        document.Data.Relationships.CreatedBy.Data.Id,
+		Name:             document.Data.Attributes.Name,
+		ProteinSequences: proteinSequencesFromEntryDocumentForTest(document),
+	}
 }
 
-func getModelForTest(t *testing.T, entryID, modelID uuid.UUID) httpapi.Model {
+func proteinSequencesFromEntryDocumentForTest(document httpapi.EntryDocument) []httpapi.ProteinSequence {
+	if document.Included == nil {
+		return nil
+	}
+
+	sequences := make([]httpapi.ProteinSequence, 0, len(*document.Included))
+	for _, resource := range *document.Included {
+		sequences = append(sequences, httpapi.ProteinSequence{
+			Id:               resource.Id,
+			SourceArtifactId: resource.Relationships.SourceArtifact.Data.Id,
+			RecordIndex:      resource.Attributes.RecordIndex,
+			Header:           resource.Attributes.Header,
+			Sequence:         resource.Attributes.Sequence,
+			CreatedAt:        resource.Attributes.CreatedAt,
+		})
+	}
+	return sequences
+}
+
+func getModelForTest(t *testing.T, entryID, modelID uuid.UUID) httpapi.ModelAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
-	return decodeJSONResponse[httpapi.Model](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.ModelDocument](t, response, http.StatusOK)
+	return document.Data.Attributes
 }
 
 func decodeJSONResponse[T any](t *testing.T, response *http.Response, expectedStatus int) T {
@@ -544,6 +582,40 @@ func decodeJSONResponse[T any](t *testing.T, response *http.Response, expectedSt
 	var body T
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
 	return body
+}
+
+type modelArtifactCollectionForTest struct {
+	Items     []httpapi.ArtifactAttributes
+	Runs      []httpapi.Run
+	Relations []httpapi.RunArtifact
+}
+
+func decodeModelArtifactCollectionForTest(t *testing.T, response *http.Response) modelArtifactCollectionForTest {
+	t.Helper()
+	document := decodeJSONResponse[httpapi.ModelArtifactCollectionDocument](t, response, http.StatusOK)
+	return modelArtifactCollectionForTest{
+		Items:     artifactsFromData(document.Data),
+		Runs:      document.Meta.Runs,
+		Relations: document.Meta.Relations,
+	}
+}
+
+func artifactsFromData(data []httpapi.ArtifactData) []httpapi.ArtifactAttributes {
+	items := make([]httpapi.ArtifactAttributes, 0, len(data))
+	for _, item := range data {
+		items = append(items, item.Attributes)
+	}
+	return items
+}
+
+func decodeEntryRevisionGroupsForTest(t *testing.T, response *http.Response) []httpapi.EntryRevisionGroupAttributes {
+	t.Helper()
+	document := decodeJSONResponse[httpapi.EntryRevisionGroupCollectionDocument](t, response, http.StatusOK)
+	items := make([]httpapi.EntryRevisionGroupAttributes, 0, len(document.Data))
+	for _, resource := range document.Data {
+		items = append(items, resource.Attributes)
+	}
+	return items
 }
 
 func tokenUserIDForTest(t *testing.T, token string) uuid.UUID {
@@ -567,17 +639,18 @@ func issueEntryTokenForGitHubIDForTest(t *testing.T, accessToken string, githubI
 	return issueTokenForTest(t, accessToken).AccessToken
 }
 
-func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenResponse {
+func issueTokenForTest(t *testing.T, accessToken string) httpapi.TokenAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := ExchangeGithubToken(t, accessToken)
-	return decodeJSONResponse[httpapi.TokenResponse](t, response, http.StatusOK)
+	document := decodeJSONResponse[httpapi.TokenDocument](t, response, http.StatusOK)
+	return document.Data.Attributes
 }
 
 func entryRevisionGroupByEntryID(
-	items []httpapi.EntryRevisionGroup,
+	items []httpapi.EntryRevisionGroupAttributes,
 	entryID uuid.UUID,
-) *httpapi.EntryRevisionGroup {
+) *httpapi.EntryRevisionGroupAttributes {
 	for index := range items {
 		if items[index].Entry.Id == entryID {
 			return &items[index]
@@ -586,7 +659,7 @@ func entryRevisionGroupByEntryID(
 	return nil
 }
 
-func entryRevisionSummaryContainsID(items []httpapi.EntryRevisionSummary, revisionID uuid.UUID) bool {
+func entryRevisionSummaryContainsID(items []httpapi.EntryRevisionSummaryAttributes, revisionID uuid.UUID) bool {
 	for _, item := range items {
 		if item.Id == revisionID {
 			return true
@@ -595,7 +668,7 @@ func entryRevisionSummaryContainsID(items []httpapi.EntryRevisionSummary, revisi
 	return false
 }
 
-func modelRevisionSummaryContainsID(items []httpapi.ModelRevisionSummary, revisionID uuid.UUID) bool {
+func modelRevisionSummaryContainsID(items []httpapi.ModelRevisionSummaryAttributes, revisionID uuid.UUID) bool {
 	for _, item := range items {
 		if item.Id == revisionID {
 			return true
@@ -604,7 +677,7 @@ func modelRevisionSummaryContainsID(items []httpapi.ModelRevisionSummary, revisi
 	return false
 }
 
-func artifactByID(artifacts []httpapi.Artifact, id uuid.UUID) *httpapi.Artifact {
+func artifactByID(artifacts []httpapi.ArtifactAttributes, id uuid.UUID) *httpapi.ArtifactAttributes {
 	for index := range artifacts {
 		if artifacts[index].Id == id {
 			return &artifacts[index]
