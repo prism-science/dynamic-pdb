@@ -38,8 +38,9 @@ func (s *AuthSuite) Test_should_return_token_when_github_user_belongs_to_allowed
 	// then
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	var body httpapi.TokenResponse
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	var document httpapi.TokenDocument
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&document))
+	body := document.Data.Attributes
 	s.Equal(httpapi.Bearer, body.TokenType)
 	s.NotEmpty(body.AccessToken)
 	s.True(body.ExpiresAt.After(time.Now()))
@@ -74,8 +75,9 @@ func (s *AuthSuite) Test_should_return_login_as_name_when_github_name_is_empty()
 	// then
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	var body httpapi.TokenResponse
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	var document httpapi.TokenDocument
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&document))
+	body := document.Data.Attributes
 	s.Equal("octocat", body.Name)
 	s.Equal("", body.Email)
 	s.Equal("octocat", body.Login)
@@ -97,8 +99,9 @@ func (s *AuthSuite) Test_should_return_token_when_github_code_exchange_succeeds(
 	// then
 	s.Require().Equal(http.StatusOK, resp.StatusCode)
 
-	var body httpapi.TokenResponse
-	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
+	var document httpapi.TokenDocument
+	s.Require().NoError(json.NewDecoder(resp.Body).Decode(&document))
+	body := document.Data.Attributes
 	s.Equal(httpapi.Bearer, body.TokenType)
 	s.NotEmpty(body.AccessToken)
 	s.True(body.ExpiresAt.After(time.Now()))
@@ -237,7 +240,9 @@ func (s *AuthSuite) Test_should_map_github_code_exchange_errors_to_http_response
 
 			var body httpapi.Error
 			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-			s.Equal(tt.errorCode, body.Code)
+			s.Require().Len(body.Errors, 1)
+			s.Require().NotNil(body.Errors[0].Code)
+			s.Equal(tt.errorCode, *body.Errors[0].Code)
 		})
 	}
 }
@@ -282,7 +287,9 @@ func (s *AuthSuite) Test_should_return_500_when_github_user_or_org_lookup_fails(
 
 			var body httpapi.Error
 			s.Require().NoError(json.NewDecoder(resp.Body).Decode(&body))
-			s.Equal("INTERNAL_ERROR", body.Code)
+			s.Require().Len(body.Errors, 1)
+			s.Require().NotNil(body.Errors[0].Code)
+			s.Equal("INTERNAL_ERROR", *body.Errors[0].Code)
 		})
 	}
 }
@@ -290,8 +297,9 @@ func (s *AuthSuite) Test_should_return_500_when_github_user_or_org_lookup_fails(
 func subjectOf(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	defer resp.Body.Close()
-	var body httpapi.TokenResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	var document httpapi.TokenDocument
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&document))
+	body := document.Data.Attributes
 	parsed, err := jwt.ParseWithClaims(body.AccessToken, &jwt.RegisteredClaims{}, func(*jwt.Token) (any, error) {
 		return []byte(testJWTSecret), nil
 	}, jwt.WithValidMethods([]string{"HS256"}))

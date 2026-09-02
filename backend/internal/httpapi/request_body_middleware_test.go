@@ -26,7 +26,12 @@ func Test_should_reject_request_when_declared_body_exceeds_limit(t *testing.T) {
 	// then
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 	assert.False(t, nextCalled)
-	assert.Contains(t, recorder.Body.String(), `"code":"REQUEST_BODY_TOO_LARGE"`)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"413","code":"REQUEST_BODY_TOO_LARGE","detail":"request body exceeds 1 MiB limit"}]}`,
+		recorder.Body.String(),
+	)
 }
 
 func Test_should_reject_chunked_request_when_body_exceeds_limit(t *testing.T) {

@@ -37,10 +37,6 @@ type Entry struct {
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
-type entryListResponse struct {
-	Items []Entry `json:"items"`
-}
-
 type CreateEntryRequest struct {
 	Entry           CreateEntryData     `json:"entry"`
 	ModelOperations []AddModelOperation `json:"model_operations,omitempty"`

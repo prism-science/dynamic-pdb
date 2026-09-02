@@ -1,3 +1,5 @@
+import { jsonApiMediaType } from "./baseUrl";
+
 export type FileUploadContext = {
   entryId: string;
   modelId?: string | null;
@@ -16,6 +18,12 @@ type FileUploadGrant = {
 type FileUploadPart = {
   part_number: number;
   url: string;
+};
+
+type JSONAPIResourceDocument<T> = {
+  data: {
+    attributes: T;
+  };
 };
 
 type CompletedFileUploadPart = {
@@ -135,10 +143,10 @@ async function postJSON<T = unknown>(path: string, body?: unknown): Promise<T> {
     cache: "no-store",
     headers:
       body === undefined
-        ? { Accept: "application/json" }
+        ? { Accept: jsonApiMediaType }
         : {
-            Accept: "application/json",
-            "Content-Type": "application/json",
+            Accept: jsonApiMediaType,
+            "Content-Type": jsonApiMediaType,
           },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -148,7 +156,12 @@ async function postJSON<T = unknown>(path: string, body?: unknown): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
   }
-  return (await response.json()) as T;
+  const document = (await response.json()) as JSONAPIResourceDocument<T>;
+  return attributesFromDocument(document);
+}
+
+function attributesFromDocument<T>(document: JSONAPIResourceDocument<T>): T {
+  return document.data.attributes;
 }
 
 async function responseError(response: Response): Promise<string> {
@@ -162,8 +175,20 @@ async function responseError(response: Response): Promise<string> {
     return `HTTP ${response.status}`;
   }
   try {
-    const body = JSON.parse(text) as { error?: string; message?: string };
-    return body.error ?? body.message ?? `HTTP ${response.status}`;
+    const body = JSON.parse(text) as {
+      error?: string;
+      message?: string;
+      errors?: Array<{ code?: string; title?: string; detail?: string }>;
+    };
+    const error = body.errors?.[0];
+    return (
+      error?.detail ??
+      error?.title ??
+      error?.code ??
+      body.error ??
+      body.message ??
+      `HTTP ${response.status}`
+    );
   } catch {
     return text;
   }

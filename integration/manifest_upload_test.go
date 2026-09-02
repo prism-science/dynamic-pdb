@@ -32,6 +32,7 @@ import (
 
 const (
 	integrationRunEnv = "DYNAMIC_PDB_RUN_INTEGRATION"
+	jsonAPIMediaType  = "application/vnd.api+json"
 	jwtSecret         = "sample-secret"
 	jwtIssuer         = "dynamic-pdb-backend"
 )
@@ -95,7 +96,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
 
-	entry := getJSON[entryResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID, auth.AccessToken)
+	entry := getJSON[entryDocumentResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID, auth.AccessToken).Entry()
 	assert.Equal(t, pdbID, entry.Name)
 	require.NotNil(t, entry.Description)
 	assert.Equal(t, "example structure", *entry.Description)
@@ -551,8 +552,26 @@ type entryListResponse struct {
 	Items []entryInfo `json:"items"`
 }
 
+func (r *entryListResponse) UnmarshalJSON(data []byte) error {
+	items, err := jsonAPICollectionAttributes[entryInfo](data)
+	if err != nil {
+		return err
+	}
+	r.Items = items
+	return nil
+}
+
 type entryRevisionGroupListResponse struct {
 	Items []entryRevisionGroupResponse `json:"items"`
+}
+
+func (r *entryRevisionGroupListResponse) UnmarshalJSON(data []byte) error {
+	items, err := jsonAPICollectionAttributes[entryRevisionGroupResponse](data)
+	if err != nil {
+		return err
+	}
+	r.Items = items
+	return nil
 }
 
 type entryRevisionGroupResponse struct {
@@ -586,12 +605,61 @@ type entryResponse struct {
 	ProteinSequences  []proteinSequence `json:"protein_sequences"`
 }
 
+type entryDocumentResponse struct {
+	Data     entryResourceResponse             `json:"data"`
+	Included []proteinSequenceResourceResponse `json:"included"`
+}
+
+func (r entryDocumentResponse) Entry() entryResponse {
+	sequences := make([]proteinSequence, 0, len(r.Included))
+	for _, resource := range r.Included {
+		sequences = append(sequences, proteinSequence{Sequence: resource.Attributes.Sequence})
+	}
+	return entryResponse{
+		ID:                r.Data.ID,
+		Name:              r.Data.Attributes.Name,
+		Description:       r.Data.Attributes.Description,
+		ThumbnailImageURL: r.Data.Attributes.ThumbnailImageURL,
+		Metadata:          r.Data.Attributes.Metadata,
+		ProteinSequences:  sequences,
+	}
+}
+
+type entryResourceResponse struct {
+	ID         string                  `json:"id"`
+	Attributes entryAttributesResponse `json:"attributes"`
+}
+
+type entryAttributesResponse struct {
+	Name              string         `json:"name"`
+	Description       *string        `json:"description"`
+	ThumbnailImageURL *string        `json:"thumbnail_image_url"`
+	Metadata          map[string]any `json:"metadata"`
+}
+
+type proteinSequenceResourceResponse struct {
+	Attributes proteinSequenceAttributesResponse `json:"attributes"`
+}
+
+type proteinSequenceAttributesResponse struct {
+	Sequence string `json:"sequence"`
+}
+
 type proteinSequence struct {
 	Sequence string `json:"sequence"`
 }
 
 type modelListResponse struct {
 	Items []modelResponse `json:"items"`
+}
+
+func (r *modelListResponse) UnmarshalJSON(data []byte) error {
+	items, err := jsonAPICollectionAttributes[modelResponse](data)
+	if err != nil {
+		return err
+	}
+	r.Items = items
+	return nil
 }
 
 type modelResponse struct {
@@ -612,6 +680,28 @@ type artifactListResponse struct {
 	Relations []runArtifactResponse `json:"relations"`
 }
 
+func (r *artifactListResponse) UnmarshalJSON(data []byte) error {
+	var document struct {
+		Data []struct {
+			Attributes artifactResponse `json:"attributes"`
+		} `json:"data"`
+		Meta struct {
+			Runs      []runResponse         `json:"runs"`
+			Relations []runArtifactResponse `json:"relations"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return err
+	}
+	r.Items = make([]artifactResponse, 0, len(document.Data))
+	for _, resource := range document.Data {
+		r.Items = append(r.Items, resource.Attributes)
+	}
+	r.Runs = document.Meta.Runs
+	r.Relations = document.Meta.Relations
+	return nil
+}
+
 type artifactResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -629,11 +719,28 @@ type runArtifactResponse struct {
 	Direction  string `json:"direction"`
 }
 
+func jsonAPICollectionAttributes[T any](data []byte) ([]T, error) {
+	var document struct {
+		Data []struct {
+			Attributes T `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil, err
+	}
+	items := make([]T, 0, len(document.Data))
+	for _, resource := range document.Data {
+		items = append(items, resource.Attributes)
+	}
+	return items, nil
+}
+
 func getJSON[T any](t *testing.T, url string, token string) T {
 	t.Helper()
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	require.NoError(t, err)
 	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Accept", jsonAPIMediaType)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
 	defer func() {
@@ -653,7 +760,8 @@ func patchJSON(t *testing.T, url string, token string, body any, expectedStatus 
 	require.NoError(t, json.NewEncoder(&payload).Encode(body))
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, url, &payload)
 	require.NoError(t, err)
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", jsonAPIMediaType)
+	request.Header.Set("Content-Type", jsonAPIMediaType)
 	request.Header.Set("Authorization", "Bearer "+token)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)

@@ -19,6 +19,8 @@ func Test_should_exchange_github_token_for_dynamic_pdb_token(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/auth/github/exchange", request.URL.Path)
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Accept"))
+		assert.Equal(t, jsonAPIMediaType, request.Header.Get("Content-Type"))
 		var body struct {
 			AccessToken string `json:"access_token"`
 		}
@@ -27,14 +29,14 @@ func Test_should_exchange_github_token_for_dynamic_pdb_token(t *testing.T) {
 			return
 		}
 		assert.Equal(t, "github-token", body.AccessToken)
-		if err := json.NewEncoder(response).Encode(TokenResponse{
+		if err := json.NewEncoder(response).Encode(jsonAPIResourceDocument("auth_tokens", "", TokenResponse{
 			TokenType:   "Bearer",
 			AccessToken: "jwt-token",
 			ExpiresAt:   expiresAt,
 			Name:        "Octo Cat",
 			Email:       "octocat@example.test",
 			Login:       "octocat",
-		}); err != nil {
+		})); err != nil {
 			assert.NoError(t, err)
 		}
 	}))
@@ -54,9 +56,14 @@ func Test_should_return_unauthorized_when_backend_rejects_github_account(t *test
 	// given
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusForbidden)
-		if err := json.NewEncoder(response).Encode(map[string]string{
-			"code":    "FORBIDDEN",
-			"message": "user is not in an allowed organization",
+		if err := json.NewEncoder(response).Encode(map[string]any{
+			"errors": []map[string]string{
+				{
+					"status": "403",
+					"code":   "FORBIDDEN",
+					"detail": "user is not in an allowed organization",
+				},
+			},
 		}); err != nil {
 			assert.NoError(t, err)
 		}

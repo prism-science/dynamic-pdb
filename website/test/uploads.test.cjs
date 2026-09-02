@@ -5,6 +5,8 @@ const test = require("node:test");
 
 const { uploadFileToObjectStorage } = require("../src/lib/api/uploads.ts");
 
+const jsonApiMediaType = "application/vnd.api+json";
+
 test("should upload all granted parts and complete upload", async () => {
   const restore = installUploadFakes({
     grant: {
@@ -47,6 +49,10 @@ test("should upload all granted parts and complete upload", async () => {
       filename: "data.bin",
       size: 6,
     });
+    assert.equal(restore.calls.createHeaders.Accept, jsonApiMediaType);
+    assert.equal(restore.calls.createHeaders["Content-Type"], jsonApiMediaType);
+    assert.equal(restore.calls.completeHeaders.Accept, jsonApiMediaType);
+    assert.equal(restore.calls.completeHeaders["Content-Type"], jsonApiMediaType);
     assert.equal(progress.at(-1), 1);
   } finally {
     restore();
@@ -78,6 +84,8 @@ test("should abort upload and keep original error when object storage omits etag
       key: "entry/entities/entity/data.bin",
       upload_id: "upload-id",
     });
+    assert.equal(restore.calls.abortHeaders.Accept, jsonApiMediaType);
+    assert.equal(restore.calls.abortHeaders["Content-Type"], jsonApiMediaType);
   } finally {
     restore();
   }
@@ -93,7 +101,7 @@ test("should abort upload when complete endpoint fails", async () => {
       parts: [{ part_number: 1, url: "https://storage.example/part-1" }],
     },
     completeStatus: 500,
-    completeBody: { error: "complete failed" },
+    completeBody: { errors: [{ detail: "complete failed" }] },
     xhrResults: [{ status: 200, headers: { etag: '"etag-1"' } }],
   });
   try {
@@ -149,21 +157,35 @@ function installUploadFakes({
 }) {
   const previousFetch = global.fetch;
   const previousXHR = global.XMLHttpRequest;
-  const calls = { create: null, complete: null, abort: null };
+  const calls = {
+    create: null,
+    createHeaders: null,
+    complete: null,
+    completeHeaders: null,
+    abort: null,
+    abortHeaders: null,
+  };
   FakeXMLHttpRequest.queue = [...xhrResults];
   FakeXMLHttpRequest.instances = [];
   global.XMLHttpRequest = FakeXMLHttpRequest;
   global.fetch = async (path, init) => {
     if (path === "/files") {
       calls.create = JSON.parse(init.body);
-      return jsonResponse(grant);
+      calls.createHeaders = init.headers;
+      return jsonResponse(resourceDocument("file_uploads", grant.upload_id, grant));
     }
     if (path === "/files/complete") {
       calls.complete = JSON.parse(init.body);
-      return jsonResponse(completeBody, { status: completeStatus });
+      calls.completeHeaders = init.headers;
+      const body =
+        completeStatus >= 400
+          ? completeBody
+          : resourceDocument("file_uploads", completeBody.key ?? calls.complete.key, completeBody);
+      return jsonResponse(body, { status: completeStatus });
     }
     if (path === "/files/abort") {
       calls.abort = JSON.parse(init.body);
+      calls.abortHeaders = init.headers;
       return new Response(null, { status: 204 });
     }
     throw new Error(`unexpected fetch ${path}`);
@@ -224,7 +246,11 @@ function normalizeHeaders(headers) {
 function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": jsonApiMediaType },
     ...init,
   });
+}
+
+function resourceDocument(type, id, attributes) {
+  return { data: { type, id, attributes } };
 }

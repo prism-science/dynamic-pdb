@@ -8,6 +8,8 @@ const nextHeaders = require("./stubs/next-headers.cjs");
 const { proxyUploadControlRequest } = require("../src/lib/api/uploadProxy.ts");
 const { authTokenCookieName } = require("../src/lib/auth/session.ts");
 
+const jsonApiMediaType = "application/vnd.api+json";
+
 test("should return 401 when upload proxy has no auth session", async () => {
   nextHeaders.__setCookieValues({});
   const request = new NextRequest("https://app.example/files", {
@@ -34,12 +36,12 @@ test("should forward upload control request with bearer token and content type",
       forwarded = { url: String(url), init };
       return new Response(JSON.stringify({ ok: true }), {
         status: 202,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": jsonApiMediaType },
       });
     };
     const request = new NextRequest("https://app.example/files", {
       method: "POST",
-      headers: { "content-type": "application/vnd.dynamic-pdb+json" },
+      headers: { "content-type": "text/plain" },
       body: JSON.stringify({ filename: "model.cif" }),
     });
 
@@ -49,8 +51,9 @@ test("should forward upload control request with bearer token and content type",
     assert.equal(await response.text(), JSON.stringify({ ok: true }));
     assert.equal(forwarded.url, "https://backend.example/v1/files");
     assert.equal(forwarded.init.method, "POST");
+    assert.equal(forwarded.init.headers.Accept, jsonApiMediaType);
     assert.equal(forwarded.init.headers.Authorization, "Bearer jwt-token");
-    assert.equal(forwarded.init.headers["Content-Type"], "application/vnd.dynamic-pdb+json");
+    assert.equal(forwarded.init.headers["Content-Type"], jsonApiMediaType);
     assert.equal(forwarded.init.body, JSON.stringify({ filename: "model.cif" }));
   } finally {
     global.fetch = previousFetch;

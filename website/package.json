@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@scalar/api-reference": "^1.66.1",
     "@xyflow/react": "^12.11.2",
     "molstar": "^5.10.1",
     "next": "^16.3.2",

@@ -65,8 +65,8 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 	if err != nil {
 		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: create GitHub token exchange request: %w", err)
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", jsonAPIMediaType)
+	request.Header.Set("Accept", jsonAPIMediaType)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
@@ -80,8 +80,8 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 		return TokenResponse{}, decodeError(response.StatusCode, body)
 	}
 
-	var token TokenResponse
-	if err := json.Unmarshal(body, &token); err != nil {
+	token, err := decodeAttributes[TokenResponse](body)
+	if err != nil {
 		return TokenResponse{}, fmt.Errorf("dynamicpdbapi: decode GitHub token exchange response: %w", err)
 	}
 	if token.TokenType == "" || token.AccessToken == "" || token.ExpiresAt.IsZero() || token.Login == "" {
@@ -95,7 +95,20 @@ func decodeError(status int, body []byte) error {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var jsonAPIPayload struct {
+		Errors []struct {
+			Code   string `json:"code"`
+			Title  string `json:"title"`
+			Detail string `json:"detail"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &jsonAPIPayload); err == nil && len(jsonAPIPayload.Errors) > 0 {
+		payload.Code = jsonAPIPayload.Errors[0].Code
+		payload.Message = jsonAPIPayload.Errors[0].Detail
+		if payload.Message == "" {
+			payload.Message = jsonAPIPayload.Errors[0].Title
+		}
+	} else if err := json.Unmarshal(body, &payload); err != nil {
 		var xmlPayload struct {
 			Code    string `xml:"Code"`
 			Message string `xml:"Message"`

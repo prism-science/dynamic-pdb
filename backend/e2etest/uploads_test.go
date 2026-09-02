@@ -42,8 +42,9 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	// then
 	s.Equal(http.StatusOK, createResp.StatusCode)
 
-	var grant httpapi.FileUploadGrantResponse
-	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grant))
+	var grantDocument httpapi.FileUploadGrantDocument
+	s.Require().NoError(json.NewDecoder(createResp.Body).Decode(&grantDocument))
+	grant := grantDocument.Data.Attributes
 	s.Equal(
 		entryID.String()+"/models/"+modelID.String()+"/artifacts/"+artifactID.String()+"/model.cif",
 		grant.Key,
@@ -75,8 +76,9 @@ func (s *UploadsSuite) Test_should_create_complete_and_abort_file_upload_when_re
 	// then
 	s.Equal(http.StatusOK, completeResp.StatusCode)
 
-	var completeBody httpapi.CompleteFileUploadResponse
-	s.Require().NoError(json.NewDecoder(completeResp.Body).Decode(&completeBody))
+	var completeDocument httpapi.CompleteFileUploadDocument
+	s.Require().NoError(json.NewDecoder(completeResp.Body).Decode(&completeDocument))
+	completeBody := completeDocument.Data.Attributes
 	s.Equal(grant.Key, completeBody.Key)
 	requests = s3Stub.Requests()
 	s.Equal("/dynamic-pdb/"+grant.Key, requests.CompletePath)

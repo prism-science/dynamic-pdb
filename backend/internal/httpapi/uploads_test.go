@@ -47,17 +47,46 @@ func Test_should_presign_file_upload_when_create_file_upload_request_is_valid(t 
 
 	// then
 	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
 	assert.Equal(t, entryID.String(), fileCDN.createdFile.EntryID)
 	assert.Equal(t, artifactID.String(), fileCDN.createdFile.ArtifactID)
 	assert.Equal(t, "model.cif", fileCDN.createdFile.OriginalFilename)
 	assert.Equal(t, int64(42), fileCDN.createdFile.Size)
 
-	var body FileUploadGrantResponse
+	var body FileUploadGrantDocument
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
-	assert.Equal(t, fileCDN.grant.Key, body.Key)
-	assert.Equal(t, fileCDN.grant.UploadID, body.UploadId)
-	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.ObjectUrl)
-	assert.Len(t, body.Parts, 1)
+	assert.Equal(t, jsonAPITypeFileUploads, body.Data.Type)
+	assert.Equal(t, fileCDN.grant.UploadID, body.Data.Id)
+	assert.Equal(t, fileCDN.grant.Key, body.Data.Attributes.Key)
+	assert.Equal(t, fileCDN.grant.UploadID, body.Data.Attributes.UploadId)
+	assert.Equal(t, "https://files.dynamicpdb.com/entry/artifacts/artifact/model.cif", body.Data.Attributes.ObjectUrl)
+	assert.Len(t, body.Data.Attributes.Parts, 1)
+}
+
+func Test_should_return_legacy_error_shape_when_create_file_upload_request_is_invalid(t *testing.T) {
+	// given
+	fileCDN := &uploadCDNStub{}
+	server := &Server{fileCDN: fileCDN}
+	req := uploadJSONRequest(t, map[string]any{
+		"entry_id":    uuid.New(),
+		"artifact_id": uuid.New(),
+		"filename":    "model.cif",
+		"size":        0,
+	})
+	rec := httptest.NewRecorder()
+
+	// when
+	server.CreateFileUpload(rec, req)
+
+	// then
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, JSONAPIMediaType, rec.Header().Get("Content-Type"))
+	assert.JSONEq(
+		t,
+		`{"errors":[{"status":"400","code":"BAD_REQUEST","detail":"size must be greater than zero"}]}`,
+		rec.Body.String(),
+	)
+	assert.Zero(t, fileCDN.createCalls)
 }
 
 func Test_should_return_400_when_create_file_upload_request_is_invalid(t *testing.T) {
@@ -338,7 +367,8 @@ func uploadJSONRequest(t *testing.T, body map[string]any) *http.Request {
 	var buf bytes.Buffer
 	require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	req := httptest.NewRequest(http.MethodPost, "/v1/files", &buf)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", JSONAPIMediaType)
+	req.Header.Set("Content-Type", JSONAPIMediaType)
 	return req
 }
 

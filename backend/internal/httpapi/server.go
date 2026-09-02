@@ -169,14 +169,19 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, TokenResponse{
-		TokenType:   Bearer,
-		AccessToken: token,
-		ExpiresAt:   expiresAt,
-		Name:        displayName,
-		Email:       githubUser.Email,
-		Login:       githubUser.Login,
-		Permissions: permissionKeys,
+	writeJSON(w, http.StatusOK, TokenDocument{
+		Data: TokenData{
+			Type: jsonAPITypeAuthTokens,
+			Attributes: TokenAttributes{
+				TokenType:   Bearer,
+				AccessToken: token,
+				ExpiresAt:   expiresAt,
+				Name:        displayName,
+				Email:       githubUser.Email,
+				Login:       githubUser.Login,
+				Permissions: permissionKeys,
+			},
+		},
 	})
 }
 
@@ -200,24 +205,37 @@ func (s *Server) isInAllowedOrg(orgs []github.Organization) bool {
 }
 
 func (s *Server) Livez(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, ProbeResponse{Status: "ok"})
+	writeJSON(w, http.StatusOK, ProbeDocument{Meta: ProbeMeta{Status: "ok"}})
 }
 
 func (s *Server) Readyz(w http.ResponseWriter, r *http.Request) {
 	if err := s.database.Ping(r.Context()); err != nil {
 		slog.Warn("readyz: db ping failed", "err", err)
-		writeJSON(w, http.StatusServiceUnavailable, ProbeResponse{Status: "not ready"})
+		writeJSON(w, http.StatusServiceUnavailable, ProbeDocument{Meta: ProbeMeta{Status: "not ready"}})
 		return
 	}
-	writeJSON(w, http.StatusOK, ProbeResponse{Status: "ok"})
+	writeJSON(w, http.StatusOK, ProbeDocument{Meta: ProbeMeta{Status: "ok"}})
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, Error{Code: code, Message: message})
+	writeJSON(w, status, Error{
+		Errors: []ErrorObject{
+			{
+				Status: strconv.Itoa(status),
+				Code:   &code,
+				Detail: &message,
+			},
+		},
+	})
+}
+
+// RouteErrorHandler writes parameter binding errors from the generated router.
+func RouteErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
+	writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", JSONAPIMediaType)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		slog.Error("write json response failed", "err", err)
