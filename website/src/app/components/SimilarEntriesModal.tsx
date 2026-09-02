@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 
 import type { ProteinSequence, SimilarEntry } from "@/lib/api/entries";
+import { formatEntryLabel } from "@/lib/entry-label";
 import {
   bestMatchStats,
   formatPercent,
@@ -239,7 +240,7 @@ function Row({
                 href={`/entries/${encodeURIComponent(item.entry.id)}`}
                 onClick={(event) => event.stopPropagation()}
               >
-                {item.entry.name}
+                {formatEntryLabel(item.entry)}
               </Link>
               <span className={styles.rowSub}>
                 {chains} {chains === 1 ? "chain" : "chains"} matched

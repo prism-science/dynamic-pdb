@@ -440,7 +440,11 @@ test("should group the review queue by entry and pair each revision with the one
           "entry_revision_groups",
           [
             {
-              entry: { id: "entry-1", name: "Entry" },
+              entry: {
+                id: "entry-1",
+                name: "Entry",
+                metadata: { external_refs: { pdb: "7B3H" } },
+              },
               entry_revisions: [
                 revisionSummary("entry-revision-1", "2026-01-01T01:00:00Z"),
               ],
@@ -500,6 +504,7 @@ test("should group the review queue by entry and pair each revision with the one
     // One row per entry, never one per revision.
     assert.equal(page.items.length, 1);
     assert.equal(page.hasMore, false);
+    assert.equal(page.items[0].name, "PDB 7B3H | entry-1");
     // The row is stamped with the earliest thing waiting under it.
     assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
 

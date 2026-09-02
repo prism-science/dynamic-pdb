@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { Entry } from "@/lib/api/entries";
+import { formatEntryLabel } from "@/lib/entry-label";
 
 import EntriesInfiniteScroll from "./EntriesInfiniteScroll";
 import styles from "./EntriesBrowser.module.css";
@@ -70,7 +71,9 @@ export default function EntriesBrowser({
                     )}
                   </span>
                   <span className={styles.cardBody}>
-                    <span className={styles.cardName}>{entry.name}</span>
+                    <span className={styles.cardName}>
+                      {formatEntryLabel(entry)}
+                    </span>
                     <span className={styles.cardDesc}>
                       {entry.description?.trim()
                         ? entry.description

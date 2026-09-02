@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
+import { formatEntryLabel } from "@/lib/entry-label";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 type JSONRecord = Record<string, unknown>;
@@ -884,7 +885,7 @@ async function listInReviewGroups(
 function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
   return {
     entry_id: group.entry.id,
-    name: group.entry.name,
+    name: formatEntryLabel(group.entry),
     submitted_at: earliest([
       ...group.entry_revisions.map((revision) => revision.updated_at),
       ...group.model_revisions.map((revision) => revision.updated_at),

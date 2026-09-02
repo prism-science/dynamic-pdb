@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 import type { ProteinSequence, SimilarEntry } from "@/lib/api/entries";
+import { formatEntryLabel } from "@/lib/entry-label";
 import { bestMatchStats, formatPercent, sortedByScore } from "@/lib/similarity";
 import SimilarEntriesModal from "./SimilarEntriesModal";
 
@@ -90,7 +91,7 @@ function RailItem({ item }: { item: SimilarEntry }) {
         )}
       </span>
       <span className={styles.body}>
-        <span className={styles.name}>{item.entry.name}</span>
+        <span className={styles.name}>{formatEntryLabel(item.entry)}</span>
         {/* The two numbers the table leads with, in full words: how alike
             the matched stretch is, and how much of the chain it spans. */}
         {stats.fident != null || stats.qcov != null ? (

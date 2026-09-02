@@ -15,6 +15,7 @@ import {
   userIdFromToken,
 } from "@/lib/auth/session";
 import { hasReviewAccess } from "@/lib/auth/permissions";
+import { formatEntryLabel } from "@/lib/entry-label";
 
 import {
   EntryRevisionPreview,
@@ -60,7 +61,14 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
   );
 
   return (
-    <RevisionPreviewFrame kind="entry" name={revision.name}>
+    <RevisionPreviewFrame
+      kind="entry"
+      name={formatEntryLabel({
+        id: revision.entry_id,
+        name: revision.name,
+        metadata: revision.metadata,
+      })}
+    >
       <EntryRevisionPreview revision={revision} models={models} />
     </RevisionPreviewFrame>
   );

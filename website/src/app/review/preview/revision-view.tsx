@@ -5,6 +5,7 @@ import {
   type ModelRevision,
 } from "@/lib/api/entries";
 import { dataTableEntities, getEntityFileURL, structureMaps } from "@/lib/entities";
+import { formatEntryLabel } from "@/lib/entry-label";
 import DataTable from "@/app/components/DataTable";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
@@ -64,12 +65,17 @@ export function EntryRevisionPreview({
   const facts = entryMetadataFacts(revision.metadata);
   const files = fileItems(revision.artifacts);
   const thumbnail = revision.thumbnail_image_url?.trim() || null;
+  const entryLabel = formatEntryLabel({
+    id: revision.entry_id,
+    name: revision.name,
+    metadata: revision.metadata,
+  });
 
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
         <Thumb url={thumbnail} />
-        <h1 className={styles.sideName}>{revision.name}</h1>
+        <h1 className={styles.sideName}>{entryLabel}</h1>
         {residues > 0 ? (
           <dl className={styles.sideVitals}>
             <div>{residues.toLocaleString()} residues</div>

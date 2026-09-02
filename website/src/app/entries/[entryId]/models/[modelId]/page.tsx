@@ -13,6 +13,7 @@ import {
   structureMaps,
 } from "@/lib/entities";
 import { buildLineage } from "@/lib/lineage";
+import { formatEntryLabel } from "@/lib/entry-label";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import DataTable from "@/app/components/DataTable";
 import PipelineModal from "@/app/components/PipelineModal";
@@ -81,17 +82,18 @@ export default async function ModelPage({
     entryGraph.relations,
     model?.id ?? null,
   );
+  const entryLabel = formatEntryLabel(data.entry);
 
   return (
     <main
       className={styles.page}
-      aria-label={`${data.entry.name} model ${data.model.name}`}
+      aria-label={`${entryLabel} model ${data.model.name}`}
     >
       <div className={styles.record}>
         <Breadcrumbs
           items={[
             { label: "Entries", href: "/browse" },
-            { label: data.entry.name, href: `/entries/${data.entry.id}` },
+            { label: entryLabel, href: `/entries/${data.entry.id}` },
             { label: data.model.name },
           ]}
         />
