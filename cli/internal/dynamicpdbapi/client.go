@@ -16,8 +16,8 @@ const defaultUploadHTTPTimeout = 10 * time.Minute
 
 type Client interface {
 	ListEntries(ctx context.Context, params ListEntriesParams) ([]Entry, error)
-	CreateEntry(ctx context.Context, request CreateEntryRequest) error
-	CreateModel(ctx context.Context, entryID string, request CreateModelRequest) error
+	CreateEntry(ctx context.Context, request CreateEntryRequest) (CreateEntryResult, error)
+	CreateModel(ctx context.Context, entryID string, request CreateModelRequest) (CreateModelResult, error)
 	CreateFileUpload(ctx context.Context, request CreateFileUploadRequest) (FileUploadGrantResponse, error)
 	CompleteFileUpload(ctx context.Context, request CompleteFileUploadRequest) error
 	PutUploadPart(ctx context.Context, url string, body io.Reader, size int64) (string, error)
@@ -51,11 +51,19 @@ func NewClient(serverURL string, token string, options ...ClientOption) *RemoteC
 	return client
 }
 
-func (c *RemoteClient) CreateEntry(ctx context.Context, request CreateEntryRequest) error {
-	if _, err := c.postJSON(ctx, "/v1/entries", request, http.StatusCreated); err != nil {
-		return fmt.Errorf("dynamicpdbapi: create entry: %w", err)
+func (c *RemoteClient) CreateEntry(ctx context.Context, request CreateEntryRequest) (CreateEntryResult, error) {
+	body, err := c.postJSON(ctx, "/v1/entries", request, http.StatusCreated)
+	if err != nil {
+		return CreateEntryResult{}, fmt.Errorf("dynamicpdbapi: create entry: %w", err)
 	}
-	return nil
+	result, err := decodeAttributes[CreateEntryResult](body)
+	if err != nil {
+		return CreateEntryResult{}, fmt.Errorf("dynamicpdbapi: decode create entry result: %w", err)
+	}
+	if strings.TrimSpace(result.EntryID) == "" {
+		return CreateEntryResult{}, fmt.Errorf("dynamicpdbapi: create entry response missing entry id")
+	}
+	return result, nil
 }
 
 func (c *RemoteClient) ListEntries(ctx context.Context, params ListEntriesParams) ([]Entry, error) {
@@ -81,15 +89,23 @@ func (c *RemoteClient) ListEntries(ctx context.Context, params ListEntriesParams
 	return entries, nil
 }
 
-func (c *RemoteClient) CreateModel(ctx context.Context, entryID string, request CreateModelRequest) error {
+func (c *RemoteClient) CreateModel(ctx context.Context, entryID string, request CreateModelRequest) (CreateModelResult, error) {
 	entryID = strings.TrimSpace(entryID)
 	if entryID == "" {
-		return fmt.Errorf("dynamicpdbapi: create model: entry id is required")
+		return CreateModelResult{}, fmt.Errorf("dynamicpdbapi: create model: entry id is required")
 	}
-	if _, err := c.postJSON(ctx, "/v1/entries/"+url.PathEscape(entryID)+"/models", request, http.StatusCreated); err != nil {
-		return fmt.Errorf("dynamicpdbapi: create model: %w", err)
+	body, err := c.postJSON(ctx, "/v1/entries/"+url.PathEscape(entryID)+"/models", request, http.StatusCreated)
+	if err != nil {
+		return CreateModelResult{}, fmt.Errorf("dynamicpdbapi: create model: %w", err)
 	}
-	return nil
+	result, err := decodeAttributes[CreateModelResult](body)
+	if err != nil {
+		return CreateModelResult{}, fmt.Errorf("dynamicpdbapi: decode create model result: %w", err)
+	}
+	if strings.TrimSpace(result.ModelID) == "" {
+		return CreateModelResult{}, fmt.Errorf("dynamicpdbapi: create model response missing model id")
+	}
+	return result, nil
 }
 
 func (c *RemoteClient) CreateFileUpload(ctx context.Context, request CreateFileUploadRequest) (FileUploadGrantResponse, error) {

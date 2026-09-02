@@ -6,6 +6,7 @@ import {
   type Entity,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { formatEntryLabel } from "@/lib/entry-label";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import NewModelForm from "@/app/components/NewModelForm";
 
@@ -37,6 +38,7 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
   }
 
   const entryHref = `/entries/${encodeURIComponent(entryId)}`;
+  const entryLabel = formatEntryLabel(data.entry);
 
   return (
     <main className={styles.page}>
@@ -44,7 +46,7 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
         <Breadcrumbs
           items={[
             { label: "Entries", href: "/browse" },
-            { label: data.entry.name, href: entryHref },
+            { label: entryLabel, href: entryHref },
             { label: "New model" },
           ]}
         />

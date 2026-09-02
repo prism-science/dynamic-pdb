@@ -1,10 +1,19 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func NewModelID(entryID string, modelNumber int) (string, error) {
+	if modelNumber < 1 || modelNumber > 999 {
+		return "", fmt.Errorf("model number %d is outside the supported range 1..999", modelNumber)
+	}
+
+	return fmt.Sprintf("%s_m_%03d", entryID, modelNumber), nil
+}
 
 type Model struct {
 	ID        string

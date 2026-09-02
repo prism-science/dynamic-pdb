@@ -152,7 +152,6 @@ export function buildCreateModelInput(
   }
 
   return {
-    id: modelDraft.id,
     name: modelDraft.name.trim(),
     description: modelDraft.description.trim() || null,
     thumbnail_image_url: modelDraft.thumbUrl,

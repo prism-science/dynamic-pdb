@@ -8,6 +8,7 @@ import {
   type Model,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { formatEntryLabel } from "@/lib/entry-label";
 import AppFooter from "./components/AppFooter";
 import LandingSearch from "./components/LandingSearch";
 
@@ -310,7 +311,7 @@ function latestDepositionFromModel(
   entry: Entry,
 ): LatestDeposition {
   return {
-    entry: entryLabel(entry),
+    entry: formatEntryLabel(entry),
     entryId: model.entry_id,
     modelId: model.id,
     modelType:
@@ -320,17 +321,6 @@ function latestDepositionFromModel(
     ),
     updatedAt: model.updated_at,
   };
-}
-
-function entryLabel(entry: Entry): string {
-  const externalRefs = entry.metadata?.external_refs;
-  if (isRecord(externalRefs)) {
-    const pdbID = stringMetadataValue(externalRefs, "pdb");
-    if (pdbID) {
-      return pdbID.toUpperCase();
-    }
-  }
-  return entry.name;
 }
 
 function experimentLabel(method: string | null): string {
@@ -346,10 +336,6 @@ function stringMetadataValue(
 ): string | null {
   const value = metadata[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function barWidth(count: number, total: number): string {

@@ -114,12 +114,9 @@ func (s *Server) createInitialEntryRevision(
 	if name == "" {
 		return CreateEntryRevisionAttributes{}, invalidRequest("entry name is required")
 	}
-	entryID := uuid.NewString()
-	if req.Entry.Id != nil {
-		entryID = strings.TrimSpace(*req.Entry.Id)
-		if entryID == "" {
-			return CreateEntryRevisionAttributes{}, invalidRequest("entry id is required")
-		}
+	entryID, err := domainmodels.NewEntryID()
+	if err != nil {
+		return CreateEntryRevisionAttributes{}, fmt.Errorf("generate entry id: %w", err)
 	}
 	metadata, err := entryMetadataFromRequest(req.Entry.Metadata)
 	if err != nil {
@@ -302,13 +299,6 @@ func (s *Server) createInitialModelRevisionForEntry(
 	if name == "" {
 		return CreateModelRevisionAttributes{}, invalidRequest("model name is required")
 	}
-	modelID := uuid.NewString()
-	if data.Id != nil {
-		modelID = strings.TrimSpace(*data.Id)
-		if modelID == "" {
-			return CreateModelRevisionAttributes{}, invalidRequest("model id is required")
-		}
-	}
 	metadata, err := modelMetadataFromRequest(data.Metadata)
 	if err != nil {
 		return CreateModelRevisionAttributes{}, fmt.Errorf("decode model metadata: %w", err)
@@ -317,7 +307,6 @@ func (s *Server) createInitialModelRevisionForEntry(
 	attributes := CreateModelRevisionAttributes{
 		EntryId:        entryID,
 		IdempotencyKey: modelRevisionIdempotencyKeyFromCreateModelData(data),
-		ModelId:        modelID,
 		State:          RevisionStateInReview,
 	}
 	err = s.database.Do(ctx, func(ctx context.Context) error {
@@ -346,6 +335,11 @@ func (s *Server) createInitialModelRevisionForEntry(
 				return fmt.Errorf("get active entry revision: %w", err)
 			}
 		}
+		modelID, err := s.database.Models.NextID(ctx, entryID)
+		if err != nil {
+			return fmt.Errorf("generate model id: %w", err)
+		}
+		attributes.ModelId = modelID
 		if _, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{ModelID: &modelID}); err == nil {
 			return fmt.Errorf("model id already exists: %w", errConflict)
 		} else if !errors.Is(err, db.ErrModelRevisionNotFound) {
@@ -396,18 +390,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 }
 
 func createModelDataFromAddOperation(data AddModelData) CreateModelData {
-	return CreateModelData{
-		Id:                data.ModelId,
-		Name:              data.Name,
-		Description:       data.Description,
-		ThumbnailImageUrl: data.ThumbnailImageUrl,
-		Metadata:          data.Metadata,
-		IdempotencyKey:    data.IdempotencyKey,
-		PrimaryArtifactId: data.PrimaryArtifactId,
-		Artifacts:         data.Artifacts,
-		Runs:              data.Runs,
-		Metrics:           data.Metrics,
-	}
+	return CreateModelData(data)
 }
 
 func (s *Server) createArtifacts(

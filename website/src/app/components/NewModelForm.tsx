@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { Entity, Entry } from "@/lib/api/entries";
+import { formatEntryLabel } from "@/lib/entry-label";
 import { getExtExperiment, type ExtExperiment } from "@/lib/api/ext";
 import { createModelAction } from "@/app/entries/[entryId]/models/new/actions";
 
@@ -162,7 +163,7 @@ export default function NewModelForm({
             ) : null}
           </span>
           <span className={styles.sourceMeta}>
-            <strong>{entry.name}</strong>
+            <strong>{formatEntryLabel(entry)}</strong>
             <span>{entry.id}</span>
           </span>
           <span className={styles.sourceCount}>

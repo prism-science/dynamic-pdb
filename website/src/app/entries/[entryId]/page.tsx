@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import { fastaTotalLength } from "@/lib/fasta";
+import { formatEntryLabel } from "@/lib/entry-label";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
 import FileList, { type FileItem } from "@/app/components/FileList";
 import SimilarProteins from "@/app/components/SimilarProteins";
@@ -57,12 +58,13 @@ export default async function EntryPage({
   const hasModels = data.models.length > 0;
   const canAddModel = session !== null;
   const entryFacts = entryMetadataFacts(data.entry.metadata);
+  const entryLabel = formatEntryLabel(data.entry);
 
   return (
-    <main className={styles.page} aria-label={`${data.entry.name} entry`}>
+    <main className={styles.page} aria-label={`${entryLabel} entry`}>
       <div className={styles.record}>
         <Breadcrumbs
-          items={[{ label: "Entries", href: "/browse" }, { label: data.entry.name }]}
+          items={[{ label: "Entries", href: "/browse" }, { label: entryLabel }]}
         />
 
         <div className={styles.layout}>
@@ -79,7 +81,7 @@ export default async function EntryPage({
               )}
             </div>
 
-            <h1 className={styles.sideName}>{data.entry.name}</h1>
+            <h1 className={styles.sideName}>{entryLabel}</h1>
 
             {vitals.length > 0 ? (
               <dl className={styles.sideVitals}>
@@ -94,7 +96,7 @@ export default async function EntryPage({
                 alignments behind "All similar". */}
             <SimilarProteins
               entryId={data.entry.id}
-              entryName={data.entry.name}
+              entryName={entryLabel}
               sequences={data.entry.protein_sequences ?? []}
               items={similarEntries}
             />

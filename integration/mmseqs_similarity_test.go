@@ -35,10 +35,8 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	defer s3.Close()
 	backend := startBackend(t, root, backendBinaryPath, s3.URL())
 
-	sourceEntryID := uuid.NewString()
-	similarEntryID := uuid.NewString()
-	createProteinEntry(t, backend.URL, auth.AccessToken, sourceEntryID, "mmseqs-source", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY")
-	createProteinEntry(t, backend.URL, auth.AccessToken, similarEntryID, "mmseqs-similar", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWF")
+	sourceEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-source", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY")
+	similarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWF")
 	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
 
 	// when
@@ -126,13 +124,12 @@ func runMMseqsJobContainer(t *testing.T, root string, image string, cacheDir str
 	require.NoError(t, cmd.Run(), output.String())
 }
 
-func createProteinEntry(t *testing.T, backendURL string, token string, entryID string, name string, sequence string) {
+func createProteinEntry(t *testing.T, backendURL string, token string, name string, sequence string) string {
 	t.Helper()
 
 	artifactID := uuid.NewString()
 	body := map[string]any{
 		"entry": map[string]any{
-			"id":   entryID,
 			"name": name,
 			"artifacts": []map[string]any{
 				{
@@ -161,6 +158,16 @@ func createProteinEntry(t *testing.T, backendURL string, token string, entryID s
 	responseBody, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, response.StatusCode, string(responseBody))
+	var document struct {
+		Data struct {
+			Attributes struct {
+				EntryID string `json:"entry_id"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(responseBody, &document))
+	require.NotEmpty(t, document.Data.Attributes.EntryID)
+	return document.Data.Attributes.EntryID
 }
 
 func postJSON(t *testing.T, url string, token string, body any) *http.Response {

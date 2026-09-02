@@ -211,7 +211,6 @@ test("should post create entry using the new backend graph shape", async () => {
     };
 
     const result = await createEntry("token-123", {
-      id: "entry-1",
       name: "Entry",
       entities: [
         {
@@ -229,7 +228,6 @@ test("should post create entry using the new backend graph shape", async () => {
       ],
       models: [
         {
-          id: "model-1",
           name: "Model",
           entities: [
             {
@@ -291,9 +289,9 @@ test("should post create entry using the new backend graph shape", async () => {
         metadata: { records: [{ header: "A", sequence: "AC" }] },
       },
     ]);
-    assert.equal(request.body.entry.id, "entry-1");
+    assert.equal("id" in request.body.entry, false);
     assert.equal(request.body.model_operations[0].op, "add");
-    assert.equal(request.body.model_operations[0].data.model_id, "model-1");
+    assert.equal("model_id" in request.body.model_operations[0].data, false);
     assert.equal(
       request.body.model_operations[0].data.idempotency_key,
       "abcdef123456",
@@ -359,7 +357,6 @@ test("should create and submit model revisions through user routes", async () =>
     };
 
     const result = await createModel("token-123", "entry-1", {
-      id: "model-1",
       name: "Model",
     });
     await submitModelRevision(
@@ -372,7 +369,6 @@ test("should create and submit model revisions through user routes", async () =>
 
     assert.equal(requests[0].url, "https://backend.example/v1/entries/entry-1/models");
     assert.deepEqual(requests[0].body.model, {
-      id: "model-1",
       name: "Model",
       idempotency_key: null,
       metadata: {},
@@ -444,7 +440,11 @@ test("should group the review queue by entry and pair each revision with the one
           "entry_revision_groups",
           [
             {
-              entry: { id: "entry-1", name: "Entry" },
+              entry: {
+                id: "entry-1",
+                name: "Entry",
+                metadata: { external_refs: { pdb: "7B3H" } },
+              },
               entry_revisions: [
                 revisionSummary("entry-revision-1", "2026-01-01T01:00:00Z"),
               ],
@@ -504,6 +504,7 @@ test("should group the review queue by entry and pair each revision with the one
     // One row per entry, never one per revision.
     assert.equal(page.items.length, 1);
     assert.equal(page.hasMore, false);
+    assert.equal(page.items[0].name, "PDB 7B3H | entry-1");
     // The row is stamped with the earliest thing waiting under it.
     assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
 

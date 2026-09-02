@@ -337,13 +337,13 @@ func (u *Uploader) uploadNewEntry(
 	pdbID string,
 	entryPDBID string,
 ) (uploadedEntry, uploadedModelSet, error) {
-	entryID := uuid.NewString()
+	uploadEntryID := uuid.NewString()
 	metadata, err := u.entryMetadata(ctx, dataRoot, entryTemplate.Metadata, entryPDBID)
 	if err != nil {
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
 
-	thumbnailImageURL, err := u.uploadPreviewImage(ctx, dataRoot, entryID, entryTemplate.PreviewImage, pdbID)
+	thumbnailImageURL, err := u.uploadPreviewImage(ctx, dataRoot, uploadEntryID, entryTemplate.PreviewImage, pdbID)
 	if err != nil {
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
@@ -351,7 +351,7 @@ func (u *Uploader) uploadNewEntry(
 	entryArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0)
 	uploadedArtifactIDs := make([]string, 0, len(entryTemplate.Artifacts))
 	for _, artifact := range entryTemplate.Artifacts {
-		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, nil, artifact, pdbID)
+		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, uploadEntryID, nil, artifact, pdbID)
 		if err != nil {
 			return uploadedEntry{}, uploadedModelSet{}, err
 		}
@@ -361,19 +361,17 @@ func (u *Uploader) uploadNewEntry(
 		}
 	}
 
-	uploadedModels, err := u.uploadModels(ctx, entryTemplate.Models, dataRoot, pdbID, entryID, false)
+	uploadedModels, err := u.uploadModels(ctx, entryTemplate.Models, dataRoot, pdbID, uploadEntryID, false)
 	if err != nil {
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
 
-	entryIDPtr := entryID
 	name := strings.ReplaceAll(entryTemplate.Name, templatePDBID, canonicalPDBID(entryPDBID))
 	if strings.TrimSpace(name) == "" {
 		name = entryPDBID
 	}
-	if err := u.dynamicPDBClient.CreateEntry(ctx, dynamicpdbapi.CreateEntryRequest{
+	result, err := u.dynamicPDBClient.CreateEntry(ctx, dynamicpdbapi.CreateEntryRequest{
 		Entry: dynamicpdbapi.CreateEntryData{
-			ID:                &entryIDPtr,
 			Name:              name,
 			Description:       entryDescription(metadata),
 			ThumbnailImageURL: thumbnailImageURL,
@@ -381,7 +379,8 @@ func (u *Uploader) uploadNewEntry(
 			Artifacts:         entryArtifacts,
 		},
 		ModelOperations: uploadedModels.ModelOperations,
-	}); err != nil {
+	})
+	if err != nil {
 		if isPDBRefConflict(err) {
 			existingEntry, lookupErr := u.existingEntryByPDBID(ctx, entryPDBID)
 			if lookupErr != nil {
@@ -393,10 +392,24 @@ func (u *Uploader) uploadNewEntry(
 		}
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
+	if len(result.ModelResults) != len(uploadedModels.ModelOperations) {
+		return uploadedEntry{}, uploadedModelSet{}, fmt.Errorf(
+			"backend returned %d model results for %d model operations",
+			len(result.ModelResults),
+			len(uploadedModels.ModelOperations),
+		)
+	}
+	uploadedModels.ModelIDs = make([]string, 0, len(result.ModelResults))
+	for _, modelResult := range result.ModelResults {
+		if strings.TrimSpace(modelResult.ModelID) == "" {
+			return uploadedEntry{}, uploadedModelSet{}, fmt.Errorf("backend returned an empty model id")
+		}
+		uploadedModels.ModelIDs = append(uploadedModels.ModelIDs, modelResult.ModelID)
+	}
 
 	return uploadedEntry{
-		EntryID:        entryID,
-		CreatedEntryID: entryID,
+		EntryID:        result.EntryID,
+		CreatedEntryID: result.EntryID,
 		ArtifactIDs:    uploadedArtifactIDs,
 		ArtifactCount:  len(entryArtifacts),
 	}, uploadedModels, nil
@@ -469,7 +482,7 @@ func (u *Uploader) uploadModel(
 	pdbID string,
 	create bool,
 ) (uploadedModel, bool, error) {
-	modelID := uuid.NewString()
+	uploadModelID := uuid.NewString()
 	modelArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0, len(model.Artifacts))
 	modelArtifactRefs := make([]uploadedArtifactRef, 0, len(model.Artifacts))
 	artifactPayloads := make(map[string]extractorapi.Artifact, len(model.Artifacts))
@@ -481,7 +494,7 @@ func (u *Uploader) uploadModel(
 		return uploadedModel{}, false, nil
 	}
 	for _, artifact := range model.Artifacts {
-		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, &modelID, artifact, pdbID)
+		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, &uploadModelID, artifact, pdbID)
 		if err != nil {
 			return uploadedModel{}, false, err
 		}
@@ -514,7 +527,6 @@ func (u *Uploader) uploadModel(
 		return uploadedModel{}, false, err
 	}
 
-	modelIDPtr := modelID
 	primaryArtifactID := modelArtifacts[0].ID
 	name := strings.TrimSpace(model.Name)
 	if name == "" {
@@ -525,7 +537,6 @@ func (u *Uploader) uploadModel(
 	modelOperation := dynamicpdbapi.AddModelOperation{
 		Op: "add",
 		Data: dynamicpdbapi.AddModelData{
-			ModelID:           &modelIDPtr,
 			Name:              name,
 			Metadata:          metadata,
 			IdempotencyKey:    idempotencyKey,
@@ -538,7 +549,6 @@ func (u *Uploader) uploadModel(
 	if create {
 		request := dynamicpdbapi.CreateModelRequest{
 			Model: dynamicpdbapi.CreateModelData{
-				ID:                &modelIDPtr,
 				Name:              name,
 				Metadata:          metadata,
 				IdempotencyKey:    idempotencyKey,
@@ -548,12 +558,20 @@ func (u *Uploader) uploadModel(
 				Metrics:           metrics,
 			},
 		}
-		if err := u.dynamicPDBClient.CreateModel(ctx, entryID, request); err != nil {
+		result, err := u.dynamicPDBClient.CreateModel(ctx, entryID, request)
+		if err != nil {
 			return uploadedModel{}, false, err
 		}
+		return uploadedModel{
+			ModelID:       result.ModelID,
+			ArtifactIDs:   artifactIDs(modelArtifacts),
+			RunIDs:        runIDs(runs),
+			MetricIDs:     metricIDs(metrics),
+			ArtifactCount: len(modelArtifacts),
+			Operation:     modelOperation,
+		}, true, nil
 	}
 	return uploadedModel{
-		ModelID:       modelID,
 		ArtifactIDs:   artifactIDs(modelArtifacts),
 		RunIDs:        runIDs(runs),
 		MetricIDs:     metricIDs(metrics),
@@ -1617,24 +1635,6 @@ func runIDs(runs []dynamicpdbapi.CreateRunRequest) []string {
 		ids = append(ids, run.ID)
 	}
 	return ids
-}
-
-func modelIDs(models []dynamicpdbapi.CreateModelData) []string {
-	ids := make([]string, 0, len(models))
-	for _, model := range models {
-		id := modelID(model)
-		if id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
-
-func modelID(model dynamicpdbapi.CreateModelData) string {
-	if model.ID == nil {
-		return ""
-	}
-	return *model.ID
 }
 
 func metricIDs(metrics []dynamicpdbapi.CreateMetricRequest) []string {

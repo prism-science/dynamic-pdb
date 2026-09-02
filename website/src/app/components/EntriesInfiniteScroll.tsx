@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { formatEntryLabel } from "@/lib/entry-label";
+
 import styles from "./EntriesBrowser.module.css";
 
 const pageSize = 50;
@@ -13,6 +15,7 @@ type Entry = {
   name: string;
   description: string | null;
   thumbnail_image_url: string | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -138,7 +141,7 @@ function EntryCard({
           )}
         </span>
         <span className={styles.cardBody}>
-          <span className={styles.cardName}>{entry.name}</span>
+          <span className={styles.cardName}>{formatEntryLabel(entry)}</span>
           <span className={styles.cardDesc}>
             {entry.description?.trim() ? entry.description : "No description yet."}
           </span>

@@ -2136,8 +2136,6 @@ components:
       type: object
       required: [name]
       properties:
-        id:
-          type: string
         name:
           type: string
           minLength: 1
@@ -2677,8 +2675,6 @@ components:
       type: object
       required: [name]
       properties:
-        model_id:
-          type: string
         name:
           type: string
           minLength: 1
@@ -2715,8 +2711,6 @@ components:
       type: object
       required: [name]
       properties:
-        id:
-          type: string
         name:
           type: string
           minLength: 1

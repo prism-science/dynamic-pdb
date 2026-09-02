@@ -32,26 +32,36 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 				map[string]any{
 					"op": "add",
 					"data": map[string]any{
-						"model_id": "model-1",
-						"name":     "model",
+						"name": "model",
 					},
 				},
 			},
 		}, body)
+		response.Header().Set("Content-Type", jsonAPIMediaType)
 		response.WriteHeader(http.StatusCreated)
+		err = json.NewEncoder(response).Encode(jsonAPIResourceDocument(
+			"entry_revision_results",
+			"revision-1",
+			CreateEntryResult{
+				EntryID: "dpdb_7h4q9k2m",
+				ModelResults: []CreateEntryModelResult{
+					{ModelID: "dpdb_7h4q9k2m_m_001"},
+				},
+			},
+		))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 	client := NewClient(server.URL, "jwt-token")
 
 	// when
-	err := client.CreateEntry(context.Background(), CreateEntryRequest{
+	result, err := client.CreateEntry(context.Background(), CreateEntryRequest{
 		Entry: CreateEntryData{Name: "5amf"},
 		ModelOperations: []AddModelOperation{
 			{
 				Op: "add",
 				Data: AddModelData{
-					ModelID: ptr("model-1"),
-					Name:    "model",
+					Name: "model",
 				},
 			},
 		},
@@ -59,6 +69,9 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 
 	// then
 	require.NoError(t, err)
+	assert.Equal(t, "dpdb_7h4q9k2m", result.EntryID)
+	require.Len(t, result.ModelResults, 1)
+	assert.Equal(t, "dpdb_7h4q9k2m_m_001", result.ModelResults[0].ModelID)
 }
 
 func Test_should_send_pdb_id_filters_when_list_entries_called(t *testing.T) {
@@ -156,16 +169,24 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 				"name": "model",
 			},
 		}, body)
+		response.Header().Set("Content-Type", jsonAPIMediaType)
 		response.WriteHeader(http.StatusCreated)
+		err = json.NewEncoder(response).Encode(jsonAPIResourceDocument(
+			"model_revision_results",
+			"revision-1",
+			CreateModelResult{ModelID: "entry-1_m_001"},
+		))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 	client := NewClient(server.URL, "jwt-token")
 
 	// when
-	err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Name: "model"}})
+	result, err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Name: "model"}})
 
 	// then
 	require.NoError(t, err)
+	assert.Equal(t, "entry-1_m_001", result.ModelID)
 }
 
 func Test_should_decode_s3_xml_error_when_upload_part_failed(t *testing.T) {
