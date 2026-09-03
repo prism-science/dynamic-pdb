@@ -662,6 +662,7 @@ func (u *Uploader) uploadArtifact(
 		ID:        artifactID,
 		Name:      name,
 		Level:     level,
+		Type:      artifactTypeForRequest(artifact, modelID != nil),
 		URI:       stringPtr(artifactURI),
 		SHA256:    stringPtr(payload.SHA256),
 		Format:    stringPtr(format),
@@ -674,6 +675,30 @@ func (u *Uploader) uploadArtifact(
 		Format:     format,
 	}
 	return uploadedArtifact{Request: request, Payload: payload, Ref: ref}, true, nil
+}
+
+func artifactTypeForRequest(artifact manifest.Artifact, attachedToModel bool) string {
+	if artifactType := strings.TrimSpace(artifact.Type); artifactType != "" {
+		return artifactType
+	}
+
+	artifactID := strings.ToLower(strings.TrimSpace(artifact.ID))
+	if !attachedToModel {
+		if artifactID == "fasta" ||
+			(artifact.Source.RCSB != nil && strings.EqualFold(strings.TrimSpace(artifact.Source.RCSB.Resource), "fasta")) {
+			return "fasta"
+		}
+		return "other"
+	}
+
+	switch {
+	case artifactID == "coordinates":
+		return "model"
+	case artifactID == "structure_factors" || strings.HasPrefix(artifactID, "structure_factors_"):
+		return "structure_factors"
+	default:
+		return "other"
+	}
 }
 
 func (u *Uploader) uploadPreviewImage(

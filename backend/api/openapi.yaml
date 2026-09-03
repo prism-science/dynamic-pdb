@@ -268,6 +268,182 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/files/{entry_id}.fasta:
+    get:
+      tags: [Files]
+      operationId: getEntryFile
+      summary: Download the canonical entry FASTA file
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the current artifact location.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        "404":
+          description: Active entry or canonical FASTA artifact not found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: More than one canonical FASTA artifact exists.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Artifact location could not be resolved.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    head:
+      tags: [Files]
+      operationId: headEntryFile
+      summary: Resolve the canonical entry FASTA file
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the current artifact location.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        "404":
+          description: Active entry or canonical FASTA artifact not found.
+        "409":
+          description: More than one canonical FASTA artifact exists.
+        "502":
+          description: Artifact location could not be resolved.
+
+  /v1/files/{entry_id}/{model_id}/{filename}:
+    get:
+      tags: [Files]
+      operationId: getModelFile
+      summary: Download a canonical model file
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          description: |
+            RCSB-style filename derived from `entry_id`: `<entry_id>.cif`
+            or `<entry_id>-sf.cif`.
+          schema:
+            type: string
+          example: pdb_1000axyz.cif
+      responses:
+        "302":
+          description: Redirect to the current artifact location.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        "404":
+          description: Active model or canonical artifact not found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: More than one canonical artifact exists.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Artifact location could not be resolved.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    head:
+      tags: [Files]
+      operationId: headModelFile
+      summary: Resolve a canonical model file
+      security: []
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          description: |
+            RCSB-style filename derived from `entry_id`: `<entry_id>.cif`
+            or `<entry_id>-sf.cif`.
+          schema:
+            type: string
+          example: pdb_1000axyz.cif
+      responses:
+        "302":
+          description: Redirect to the current artifact location.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+        "404":
+          description: Active model or canonical artifact not found.
+        "409":
+          description: More than one canonical artifact exists.
+        "502":
+          description: Artifact location could not be resolved.
+
   /v1/entries/{entry_id}:
     get:
       tags: [Entries]
@@ -2389,6 +2565,12 @@ components:
       type: string
       enum: [L0, L1, L2, L3]
 
+    ArtifactType:
+      type: string
+      enum: [model, structure_factors, fasta, other]
+      x-enum-varnames:
+        [ArtifactTypeModel, ArtifactTypeStructureFactors, ArtifactTypeFASTA, ArtifactTypeOther]
+
     RunArtifactDirection:
       type: string
       enum: [input, output]
@@ -2405,6 +2587,10 @@ components:
           minLength: 1
         level:
           $ref: "#/components/schemas/ArtifactLevel"
+        type:
+          allOf:
+            - $ref: "#/components/schemas/ArtifactType"
+          default: other
         uri:
           type: string
           nullable: true
@@ -2424,7 +2610,7 @@ components:
 
     ArtifactAttributes:
       type: object
-      required: [id, name, level, metadata, created_by, created_at]
+      required: [id, name, level, type, metadata, created_by, created_at]
       properties:
         id:
           type: string
@@ -2433,6 +2619,8 @@ components:
           type: string
         level:
           $ref: "#/components/schemas/ArtifactLevel"
+        type:
+          $ref: "#/components/schemas/ArtifactType"
         uri:
           type: string
           nullable: true

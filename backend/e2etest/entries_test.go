@@ -111,6 +111,79 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, modelArtifactID, httpapi.Output))
 }
 
+func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "files-owner", 8113)
+	entryArtifact := artifactRequest(
+		uuid.New(), "entry FASTA", "L0", "fasta", "https://files.example/entry.fasta", nil,
+	)
+	entryArtifact["type"] = "fasta"
+	modelArtifactID := uuid.New()
+	modelArtifact := artifactRequest(
+		modelArtifactID, "model coordinates", "L2", "cif", "https://files.example/model.cif", nil,
+	)
+	modelArtifact["type"] = "model"
+	structureFactorsArtifact := artifactRequest(
+		uuid.New(), "structure factors", "L2", "cif", "https://files.example/sf.cif", nil,
+	)
+	structureFactorsArtifact["type"] = "structure_factors"
+	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"name":      "files entry",
+			"artifacts": []map[string]any{entryArtifact},
+		},
+		"model_operations": []map[string]any{{
+			"op": "add",
+			"data": map[string]any{
+				"name":                "files model",
+				"primary_artifact_id": modelArtifactID,
+				"artifacts": []map[string]any{
+					modelArtifact,
+					structureFactorsArtifact,
+				},
+			},
+		}},
+	})
+	activateEntryRevisionForTest(s.T(), entry)
+	s.Require().Len(entry.ModelResults, 1)
+	model := entry.ModelResults[0]
+	modelPath := fmt.Sprintf(
+		"/v1/entries/%s/models/%s/revisions/%s",
+		entry.EntryId, model.ModelId, model.ModelRevisionId,
+	)
+	updateModelRevisionStateForTest(s.T(), modelPath, adminToken, "active")
+
+	// when
+	files := []struct {
+		method   string
+		path     string
+		location string
+	}{
+		{method: http.MethodGet, path: fmt.Sprintf("/v1/files/%s.fasta", entry.EntryId), location: "https://files.example/entry.fasta"},
+		{method: http.MethodGet, path: fmt.Sprintf("/v1/files/%s/%s/%s.cif", entry.EntryId, model.ModelId, entry.EntryId), location: "https://files.example/model.cif"},
+		{method: http.MethodHead, path: fmt.Sprintf("/v1/files/%s/%s/%s-sf.cif", entry.EntryId, model.ModelId, entry.EntryId), location: "https://files.example/sf.cif"},
+	}
+	responses := make([]*http.Response, 0, len(files))
+	for _, file := range files {
+		//nolint:bodyclose // Closed in the assertion loop below.
+		responses = append(responses, requestWithoutRedirect(s.T(), file.method, file.path))
+	}
+	oldStyleResponse := requestWithoutRedirect(
+		s.T(), http.MethodGet, fmt.Sprintf("/v1/files/%s/%s/model.cif", entry.EntryId, model.ModelId),
+	)
+
+	// then
+	for index, file := range files {
+		response := responses[index]
+		s.Equal(http.StatusFound, response.StatusCode)
+		s.Equal(file.location, response.Header.Get("Location"))
+		s.Equal("no-store", response.Header.Get("Cache-Control"))
+		s.Require().NoError(response.Body.Close())
+	}
+	s.Equal(http.StatusNotFound, oldStyleResponse.StatusCode)
+	s.Require().NoError(oldStyleResponse.Body.Close())
+}
+
 func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempotency_key_is_repeated() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "idempotent-model-owner", 8112)

@@ -1,4 +1,4 @@
-import type { EntityLevel } from "@/lib/api/entries";
+import type { ArtifactType, EntityLevel } from "@/lib/api/entries";
 import type { ExtFileReference } from "@/lib/api/ext";
 
 import { DRAFT_STORAGE_KEY, DRAFT_VERSION } from "./types";
@@ -11,7 +11,7 @@ import type {
   ProgramDraft,
   UploadStatus,
 } from "./types";
-import { normalizeModelLevel } from "./helpers";
+import { assignCanonicalArtifactTypes } from "./helpers";
 
 export type StoredFile = {
   id: string;
@@ -19,6 +19,7 @@ export type StoredFile = {
   name: string;
   size: number;
   type: string;
+  artifactType?: ArtifactType;
   level: EntityLevel;
   authors: string;
   affiliation: string;
@@ -73,6 +74,7 @@ export function fileToDraft(file: ParsedFile): StoredFile {
     name: file.name,
     size: file.size,
     type: file.type,
+    artifactType: file.artifactType,
     level: file.level,
     authors: file.authors,
     affiliation: file.affiliation,
@@ -91,6 +93,7 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
     name: file.name,
     size: file.size,
     type: file.type,
+    artifactType: file.artifactType ?? "other",
     level: file.level,
     authors: file.authors,
     affiliation: file.affiliation,
@@ -132,7 +135,11 @@ export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
     thumbProgress: modelDraft.thumbUrl ? 1 : 0,
     thumbUploadStatus: modelDraft.thumbUrl ? "uploaded" : "idle",
     thumbUploadError: null,
-    files: modelDraft.files.map(fileFromDraft).map(normalizeModelLevel),
+    files: assignCanonicalArtifactTypes(
+      [],
+      modelDraft.files.map(fileFromDraft),
+      "model",
+    ),
     metrics: modelDraft.metrics,
     purpose: modelDraft.purpose ?? "",
     modelType: modelDraft.modelType ?? "",
@@ -153,7 +160,9 @@ function storedPrograms(modelDraft: StoredModel): ProgramDraft[] {
   }
   const files = modelDraft.files;
   const isModel = (file: StoredFile) =>
-    file.type === "pdb" || file.type === "mmcif";
+    file.artifactType === "model" ||
+    (file.artifactType == null &&
+      (file.type === "pdb" || file.type === "mmcif"));
   return [
     {
       ...legacy,

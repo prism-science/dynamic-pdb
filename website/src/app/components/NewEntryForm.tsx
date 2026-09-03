@@ -41,6 +41,7 @@ import type {
   UploadStatus,
 } from "./entry-form/types";
 import {
+  assignCanonicalArtifactTypes,
   buildCreateModelInput,
   extFileKeys,
   extFileToParsed,
@@ -236,7 +237,13 @@ export default function NewEntryForm({
     setThumbPreview(draft.thumbPreview ?? null);
     setThumbUploadStatus(draft.thumbUrl ? "uploaded" : "idle");
     setThumbProgress(draft.thumbUrl ? 1 : 0);
-    setFiles(draft.files.map(fileFromDraft));
+    setFiles(
+      assignCanonicalArtifactTypes(
+        [],
+        draft.files.map(fileFromDraft),
+        "entry",
+      ),
+    );
     setModels(draft.models.map(modelFromDraft));
     setDraftPrompt(null);
     setStorageReady(true);
@@ -291,7 +298,10 @@ export default function NewEntryForm({
 
   const addEntryFiles = async (list: File[]) => {
     const parsed = await Promise.all(list.map((file) => parseFile(file, "L0")));
-    setFiles((prev) => [...prev, ...parsed]);
+    setFiles((current) => [
+      ...current,
+      ...assignCanonicalArtifactTypes(current, parsed, "entry"),
+    ]);
     parsed.forEach((file) => {
       void uploadParsedFileNow(file, { entryId, modelId: null }, patchEntryFile);
     });
@@ -302,7 +312,10 @@ export default function NewEntryForm({
     if (!parsed) {
       return;
     }
-    setFiles((prev) => [...prev, parsed]);
+    setFiles((current) => [
+      ...current,
+      ...assignCanonicalArtifactTypes(current, [parsed], "entry"),
+    ]);
   };
 
   const addEntryExtFiles = (selected: ExtFile[]) => {
@@ -316,7 +329,10 @@ export default function NewEntryForm({
     if (parsed.length === 0) {
       return;
     }
-    setFiles((prev) => [...prev, ...parsed]);
+    setFiles((current) => [
+      ...current,
+      ...assignCanonicalArtifactTypes(current, parsed, "entry"),
+    ]);
   };
 
   const addModel = () => {

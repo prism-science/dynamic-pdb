@@ -110,6 +110,9 @@ func (s *Server) createInitialEntryRevision(
 	req CreateEntryRequest,
 	createdBy uuid.UUID,
 ) (CreateEntryRevisionAttributes, error) {
+	if err := validateArtifactRequests(req.Entry.Artifacts, artifactAttachmentScopeEntry); err != nil {
+		return CreateEntryRevisionAttributes{}, fmt.Errorf("validate initial entry artifacts: %w", err)
+	}
 	name := strings.TrimSpace(req.Entry.Name)
 	if name == "" {
 		return CreateEntryRevisionAttributes{}, invalidRequest("entry name is required")
@@ -295,6 +298,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 	createdBy uuid.UUID,
 	requireActiveEntry bool,
 ) (CreateModelRevisionAttributes, error) {
+	if err := validateArtifactRequests(data.Artifacts, artifactAttachmentScopeModel); err != nil {
+		return CreateModelRevisionAttributes{}, fmt.Errorf("validate initial model artifacts: %w", err)
+	}
 	name := strings.TrimSpace(data.Name)
 	if name == "" {
 		return CreateModelRevisionAttributes{}, invalidRequest("model name is required")
@@ -464,6 +470,9 @@ func (s *Server) createModelRevisionGraph(
 		return CreateModelRevisionAttributes{}, invalidRequest("model change must contain at least one field")
 	}
 	data := payload.Request.Model
+	if err := validateArtifactRequests(data.Artifacts, artifactAttachmentScopeModel); err != nil {
+		return CreateModelRevisionAttributes{}, fmt.Errorf("validate model artifacts: %w", err)
+	}
 	for _, field := range []string{"artifacts", "metrics", "runs"} {
 		if raw, present := payload.ModelFields[field]; present && isJSONNull(raw) {
 			return CreateModelRevisionAttributes{}, invalidRequest("model %s cannot be null", field)
@@ -1079,9 +1088,14 @@ func (s *Server) createArtifact(
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
+	artifactType, err := artifactTypeFromRequest(req.Type)
+	if err != nil {
+		return nil, err
+	}
 	artifact, err := s.database.Artifacts.Create(ctx, domainmodels.Artifact{
 		ID: req.Id, Name: name, Level: domainmodels.ArtifactLevel(req.Level),
-		URI: trimmedStringPtr(req.Uri), SHA256: trimmedStringPtr(req.Sha256),
+		Type: artifactType,
+		URI:  trimmedStringPtr(req.Uri), SHA256: trimmedStringPtr(req.Sha256),
 		Format: trimmedStringPtr(req.Format), SizeBytes: req.SizeBytes, Metadata: metadata,
 		CreatedBy: createdBy, CreatedAt: now,
 	})
@@ -1252,9 +1266,71 @@ func artifactAttributesFromModel(artifact domainmodels.Artifact) (ArtifactAttrib
 	if err != nil {
 		return ArtifactAttributes{}, fmt.Errorf("build artifact metadata response: %w", err)
 	}
-	return ArtifactAttributes{Id: artifact.ID, Name: artifact.Name, Level: ArtifactLevel(artifact.Level), Uri: artifact.URI,
+	return ArtifactAttributes{Id: artifact.ID, Name: artifact.Name, Level: ArtifactLevel(artifact.Level), Type: ArtifactType(artifact.Type), Uri: artifact.URI,
 		Sha256: artifact.SHA256, Format: artifact.Format, SizeBytes: artifact.SizeBytes, Metadata: metadata,
 		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt}, nil
+}
+
+type artifactAttachmentScope string
+
+const (
+	artifactAttachmentScopeEntry artifactAttachmentScope = "entry"
+	artifactAttachmentScopeModel artifactAttachmentScope = "model"
+)
+
+func artifactTypeFromRequest(requested *ArtifactType) (domainmodels.ArtifactType, error) {
+	if requested == nil {
+		return domainmodels.ArtifactTypeOther, nil
+	}
+	typeValue := domainmodels.ArtifactType(*requested)
+	switch typeValue {
+	case domainmodels.ArtifactTypeModel,
+		domainmodels.ArtifactTypeStructureFactors,
+		domainmodels.ArtifactTypeFASTA,
+		domainmodels.ArtifactTypeOther:
+		return typeValue, nil
+	default:
+		return "", invalidRequest("unsupported artifact type %q", *requested)
+	}
+}
+
+func validateArtifactRequests(requests *[]CreateArtifactRequest, scope artifactAttachmentScope) error {
+	if requests == nil {
+		return nil
+	}
+	counts := make(map[domainmodels.ArtifactType]int)
+	for _, request := range *requests {
+		artifactType, err := artifactTypeFromRequest(request.Type)
+		if err != nil {
+			return fmt.Errorf("validate artifact %s: %w", request.Id, err)
+		}
+		if scope == artifactAttachmentScopeEntry &&
+			artifactType != domainmodels.ArtifactTypeFASTA &&
+			artifactType != domainmodels.ArtifactTypeOther {
+			return invalidRequest("artifact type %q cannot be attached to an entry revision", artifactType)
+		}
+		if scope == artifactAttachmentScopeModel && artifactType == domainmodels.ArtifactTypeFASTA {
+			return invalidRequest("artifact type %q cannot be attached to a model revision", artifactType)
+		}
+		if artifactType == domainmodels.ArtifactTypeFASTA &&
+			(request.Format == nil || strings.TrimSpace(*request.Format) != "fasta") {
+			return invalidRequest("artifact type %q requires FASTA format", artifactType)
+		}
+		counts[artifactType]++
+	}
+
+	uniqueTypes := []domainmodels.ArtifactType{domainmodels.ArtifactTypeModel}
+	if scope == artifactAttachmentScopeEntry {
+		uniqueTypes = []domainmodels.ArtifactType{domainmodels.ArtifactTypeFASTA}
+	} else {
+		uniqueTypes = append(uniqueTypes, domainmodels.ArtifactTypeStructureFactors)
+	}
+	for _, artifactType := range uniqueTypes {
+		if counts[artifactType] > 1 {
+			return invalidRequest("only one artifact of type %q can be attached to a %s revision", artifactType, scope)
+		}
+	}
+	return nil
 }
 
 func metricsFromModels(metrics []domainmodels.Metric) []Metric {

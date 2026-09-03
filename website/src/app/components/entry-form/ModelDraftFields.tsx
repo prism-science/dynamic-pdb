@@ -16,11 +16,11 @@ import { MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type { ModelDraft, ParsedFile } from "./types";
 import {
   ONE_MODEL_FILE_ERROR,
+  assignCanonicalArtifactTypes,
   canAddModelFiles,
   isModelFile,
   extFileKeys,
   extFileToParsed,
-  normalizeModelLevel,
   parseModelFile,
   parseModelUrlFile,
   setFileLevel,
@@ -302,8 +302,10 @@ export default function ModelDraftFields({
         }
         extExperiment={extExperiment}
         onAdd={async (list) => {
-          const parsed = await Promise.all(
-            list.map((file) => parseModelFile(file)),
+          const parsed = assignCanonicalArtifactTypes(
+            draftRef.current.files,
+            await Promise.all(list.map((file) => parseModelFile(file, false))),
+            "model",
           );
           if (!appendFiles(parsed)) {
             return;
@@ -355,9 +357,15 @@ export default function ModelDraftFields({
           }
         }}
         onAddUrl={async (rawUrl) => {
-          const parsed = await parseModelUrlFile(rawUrl);
+          const parsed = await parseModelUrlFile(rawUrl, false);
           if (parsed) {
-            appendFiles([parsed]);
+            appendFiles(
+              assignCanonicalArtifactTypes(
+                draftRef.current.files,
+                [parsed],
+                "model",
+              ),
+            );
           }
         }}
         onAddExt={(selected) => {
@@ -365,13 +373,15 @@ export default function ModelDraftFields({
             return;
           }
           const existing = extFileKeys(draft.files);
-          const parsed = selected
-            .filter((file) => !existing.has(extFileKey(file)))
-            .map((file) =>
-              normalizeModelLevel(
+          const parsed = assignCanonicalArtifactTypes(
+            draft.files,
+            selected
+              .filter((file) => !existing.has(extFileKey(file)))
+              .map((file) =>
                 extFileToParsed(file, extExperiment.id, "L2"),
               ),
-            );
+            "model",
+          );
           appendFiles(parsed);
         }}
         onRemove={(id) =>
@@ -389,6 +399,7 @@ export default function ModelDraftFields({
           }))
         }
         onPatch={patchFile}
+        artifactTypeOptions={["structure_factors", "other"]}
       />
 
       <span className={styles.subLabel}>Metrics</span>

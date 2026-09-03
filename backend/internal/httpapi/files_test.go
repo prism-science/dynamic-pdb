@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	domainmodels "dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/services/cdn"
 )
 
@@ -416,3 +417,57 @@ func (s *uploadCDNStub) AbortUpload(_ context.Context, key, uploadID string) err
 }
 
 var _ cdn.Service = (*uploadCDNStub)(nil)
+
+func Test_should_select_artifact_when_file_has_one_matching_artifact(t *testing.T) {
+	// given
+	format := "mmcif"
+	uri := "https://files.example/model.cif"
+	artifacts := []domainmodels.Artifact{{ID: uuid.New(), Format: &format, URI: &uri}}
+
+	// when
+	artifact, err := selectFileArtifact(artifacts, []string{"cif", "mmcif"})
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, artifact)
+	assert.Equal(t, artifacts[0].ID, artifact.ID)
+}
+
+func Test_should_reject_file_when_multiple_matching_artifacts_exist(t *testing.T) {
+	// given
+	artifacts := []domainmodels.Artifact{{ID: uuid.New()}, {ID: uuid.New()}}
+
+	// when
+	_, err := selectFileArtifact(artifacts, []string{"cif", "mmcif"})
+
+	// then
+	require.ErrorIs(t, err, errFileAmbiguous)
+}
+
+func Test_should_redirect_to_stored_http_location_when_artifact_is_available(t *testing.T) {
+	// given
+	uri := "https://files.example/model.cif?token=abc"
+	server := &Server{}
+	recorder := httptest.NewRecorder()
+
+	// when
+	server.redirectToArtifact(recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
+
+	// then
+	require.Equal(t, http.StatusFound, recorder.Code)
+	assert.Equal(t, uri, recorder.Header().Get("Location"))
+	assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func Test_should_return_bad_gateway_when_artifact_location_is_not_http(t *testing.T) {
+	// given
+	uri := "s3://bucket/model.cif"
+	server := &Server{}
+	recorder := httptest.NewRecorder()
+
+	// when
+	server.redirectToArtifact(recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
+
+	// then
+	require.Equal(t, http.StatusBadGateway, recorder.Code)
+}
