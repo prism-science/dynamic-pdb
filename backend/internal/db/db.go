@@ -15,6 +15,7 @@ type DB struct {
 	Users                       *UsersRepository
 	Roles                       *RolesRepository
 	Permissions                 *PermissionsRepository
+	DataSyncJobs                *DataSyncJobsRepository
 	Entries                     *EntriesRepository
 	EntrySearch                 *EntrySearchIndexRepository
 	Models                      *ModelsRepository
@@ -27,6 +28,8 @@ type DB struct {
 	sqlx      *sqlx.DB
 	txManager *TxManager
 }
+
+const advisoryLockCleanupTimeout = 5 * time.Second
 
 func NewDB(cfg Config) (*DB, error) {
 	if cfg.Host == "" {
@@ -65,6 +68,7 @@ func NewDB(cfg Config) (*DB, error) {
 		Users:                       NewUsersRepository(sqlxDB, queriers),
 		Roles:                       NewRolesRepository(sqlxDB, queriers),
 		Permissions:                 NewPermissionsRepository(sqlxDB, queriers),
+		DataSyncJobs:                NewDataSyncJobsRepository(sqlxDB, queriers),
 		Entries:                     NewEntriesRepository(sqlxDB, queriers),
 		EntrySearch:                 NewEntrySearchIndexRepository(sqlxDB, queriers),
 		Models:                      NewModelsRepository(sqlxDB, queriers),
@@ -94,6 +98,57 @@ func (d *DB) Ping(ctx context.Context) error {
 
 func (d *DB) Do(ctx context.Context, fn func(ctx context.Context) error) error {
 	return d.txManager.Do(ctx, fn)
+}
+
+func (d *DB) RunLocked(
+	ctx context.Context,
+	lockName string,
+	run func(context.Context) error,
+) (ran bool, err error) {
+	connection, err := d.sqlx.Connx(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get advisory lock connection: %w", err)
+	}
+
+	locked := false
+	defer func() {
+		if locked {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), advisoryLockCleanupTimeout)
+			defer cancel()
+
+			var unlocked bool
+			if unlockErr := connection.GetContext(
+				cleanupCtx,
+				&unlocked,
+				`select pg_advisory_unlock(hashtextextended($1, 0))`,
+				lockName,
+			); unlockErr != nil {
+				err = errors.Join(err, fmt.Errorf("release advisory lock: %w", unlockErr))
+			} else if !unlocked {
+				err = errors.Join(err, errors.New("release advisory lock: lock was not held"))
+			}
+		}
+		if closeErr := connection.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close advisory lock connection: %w", closeErr))
+		}
+	}()
+
+	if err := connection.GetContext(
+		ctx,
+		&locked,
+		`select pg_try_advisory_lock(hashtextextended($1, 0))`,
+		lockName,
+	); err != nil {
+		return false, fmt.Errorf("acquire advisory lock: %w", err)
+	}
+	if !locked {
+		return false, nil
+	}
+
+	if err := run(ctx); err != nil {
+		return true, fmt.Errorf("run locked function: %w", err)
+	}
+	return true, nil
 }
 
 func dsnFrom(cfg Config) string {
