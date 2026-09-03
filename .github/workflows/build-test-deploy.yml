@@ -53,6 +53,7 @@ jobs:
               - "go.work"
               - "go.work.sum"
               - "cli/**"
+              - "lib/**"
             website:
               - ".github/workflows/build-test-deploy.yml"
               - "website/**"
@@ -142,13 +143,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
+          cache-dependency-path: |
+            cli/go.sum
+            lib/go.sum
 
       - name: Build CLI
         run: make -C cli build
 
       - name: Test CLI
         working-directory: cli
+        run: go test ./... -count=1
+
+      - name: Test shared Go library
+        working-directory: lib
         run: go test ./... -count=1
 
   website:
@@ -263,6 +270,7 @@ jobs:
           SHA="$(git rev-parse HEAD)"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker buildx build --push \
+            --build-context lib=lib \
             --build-arg VERSION="sha-${SHA}" \
             --build-arg COMMIT="${SHA}" \
             --build-arg DATE="${DATE}" \

@@ -12,9 +12,9 @@ import (
 	"dynamic-pdb/cli/internal/config"
 	"dynamic-pdb/cli/internal/dynamicpdbapi"
 	"dynamic-pdb/cli/internal/paths"
-	"dynamic-pdb/cli/internal/rcsb"
 	"dynamic-pdb/cli/internal/upload"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	"dynamic-pdb/lib/rcsb"
 
 	"github.com/spf13/pflag"
 )

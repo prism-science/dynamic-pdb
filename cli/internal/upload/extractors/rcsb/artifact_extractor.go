@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"dynamic-pdb/cli/internal/rcsb"
 	"dynamic-pdb/cli/internal/upload/extractors"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	"dynamic-pdb/lib/rcsb"
 )
 
 const templatePDBID = "{{ pdb_id }}"

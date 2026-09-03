@@ -18,9 +18,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"dynamic-pdb/cli/internal/dynamicpdbapi"
-	"dynamic-pdb/cli/internal/rcsb"
 	extractorapi "dynamic-pdb/cli/internal/upload/extractors"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	"dynamic-pdb/lib/rcsb"
 )
 
 func Test_should_upload_entries_from_manifest(t *testing.T) {

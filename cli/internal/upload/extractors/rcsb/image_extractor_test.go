@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	rcsbclient "dynamic-pdb/cli/internal/rcsb"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	rcsbclient "dynamic-pdb/lib/rcsb"
 )
 
 func Test_should_extract_rcsb_image(t *testing.T) {
