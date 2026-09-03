@@ -5,9 +5,75 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	domainmodels "dynamic-pdb/backend/internal/models"
 )
+
+func Test_should_default_artifact_type_to_other_when_type_is_missing(t *testing.T) {
+	// given
+	// when
+	artifactType, err := artifactTypeFromRequest(nil)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, domainmodels.ArtifactTypeOther, artifactType)
+}
+
+func Test_should_reject_duplicate_structure_factors_when_model_artifacts_are_validated(t *testing.T) {
+	// given
+	artifactType := ArtifactTypeStructureFactors
+	requests := []CreateArtifactRequest{
+		{Id: uuid.New(), Type: &artifactType},
+		{Id: uuid.New(), Type: &artifactType},
+	}
+
+	// when
+	err := validateArtifactRequests(&requests, artifactAttachmentScopeModel)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
+
+func Test_should_reject_assembly_artifact_type(t *testing.T) {
+	// given
+	artifactType := ArtifactType("assembly")
+
+	// when
+	_, err := artifactTypeFromRequest(&artifactType)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
+
+func Test_should_reject_model_artifact_type_when_entry_artifacts_are_validated(t *testing.T) {
+	// given
+	artifactType := ArtifactTypeModel
+	requests := []CreateArtifactRequest{{Id: uuid.New(), Type: &artifactType}}
+
+	// when
+	err := validateArtifactRequests(&requests, artifactAttachmentScopeEntry)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
+
+func Test_should_reject_fasta_type_when_artifact_format_is_not_fasta(t *testing.T) {
+	// given
+	artifactType := ArtifactTypeFASTA
+	format := "cif"
+	requests := []CreateArtifactRequest{
+		{Id: uuid.New(), Type: &artifactType, Format: &format},
+	}
+
+	// when
+	err := validateArtifactRequests(&requests, artifactAttachmentScopeEntry)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
 
 func Test_should_apply_default_limit_when_list_entries_limit_is_missing(t *testing.T) {
 	// given

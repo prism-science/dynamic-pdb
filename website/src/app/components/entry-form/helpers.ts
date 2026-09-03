@@ -2,6 +2,7 @@ import type {
   CreateEntityInput,
   CreateEntityRelationInput,
   CreateModelInput,
+  ArtifactType,
   EntityLevel,
 } from "@/lib/api/entries";
 import { extFileKey, extFileReferenceURL, type ExtFile } from "@/lib/api/ext";
@@ -67,6 +68,7 @@ export function toEntity(file: ParsedFile) {
   return {
     id: file.id,
     type: entityType,
+    artifact_type: file.artifactType,
     level: entityType === "model" ? "L2" : file.level,
     name: file.name,
     payload,
@@ -87,6 +89,12 @@ export function buildCreateModelInput(
   const modelEntityFiles = modelDraft.files.filter(isModelFile);
   if (modelEntityFiles.length !== 1) {
     throw new Error(ONE_MODEL_FILE_ERROR);
+  }
+  const artifactTypeMessage = modelArtifactTypeValidationMessage(
+    modelDraft.files,
+  );
+  if (artifactTypeMessage) {
+    throw new Error(artifactTypeMessage);
   }
   const programMessage = programsValidationMessage(modelDraft.programs);
   if (programMessage) {
@@ -169,7 +177,25 @@ export function modelValidationMessage(modelDraft: ModelDraft): string | null {
   if (modelEntityCount > 1) {
     return "Keep only one PDB/mmCIF model file.";
   }
+  const artifactTypeMessage = modelArtifactTypeValidationMessage(
+    modelDraft.files,
+  );
+  if (artifactTypeMessage) {
+    return artifactTypeMessage;
+  }
   return programsValidationMessage(modelDraft.programs);
+}
+
+function modelArtifactTypeValidationMessage(
+  files: ParsedFile[],
+): string | null {
+  if (
+    files.filter((file) => file.artifactType === "structure_factors").length >
+    1
+  ) {
+    return "Keep only one structure factors file.";
+  }
+  return null;
 }
 
 export function programsValidationMessage(
@@ -237,7 +263,7 @@ export function toProgramEntity(program: ProgramDraft): CreateEntityInput {
 }
 
 export function fileEntityType(file: ParsedFile): "data" | "model" {
-  return file.type === "pdb" || file.type === "mmcif" ? "model" : "data";
+  return file.artifactType === "model" ? "model" : "data";
 }
 
 export function isModelFile(file: ParsedFile): boolean {
@@ -260,6 +286,48 @@ export function setFileLevel(file: ParsedFile, level: EntityLevel): ParsedFile {
     ...file,
     level: isModelFile(file) ? "L2" : level,
   };
+}
+
+export function assignCanonicalArtifactTypes(
+  currentFiles: ParsedFile[],
+  incomingFiles: ParsedFile[],
+  scope: "entry" | "model",
+): ParsedFile[] {
+  const canonicalType: ArtifactType = scope === "entry" ? "fasta" : "model";
+  let hasCanonical = currentFiles.some(
+    (file) => file.artifactType === canonicalType,
+  );
+
+  return incomingFiles.map((file) => {
+    let artifactType = file.artifactType;
+    if (
+      scope === "entry" &&
+      artifactType !== "fasta" &&
+      artifactType !== "other"
+    ) {
+      artifactType = "other";
+    }
+    if (scope === "model" && artifactType === "fasta") {
+      artifactType = "other";
+    }
+
+    const matchesCanonicalFormat =
+      scope === "entry"
+        ? file.type === "fasta"
+        : file.type === "pdb" || file.type === "mmcif";
+    if (
+      artifactType === canonicalType ||
+      (!hasCanonical && matchesCanonicalFormat)
+    ) {
+      if (!hasCanonical) {
+        hasCanonical = true;
+        artifactType = canonicalType;
+      } else {
+        artifactType = "other";
+      }
+    }
+    return normalizeModelLevel({ ...file, artifactType });
+  });
 }
 
 export function authorsTextToList(text: string): string[] {
@@ -309,6 +377,7 @@ export async function parseFile(file: File, level: EntityLevel): Promise<ParsedF
     name: file.name,
     size: file.size,
     type,
+    artifactType: "other",
     level,
     authors: "",
     affiliation: "",
@@ -342,8 +411,16 @@ async function fileSHA256(file: File): Promise<string> {
     .join("");
 }
 
-export async function parseModelFile(file: File): Promise<ParsedFile> {
-  return normalizeModelLevel(await parseFile(file, "L2"));
+export async function parseModelFile(
+  file: File,
+  assignAsModel = true,
+): Promise<ParsedFile> {
+  const parsed = await parseFile(file, "L2");
+  const artifactType =
+    assignAsModel && (parsed.type === "pdb" || parsed.type === "mmcif")
+      ? "model"
+      : "other";
+  return normalizeModelLevel({ ...parsed, artifactType });
 }
 
 export function extFileToParsed(
@@ -357,6 +434,7 @@ export function extFileToParsed(
     name: file.name || file.path.split("/").filter(Boolean).pop() || "ext-file",
     size: file.size,
     type: detectType(file.name || file.path),
+    artifactType: "other",
     level,
     authors: "",
     affiliation: "",
@@ -408,6 +486,7 @@ export async function parseUrlFile(
     name,
     size: 0,
     type,
+    artifactType: "other",
     level,
     authors: "",
     affiliation: "",
@@ -441,9 +520,17 @@ export async function parseUrlFile(
 
 export async function parseModelUrlFile(
   rawUrl: string,
+  assignAsModel = true,
 ): Promise<ParsedFile | null> {
   const parsed = await parseUrlFile(rawUrl, "L2");
-  return parsed ? normalizeModelLevel(parsed) : null;
+  if (!parsed) {
+    return null;
+  }
+  const artifactType =
+    assignAsModel && (parsed.type === "pdb" || parsed.type === "mmcif")
+      ? "model"
+      : "other";
+  return normalizeModelLevel({ ...parsed, artifactType });
 }
 
 export function normalizeModelLevel(file: ParsedFile): ParsedFile {

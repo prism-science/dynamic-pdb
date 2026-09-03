@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  assignCanonicalArtifactTypes,
   authorsTextToList,
   buildCreateModelInput,
   canAddModelFiles,
@@ -59,6 +60,7 @@ test("should convert files and metrics into create entry entities", () => {
   assert.deepEqual(toEntity(modelFile), {
     id: "model-1",
     type: "model",
+    artifact_type: "model",
     level: "L2",
     name: "model.cif",
     payload: {
@@ -72,6 +74,7 @@ test("should convert files and metrics into create entry entities", () => {
   assert.deepEqual(toEntity(dataFile), {
     id: "data-1",
     type: "data",
+    artifact_type: "fasta",
     level: "L0",
     name: "sequence.fasta",
     payload: {
@@ -86,6 +89,32 @@ test("should convert files and metrics into create entry entities", () => {
     name: "Metrics",
     payload: { r_free: 0.231, cc: 0.98 },
   });
+});
+
+test("should assign only the first canonical file for each scope", () => {
+  // given
+  const fastaFiles = [
+    parsedFile({ id: "fasta-1", type: "fasta", artifactType: "other" }),
+    parsedFile({ id: "fasta-2", type: "fasta", artifactType: "other" }),
+  ];
+  const coordinateFiles = [
+    parsedFile({ id: "model-1", artifactType: "other" }),
+    parsedFile({ id: "auxiliary-1", artifactType: "other" }),
+  ];
+
+  // when
+  const entryFiles = assignCanonicalArtifactTypes([], fastaFiles, "entry");
+  const modelFiles = assignCanonicalArtifactTypes([], coordinateFiles, "model");
+
+  // then
+  assert.deepEqual(
+    entryFiles.map((file) => file.artifactType),
+    ["fasta", "other"],
+  );
+  assert.deepEqual(
+    modelFiles.map((file) => file.artifactType),
+    ["model", "other"],
+  );
 });
 
 test("should preserve Ext provenance when linked file becomes an entity", () => {
@@ -468,14 +497,15 @@ test("should serialize and restore persisted draft files safely", () => {
 
   // A draft saved by the previous version carried one unlinked program; it is
   // restored as the star the old form would have submitted rather than dropped.
+  const { artifactType: _artifactType, ...legacyStoredFile } = storedFile;
   const legacy = modelFromDraft({
     id: "model-1",
     name: "Model",
     description: "",
     thumbUrl: null,
     files: [
-      { ...storedFile, id: "coords-1", type: "mmcif" },
-      { ...storedFile, id: "map-1", type: "ccp4" },
+      { ...legacyStoredFile, id: "coords-1", type: "mmcif" },
+      { ...legacyStoredFile, id: "map-1", type: "ccp4" },
     ],
     metrics: [],
     program: {
@@ -524,12 +554,21 @@ test("should format byte sizes", () => {
 });
 
 function parsedFile(overrides = {}) {
+  const fileType = overrides.type ?? "mmcif";
+  const artifactType =
+    overrides.artifactType ??
+    (fileType === "pdb" || fileType === "mmcif"
+      ? "model"
+      : fileType === "fasta"
+        ? "fasta"
+        : "other");
   return {
     id: "file-1",
     source: "url",
     name: "file.cif",
     size: 0,
-    type: "mmcif",
+    type: fileType,
+    artifactType,
     level: "L2",
     authors: "",
     affiliation: "",

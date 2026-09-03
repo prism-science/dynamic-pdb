@@ -9,7 +9,11 @@ import {
   type ReactNode,
 } from "react";
 
-import type { EntityLevel, FastaMetadata } from "@/lib/api/entries";
+import type {
+  ArtifactType,
+  EntityLevel,
+  FastaMetadata,
+} from "@/lib/api/entries";
 import {
   extFileKey,
   searchExtFiles,
@@ -54,6 +58,7 @@ export default function FilesEditor({
   lockModelLevel = false,
   hint = DEFAULT_HINT,
   title,
+  artifactTypeOptions,
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -69,6 +74,7 @@ export default function FilesEditor({
   /** Overrides the drop-zone headline; the model form asks for the
    *  coordinates first because that file is what everything else hangs off. */
   title?: ReactNode;
+  artifactTypeOptions?: ArtifactType[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -332,6 +338,28 @@ export default function FilesEditor({
                           ))}
                         </select>
                       )}
+                      {artifactTypeOptions ? (
+                        <select
+                          className={styles.levelSelect}
+                          value={file.artifactType}
+                          disabled={isModelFile(file)}
+                          onChange={(event) =>
+                            onPatch(file.id, {
+                              artifactType: event.target.value as ArtifactType,
+                            })
+                          }
+                          aria-label="File type"
+                        >
+                          {(isModelFile(file)
+                            ? (["model"] as ArtifactType[])
+                            : artifactTypeOptions
+                          ).map((artifactType) => (
+                            <option key={artifactType} value={artifactType}>
+                              {artifactTypeLabel(artifactType)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                       <button
                         type="button"
                         className={styles.remove}
@@ -395,6 +423,15 @@ export default function FilesEditor({
       ) : null}
     </div>
   );
+}
+
+function artifactTypeLabel(type: ArtifactType): string {
+  switch (type) {
+    case "structure_factors":
+      return "structure factors";
+    default:
+      return type;
+  }
 }
 
 function ExtFilePicker({

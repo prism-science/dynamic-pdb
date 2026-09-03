@@ -59,6 +59,22 @@ func getWithToken(t *testing.T, path string, token string) *http.Response {
 	return resp
 }
 
+func requestWithoutRedirect(t *testing.T, method, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, testServer.URL+path, nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", httpapi.JSONAPIMediaType)
+
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
 func deleteWithToken(t *testing.T, path string, token string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodDelete, testServer.URL+path, nil)

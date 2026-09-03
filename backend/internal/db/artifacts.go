@@ -26,6 +26,7 @@ type ArtifactFilters struct {
 	ModelRevisionID *uuid.UUID
 	CreatedBy       *uuid.UUID
 	Levels          []models.ArtifactLevel
+	Types           []models.ArtifactType
 	Formats         []string
 	Limit           *int
 	Offset          *int
@@ -39,6 +40,9 @@ func NewArtifactsRepository(database *sqlx.DB, queriers *QuerierProvider) *Artif
 }
 
 func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifact) (*models.Artifact, error) {
+	if artifact.Type == "" {
+		artifact.Type = models.ArtifactTypeOther
+	}
 	metadata, err := marshalJSON(artifact.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("prepare artifact metadata: %w", err)
@@ -48,6 +52,7 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 			    id,
 			    name,
 			    level,
+			    type,
 			    uri,
 			    sha256,
 			    format,
@@ -60,6 +65,7 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 			    :id,
 			    :name,
 			    :level,
+			    :type,
 			    :uri,
 			    :sha256,
 			    :format,
@@ -68,13 +74,14 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 			    :created_by,
 			    :created_at
 			  )
-			  returning id, name, level, uri, sha256, format, size_bytes, metadata, created_by, created_at`
+			  returning id, name, level, type, uri, sha256, format, size_bytes, metadata, created_by, created_at`
 
 	var row artifactRow
 	args := map[string]any{
 		"id":         artifact.ID,
 		"name":       artifact.Name,
 		"level":      string(artifact.Level),
+		"type":       string(artifact.Type),
 		"uri":        artifact.URI,
 		"sha256":     artifact.SHA256,
 		"format":     artifact.Format,
@@ -198,7 +205,7 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 
 	args := map[string]any{}
 	conditions := make([]string, 0)
-	query := `select id, name, level, uri, sha256, format, size_bytes, metadata, created_by, created_at
+	query := `select id, name, level, type, uri, sha256, format, size_bytes, metadata, created_by, created_at
 			  from artifacts`
 
 	if filters.EntryRevisionID != nil {
@@ -222,6 +229,10 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 	if len(filters.Levels) > 0 {
 		conditions = append(conditions, "artifacts.level = any(cast(:levels as text[]))")
 		args["levels"] = pq.Array(artifactLevelStrings(filters.Levels))
+	}
+	if len(filters.Types) > 0 {
+		conditions = append(conditions, "artifacts.type = any(cast(:types as text[]))")
+		args["types"] = pq.Array(artifactTypeStrings(filters.Types))
 	}
 	if len(filters.Formats) > 0 {
 		conditions = append(conditions, "artifacts.format = any(cast(:formats as text[]))")
@@ -256,6 +267,7 @@ func artifactFromRow(row *artifactRow) (*models.Artifact, error) {
 		ID:        row.ID,
 		Name:      row.Name,
 		Level:     models.ArtifactLevel(row.Level),
+		Type:      models.ArtifactType(row.Type),
 		URI:       stringPtrFromSQL(row.URI),
 		SHA256:    stringPtrFromSQL(row.SHA256),
 		Format:    format,
@@ -290,10 +302,19 @@ func artifactLevelStrings(values []models.ArtifactLevel) []string {
 	return result
 }
 
+func artifactTypeStrings(values []models.ArtifactType) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, string(value))
+	}
+	return result
+}
+
 type artifactRow struct {
 	ID        uuid.UUID      `db:"id"`
 	Name      string         `db:"name"`
 	Level     string         `db:"level"`
+	Type      string         `db:"type"`
 	URI       sql.NullString `db:"uri"`
 	SHA256    sql.NullString `db:"sha256"`
 	Format    sql.NullString `db:"format"`

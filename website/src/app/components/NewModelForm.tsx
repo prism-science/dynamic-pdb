@@ -275,6 +275,7 @@ function entityToBaselineFile(entity: Entity): ParsedFile {
     name: entity.name,
     size: typeof payload.size === "number" ? payload.size : 0,
     type: typeof payload.type === "string" ? payload.type : "file",
+    artifactType: "other",
     level: entity.level ?? "L0",
     authors: "",
     affiliation: "",

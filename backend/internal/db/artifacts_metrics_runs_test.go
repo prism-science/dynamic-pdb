@@ -23,6 +23,7 @@ func Test_should_create_and_list_artifacts_for_entry_revision_when_artifacts_rep
 		ID:     uuid.New(),
 		Name:   "sequence artifact " + uuid.NewString(),
 		Level:  models.ArtifactLevelL0,
+		Type:   models.ArtifactTypeFASTA,
 		Format: &format,
 		Metadata: models.FASTAMetadata{
 			Records: []models.FASTARecord{{Header: "first", Sequence: "ACDEFGHIK"}},
@@ -34,13 +35,17 @@ func Test_should_create_and_list_artifacts_for_entry_revision_when_artifacts_rep
 	require.NoError(t, testDB.Artifacts.AttachToEntryRevision(ctx, entryRevision.ID, artifact.ID))
 
 	// when
-	got, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{EntryRevisionID: &entryRevision.ID})
+	got, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{
+		EntryRevisionID: &entryRevision.ID,
+		Types:           []models.ArtifactType{models.ArtifactTypeFASTA},
+	})
 
 	// then
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, artifact.ID, got[0].ID)
 	assert.Equal(t, models.ArtifactLevelL0, got[0].Level)
+	assert.Equal(t, models.ArtifactTypeFASTA, got[0].Type)
 	fasta, err := got[0].FASTA()
 	require.NoError(t, err)
 	require.Len(t, fasta.Records, 1)

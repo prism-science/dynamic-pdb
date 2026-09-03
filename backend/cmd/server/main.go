@@ -149,6 +149,7 @@ func corsMiddleware(env string) func(http.Handler) http.Handler {
 		AllowedOrigins: allowedOrigins,
 		AllowedMethods: []string{
 			http.MethodGet,
+			http.MethodHead,
 			http.MethodPost,
 			http.MethodPut,
 			http.MethodDelete,

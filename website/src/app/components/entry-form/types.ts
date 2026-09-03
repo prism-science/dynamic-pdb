@@ -1,4 +1,4 @@
-import type { EntityLevel } from "@/lib/api/entries";
+import type { ArtifactType, EntityLevel } from "@/lib/api/entries";
 import type { ExtFileReference } from "@/lib/api/ext";
 
 export type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
@@ -12,6 +12,7 @@ export type ParsedFile = {
   name: string;
   size: number;
   type: string;
+  artifactType: ArtifactType;
   level: EntityLevel;
   authors: string;
   affiliation: string;

@@ -25,10 +25,20 @@ const (
 	ArtifactLevelL3 ArtifactLevel = "L3"
 )
 
+type ArtifactType string
+
+const (
+	ArtifactTypeModel            ArtifactType = "model"
+	ArtifactTypeStructureFactors ArtifactType = "structure_factors"
+	ArtifactTypeFASTA            ArtifactType = "fasta"
+	ArtifactTypeOther            ArtifactType = "other"
+)
+
 type Artifact struct {
 	ID        uuid.UUID
 	Name      string
 	Level     ArtifactLevel
+	Type      ArtifactType
 	URI       *string
 	SHA256    *string
 	Format    *string

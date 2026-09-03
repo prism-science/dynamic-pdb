@@ -282,6 +282,7 @@ test("should post create entry using the new backend graph shape", async () => {
         id: "baseline",
         name: "sequence.fasta",
         level: "L0",
+        type: "fasta",
         uri: "s3://dynamic-pdb/sequence.fasta",
         sha256: null,
         format: "fasta",

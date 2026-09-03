@@ -39,6 +39,11 @@ export type Model = {
 
 export type EntityType = "data" | "metrics" | "model" | "program";
 export type EntityLevel = "L0" | "L1" | "L2" | "L3";
+export type ArtifactType =
+  | "model"
+  | "structure_factors"
+  | "fasta"
+  | "other";
 
 export type FastaRecordMetadata = {
   header: string;
@@ -200,6 +205,7 @@ export type Artifact = {
   id: string;
   name: string;
   level: EntityLevel;
+  type: ArtifactType;
   uri: string | null;
   sha256: string | null;
   format: string | null;
@@ -254,6 +260,7 @@ type CreateArtifactRequest = {
   id: string;
   name: string;
   level: EntityLevel;
+  type: ArtifactType;
   uri: string | null;
   sha256: string | null;
   format: string | null;
@@ -440,6 +447,7 @@ export async function listSimilarEntries(
 export type CreateEntityInput = {
   id: string;
   type: EntityType;
+  artifact_type?: ArtifactType;
   level?: EntityLevel | null;
   name: string;
   payload: JSONRecord;
@@ -1243,6 +1251,7 @@ function createArtifactRequest(entity: CreateEntityInput): CreateArtifactRequest
     id: entity.id,
     name: entity.name,
     level: entity.level ?? "L0",
+    type: artifactTypeFromEntity(entity),
     uri: stringOrNull(payload.file_url),
     sha256: stringOrNull(payload.sha256),
     format: artifactFormat(entity),
@@ -1512,12 +1521,10 @@ function entityRelationFromRunArtifact(
 }
 
 function artifactEntityType(artifact: Artifact, model?: Model): EntityType {
-  if (model?.primary_artifact_id === artifact.id) {
+  if (model?.primary_artifact_id === artifact.id || artifact.type === "model") {
     return "model";
   }
-  return artifact.format === "pdb" || artifact.format === "mmcif"
-    ? "model"
-    : "data";
+  return "data";
 }
 
 function isArtifactEntity(entity: CreateEntityInput): boolean {
@@ -1531,6 +1538,16 @@ function artifactFormat(entity: CreateEntityInput): string | null {
     return explicit;
   }
   return formatFromNameOrURL(entity.name, stringOrNull(payload.file_url));
+}
+
+function artifactTypeFromEntity(entity: CreateEntityInput): ArtifactType {
+  if (entity.artifact_type) {
+    return entity.artifact_type;
+  }
+  if (entity.type === "model") {
+    return "model";
+  }
+  return artifactFormat(entity) === "fasta" ? "fasta" : "other";
 }
 
 function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {

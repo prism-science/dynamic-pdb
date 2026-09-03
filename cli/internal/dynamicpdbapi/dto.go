@@ -100,6 +100,7 @@ type CreateArtifactRequest struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Level     string         `json:"level"`
+	Type      string         `json:"type"`
 	URI       *string        `json:"uri,omitempty"`
 	SHA256    *string        `json:"sha256,omitempty"`
 	Format    *string        `json:"format,omitempty"`
