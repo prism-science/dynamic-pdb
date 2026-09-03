@@ -12,9 +12,10 @@ import {
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import { fastaTotalLength } from "@/lib/fasta";
+import { type FileItem, fileItemFromEntity } from "@/lib/entities";
 import { formatEntryLabel } from "@/lib/entry-label";
 import Breadcrumbs from "@/app/components/Breadcrumbs";
-import FileList, { type FileItem } from "@/app/components/FileList";
+import FileTable from "@/app/components/FileTable";
 import SimilarProteins from "@/app/components/SimilarProteins";
 import SortableModelList from "@/app/components/SortableModelList";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
@@ -121,7 +122,7 @@ export default async function EntryPage({
             {hasFiles ? (
               <section id="files" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Files</h2>
-                <FileList items={files} />
+                <FileTable items={files} />
               </section>
             ) : null}
 
@@ -223,16 +224,6 @@ function getFastaMetadata(data: EntryPageData): FastaMetadata | null {
 function getLevelZeroFiles(data: EntryPageData): FileItem[] {
   return structureEntities(data)
     .filter((entity) => entity.level === "L0" && entity.type === "data")
-    .map((entity) => {
-      const payload = entity.payload as DataPayload;
-      return {
-        id: entity.id,
-        name: entity.name,
-        type: payload?.type,
-        size: payload?.size,
-        url: typeof payload?.file_url === "string" ? payload.file_url : null,
-        entity,
-      };
-    })
+    .map(fileItemFromEntity)
     .sort((a, b) => Number(b.type === "fasta") - Number(a.type === "fasta"));
 }

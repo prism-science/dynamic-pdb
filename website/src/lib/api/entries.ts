@@ -131,16 +131,18 @@ export type DataPayload = {
   file_url: string;
   type?: string;
   authors?: string[];
-  affiliation?: string | null;
   size?: number;
+  /** Lowercase hex digest of the stored file, as the artifact recorded it. */
+  sha256?: string | null;
   metadata?: JSONRecord;
 };
 
 export type ModelPayload = {
   file_url: string;
+  type?: string;
   authors?: string[];
-  affiliation?: string | null;
   size?: number;
+  sha256?: string | null;
   metadata?: JSONRecord;
 };
 
@@ -1424,12 +1426,15 @@ function entityFromArtifact(
   model?: Model,
 ): Entity {
   const entityType = artifactEntityType(artifact, model);
+  // Level, format, size and checksum are all facts of the artifact, and the
+  // file table prints each of them in its own column. Format used to be copied
+  // for data artifacts only, so a model arrived without one, and the checksum
+  // was dropped here entirely — stored by the backend, never shown.
   const payload: JSONRecord = {
     ...(artifact.uri ? { file_url: artifact.uri } : {}),
     ...(artifact.size_bytes != null ? { size: artifact.size_bytes } : {}),
-    ...(entityType === "data" && artifact.format
-      ? { type: artifact.format }
-      : {}),
+    ...(artifact.format ? { type: artifact.format } : {}),
+    ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
     ...(Object.keys(artifact.metadata ?? {}).length > 0
       ? { metadata: artifact.metadata }
       : {}),
@@ -1437,12 +1442,8 @@ function entityFromArtifact(
   if (entityType === "model") {
     const metadata = objectRecord(model?.metadata);
     const authors = stringArray(metadata.authors);
-    const affiliation = stringOrNull(metadata.affiliation);
     if (authors.length > 0) {
       payload.authors = authors;
-    }
-    if (affiliation) {
-      payload.affiliation = affiliation;
     }
   }
 
@@ -1557,12 +1558,8 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   const payload = objectRecord(entity.payload);
   const metadata: JSONRecord = {};
   const authors = stringArray(payload.authors);
-  const affiliation = stringOrNull(payload.affiliation);
   if (authors.length > 0) {
     metadata.authors = authors;
-  }
-  if (affiliation) {
-    metadata.affiliation = affiliation;
   }
 
   // Composition was read out of the coordinates and parked on the artifact.

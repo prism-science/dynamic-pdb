@@ -137,7 +137,7 @@ function FactValue({ fact }: { fact: MetadataFact }) {
 //
 // The halves are split here and rendered as two independent lists rather than
 // as one grid flowing across both. A single grid shares its rows between the
-// columns, so a three-line affiliation on the right stretches the row and
+// columns, so a three-line list of authors on the right stretches the row and
 // punches a hole into the left column; separate lists let each side pack
 // tight. Splitting at ceil(n / 2) also keeps the reading order down the left
 // column and stays balanced whichever facts happen to be missing.
@@ -399,7 +399,6 @@ export function modelInfoFacts(
   const modelType = stringValue(metadata.model_type);
   const ligands = stringArrayValue(metadata.ligands);
   const authors = stringArrayValue(metadata.authors);
-  const affiliation = stringValue(metadata.affiliation);
 
   if (program) {
     facts.push({ label: "Made with", value: formatProgram(program) });
@@ -419,9 +418,6 @@ export function modelInfoFacts(
   }
   if (authors.length > 0) {
     facts.push({ label: "Authors", value: authors.join(", ") });
-  }
-  if (affiliation) {
-    facts.push({ label: "Affiliation", value: affiliation });
   }
 
   return facts;

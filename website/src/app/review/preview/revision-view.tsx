@@ -4,10 +4,15 @@ import {
   type EntryRevision,
   type ModelRevision,
 } from "@/lib/api/entries";
-import { dataTableEntities, getEntityFileURL, structureMaps } from "@/lib/entities";
+import {
+  dataTableEntities,
+  type FileItem,
+  getEntityFileURL,
+  structureMaps,
+} from "@/lib/entities";
 import { formatEntryLabel } from "@/lib/entry-label";
 import DataTable from "@/app/components/DataTable";
-import FileList, { type FileItem } from "@/app/components/FileList";
+import FileTable from "@/app/components/FileTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
@@ -97,7 +102,7 @@ export function EntryRevisionPreview({
         {files.length > 0 ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Files</h2>
-            <FileList items={files} />
+            <FileTable items={files} />
           </section>
         ) : null}
 
@@ -247,6 +252,8 @@ function fileItems(artifacts: Artifact[]): FileItem[] {
       name: artifact.name,
       type: artifact.format ?? undefined,
       size: artifact.size_bytes ?? undefined,
+      level: artifact.level,
+      sha256: artifact.sha256,
       url: artifact.uri,
     }));
 }

@@ -14,9 +14,6 @@ export type StructureFacts = {
    * Depositors, in the `Surname, I.N.` form the app displays. Taken from
    * mmCIF `_audit_author` or PDB `AUTHOR` — the people who deposited the
    * structure, not `_citation_author`, who wrote the paper about it.
-   *
-   * Affiliation has no counterpart: released PDB and mmCIF entries do not
-   * carry one, so that field stays for the depositor to fill.
    */
   authors: string[];
   /** Four-character PDB accession, when the file admits to having one. */

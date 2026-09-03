@@ -45,7 +45,6 @@ test("should convert files and metrics into create entry entities", () => {
     size: 128,
     url: "s3://dynamic-pdb/model.cif",
     authors: " Alice ; Bob\nCarol ",
-    affiliation: "  Example Lab  ",
     metadata: { pdb_id: "4HHB" },
   });
   const dataFile = parsedFile({
@@ -68,7 +67,6 @@ test("should convert files and metrics into create entry entities", () => {
       size: 128,
       metadata: { pdb_id: "4HHB" },
       authors: ["Alice", "Bob", "Carol"],
-      affiliation: "Example Lab",
     },
   });
   assert.deepEqual(toEntity(dataFile), {
@@ -571,7 +569,6 @@ function parsedFile(overrides = {}) {
     artifactType,
     level: "L2",
     authors: "",
-    affiliation: "",
     url: "s3://dynamic-pdb/file.cif",
     progress: 1,
     uploadStatus: "uploaded",
