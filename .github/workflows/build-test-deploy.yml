@@ -45,6 +45,7 @@ jobs:
               - "go.work"
               - "go.work.sum"
               - "backend/**"
+              - "lib/**"
             cli:
               - ".github/workflows/build-test-deploy.yml"
               - ".github/workflows/release.yml"
@@ -88,6 +89,7 @@ jobs:
             backend/go.sum
             backend/migrations/go.sum
             backend/tools/go.sum
+            lib/go.sum
 
       - name: Install codegen tools
         run: make -C backend install-tools
@@ -229,6 +231,7 @@ jobs:
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-backend"
           SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
+            --build-context lib=lib \
             -t "${IMAGE}:sha-${SHA}" \
             -t "${IMAGE}:latest" \
             -f backend/Dockerfile backend
@@ -249,6 +252,7 @@ jobs:
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-mmseqs-job"
           SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
+            --build-context lib=lib \
             -t "${IMAGE}:sha-${SHA}" \
             -t "${IMAGE}:latest" \
             -f backend/cmd/mmseqs-job/Dockerfile backend
