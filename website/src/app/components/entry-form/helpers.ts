@@ -60,10 +60,6 @@ export function toEntity(file: ParsedFile) {
   if (authors.length > 0) {
     payload.authors = authors;
   }
-  const affiliation = file.affiliation.trim();
-  if (affiliation) {
-    payload.affiliation = affiliation;
-  }
 
   return {
     id: file.id,
@@ -380,7 +376,6 @@ export async function parseFile(file: File, level: EntityLevel): Promise<ParsedF
     artifactType: "other",
     level,
     authors: "",
-    affiliation: "",
     url: "",
     progress: 0,
     uploadStatus: "uploading",
@@ -437,7 +432,6 @@ export function extFileToParsed(
     artifactType: "other",
     level,
     authors: "",
-    affiliation: "",
     metadata: file.metadata,
     sha256: file.sha256,
     url: extFileReferenceURL(experimentId, file),
@@ -489,7 +483,6 @@ export async function parseUrlFile(
     artifactType: "other",
     level,
     authors: "",
-    affiliation: "",
     url,
     progress: 1,
     uploadStatus: "uploaded",

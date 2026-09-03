@@ -1,0 +1,274 @@
+/* Same window furniture as the preview dialog — tinted title strip, white body,
+   dimmed page behind — so opening one and then the other reads as staying in
+   the same place rather than as two unrelated dialogs. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(26, 30, 42, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Narrower than the preview: this window holds five short values and a digest,
+   and a wide card would leave the label column stranded from its values. */
+.card {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgba(26, 30, 42, 0.28);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 14px 20px;
+  border-bottom: 1px solid var(--dialog-border);
+  background: var(--dialog-bg);
+}
+
+.title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dialog-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dialog-fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.close:hover {
+  background: var(--dialog-hover);
+  color: var(--dialog-fg);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow: var(--dialog-ring);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.factRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.factRow:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.factRow dt {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.factRow dd,
+.checksumValue {
+  font-size: 13px;
+}
+
+.factRow dd {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-align: right;
+}
+
+.absent {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.checksum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.checksumHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.checksumKey {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.copy {
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.copy:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.copy:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* Wraps rather than scrolls: a digest that has to be dragged sideways cannot be
+   compared by eye against the one in a terminal. */
+.checksumValue {
+  color: var(--text);
+  font-family: var(--font-mono);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* Right-aligned, with the way into the viewer last: it is the step forward, and
+   the corner a dialog's primary action is looked for in. */
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Preview is the filled button and Download the outlined one: the dialog exists
+   because the row no longer opens the viewer, so the way in has to be the
+   obvious thing in the window. */
+.preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.preview:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.preview:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.download:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.download:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 720px) {
+  .backdrop {
+    padding: 12px;
+  }
+
+  .card {
+    max-height: calc(100vh - 24px);
+  }
+}

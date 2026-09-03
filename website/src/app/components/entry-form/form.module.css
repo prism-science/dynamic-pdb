@@ -590,10 +590,10 @@
   border-top: 1px solid var(--border);
 }
 
-/* Deposition block (authors + affiliation) */
+/* Deposition block: authors of the file */
 .depositBlock {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   margin: 0 12px 12px;
   padding: 12px;
@@ -1326,10 +1326,6 @@
 }
 
 @media (max-width: 680px) {
-  .depositBlock {
-    grid-template-columns: 1fr;
-  }
-
   .programGrid {
     grid-template-columns: 1fr;
   }

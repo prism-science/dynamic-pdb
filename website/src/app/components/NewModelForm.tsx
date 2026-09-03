@@ -278,7 +278,6 @@ function entityToBaselineFile(entity: Entity): ParsedFile {
     artifactType: "other",
     level: entity.level ?? "L0",
     authors: "",
-    affiliation: "",
     url: "",
     progress: 1,
     uploadStatus: "uploaded",

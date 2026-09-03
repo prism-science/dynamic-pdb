@@ -15,7 +15,6 @@ export type ParsedFile = {
   artifactType: ArtifactType;
   level: EntityLevel;
   authors: string;
-  affiliation: string;
   metadata?: Record<string, unknown>;
   sha256?: string;
   preview?: string;

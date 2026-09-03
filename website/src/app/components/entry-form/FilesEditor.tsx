@@ -380,20 +380,6 @@ export default function FilesEditor({
                           }
                         />
                       </div>
-                      <div className={styles.depositField}>
-                        <span className={styles.depositLabel}>Affiliation</span>
-                        <input
-                          className={styles.input}
-                          value={file.affiliation}
-                          onChange={(event) =>
-                            onPatch(file.id, {
-                              affiliation: event.target.value,
-                            })
-                          }
-                          placeholder="e.g. Department of Chemistry, Boston University"
-                          autoComplete="organization"
-                        />
-                      </div>
                     </div>
 
                     {file.type === "image" && file.preview ? (

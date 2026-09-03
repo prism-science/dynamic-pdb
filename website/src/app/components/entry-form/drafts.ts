@@ -22,7 +22,6 @@ export type StoredFile = {
   artifactType?: ArtifactType;
   level: EntityLevel;
   authors: string;
-  affiliation: string;
   metadata?: Record<string, unknown>;
   sha256?: string;
   preview?: string;
@@ -77,7 +76,6 @@ export function fileToDraft(file: ParsedFile): StoredFile {
     artifactType: file.artifactType,
     level: file.level,
     authors: file.authors,
-    affiliation: file.affiliation,
     metadata: file.metadata,
     sha256: file.sha256,
     preview: httpOnly(file.preview),
@@ -96,7 +94,6 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
     artifactType: file.artifactType ?? "other",
     level: file.level,
     authors: file.authors,
-    affiliation: file.affiliation,
     metadata: file.metadata,
     sha256: file.sha256,
     preview: file.preview,

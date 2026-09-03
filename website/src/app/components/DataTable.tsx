@@ -3,7 +3,13 @@
 import { useState, type CSSProperties } from "react";
 
 import type { Entity, EntityLevel } from "@/lib/api/entries";
-import { dataTableEntities, structureMaps } from "@/lib/entities";
+import {
+  dataTableEntities,
+  type FileItem,
+  fileItemFromEntity,
+  structureMaps,
+} from "@/lib/entities";
+import FileDetailsModal from "./FileDetailsModal";
 import FilePreviewModal from "./FilePreviewModal";
 
 import styles from "./DataTable.module.css";
@@ -17,7 +23,8 @@ const LEVEL_TITLE: Record<EntityLevel, string> = {
 };
 
 export default function DataTable({ entities }: { entities: Entity[] }) {
-  const [selected, setSelected] = useState<Entity | null>(null);
+  const [details, setDetails] = useState<FileItem | null>(null);
+  const [preview, setPreview] = useState<Entity | null>(null);
 
   const graphEntities = dataTableEntities(entities);
 
@@ -30,6 +37,18 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
 
   if (columns.length === 0) {
     return null;
+  }
+
+  // A file opens its details — the same window the entry's file list opens — so
+  // format, size and checksum are one click away from either page. Metrics are
+  // not a file and have nothing to state beyond their numbers, so they still go
+  // straight to the view that prints them.
+  function open(entity: Entity) {
+    if (entity.type === "metrics") {
+      setPreview(entity);
+      return;
+    }
+    setDetails(fileItemFromEntity(entity));
   }
 
   return (
@@ -53,7 +72,7 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
                 type="button"
                 key={entity.id}
                 className={styles.cell}
-                onClick={() => setSelected(entity)}
+                onClick={() => open(entity)}
                 title="Open preview"
               >
                 <span className={styles.cellType} data-type={entity.type}>
@@ -66,10 +85,16 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
         </div>
       ))}
 
+      <FileDetailsModal
+        item={preview ? null : details}
+        onClose={() => setDetails(null)}
+        onPreview={setPreview}
+      />
+
       <FilePreviewModal
-        entity={selected}
+        entity={preview}
         maps={structureMaps(entities)}
-        onClose={() => setSelected(null)}
+        onClose={() => setPreview(null)}
       />
     </div>
   );

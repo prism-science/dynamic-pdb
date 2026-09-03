@@ -265,7 +265,6 @@ const file = (patch) => ({
   type: "pdb",
   level: "L2",
   authors: "",
-  affiliation: "",
   url: "s3://x",
   progress: 1,
   uploadStatus: "uploaded",
