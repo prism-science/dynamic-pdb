@@ -150,6 +150,21 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 	revision.UpdatedAt = now
 
 	if err := j.database.Do(ctx, func(ctx context.Context) error {
+		if err := j.database.Entries.Lock(ctx, entryID); err != nil {
+			return fmt.Errorf("lock entry: %w", err)
+		}
+		activeState := models.RevisionStateActive
+		activeRevision, err := j.database.Entries.Get(ctx, db.EntryRevisionFilters{
+			EntryID: &entryID,
+			State:   &activeState,
+		})
+		if err != nil {
+			return fmt.Errorf("get active parent revision: %w", err)
+		}
+		if activeRevision.ID != parentRevisionID {
+			return fmt.Errorf("entry revision parent is no longer active: %w", db.ErrEntryRevisionConflict)
+		}
+
 		createdRevision, err := j.database.Entries.Create(ctx, *revision)
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)

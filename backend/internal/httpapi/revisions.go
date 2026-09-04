@@ -216,6 +216,9 @@ func (s *Server) UpdateEntryRevisionState(
 			return nil
 		}
 
+		if err := s.database.Entries.Lock(ctx, entryID); err != nil {
+			return fmt.Errorf("lock entry: %w", err)
+		}
 		if err := s.ensureRevisionParentIsActive(ctx, *target); err != nil {
 			return fmt.Errorf("validate entry revision parent: %w", err)
 		}
