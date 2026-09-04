@@ -139,7 +139,8 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 	}
 
 	now := j.now()
-	revision.ParentRevisionID = new(revision.ID)
+	parentRevisionID := revision.ID
+	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
 	revision.State = models.RevisionStateInReview
@@ -153,8 +154,15 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
 		}
-		if _, err := j.database.Entries.ActivateRevision(ctx, entryID, createdRevision.ID); err != nil {
+		if err := j.moveEntryRevisionData(ctx, parentRevisionID, createdRevision.ID); err != nil {
+			return fmt.Errorf("move entry revision data: %w", err)
+		}
+		activatedRevision, err := j.database.Entries.ActivateRevision(ctx, entryID, createdRevision.ID)
+		if err != nil {
 			return fmt.Errorf("activate entry revision: %w", err)
+		}
+		if err := j.reindexEntry(ctx, *activatedRevision); err != nil {
+			return fmt.Errorf("reindex entry: %w", err)
 		}
 		return nil
 	}); err != nil {
@@ -165,6 +173,45 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 		"entry_id", entryID,
 		"revision_id", revision.ID,
 	)
+	return nil
+}
+
+func (j *DataSyncJob) moveEntryRevisionData(
+	ctx context.Context,
+	fromRevisionID uuid.UUID,
+	toRevisionID uuid.UUID,
+) error {
+	if err := j.database.Artifacts.CopyEntryRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("copy artifact links: %w", err)
+	}
+
+	if err := j.database.ProteinSequences.MoveEntryRevision(ctx, fromRevisionID, toRevisionID); err != nil {
+		return fmt.Errorf("move protein sequences: %w", err)
+	}
+	return nil
+}
+
+func (j *DataSyncJob) reindexEntry(ctx context.Context, revision models.EntryRevision) error {
+	if err := j.database.EntrySearch.DeleteEntry(ctx, revision.EntryID); err != nil {
+		return fmt.Errorf("clear entry search index: %w", err)
+	}
+	if err := j.database.EntrySearch.IndexEntryRevision(ctx, revision); err != nil {
+		return fmt.Errorf("index entry revision: %w", err)
+	}
+
+	activeModels, err := j.database.Models.List(ctx, db.ModelRevisionFilters{
+		EntryID:    new(revision.EntryID),
+		State:      new(models.RevisionStateActive),
+		ModelState: new(models.ModelStateActive),
+	})
+	if err != nil {
+		return fmt.Errorf("list active models: %w", err)
+	}
+	for _, model := range activeModels {
+		if err := j.database.EntrySearch.IndexModelRevision(ctx, model); err != nil {
+			return fmt.Errorf("index active model revision %s: %w", model.ID, err)
+		}
+	}
 	return nil
 }
 
