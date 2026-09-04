@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/lib/rcsb"
@@ -107,7 +109,9 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	j.execute(ctx, *job)
+	if err := j.execute(ctx, *job); err != nil {
+		return false, fmt.Errorf("execute data sync job: %w", err)
+	}
 	job.ScheduledAt = j.nextScheduledAt(j.now())
 	if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
 		return false, fmt.Errorf("reschedule data sync job: %w", err)
@@ -115,7 +119,45 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (j *DataSyncJob) execute(_ context.Context, _ models.DataSyncJob) {
+func (j *DataSyncJob) execute(ctx context.Context, job models.DataSyncJob) error {
+	if job.ModelID != nil {
+		return nil
+	}
+	if err := j.syncEntry(ctx, job.EntryID); err != nil {
+		return fmt.Errorf("sync entry %s: %w", job.EntryID, err)
+	}
+	return nil
+}
+
+func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
+	revision, err := j.prepareEntryRevisionUpdate(ctx, entryID)
+	if err != nil {
+		return fmt.Errorf("prepare entry revision update: %w", err)
+	}
+	if revision == nil {
+		return nil
+	}
+
+	now := j.now()
+	revision.ParentRevisionID = new(revision.ID)
+	revision.ID = uuid.New()
+	revision.RevisionNumber = nil
+	revision.State = models.RevisionStateInReview
+	revision.ChangeSummary = nil
+	revision.PublishedAt = nil
+	revision.CreatedAt = now
+	revision.UpdatedAt = now
+
+	createdRevision, err := j.database.Entries.Create(ctx, *revision)
+	if err != nil {
+		return fmt.Errorf("create entry revision: %w", err)
+	}
+	j.logger.Info(
+		"data sync entry revision created",
+		"entry_id", entryID,
+		"revision_id", createdRevision.ID,
+	)
+	return nil
 }
 
 func (j *DataSyncJob) prepareEntryRevisionUpdate(
