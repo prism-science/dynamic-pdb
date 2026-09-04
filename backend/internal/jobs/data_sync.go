@@ -24,6 +24,8 @@ const (
 	dataSyncScheduleJitter  = 7 * 24 * time.Hour
 )
 
+var dataSyncUserID = uuid.MustParse(models.SystemUserID)
+
 type DataSyncJob struct {
 	database        *db.DB
 	rcsbClient      *rcsb.RemoteClient
@@ -109,8 +111,21 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	if err := j.execute(ctx, *job); err != nil {
-		return false, fmt.Errorf("execute data sync job: %w", err)
+	if executionErr := j.execute(ctx, *job); executionErr != nil {
+		job.ScheduledAt = j.now().Add(dataSyncInterval)
+		if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
+			return false, errors.Join(
+				fmt.Errorf("execute data sync job: %w", executionErr),
+				fmt.Errorf("reschedule failed data sync job: %w", err),
+			)
+		}
+		j.logger.Error(
+			"data sync job failed; retry scheduled",
+			"entry_id", job.EntryID,
+			"retry_at", job.ScheduledAt,
+			"err", executionErr,
+		)
+		return true, nil
 	}
 	job.ScheduledAt = j.nextScheduledAt(j.now())
 	if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
@@ -146,6 +161,7 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 	revision.State = models.RevisionStateInReview
 	revision.ChangeSummary = nil
 	revision.PublishedAt = nil
+	revision.CreatedBy = dataSyncUserID
 	revision.CreatedAt = now
 	revision.UpdatedAt = now
 

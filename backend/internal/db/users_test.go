@@ -167,3 +167,18 @@ func Test_should_return_not_found_error_when_get_misses(t *testing.T) {
 	// then
 	require.ErrorIs(t, err, db.ErrUserNotFound)
 }
+
+func Test_should_create_system_user_when_database_migrated(t *testing.T) {
+	// given
+	systemUserID, err := uuid.Parse(models.SystemUserID)
+	require.NoError(t, err)
+
+	// when
+	user, err := testDB.Users.Get(context.Background(), systemUserID)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "system", user.ExternalRef.Source)
+	assert.Equal(t, "dynamic-pdb", user.ExternalRef.Value)
+	assert.Equal(t, "Dynamic PDB", user.DisplayName)
+}

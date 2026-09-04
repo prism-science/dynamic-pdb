@@ -87,7 +87,12 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dataSyncJob, err := jobs.NewDataSyncJob(database, rcsb.NewClient(), slog.Default())
+	// TODO: Replace the disabled backend cache with a bounded RCSB cache that expires entries by TTL.
+	dataSyncJob, err := jobs.NewDataSyncJob(
+		database,
+		rcsb.NewClient(rcsb.WithCacheEntries(0)),
+		slog.Default(),
+	)
 	if err != nil {
 		slog.Error("data sync job init failed", "err", err)
 		return 1
