@@ -18,7 +18,7 @@ import (
 
 const (
 	dataSyncLockName        = "data-sync"
-	dataSyncInterval        = time.Hour
+	dataSyncInterval        = 5 * time.Second
 	dataSyncBatchTimeout    = 5 * time.Minute
 	dataSyncMinimumInterval = 7 * 24 * time.Hour
 	dataSyncScheduleJitter  = 7 * 24 * time.Hour
