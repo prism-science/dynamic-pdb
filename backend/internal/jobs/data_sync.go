@@ -148,14 +148,22 @@ func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
 	revision.CreatedAt = now
 	revision.UpdatedAt = now
 
-	createdRevision, err := j.database.Entries.Create(ctx, *revision)
-	if err != nil {
-		return fmt.Errorf("create entry revision: %w", err)
+	if err := j.database.Do(ctx, func(ctx context.Context) error {
+		createdRevision, err := j.database.Entries.Create(ctx, *revision)
+		if err != nil {
+			return fmt.Errorf("create entry revision: %w", err)
+		}
+		if _, err := j.database.Entries.ActivateRevision(ctx, entryID, createdRevision.ID); err != nil {
+			return fmt.Errorf("activate entry revision: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("save entry revision update: %w", err)
 	}
 	j.logger.Info(
-		"data sync entry revision created",
+		"data sync entry revision activated",
 		"entry_id", entryID,
-		"revision_id", createdRevision.ID,
+		"revision_id", revision.ID,
 	)
 	return nil
 }
