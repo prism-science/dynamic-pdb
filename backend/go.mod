@@ -3,6 +3,7 @@ module dynamic-pdb/backend
 go 1.26
 
 require (
+	dynamic-pdb/lib v0.0.0
 	github.com/aws/aws-sdk-go-v2 v1.32.6
 	github.com/aws/aws-sdk-go-v2/config v1.28.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.47
@@ -19,6 +20,8 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 )
+
+replace dynamic-pdb/lib => ../lib
 
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
@@ -41,6 +44,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect

@@ -151,6 +151,24 @@ func (r *ProteinSequencesRepository) MoveEntryRevisionArtifacts(
 	return nil
 }
 
+func (r *ProteinSequencesRepository) MoveEntryRevision(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+) error {
+	query := `update protein_sequences
+		      set entry_revision_id = $2
+		      where entry_revision_id = $1`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(
+		ctx,
+		query,
+		fromRevisionID,
+		toRevisionID,
+	); err != nil {
+		return fmt.Errorf("move protein sequences to entry revision: %w", err)
+	}
+	return nil
+}
+
 func (r *ProteinSequencesRepository) Delete(ctx context.Context, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil

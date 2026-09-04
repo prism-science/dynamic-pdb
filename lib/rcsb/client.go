@@ -102,10 +102,9 @@ func NewClient(options ...Option) *RemoteClient {
 }
 
 func (c *RemoteClient) GetEntry(ctx context.Context, pdbID string) (map[string]any, error) {
-	url := c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(pdbID)
-	contents, err := c.get(ctx, url)
+	contents, err := c.getEntry(ctx, pdbID)
 	if err != nil {
-		return nil, fmt.Errorf("get RCSB entry: %w", err)
+		return nil, err
 	}
 
 	var payload map[string]any
@@ -115,17 +114,64 @@ func (c *RemoteClient) GetEntry(ctx context.Context, pdbID string) (map[string]a
 	return payload, nil
 }
 
-func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error) {
-	url := c.dataBaseURL + "/rest/v1/core/polymer_entity/" + strings.ToUpper(pdbID) + "/" + strings.TrimSpace(entityID)
-	contents, err := c.get(ctx, url)
+func (c *RemoteClient) GetEntryDetails(ctx context.Context, pdbID string) (EntryDetails, error) {
+	contents, err := c.getEntry(ctx, pdbID)
 	if err != nil {
-		return nil, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
+		return EntryDetails{}, err
+	}
+
+	var details EntryDetails
+	if err := json.Unmarshal(contents, &details); err != nil {
+		return EntryDetails{}, fmt.Errorf("decode RCSB entry: %w", err)
+	}
+	return details, nil
+}
+
+func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error) {
+	contents, err := c.getPolymerEntity(ctx, pdbID, entityID)
+	if err != nil {
+		return nil, err
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(contents, &payload); err != nil {
 		return nil, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
 	return payload, nil
+}
+
+func (c *RemoteClient) GetPolymerEntityDetails(
+	ctx context.Context,
+	pdbID string,
+	entityID string,
+) (PolymerEntityDetails, error) {
+	contents, err := c.getPolymerEntity(ctx, pdbID, entityID)
+	if err != nil {
+		return PolymerEntityDetails{}, err
+	}
+
+	var details PolymerEntityDetails
+	if err := json.Unmarshal(contents, &details); err != nil {
+		return PolymerEntityDetails{}, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
+	}
+	return details, nil
+}
+
+func (c *RemoteClient) getEntry(ctx context.Context, pdbID string) ([]byte, error) {
+	url := c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(strings.TrimSpace(pdbID))
+	contents, err := c.get(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("get RCSB entry: %w", err)
+	}
+	return contents, nil
+}
+
+func (c *RemoteClient) getPolymerEntity(ctx context.Context, pdbID string, entityID string) ([]byte, error) {
+	url := c.dataBaseURL + "/rest/v1/core/polymer_entity/" + strings.ToUpper(strings.TrimSpace(pdbID)) + "/" + strings.TrimSpace(entityID)
+	contents, err := c.get(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
+	}
+	return contents, nil
 }
 
 func (c *RemoteClient) GetFile(_ context.Context, pdbID string, file string) (Artifact, error) {

@@ -216,6 +216,9 @@ func (s *Server) UpdateEntryRevisionState(
 			return nil
 		}
 
+		if err := s.database.Entries.Lock(ctx, entryID); err != nil {
+			return fmt.Errorf("lock entry: %w", err)
+		}
 		if err := s.ensureRevisionParentIsActive(ctx, *target); err != nil {
 			return fmt.Errorf("validate entry revision parent: %w", err)
 		}
@@ -463,6 +466,7 @@ func (s *Server) ensureModelRevisionParentIsActive(
 }
 
 func (s *Server) reindexActiveEntry(ctx context.Context, revision domainmodels.EntryRevision) error {
+	// TODO: Reconsider the full search-index rebuild: changing an entry revision should not require reindexing all of its models.
 	if err := s.database.EntrySearch.DeleteEntry(ctx, revision.EntryID); err != nil {
 		return fmt.Errorf("clear entry search index: %w", err)
 	}

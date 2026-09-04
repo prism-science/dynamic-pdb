@@ -255,6 +255,19 @@ func (r *EntriesRepository) Get(ctx context.Context, filters EntryRevisionFilter
 	return &revisions[0], nil
 }
 
+func (r *EntriesRepository) Lock(ctx context.Context, entryID string) error {
+	var lockedEntryID string
+	if err := r.queriers.Querier(ctx, r.db).GetContext(
+		ctx,
+		&lockedEntryID,
+		`select id from entries where id = $1 for update`,
+		entryID,
+	); err != nil {
+		return fmt.Errorf("lock entry: %w", err)
+	}
+	return nil
+}
+
 func (r *EntriesRepository) List(
 	ctx context.Context,
 	filters EntryRevisionFilters,

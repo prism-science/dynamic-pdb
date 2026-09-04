@@ -136,8 +136,12 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	require.NoError(t, err)
 	polymerEntity, err := client.GetPolymerEntity(context.Background(), "5amf", "2")
 	require.NoError(t, err)
+	entryDetails, err := client.GetEntryDetails(context.Background(), "5amf")
+	require.NoError(t, err)
+	polymerEntityDetails, err := client.GetPolymerEntityDetails(context.Background(), "5amf", "2")
 
 	// then
+	require.NoError(t, err)
 	assert.Equal(t, "example structure", entry["struct"].(map[string]any)["title"])
 	assert.Equal(t, "X-RAY DIFFRACTION", entry["exptl"].([]any)[0].(map[string]any)["method"])
 	entryInfo := entry["rcsb_entry_info"].(map[string]any)
@@ -158,6 +162,13 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	refinement := entry["refine"].([]any)[0].(map[string]any)
 	assert.Equal(t, 0.21, refinement["ls_R_factor_R_free"])
 	assert.Equal(t, 0.18, refinement["ls_R_factor_R_work"])
+	assert.Equal(t, "example structure", entryDetails.Structure.Title)
+	assert.Equal(t, "X-RAY DIFFRACTION", entryDetails.Experiments[0].Method)
+	assert.Equal(t, []float64{1.5}, entryDetails.Info.CombinedResolution)
+	assert.Equal(t, "P 21 21 21", entryDetails.Symmetry.SpaceGroup)
+	assert.Equal(t, []string{"1", "2"}, entryDetails.Identifiers.PolymerEntityIDs)
+	assert.Equal(t, "Homo sapiens", polymerEntityDetails.SourceOrganisms[0].ScientificName)
+	assert.Equal(t, "Escherichia coli", polymerEntityDetails.SourceOrganisms[1].ScientificName)
 }
 
 func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {

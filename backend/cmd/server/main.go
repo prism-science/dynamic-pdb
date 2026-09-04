@@ -21,7 +21,9 @@ import (
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
 	"dynamic-pdb/backend/internal/integrations/s3"
+	"dynamic-pdb/backend/internal/jobs"
 	"dynamic-pdb/backend/internal/services/cdn"
+	"dynamic-pdb/lib/rcsb"
 )
 
 func main() {
@@ -85,6 +87,16 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// TODO: Replace the disabled backend cache with a bounded RCSB cache that expires entries by TTL.
+	dataSyncJob, err := jobs.NewDataSyncJob(
+		database,
+		rcsb.NewClient(rcsb.WithCacheEntries(0)),
+		slog.Default(),
+	)
+	if err != nil {
+		slog.Error("data sync job init failed", "err", err)
+		return 1
+	}
 
 	addr := strings.TrimSpace(cfg.Server.Addr)
 	if addr == "" {
@@ -100,14 +112,25 @@ func run() int {
 	}
 
 	slog.Info("server listening", "addr", httpServer.Addr)
-	if err := serve(ctx, httpServer); err != nil {
+	if err := serve(ctx, httpServer, dataSyncJob); err != nil {
 		slog.Error("server exited with error", "err", err)
 		return 1
 	}
 	return 0
 }
 
-func serve(ctx context.Context, httpServer *http.Server) error {
+func serve(ctx context.Context, httpServer *http.Server, dataSyncJob *jobs.DataSyncJob) error {
+	serviceCtx, stopServices := context.WithCancel(ctx)
+	dataSyncDone := make(chan struct{})
+	go func() {
+		defer close(dataSyncDone)
+		dataSyncJob.Run(serviceCtx)
+	}()
+	defer func() {
+		stopServices()
+		<-dataSyncDone
+	}()
+
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- httpServer.ListenAndServe()

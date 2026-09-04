@@ -29,7 +29,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
+          cache-dependency-path: |
+            cli/go.sum
+            lib/go.sum
 
       - uses: azure/setup-helm@v4
         with:
@@ -38,9 +40,9 @@ jobs:
       - name: go build / vet / test
         run: |
           set -euo pipefail
-          go build ./cli/...
-          go vet ./cli/...
-          go test ./cli/... -count=1
+          go build ./cli/... ./lib/...
+          go vet ./cli/... ./lib/...
+          go test ./cli/... ./lib/... -count=1
 
       - name: helm lint / template
         run: |
@@ -59,7 +61,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
+          cache-dependency-path: |
+            cli/go.sum
+            lib/go.sum
 
       - name: Print GitHub OIDC claims
         run: |
@@ -183,6 +187,7 @@ jobs:
           SHA=$(git rev-parse HEAD)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           docker buildx build --push \
+            --build-context lib=lib \
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${SHA}" \
             --build-arg DATE="${DATE}" \

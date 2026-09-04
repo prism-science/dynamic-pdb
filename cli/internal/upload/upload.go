@@ -23,12 +23,12 @@ import (
 	"github.com/google/uuid"
 
 	"dynamic-pdb/cli/internal/dynamicpdbapi"
-	"dynamic-pdb/cli/internal/rcsb"
 	extractorapi "dynamic-pdb/cli/internal/upload/extractors"
 	artifactextractor "dynamic-pdb/cli/internal/upload/extractors/artifact"
 	fileextractor "dynamic-pdb/cli/internal/upload/extractors/file"
 	rcsbextractor "dynamic-pdb/cli/internal/upload/extractors/rcsb"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	"dynamic-pdb/lib/rcsb"
 )
 
 const templatePDBID = "{{ pdb_id }}"

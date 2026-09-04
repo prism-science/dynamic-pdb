@@ -67,6 +67,8 @@ func buildMMseqsJobImage(t *testing.T, root string) string {
 	cmd := exec.Command(
 		dockerCommand(),
 		"build",
+		"--build-context",
+		"lib=lib",
 		"-f",
 		"backend/cmd/mmseqs-job/Dockerfile",
 		"-t",

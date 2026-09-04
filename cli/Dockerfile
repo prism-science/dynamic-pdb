@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM harbor.astera.sh/dockerhub-cache/golang:1.26-alpine AS builder
-WORKDIR /src
+WORKDIR /src/cli
 
 COPY go.mod go.sum ./
+COPY --from=lib go.mod go.sum /src/lib/
 RUN GOWORK=off go mod download
 
 COPY . .
+COPY --from=lib . /src/lib/
 ARG VERSION=dev
 ARG COMMIT=none
 ARG DATE=unknown

@@ -6,7 +6,7 @@ GOLANGCI_LINT ?= $(shell command -v golangci-lint 2>/dev/null || echo $(shell $(
 
 # Modules in the go.work workspace. golangci-lint runs once per module because
 # each is a separate Go module.
-LINT_MODULES := backend cli integration
+LINT_MODULES := backend cli integration lib
 
 .PHONY: integration-test lint lint-fix install-lint-tools ensure-lint-tools
 

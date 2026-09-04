@@ -96,7 +96,7 @@ func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revisi
 	})
 	require.NoError(t, err)
 	targetRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
-		ID: uuid.New(), EntryID: entryID, ParentRevisionID: &activeRevision.ID,
+		ID: uuid.New(), EntryID: entryID, ParentRevisionID: new(activeRevision.ID),
 		State: models.RevisionStatePending, EntryState: models.EntryStateActive,
 		Name: "target protein revision", CreatedBy: createdBy,
 		CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
@@ -128,6 +128,53 @@ func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revisi
 	// then
 	require.NoError(t, err)
 	oldSequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: new(activeRevision.ID),
+	})
+	require.NoError(t, err)
+	assert.Empty(t, oldSequences)
+	movedSequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: new(targetRevision.ID),
+	})
+	require.NoError(t, err)
+	require.Len(t, movedSequences, 1)
+	assert.Equal(t, before[0].ID, movedSequences[0].ID)
+	assert.Equal(t, models.ProteinSequenceProcessingStateProcessed, movedSequences[0].ProcessingState)
+}
+
+func Test_should_move_all_protein_sequences_to_new_entry_revision(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createdBy := createDBTestUser(t)
+	entryID := "entry-" + uuid.NewString()
+	activeRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID: uuid.New(), EntryID: entryID, State: models.RevisionStateActive,
+		EntryState: models.EntryStateActive, Name: "active protein revision", CreatedBy: createdBy,
+		CreatedAt: now, UpdatedAt: now,
+	})
+	require.NoError(t, err)
+	targetRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
+		ID: uuid.New(), EntryID: entryID, ParentRevisionID: &activeRevision.ID,
+		State: models.RevisionStatePending, EntryState: models.EntryStateActive,
+		Name: "target protein revision", CreatedBy: createdBy,
+		CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
+	})
+	require.NoError(t, err)
+	firstArtifact := createDBTestArtifact(t, createdBy, "first protein artifact", now)
+	secondArtifact := createDBTestArtifact(t, createdBy, "second protein artifact", now)
+	require.NoError(t, testDB.ProteinSequences.Create(ctx, activeRevision.ID, firstArtifact.ID, []models.FASTARecord{
+		{Header: "first", Sequence: "ACDEFGHIK"},
+	}))
+	require.NoError(t, testDB.ProteinSequences.Create(ctx, activeRevision.ID, secondArtifact.ID, []models.FASTARecord{
+		{Header: "second", Sequence: "LMNPQRSTV"},
+	}))
+
+	// when
+	err = testDB.ProteinSequences.MoveEntryRevision(ctx, activeRevision.ID, targetRevision.ID)
+
+	// then
+	require.NoError(t, err)
+	oldSequences, err := testDB.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
 		EntryRevisionID: &activeRevision.ID,
 	})
 	require.NoError(t, err)
@@ -136,7 +183,5 @@ func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revisi
 		EntryRevisionID: &targetRevision.ID,
 	})
 	require.NoError(t, err)
-	require.Len(t, movedSequences, 1)
-	assert.Equal(t, before[0].ID, movedSequences[0].ID)
-	assert.Equal(t, models.ProteinSequenceProcessingStateProcessed, movedSequences[0].ProcessingState)
+	assert.Len(t, movedSequences, 2)
 }
