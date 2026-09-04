@@ -3,6 +3,7 @@ package models
 import (
 	"crypto/rand"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,6 +71,25 @@ type EntryMetadata struct {
 	Organism     *string                `json:"organism,omitempty"`
 	Method       *StructureMethod       `json:"method,omitempty"`
 	SpaceGroup   *string                `json:"space_group,omitempty"`
+}
+
+func (revision EntryRevision) HasSameData(other EntryRevision) bool {
+	return revision.EntryState == other.EntryState &&
+		revision.Name == other.Name &&
+		pointersEqual(revision.Description, other.Description) &&
+		pointersEqual(revision.ThumbnailImageURL, other.ThumbnailImageURL) &&
+		maps.Equal(revision.Metadata.ExternalRefs, other.Metadata.ExternalRefs) &&
+		pointersEqual(revision.Metadata.Resolution, other.Metadata.Resolution) &&
+		pointersEqual(revision.Metadata.Organism, other.Metadata.Organism) &&
+		pointersEqual(revision.Metadata.Method, other.Metadata.Method) &&
+		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup)
+}
+
+func pointersEqual[T comparable](left *T, right *T) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 type EntrySource string

@@ -23,6 +23,7 @@ import (
 	"dynamic-pdb/backend/internal/integrations/s3"
 	"dynamic-pdb/backend/internal/jobs"
 	"dynamic-pdb/backend/internal/services/cdn"
+	"dynamic-pdb/lib/rcsb"
 )
 
 func main() {
@@ -86,7 +87,7 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	dataSyncJob, err := jobs.NewDataSyncJob(database, slog.Default())
+	dataSyncJob, err := jobs.NewDataSyncJob(database, rcsb.NewClient(), slog.Default())
 	if err != nil {
 		slog.Error("data sync job init failed", "err", err)
 		return 1
