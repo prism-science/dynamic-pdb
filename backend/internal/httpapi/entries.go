@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +32,8 @@ const (
 	maxEntryPDBIDLength           = 64
 	minProteinSequenceQueryLength = 8
 	proteinSequenceAlphabet       = "ACDEFGHIKLMNPQRSTVWYX"
+	entryDataSyncMinimumInterval  = 7 * 24 * time.Hour
+	entryDataSyncScheduleJitter   = 7 * 24 * time.Hour
 )
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
@@ -161,6 +164,14 @@ func (s *Server) createInitialEntryRevision(
 			return fmt.Errorf("create entry revision: %w", err)
 		}
 		attributes.RevisionId = revision.ID
+		if strings.TrimSpace(metadata.ExternalRefs[domainmodels.EntrySourcePDB]) != "" {
+			if err := s.database.DataSyncJobs.Schedule(ctx, domainmodels.DataSyncJob{
+				EntryID:     entryID,
+				ScheduledAt: nextEntryDataSyncScheduledAt(now),
+			}); err != nil {
+				return fmt.Errorf("schedule entry data sync: %w", err)
+			}
+		}
 
 		if req.Entry.Artifacts != nil {
 			for _, artifactRequest := range *req.Entry.Artifacts {
@@ -201,6 +212,13 @@ func (s *Server) createInitialEntryRevision(
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("create initial entry graph: %w", err)
 	}
 	return attributes, nil
+}
+
+func nextEntryDataSyncScheduledAt(now time.Time) time.Time {
+	// Scheduling jitter does not require cryptographic randomness.
+	//nolint:gosec
+	jitter := time.Duration(rand.Int64N(int64(entryDataSyncScheduleJitter)))
+	return now.Add(entryDataSyncMinimumInterval + jitter)
 }
 
 func applyEntryRevisionChange(

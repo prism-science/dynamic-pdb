@@ -107,6 +107,18 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	externalRefs, ok := entry.Metadata["external_refs"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, pdbID, externalRefs["pdb"])
+	var dataSyncScheduledAt time.Time
+	require.NoError(t, database.Conn.QueryRowContext(
+		t.Context(),
+		`select scheduled_at from data_sync_jobs where entry_id = $1 and model_id is null`,
+		entry.ID,
+	).Scan(&dataSyncScheduledAt))
+	assert.WithinRange(
+		t,
+		dataSyncScheduledAt,
+		time.Now().Add(6*24*time.Hour),
+		time.Now().Add(15*24*time.Hour),
+	)
 	require.NotNil(t, entry.ThumbnailImageURL)
 	assert.Contains(t, *entry.ThumbnailImageURL, pdbIDLower+"_assembly-1.jpeg")
 	require.Len(t, entry.ProteinSequences, 1)
