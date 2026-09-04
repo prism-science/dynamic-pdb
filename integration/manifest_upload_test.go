@@ -312,7 +312,6 @@ func startBackend(t *testing.T, root string, binaryPath string, s3URL string) ba
 		"DYNAMIC_PDB_ENV=local",
 		"DYNAMIC_PDB_SERVER_ADDR="+addr,
 		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
-		"DYNAMIC_PDB_DB_MAX_OPEN_CONNECTIONS=1",
 		"DYNAMIC_PDB_CDN_S3_ENDPOINT="+s3URL,
 		"DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID=AKIAEXAMPLE",
 		"DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY=secret",
