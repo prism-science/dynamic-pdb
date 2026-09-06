@@ -74,6 +74,11 @@ export default function EntriesBrowser({
                     <span className={styles.cardName}>
                       {formatEntryLabel(entry)}
                     </span>
+                    <span className={styles.cardDesc}>
+                      {entry.title?.trim()
+                        ? entry.title
+                        : "No description yet."}
+                    </span>
                     {updated ? (
                       <span className={styles.cardMeta}>
                         <span className={styles.cardDate}>Updated {updated}</span>

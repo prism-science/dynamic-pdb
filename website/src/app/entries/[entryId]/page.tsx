@@ -104,9 +104,15 @@ export default async function EntryPage({
           </aside>
 
           <div className={styles.content}>
-            {entryFacts.length > 0 ? (
+            {/* Same block as the model page. The title lives inside it rather
+                than floating above: on its own it was the one piece of the
+                column with nothing to attach to. */}
+            {data.entry.title?.trim() || entryFacts.length > 0 ? (
               <section id="info" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Info</h2>
+                {data.entry.title?.trim() ? (
+                  <p className={styles.lead}>{data.entry.title}</p>
+                ) : null}
                 <InfoGrid facts={entryFacts} />
               </section>
             ) : null}

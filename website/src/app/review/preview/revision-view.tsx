@@ -89,9 +89,12 @@ export function EntryRevisionPreview({
       </aside>
 
       <div className={styles.content}>
-        {facts.length > 0 ? (
+        {revision.title?.trim() || facts.length > 0 ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
+            {revision.title?.trim() ? (
+              <p className={styles.lead}>{revision.title}</p>
+            ) : null}
             <InfoGrid facts={facts} />
           </section>
         ) : null}
