@@ -111,7 +111,7 @@ model in the generated manifest.
 ### 3. Review and edit the manifest
 
 The manifest is intentionally editable. Fill in the fields that the CLI
-cannot know safely, especially model names, model type, and purpose.
+cannot know safely, especially model titles, model type, and purpose.
 
 Use `filter.include` when you want to upload only a small subset during testing:
 
@@ -126,7 +126,7 @@ filter:
 
 entries:
   - pdb_id: "{{ pdb_id }}"
-    name: "{{ pdb_id }}"
+    title: "{{ pdb_id }}"
     metadata:
       title:
         source:
@@ -182,7 +182,7 @@ entries:
         level: L0
     models:
       - id: model_1
-        name: Deposited model
+        title: Deposited model
         model_type: Single Conformer
         purpose: Model Building
         artifacts:
@@ -217,7 +217,7 @@ entries:
                 field: refine[0].ls_R_factor_R_work
 
       - id: model_2
-        name: Rerefined model
+        title: Rerefined model
         model_type: Single Conformer
         purpose: Refinement
         artifacts:

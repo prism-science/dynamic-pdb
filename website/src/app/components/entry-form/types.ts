@@ -91,8 +91,7 @@ export function emptyEntryMetadataDraft(): EntryMetadataDraft {
 
 export type ModelDraft = {
   id: string;
-  name: string;
-  description: string;
+  title: string;
   thumbFileId: string;
   thumbFile: File | null;
   thumbPreview: string | null;
@@ -123,5 +122,5 @@ export const METRIC_FIELDS: { key: string; label: string; example: string }[] = 
 ];
 
 export const DRAFT_STORAGE_KEY = "dpdb:new-entry-draft";
-// 2: `program` became `programs[]` with explicit input/output links.
-export const DRAFT_VERSION = 2;
+// 3: entry and model identity changed from name/description to title.
+export const DRAFT_VERSION = 3;

@@ -20,12 +20,12 @@ const RAIL_LIMIT = 5;
  */
 export default function SimilarProteins({
   entryId,
-  entryName,
+  entryLabel,
   sequences,
   items,
 }: {
   entryId: string;
-  entryName: string;
+  entryLabel: string;
   /** The entry's own sequences: matches reference them by id, and the
    *  alignment view needs their headers and lengths for the query side. */
   sequences: ProteinSequence[];
@@ -61,7 +61,7 @@ export default function SimilarProteins({
       {open ? (
         <SimilarEntriesModal
           entryId={entryId}
-          entryName={entryName}
+          entryLabel={entryLabel}
           sequences={sequences}
           items={sorted}
           onClose={() => setOpen(false)}

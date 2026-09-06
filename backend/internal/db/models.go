@@ -95,8 +95,7 @@ func (r *ModelsRepository) Create(
 			    model_state,
 			    change_summary,
 			    published_at,
-			    name,
-			    description,
+			    title,
 			    thumbnail_image_url,
 			    metadata,
 			    idempotency_key,
@@ -114,8 +113,7 @@ func (r *ModelsRepository) Create(
 			    :model_state,
 			    :change_summary,
 			    :published_at,
-			    :name,
-			    :description,
+			    :title,
 			    :thumbnail_image_url,
 			    cast(:metadata as jsonb),
 			    :idempotency_key,
@@ -124,7 +122,7 @@ func (r *ModelsRepository) Create(
 			    :updated_at
 			  )
 			  returning id, model_id, parent_revision_id, primary_artifact_id, revision_number,
-			            state, model_state, change_summary, published_at, name, description,
+			            state, model_state, change_summary, published_at, title,
 			            thumbnail_image_url, metadata, idempotency_key, created_by, created_at, updated_at`
 
 	var row modelRevisionRow
@@ -139,8 +137,7 @@ func (r *ModelsRepository) Create(
 		"model_state":         string(modelState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
-		"name":                revision.Name,
-		"description":         revision.Description,
+		"title":               revision.Title,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
 		"idempotency_key":     revision.IdempotencyKey,
@@ -336,8 +333,8 @@ func (r *ModelsRepository) RejectRevision(
 
 const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_id, model_revisions.model_id,
 			model_revisions.parent_revision_id, model_revisions.primary_artifact_id, model_revisions.revision_number,
-			model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at, model_revisions.name,
-			model_revisions.description, model_revisions.thumbnail_image_url, model_revisions.metadata,
+			model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at, model_revisions.title,
+			model_revisions.thumbnail_image_url, model_revisions.metadata,
 			model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
 
 // GetLive returns the latest non-archived revision of a model.
@@ -364,8 +361,7 @@ func (r *ModelsRepository) SaveDraft(ctx context.Context, revision models.ModelR
 	}
 
 	query := `update model_revisions
-			  set name = :name,
-			      description = :description,
+			  set title = :title,
 			      thumbnail_image_url = :thumbnail_image_url,
 			      primary_artifact_id = :primary_artifact_id,
 			      metadata = cast(:metadata as jsonb),
@@ -379,8 +375,7 @@ func (r *ModelsRepository) SaveDraft(ctx context.Context, revision models.ModelR
 
 	updated, err := r.getRevision(ctx, query, map[string]any{
 		"id":                  revision.ID,
-		"name":                revision.Name,
-		"description":         revision.Description,
+		"title":               revision.Title,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"primary_artifact_id": revision.PrimaryArtifactID,
 		"metadata":            metadata,
@@ -474,7 +469,7 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
 			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
-			         model_revisions.name, model_revisions.description, model_revisions.thumbnail_image_url,
+			         model_revisions.title, model_revisions.thumbnail_image_url,
 			         model_revisions.metadata, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
 			         model_revisions.updated_at
 			  from model_revisions
@@ -516,8 +511,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 		ModelState:        models.ModelState(row.ModelState),
 		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 		PublishedAt:       timePtrFromSQL(row.PublishedAt),
-		Name:              row.Name,
-		Description:       stringPtrFromSQL(row.Description),
+		Title:             stringPtrFromSQL(row.Title),
 		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
 		Metadata:          metadata,
 		IdempotencyKey:    stringPtrFromSQL(row.IdempotencyKey),
@@ -538,8 +532,7 @@ type modelRevisionRow struct {
 	ModelState        string         `db:"model_state"`
 	ChangeSummary     sql.NullString `db:"change_summary"`
 	PublishedAt       sql.NullTime   `db:"published_at"`
-	Name              string         `db:"name"`
-	Description       sql.NullString `db:"description"`
+	Title             sql.NullString `db:"title"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	Metadata          []byte         `db:"metadata"`
 	IdempotencyKey    sql.NullString `db:"idempotency_key"`

@@ -126,8 +126,7 @@ func (r *EntrySearchIndexRepository) deleteSearchRow(
 
 func entryRevisionSearchParts(revision models.EntryRevision) []string {
 	parts := []string{
-		revision.Name,
-		stringFromPtr(revision.Description),
+		stringFromPtr(revision.Title),
 		stringFromPtr(revision.Metadata.Organism),
 		stringFromPtr(revision.Metadata.SpaceGroup),
 	}
@@ -144,8 +143,7 @@ func entryRevisionSearchParts(revision models.EntryRevision) []string {
 
 func modelRevisionSearchParts(revision models.ModelRevision) []string {
 	parts := []string{
-		revision.Name,
-		stringFromPtr(revision.Description),
+		stringFromPtr(revision.Title),
 		strings.Join(revision.Metadata.Authors, " "),
 		stringFromPtr(revision.Metadata.Affiliation),
 		strings.Join(revision.Metadata.Ligands, " "),

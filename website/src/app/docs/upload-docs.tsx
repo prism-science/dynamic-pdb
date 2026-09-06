@@ -9,7 +9,7 @@ filter:
 
 entries:
   - pdb_id: "{{ pdb_id }}"
-    name: "{{ pdb_id }} room-temperature refinement"
+    title: "{{ pdb_id }} room-temperature refinement"
     metadata:
       resolution:
         - source:
@@ -26,7 +26,7 @@ entries:
         level: L0
     models:
       - id: model_1
-        name: "{{ pdb_id }} refined model"
+        title: "{{ pdb_id }} refined model"
         model_type: Single Conformer
         purpose: Refinement
         artifacts:

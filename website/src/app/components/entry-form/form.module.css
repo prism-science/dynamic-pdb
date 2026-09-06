@@ -10,7 +10,7 @@
   gap: 8px;
 }
 
-/* Identity block: preview image beside the name and description instead of
+/* Identity block: preview image beside the title instead of
    stacked under them. The thumbnail comes last in the DOM for tab order and is
    pulled to the left with order, so it also lands on top once the row wraps. */
 .identityRow {
@@ -93,7 +93,7 @@
   display: none;
 }
 
-/* Source experiment link — sits under the entry name */
+/* Source experiment link — sits under the entry title */
 .sourceSection {
   display: flex;
   flex-direction: column;

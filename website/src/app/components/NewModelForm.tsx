@@ -94,7 +94,7 @@ export default function NewModelForm({
     draft.thumbUploadStatus === "failed" ||
     draft.files.some((file) => file.uploadStatus === "failed");
   const canSubmit =
-    draft.name.trim().length > 0 &&
+    draft.title.trim().length > 0 &&
     !validationMessage &&
     !hasPendingUploads &&
     !hasFailedUploads &&

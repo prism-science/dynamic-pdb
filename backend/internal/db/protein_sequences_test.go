@@ -91,14 +91,14 @@ func Test_should_preserve_protein_sequence_ids_when_artifact_moved_to_new_revisi
 	entryID := "entry-" + uuid.NewString()
 	activeRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
 		ID: uuid.New(), EntryID: entryID, State: models.RevisionStateActive,
-		EntryState: models.EntryStateActive, Name: "active protein revision", CreatedBy: createdBy,
+		EntryState: models.EntryStateActive, Title: ptr("active protein revision"), CreatedBy: createdBy,
 		CreatedAt: now, UpdatedAt: now,
 	})
 	require.NoError(t, err)
 	targetRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
 		ID: uuid.New(), EntryID: entryID, ParentRevisionID: new(activeRevision.ID),
 		State: models.RevisionStatePending, EntryState: models.EntryStateActive,
-		Name: "target protein revision", CreatedBy: createdBy,
+		Title: ptr("target protein revision"), CreatedBy: createdBy,
 		CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
 	})
 	require.NoError(t, err)
@@ -149,14 +149,14 @@ func Test_should_move_all_protein_sequences_to_new_entry_revision(t *testing.T) 
 	entryID := "entry-" + uuid.NewString()
 	activeRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
 		ID: uuid.New(), EntryID: entryID, State: models.RevisionStateActive,
-		EntryState: models.EntryStateActive, Name: "active protein revision", CreatedBy: createdBy,
+		EntryState: models.EntryStateActive, Title: ptr("active protein revision"), CreatedBy: createdBy,
 		CreatedAt: now, UpdatedAt: now,
 	})
 	require.NoError(t, err)
 	targetRevision, err := testDB.Entries.Create(ctx, models.EntryRevision{
 		ID: uuid.New(), EntryID: entryID, ParentRevisionID: &activeRevision.ID,
 		State: models.RevisionStatePending, EntryState: models.EntryStateActive,
-		Name: "target protein revision", CreatedBy: createdBy,
+		Title: ptr("target protein revision"), CreatedBy: createdBy,
 		CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
 	})
 	require.NoError(t, err)

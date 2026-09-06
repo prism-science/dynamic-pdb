@@ -56,7 +56,7 @@ func (r *EntriesRepository) SetRevisionState(
 			    and entry_id = $1
 			    and state = any($3::text[])
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            published_at, title, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID, pq.Array(fromStates), string(to))
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -94,7 +94,7 @@ func (r *EntriesRepository) ActivateRevision(
 			    and entry_id = $1
 			    and state = 'in_review'
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            published_at, title, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID)
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -126,7 +126,7 @@ func (r *EntriesRepository) RejectRevision(
 			    and entry_id = $1
 			    and state = 'in_review'
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            published_at, title, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID)
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -177,8 +177,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    entry_state,
 			    change_summary,
 			    published_at,
-			    name,
-			    description,
+			    title,
 			    thumbnail_image_url,
 			    metadata,
 			    created_by,
@@ -194,8 +193,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :entry_state,
 			    :change_summary,
 			    :published_at,
-			    :name,
-			    :description,
+			    :title,
 			    :thumbnail_image_url,
 			    cast(:metadata as jsonb),
 			    :created_by,
@@ -203,7 +201,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :updated_at
 			  )
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            published_at, title, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 
 	var row entryRevisionRow
@@ -216,8 +214,7 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 		"entry_state":         string(entryState),
 		"change_summary":      revision.ChangeSummary,
 		"published_at":        revision.PublishedAt,
-		"name":                revision.Name,
-		"description":         revision.Description,
+		"title":               revision.Title,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
 		"created_by":          revision.CreatedBy,
@@ -326,8 +323,7 @@ func (r *EntriesRepository) SaveDraft(ctx context.Context, revision models.Entry
 	}
 
 	query := `update entry_revisions
-			  set name = :name,
-			      description = :description,
+			  set title = :title,
 			      thumbnail_image_url = :thumbnail_image_url,
 			      metadata = cast(:metadata as jsonb),
 			      state = :state,
@@ -335,13 +331,12 @@ func (r *EntriesRepository) SaveDraft(ctx context.Context, revision models.Entry
 			  where id = :id
 			    and state in ('pending', 'rejected')
 			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
-			            published_at, name, description, thumbnail_image_url, metadata, created_by,
+			            published_at, title, thumbnail_image_url, metadata, created_by,
 			            created_at, updated_at`
 
 	updated, err := r.getRevision(ctx, query, map[string]any{
 		"id":                  revision.ID,
-		"name":                revision.Name,
-		"description":         revision.Description,
+		"title":               revision.Title,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
 		"state":               string(revision.State),
@@ -485,7 +480,7 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	query := `select id, entry_id, parent_revision_id, revision_number, state,
 			         entry_state,
 			         change_summary,
-			         published_at, name, description, thumbnail_image_url, metadata, created_by,
+			         published_at, title, thumbnail_image_url, metadata, created_by,
 			         created_at, updated_at
 			  from entry_revisions`
 	if len(conditions) > 0 {
@@ -537,8 +532,7 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 		EntryState:        models.EntryState(row.EntryState),
 		ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 		PublishedAt:       timePtrFromSQL(row.PublishedAt),
-		Name:              row.Name,
-		Description:       stringPtrFromSQL(row.Description),
+		Title:             stringPtrFromSQL(row.Title),
 		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
 		Metadata:          metadata,
 		CreatedBy:         row.CreatedBy,
@@ -556,8 +550,7 @@ type entryRevisionRow struct {
 	EntryState        string         `db:"entry_state"`
 	ChangeSummary     sql.NullString `db:"change_summary"`
 	PublishedAt       sql.NullTime   `db:"published_at"`
-	Name              string         `db:"name"`
-	Description       sql.NullString `db:"description"`
+	Title             sql.NullString `db:"title"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	Metadata          []byte         `db:"metadata"`
 	CreatedBy         uuid.UUID      `db:"created_by"`

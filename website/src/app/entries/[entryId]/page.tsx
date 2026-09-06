@@ -97,22 +97,16 @@ export default async function EntryPage({
                 alignments behind "All similar". */}
             <SimilarProteins
               entryId={data.entry.id}
-              entryName={entryLabel}
+              entryLabel={entryLabel}
               sequences={data.entry.protein_sequences ?? []}
               items={similarEntries}
             />
           </aside>
 
           <div className={styles.content}>
-            {/* Same block as the model page. The description lives inside it
-                rather than floating above: on its own it was the one piece of
-                the column with nothing to attach to. */}
-            {data.entry.description?.trim() || entryFacts.length > 0 ? (
+            {entryFacts.length > 0 ? (
               <section id="info" className={styles.contentSection}>
                 <h2 className={styles.contentHeading}>Info</h2>
-                {data.entry.description?.trim() ? (
-                  <p className={styles.lead}>{data.entry.description}</p>
-                ) : null}
                 <InfoGrid facts={entryFacts} />
               </section>
             ) : null}

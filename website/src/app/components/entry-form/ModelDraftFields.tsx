@@ -35,7 +35,7 @@ export type ModelDraftUpdater = (
 ) => void;
 
 /**
- * The editable body of a single model: name, description, preview image, data
+ * The editable body of a single model: title, preview image, data
  * files, metrics, and program. Shared by the new-entry form (one block per
  * model) and the add-model form (a single block).
  *
@@ -139,21 +139,20 @@ export default function ModelDraftFields({
   return (
     <div className={styles.modelLayout}>
       <div className={styles.modelMain}>
-      {/* Same identity block as the entry form: preview on the left, name and
-          description beside it. The thumbnail is last in the DOM and moved by
-          CSS so tabbing still starts at the name. */}
+      {/* Same identity block as the entry form. The thumbnail is last in the
+          DOM and moved by CSS so tabbing still starts at the title. */}
       <div className={styles.identityRow}>
         <div className={styles.identityMain}>
           <div className={styles.field}>
-            <label className={styles.subLabel} htmlFor={`${fieldId}-name`}>
-              Name
+            <label className={styles.subLabel} htmlFor={`${fieldId}-title`}>
+              Title
             </label>
             <input
-              id={`${fieldId}-name`}
+              id={`${fieldId}-title`}
               className={styles.input}
-              value={draft.name}
+              value={draft.title}
               onChange={(event) =>
-                onUpdate((current) => ({ ...current, name: event.target.value }))
+                onUpdate((current) => ({ ...current, title: event.target.value }))
               }
               placeholder="e.g. Refined structure (REFMAC)"
               autoComplete="off"
@@ -163,27 +162,8 @@ export default function ModelDraftFields({
             />
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.subLabel} htmlFor={`${fieldId}-desc`}>
-              Description
-            </label>
-            <input
-              id={`${fieldId}-desc`}
-              className={styles.input}
-              value={draft.description}
-              onChange={(event) =>
-                onUpdate((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-              placeholder="Optional — e.g. molecular replacement, then restrained refinement"
-              autoComplete="off"
-            />
-          </div>
-
           {/* What the run was for and what came out are properties of the
-              model, like its name — not a separate stage of the form. */}
+              model, like its title — not a separate stage of the form. */}
           <div className={styles.identityChoices}>
             <div className={styles.field}>
               <label className={styles.subLabel} htmlFor={`${fieldId}-purpose`}>
@@ -436,8 +416,7 @@ export default function ModelDraftFields({
 export function emptyModelDraft(): ModelDraft {
   return {
     id: crypto.randomUUID(),
-    name: "",
-    description: "",
+    title: "",
     thumbFileId: crypto.randomUUID(),
     thumbFile: null,
     thumbPreview: null,

@@ -33,7 +33,7 @@ type ListEntriesParams struct {
 
 type Entry struct {
 	ID       string         `json:"id"`
-	Name     string         `json:"name"`
+	Title    *string        `json:"title"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
@@ -52,8 +52,7 @@ type CreateEntryModelResult struct {
 }
 
 type CreateEntryData struct {
-	Name              string                  `json:"name"`
-	Description       *string                 `json:"description,omitempty"`
+	Title             string                  `json:"title"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
@@ -65,8 +64,7 @@ type AddModelOperation struct {
 }
 
 type AddModelData struct {
-	Name              string                  `json:"name"`
-	Description       *string                 `json:"description,omitempty"`
+	Title             string                  `json:"title"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
 	IdempotencyKey    *string                 `json:"idempotency_key,omitempty"`
@@ -85,8 +83,7 @@ type CreateModelResult struct {
 }
 
 type CreateModelData struct {
-	Name              string                  `json:"name"`
-	Description       *string                 `json:"description,omitempty"`
+	Title             string                  `json:"title"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
 	Metadata          map[string]any          `json:"metadata,omitempty"`
 	IdempotencyKey    *string                 `json:"idempotency_key,omitempty"`

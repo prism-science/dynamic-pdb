@@ -17,7 +17,7 @@ import (
 func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get_called(t *testing.T) {
 	// given
 	now := time.Now().UTC()
-	description := "Entry description " + uuid.NewString()
+	title := "Entry title " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
 	method := models.StructureMethodXRayCrystallography
@@ -26,8 +26,7 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 		ID:                uuid.New(),
 		EntryID:           "entry-1abc",
 		State:             models.RevisionStatePending,
-		Name:              "entry-" + uuid.NewString(),
-		Description:       &description,
+		Title:             &title,
 		ThumbnailImageURL: &thumbnailImageURL,
 		Metadata: models.EntryMetadata{
 			ExternalRefs: map[models.EntrySource]string{
@@ -52,9 +51,7 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	assert.Equal(t, revision.EntryID, got.EntryID)
 	assert.Equal(t, models.EntryStateActive, got.EntryState)
 	assert.Equal(t, createdBy, got.CreatedBy)
-	assert.Equal(t, revision.Name, got.Name)
-	require.NotNil(t, got.Description)
-	assert.Equal(t, description, *got.Description)
+	assert.Equal(t, revision.Title, got.Title)
 	require.NotNil(t, got.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *got.ThumbnailImageURL)
 	assert.Equal(t, "1ABC", got.Metadata.ExternalRefs[models.EntrySourcePDB])
@@ -208,7 +205,7 @@ func Test_should_archive_previous_active_revision_when_entry_revision_activated(
 		RevisionNumber: &revisionNumber,
 		State:          models.RevisionStateActive,
 		EntryState:     models.EntryStateActive,
-		Name:           "active entry revision",
+		Title:          ptr("active entry revision"),
 		CreatedBy:      createdBy,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -220,7 +217,7 @@ func Test_should_archive_previous_active_revision_when_entry_revision_activated(
 		ParentRevisionID: &active.ID,
 		State:            models.RevisionStateInReview,
 		EntryState:       models.EntryStateActive,
-		Name:             "replacement entry revision",
+		Title:            ptr("replacement entry revision"),
 		CreatedBy:        createdBy,
 		CreatedAt:        now.Add(time.Second),
 		UpdatedAt:        now.Add(time.Second),
@@ -305,7 +302,7 @@ func dbTestEntryRevisionWithPDBID(
 		ID:      uuid.New(),
 		EntryID: "entry-" + uuid.NewString(),
 		State:   state,
-		Name:    name + "-" + uuid.NewString(),
+		Title:   ptr(name + "-" + uuid.NewString()),
 		Metadata: models.EntryMetadata{
 			ExternalRefs: map[models.EntrySource]string{
 				models.EntrySourcePDB: pdbID,

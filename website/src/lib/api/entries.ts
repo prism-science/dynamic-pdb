@@ -11,8 +11,7 @@ type JSONRecord = Record<string, unknown>;
 export type Entry = {
   id: string;
   created_by: string;
-  name: string;
-  description: string | null;
+  title: string | null;
   thumbnail_image_url: string | null;
   idempotency_key?: string | null;
   metadata?: JSONRecord;
@@ -26,8 +25,7 @@ export type Model = {
   id: string;
   entry_id: string;
   created_by: string;
-  name: string;
-  description: string | null;
+  title: string | null;
   thumbnail_image_url: string | null;
   metadata?: JSONRecord;
   primary_artifact_id?: string | null;
@@ -76,8 +74,7 @@ type EntryData = {
 };
 
 type EntryAttributes = {
-  name: string;
-  description: string | null;
+  title: string | null;
   thumbnail_image_url: string | null;
   metadata: JSONRecord;
   published_at?: string | null;
@@ -296,8 +293,7 @@ type CreateRunRequest = {
 };
 
 type BackendCreateModelData = {
-  name: string;
-  description?: string | null;
+  title: string;
   thumbnail_image_url?: string | null;
   idempotency_key?: string | null;
   metadata: JSONRecord;
@@ -309,8 +305,7 @@ type BackendCreateModelData = {
 
 type BackendCreateEntryRequest = {
   entry: {
-    name: string;
-    description?: string | null;
+    title: string;
     thumbnail_image_url?: string | null;
     metadata: JSONRecord;
     artifacts: CreateArtifactRequest[];
@@ -462,8 +457,7 @@ export type CreateEntityRelationInput = {
 };
 
 export type CreateModelInput = {
-  name: string;
-  description?: string | null;
+  title: string;
   thumbnail_image_url?: string | null;
   idempotency_key?: string | null;
   entities?: CreateEntityInput[];
@@ -482,8 +476,7 @@ export type CreateEntryMetadata = {
 };
 
 export type CreateEntryInput = {
-  name: string;
-  description?: string | null;
+  title: string;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
@@ -537,7 +530,7 @@ export type EntryRevisionSummary = {
   state: RevisionState;
   entry_state: "new" | "active" | "deleted";
   created_by: string;
-  name: string;
+  title: string | null;
   published_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -553,7 +546,7 @@ export type ModelRevisionSummary = {
   state: RevisionState;
   model_state: "new" | "active" | "deleted";
   created_by: string;
-  name: string;
+  title: string | null;
   published_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -584,7 +577,7 @@ export type RevisionTarget =
  *  revisions it actually shows, not a second pass over the whole queue. */
 export type ReviewQueueItem = {
   entry_id: string;
-  name: string;
+  title: string;
   submitted_at: string;
   entry_revisions: EntryRevisionSummary[];
   model_revisions: ModelRevisionSummary[];
@@ -600,7 +593,6 @@ export type ReviewQueuePage = {
 
 
 export type EntryRevision = EntryRevisionSummary & {
-  description: string | null;
   thumbnail_image_url: string | null;
   metadata: JSONRecord;
   protein_sequences: ProteinSequence[];
@@ -608,7 +600,6 @@ export type EntryRevision = EntryRevisionSummary & {
 };
 
 export type ModelRevision = ModelRevisionSummary & {
-  description: string | null;
   thumbnail_image_url: string | null;
   primary_artifact_id: string | null;
   metadata: JSONRecord;
@@ -629,7 +620,7 @@ export type ReviewPair<T> = {
 
 export type EntryReview = {
   entry_id: string;
-  name: string;
+  title: string;
   entry: ReviewPair<ReviewEntry> | null;
   models: (ReviewPair<ReviewModel> & { model_id: string })[];
 };
@@ -775,7 +766,7 @@ async function buildEntryReview(
       item.model_revisions.map((revision) => modelPair(readers, revision)),
     ),
   ]);
-  return { entry_id: item.entry_id, name: item.name, entry, models };
+  return { entry_id: item.entry_id, title: item.title, entry, models };
 }
 
 async function entryPair(
@@ -895,7 +886,7 @@ async function listInReviewGroups(
 function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
   return {
     entry_id: group.entry.id,
-    name: formatEntryLabel(group.entry),
+    title: formatEntryLabel(group.entry),
     submitted_at: earliest([
       ...group.entry_revisions.map((revision) => revision.updated_at),
       ...group.model_revisions.map((revision) => revision.updated_at),
@@ -1013,7 +1004,7 @@ async function sendJSON<T>(
 }
 
 /** Fetches a single entry without its models or artifacts. Cheap enough to
- *  call per row when a list only needs entry names. */
+ *  call per row when a list only needs entry titles. */
 export async function getEntry(
   token: string | undefined,
   entryId: string,
@@ -1141,8 +1132,7 @@ function entryFromDocument(document: EntryDocument): Entry {
   return {
     id: data.id,
     created_by: data.relationships.created_by.data.id,
-    name: attributes.name,
-    description: attributes.description,
+    title: attributes.title,
     thumbnail_image_url: attributes.thumbnail_image_url,
     metadata: attributes.metadata,
     protein_sequences: proteinSequences,
@@ -1170,8 +1160,7 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
   const entities = input.entities ?? [];
   return {
     entry: {
-      name: input.name,
-      description: input.description,
+      title: input.title,
       thumbnail_image_url: input.thumbnail_image_url,
       metadata: entryMetadataRequest(input.metadata),
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
@@ -1225,8 +1214,7 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     entities.find((entity) => entity.type === "model") ?? null;
 
   return {
-    name: input.name,
-    description: input.description,
+    title: input.title,
     thumbnail_image_url: input.thumbnail_image_url,
     idempotency_key:
       stringOrNull(input.idempotency_key) ??
@@ -1372,8 +1360,7 @@ export function modelFromRevision(revision: ModelRevision): Model {
     id: revision.model_id,
     entry_id: revision.entry_id,
     created_by: revision.created_by,
-    name: revision.name,
-    description: revision.description,
+    title: revision.title,
     thumbnail_image_url: revision.thumbnail_image_url,
     metadata: revision.metadata,
     primary_artifact_id: revision.primary_artifact_id,

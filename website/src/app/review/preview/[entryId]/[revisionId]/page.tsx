@@ -63,9 +63,9 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
   return (
     <RevisionPreviewFrame
       kind="entry"
-      name={formatEntryLabel({
+      title={formatEntryLabel({
         id: revision.entry_id,
-        name: revision.name,
+        title: revision.title,
         metadata: revision.metadata,
       })}
     >

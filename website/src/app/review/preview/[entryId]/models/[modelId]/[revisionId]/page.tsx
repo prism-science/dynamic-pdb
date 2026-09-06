@@ -51,7 +51,7 @@ export default async function ModelRevisionPreviewPage({ params }: Props) {
   }
 
   return (
-    <RevisionPreviewFrame kind="model" name={revision.name}>
+    <RevisionPreviewFrame kind="model" title={revision.title?.trim() || revision.model_id}>
       <ModelRevisionPreview revision={revision} />
     </RevisionPreviewFrame>
   );

@@ -31,13 +31,13 @@ type SimilarPage = {
  */
 export default function SimilarEntriesModal({
   entryId,
-  entryName,
+  entryLabel,
   sequences,
   items: initialItems,
   onClose,
 }: {
   entryId: string;
-  entryName: string;
+  entryLabel: string;
   sequences: ProteinSequence[];
   items: SimilarEntry[];
   onClose: () => void;
@@ -123,7 +123,7 @@ export default function SimilarEntriesModal({
       <div
         className={styles.card}
         role="dialog"
-        aria-label={`Proteins similar to ${entryName}`}
+        aria-label={`Proteins similar to ${entryLabel}`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.head}>

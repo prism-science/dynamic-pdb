@@ -83,18 +83,19 @@ export default async function ModelPage({
     model?.id ?? null,
   );
   const entryLabel = formatEntryLabel(data.entry);
+  const modelTitle = data.model.title?.trim() || data.model.id;
 
   return (
     <main
       className={styles.page}
-      aria-label={`${entryLabel} model ${data.model.name}`}
+      aria-label={`${entryLabel} model ${modelTitle}`}
     >
       <div className={styles.record}>
         <Breadcrumbs
           items={[
             { label: "Entries", href: "/browse" },
             { label: entryLabel, href: `/entries/${data.entry.id}` },
-            { label: data.model.name },
+            { label: modelTitle },
           ]}
         />
 
@@ -112,7 +113,7 @@ export default async function ModelPage({
               )}
             </div>
 
-            <h1 className={styles.sideName}>{data.model.name}</h1>
+            <h1 className={styles.sideName}>{modelTitle}</h1>
 
             {vitals.length > 0 ? (
               <dl className={styles.sideVitals}>
@@ -142,7 +143,7 @@ export default async function ModelPage({
               </div>
             ) : null}
 
-            <PipelineModal lineage={lineage} title={data.model.name} />
+            <PipelineModal lineage={lineage} title={modelTitle} />
           </aside>
 
           <div className={styles.content}>

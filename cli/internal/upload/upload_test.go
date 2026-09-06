@@ -46,9 +46,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	require.Len(t, dynamicPDBClient.entries, 1)
 	entryRequest := dynamicPDBClient.entries[0]
 	entry := entryRequest.Entry
-	assert.Equal(t, "5AMF", entry.Name)
-	require.NotNil(t, entry.Description)
-	assert.Equal(t, "example structure", *entry.Description)
+	assert.Equal(t, "example structure", entry.Title)
 	assert.Equal(t, "example structure", entry.Metadata["title"])
 	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
@@ -207,7 +205,7 @@ func Test_should_skip_non_deposited_model_when_coordinates_file_is_missing(t *te
 	assert.Equal(t, 3, summary.Artifacts)
 	models := modelRequests(dynamicPDBClient.models)
 	require.Len(t, models, 1)
-	assert.Equal(t, "Deposited model", models[0].Name)
+	assert.Equal(t, "Deposited model", models[0].Title)
 	assert.Equal(t, 1, countString(rcsbClient.files, "5amf-sf.cif"))
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.pdb")
 }
@@ -235,7 +233,7 @@ func Test_should_skip_non_deposited_model_when_coordinates_zip_entry_is_empty(t 
 	assert.Equal(t, 3, summary.Artifacts)
 	models := modelRequests(dynamicPDBClient.models)
 	require.Len(t, models, 1)
-	assert.Equal(t, "Deposited model", models[0].Name)
+	assert.Equal(t, "Deposited model", models[0].Title)
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.pdb")
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.log")
 	assert.NotContains(t, uploadFilenames(dynamicPDBClient.uploads), "5amf_model.mtz")
@@ -259,7 +257,7 @@ func Test_should_upload_only_included_pdb_ids_when_filter_include_is_set(t *test
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Name)
+	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Title)
 	state := readState(t, summary.StatePath)
 	assert.NotEmpty(t, state.Entries["5AMF"].EntryID)
 }
@@ -286,7 +284,7 @@ func Test_should_override_manifest_include_when_upload_include_option_is_set(t *
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Name)
+	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Title)
 }
 
 func Test_should_override_manifest_skip_when_upload_skip_option_is_set(t *testing.T) {
@@ -313,7 +311,7 @@ func Test_should_override_manifest_skip_when_upload_skip_option_is_set(t *testin
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Name)
+	assert.Equal(t, "5AMF", dynamicPDBClient.entries[0].Entry.Title)
 }
 
 func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *testing.T) {
@@ -326,8 +324,8 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 	dynamicPDBClient := &fakeDynamicPDBClient{
 		existingEntries: []dynamicpdbapi.Entry{
 			{
-				ID:   existingEntryID,
-				Name: "Existing 5AMF",
+				ID:    existingEntryID,
+				Title: stringPtr("Existing 5AMF"),
 				Metadata: map[string]any{
 					"external_refs": map[string]any{"pdb": "5AMF"},
 				},
@@ -366,8 +364,8 @@ func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_con
 			{},
 			{
 				{
-					ID:   existingEntryID,
-					Name: "Existing 5AMF",
+					ID:    existingEntryID,
+					Title: stringPtr("Existing 5AMF"),
 					Metadata: map[string]any{
 						"external_refs": map[string]any{"pdb": "5AMF"},
 					},
@@ -421,7 +419,7 @@ func Test_should_resume_from_completed_entries_in_upload_state(t *testing.T) {
 	assert.Equal(t, 1, summary.Entries)
 	assert.Equal(t, 1, summary.Skipped)
 	require.Len(t, dynamicPDBClient.entries, 1)
-	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Name)
+	assert.Equal(t, "6ABC", dynamicPDBClient.entries[0].Entry.Title)
 	updatedState := readState(t, statePath)
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["5AMF"].Status)
 	assert.Equal(t, entryStatusCompleted, updatedState.Entries["6ABC"].Status)
@@ -780,8 +778,7 @@ func (b *fakeDynamicPDBClient) CreateEntry(
 			entryID: entryID,
 			modelID: modelID,
 			model: dynamicpdbapi.CreateModelData{
-				Name:              operation.Data.Name,
-				Description:       operation.Data.Description,
+				Title:             operation.Data.Title,
 				ThumbnailImageURL: operation.Data.ThumbnailImageURL,
 				Metadata:          operation.Data.Metadata,
 				IdempotencyKey:    operation.Data.IdempotencyKey,
@@ -1066,11 +1063,11 @@ func testManifest(dataRoot string, coordinateSource string, logSource string, mt
 func simpleManifest(dataRoot string) manifest.Manifest {
 	entry := manifest.Entry{
 		PDBID: "{{ pdb_id }}",
-		Name:  "{{ pdb_id }}",
+		Title: "{{ pdb_id }}",
 		Models: []manifest.ModelPattern{
 			{
 				ID:        "model_1",
-				Name:      "Uploaded model",
+				Title:     "Uploaded model",
 				ModelType: "",
 				Purpose:   "",
 				Artifacts: []manifest.Artifact{
@@ -1091,7 +1088,7 @@ func simpleManifest(dataRoot string) manifest.Manifest {
 func testEntry() manifest.Entry {
 	return manifest.Entry{
 		PDBID:        "{{ pdb_id }}",
-		Name:         "{{ pdb_id }}",
+		Title:        "{{ pdb_id }}",
 		PreviewImage: &manifest.EntryPreviewImage{Source: rcsbFileSource("{{ pdb_id }}_assembly-1.jpeg")},
 		Artifacts: []manifest.Artifact{
 			{
@@ -1106,7 +1103,7 @@ func testEntry() manifest.Entry {
 func depositedModel() manifest.ModelPattern {
 	return manifest.ModelPattern{
 		ID:        "model_1",
-		Name:      "Deposited model",
+		Title:     "Deposited model",
 		ModelType: "Deposited",
 		Purpose:   "Reference",
 		Metadata: manifest.ModelMetadata{
@@ -1128,7 +1125,7 @@ func depositedModel() manifest.ModelPattern {
 	}
 }
 
-func localModel(name string, coordinateSource string, logSource string, mtzSource string) manifest.ModelPattern {
+func localModel(title string, coordinateSource string, logSource string, mtzSource string) manifest.ModelPattern {
 	artifacts := []manifest.Artifact{fileArtifact("coordinates", coordinateSource, "L2")}
 	if logSource != "" {
 		artifacts = append(artifacts, fileArtifact("log_1", logSource, ""))
@@ -1138,7 +1135,7 @@ func localModel(name string, coordinateSource string, logSource string, mtzSourc
 	}
 	return manifest.ModelPattern{
 		ID:        "model_2",
-		Name:      name,
+		Title:     title,
 		ModelType: "",
 		Purpose:   "",
 		Metadata: manifest.ModelMetadata{

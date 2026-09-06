@@ -35,7 +35,7 @@ func createDBTestUser(t *testing.T) uuid.UUID {
 	return user.ID
 }
 
-func createDBTestEntryRevision(t *testing.T, name string, createdAt time.Time) *models.EntryRevision {
+func createDBTestEntryRevision(t *testing.T, title string, createdAt time.Time) *models.EntryRevision {
 	t.Helper()
 
 	createdBy := createDBTestUser(t)
@@ -43,7 +43,7 @@ func createDBTestEntryRevision(t *testing.T, name string, createdAt time.Time) *
 		ID:        uuid.New(),
 		EntryID:   "entry-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
-		Name:      name + "-" + uuid.NewString(),
+		Title:     ptr(title + "-" + uuid.NewString()),
 		CreatedBy: createdBy,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
@@ -52,7 +52,7 @@ func createDBTestEntryRevision(t *testing.T, name string, createdAt time.Time) *
 	return revision
 }
 
-func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.Time) *models.EntryRevision {
+func createDBTestActiveEntryRevision(t *testing.T, title string, createdAt time.Time) *models.EntryRevision {
 	t.Helper()
 
 	createdBy := createDBTestUser(t)
@@ -61,7 +61,7 @@ func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.T
 		EntryID:    "entry-" + uuid.NewString(),
 		State:      models.RevisionStateInReview,
 		EntryState: models.EntryStateActive,
-		Name:       name + "-" + uuid.NewString(),
+		Title:      ptr(title + "-" + uuid.NewString()),
 		CreatedBy:  createdBy,
 		CreatedAt:  createdAt,
 		UpdatedAt:  createdAt,
@@ -76,7 +76,7 @@ func createDBTestActiveEntryRevision(t *testing.T, name string, createdAt time.T
 func createDBTestModelRevision(
 	t *testing.T,
 	entryID string,
-	name string,
+	title string,
 	createdAt time.Time,
 ) *models.ModelRevision {
 	t.Helper()
@@ -86,7 +86,7 @@ func createDBTestModelRevision(
 		ID:        uuid.New(),
 		ModelID:   "model-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
-		Name:      name + "-" + uuid.NewString(),
+		Title:     ptr(title + "-" + uuid.NewString()),
 		CreatedBy: createdBy,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
@@ -98,7 +98,7 @@ func createDBTestModelRevision(
 func createDBTestActiveModelRevision(
 	t *testing.T,
 	entryID string,
-	name string,
+	title string,
 	createdAt time.Time,
 ) *models.ModelRevision {
 	t.Helper()
@@ -109,7 +109,7 @@ func createDBTestActiveModelRevision(
 		ModelID:    "model-" + uuid.NewString(),
 		State:      models.RevisionStateInReview,
 		ModelState: models.ModelStateActive,
-		Name:       name + "-" + uuid.NewString(),
+		Title:      ptr(title + "-" + uuid.NewString()),
 		CreatedBy:  createdBy,
 		CreatedAt:  createdAt,
 		UpdatedAt:  createdAt,

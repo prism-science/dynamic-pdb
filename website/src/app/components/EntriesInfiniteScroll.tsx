@@ -12,8 +12,8 @@ const pageSize = 50;
 type Entry = {
   id: string;
   created_by: string;
-  name: string;
-  description: string | null;
+  title: string;
+  name: string | null;
   thumbnail_image_url: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
@@ -142,9 +142,6 @@ function EntryCard({
         </span>
         <span className={styles.cardBody}>
           <span className={styles.cardName}>{formatEntryLabel(entry)}</span>
-          <span className={styles.cardDesc}>
-            {entry.description?.trim() ? entry.description : "No description yet."}
-          </span>
           {updated ? (
             <span className={styles.cardMeta}>
               <span className={styles.cardDate}>Updated {updated}</span>

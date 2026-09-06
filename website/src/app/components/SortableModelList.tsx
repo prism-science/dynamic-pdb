@@ -297,7 +297,7 @@ export default function SortableModelList({
                     </span>
                     <span className={styles.modelTableNameBlock}>
                       <Link className={styles.modelTableName} href={href}>
-                        {model.name}
+                        {model.title}
                       </Link>
                       <span className={styles.modelTableDate}>
                         {formatDate(model.created_at)}

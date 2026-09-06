@@ -366,14 +366,16 @@ func (u *Uploader) uploadNewEntry(
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
 
-	name := strings.ReplaceAll(entryTemplate.Name, templatePDBID, canonicalPDBID(entryPDBID))
-	if strings.TrimSpace(name) == "" {
-		name = entryPDBID
+	title := strings.ReplaceAll(entryTemplate.Title, templatePDBID, canonicalPDBID(entryPDBID))
+	if extractedTitle := entryTitle(metadata); extractedTitle != nil {
+		title = *extractedTitle
+	}
+	if strings.TrimSpace(title) == "" {
+		title = entryPDBID
 	}
 	result, err := u.dynamicPDBClient.CreateEntry(ctx, dynamicpdbapi.CreateEntryRequest{
 		Entry: dynamicpdbapi.CreateEntryData{
-			Name:              name,
-			Description:       entryDescription(metadata),
+			Title:             title,
 			ThumbnailImageURL: thumbnailImageURL,
 			Metadata:          metadata,
 			Artifacts:         entryArtifacts,
@@ -528,16 +530,16 @@ func (u *Uploader) uploadModel(
 	}
 
 	primaryArtifactID := modelArtifacts[0].ID
-	name := strings.TrimSpace(model.Name)
-	if name == "" {
-		name = model.ID
+	title := strings.TrimSpace(model.Title)
+	if title == "" {
+		title = model.ID
 	}
 	idempotencyKey := modelArtifacts[0].SHA256
 	runs := modelRuns(modelArtifactRefs, program)
 	modelOperation := dynamicpdbapi.AddModelOperation{
 		Op: "add",
 		Data: dynamicpdbapi.AddModelData{
-			Name:              name,
+			Title:             title,
 			Metadata:          metadata,
 			IdempotencyKey:    idempotencyKey,
 			PrimaryArtifactID: &primaryArtifactID,
@@ -549,7 +551,7 @@ func (u *Uploader) uploadModel(
 	if create {
 		request := dynamicpdbapi.CreateModelRequest{
 			Model: dynamicpdbapi.CreateModelData{
-				Name:              name,
+				Title:             title,
 				Metadata:          metadata,
 				IdempotencyKey:    idempotencyKey,
 				PrimaryArtifactID: &primaryArtifactID,
@@ -1487,7 +1489,7 @@ func artifactIDs(artifacts []dynamicpdbapi.CreateArtifactRequest) []string {
 	return ids
 }
 
-func entryDescription(metadata map[string]any) *string {
+func entryTitle(metadata map[string]any) *string {
 	title, ok := metadata["title"].(string)
 	if !ok {
 		return nil

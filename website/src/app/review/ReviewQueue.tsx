@@ -123,7 +123,7 @@ export default function ReviewQueue({
               item.entry_id === selectedEntryId ? styles.rowSel : ""
             }`}
           >
-            <div className={styles.rowName}>{item.name}</div>
+            <div className={styles.rowName}>{item.title}</div>
             <div className={styles.rowMeta}>
               submitted {formatDate(item.submitted_at)}
             </div>

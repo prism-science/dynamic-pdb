@@ -156,7 +156,7 @@
 }
 
 /* The card header needs its own rule: without it the first block sits right
-   under the name. The models below get that separation from their section
+   under the title. The models below get that separation from their section
    divider, which is why only the entry block looked cramped. */
 .pvTitle {
   font-size: 22px;
@@ -454,4 +454,3 @@
   font-size: 12.5px;
   font-weight: 530;
 }
-

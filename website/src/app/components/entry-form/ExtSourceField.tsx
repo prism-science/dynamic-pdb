@@ -8,7 +8,7 @@ import { PlusIcon } from "./icons";
 import styles from "./form.module.css";
 
 export const EXT_LINK_HINT =
-  "Its files become available under Baseline data, and name and description are prefilled.";
+  "Its files become available under Baseline data, and the title is prefilled.";
 export const EXT_LINK_INVALID = "That doesn't look like an Ext experiment link.";
 
 export default function ExtSourceField({

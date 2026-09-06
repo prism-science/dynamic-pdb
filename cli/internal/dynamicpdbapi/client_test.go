@@ -26,13 +26,13 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"entry": map[string]any{
-				"name": "5amf",
+				"title": "5amf",
 			},
 			"model_operations": []any{
 				map[string]any{
 					"op": "add",
 					"data": map[string]any{
-						"name": "model",
+						"title": "model",
 					},
 				},
 			},
@@ -56,12 +56,12 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 
 	// when
 	result, err := client.CreateEntry(context.Background(), CreateEntryRequest{
-		Entry: CreateEntryData{Name: "5amf"},
+		Entry: CreateEntryData{Title: "5amf"},
 		ModelOperations: []AddModelOperation{
 			{
 				Op: "add",
 				Data: AddModelData{
-					Name: "model",
+					Title: "model",
 				},
 			},
 		},
@@ -86,8 +86,8 @@ func Test_should_send_pdb_id_filters_when_list_entries_called(t *testing.T) {
 		err := json.NewEncoder(response).Encode(map[string]any{
 			"data": []map[string]any{
 				jsonAPIResourceData("entries", "entry-1", Entry{
-					ID:   "entry-1",
-					Name: "1YJO",
+					ID:    "entry-1",
+					Title: ptr("1YJO"),
 					Metadata: map[string]any{
 						"external_refs": map[string]string{"pdb": "1YJO"},
 					},
@@ -166,7 +166,7 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"model": map[string]any{
-				"name": "model",
+				"title": "model",
 			},
 		}, body)
 		response.Header().Set("Content-Type", jsonAPIMediaType)
@@ -182,7 +182,7 @@ func Test_should_create_model_under_entry_when_create_model_called(t *testing.T)
 	client := NewClient(server.URL, "jwt-token")
 
 	// when
-	result, err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Name: "model"}})
+	result, err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Title: "model"}})
 
 	// then
 	require.NoError(t, err)

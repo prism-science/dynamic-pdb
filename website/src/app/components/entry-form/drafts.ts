@@ -31,8 +31,7 @@ export type StoredFile = {
 
 export type StoredModel = {
   id: string;
-  name: string;
-  description: string;
+  title: string;
   thumbUrl: string | null;
   thumbPreview?: string;
   files: StoredFile[];
@@ -49,8 +48,7 @@ export type StoredDraft = {
   entryId: string;
   metadata?: EntryMetadataDraft;
   extExperimentId?: string | null;
-  name: string;
-  description: string;
+  title: string;
   thumbUrl: string | null;
   thumbPreview?: string;
   thumbUploadStatus: UploadStatus;
@@ -108,8 +106,7 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
 export function modelToDraft(modelDraft: ModelDraft): StoredModel {
   return {
     id: modelDraft.id,
-    name: modelDraft.name,
-    description: modelDraft.description,
+    title: modelDraft.title,
     thumbUrl: modelDraft.thumbUrl,
     thumbPreview: httpOnly(modelDraft.thumbPreview),
     files: modelDraft.files.filter(isPersistable).map(fileToDraft),
@@ -123,8 +120,7 @@ export function modelToDraft(modelDraft: ModelDraft): StoredModel {
 export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
   return {
     id: modelDraft.id,
-    name: modelDraft.name,
-    description: modelDraft.description,
+    title: modelDraft.title,
     thumbFileId: crypto.randomUUID(),
     thumbFile: null,
     thumbPreview: modelDraft.thumbPreview ?? null,
@@ -173,8 +169,7 @@ function storedPrograms(modelDraft: StoredModel): ProgramDraft[] {
 
 export function draftHasContent(draft: StoredDraft): boolean {
   return (
-    draft.name.trim().length > 0 ||
-    draft.description.trim().length > 0 ||
+    draft.title.trim().length > 0 ||
     Boolean(draft.extExperimentId) ||
     Boolean(draft.thumbUrl) ||
     draft.files.length > 0 ||

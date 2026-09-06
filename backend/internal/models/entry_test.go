@@ -10,14 +10,13 @@ import (
 
 func Test_should_compare_only_entry_revision_data_when_checked_for_equality(t *testing.T) {
 	// given
-	description := "description"
+	title := "entry"
 	revision := EntryRevision{
-		ID:          uuid.New(),
-		EntryID:     "dpdb_entry",
-		State:       RevisionStateActive,
-		EntryState:  EntryStateActive,
-		Name:        "entry",
-		Description: &description,
+		ID:         uuid.New(),
+		EntryID:    "dpdb_entry",
+		State:      RevisionStateActive,
+		EntryState: EntryStateActive,
+		Title:      &title,
 		Metadata: EntryMetadata{
 			ExternalRefs: map[EntrySource]string{EntrySourcePDB: "5AMF"},
 		},
@@ -32,7 +31,8 @@ func Test_should_compare_only_entry_revision_data_when_checked_for_equality(t *t
 
 	// when
 	equalBeforeDataChange := revision.HasSameData(other)
-	other.Name = "changed entry"
+	changedTitle := "changed entry"
+	other.Title = &changedTitle
 	equalAfterDataChange := revision.HasSameData(other)
 
 	// then
