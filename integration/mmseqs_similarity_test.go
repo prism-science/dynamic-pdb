@@ -126,24 +126,24 @@ func runMMseqsJobContainer(t *testing.T, root string, image string, cacheDir str
 	require.NoError(t, cmd.Run(), output.String())
 }
 
-func createProteinEntry(t *testing.T, backendURL string, token string, name string, sequence string) string {
+func createProteinEntry(t *testing.T, backendURL string, token string, title string, sequence string) string {
 	t.Helper()
 
 	artifactID := uuid.NewString()
 	body := map[string]any{
 		"entry": map[string]any{
-			"name": name,
+			"title": title,
 			"artifacts": []map[string]any{
 				{
 					"id":     artifactID,
-					"name":   name + ".fasta",
+					"name":   title + ".fasta",
 					"level":  "L0",
 					"format": "fasta",
 					"uri":    "s3://dynamic-pdb/" + artifactID + ".fasta",
 					"metadata": map[string]any{
 						"records": []map[string]any{
 							{
-								"header":   name + ":A",
+								"header":   title + ":A",
 								"sequence": sequence,
 							},
 						},

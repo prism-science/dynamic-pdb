@@ -97,9 +97,8 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
 
 	entry := getJSON[entryDocumentResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID, auth.AccessToken).Entry()
-	assert.Equal(t, pdbID, entry.Name)
-	require.NotNil(t, entry.Description)
-	assert.Equal(t, "example structure", *entry.Description)
+	require.NotNil(t, entry.Title)
+	assert.Equal(t, "example structure", *entry.Title)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
 	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
 	assert.Equal(t, 1.4, entry.Metadata["resolution"])
@@ -130,7 +129,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	models := getJSON[modelListResponse](t, backend.URL+"/v1/entries/"+entry.ID+"/models", auth.AccessToken)
 	require.Len(t, models.Items, 2)
 	sort.Slice(models.Items, func(i, j int) bool {
-		return models.Items[i].Name < models.Items[j].Name
+		return stringValue(models.Items[i].Title) < stringValue(models.Items[j].Title)
 	})
 
 	assertMetric(t, models.Items[0].Metrics, "r_free", 0.21)
@@ -138,7 +137,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	for _, model := range models.Items {
 		artifacts := getJSON[artifactListResponse](t, backend.URL+"/v1/entries/"+entry.ID+"/models/"+model.ID+"/artifacts", auth.AccessToken)
 		names := artifactNames(artifacts.Items)
-		if model.Name == "Deposited model" {
+		if stringValue(model.Title) == "Deposited model" {
 			assert.Equal(t, []any{"Nelson, R.", "Sawaya, M.R."}, model.Metadata["authors"])
 			assert.Equal(t, "Howard Hughes Medical Institute, UCLA, USA.", model.Metadata["affiliation"])
 			assert.Equal(t, 1383.0, model.Metadata["atom_count"])
@@ -241,7 +240,7 @@ func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t
 
 	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
 	for _, entry := range entryList.Items {
-		assert.NotEqual(t, "9ZZZ", entry.Name)
+		assert.NotEqual(t, "9ZZZ", stringValue(entry.Title))
 	}
 }
 
@@ -602,15 +601,14 @@ type modelRevisionSummaryResponse struct {
 }
 
 type entryInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedBy string `json:"created_by"`
+	ID        string  `json:"id"`
+	Title     *string `json:"title"`
+	CreatedBy string  `json:"created_by"`
 }
 
 type entryResponse struct {
 	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	Description       *string           `json:"description"`
+	Title             *string           `json:"title"`
 	ThumbnailImageURL *string           `json:"thumbnail_image_url"`
 	Metadata          map[string]any    `json:"metadata"`
 	ProteinSequences  []proteinSequence `json:"protein_sequences"`
@@ -628,8 +626,7 @@ func (r entryDocumentResponse) Entry() entryResponse {
 	}
 	return entryResponse{
 		ID:                r.Data.ID,
-		Name:              r.Data.Attributes.Name,
-		Description:       r.Data.Attributes.Description,
+		Title:             r.Data.Attributes.Title,
 		ThumbnailImageURL: r.Data.Attributes.ThumbnailImageURL,
 		Metadata:          r.Data.Attributes.Metadata,
 		ProteinSequences:  sequences,
@@ -642,8 +639,7 @@ type entryResourceResponse struct {
 }
 
 type entryAttributesResponse struct {
-	Name              string         `json:"name"`
-	Description       *string        `json:"description"`
+	Title             *string        `json:"title"`
 	ThumbnailImageURL *string        `json:"thumbnail_image_url"`
 	Metadata          map[string]any `json:"metadata"`
 }
@@ -675,7 +671,7 @@ func (r *modelListResponse) UnmarshalJSON(data []byte) error {
 
 type modelResponse struct {
 	ID       string           `json:"id"`
-	Name     string           `json:"name"`
+	Title    *string          `json:"title"`
 	Metadata map[string]any   `json:"metadata"`
 	Metrics  []metricResponse `json:"metrics"`
 }
@@ -968,6 +964,13 @@ func assertMetric(t *testing.T, metrics []metricResponse, key string, value floa
 		}
 	}
 	assert.Failf(t, "missing metric", "metric %q was not found in %#v", key, metrics)
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func countString(values []string, target string) int {
