@@ -37,7 +37,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	// when
 	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"name": "independent entry",
+			"title": "independent entry",
 			"artifacts": []map[string]any{
 				artifactRequest(entryArtifactID, "entry FASTA", "L0", "fasta", "s3://entry/sequence.fasta", map[string]any{
 					"records": []map[string]any{{"header": "entry", "sequence": "MACDEFGHIK"}},
@@ -47,7 +47,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 		"model_operations": []map[string]any{{
 			"op": "add",
 			"data": map[string]any{
-				"name": "independent model", "primary_artifact_id": modelArtifactID,
+				"title": "independent model", "primary_artifact_id": modelArtifactID,
 				"artifacts": []map[string]any{
 					artifactRequest(modelArtifactID, "model coordinates", "L2", "cif", "s3://model/model.cif", nil),
 				},
@@ -97,7 +97,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	s.Require().Len(publicEntry.ProteinSequences, 1)
 	s.Equal(entryArtifactID, publicEntry.ProteinSequences[0].SourceArtifactId)
 	model := getModelForTest(s.T(), entryID, modelID)
-	s.Equal("independent model", model.Name)
+	s.Equal("independent model", stringValue(model.Title))
 	s.Require().NotNil(metricByKey(model.Metrics, "r_free"))
 
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
@@ -129,13 +129,13 @@ func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {
 	structureFactorsArtifact["type"] = "structure_factors"
 	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"name":      "files entry",
+			"title":     "files entry",
 			"artifacts": []map[string]any{entryArtifact},
 		},
 		"model_operations": []map[string]any{{
 			"op": "add",
 			"data": map[string]any{
-				"name":                "files model",
+				"title":               "files model",
 				"primary_artifact_id": modelArtifactID,
 				"artifacts": []map[string]any{
 					modelArtifact,
@@ -188,13 +188,13 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "idempotent-model-owner", 8112)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "idempotent model entry"},
+		"entry": map[string]any{"title": "idempotent model entry"},
 	})
 	entryID := entry.EntryId
 	idempotencyKey := uuid.NewString()
 	request := map[string]any{
 		"model": map[string]any{
-			"name": "idempotent model", "idempotency_key": idempotencyKey,
+			"title": "idempotent model", "idempotency_key": idempotencyKey,
 		},
 	}
 
@@ -214,13 +214,13 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "protein-model-owner", 8102)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "protein model entry"},
+		"entry": map[string]any{"title": "protein model entry"},
 	})
 	entryID := entry.EntryId
 	initialArtifactID := uuid.New()
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{
-			"name": "protein model",
+			"title": "protein model",
 			"artifacts": []map[string]any{
 				artifactRequest(initialArtifactID, "initial FASTA", "L2", "fasta", "s3://model/initial.fasta", map[string]any{
 					"records": []map[string]any{{"header": "initial", "sequence": "MACDEFGHIK"}},
@@ -235,7 +235,7 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 
 	// when
 	renamed := createAndActivateModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
-		"model": map[string]any{"name": "renamed protein model"},
+		"model": map[string]any{"title": "renamed protein model"},
 	})
 	entryAfterRename := getEntryForTest(s.T(), entryID)
 	replacementArtifactID := uuid.New()
@@ -267,7 +267,7 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 	assertErrorResponse(s.T(), deleteResponse, "BAD_REQUEST", "revision field \"state\" is not allowed")
 	s.Require().Len(entryAfterRejectedDeletion.ProteinSequences, 1)
 	s.Equal(replacementArtifactID, entryAfterRejectedDeletion.ProteinSequences[0].SourceArtifactId)
-	s.Equal("renamed protein model", getModelForTest(s.T(), entryID, modelID).Name)
+	s.Equal("renamed protein model", stringValue(getModelForTest(s.T(), entryID, modelID).Title))
 }
 
 func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisions() {
@@ -276,23 +276,23 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-contributor", 8111)
 	contributorID := tokenUserIDForTest(s.T(), contributorToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "shared entry"},
+		"entry": map[string]any{"title": "shared entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"name": "shared model"},
+		"model": map[string]any{"title": "shared model"},
 	})
 	modelID := model.ModelId
 
 	// when
 	entryRevision := createEntryRevisionForTest(s.T(), contributorToken, entryID, map[string]any{
-		"entry": map[string]any{"description": "contributed entry revision"},
+		"entry": map[string]any{"title": "contributed entry revision"},
 	})
 	modelRevision := createModelRevisionForTest(s.T(), contributorToken, entryID, modelID, map[string]any{
-		"model": map[string]any{"description": "contributed model revision"},
+		"model": map[string]any{"title": "contributed model revision"},
 	})
 	newModelRevision := createModelForTest(s.T(), contributorToken, entryID, map[string]any{
-		"model": map[string]any{"name": "contributed model"},
+		"model": map[string]any{"title": "contributed model"},
 	})
 	//nolint:bodyclose // assertErrorResponse closes the response body.
 	deleteEntryResponse := postJSONWithToken(
@@ -319,22 +319,22 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "separate-lifecycle-owner", 8103)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "original entry"},
+		"entry": map[string]any{"title": "original entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"name": "original model"},
+		"model": map[string]any{"title": "original model"},
 	})
 	modelID := model.ModelId
 	modelRevision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
-		"model": map[string]any{"name": "updated model"},
+		"model": map[string]any{"title": "updated model"},
 	})
 	modelUserPath := fmt.Sprintf(
 		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
 		ownerID, entryID, modelID, modelRevision.RevisionId,
 	)
 	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
-		"entry": map[string]any{"name": "updated entry"},
+		"entry": map[string]any{"title": "updated entry"},
 	})
 
 	// when
@@ -342,8 +342,8 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 	pendingModel := getModelRevisionForTest(s.T(), modelUserPath, ownerToken)
 
 	// then
-	s.Equal("updated entry", getEntryForTest(s.T(), entryID).Name)
-	s.Equal("original model", getModelForTest(s.T(), entryID, modelID).Name)
+	s.Equal("updated entry", getEntryForTest(s.T(), entryID).Title)
+	s.Equal("original model", stringValue(getModelForTest(s.T(), entryID, modelID).Title))
 	s.Equal(httpapi.RevisionStateInReview, pendingModel.State)
 
 	adminModelPath := fmt.Sprintf(
@@ -351,7 +351,7 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 		entryID, modelID, modelRevision.RevisionId,
 	)
 	updateModelRevisionStateForTest(s.T(), adminModelPath, adminToken, "active")
-	s.Equal("updated model", getModelForTest(s.T(), entryID, modelID).Name)
+	s.Equal("updated model", stringValue(getModelForTest(s.T(), entryID, modelID).Title))
 }
 
 func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
@@ -361,14 +361,14 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "revision-group-other", 8105)
 	otherID := tokenUserIDForTest(s.T(), otherToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "revision group entry"},
+		"entry": map[string]any{"title": "revision group entry"},
 	})
 	entryID := entry.EntryId
 	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
-		"entry": map[string]any{"description": "in-review entry change"},
+		"entry": map[string]any{"title": "in-review entry change"},
 	})
 	modelRevision := createModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"name": "in-review model"},
+		"model": map[string]any{"title": "in-review model"},
 	})
 
 	// when
@@ -410,15 +410,15 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-rejection-owner", 8106)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"name": "model rejection entry"},
+		"entry": map[string]any{"title": "model rejection entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"name": "active model"},
+		"model": map[string]any{"title": "active model"},
 	})
 	modelID := model.ModelId
 	revision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
-		"model": map[string]any{"name": "proposed model"},
+		"model": map[string]any{"title": "proposed model"},
 	})
 	userPath := fmt.Sprintf(
 		"/v1/users/%s/entries/%s/models/%s/revisions/%s",
@@ -438,7 +438,7 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 	s.Equal(httpapi.RevisionStateRejected, rejected.State)
 	s.Equal(httpapi.RevisionStateInReview, resubmitted.State)
 	s.Equal(httpapi.RevisionStateActive, active.State)
-	s.Equal("proposed model", getModelForTest(s.T(), entryID, modelID).Name)
+	s.Equal("proposed model", stringValue(getModelForTest(s.T(), entryID, modelID).Title))
 }
 
 func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentication() {
@@ -449,12 +449,12 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 	//nolint:bodyclose // assertErrorResponse closes the response body.
 	oldShapeResponse := postJSONWithToken(s.T(), "/v1/entries", map[string]any{"name": "old shape"}, ownerToken)
 	unauthenticatedResponse := postJSON(s.T(), "/v1/entries", map[string]any{
-		"entry": map[string]any{"name": "no token"},
+		"entry": map[string]any{"title": "no token"},
 	})
 
 	// then
 	s.Equal(http.StatusBadRequest, oldShapeResponse.StatusCode)
-	assertErrorResponse(s.T(), oldShapeResponse, "BAD_REQUEST", "entry name is required")
+	assertErrorResponse(s.T(), oldShapeResponse, "BAD_REQUEST", "entry title is required")
 	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
 }
@@ -601,7 +601,7 @@ func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevi
 
 type entryForTest struct {
 	CreatedBy        uuid.UUID
-	Name             string
+	Title            string
 	ProteinSequences []httpapi.ProteinSequence
 }
 
@@ -612,9 +612,16 @@ func getEntryForTest(t *testing.T, entryID string) entryForTest {
 	document := decodeJSONResponse[httpapi.EntryDocument](t, response, http.StatusOK)
 	return entryForTest{
 		CreatedBy:        document.Data.Relationships.CreatedBy.Data.Id,
-		Name:             document.Data.Attributes.Name,
+		Title:            stringValue(document.Data.Attributes.Title),
 		ProteinSequences: proteinSequencesFromEntryDocumentForTest(document),
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func proteinSequencesFromEntryDocumentForTest(document httpapi.EntryDocument) []httpapi.ProteinSequence {

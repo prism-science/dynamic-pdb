@@ -57,7 +57,7 @@ func (SampleWorksManifestBuilder) Build(dataRoot string) (Manifest, Stats, error
 		Entries: []Entry{
 			{
 				PDBID:        templatePDBID,
-				Name:         templatePDBID,
+				Title:        templatePDBID,
 				Metadata:     entryMetadata(),
 				PreviewImage: entryPreviewImage(),
 				Artifacts:    sampleWorksEntryArtifacts(),
@@ -108,7 +108,7 @@ func sampleWorksModel(pattern SampleWorksPattern, label string) ModelPattern {
 	coordinateExtensions := sampleWorksCoordinateExtensions([]string{coordinateSource})
 	return ModelPattern{
 		ID:        sampleWorksModelID(label),
-		Name:      "Sampleworks " + label,
+		Title:     "Sampleworks " + label,
 		ModelType: "Single Conformer",
 		Purpose:   "Refinement",
 		Metadata:  coordinateModelMetadata(coordinateExtensions),

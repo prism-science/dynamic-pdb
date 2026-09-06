@@ -17,7 +17,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	// given
 	entryRevision := createDBTestEntryRevision(t, "model-entry", time.Now().UTC())
 	now := time.Now().UTC()
-	description := "Refined coordinate model with electron-density support " + uuid.NewString()
+	title := "Refined coordinate model with electron-density support " + uuid.NewString()
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
 	affiliation := "Department of Chemistry, Boston University"
@@ -28,8 +28,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 		ID:                uuid.New(),
 		ModelID:           "model-primary",
 		State:             models.RevisionStatePending,
-		Name:              "qFit run " + uuid.NewString(),
-		Description:       &description,
+		Title:             &title,
 		ThumbnailImageURL: &thumbnailImageURL,
 		Metadata: models.ModelMetadata{
 			Authors:     []string{"Hendrickson, W.A.", "Teeter, M.M."},
@@ -56,9 +55,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, revision.ModelID, got.ModelID)
 	assert.Equal(t, models.ModelStateActive, got.ModelState)
 	assert.Equal(t, createdBy, got.CreatedBy)
-	assert.Equal(t, revision.Name, got.Name)
-	require.NotNil(t, got.Description)
-	assert.Equal(t, description, *got.Description)
+	assert.Equal(t, revision.Title, got.Title)
 	require.NotNil(t, got.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *got.ThumbnailImageURL)
 	assert.Equal(t, []string{"Hendrickson, W.A.", "Teeter, M.M."}, got.Metadata.Authors)
@@ -106,7 +103,7 @@ func Test_should_allow_duplicate_model_revision_idempotency_key_when_revision_is
 		ID:             uuid.New(),
 		ModelID:        modelID,
 		State:          models.RevisionStatePending,
-		Name:           "first idempotent model revision",
+		Title:          ptr("first idempotent model revision"),
 		IdempotencyKey: &idempotencyKey,
 		CreatedBy:      createdBy,
 		CreatedAt:      now,
@@ -114,7 +111,7 @@ func Test_should_allow_duplicate_model_revision_idempotency_key_when_revision_is
 	}
 	second := first
 	second.ID = uuid.New()
-	second.Name = "second idempotent model revision"
+	second.Title = ptr("second idempotent model revision")
 
 	// when
 	_, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, first)
@@ -136,7 +133,7 @@ func Test_should_reject_duplicate_active_model_revision_idempotency_key(t *testi
 		ID:             uuid.New(),
 		ModelID:        "model-" + uuid.NewString(),
 		State:          models.RevisionStateActive,
-		Name:           "first active idempotent model revision",
+		Title:          ptr("first active idempotent model revision"),
 		IdempotencyKey: &idempotencyKey,
 		CreatedBy:      createdBy,
 		CreatedAt:      now,
@@ -145,7 +142,7 @@ func Test_should_reject_duplicate_active_model_revision_idempotency_key(t *testi
 	second := first
 	second.ID = uuid.New()
 	second.ModelID = "model-" + uuid.NewString()
-	second.Name = "second active idempotent model revision"
+	second.Title = ptr("second active idempotent model revision")
 
 	// when
 	_, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, first)
@@ -236,7 +233,7 @@ func Test_should_activate_only_target_model_revision_when_models_activate_revisi
 		RevisionNumber: &revisionNumber,
 		State:          models.RevisionStateActive,
 		ModelState:     models.ModelStateActive,
-		Name:           "active model revision",
+		Title:          ptr("active model revision"),
 		CreatedBy:      createdBy,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -248,7 +245,7 @@ func Test_should_activate_only_target_model_revision_when_models_activate_revisi
 		ParentRevisionID: &active.ID,
 		State:            models.RevisionStateInReview,
 		ModelState:       models.ModelStateActive,
-		Name:             "replacement model revision",
+		Title:            ptr("replacement model revision"),
 		CreatedBy:        createdBy,
 		CreatedAt:        now.Add(time.Second),
 		UpdatedAt:        now.Add(time.Second),
@@ -260,7 +257,7 @@ func Test_should_activate_only_target_model_revision_when_models_activate_revisi
 		ParentRevisionID: &active.ID,
 		State:            models.RevisionStatePending,
 		ModelState:       models.ModelStateActive,
-		Name:             "unrelated model revision",
+		Title:            ptr("unrelated model revision"),
 		CreatedBy:        createdBy,
 		CreatedAt:        now.Add(2 * time.Second),
 		UpdatedAt:        now.Add(2 * time.Second),

@@ -100,8 +100,7 @@ export default function NewEntryForm({
     Boolean(seededExtExperimentId),
   );
   const [entryId, setEntryId] = useState(() => crypto.randomUUID());
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState("");
   const activeThumbFileId = useRef<string | null>(null);
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
@@ -139,8 +138,7 @@ export default function NewEntryForm({
     void getExtExperiment(extExperimentId, controller.signal)
       .then((experiment) => {
         setExtExperiment(experiment);
-        setName((current) => current || experiment.name);
-        setDescription((current) => current || experiment.description);
+        setTitle((current) => current || experiment.name);
       })
       .catch((loadError: unknown) => {
         if (controller.signal.aborted) {
@@ -194,8 +192,7 @@ export default function NewEntryForm({
       version: DRAFT_VERSION,
       entryId,
       extExperimentId,
-      name,
-      description,
+      title,
       thumbUrl,
       thumbPreview: httpOnly(thumbPreview),
       thumbUploadStatus: thumbUrl ? "uploaded" : "idle",
@@ -211,8 +208,7 @@ export default function NewEntryForm({
     storageReady,
     entryId,
     extExperimentId,
-    name,
-    description,
+    title,
     thumbUrl,
     thumbPreview,
     files,
@@ -231,8 +227,7 @@ export default function NewEntryForm({
     if (draftExtExperimentId) {
       linkExtExperiment(draftExtExperimentId);
     }
-    setName(draft.name);
-    setDescription(draft.description);
+    setTitle(draft.title);
     setThumbUrl(draft.thumbUrl);
     setThumbPreview(draft.thumbPreview ?? null);
     setThumbUploadStatus(draft.thumbUrl ? "uploaded" : "idle");
@@ -254,20 +249,18 @@ export default function NewEntryForm({
     setDraftPrompt(null);
     setStorageReady(true);
     // "Start fresh" means a blank form: drop the linked experiment along with
-    // the name and description it prefilled.
+    // the title it prefilled.
     unlinkExtExperiment();
-    setName("");
-    setDescription("");
+    setTitle("");
   };
 
   const resetForm = () => {
     clearStoredDraft();
     setEntryId(crypto.randomUUID());
     // The link is something the user entered, so it resets with everything
-    // else instead of re-seeding name and description from the experiment.
+    // else instead of re-seeding the title from the experiment.
     unlinkExtExperiment();
-    setName("");
-    setDescription("");
+    setTitle("");
     activeThumbFileId.current = null;
     setThumbFile(null);
     setThumbPreview(null);
@@ -395,10 +388,10 @@ export default function NewEntryForm({
     );
 
   const canSubmit =
-    name.trim().length > 0 &&
+    title.trim().length > 0 &&
     models.every(
       (modelDraft) =>
-        modelDraft.name.trim().length > 0 && !modelValidationMessage(modelDraft),
+        modelDraft.title.trim().length > 0 && !modelValidationMessage(modelDraft),
     ) &&
     !hasPendingUploads &&
     !hasFailedUploads &&
@@ -454,8 +447,7 @@ export default function NewEntryForm({
           method: metadata.method.trim() || null,
           space_group: metadata.spaceGroup.trim() || null,
         },
-        name: name.trim(),
-        description: description.trim() || null,
+        title: title.trim(),
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),
         models: models.map((modelDraft) => buildCreateModelInput(modelDraft)),
@@ -488,21 +480,21 @@ export default function NewEntryForm({
         />
       ) : null}
 
-      {/* Name, description and preview image are one identity block. The
+      {/* Title and preview image are one identity block. The
           thumbnail is placed first visually by CSS but stays last in the DOM so
-          the keyboard lands on the name field first. */}
+          the keyboard lands on the title field first. */}
       <section className={styles.field}>
         <div className={styles.identityRow}>
           <div className={styles.identityMain}>
             <div className={styles.field}>
-              <label className={styles.label} htmlFor="entry-name">
-                Name
+              <label className={styles.label} htmlFor="entry-title">
+                Title
               </label>
               <input
-                id="entry-name"
+                id="entry-title"
                 className={styles.input}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
                 placeholder="e.g. Hen egg-white lysozyme"
                 autoComplete="off"
                 data-1p-ignore
@@ -511,19 +503,6 @@ export default function NewEntryForm({
               />
             </div>
 
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="entry-desc">
-                Description
-              </label>
-              <textarea
-                id="entry-desc"
-                className={styles.textarea}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="e.g. 129-residue antibacterial enzyme; common crystallography benchmark"
-                rows={3}
-              />
-            </div>
           </div>
 
           <div className={styles.identityThumb}>
@@ -799,8 +778,8 @@ function DraftRestorePrompt({
     draft.files.length +
     draft.models.reduce((sum, modelDraft) => sum + modelDraft.files.length, 0);
   const parts: string[] = [];
-  if (draft.name.trim()) {
-    parts.push(`“${draft.name.trim()}”`);
+  if (draft.title.trim()) {
+    parts.push(`“${draft.title.trim()}”`);
   }
   if (fileCount > 0) {
     parts.push(`${fileCount} uploaded file${fileCount === 1 ? "" : "s"}`);

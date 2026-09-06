@@ -88,7 +88,7 @@ func Build(dataRoot string, options ...BuildOptions) (Manifest, Stats, error) {
 		Entries: []Entry{
 			{
 				PDBID:        templatePDBID,
-				Name:         templatePDBID,
+				Title:        templatePDBID,
 				Metadata:     entryMetadata(),
 				PreviewImage: entryPreviewImage(),
 				Artifacts:    entryArtifacts(),
@@ -381,7 +381,7 @@ func entryPreviewImage() *EntryPreviewImage {
 func depositedModelPattern(id string) ModelPattern {
 	return ModelPattern{
 		ID:        id,
-		Name:      "Deposited model",
+		Title:     "Deposited model",
 		ModelType: "Deposited",
 		Purpose:   "Reference",
 		Metadata:  depositedModelMetadata(),
@@ -423,7 +423,7 @@ func modelPatternFromGroup(id string, group coordinateGroup) ModelPattern {
 	}
 	return ModelPattern{
 		ID:        id,
-		Name:      "",
+		Title:     "",
 		Metadata:  coordinateModelMetadata(group.extensions),
 		Artifacts: artifacts,
 		Metrics:   coordinateRefinementMetrics(group.extensions),

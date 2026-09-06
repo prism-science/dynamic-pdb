@@ -285,15 +285,16 @@ func createPipelineTestUser(t *testing.T, database *db.DB) uuid.UUID {
 	return user.ID
 }
 
-func createPipelineTestEntryRevision(t *testing.T, database *db.DB, name string, createdAt time.Time) *models.EntryRevision {
+func createPipelineTestEntryRevision(t *testing.T, database *db.DB, title string, createdAt time.Time) *models.EntryRevision {
 	t.Helper()
 
 	createdBy := createPipelineTestUser(t, database)
+	revisionTitle := title + "-" + uuid.NewString()
 	revision, err := database.Entries.Create(context.Background(), models.EntryRevision{
 		ID:        uuid.New(),
 		EntryID:   "entry-" + uuid.NewString(),
 		State:     models.RevisionStatePending,
-		Name:      name + "-" + uuid.NewString(),
+		Title:     &revisionTitle,
 		CreatedBy: createdBy,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,

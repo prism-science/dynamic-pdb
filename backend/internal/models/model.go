@@ -34,8 +34,7 @@ type ModelRevision struct {
 	ModelState        ModelState
 	ChangeSummary     *string
 	PublishedAt       *time.Time
-	Name              string
-	Description       *string
+	Title             *string
 	ThumbnailImageURL *string
 	Metadata          ModelMetadata
 	IdempotencyKey    *string

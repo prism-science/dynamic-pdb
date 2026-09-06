@@ -63,8 +63,7 @@ function entryFieldRows(
   after: ReviewEntry,
 ): DiffRow[] {
   return [
-    scalarRow("Name", before?.name, after.name),
-    scalarRow("Description", before?.description, after.description, true),
+    scalarRow("Title", before?.title, after.title),
     ...metadataRows(before?.metadata, after.metadata),
     scalarRow(
       "Protein sequences",
@@ -79,8 +78,7 @@ function modelFieldRows(
   after: ReviewModel,
 ): DiffRow[] {
   return [
-    scalarRow("Name", before?.name, after.name),
-    scalarRow("Description", before?.description, after.description, true),
+    scalarRow("Title", before?.title, after.title),
     ...metadataRows(before?.metadata, after.metadata),
   ];
 }

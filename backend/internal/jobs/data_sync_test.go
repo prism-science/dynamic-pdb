@@ -62,10 +62,9 @@ func Test_should_schedule_next_data_sync_between_seven_and_fourteen_days(t *test
 
 func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	// given
-	originalDescription := "old description"
+	originalTitle := "old title"
 	original := models.EntryRevision{
-		Name:        "5AMF",
-		Description: &originalDescription,
+		Title: &originalTitle,
 		Metadata: models.EntryMetadata{
 			ExternalRefs: map[models.EntrySource]string{models.EntrySourcePDB: "5AMF"},
 		},
@@ -83,8 +82,8 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	applyRCSBEntryDetails(&updated, details, &organism)
 
 	// then
-	require.NotNil(t, updated.Description)
-	assert.Equal(t, "Example structure", *updated.Description)
+	require.NotNil(t, updated.Title)
+	assert.Equal(t, "Example structure", *updated.Title)
 	require.NotNil(t, updated.Metadata.Resolution)
 	assert.Equal(t, 1.5, *updated.Metadata.Resolution)
 	require.NotNil(t, updated.Metadata.Method)
@@ -92,20 +91,20 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	require.NotNil(t, updated.Metadata.SpaceGroup)
 	assert.Equal(t, "P 21 21 21", *updated.Metadata.SpaceGroup)
 	assert.Equal(t, &organism, updated.Metadata.Organism)
-	assert.Equal(t, "old description", *original.Description)
+	assert.Equal(t, "old title", *original.Title)
 	assert.Equal(t, "5AMF", updated.Metadata.ExternalRefs[models.EntrySourcePDB])
 	assert.False(t, original.HasSameData(updated))
 }
 
 func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 	// given
-	description := "old description"
+	title := "old title"
 	resolution := 1.5
 	organism := "Homo sapiens"
 	method := models.StructureMethodCryoEM
 	spaceGroup := "P 21 21 21"
 	revision := models.EntryRevision{
-		Description: &description,
+		Title: &title,
 		Metadata: models.EntryMetadata{
 			Resolution: &resolution,
 			Organism:   &organism,
@@ -118,7 +117,7 @@ func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 	applyRCSBEntryDetails(&revision, rcsb.EntryDetails{}, nil)
 
 	// then
-	assert.Nil(t, revision.Description)
+	assert.Nil(t, revision.Title)
 	assert.Nil(t, revision.Metadata.Resolution)
 	assert.Nil(t, revision.Metadata.Organism)
 	assert.Nil(t, revision.Metadata.Method)

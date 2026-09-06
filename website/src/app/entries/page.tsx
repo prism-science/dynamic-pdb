@@ -72,7 +72,7 @@ export default async function MyEntriesPage({ searchParams }: Props) {
       <div className={`${styles.col} ${styles.preview}`}>
         {selected && submission ? (
           <SubmissionCard
-            title={selected.name}
+            title={selected.title}
             review={submission}
             reviewPermissions={null}
           />

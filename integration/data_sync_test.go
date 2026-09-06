@@ -61,8 +61,8 @@ func Test_should_update_entry_when_data_sync_job_is_scheduled(t *testing.T) {
 	)
 
 	// then
-	require.NotNil(t, entry.Description)
-	assert.Equal(t, "example structure", *entry.Description)
+	require.NotNil(t, entry.Title)
+	assert.Equal(t, "example structure", *entry.Title)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
 	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
 	assert.Equal(t, 1.4, entry.Metadata["resolution"])
@@ -184,14 +184,13 @@ func seedScheduledDataSyncEntry(
 	_, err = transaction.ExecContext(
 		t.Context(),
 		`insert into entry_revisions(
-		   id, entry_id, revision_number, state, entry_state, published_at, name, description,
+		   id, entry_id, revision_number, state, entry_state, published_at, title,
 		   metadata, created_by, created_at, updated_at
-		 ) values ($1, $2, 1, 'active', 'active', $3, $4, $5, $6::jsonb, $7, $3, $3)`,
+		 ) values ($1, $2, 1, 'active', 'active', $3, $4, $5::jsonb, $6, $3, $3)`,
 		revisionID,
 		entryID,
 		now,
-		pdbID,
-		"outdated description",
+		"outdated title",
 		entryMetadata,
 		createdBy,
 	)

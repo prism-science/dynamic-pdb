@@ -31,7 +31,7 @@ test("should list entries with trimmed query and optional authorization", async 
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse(collectionDocument("entries", [{ id: "entry-1", name: "Entry 1" }]));
+      return jsonResponse(collectionDocument("entries", [{ id: "entry-1", title: "Entry 1" }]));
     };
 
     const entries = await listEntries("token-123", { query: "  hemoglobin  " });
@@ -39,7 +39,7 @@ test("should list entries with trimmed query and optional authorization", async 
     assert.equal(requestedURL, "https://backend.example/v1/entries?query=hemoglobin");
     assert.equal(requestedHeaders.Accept, jsonApiMediaType);
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
-    assert.deepEqual(entries, [{ id: "entry-1", name: "Entry 1" }]);
+    assert.deepEqual(entries, [{ id: "entry-1", title: "Entry 1" }]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -56,7 +56,7 @@ test("should list models with pagination and optional authorization", async () =
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse(collectionDocument("models", [{ id: "model-1", name: "Model 1" }]));
+      return jsonResponse(collectionDocument("models", [{ id: "model-1", title: "Model 1" }]));
     };
 
     const models = await listModels("token-123", {
@@ -70,7 +70,7 @@ test("should list models with pagination and optional authorization", async () =
     );
     assert.equal(requestedHeaders.Accept, jsonApiMediaType);
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
-    assert.deepEqual(models, [{ id: "model-1", name: "Model 1" }]);
+    assert.deepEqual(models, [{ id: "model-1", title: "Model 1" }]);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -90,8 +90,7 @@ test("should get entry from json api document", async () => {
       return jsonResponse(entryDocument({
         id: "entry-1",
         created_by: "user-1",
-        name: "Entry",
-        description: "Description",
+        title: "Entry",
         thumbnail_image_url: "https://cdn.example/entry.png",
         metadata: { method: "X-ray crystallography" },
         protein_sequences: [
@@ -118,8 +117,7 @@ test("should get entry from json api document", async () => {
     assert.deepEqual(entry, {
       id: "entry-1",
       created_by: "user-1",
-      name: "Entry",
-      description: "Description",
+      title: "Entry",
       thumbnail_image_url: "https://cdn.example/entry.png",
       metadata: { method: "X-ray crystallography" },
       protein_sequences: [
@@ -170,7 +168,7 @@ test("should throw ApiRequestError with status when create entry fails", async (
     global.fetch = async () => new Response(JSON.stringify({ code: "BAD_REQUEST" }), { status: 400 });
 
     await assert.rejects(
-      () => createEntry("token-123", { name: "Entry" }),
+      () => createEntry("token-123", { title: "Entry" }),
       (error) =>
         error instanceof ApiRequestError &&
         error.status === 400 &&
@@ -211,7 +209,7 @@ test("should post create entry using the new backend graph shape", async () => {
     };
 
     const result = await createEntry("token-123", {
-      name: "Entry",
+      title: "Entry",
       entities: [
         {
           id: "baseline",
@@ -228,7 +226,7 @@ test("should post create entry using the new backend graph shape", async () => {
       ],
       models: [
         {
-          name: "Model",
+          title: "Model",
           entities: [
             {
               id: "model-artifact",
@@ -356,7 +354,7 @@ test("should create and submit model revisions through user routes", async () =>
     };
 
     const result = await createModel("token-123", "entry-1", {
-      name: "Model",
+      title: "Model",
     });
     await submitModelRevision(
       "token-123",
@@ -368,7 +366,7 @@ test("should create and submit model revisions through user routes", async () =>
 
     assert.equal(requests[0].url, "https://backend.example/v1/entries/entry-1/models");
     assert.deepEqual(requests[0].body.model, {
-      name: "Model",
+      title: "Model",
       idempotency_key: null,
       metadata: {},
       primary_artifact_id: null,
@@ -441,7 +439,7 @@ test("should group the review queue by entry and pair each revision with the one
             {
               entry: {
                 id: "entry-1",
-                name: "Entry",
+                title: "Entry",
                 metadata: { external_refs: { pdb: "7B3H" } },
               },
               entry_revisions: [
@@ -463,7 +461,7 @@ test("should group the review queue by entry and pair each revision with the one
           resourceDocument(
             "entry_revisions",
             entryRevision("entry-revision-1", "2026-01-01T01:00:00Z", {
-              description: "Fresh",
+              title: "Fresh",
             }),
           ),
         );
@@ -474,7 +472,7 @@ test("should group the review queue by entry and pair each revision with the one
             "model_revisions",
             modelRevision("model-revision-1", "2026-01-01T02:00:00Z", {
               parent_revision_id: "model-revision-active",
-              description: "Updated",
+              title: "Updated",
             }),
           ),
         );
@@ -485,7 +483,7 @@ test("should group the review queue by entry and pair each revision with the one
             "model_revisions",
             modelRevision("model-revision-active", "2025-12-01T00:00:00Z", {
               state: "active",
-              description: "Original",
+              title: "Original",
             }),
           ),
         );
@@ -503,13 +501,13 @@ test("should group the review queue by entry and pair each revision with the one
     // One row per entry, never one per revision.
     assert.equal(page.items.length, 1);
     assert.equal(page.hasMore, false);
-    assert.equal(page.items[0].name, "PDB 7B3H | entry-1");
+    assert.equal(page.items[0].title, "PDB 7B3H | entry-1");
     // The row is stamped with the earliest thing waiting under it.
     assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
 
     // A first revision has nothing published to compare against.
     assert.equal(review.entry.active, null);
-    assert.equal(review.entry.proposed.description, "Fresh");
+    assert.equal(review.entry.proposed.title, "Fresh");
     assert.deepEqual(review.entry.target, {
       kind: "entry",
       entry_id: "entry-1",
@@ -518,8 +516,8 @@ test("should group the review queue by entry and pair each revision with the one
 
     assert.equal(review.models.length, 1);
     assert.equal(review.models[0].model_id, "model-1");
-    assert.equal(review.models[0].active.description, "Original");
-    assert.equal(review.models[0].proposed.description, "Updated");
+    assert.equal(review.models[0].active.title, "Original");
+    assert.equal(review.models[0].proposed.title, "Updated");
     assert.deepEqual(review.models[0].target, {
       kind: "model",
       entry_id: "entry-1",
@@ -599,8 +597,7 @@ test("should build model page entities from model artifacts and runs", async () 
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
     const entry = {
       id: "entry-1",
-      name: "Entry",
-      description: null,
+      title: "Entry",
       thumbnail_image_url: null,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -608,8 +605,7 @@ test("should build model page entities from model artifacts and runs", async () 
     const model = {
       id: "model-1",
       entry_id: "entry-1",
-      name: "Model",
-      description: null,
+      title: "Model",
       thumbnail_image_url: null,
       primary_artifact_id: "model-artifact",
       metrics: [{ id: "metric-1", key: "r_free", value: 0.23, created_at: "2026-01-01T00:00:00Z" }],
@@ -702,7 +698,7 @@ function revisionSummary(id, updatedAt) {
     state: "in_review",
     entry_state: "active",
     created_by: "user-1",
-    name: "Entry",
+    title: "Entry",
     published_at: null,
     created_at: updatedAt,
     updated_at: updatedAt,
@@ -719,7 +715,7 @@ function modelRevisionSummary(id, modelId, updatedAt) {
     state: "in_review",
     model_state: "active",
     created_by: "user-1",
-    name: "Model",
+    title: "Model",
     published_at: null,
     created_at: updatedAt,
     updated_at: updatedAt,
@@ -772,8 +768,7 @@ function entryDocument(entry) {
       type: "entries",
       id: entry.id,
       attributes: {
-        name: entry.name,
-        description: entry.description,
+        title: entry.title,
         thumbnail_image_url: entry.thumbnail_image_url,
         metadata: entry.metadata ?? {},
         published_at: entry.published_at ?? null,
@@ -824,7 +819,6 @@ function restoreEnv(name, value) {
 function entryRevision(id, updatedAt, overrides = {}) {
   return {
     ...revisionSummary(id, updatedAt),
-    description: null,
     thumbnail_image_url: null,
     metadata: {},
     protein_sequences: [],
@@ -836,7 +830,6 @@ function entryRevision(id, updatedAt, overrides = {}) {
 function modelRevision(id, updatedAt, overrides = {}) {
   return {
     ...modelRevisionSummary(id, "model-1", updatedAt),
-    description: null,
     thumbnail_image_url: null,
     primary_artifact_id: null,
     metadata: {},

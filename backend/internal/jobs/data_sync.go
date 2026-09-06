@@ -320,7 +320,7 @@ func applyRCSBEntryDetails(
 	details rcsb.EntryDetails,
 	organism *string,
 ) {
-	revision.Description = optionalString(details.Structure.Title)
+	revision.Title = optionalString(details.Structure.Title)
 	revision.Metadata.Resolution = firstResolution(details.Info.CombinedResolution)
 	revision.Metadata.Organism = organism
 	revision.Metadata.Method = structureMethod(details.Experiments)

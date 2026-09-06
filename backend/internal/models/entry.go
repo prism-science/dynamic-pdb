@@ -56,8 +56,7 @@ type EntryRevision struct {
 	EntryState        EntryState
 	ChangeSummary     *string
 	PublishedAt       *time.Time
-	Name              string
-	Description       *string
+	Title             *string
 	ThumbnailImageURL *string
 	Metadata          EntryMetadata
 	CreatedBy         uuid.UUID
@@ -75,8 +74,7 @@ type EntryMetadata struct {
 
 func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 	return revision.EntryState == other.EntryState &&
-		revision.Name == other.Name &&
-		pointersEqual(revision.Description, other.Description) &&
+		pointersEqual(revision.Title, other.Title) &&
 		pointersEqual(revision.ThumbnailImageURL, other.ThumbnailImageURL) &&
 		maps.Equal(revision.Metadata.ExternalRefs, other.Metadata.ExternalRefs) &&
 		pointersEqual(revision.Metadata.Resolution, other.Metadata.Resolution) &&

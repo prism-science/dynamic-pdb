@@ -97,7 +97,7 @@ function Changes({
           <DeletionBlock
             reviewPermissions={reviewPermissions}
             key={model.model_id}
-            title={model.proposed.name}
+            title={model.proposed.title?.trim() || model.model_id}
             what="model"
             target={model.target}
             removes={modelRemovals(model.active)}
@@ -110,7 +110,7 @@ function Changes({
           <DiffBlock
             reviewPermissions={reviewPermissions}
             key={model.model_id}
-            title={model.proposed.name}
+            title={model.proposed.title?.trim() || model.model_id}
             badge={model.active ? "revision" : "new"}
             sections={diffModel(model.active, model.proposed)}
             target={model.target}

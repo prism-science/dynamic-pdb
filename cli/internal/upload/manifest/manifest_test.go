@@ -51,7 +51,7 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.Contains(t, string(contents), "include: []")
 	assert.Contains(t, string(contents), "skip: []")
 	assert.NotContains(t, string(contents), "exceptions:")
-	assert.Contains(t, string(contents), "name: '{{ pdb_id }}'")
+	assert.Contains(t, string(contents), "title: '{{ pdb_id }}'")
 	assert.Contains(t, string(contents), "id: model_1")
 	assert.Contains(t, string(contents), "id: model_2")
 	assert.Contains(t, string(contents), "id: model_3")
@@ -76,7 +76,7 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.NotContains(t, string(contents), "Model Building")
 	assert.NotContains(t, string(contents), "purpose: Refinement")
 	assert.NotContains(t, string(contents), "model_type: Ensemble")
-	assert.NotContains(t, string(contents), "name: Deposited model")
+	assert.NotContains(t, string(contents), "title: Deposited model")
 	assert.Contains(t, string(contents), "r_free")
 	assert.Contains(t, string(contents), "r_work")
 	assert.GreaterOrEqual(t, strings.Count(string(contents), "pdb_id: '{{ pdb_id }}'"), 3)
@@ -143,12 +143,12 @@ func Test_should_include_rcsb_model_when_requested(t *testing.T) {
 	require.Len(t, generated.Entries, 1)
 	require.Len(t, generated.Entries[0].Models, 2)
 	assert.Equal(t, "model_1", generated.Entries[0].Models[0].ID)
-	assert.Equal(t, "Deposited model", generated.Entries[0].Models[0].Name)
+	assert.Equal(t, "Deposited model", generated.Entries[0].Models[0].Title)
 	assert.Equal(t, "model_2", generated.Entries[0].Models[1].ID)
 
 	contents, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(contents), "name: Deposited model")
+	assert.Contains(t, string(contents), "title: Deposited model")
 	assert.Contains(t, string(contents), "file: '{{ pdb_id }}.cif'")
 	assert.Contains(t, string(contents), "- Rerefined/final_model/{{ pdb_id }}_020.pdb")
 }
@@ -233,10 +233,10 @@ func Test_should_reject_metric_values_when_manifest_loaded(t *testing.T) {
 data_root: /tmp/data
 entries:
   - pdb_id: '{{ pdb_id }}'
-    name: '{{ pdb_id }}'
+    title: '{{ pdb_id }}'
     models:
       - id: model_1
-        name: ""
+        title: ""
         model_type: ""
         purpose: ""
         artifacts: []

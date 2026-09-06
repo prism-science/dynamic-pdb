@@ -36,15 +36,15 @@ import previewStyles from "./preview.module.css";
  *  active revision and have no business knowing about this. */
 export function RevisionPreviewFrame({
   kind,
-  name,
+  title,
   children,
 }: {
   kind: "entry" | "model";
-  name: string;
+  title: string;
   children: React.ReactNode;
 }) {
   return (
-    <main className={styles.page} aria-label={`${name} preview`}>
+    <main className={styles.page} aria-label={`${title} preview`}>
       <div className={styles.record}>
         <div className={previewStyles.banner}>
           <span className={previewStyles.dot} />
@@ -72,7 +72,7 @@ export function EntryRevisionPreview({
   const thumbnail = revision.thumbnail_image_url?.trim() || null;
   const entryLabel = formatEntryLabel({
     id: revision.entry_id,
-    name: revision.name,
+    title: revision.title,
     metadata: revision.metadata,
   });
 
@@ -89,11 +89,11 @@ export function EntryRevisionPreview({
       </aside>
 
       <div className={styles.content}>
-        {revision.description?.trim() || facts.length > 0 ? (
+        {revision.title?.trim() || facts.length > 0 ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
-            {revision.description?.trim() ? (
-              <p className={styles.lead}>{revision.description}</p>
+            {revision.title?.trim() ? (
+              <p className={styles.lead}>{revision.title}</p>
             ) : null}
             <InfoGrid facts={facts} />
           </section>
@@ -112,7 +112,7 @@ export function EntryRevisionPreview({
             <ul className={previewStyles.modelList}>
               {models.map((model) => (
                 <li key={model.id} className={previewStyles.modelRow}>
-                  <span className={previewStyles.modelName}>{model.name}</span>
+                  <span className={previewStyles.modelName}>{model.title}</span>
                   <span className={previewStyles.modelMetrics}>
                     {model.metrics.length > 0
                       ? model.metrics
@@ -161,7 +161,7 @@ export function ModelRevisionPreview({
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
         <Thumb url={previewURL} />
-        <h1 className={styles.sideName}>{revision.name}</h1>
+        <h1 className={styles.sideName}>{revision.title}</h1>
 
         {vitals.length > 0 ? (
           <dl className={styles.sideVitals}>
@@ -203,12 +203,9 @@ export function ModelRevisionPreview({
       </aside>
 
       <div className={styles.content}>
-        {revision.description?.trim() || infoFacts.length > 0 ? (
+        {infoFacts.length > 0 ? (
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
-            {revision.description?.trim() ? (
-              <p className={styles.lead}>{revision.description}</p>
-            ) : null}
             <InfoGrid facts={infoFacts} />
           </section>
         ) : null}

@@ -62,7 +62,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
       <div className={`${styles.col} ${styles.preview}`}>
         {selected && review ? (
           <SubmissionCard
-            title={selected.name}
+            title={selected.title}
             review={review}
             reviewPermissions={reviewPermissions}
           />

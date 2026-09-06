@@ -26,7 +26,7 @@ func Test_sampleworks_builder_should_create_manifest_from_sampleworks_folder(t *
 
 	model := uploadManifest.Entries[0].Models[0]
 	assert.Equal(t, "sampleworks_025occa_075occb", model.ID)
-	assert.Equal(t, "Sampleworks 0.25occA 0.75occB", model.Name)
+	assert.Equal(t, "Sampleworks 0.25occA 0.75occB", model.Title)
 	assert.Equal(t, "Single Conformer", model.ModelType)
 	assert.Equal(t, "Refinement", model.Purpose)
 	require.Len(t, model.Artifacts, 3)
@@ -92,9 +92,9 @@ func Test_sampleworks_builder_should_include_parent_folder_when_leaf_model_label
 	require.Len(t, uploadManifest.Entries, 1)
 	require.Len(t, uploadManifest.Entries[0].Models, 2)
 	assert.Equal(t, "sampleworks_other_guidance_ens1", uploadManifest.Entries[0].Models[0].ID)
-	assert.Equal(t, "Sampleworks other_guidance ens1", uploadManifest.Entries[0].Models[0].Name)
+	assert.Equal(t, "Sampleworks other_guidance ens1", uploadManifest.Entries[0].Models[0].Title)
 	assert.Equal(t, "sampleworks_pure_guidance_ens1", uploadManifest.Entries[0].Models[1].ID)
-	assert.Equal(t, "Sampleworks pure_guidance ens1", uploadManifest.Entries[0].Models[1].Name)
+	assert.Equal(t, "Sampleworks pure_guidance ens1", uploadManifest.Entries[0].Models[1].Title)
 }
 
 func Test_sampleworks_builder_should_reject_non_sampleworks_folder(t *testing.T) {
@@ -125,5 +125,5 @@ func Test_init_sampleworks_should_write_manifest(t *testing.T) {
 	assert.FileExists(t, writtenPath)
 	assert.Equal(t, 1, stats.PDBIDs)
 	require.Len(t, uploadManifest.Entries[0].Models, 1)
-	assert.Equal(t, "Sampleworks 1.0occB", uploadManifest.Entries[0].Models[0].Name)
+	assert.Equal(t, "Sampleworks 1.0occB", uploadManifest.Entries[0].Models[0].Title)
 }

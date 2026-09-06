@@ -11,7 +11,7 @@ type Manifest struct {
 
 type Entry struct {
 	PDBID        string             `yaml:"pdb_id"`
-	Name         string             `yaml:"name"`
+	Title        string             `yaml:"title"`
 	Metadata     EntryMetadata      `yaml:"metadata,omitempty"`
 	PreviewImage *EntryPreviewImage `yaml:"preview_image,omitempty"`
 	Artifacts    []Artifact         `yaml:"artifacts,omitempty"`
@@ -35,7 +35,7 @@ type Artifact struct {
 
 type ModelPattern struct {
 	ID        string        `yaml:"id"`
-	Name      string        `yaml:"name"`
+	Title     string        `yaml:"title"`
 	ModelType string        `yaml:"model_type"`
 	Purpose   string        `yaml:"purpose"`
 	Metadata  ModelMetadata `yaml:"metadata,omitempty"`

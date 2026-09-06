@@ -171,8 +171,7 @@ test("should build explicit graph relations for model metrics and program", () =
   });
   const modelDraft = modelDraftFixture({
     id: "model-1",
-    name: " Refined model ",
-    description: " Description ",
+    title: " Refined model ",
     files: [modelFile, densityFile],
     metrics: [{ id: "metrics-1", values: { r_free: "0.231", cc: "0.98" } }],
     programs: [
@@ -191,8 +190,7 @@ test("should build explicit graph relations for model metrics and program", () =
 
   const input = buildCreateModelInput(modelDraft);
 
-  assert.equal(input.name, "Refined model");
-  assert.equal(input.description, "Description");
+  assert.equal(input.title, "Refined model");
   assert.deepEqual(input.metadata, {});
   assert.deepEqual(input.entities.map((entity) => [entity.id, entity.type, entity.level]), [
     ["model-entity-1", "model", "L2"],
@@ -423,8 +421,7 @@ test("should decide upload readiness from file and thumbnail states", () => {
   const pending = parsedFile({ id: "pending", url: "", uploadStatus: "uploading" });
   const model = {
     id: "model-1",
-    name: "Model",
-    description: "",
+    title: "Model",
     thumbFileId: "thumb-1",
     thumbFile: null,
     thumbPreview: null,
@@ -453,8 +450,7 @@ test("should serialize and restore persisted draft files safely", () => {
   });
   const model = {
     id: "model-1",
-    name: "Model",
-    description: "Description",
+    title: "Model",
     thumbFileId: "thumb-1",
     thumbFile: null,
     thumbPreview: "https://example.com/thumb.png",
@@ -498,8 +494,7 @@ test("should serialize and restore persisted draft files safely", () => {
   const { artifactType: _artifactType, ...legacyStoredFile } = storedFile;
   const legacy = modelFromDraft({
     id: "model-1",
-    name: "Model",
-    description: "",
+    title: "Model",
     thumbUrl: null,
     files: [
       { ...legacyStoredFile, id: "coords-1", type: "mmcif" },
@@ -520,8 +515,7 @@ test("should serialize and restore persisted draft files safely", () => {
     draftHasContent({
       version: 1,
       entryId: "entry-1",
-      name: "",
-      description: "",
+      title: "",
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
@@ -533,8 +527,7 @@ test("should serialize and restore persisted draft files safely", () => {
     draftHasContent({
       version: 1,
       entryId: "entry-1",
-      name: "Draft",
-      description: "",
+      title: "Draft",
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
@@ -580,8 +573,7 @@ function parsedFile(overrides = {}) {
 function modelDraftFixture(overrides = {}) {
   return {
     id: "model-1",
-    name: "Model",
-    description: "",
+    title: "Model",
     thumbFileId: "thumb-1",
     thumbFile: null,
     thumbPreview: null,

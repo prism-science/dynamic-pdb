@@ -89,7 +89,7 @@ const PLACEHOLDER = {
 // model revision metadata: a program name lives on a node in the run graph and
 // is not indexed at all, a collection condition has no field to live in, and
 // "diffuse scattering" is not one of the two values the method enum holds. Any
-// of them can still hit if the words happen to sit in an entry's name or
+// of them can still hit if the words happen to sit in an entry's title or
 // description. They stay as they are: the row is a claim about what the field
 // is for, and the index is the side that has to catch up.
 const SAMPLE_SEARCHES = [

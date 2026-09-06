@@ -116,9 +116,9 @@ func (s *Server) createInitialEntryRevision(
 	if err := validateArtifactRequests(req.Entry.Artifacts, artifactAttachmentScopeEntry); err != nil {
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("validate initial entry artifacts: %w", err)
 	}
-	name := strings.TrimSpace(req.Entry.Name)
-	if name == "" {
-		return CreateEntryRevisionAttributes{}, invalidRequest("entry name is required")
+	title := strings.TrimSpace(req.Entry.Title)
+	if title == "" {
+		return CreateEntryRevisionAttributes{}, invalidRequest("entry title is required")
 	}
 	entryID, err := domainmodels.NewEntryID()
 	if err != nil {
@@ -152,8 +152,7 @@ func (s *Server) createInitialEntryRevision(
 			EntryID:           entryID,
 			State:             domainmodels.RevisionStateInReview,
 			EntryState:        domainmodels.EntryStateActive,
-			Name:              name,
-			Description:       trimmedStringPtr(req.Entry.Description),
+			Title:             &title,
 			ThumbnailImageURL: trimmedStringPtr(req.Entry.ThumbnailImageUrl),
 			Metadata:          metadata,
 			CreatedBy:         createdBy,
@@ -229,22 +228,15 @@ func applyEntryRevisionChange(
 	if err := validateRevisionFields(fields, entryRevisionFields); err != nil {
 		return err
 	}
-	if raw, present := fields["name"]; present {
-		if isJSONNull(raw) || change.Name == nil {
-			return invalidRequest("entry name cannot be null")
+	if raw, present := fields["title"]; present {
+		if isJSONNull(raw) || change.Title == nil {
+			return invalidRequest("entry title cannot be null")
 		}
-		name := strings.TrimSpace(*change.Name)
-		if name == "" {
-			return invalidRequest("entry name cannot be empty")
+		title := strings.TrimSpace(*change.Title)
+		if title == "" {
+			return invalidRequest("entry title cannot be empty")
 		}
-		revision.Name = name
-	}
-	if raw, present := fields["description"]; present {
-		if isJSONNull(raw) {
-			revision.Description = nil
-		} else {
-			revision.Description = trimmedStringPtr(change.Description)
-		}
+		revision.Title = &title
 	}
 	if raw, present := fields["thumbnail_image_url"]; present {
 		if isJSONNull(raw) {
@@ -319,9 +311,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 	if err := validateArtifactRequests(data.Artifacts, artifactAttachmentScopeModel); err != nil {
 		return CreateModelRevisionAttributes{}, fmt.Errorf("validate initial model artifacts: %w", err)
 	}
-	name := strings.TrimSpace(data.Name)
-	if name == "" {
-		return CreateModelRevisionAttributes{}, invalidRequest("model name is required")
+	title := strings.TrimSpace(data.Title)
+	if title == "" {
+		return CreateModelRevisionAttributes{}, invalidRequest("model title is required")
 	}
 	metadata, err := modelMetadataFromRequest(data.Metadata)
 	if err != nil {
@@ -379,8 +371,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 			PrimaryArtifactID: data.PrimaryArtifactId,
 			State:             domainmodels.RevisionStateInReview,
 			ModelState:        domainmodels.ModelStateActive,
-			Name:              name,
-			Description:       trimmedStringPtr(data.Description),
+			Title:             &title,
 			ThumbnailImageURL: trimmedStringPtr(data.ThumbnailImageUrl),
 			Metadata:          metadata,
 			IdempotencyKey:    attributes.IdempotencyKey,
@@ -535,8 +526,7 @@ func (s *Server) createModelRevisionGraph(
 			PrimaryArtifactID: base.PrimaryArtifactID,
 			State:             domainmodels.RevisionStateInReview,
 			ModelState:        domainmodels.ModelStateActive,
-			Name:              base.Name,
-			Description:       base.Description,
+			Title:             base.Title,
 			ThumbnailImageURL: base.ThumbnailImageURL,
 			Metadata:          base.Metadata,
 			IdempotencyKey:    attributes.IdempotencyKey,
@@ -544,22 +534,15 @@ func (s *Server) createModelRevisionGraph(
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
-		if raw, present := payload.ModelFields["name"]; present {
-			if isJSONNull(raw) || data.Name == nil {
-				return invalidRequest("model name cannot be null")
+		if raw, present := payload.ModelFields["title"]; present {
+			if isJSONNull(raw) || data.Title == nil {
+				return invalidRequest("model title cannot be null")
 			}
-			name := strings.TrimSpace(*data.Name)
-			if name == "" {
-				return invalidRequest("model name cannot be empty")
+			title := strings.TrimSpace(*data.Title)
+			if title == "" {
+				return invalidRequest("model title cannot be empty")
 			}
-			revision.Name = name
-		}
-		if raw, present := payload.ModelFields["description"]; present {
-			if isJSONNull(raw) {
-				revision.Description = nil
-			} else {
-				revision.Description = trimmedStringPtr(data.Description)
-			}
+			revision.Title = &title
 		}
 		if raw, present := payload.ModelFields["thumbnail_image_url"]; present {
 			if isJSONNull(raw) {
@@ -788,8 +771,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 			Type: Entries,
 			Id:   revision.EntryID,
 			Attributes: EntryAttributes{
-				Name:              revision.Name,
-				Description:       revision.Description,
+				Title:             revision.Title,
 				ThumbnailImageUrl: revision.ThumbnailImageURL,
 				Metadata:          metadata,
 				PublishedAt:       revision.PublishedAt,
@@ -1251,8 +1233,8 @@ func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (Entry
 	if err != nil {
 		return EntryInfoAttributes{}, fmt.Errorf("build entry metadata response: %w", err)
 	}
-	return EntryInfoAttributes{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Name: revision.Name,
-		Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: &metadata,
+	return EntryInfoAttributes{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Title: revision.Title,
+		ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: &metadata,
 		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
 }
 
@@ -1262,7 +1244,7 @@ func modelAttributesFromRevision(revision domainmodels.ModelRevision, metrics []
 		return ModelAttributes{}, fmt.Errorf("build model metadata response: %w", err)
 	}
 	return ModelAttributes{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
-		Name: revision.Name, Description: revision.Description, ThumbnailImageUrl: revision.ThumbnailImageURL,
+		Title: revision.Title, ThumbnailImageUrl: revision.ThumbnailImageURL,
 		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
 		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics)}, nil
 }
@@ -1645,11 +1627,11 @@ func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPaylo
 }
 
 var entryRevisionFields = map[string]struct{}{
-	"name": {}, "description": {}, "thumbnail_image_url": {}, "metadata": {},
+	"title": {}, "thumbnail_image_url": {}, "metadata": {},
 }
 
 var modelRevisionFields = map[string]struct{}{
-	"name": {}, "description": {}, "thumbnail_image_url": {}, "metadata": {},
+	"title": {}, "thumbnail_image_url": {}, "metadata": {},
 	"idempotency_key": {}, "primary_artifact_id": {}, "artifacts": {}, "runs": {}, "metrics": {},
 }
 

@@ -571,8 +571,7 @@ func similarEntryListQuery(filters SimilarEntryFilters) (string, map[string]any,
 			    entry_revisions.state as entry_state,
 			    entry_revisions.change_summary,
 			    entry_revisions.published_at,
-			    entry_revisions.name as entry_name,
-			    entry_revisions.description as entry_description,
+			    entry_revisions.title as entry_title,
 			    entry_revisions.thumbnail_image_url as entry_thumbnail_image_url,
 			    entry_revisions.metadata as entry_metadata,
 			    entry_revisions.created_by as entry_created_by,
@@ -661,8 +660,7 @@ func similarEntryFromRow(row similarEntryMatchRow) (*models.SimilarEntry, error)
 			State:             models.RevisionState(row.EntryState),
 			ChangeSummary:     stringPtrFromSQL(row.ChangeSummary),
 			PublishedAt:       timePtrFromSQL(row.PublishedAt),
-			Name:              row.EntryName,
-			Description:       stringPtrFromSQL(row.EntryDescription),
+			Title:             stringPtrFromSQL(row.EntryTitle),
 			ThumbnailImageURL: stringPtrFromSQL(row.EntryThumbnailImageURL),
 			Metadata:          metadata,
 			CreatedBy:         row.EntryCreatedBy,
@@ -749,8 +747,7 @@ type similarEntryMatchRow struct {
 	EntryState                      string         `db:"entry_state"`
 	ChangeSummary                   sql.NullString `db:"change_summary"`
 	PublishedAt                     sql.NullTime   `db:"published_at"`
-	EntryName                       string         `db:"entry_name"`
-	EntryDescription                sql.NullString `db:"entry_description"`
+	EntryTitle                      sql.NullString `db:"entry_title"`
 	EntryThumbnailImageURL          sql.NullString `db:"entry_thumbnail_image_url"`
 	EntryMetadata                   []byte         `db:"entry_metadata"`
 	EntryCreatedBy                  uuid.UUID      `db:"entry_created_by"`

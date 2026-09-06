@@ -1,6 +1,6 @@
 type EntryLabelSource = {
   id: string;
-  name: string;
+  title: string | null;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -13,7 +13,8 @@ export function formatEntryLabel(entry: EntryLabelSource): string {
     }
   }
 
-  return `${entry.name} | ${entry.id}`;
+  const title = stringValue(entry.title);
+  return title ? `${title} | ${entry.id}` : entry.id;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

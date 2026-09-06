@@ -156,8 +156,7 @@ export function buildCreateModelInput(
   }
 
   return {
-    name: modelDraft.name.trim(),
-    description: modelDraft.description.trim() || null,
+    title: modelDraft.title.trim(),
     thumbnail_image_url: modelDraft.thumbUrl,
     entities,
     relations,
