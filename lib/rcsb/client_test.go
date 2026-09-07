@@ -122,7 +122,24 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 			}`)
 		case "/rest/v1/core/polymer_entity/5AMF/2":
 			writeText(t, w, `{
-				"rcsb_entity_source_organism": [{"ncbi_scientific_name": "Homo sapiens"}, {"ncbi_scientific_name": "Escherichia coli"}]
+				"entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+				"rcsb_polymer_entity": {
+					"pdbx_description": "Example protein",
+					"pdbx_fragment": "Catalytic domain",
+					"pdbx_mutation": "A12G"
+				},
+				"rcsb_polymer_entity_container_identifiers": {
+					"entity_id": "2",
+					"reference_sequence_identifiers": [{
+						"database_accession": "P12345",
+						"database_name": "UniProt",
+						"provenance_source": "SIFTS"
+					}]
+				},
+				"rcsb_entity_source_organism": [
+					{"ncbi_scientific_name": "Homo sapiens", "ncbi_taxonomy_id": 9606},
+					{"ncbi_scientific_name": "Escherichia coli", "ncbi_taxonomy_id": 562}
+				]
 			}`)
 		default:
 			http.NotFound(w, r)
@@ -169,6 +186,16 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, []string{"1", "2"}, entryDetails.Identifiers.PolymerEntityIDs)
 	assert.Equal(t, "Homo sapiens", polymerEntityDetails.SourceOrganisms[0].ScientificName)
 	assert.Equal(t, "Escherichia coli", polymerEntityDetails.SourceOrganisms[1].ScientificName)
+	assert.Equal(t, 9606, *polymerEntityDetails.SourceOrganisms[0].NCBITaxonomyID)
+	assert.Equal(t, "ACDE", polymerEntityDetails.Polymer.CanonicalSequence)
+	assert.Equal(t, "Example protein", polymerEntityDetails.Entity.Description)
+	assert.Equal(t, "Catalytic domain", polymerEntityDetails.Entity.Fragment)
+	assert.Equal(t, "A12G", polymerEntityDetails.Entity.Mutation)
+	assert.Equal(t, "2", polymerEntityDetails.Identifiers.EntityID)
+	require.Len(t, polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers, 1)
+	assert.Equal(t, "P12345", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseAccession)
+	assert.Equal(t, "UniProt", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseName)
+	assert.Equal(t, "SIFTS", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].ProvenanceSource)
 }
 
 func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {

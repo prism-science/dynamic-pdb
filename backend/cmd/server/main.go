@@ -24,6 +24,7 @@ import (
 	"dynamic-pdb/backend/internal/jobs"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/lib/rcsb"
+	"dynamic-pdb/lib/sifts"
 )
 
 func main() {
@@ -91,6 +92,7 @@ func run() int {
 	dataSyncJob, err := jobs.NewDataSyncJob(
 		database,
 		rcsb.NewClient(rcsb.WithCacheEntries(0)),
+		sifts.NewClient(),
 		slog.Default(),
 	)
 	if err != nil {
