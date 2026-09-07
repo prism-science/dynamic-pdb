@@ -103,6 +103,20 @@ test("should get entry from json api document", async () => {
             created_at: "2026-01-01T00:00:00Z",
           },
         ],
+        polymer_entities: [
+          {
+            id: "polymer-1",
+            label_entity_id: "1",
+            description: "Hemoglobin subunit alpha",
+            source_organisms: [
+              { scientific_name: "Homo sapiens", ncbi_taxonomy_id: 9606 },
+            ],
+            uniprot_mappings: [
+              { accession: "P69905", source: "sifts", unp_release: "2025_03" },
+            ],
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ],
         published_at: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-02T00:00:00Z",
@@ -127,6 +141,20 @@ test("should get entry from json api document", async () => {
           record_index: 0,
           header: "chain A",
           sequence: "ACDE",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      polymer_entities: [
+        {
+          id: "polymer-1",
+          label_entity_id: "1",
+          description: "Hemoglobin subunit alpha",
+          source_organisms: [
+            { scientific_name: "Homo sapiens", ncbi_taxonomy_id: 9606 },
+          ],
+          uniprot_mappings: [
+            { accession: "P69905", source: "sifts", unp_release: "2025_03" },
+          ],
           created_at: "2026-01-01T00:00:00Z",
         },
       ],
@@ -771,6 +799,7 @@ function entryDocument(entry) {
         title: entry.title,
         thumbnail_image_url: entry.thumbnail_image_url,
         metadata: entry.metadata ?? {},
+        polymer_entities: entry.polymer_entities ?? [],
         published_at: entry.published_at ?? null,
         created_at: entry.created_at,
         updated_at: entry.updated_at,

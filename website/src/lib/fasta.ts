@@ -5,6 +5,10 @@ import type {
 
 export const FASTA_LINE = 60;
 
+// Residues are read in blocks of ten, sixty to a line, as every sequence
+// database prints them.
+const RESIDUE_GROUP = 10;
+
 export function fastaRecords(metadata: FastaMetadata): FastaRecordMetadata[] {
   if (!Array.isArray(metadata.records)) {
     return [];
@@ -13,7 +17,7 @@ export function fastaRecords(metadata: FastaMetadata): FastaRecordMetadata[] {
     if (!record || typeof record.sequence !== "string") {
       return [];
     }
-    const sequence = normalizeSequence(record.sequence);
+    const sequence = plainSequence(record.sequence);
     if (!sequence) {
       return [];
     }
@@ -40,7 +44,7 @@ export function fastaRecordText(
   record: FastaRecordMetadata,
   fallbackHeader = "",
 ): string {
-  const sequence = normalizeSequence(record.sequence);
+  const sequence = plainSequence(record.sequence);
   const lines: string[] = [];
   for (let offset = 0; offset < sequence.length; offset += FASTA_LINE) {
     lines.push(sequence.slice(offset, offset + FASTA_LINE));
@@ -48,6 +52,24 @@ export function fastaRecordText(
   return `>${record.header || fallbackHeader}\n${lines.join("\n")}\n`;
 }
 
-function normalizeSequence(sequence: string): string {
+// The same sequence laid out for reading rather than for copying: sixty
+// residues to a line, spaced into groups of ten.
+export function sequenceLines(sequence: string): string[] {
+  const residues = plainSequence(sequence);
+  const lines: string[] = [];
+  for (let offset = 0; offset < residues.length; offset += FASTA_LINE) {
+    const slice = residues.slice(offset, offset + FASTA_LINE);
+    const groups: string[] = [];
+    for (let position = 0; position < slice.length; position += RESIDUE_GROUP) {
+      groups.push(slice.slice(position, position + RESIDUE_GROUP));
+    }
+    lines.push(groups.join(" "));
+  }
+  return lines;
+}
+
+/** Residues only: whitespace stripped and upper-cased, the form a search box or
+ *  an alignment tool expects. */
+export function plainSequence(sequence: string): string {
   return sequence.replace(/\s+/g, "").toUpperCase();
 }

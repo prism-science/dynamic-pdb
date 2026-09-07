@@ -16,6 +16,7 @@ export type Entry = {
   idempotency_key?: string | null;
   metadata?: JSONRecord;
   protein_sequences?: ProteinSequence[];
+  polymer_entities?: PolymerEntity[];
   published_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -61,6 +62,34 @@ export type ProteinSequence = {
   created_at: string;
 };
 
+export type PolymerEntityOrganism = {
+  scientific_name: string;
+  ncbi_taxonomy_id?: number;
+};
+
+/** Where the accession came from: the wwPDB/EBI mapping, or the depositor's
+ *  own struct_ref record. Only SIFTS mappings carry a UniProt release. */
+export type PolymerEntityUniProtSource = "sifts" | "struct_ref";
+
+export type PolymerEntityUniProtMapping = {
+  accession: string;
+  source: PolymerEntityUniProtSource;
+  unp_release?: string;
+};
+
+/** One distinct polymer chain of the deposited structure, as RCSB defines it:
+ *  chains with the same sequence share an entity. */
+export type PolymerEntity = {
+  id: string;
+  label_entity_id?: string;
+  description?: string;
+  source_organisms: PolymerEntityOrganism[];
+  construct?: string;
+  mutations?: string;
+  uniprot_mappings: PolymerEntityUniProtMapping[];
+  created_at: string;
+};
+
 type EntryDocument = {
   data: EntryData;
   included?: EntryProteinSequenceData[];
@@ -77,6 +106,7 @@ type EntryAttributes = {
   title: string | null;
   thumbnail_image_url: string | null;
   metadata: JSONRecord;
+  polymer_entities?: PolymerEntity[];
   published_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -1136,6 +1166,7 @@ function entryFromDocument(document: EntryDocument): Entry {
     thumbnail_image_url: attributes.thumbnail_image_url,
     metadata: attributes.metadata,
     protein_sequences: proteinSequences,
+    polymer_entities: attributes.polymer_entities ?? [],
     published_at: attributes.published_at,
     created_at: attributes.created_at,
     updated_at: attributes.updated_at,

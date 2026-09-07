@@ -1,0 +1,365 @@
+/* Same frame as the file table below it: the two sections sit one under the
+   other in the same column, and a second kind of border between them would
+   read as two unrelated widgets rather than as two views of one deposit. */
+.wrap {
+  /* The Entity column is the one column given a fixed width, so the open panel
+     can lay its own two columns on the same edges: labels start where ENTITY
+     starts, values where MOLECULE starts. Wide enough for the header label and
+     for the panel's longest label. */
+  --entity-col: 90px;
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Columns are the point, so a narrow viewport scrolls them instead of stacking
+   them: the frame stays put and only the table moves. */
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+
+.table thead th {
+  padding: 10px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.table thead th.numHead {
+  text-align: right;
+}
+
+.table td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table tbody tr:first-child td {
+  border-top: 0;
+}
+
+/* Auto table layout ignores a width set on a cell once another column asks for
+   100%, so the Entity column is held open from the inside: the header label is
+   an inline-block with a minimum width, which the column's max-content width
+   does respect. 28px is the cell's own horizontal padding. */
+.entityHead {
+  display: inline-block;
+  min-width: calc(var(--entity-col) - 28px);
+}
+
+/* The molecule name takes the surplus width; every other column asks for its
+   own content and no more. */
+.nameCell {
+  width: 100%;
+}
+
+.valueCell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.row:hover {
+  background: var(--surface-muted);
+}
+
+.entityId {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.row:hover .entityId {
+  background: var(--surface);
+}
+
+/* Drawn as plain text for the same reason as the file name: a button-looking
+   name in every row would read as a stack of controls rather than as a list. */
+.nameBtn {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nameBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.chains {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+/* Right-aligned and tabular so the counts sit under the counts: comparing them
+   is the reason the column exists. */
+.residues {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Organism names are conventionally italicised. */
+.organism {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.absent {
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+.actionCell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.chevron {
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+
+.row:hover .chevron {
+  color: var(--accent-hover);
+}
+
+.row[data-open="true"] .chevron {
+  transform: rotate(180deg);
+}
+
+/* The panel belongs to the row above it, so no rule is drawn between them and
+   it keeps the row's own ground. The rule under the next row closes it.
+   Written against `.table td` so it outranks that rule's padding and border. */
+.table td.detailsCell {
+  border-top: 0;
+  padding: 0;
+}
+
+.details {
+  padding: 2px 14px 18px;
+}
+
+/* One track of (--entity-col - padding) plus a padding-wide gutter puts the
+   values back on the Molecule column's own edge, so nothing in the panel floats
+   between two headings. */
+.facts {
+  display: grid;
+  grid-template-columns: calc(var(--entity-col) - 14px) minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.references {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.references li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.link svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+/* Provenance of an accession, and the organism behind a taxonomy id: true but
+   secondary, so it is set as a caption rather than as another value. */
+.caption {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.mutations {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* A mutation is the one thing here that changes what the structure is, so it is
+   the one thing carrying a colour. */
+.mutation {
+  padding: 1px 6px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* The frame the copy button anchors to: the button has to sit outside the
+   scrolling box, or it would slide away with the residues. */
+.sequence {
+  position: relative;
+}
+
+/* Capped and scrolled: a spike protein is 1288 residues, and letting it set the
+   panel height would bury every row below it. */
+.sequenceBody {
+  max-height: 132px;
+  overflow: auto;
+  padding: 10px 12px;
+  padding-right: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.copy {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.copy:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.copy:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.copy[data-copied="true"] {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.sequenceLine {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.8;
+  letter-spacing: 0.07em;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
