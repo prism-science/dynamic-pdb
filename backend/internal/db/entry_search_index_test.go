@@ -24,7 +24,6 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	externalRefToken := "externalref" + token
 	authorToken := "author" + token
 	ligandToken := "ligand" + token
-	organism := "organism " + entryToken
 	spaceGroup := "spacegroup " + entryToken
 	method := models.StructureMethodCryoEM
 	modelType := models.StructureModelTypeMulticonformer
@@ -34,7 +33,6 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 		ExternalRefs: map[models.EntrySource]string{
 			models.EntrySourcePDB: externalRefToken,
 		},
-		Organism:   &organism,
 		Method:     &method,
 		SpaceGroup: &spaceGroup,
 		Resolution: ptr(1.23),

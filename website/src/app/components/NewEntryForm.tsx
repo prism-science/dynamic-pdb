@@ -407,7 +407,6 @@ export default function NewEntryForm({
         (facts.resolution !== undefined ? String(facts.resolution) : ""),
       method: current.method || facts.method || "",
       spaceGroup: current.spaceGroup || facts.spaceGroup || "",
-      organism: current.organism || facts.organism || "",
     }));
   }, []);
 
@@ -443,7 +442,6 @@ export default function NewEntryForm({
           resolution: metadata.resolution.trim()
             ? Number.parseFloat(metadata.resolution)
             : null,
-          organism: metadata.organism.trim() || null,
           method: metadata.method.trim() || null,
           space_group: metadata.spaceGroup.trim() || null,
         },
@@ -619,21 +617,6 @@ export default function NewEntryForm({
                 }))
               }
               placeholder="e.g. P 21 21 21"
-              autoComplete="off"
-            />
-          </label>
-          <label className={styles.metricField}>
-            <span>Organism</span>
-            <input
-              className={styles.input}
-              value={metadata.organism}
-              onChange={(event) =>
-                setMetadata((current) => ({
-                  ...current,
-                  organism: event.target.value,
-                }))
-              }
-              placeholder="e.g. Klebsiella pneumoniae"
               autoComplete="off"
             />
           </label>

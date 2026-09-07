@@ -84,7 +84,6 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 		},
 	}
 	updated := original
-	organism := "Homo sapiens; Escherichia coli"
 	details := rcsb.EntryDetails{
 		Structure:   rcsb.EntryStructure{Title: "Example structure"},
 		Experiments: []rcsb.EntryExperiment{{Method: "X-RAY DIFFRACTION"}},
@@ -93,7 +92,7 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	}
 
 	// when
-	applyRCSBEntryDetails(&updated, details, &organism)
+	applyRCSBEntryDetails(&updated, details)
 
 	// then
 	require.NotNil(t, updated.Title)
@@ -104,7 +103,6 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	assert.Equal(t, models.StructureMethodXRayCrystallography, *updated.Metadata.Method)
 	require.NotNil(t, updated.Metadata.SpaceGroup)
 	assert.Equal(t, "P 21 21 21", *updated.Metadata.SpaceGroup)
-	assert.Equal(t, &organism, updated.Metadata.Organism)
 	assert.Equal(t, "old title", *original.Title)
 	assert.Equal(t, "5AMF", updated.Metadata.ExternalRefs[models.EntrySourcePDB])
 	assert.False(t, original.HasSameData(updated))
@@ -114,26 +112,23 @@ func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 	// given
 	title := "old title"
 	resolution := 1.5
-	organism := "Homo sapiens"
 	method := models.StructureMethodCryoEM
 	spaceGroup := "P 21 21 21"
 	revision := models.EntryRevision{
 		Title: &title,
 		Metadata: models.EntryMetadata{
 			Resolution: &resolution,
-			Organism:   &organism,
 			Method:     &method,
 			SpaceGroup: &spaceGroup,
 		},
 	}
 
 	// when
-	applyRCSBEntryDetails(&revision, rcsb.EntryDetails{}, nil)
+	applyRCSBEntryDetails(&revision, rcsb.EntryDetails{})
 
 	// then
 	assert.Nil(t, revision.Title)
 	assert.Nil(t, revision.Metadata.Resolution)
-	assert.Nil(t, revision.Metadata.Organism)
 	assert.Nil(t, revision.Metadata.Method)
 	assert.Nil(t, revision.Metadata.SpaceGroup)
 }

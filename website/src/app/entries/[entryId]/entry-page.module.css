@@ -291,10 +291,6 @@
   font-family: var(--font-mono);
 }
 
-.infoRow dd[data-format="italic"] {
-  font-style: italic;
-}
-
 .factLink {
   display: inline-flex;
   align-items: center;

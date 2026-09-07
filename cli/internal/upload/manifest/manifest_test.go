@@ -81,7 +81,7 @@ func Test_should_create_template_manifest_from_data_folder(t *testing.T) {
 	assert.Contains(t, string(contents), "r_work")
 	assert.GreaterOrEqual(t, strings.Count(string(contents), "pdb_id: '{{ pdb_id }}'"), 3)
 	assert.Contains(t, string(contents), "resource: entry")
-	assert.Contains(t, string(contents), "resource: polymer_entity")
+	assert.NotContains(t, string(contents), "resource: polymer_entity")
 	assert.Contains(t, string(contents), "resource: fasta")
 	assert.NotContains(t, string(contents), "file: '{{ pdb_id }}.cif'")
 	assert.Contains(t, string(contents), "file: '{{ pdb_id }}-sf.cif'")

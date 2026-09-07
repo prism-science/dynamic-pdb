@@ -500,7 +500,6 @@ export type CreateModelInput = {
 export type CreateEntryMetadata = {
   pdb?: string | null;
   resolution?: number | null;
-  organism?: string | null;
   method?: string | null;
   space_group?: string | null;
 };
@@ -1221,10 +1220,6 @@ function entryMetadataRequest(metadata?: CreateEntryMetadata): JSONRecord {
   const resolution = numberOrNull(metadata.resolution);
   if (resolution !== null) {
     result.resolution = resolution;
-  }
-  const organism = stringOrNull(metadata.organism);
-  if (organism) {
-    result.organism = organism;
   }
   const method = stringOrNull(metadata.method);
   if (method) {

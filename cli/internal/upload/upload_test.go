@@ -48,7 +48,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	entry := entryRequest.Entry
 	assert.Equal(t, "example structure", entry.Title)
 	assert.Equal(t, "example structure", entry.Metadata["title"])
-	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
+	assert.NotContains(t, entry.Metadata, "organism")
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
 	assert.Equal(t, "P 21 21 21", entry.Metadata["space_group"])
 	externalRefs, ok := entry.Metadata["external_refs"].(map[string]any)
@@ -1044,7 +1044,6 @@ func testManifest(dataRoot string, coordinateSource string, logSource string, mt
 	entry.Metadata = manifest.EntryMetadata{
 		"title":       rcsbJSONExtraction("entry", "struct.title"),
 		"method":      rcsbJSONExtraction("entry", "exptl[0].method"),
-		"organism":    rcsbJSONExtraction("polymer_entity", "rcsb_entity_source_organism.ncbi_scientific_name"),
 		"resolution":  rcsbJSONExtraction("entry", "rcsb_entry_info.resolution_combined[0]"),
 		"space_group": rcsbJSONExtraction("entry", "symmetry.space_group_name_H_M"),
 	}

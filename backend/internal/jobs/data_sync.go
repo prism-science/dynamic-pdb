@@ -217,7 +217,6 @@ func compareEntryUpdate(
 ) (bool, bool) {
 	entryRevisionChanged := !reflect.DeepEqual(currentRevision.Title, desiredRevision.Title) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Resolution, desiredRevision.Metadata.Resolution) ||
-		!reflect.DeepEqual(currentRevision.Metadata.Organism, desiredRevision.Metadata.Organism) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Method, desiredRevision.Metadata.Method) ||
 		!reflect.DeepEqual(currentRevision.Metadata.SpaceGroup, desiredRevision.Metadata.SpaceGroup)
 	polymerEntitiesChanged := !polymerEntitiesHaveSameData(
@@ -240,7 +239,6 @@ func (j *DataSyncJob) saveEntryUpdate(
 	revision := currentRevision
 	revision.Title = desiredRevision.Title
 	revision.Metadata.Resolution = desiredRevision.Metadata.Resolution
-	revision.Metadata.Organism = desiredRevision.Metadata.Organism
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
 	revision.ParentRevisionID = new(parentRevisionID)
@@ -379,7 +377,7 @@ func (j *DataSyncJob) buildEntryUpdate(
 	if err != nil {
 		return models.EntryRevision{}, nil, fmt.Errorf("get RCSB entry %s: %w", pdbID, err)
 	}
-	desiredPolymerEntities, organism, err := j.buildPolymerEntities(
+	desiredPolymerEntities, err := j.buildPolymerEntities(
 		ctx,
 		pdbID,
 		details.Identifiers.PolymerEntityIDs,
@@ -390,7 +388,7 @@ func (j *DataSyncJob) buildEntryUpdate(
 	}
 
 	desiredRevision := models.EntryRevision{}
-	applyRCSBEntryDetails(&desiredRevision, details, organism)
+	applyRCSBEntryDetails(&desiredRevision, details)
 	return desiredRevision, desiredPolymerEntities, nil
 }
 
@@ -399,10 +397,8 @@ func (j *DataSyncJob) buildPolymerEntities(
 	pdbID string,
 	polymerEntityIDs []string,
 	proteinSequences []models.ProteinSequence,
-) ([]models.PolymerEntity, *string, error) {
+) ([]models.PolymerEntity, error) {
 	entities := make([]models.PolymerEntity, 0, len(polymerEntityIDs))
-	organisms := make([]string, 0)
-	seenOrganisms := make(map[string]struct{})
 	var uniProtRelease *string
 	uniProtReleaseLoaded := false
 
@@ -413,12 +409,12 @@ func (j *DataSyncJob) buildPolymerEntities(
 		}
 		details, err := j.rcsbClient.GetPolymerEntityDetails(ctx, pdbID, entityID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("get polymer entity %s_%s: %w", pdbID, entityID, err)
+			return nil, fmt.Errorf("get polymer entity %s_%s: %w", pdbID, entityID, err)
 		}
 		if !uniProtReleaseLoaded && hasSIFTSMapping(details) {
 			release, err := j.siftsClient.GetUniProtRelease(ctx, pdbID)
 			if err != nil {
-				return nil, nil, fmt.Errorf("get UniProt release for %s: %w", pdbID, err)
+				return nil, fmt.Errorf("get UniProt release for %s: %w", pdbID, err)
 			}
 			uniProtRelease = normalizeUniProtRelease(release)
 			uniProtReleaseLoaded = true
@@ -432,29 +428,17 @@ func (j *DataSyncJob) buildPolymerEntities(
 			proteinSequences,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		entities = append(entities, models.PolymerEntity{
 			ProteinSequenceID: proteinSequence.ID,
 			Metadata:          metadata,
 		})
-		for _, sourceOrganism := range metadata.SourceOrganisms {
-			name := strings.TrimSpace(sourceOrganism.ScientificName)
-			if name == "" {
-				continue
-			}
-			if _, ok := seenOrganisms[name]; ok {
-				continue
-			}
-			seenOrganisms[name] = struct{}{}
-			organisms = append(organisms, name)
-		}
 	}
 	sort.Slice(entities, func(first int, second int) bool {
 		return stringValue(entities[first].Metadata.LabelEntityID) < stringValue(entities[second].Metadata.LabelEntityID)
 	})
-	sort.Strings(organisms)
-	return entities, optionalString(strings.Join(organisms, "; ")), nil
+	return entities, nil
 }
 
 func hasSIFTSMapping(details rcsb.PolymerEntityDetails) bool {
@@ -628,11 +612,9 @@ func intValue(value *int) int {
 func applyRCSBEntryDetails(
 	revision *models.EntryRevision,
 	details rcsb.EntryDetails,
-	organism *string,
 ) {
 	revision.Title = optionalString(details.Structure.Title)
 	revision.Metadata.Resolution = firstResolution(details.Info.CombinedResolution)
-	revision.Metadata.Organism = organism
 	revision.Metadata.Method = structureMethod(details.Experiments)
 	revision.Metadata.SpaceGroup = optionalString(details.Symmetry.SpaceGroup)
 }

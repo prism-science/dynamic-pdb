@@ -152,14 +152,6 @@ entries:
         extract:
           json:
             field: rcsb_entry_info.resolution_combined[0]
-      organism:
-        source:
-          rcsb:
-            pdb_id: "{{ pdb_id }}"
-            resource: polymer_entity
-        extract:
-          json:
-            field: rcsb_entity_source_organism.ncbi_scientific_name
       space_group:
         source:
           rcsb:

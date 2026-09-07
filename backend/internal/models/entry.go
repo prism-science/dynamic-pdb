@@ -67,7 +67,6 @@ type EntryRevision struct {
 type EntryMetadata struct {
 	ExternalRefs map[EntrySource]string `json:"external_refs,omitempty"`
 	Resolution   *float64               `json:"resolution,omitempty"`
-	Organism     *string                `json:"organism,omitempty"`
 	Method       *StructureMethod       `json:"method,omitempty"`
 	SpaceGroup   *string                `json:"space_group,omitempty"`
 }
@@ -78,7 +77,6 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		pointersEqual(revision.ThumbnailImageURL, other.ThumbnailImageURL) &&
 		maps.Equal(revision.Metadata.ExternalRefs, other.Metadata.ExternalRefs) &&
 		pointersEqual(revision.Metadata.Resolution, other.Metadata.Resolution) &&
-		pointersEqual(revision.Metadata.Organism, other.Metadata.Organism) &&
 		pointersEqual(revision.Metadata.Method, other.Metadata.Method) &&
 		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup)
 }

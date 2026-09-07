@@ -359,7 +359,6 @@ func entryMetadata() EntryMetadata {
 		"title":       rcsbJSONField("struct.title"),
 		"method":      rcsbJSONField("exptl[0].method"),
 		"resolution":  rcsbJSONField("rcsb_entry_info.resolution_combined[0]"),
-		"organism":    rcsbResourceJSONField("polymer_entity", "rcsb_entity_source_organism.ncbi_scientific_name"),
 		"space_group": rcsbJSONField("symmetry.space_group_name_H_M"),
 	}
 }

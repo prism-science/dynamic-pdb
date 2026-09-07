@@ -100,7 +100,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	require.NotNil(t, entry.Title)
 	assert.Equal(t, "example structure", *entry.Title)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
-	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
+	assert.NotContains(t, entry.Metadata, "organism")
 	assert.Equal(t, 1.4, entry.Metadata["resolution"])
 	assert.Equal(t, "P 21 21 21", entry.Metadata["space_group"])
 	externalRefs, ok := entry.Metadata["external_refs"].(map[string]any)

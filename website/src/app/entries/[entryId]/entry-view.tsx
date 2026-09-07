@@ -24,9 +24,8 @@ export type MetadataFact = {
   // Set when the value identifies the record in an external database; rendered
   // as the only coloured value in the block so it reads as clickable.
   href?: string;
-  // Identifiers and symmetry symbols are glyph-sensitive (P 21 21 21, 5GY3);
-  // organism names are conventionally italicised.
-  format?: "mono" | "italic";
+  // Identifiers and symmetry symbols are glyph-sensitive (P 21 21 21, 5GY3).
+  format?: "mono";
 };
 
 export function buildProvenance(
@@ -320,7 +319,6 @@ export function entryMetadataFacts(
   const externalRefs = recordValue(metadata?.external_refs);
   const pdb = stringValue(externalRefs?.pdb);
   const resolution = numberValue(metadata?.resolution);
-  const organism = stringValue(metadata?.organism);
   const method = stringValue(metadata?.method);
   const spaceGroup = stringValue(metadata?.space_group);
 
@@ -344,10 +342,6 @@ export function entryMetadataFacts(
   if (spaceGroup) {
     facts.push({ label: "Space group", value: spaceGroup, format: "mono" });
   }
-  if (organism) {
-    facts.push({ label: "Organism", value: organism, format: "italic" });
-  }
-
   return facts;
 }
 
