@@ -6,7 +6,6 @@ const test = require("node:test");
 const {
   chainsLabel,
   hasEntityDetails,
-  moleculeCount,
   mutationTokens,
   organismLabel,
   polymerEntityViews,
@@ -148,51 +147,6 @@ test("should carry the raw mutation text alongside the parsed substitutions", ()
   assert.equal(first.mutationsText, "K986P, V987P");
   assert.equal(second.mutations, null);
   assert.equal(second.mutationsText, "engineered disulfide");
-});
-
-test("should count one molecule when several entities share a uniprot accession", () => {
-  // given
-  const entities = [
-    entity({
-      label_entity_id: "1",
-      description: "Kallikrein-6",
-      uniprot_mappings: [{ accession: "Q92876", source: "sifts" }],
-    }),
-    entity({
-      label_entity_id: "2",
-      description: "Amyloid-beta A4 protein",
-      construct: "UNP residues 289-301",
-      uniprot_mappings: [{ accession: "P05067", source: "sifts" }],
-    }),
-    entity({
-      label_entity_id: "3",
-      description: "Amyloid-beta A4 protein",
-      construct: "UNP residues 302-346",
-      uniprot_mappings: [{ accession: "P05067", source: "sifts" }],
-    }),
-  ];
-
-  // when
-  const views = polymerEntityViews(entities, []);
-
-  // then
-  assert.equal(views.length, 3);
-  assert.equal(moleculeCount(views), 2);
-});
-
-test("should fall back to the molecule name when an entity has no uniprot mapping", () => {
-  // given
-  const entities = [
-    entity({ label_entity_id: "1", description: "DNA polymerase" }),
-    entity({ label_entity_id: "2", description: "DNA polymerase" }),
-    entity({ label_entity_id: "3", description: "Thioredoxin" }),
-  ];
-
-  // when
-  const views = polymerEntityViews(entities, []);
-
-  // then
-  assert.equal(moleculeCount(views), 2);
 });
 
 test("should offer no disclosure for an entity with nothing behind the row", () => {

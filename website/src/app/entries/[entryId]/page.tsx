@@ -19,7 +19,7 @@ import FileTable from "@/app/components/FileTable";
 import PolymerEntities from "@/app/components/PolymerEntities";
 import SimilarProteins from "@/app/components/SimilarProteins";
 import SortableModelList from "@/app/components/SortableModelList";
-import { moleculeCount, polymerEntityViews } from "@/lib/polymer-entities";
+import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import {
   entryMetadataFacts,
@@ -68,7 +68,6 @@ export default async function EntryPage({
     data.entry.polymer_entities ?? [],
     data.entry.protein_sequences ?? [],
   );
-  const entitiesSummary = polymerEntitiesSummary(entities);
 
   return (
     <main className={styles.page} aria-label={`${entryLabel} entry`}>
@@ -130,12 +129,7 @@ export default async function EntryPage({
                 the files that carry them. */}
             {entities.length > 0 ? (
               <section id="entities" className={styles.contentSection}>
-                <div className={styles.contentSectionHead}>
-                  <h2 className={styles.contentHeading}>Polymer entities</h2>
-                  {entitiesSummary ? (
-                    <p className={styles.sectionMeta}>{entitiesSummary}</p>
-                  ) : null}
-                </div>
+                <h2 className={styles.contentHeading}>Polymer entities</h2>
                 <PolymerEntities views={entities} />
               </section>
             ) : null}
@@ -188,22 +182,6 @@ export default async function EntryPage({
       </div>
     </main>
   );
-}
-
-// A count is only worth printing when there is more than one entity, and the
-// molecule count only when it differs -- 5NX1 is four entities but two
-// molecules, one of them in three constructs.
-function polymerEntitiesSummary(
-  entities: ReturnType<typeof polymerEntityViews>,
-): string | null {
-  if (entities.length < 2) {
-    return null;
-  }
-  const molecules = moleculeCount(entities);
-  const count = `${entities.length} entities`;
-  return molecules < entities.length
-    ? `${count} \u00b7 ${molecules} molecules`
-    : count;
 }
 
 async function loadEntryPage(

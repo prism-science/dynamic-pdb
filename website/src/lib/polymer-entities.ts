@@ -56,16 +56,6 @@ export function polymerEntityViews(
     .sort(byEntityId);
 }
 
-/** Distinct molecules behind the entities: a structure solved with the same
- *  protein in three constructs is one molecule, not three. */
-export function moleculeCount(views: PolymerEntityView[]): number {
-  const molecules = views.map(
-    (view) =>
-      view.uniprotMappings[0]?.accession.toLowerCase() ?? view.name.toLowerCase(),
-  );
-  return new Set(molecules).size;
-}
-
 export function chainsLabel(chains: string[]): string | null {
   if (chains.length === 0) {
     return null;

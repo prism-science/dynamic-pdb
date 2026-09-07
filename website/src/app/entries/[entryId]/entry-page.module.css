@@ -118,16 +118,6 @@
   gap: 12px;
 }
 
-/* Counts that annotate a section heading rather than act on it: same baseline
-   and same bottom margin as the heading, so the row sits level. */
-.sectionMeta {
-  margin: 0 0 14px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .addModelLink {
   margin-bottom: 14px;
   color: var(--accent-hover);
