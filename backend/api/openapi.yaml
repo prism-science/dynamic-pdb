@@ -2384,7 +2384,7 @@ components:
 
     EntryAttributes:
       type: object
-      required: [title, metadata, created_at, updated_at]
+      required: [title, metadata, created_at, updated_at, polymer_entities]
       properties:
         title:
           type: string
@@ -2405,6 +2405,59 @@ components:
         updated_at:
           type: string
           format: date-time
+        polymer_entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntity"
+
+    PolymerEntity:
+      type: object
+      required: [id, source_organisms, uniprot_mappings, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label_entity_id:
+          type: string
+        description:
+          type: string
+        source_organisms:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntityOrganism"
+        construct:
+          type: string
+        mutations:
+          type: string
+          description: Mutation description from RCSB. Multiple mutations may be stored in one string.
+        uniprot_mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntityUniProtMapping"
+        created_at:
+          type: string
+          format: date-time
+
+    PolymerEntityOrganism:
+      type: object
+      required: [scientific_name]
+      properties:
+        scientific_name:
+          type: string
+        ncbi_taxonomy_id:
+          type: integer
+
+    PolymerEntityUniProtMapping:
+      type: object
+      required: [accession, source]
+      properties:
+        accession:
+          type: string
+        source:
+          type: string
+          enum: [sifts, struct_ref]
+        unp_release:
+          type: string
 
     EntryRelationships:
       type: object

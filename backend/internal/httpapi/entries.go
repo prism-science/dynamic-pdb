@@ -737,6 +737,14 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
+	polymerEntities, err := s.database.PolymerEntities.List(r.Context(), db.PolymerEntityFilters{
+		EntryRevisionID: &revision.ID,
+	})
+	if err != nil {
+		slog.Error("list entry polymer entities failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
 	metadata, err := metadataFromValue(revision.Metadata)
 	if err != nil {
 		slog.Error("build entry response failed", "err", err)
@@ -777,6 +785,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 				PublishedAt:       revision.PublishedAt,
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
+				PolymerEntities:   polymerEntitiesFromModels(polymerEntities),
 			},
 			Relationships: EntryRelationships{
 				CreatedBy: EntryCreatedByRelationship{
@@ -1364,6 +1373,40 @@ func proteinSequenceFromModel(sequence domainmodels.ProteinSequence) ProteinSequ
 	return ProteinSequence{Id: sequence.ID, SourceArtifactId: sequence.SourceArtifactID,
 		RecordIndex: sequence.RecordIndex, Header: sequence.Header, Sequence: sequence.Sequence,
 		CreatedAt: sequence.CreatedAt}
+}
+
+func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerEntity {
+	items := make([]PolymerEntity, 0, len(entities))
+	for _, entity := range entities {
+		sourceOrganisms := make([]PolymerEntityOrganism, 0, len(entity.Metadata.SourceOrganisms))
+		for _, organism := range entity.Metadata.SourceOrganisms {
+			sourceOrganisms = append(sourceOrganisms, PolymerEntityOrganism{
+				ScientificName: organism.ScientificName,
+				NcbiTaxonomyId: organism.NCBITaxonomyID,
+			})
+		}
+
+		uniProtMappings := make([]PolymerEntityUniProtMapping, 0, len(entity.Metadata.UniProtMappings))
+		for _, mapping := range entity.Metadata.UniProtMappings {
+			uniProtMappings = append(uniProtMappings, PolymerEntityUniProtMapping{
+				Accession:  mapping.Accession,
+				Source:     PolymerEntityUniProtMappingSource(mapping.Source),
+				UnpRelease: mapping.UniProtRelease,
+			})
+		}
+
+		items = append(items, PolymerEntity{
+			Id:              entity.ID,
+			LabelEntityId:   entity.Metadata.LabelEntityID,
+			Description:     entity.Metadata.Description,
+			SourceOrganisms: sourceOrganisms,
+			Construct:       entity.Metadata.Construct,
+			Mutations:       entity.Metadata.Mutations,
+			UniprotMappings: uniProtMappings,
+			CreatedAt:       entity.CreatedAt,
+		})
+	}
+	return items
 }
 
 func metadataFromValue(value any) (map[string]interface{}, error) {

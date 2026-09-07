@@ -1,11 +1,13 @@
 package e2etest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -13,8 +15,10 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"dynamic-pdb/backend/internal/auth"
+	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/httpapi"
 	"dynamic-pdb/backend/internal/integrations/github"
+	"dynamic-pdb/backend/internal/models"
 )
 
 type EntriesSuite struct {
@@ -109,6 +113,89 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	s.Require().NotNil(runByID(artifacts.Runs, runID))
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, entryArtifactID, httpapi.Input))
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, modelArtifactID, httpapi.Output))
+}
+
+func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
+	// given
+	ctx := context.Background()
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "polymer-entity-owner", 8114)
+	entryArtifactID := uuid.New()
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title": "entry with polymer entity",
+			"artifacts": []map[string]any{
+				artifactRequest(entryArtifactID, "entry FASTA", "L0", "fasta", "s3://entry/polymer.fasta", map[string]any{
+					"records": []map[string]any{{"header": "polymer", "sequence": "MACDEFGHIK"}},
+				}),
+			},
+		},
+	})
+	sequences, err := testDatabase.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
+		EntryRevisionID: &entry.RevisionId,
+	})
+	s.Require().NoError(err)
+	s.Require().Len(sequences, 1)
+	polymerEntityID := uuid.New()
+	labelEntityID := "1"
+	description := "Spike glycoprotein"
+	construct := "receptor-binding domain"
+	mutations := "D614G,N501Y,E484K"
+	taxonomyID := 2697049
+	uniProtRelease := "2026_03"
+	createdAt := time.Now().UTC()
+	_, err = testDatabase.PolymerEntities.Create(ctx, models.PolymerEntity{
+		ID:                polymerEntityID,
+		ProteinSequenceID: sequences[0].ID,
+		Metadata: models.PolymerEntityMetadata{
+			LabelEntityID: &labelEntityID,
+			Description:   &description,
+			SourceOrganisms: []models.PolymerEntityOrganism{{
+				ScientificName: "Severe acute respiratory syndrome coronavirus 2",
+				NCBITaxonomyID: &taxonomyID,
+			}},
+			Construct: &construct,
+			Mutations: &mutations,
+			UniProtMappings: []models.PolymerEntityUniProtReference{{
+				Accession:      "P0DTC2",
+				Source:         models.UniProtReferenceSourceSIFTS,
+				UniProtRelease: &uniProtRelease,
+			}},
+		},
+		CreatedAt: createdAt,
+	})
+	s.Require().NoError(err)
+	s.Require().NoError(testDatabase.PolymerEntities.AttachToEntryRevision(
+		ctx, entry.RevisionId, polymerEntityID,
+	))
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := getWithToken(s.T(), "/v1/entries/"+entry.EntryId, "")
+	document := decodeJSONResponse[httpapi.EntryDocument](s.T(), response, http.StatusOK)
+
+	// then
+	s.Require().Len(document.Data.Attributes.PolymerEntities, 1)
+	entity := document.Data.Attributes.PolymerEntities[0]
+	s.Equal(polymerEntityID, entity.Id)
+	s.Equal(labelEntityID, stringValue(entity.LabelEntityId))
+	s.Equal(description, stringValue(entity.Description))
+	s.Equal(construct, stringValue(entity.Construct))
+	s.Equal(mutations, stringValue(entity.Mutations))
+	s.Equal([]httpapi.PolymerEntityOrganism{{
+		ScientificName: "Severe acute respiratory syndrome coronavirus 2",
+		NcbiTaxonomyId: &taxonomyID,
+	}}, entity.SourceOrganisms)
+	s.Equal([]httpapi.PolymerEntityUniProtMapping{{
+		Accession:  "P0DTC2",
+		Source:     httpapi.Sifts,
+		UnpRelease: &uniProtRelease,
+	}}, entity.UniprotMappings)
+	encoded, err := json.Marshal(entity)
+	s.Require().NoError(err)
+	var fields map[string]json.RawMessage
+	s.Require().NoError(json.Unmarshal(encoded, &fields))
+	s.NotContains(fields, "metadata")
+	s.NotContains(fields, "protein_sequence_id")
 }
 
 func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {

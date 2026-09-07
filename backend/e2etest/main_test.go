@@ -35,6 +35,7 @@ const (
 
 var (
 	testServer   *httptest.Server
+	testDatabase *db.DB
 	githubClient *MockGitHubClient
 	s3Stub       *e2es3.StubServer
 	adminToken   string
@@ -63,7 +64,8 @@ func TestMain(m *testing.M) {
 	githubClient = &MockGitHubClient{}
 	s3Stub = e2es3.NewStubServer()
 
-	database, err := db.NewDB(db.Config{
+	var err error
+	testDatabase, err = db.NewDB(db.Config{
 		Host:             "localhost",
 		Port:             35432,
 		Name:             "dynamic_pdb_local",
@@ -76,7 +78,7 @@ func TestMain(m *testing.M) {
 	}
 
 	now := time.Now().UTC()
-	admin, err := database.Users.Create(context.Background(), models.User{
+	admin, err := testDatabase.Users.Create(context.Background(), models.User{
 		ID: uuid.MustParse("8ca59596-c4b4-4f3f-94be-6dd73f76f050"),
 		ExternalRef: types.ExternalRef{
 			Source: "e2etest",
@@ -89,7 +91,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create admin: %v", err)
 	}
-	adminRoles, err := database.Roles.List(context.Background(), db.RoleFilters{
+	adminRoles, err := testDatabase.Roles.List(context.Background(), db.RoleFilters{
 		Keys: []models.RoleKey{models.RoleKeyAdmin, models.RoleKeyReviewer},
 	})
 	if err != nil {
@@ -99,7 +101,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("e2etest: expected admin and reviewer roles, got %d", len(adminRoles))
 	}
 	for _, role := range adminRoles {
-		if err := database.Roles.AssignToUser(context.Background(), admin.ID, role.ID, nil); err != nil {
+		if err := testDatabase.Roles.AssignToUser(context.Background(), admin.ID, role.ID, nil); err != nil {
 			log.Fatalf("e2etest: assign %s role: %v", role.Key, err)
 		}
 	}
@@ -135,7 +137,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
-	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, database)
+	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, testDatabase)
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())
@@ -144,7 +146,7 @@ func TestMain(m *testing.M) {
 		BaseRouter:       router,
 		ErrorHandlerFunc: httpapi.RouteErrorHandler,
 		Middlewares: []httpapi.MiddlewareFunc{
-			httpapi.AuthMiddleware(jwt, database),
+			httpapi.AuthMiddleware(jwt, testDatabase),
 		},
 	})
 	testServer = httptest.NewServer(router)
@@ -153,7 +155,7 @@ func TestMain(m *testing.M) {
 
 	testServer.Close()
 	s3Stub.Close()
-	if err := database.Close(); err != nil {
+	if err := testDatabase.Close(); err != nil {
 		log.Printf("e2etest: close database: %v", err)
 	}
 	os.Exit(code)
