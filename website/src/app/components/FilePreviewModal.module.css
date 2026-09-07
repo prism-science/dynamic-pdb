@@ -14,7 +14,7 @@
 .card {
   display: flex;
   flex-direction: column;
-  width: min(780px, 100%);
+  width: min(var(--dialog-width), 100%);
   max-height: calc(100vh - 64px);
   overflow: hidden;
   border-radius: 14px;
@@ -22,8 +22,9 @@
   box-shadow: 0 24px 64px rgba(26, 30, 42, 0.28);
 }
 
+/* A structure is drawn, not read, so it takes the browsing width. */
 .cardWide {
-  width: min(1360px, 100%);
+  width: min(var(--dialog-width-wide), 100%);
 }
 
 /* A structure is worth the whole window: the dialog drops its frame and fills

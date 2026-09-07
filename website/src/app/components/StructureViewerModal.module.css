@@ -55,7 +55,7 @@
 }
 
 .chartOverlayCard {
-  width: min(960px, 100%);
+  width: min(var(--dialog-width-wide), 100%);
   max-height: calc(100vh - 64px);
   overflow: auto;
   padding: 16px 20px 20px;

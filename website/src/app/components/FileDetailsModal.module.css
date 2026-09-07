@@ -19,7 +19,7 @@
 .card {
   display: flex;
   flex-direction: column;
-  width: min(520px, 100%);
+  width: min(var(--dialog-width), 100%);
   max-height: calc(100vh - 64px);
   overflow: hidden;
   border-radius: 14px;

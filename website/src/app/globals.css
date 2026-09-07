@@ -57,6 +57,15 @@
   --dialog-field: #ffffff;
   --dialog-ring: var(--ring);
 
+  /* Dialogs come in two sizes and no others. One record -- a file's details,
+     its preview, its metrics, its sequence -- gets the first; a dialog you
+     browse or draw in -- the similar-protein table, the pipeline graph, a
+     structure canvas -- gets the second. Only the fullscreen viewer opts out.
+     They were drifting across six widths between 520px and 1360px, which read
+     as six unrelated windows. */
+  --dialog-width: 720px;
+  --dialog-width-wide: 980px;
+
   /* Data-maturity level palette (L0 raw -> L3 evaluations): one monochrome ramp
      from the brand tint to the brand ink, with the brand purple only at the top
      level so the accent stays rare. */
