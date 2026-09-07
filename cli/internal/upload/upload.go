@@ -373,11 +373,15 @@ func (u *Uploader) uploadNewEntry(
 	if strings.TrimSpace(title) == "" {
 		title = entryPDBID
 	}
+	entryProperties, err := entryProperties(metadata)
+	if err != nil {
+		return uploadedEntry{}, uploadedModelSet{}, err
+	}
 	result, err := u.dynamicPDBClient.CreateEntry(ctx, dynamicpdbapi.CreateEntryRequest{
 		Entry: dynamicpdbapi.CreateEntryData{
+			EntryProperties:   entryProperties,
 			Title:             title,
 			ThumbnailImageURL: thumbnailImageURL,
-			Metadata:          metadata,
 			Artifacts:         entryArtifacts,
 		},
 		ModelOperations: uploadedModels.ModelOperations,
@@ -1462,16 +1466,24 @@ func (u *Uploader) existingEntryByPDBID(ctx context.Context, pdbID string) (*dyn
 }
 
 func entryPDBID(entry dynamicpdbapi.Entry) (string, bool) {
-	refs, ok := entry.Metadata["external_refs"].(map[string]any)
-	if !ok {
-		return "", false
-	}
-	pdbID, ok := refs["pdb"].(string)
+	pdbID, ok := entry.ExternalRefs["pdb"]
 	if !ok {
 		return "", false
 	}
 	pdbID = canonicalPDBID(pdbID)
 	return pdbID, pdbID != ""
+}
+
+func entryProperties(metadata map[string]any) (dynamicpdbapi.EntryProperties, error) {
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return dynamicpdbapi.EntryProperties{}, fmt.Errorf("encode entry properties: %w", err)
+	}
+	var properties dynamicpdbapi.EntryProperties
+	if err := json.Unmarshal(encoded, &properties); err != nil {
+		return dynamicpdbapi.EntryProperties{}, fmt.Errorf("decode entry properties: %w", err)
+	}
+	return properties, nil
 }
 
 func isPDBRefConflict(err error) bool {

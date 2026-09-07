@@ -22,6 +22,7 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	entryToken := "entrytoken" + token
 	modelToken := "modeltoken" + token
 	externalRefToken := "externalref" + token
+	detailsToken := "detailstoken" + token
 	authorToken := "author" + token
 	ligandToken := "ligand" + token
 	spaceGroup := "spacegroup " + entryToken
@@ -33,6 +34,7 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 		ExternalRefs: map[models.EntrySource]string{
 			models.EntrySourcePDB: externalRefToken,
 		},
+		Details:    ptr("Entry details " + detailsToken),
 		Method:     &method,
 		SpaceGroup: &spaceGroup,
 		Resolution: ptr(1.23),
@@ -54,6 +56,7 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	require.NoError(t, err)
 	assertEntryRevisionSearchContains(ctx, t, entryToken, entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, externalRefToken, entryRevision.EntryID)
+	assertEntryRevisionSearchContains(ctx, t, detailsToken, entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, string(method), entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, modelToken, entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, authorToken, entryRevision.EntryID)

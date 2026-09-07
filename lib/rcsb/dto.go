@@ -8,19 +8,39 @@ type Artifact struct {
 }
 
 type EntryDetails struct {
-	Structure   EntryStructure            `json:"struct"`
-	Experiments []EntryExperiment         `json:"exptl"`
-	Info        EntryInfo                 `json:"rcsb_entry_info"`
-	Symmetry    EntrySymmetry             `json:"symmetry"`
-	Identifiers EntryContainerIdentifiers `json:"rcsb_entry_container_identifiers"`
+	Structure     EntryStructure            `json:"struct"`
+	Experiments   []EntryExperiment         `json:"exptl"`
+	Crystals      []EntryCrystal            `json:"exptl_crystal"`
+	CrystalGrowth []EntryCrystalGrowth      `json:"exptl_crystal_grow"`
+	Diffractions  []EntryDiffraction        `json:"diffrn"`
+	Info          EntryInfo                 `json:"rcsb_entry_info"`
+	Symmetry      EntrySymmetry             `json:"symmetry"`
+	Identifiers   EntryContainerIdentifiers `json:"rcsb_entry_container_identifiers"`
 }
 
 type EntryStructure struct {
-	Title string `json:"title"`
+	Title   string `json:"title"`
+	Details string `json:"pdbx_details"`
 }
 
 type EntryExperiment struct {
 	Method string `json:"method"`
+}
+
+type EntryCrystal struct {
+	ID string `json:"id"`
+}
+
+type EntryCrystalGrowth struct {
+	CrystalID         string   `json:"crystal_id"`
+	PH                *float64 `json:"pH"`
+	TemperatureKelvin *float64 `json:"temp"`
+}
+
+type EntryDiffraction struct {
+	ID                string   `json:"id"`
+	CrystalID         string   `json:"crystal_id"`
+	TemperatureKelvin *float64 `json:"ambient_temp"`
 }
 
 type EntryInfo struct {

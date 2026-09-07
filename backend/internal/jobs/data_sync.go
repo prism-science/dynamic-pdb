@@ -216,9 +216,11 @@ func compareEntryUpdate(
 	desiredPolymerEntities []models.PolymerEntity,
 ) (bool, bool) {
 	entryRevisionChanged := !reflect.DeepEqual(currentRevision.Title, desiredRevision.Title) ||
+		!reflect.DeepEqual(currentRevision.Metadata.Details, desiredRevision.Metadata.Details) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Resolution, desiredRevision.Metadata.Resolution) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Method, desiredRevision.Metadata.Method) ||
-		!reflect.DeepEqual(currentRevision.Metadata.SpaceGroup, desiredRevision.Metadata.SpaceGroup)
+		!reflect.DeepEqual(currentRevision.Metadata.SpaceGroup, desiredRevision.Metadata.SpaceGroup) ||
+		!reflect.DeepEqual(currentRevision.Metadata.Crystallography, desiredRevision.Metadata.Crystallography)
 	polymerEntitiesChanged := !polymerEntitiesHaveSameData(
 		currentPolymerEntities,
 		desiredPolymerEntities,
@@ -238,9 +240,11 @@ func (j *DataSyncJob) saveEntryUpdate(
 	parentRevisionID := currentRevision.ID
 	revision := currentRevision
 	revision.Title = desiredRevision.Title
+	revision.Metadata.Details = desiredRevision.Metadata.Details
 	revision.Metadata.Resolution = desiredRevision.Metadata.Resolution
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
+	revision.Metadata.Crystallography = desiredRevision.Metadata.Crystallography
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
@@ -614,9 +618,79 @@ func applyRCSBEntryDetails(
 	details rcsb.EntryDetails,
 ) {
 	revision.Title = optionalString(details.Structure.Title)
+	revision.Metadata.Details = optionalString(details.Structure.Details)
 	revision.Metadata.Resolution = firstResolution(details.Info.CombinedResolution)
 	revision.Metadata.Method = structureMethod(details.Experiments)
 	revision.Metadata.SpaceGroup = optionalString(details.Symmetry.SpaceGroup)
+	revision.Metadata.Crystallography = crystallographyFromRCSB(details)
+}
+
+func crystallographyFromRCSB(details rcsb.EntryDetails) *models.EntryCrystallography {
+	crystalsByID := make(map[string]models.EntryCrystal)
+	ensureCrystal := func(rawID string) (models.EntryCrystal, string, bool) {
+		crystalID := strings.TrimSpace(rawID)
+		if crystalID == "" {
+			return models.EntryCrystal{}, "", false
+		}
+		crystal, ok := crystalsByID[crystalID]
+		if !ok {
+			crystal = models.EntryCrystal{ID: crystalID}
+		}
+		return crystal, crystalID, true
+	}
+
+	for _, sourceCrystal := range details.Crystals {
+		crystal, crystalID, ok := ensureCrystal(sourceCrystal.ID)
+		if ok {
+			crystalsByID[crystalID] = crystal
+		}
+	}
+	for _, sourceGrowth := range details.CrystalGrowth {
+		crystal, crystalID, ok := ensureCrystal(sourceGrowth.CrystalID)
+		if !ok {
+			continue
+		}
+		if sourceGrowth.PH != nil || sourceGrowth.TemperatureKelvin != nil {
+			crystal.Growth = &models.EntryCrystalGrowth{
+				PH:                sourceGrowth.PH,
+				TemperatureKelvin: sourceGrowth.TemperatureKelvin,
+			}
+		}
+		crystalsByID[crystalID] = crystal
+	}
+	for _, sourceDiffraction := range details.Diffractions {
+		crystal, crystalID, ok := ensureCrystal(sourceDiffraction.CrystalID)
+		if !ok {
+			continue
+		}
+		diffractionID := strings.TrimSpace(sourceDiffraction.ID)
+		if diffractionID == "" {
+			continue
+		}
+		crystal.Diffractions = append(crystal.Diffractions, models.EntryDiffraction{
+			ID:                diffractionID,
+			TemperatureKelvin: sourceDiffraction.TemperatureKelvin,
+		})
+		crystalsByID[crystalID] = crystal
+	}
+	if len(crystalsByID) == 0 {
+		return nil
+	}
+
+	crystalIDs := make([]string, 0, len(crystalsByID))
+	for crystalID := range crystalsByID {
+		crystalIDs = append(crystalIDs, crystalID)
+	}
+	sort.Strings(crystalIDs)
+	crystals := make([]models.EntryCrystal, 0, len(crystalIDs))
+	for _, crystalID := range crystalIDs {
+		crystal := crystalsByID[crystalID]
+		sort.Slice(crystal.Diffractions, func(first int, second int) bool {
+			return crystal.Diffractions[first].ID < crystal.Diffractions[second].ID
+		})
+		crystals = append(crystals, crystal)
+	}
+	return &models.EntryCrystallography{Crystals: crystals}
 }
 
 func firstResolution(resolutions []float64) *float64 {

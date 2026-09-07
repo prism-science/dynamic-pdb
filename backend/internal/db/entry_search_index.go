@@ -127,6 +127,7 @@ func (r *EntrySearchIndexRepository) deleteSearchRow(
 func entryRevisionSearchParts(revision models.EntryRevision) []string {
 	parts := []string{
 		stringFromPtr(revision.Title),
+		stringFromPtr(revision.Metadata.Details),
 		stringFromPtr(revision.Metadata.SpaceGroup),
 	}
 

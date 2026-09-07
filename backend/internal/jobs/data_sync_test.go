@@ -85,10 +85,21 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	}
 	updated := original
 	details := rcsb.EntryDetails{
-		Structure:   rcsb.EntryStructure{Title: "Example structure"},
+		Structure:   rcsb.EntryStructure{Title: "Example structure", Details: "Entry details"},
 		Experiments: []rcsb.EntryExperiment{{Method: "X-RAY DIFFRACTION"}},
-		Info:        rcsb.EntryInfo{CombinedResolution: []float64{1.5}},
-		Symmetry:    rcsb.EntrySymmetry{SpaceGroup: "P 21 21 21"},
+		Crystals:    []rcsb.EntryCrystal{{ID: "1"}},
+		CrystalGrowth: []rcsb.EntryCrystalGrowth{{
+			CrystalID:         "1",
+			PH:                new(7.5),
+			TemperatureKelvin: new(293.0),
+		}},
+		Diffractions: []rcsb.EntryDiffraction{{
+			ID:                "1",
+			CrystalID:         "1",
+			TemperatureKelvin: new(100.0),
+		}},
+		Info:     rcsb.EntryInfo{CombinedResolution: []float64{1.5}},
+		Symmetry: rcsb.EntrySymmetry{SpaceGroup: "P 21 21 21"},
 	}
 
 	// when
@@ -97,12 +108,24 @@ func Test_should_apply_rcsb_details_to_entry_revision_copy(t *testing.T) {
 	// then
 	require.NotNil(t, updated.Title)
 	assert.Equal(t, "Example structure", *updated.Title)
+	assert.Equal(t, optionalString("Entry details"), updated.Metadata.Details)
 	require.NotNil(t, updated.Metadata.Resolution)
 	assert.Equal(t, 1.5, *updated.Metadata.Resolution)
 	require.NotNil(t, updated.Metadata.Method)
 	assert.Equal(t, models.StructureMethodXRayCrystallography, *updated.Metadata.Method)
 	require.NotNil(t, updated.Metadata.SpaceGroup)
 	assert.Equal(t, "P 21 21 21", *updated.Metadata.SpaceGroup)
+	assert.Equal(t, &models.EntryCrystallography{Crystals: []models.EntryCrystal{{
+		ID: "1",
+		Growth: &models.EntryCrystalGrowth{
+			PH:                new(7.5),
+			TemperatureKelvin: new(293.0),
+		},
+		Diffractions: []models.EntryDiffraction{{
+			ID:                "1",
+			TemperatureKelvin: new(100.0),
+		}},
+	}}}, updated.Metadata.Crystallography)
 	assert.Equal(t, "old title", *original.Title)
 	assert.Equal(t, "5AMF", updated.Metadata.ExternalRefs[models.EntrySourcePDB])
 	assert.False(t, original.HasSameData(updated))
@@ -114,12 +137,17 @@ func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 	resolution := 1.5
 	method := models.StructureMethodCryoEM
 	spaceGroup := "P 21 21 21"
+	details := "old details"
 	revision := models.EntryRevision{
 		Title: &title,
 		Metadata: models.EntryMetadata{
+			Details:    &details,
 			Resolution: &resolution,
 			Method:     &method,
 			SpaceGroup: &spaceGroup,
+			Crystallography: &models.EntryCrystallography{Crystals: []models.EntryCrystal{{
+				ID: "1",
+			}}},
 		},
 	}
 
@@ -128,9 +156,73 @@ func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 
 	// then
 	assert.Nil(t, revision.Title)
+	assert.Nil(t, revision.Metadata.Details)
 	assert.Nil(t, revision.Metadata.Resolution)
 	assert.Nil(t, revision.Metadata.Method)
 	assert.Nil(t, revision.Metadata.SpaceGroup)
+	assert.Nil(t, revision.Metadata.Crystallography)
+}
+
+func Test_should_group_rcsb_crystallography_by_crystal(t *testing.T) {
+	// given
+	details := rcsb.EntryDetails{
+		Crystals: []rcsb.EntryCrystal{{ID: " 2 "}, {ID: "1"}},
+		CrystalGrowth: []rcsb.EntryCrystalGrowth{
+			{CrystalID: "1", PH: new(6.5)},
+			{CrystalID: "2", TemperatureKelvin: new(293.0)},
+		},
+		Diffractions: []rcsb.EntryDiffraction{
+			{ID: "2", CrystalID: "1", TemperatureKelvin: new(120.0)},
+			{ID: "1", CrystalID: "1", TemperatureKelvin: new(100.0)},
+		},
+	}
+
+	// when
+	crystallography := crystallographyFromRCSB(details)
+
+	// then
+	assert.Equal(t, &models.EntryCrystallography{Crystals: []models.EntryCrystal{
+		{
+			ID:     "1",
+			Growth: &models.EntryCrystalGrowth{PH: new(6.5)},
+			Diffractions: []models.EntryDiffraction{
+				{ID: "1", TemperatureKelvin: new(100.0)},
+				{ID: "2", TemperatureKelvin: new(120.0)},
+			},
+		},
+		{
+			ID:     "2",
+			Growth: &models.EntryCrystalGrowth{TemperatureKelvin: new(293.0)},
+		},
+	}}, crystallography)
+}
+
+func Test_should_detect_entry_update_when_crystallography_changed(t *testing.T) {
+	// given
+	current := models.EntryRevision{Metadata: models.EntryMetadata{
+		Crystallography: &models.EntryCrystallography{Crystals: []models.EntryCrystal{{
+			ID: "1",
+			Diffractions: []models.EntryDiffraction{{
+				ID:                "1",
+				TemperatureKelvin: new(100.0),
+			}},
+		}}},
+	}}
+	desired := current
+	desired.Metadata.Crystallography = &models.EntryCrystallography{Crystals: []models.EntryCrystal{{
+		ID: "1",
+		Diffractions: []models.EntryDiffraction{{
+			ID:                "1",
+			TemperatureKelvin: new(120.0),
+		}},
+	}}}
+
+	// when
+	entryChanged, polymerEntitiesChanged := compareEntryUpdate(current, desired, nil, nil)
+
+	// then
+	assert.True(t, entryChanged)
+	assert.False(t, polymerEntitiesChanged)
 }
 
 func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {

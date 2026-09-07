@@ -122,7 +122,21 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	entryArtifactID := uuid.New()
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"title": "entry with polymer entity",
+			"title":   "entry with polymer entity",
+			"details": "Additional structure details",
+			"crystallography": map[string]any{
+				"crystals": []map[string]any{{
+					"id": "1",
+					"growth": map[string]any{
+						"ph":                 7.5,
+						"temperature_kelvin": 293.0,
+					},
+					"diffractions": []map[string]any{{
+						"id":                 "1",
+						"temperature_kelvin": 100.0,
+					}},
+				}},
+			},
 			"artifacts": []map[string]any{
 				artifactRequest(entryArtifactID, "entry FASTA", "L0", "fasta", "s3://entry/polymer.fasta", map[string]any{
 					"records": []map[string]any{{"header": "polymer", "sequence": "MACDEFGHIK"}},
@@ -174,6 +188,23 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	document := decodeJSONResponse[httpapi.EntryDocument](s.T(), response, http.StatusOK)
 
 	// then
+	s.Equal("Additional structure details", stringValue(document.Data.Attributes.Details))
+	s.Require().NotNil(document.Data.Attributes.Crystallography)
+	s.Require().NotNil(document.Data.Attributes.Crystallography.Crystals)
+	s.Require().Len(*document.Data.Attributes.Crystallography.Crystals, 1)
+	crystal := (*document.Data.Attributes.Crystallography.Crystals)[0]
+	s.Equal("1", crystal.Id)
+	s.Require().NotNil(crystal.Growth)
+	s.Equal(7.5, *crystal.Growth.Ph)
+	s.Equal(293.0, *crystal.Growth.TemperatureKelvin)
+	s.Require().NotNil(crystal.Diffractions)
+	s.Require().Len(*crystal.Diffractions, 1)
+	s.Equal(100.0, *(*crystal.Diffractions)[0].TemperatureKelvin)
+	encodedAttributes, err := json.Marshal(document.Data.Attributes)
+	s.Require().NoError(err)
+	var attributeFields map[string]json.RawMessage
+	s.Require().NoError(json.Unmarshal(encodedAttributes, &attributeFields))
+	s.NotContains(attributeFields, "metadata")
 	s.Require().Len(document.Data.Attributes.PolymerEntities, 1)
 	entity := document.Data.Attributes.PolymerEntities[0]
 	s.Equal(polymerEntityID, entity.Id)

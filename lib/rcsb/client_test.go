@@ -100,8 +100,11 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 		switch r.URL.Path {
 		case "/rest/v1/core/entry/5AMF":
 			writeText(t, w, `{
-				"struct": {"title": "example structure"},
+				"struct": {"title": "example structure", "pdbx_details": "entry details"},
 				"exptl": [{"method": "X-RAY DIFFRACTION"}],
+				"exptl_crystal": [{"id": "1"}],
+				"exptl_crystal_grow": [{"crystal_id": "1", "pH": 7.5, "temp": 293}],
+				"diffrn": [{"id": "1", "crystal_id": "1", "ambient_temp": 100}],
 				"rcsb_entry_info": {
 					"resolution_combined": [1.5],
 					"deposited_atom_count": 1383,
@@ -180,7 +183,18 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, 0.21, refinement["ls_R_factor_R_free"])
 	assert.Equal(t, 0.18, refinement["ls_R_factor_R_work"])
 	assert.Equal(t, "example structure", entryDetails.Structure.Title)
+	assert.Equal(t, "entry details", entryDetails.Structure.Details)
 	assert.Equal(t, "X-RAY DIFFRACTION", entryDetails.Experiments[0].Method)
+	require.Len(t, entryDetails.Crystals, 1)
+	assert.Equal(t, "1", entryDetails.Crystals[0].ID)
+	require.Len(t, entryDetails.CrystalGrowth, 1)
+	assert.Equal(t, "1", entryDetails.CrystalGrowth[0].CrystalID)
+	assert.Equal(t, 7.5, *entryDetails.CrystalGrowth[0].PH)
+	assert.Equal(t, 293.0, *entryDetails.CrystalGrowth[0].TemperatureKelvin)
+	require.Len(t, entryDetails.Diffractions, 1)
+	assert.Equal(t, "1", entryDetails.Diffractions[0].ID)
+	assert.Equal(t, "1", entryDetails.Diffractions[0].CrystalID)
+	assert.Equal(t, 100.0, *entryDetails.Diffractions[0].TemperatureKelvin)
 	assert.Equal(t, []float64{1.5}, entryDetails.Info.CombinedResolution)
 	assert.Equal(t, "P 21 21 21", entryDetails.Symmetry.SpaceGroup)
 	assert.Equal(t, []string{"1", "2"}, entryDetails.Identifiers.PolymerEntityIDs)

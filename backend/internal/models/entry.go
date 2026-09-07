@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"maps"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,10 +66,32 @@ type EntryRevision struct {
 }
 
 type EntryMetadata struct {
-	ExternalRefs map[EntrySource]string `json:"external_refs,omitempty"`
-	Resolution   *float64               `json:"resolution,omitempty"`
-	Method       *StructureMethod       `json:"method,omitempty"`
-	SpaceGroup   *string                `json:"space_group,omitempty"`
+	ExternalRefs    map[EntrySource]string `json:"external_refs,omitempty"`
+	Details         *string                `json:"details,omitempty"`
+	Resolution      *float64               `json:"resolution,omitempty"`
+	Method          *StructureMethod       `json:"method,omitempty"`
+	SpaceGroup      *string                `json:"space_group,omitempty"`
+	Crystallography *EntryCrystallography  `json:"crystallography,omitempty"`
+}
+
+type EntryCrystallography struct {
+	Crystals []EntryCrystal `json:"crystals,omitempty"`
+}
+
+type EntryCrystal struct {
+	ID           string              `json:"id"`
+	Growth       *EntryCrystalGrowth `json:"growth,omitempty"`
+	Diffractions []EntryDiffraction  `json:"diffractions,omitempty"`
+}
+
+type EntryCrystalGrowth struct {
+	PH                *float64 `json:"ph,omitempty"`
+	TemperatureKelvin *float64 `json:"temperature_kelvin,omitempty"`
+}
+
+type EntryDiffraction struct {
+	ID                string   `json:"id"`
+	TemperatureKelvin *float64 `json:"temperature_kelvin,omitempty"`
 }
 
 func (revision EntryRevision) HasSameData(other EntryRevision) bool {
@@ -76,9 +99,11 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		pointersEqual(revision.Title, other.Title) &&
 		pointersEqual(revision.ThumbnailImageURL, other.ThumbnailImageURL) &&
 		maps.Equal(revision.Metadata.ExternalRefs, other.Metadata.ExternalRefs) &&
+		pointersEqual(revision.Metadata.Details, other.Metadata.Details) &&
 		pointersEqual(revision.Metadata.Resolution, other.Metadata.Resolution) &&
 		pointersEqual(revision.Metadata.Method, other.Metadata.Method) &&
-		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup)
+		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup) &&
+		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography)
 }
 
 func pointersEqual[T comparable](left *T, right *T) bool {

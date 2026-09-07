@@ -32,9 +32,38 @@ type ListEntriesParams struct {
 }
 
 type Entry struct {
-	ID       string         `json:"id"`
-	Title    *string        `json:"title"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	EntryProperties
+	ID    string  `json:"id"`
+	Title *string `json:"title"`
+}
+
+type EntryProperties struct {
+	ExternalRefs    map[string]string     `json:"external_refs,omitempty"`
+	Details         *string               `json:"details,omitempty"`
+	Resolution      *float64              `json:"resolution,omitempty"`
+	Method          *string               `json:"method,omitempty"`
+	SpaceGroup      *string               `json:"space_group,omitempty"`
+	Crystallography *EntryCrystallography `json:"crystallography,omitempty"`
+}
+
+type EntryCrystallography struct {
+	Crystals []EntryCrystal `json:"crystals,omitempty"`
+}
+
+type EntryCrystal struct {
+	ID           string              `json:"id"`
+	Growth       *EntryCrystalGrowth `json:"growth,omitempty"`
+	Diffractions []EntryDiffraction  `json:"diffractions,omitempty"`
+}
+
+type EntryCrystalGrowth struct {
+	PH                *float64 `json:"ph,omitempty"`
+	TemperatureKelvin *float64 `json:"temperature_kelvin,omitempty"`
+}
+
+type EntryDiffraction struct {
+	ID                string   `json:"id"`
+	TemperatureKelvin *float64 `json:"temperature_kelvin,omitempty"`
 }
 
 type CreateEntryRequest struct {
@@ -52,9 +81,9 @@ type CreateEntryModelResult struct {
 }
 
 type CreateEntryData struct {
+	EntryProperties
 	Title             string                  `json:"title"`
 	ThumbnailImageURL *string                 `json:"thumbnail_image_url,omitempty"`
-	Metadata          map[string]any          `json:"metadata,omitempty"`
 	Artifacts         []CreateArtifactRequest `json:"artifacts,omitempty"`
 }
 

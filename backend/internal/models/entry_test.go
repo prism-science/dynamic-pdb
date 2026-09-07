@@ -39,3 +39,21 @@ func Test_should_compare_only_entry_revision_data_when_checked_for_equality(t *t
 	assert.True(t, equalBeforeDataChange)
 	assert.False(t, equalAfterDataChange)
 }
+
+func Test_should_detect_entry_crystallography_change(t *testing.T) {
+	// given
+	revision := EntryRevision{Metadata: EntryMetadata{
+		Crystallography: &EntryCrystallography{Crystals: []EntryCrystal{{ID: "1"}}},
+	}}
+	other := revision
+	other.Metadata.Crystallography = &EntryCrystallography{Crystals: []EntryCrystal{{
+		ID:     "1",
+		Growth: &EntryCrystalGrowth{PH: new(7.5)},
+	}}}
+
+	// when
+	equal := revision.HasSameData(other)
+
+	// then
+	assert.False(t, equal)
+}
