@@ -13,6 +13,7 @@ import {
   dataTableEntities,
   getEntityFileURL,
   getFilePayload,
+  modelScopedEntities,
 } from "@/lib/entities";
 import { entryIdentity, formatEntryLabel } from "@/lib/entry-label";
 import { crystallographyView } from "@/lib/crystallography";
@@ -114,7 +115,13 @@ export default async function ScopePage({
   );
   const crystallography = crystallographyView(data.entry.crystallography);
   const artifacts = new Map(data.entities.map((entity) => [entity.id, entity]));
-  const dataEntities = dataTableEntities(data.entities);
+  // Scoped to the selected model, like the download menu: the artifacts this
+  // model was made from and produced, plus the entry's own. The whole graph is
+  // still what provenance and the metrics are read from -- a model's input is
+  // often another model's output -- but the Data tab is a list of files, and a
+  // reader on one model has no use for another model's.
+  const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
+  const dataEntities = dataTableEntities(modelEntities);
   const structure = viewableStructure(modelEntity);
 
   // The chains of the selected model, as its coordinates hold them. Only read
@@ -259,10 +266,7 @@ export default async function ScopePage({
 
           {active === "data" ? (
             <section aria-label="Data">
-              {/* The whole entry graph, not just this model's share of it: a
-                  model's input is often another model's output, and reading
-                  left to right is what shows that. */}
-              <DataTable entities={data.entities} />
+              <DataTable entities={modelEntities} />
             </section>
           ) : null}
 

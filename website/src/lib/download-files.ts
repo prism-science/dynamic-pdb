@@ -1,5 +1,10 @@
 import type { Entity } from "@/lib/api/entries";
-import { formatLabel, getEntityFileURL, getFilePayload } from "@/lib/entities";
+import {
+  formatLabel,
+  getEntityFileURL,
+  getFilePayload,
+  modelScopedEntities,
+} from "@/lib/entities";
 
 /** One line of the download menu. */
 export type DownloadFile = {
@@ -34,9 +39,7 @@ export function downloadGroups(
   entities: Entity[],
   modelId: string | null,
 ): DownloadGroup[] {
-  const inScope = entities.filter(
-    (entity) => entity.model_id === null || entity.model_id === modelId,
-  );
+  const inScope = modelScopedEntities(entities, modelId);
 
   const sequences = inScope
     .filter((entity) => getFilePayload(entity)?.type === "fasta")
