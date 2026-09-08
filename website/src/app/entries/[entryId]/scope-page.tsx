@@ -25,6 +25,7 @@ import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { readModelFile, readModelStructure } from "@/lib/api/coordinates";
 import { scopeRailModels } from "@/lib/scope-rail";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
+import EntryVersions from "@/app/components/EntryVersions";
 import Experiment from "@/app/components/Experiment";
 import DownloadFiles from "@/app/components/DownloadFiles";
 import EntryOverview, {
@@ -182,6 +183,9 @@ export default async function ScopePage({
   if (hasSequences || similarEntries.length > 0) {
     tabs.push({ id: "sequence", label: "Sequence" });
   }
+  // Always offered: every entry has a history, even if all we can say about it
+  // so far is that it was synced once.
+  tabs.push({ id: "versions", label: "Versions" });
   const active = resolveTab(tabs, requestedTab);
 
   const hrefFor = (id: string) =>
@@ -284,6 +288,12 @@ export default async function ScopePage({
                 sequences={data.entry.protein_sequences ?? []}
                 items={similarEntries}
               />
+            </section>
+          ) : null}
+
+          {active === "versions" ? (
+            <section aria-label="Versions">
+              <EntryVersions />
             </section>
           ) : null}
           </div>
