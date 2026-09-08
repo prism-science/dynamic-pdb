@@ -12,24 +12,17 @@
 /* Scope — the rail beside the record it selects                          */
 /* --------------------------------------------------------------------- */
 
-/* Half the side padding the other pages use. The modifier is on this page
-   only -- `.page` is shared with the review preview, which is a single column
-   and still wants the site's spacing. */
-.scopeWide {
-  padding-right: 12px;
-  padding-left: 12px;
-}
-
 .scope {
   /* The page's top padding, the identity strip, and the space under it. The
      tabs stick directly below this, so the number lives here rather than being
      guessed twice. */
   --scope-head-height: 96px;
 
-  /* Wider than the site's 1120, by exactly the rail: this page carries a
-     navigation column the other pages do not, and at 1120 the record was
-     paying for it. The record itself keeps the measure it reads best at. */
-  width: min(1380px, 100%);
+  /* The site's own measure. This page is the reason it is as wide as it is --
+     it carries a navigation column the others do not -- and the header, the
+     footer and every other page now measure to the same number, so the
+     content edges line up wherever the reader goes. */
+  width: min(var(--content-max), 100%);
   margin: 0 auto;
 }
 

@@ -86,7 +86,12 @@
   --shadow-md: 0 16px 40px rgba(26, 30, 42, 0.08);
   --ring: 0 0 0 3px rgba(102, 59, 228, 0.2);
   --header-height: 56px;
-  --content-max: 1120px;
+  /* The width of the record page, which is the widest thing on the site: it
+     carries a navigation rail beside the record and needs the room. Every
+     other page, the header and the footer measure to the same number so that
+     moving between them does not shift the content edges. Prose keeps its own
+     narrower measure (min(660px, 100%)) inside this column. */
+  --content-max: 1380px;
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter",
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Monaco,
