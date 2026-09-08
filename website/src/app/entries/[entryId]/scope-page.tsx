@@ -10,7 +10,6 @@ import {
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import {
-  dataTableEntities,
   getEntityFileURL,
   getFilePayload,
   modelScopedEntities,
@@ -26,7 +25,6 @@ import { readModelStructure } from "@/lib/api/coordinates";
 import { scopeRailModels } from "@/lib/scope-rail";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import Crystallography from "@/app/components/Crystallography";
-import DataTable from "@/app/components/DataTable";
 import DownloadFiles from "@/app/components/DownloadFiles";
 import EntryOverview, {
   type SummaryModel,
@@ -118,10 +116,9 @@ export default async function ScopePage({
   // Scoped to the selected model, like the download menu: the artifacts this
   // model was made from and produced, plus the entry's own. The whole graph is
   // still what provenance and the metrics are read from -- a model's input is
-  // often another model's output -- but the Data tab is a list of files, and a
-  // reader on one model has no use for another model's.
+  // often another model's output -- but the Data section is a list of files,
+  // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
-  const dataEntities = dataTableEntities(modelEntities);
   const structure = viewableStructure(modelEntity);
 
   // The chains of the selected model, as its coordinates hold them. Only read
@@ -163,9 +160,6 @@ export default async function ScopePage({
   }
   if (crystallography) {
     tabs.push({ id: "experiment", label: "Experiment" });
-  }
-  if (dataEntities.length > 0) {
-    tabs.push({ id: "data", label: "Data" });
   }
   // One tab for everything about the sequence: the residues themselves, and
   // the entries that share them. Present as soon as either exists.
@@ -248,6 +242,7 @@ export default async function ScopePage({
                 entry={data.entry}
                 entities={entities}
                 artifacts={artifacts}
+                dataEntities={modelEntities}
                 model={summaryModel}
               />
             ) : null}
@@ -261,12 +256,6 @@ export default async function ScopePage({
           {active === "experiment" && crystallography ? (
             <section aria-label="Crystallography">
               <Crystallography view={crystallography} />
-            </section>
-          ) : null}
-
-          {active === "data" ? (
-            <section aria-label="Data">
-              <DataTable entities={modelEntities} />
             </section>
           ) : null}
 

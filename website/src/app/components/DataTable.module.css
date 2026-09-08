@@ -21,37 +21,25 @@
   border-left: 1px solid var(--border);
 }
 
-/* The three heads line up into one strip across the top, so the grid reads as a
-   table with a header row rather than as three stacked cards. */
+/* The heads line up into one strip across the top, so the grid reads as a
+   table with a header row rather than as four stacked cards.
+
+   Same band the entity tables carry, down to the type: both say which slice of
+   the record follows, and two tables on one page should not say that two
+   different ways. The level needs no colour of its own here -- it is the
+   column's name, not a tag on a row, and a tinted pill inside a tinted band is
+   a band inside a band. */
 .columnHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-muted);
-}
-
-.levelBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--lvl-soft);
-  color: var(--lvl);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-}
-
-.levelTitle {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .cells {
@@ -77,12 +65,10 @@
 /* Rows, not cards. Each of these used to be a bordered, rounded, tinted card
    inside the bordered, rounded grid — a window in a window, seven frames where
    one would do — and it carried a third copy of the level the column head and
-   its badge already state. What is left is the pair that matters: what kind of
-   artifact it is, and its name. */
+   its badge already state. What is left is the name, which is the only thing
+   about a file the reader cannot get from the column it sits in. */
 .cell {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  display: block;
   width: 100%;
   padding: 11px 14px;
   border: 0;
@@ -112,31 +98,6 @@
 
 .cell:disabled {
   cursor: default;
-}
-
-.cellType {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  height: 18px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--neutral-bg);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.cellType[data-type="model"] {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-}
-
-.cellType[data-type="metrics"] {
-  background: var(--l3-soft);
-  color: var(--l3);
 }
 
 .cellName {

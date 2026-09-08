@@ -1,4 +1,5 @@
 import type { Entity, Entry } from "@/lib/api/entries";
+import { dataTableEntities } from "@/lib/entities";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
 import {
   ImagePlaceholderIcon,
@@ -7,6 +8,7 @@ import {
   type MetricColumn,
   MetricTiles,
 } from "@/app/entries/[entryId]/entry-view";
+import DataTable from "./DataTable";
 import PolymerEntities from "./PolymerEntities";
 
 import styles from "./EntryOverview.module.css";
@@ -25,8 +27,8 @@ export type SummaryModel = {
  *
  * The picture is the selected model's, and so is everything in the right-hand
  * column below the description -- switch models in the rail and that column
- * changes while the left one does not. Macromolecules sits under both at full
- * width, because a six-column table does not fit in half a page.
+ * changes while the left one does not. Macromolecules and Data sit under both
+ * at full width, because neither table fits in half a page.
  *
  * The crystal is deliberately absent: pH and temperatures have their own tab,
  * and a fact printed in two places is a fact that will disagree with itself.
@@ -35,11 +37,15 @@ export default function EntryOverview({
   entry,
   entities,
   artifacts,
+  dataEntities,
   model,
 }: {
   entry: Entry;
   entities: PolymerEntityView[];
   artifacts: Map<string, Entity>;
+  /** The selected model's artifacts and the entry's own, for the Data
+   *  section: the levels, and the files at each. */
+  dataEntities: Entity[];
   /** Null on an entry that has no models yet. */
   model: SummaryModel | null;
 }) {
@@ -97,6 +103,16 @@ export default function EntryOverview({
         <section className={styles.section}>
           <h2 className={styles.heading}>Macromolecules</h2>
           <PolymerEntities views={entities} artifacts={artifacts} />
+        </section>
+      ) : null}
+
+      {/* What this model was made from and what came out of it, by level. It
+          had a tab of its own, which cost a click to answer "what files are
+          here" -- a question a summary should already answer. */}
+      {dataTableEntities(dataEntities).length > 0 ? (
+        <section className={styles.section}>
+          <h2 className={styles.heading}>Data</h2>
+          <DataTable entities={dataEntities} />
         </section>
       ) : null}
     </div>
