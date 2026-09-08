@@ -5,13 +5,18 @@ const test = require("node:test");
 
 const { listSimilarEntries } = require("../src/lib/api/entries.ts");
 const {
+  bestMatch,
   bestMatchStats,
   deflineTail,
+  formatEvalue,
   formatPercent,
   hasRecordedAlignment,
+  identityGrade,
+  matchedSpan,
   sequenceLabel,
   similarityStats,
   sortedByScore,
+  spanLabel,
 } = require("../src/lib/similarity.ts");
 
 test("should list similar entries with pagination and authorization", async () => {
@@ -175,3 +180,78 @@ function collectionDocument(type, items) {
     })),
   };
 }
+
+test("should quote one alignment rather than the best of each number", () => {
+  // given: the higher-scoring match is not the one with the best coverage
+  const matches = [
+    { score: 0.4, metadata: { fident: 0.5, qcov: 0.99, evalue: 1e-9 } },
+    { score: 0.9, metadata: { fident: 0.8, qcov: 0.7, evalue: 3e-52 } },
+  ];
+
+  // when
+  const best = bestMatch(matches);
+
+  // then
+  assert.equal(best.match.score, 0.9);
+  assert.equal(best.stats.fident, 0.8);
+  assert.equal(best.stats.qcov, 0.7);
+  assert.equal(best.stats.evalue, 3e-52);
+});
+
+test("should have no best match when there are no matches", () => {
+  // when / then
+  assert.equal(bestMatch([]), null);
+});
+
+test("should grade identity by what it says about the hit", () => {
+  // when / then
+  assert.equal(identityGrade(0.78), "good");
+  assert.equal(identityGrade(0.6), "good");
+  assert.equal(identityGrade(0.41), "warn");
+  assert.equal(identityGrade(0.2), "dim");
+  assert.equal(identityGrade(null), undefined);
+});
+
+test("should place the matched span at its recorded positions", () => {
+  // when
+  const span = matchedSpan(101, 200, 0.5, 400);
+
+  // then
+  assert.equal(span.exact, true);
+  assert.equal(span.left, 25);
+  assert.equal(span.width, 25);
+});
+
+test("should mark a span approximated from coverage as not exact", () => {
+  // when: no positions recorded, only coverage
+  const span = matchedSpan(null, null, 0.5, 400);
+
+  // then
+  assert.equal(span.exact, false);
+  assert.equal(span.left, 0);
+  assert.equal(span.width, 50);
+});
+
+test("should draw no span without a chain length or a positive width", () => {
+  // when / then
+  assert.equal(matchedSpan(1, 10, 1, null), null);
+  assert.equal(matchedSpan(1, 10, 1, 0), null);
+  assert.equal(matchedSpan(null, null, 0, 400), null);
+});
+
+test("should name the matched span, and only the length when positions are absent", () => {
+  // when / then
+  assert.equal(spanLabel(24, 618, 640), "24\u2013618 \u00b7 640 aa");
+  assert.equal(spanLabel(null, null, 640), "640 aa");
+  assert.equal(spanLabel(null, null, null), "");
+});
+
+test("should read e-values as exponents", () => {
+  // when / then
+  assert.equal(formatEvalue(3e-52), "3e-52");
+  assert.equal(formatEvalue(0.0000012), "1e-6");
+  assert.equal(formatEvalue(0.023), "0.023");
+  assert.equal(formatEvalue(1.7), "1.7");
+  assert.equal(formatEvalue(0), "0");
+  assert.equal(formatEvalue(null), "\u2014");
+});

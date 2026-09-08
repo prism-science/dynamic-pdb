@@ -6,9 +6,11 @@ import type { ProteinSequence, SimilarEntryMatch } from "@/lib/api/entries";
 import {
   deflineTail,
   hasRecordedAlignment,
+  matchedSpan,
   sequenceLabel,
   similarityStats,
   type SimilarityStats,
+  spanLabel,
 } from "@/lib/similarity";
 
 import styles from "./SimilarMatchAlignment.module.css";
@@ -152,10 +154,6 @@ function optionLabel(
 /* Tracks — where on either chain the matched region lies              */
 /* ------------------------------------------------------------------ */
 
-type MapSegment = {
-  left: number;
-  width: number;
-};
 
 function AlignmentMap({
   stats,
@@ -170,8 +168,8 @@ function AlignmentMap({
   queryLength: number | null;
   matchLength: number;
 }) {
-  const query = trackSegment(stats.qstart, stats.qend, stats.qcov, queryLength);
-  const target = trackSegment(
+  const query = matchedSpan(stats.qstart, stats.qend, stats.qcov, queryLength);
+  const target = matchedSpan(
     stats.tstart,
     stats.tend,
     stats.tcov,
@@ -193,7 +191,7 @@ function AlignmentMap({
           ) : null}
         </span>
         <span className={styles.mapMeta}>
-          {spanText(stats.qstart, stats.qend, queryLength)}
+          {spanLabel(stats.qstart, stats.qend, queryLength)}
         </span>
       </div>
       <div className={styles.mapRow}>
@@ -208,52 +206,13 @@ function AlignmentMap({
           ) : null}
         </span>
         <span className={styles.mapMeta}>
-          {spanText(stats.tstart, stats.tend, matchLength)}
+          {spanLabel(stats.tstart, stats.tend, matchLength)}
         </span>
       </div>
     </div>
   );
 }
 
-/**
- * The matched span on a chain: exact when the run recorded positions,
- * approximated from coverage (anchored at the start) when it did not.
- */
-function trackSegment(
-  start: number | null,
-  end: number | null,
-  coverage: number | null,
-  length: number | null,
-): MapSegment | null {
-  if (length == null || length === 0) {
-    return null;
-  }
-  const from = start ?? 1;
-  const span =
-    start != null && end != null
-      ? end - start + 1
-      : Math.round((coverage ?? 1) * length);
-  if (span <= 0) {
-    return null;
-  }
-  return {
-    left: ((from - 1) / length) * 100,
-    width: (span / length) * 100,
-  };
-}
-
-/** "12–141 · 141 aa" when the run recorded positions, "141 aa" when not. */
-function spanText(
-  start: number | null,
-  end: number | null,
-  length: number | null,
-): string {
-  const total = length != null ? `${length} aa` : "";
-  if (start != null && end != null) {
-    return total ? `${start}–${end} · ${total}` : `${start}–${end}`;
-  }
-  return total;
-}
 
 /* ------------------------------------------------------------------ */
 /* Residue comparison, wrapped at 60 like the FASTA viewer              */

@@ -155,7 +155,6 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
 
           <Row
             label={active.chainId ? `Chain ${active.chainId}` : "Sequence"}
-            caption={active.entityId ? `Entity ${active.entityId}` : null}
             sequence
           >
             {letters !== null && letterCell !== null ? (
@@ -194,7 +193,7 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
           </Row>
 
           {active.tracks.map((track) => (
-            <Row key={track.key} label={track.label} caption={track.caption}>
+            <Row key={track.key} label={track.label}>
               {track.features.map((feature) => (
                 <span
                   key={feature.key}
@@ -216,22 +215,17 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
 
 function Row({
   label,
-  caption,
   sequence,
   children,
 }: {
   label: string;
-  caption: string | null;
   /** The chain's own row, which holds letters and so runs taller. */
   sequence?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className={styles.row}>
-      <span className={styles.rowLabel}>
-        {label}
-        {caption ? <span className={styles.rowCaption}>{caption}</span> : null}
-      </span>
+      <span className={styles.rowLabel}>{label}</span>
       <div
         className={styles.rowTrack}
         data-sequence={sequence ? "true" : undefined}

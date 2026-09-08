@@ -1,44 +1,178 @@
-/* Sits at the bottom of the entry's identity rail, cut off by a rule: the
-   rail above is about this protein, this block points away from it. */
+/* ---------------------------------------------------------------------- */
+/* Similar proteins — the table under the sequence viewer                  */
+/* ---------------------------------------------------------------------- */
+
 .block {
+  margin-top: 30px;
+}
+
+.head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .heading {
-  margin: 0 0 2px;
+  margin: 0;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* The whole list lives here, however long it is: the box keeps its height and
+   the rows scroll inside it, so a hundred hits do not push the sequence
+   viewer off the screen. Capped rather than fixed -- three hits should not
+   leave two thirds of a frame empty. */
+.body {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+/* The head stays put while the rows scroll under it -- sticky against .body,
+   which is this list's scroll container. The rule under it has to be an inset
+   shadow: in a collapsed table the border belongs to the table, so it scrolls
+   away and leaves the stuck head sitting edgeless on the rows. */
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  background: var(--surface-muted);
+  box-shadow: inset 0 -1px 0 var(--border-strong);
   color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
 }
 
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.table td {
+  padding: 9px 12px;
+  vertical-align: middle;
 }
 
-/* Rows bleed into the rail's gutter on hover, like nav items rather than
-   cards: the rail has no room for another frame. */
-.item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  margin: 0 -8px;
-  border-radius: var(--radius);
-  text-decoration: none;
+.row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
   transition: background 120ms ease;
 }
 
-.item:hover {
+.row:hover {
   background: var(--accent-soft);
+}
+
+/* No divider between an open row and its alignments: the row opens straight
+   into them, and the detail's own bottom border closes the pair. */
+.row[data-open="true"] {
+  border-bottom-color: transparent;
+}
+
+.detailRow {
+  border-bottom: 1px solid var(--border);
+}
+
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.loadSentinel {
+  height: 1px;
+}
+
+/* The name column carries the row and the numbers are only as wide as their
+   headers, so the three of them read as one block and the bar gets the rest of
+   the width -- which is what it needs, being a picture of the chain. */
+.table th:first-child,
+.table td:first-child {
+  padding-left: 14px;
+  width: 34%;
+}
+
+.table th.num,
+.table td.num {
+  width: 90px;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 14px;
+}
+
+/* The alignments run the full width of the list. This cell spans every column,
+   which makes it both the first and the last of its row, so it has to opt out
+   of the padding and the width those two rules set. */
+.table .detailRow > td {
+  width: auto;
+  padding: 0;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dim {
+  color: var(--text-muted);
+}
+
+/* Identity is the number a reader sorts by eye: above 60% the hit is the same
+   protein, below 25% it says little on its own. Same three colours the dialog
+   uses, so one number does not change meaning between the two views. */
+.num[data-grade] {
+  font-weight: 700;
+}
+
+.num[data-grade="good"] {
+  color: var(--success-fg);
+}
+
+.num[data-grade="warn"] {
+  color: var(--warning-fg);
+}
+
+.num[data-grade="dim"] {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.protein {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+
+.row[data-open="true"] .expander {
+  transform: rotate(90deg);
+  color: var(--accent-hover);
 }
 
 .thumb {
@@ -60,48 +194,72 @@
   object-fit: cover;
 }
 
-.body {
+.names {
   min-width: 0;
 }
 
 .name {
   display: block;
-  font-size: 13px;
-  font-weight: 600;
   color: var(--text);
+  font-weight: 600;
   line-height: 1.3;
+  text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.name:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .sub {
   display: block;
   margin-top: 1px;
-  font-size: 11px;
-  font-weight: 600;
   color: var(--text-muted);
+  font-size: 11.5px;
 }
 
-/* High identity is the one number worth colour in the rail. */
-.id[data-strong="true"] {
-  color: var(--success-fg);
+.organism {
+  font-style: italic;
 }
 
-.more {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 0;
-  border: none;
+/* Where the match falls on our chain, over the chain's whole length -- the
+   same coordinates the viewer above is drawn in, so a bar that sits under the
+   viewer's unobserved stretch is telling the reader something. */
+.spanBar {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.spanBar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+/* Width from coverage, placement unknown: outlined rather than filled, so it
+   is not read as a measured position. */
+.spanBar i[data-approx="true"] {
   background: none;
-  cursor: pointer;
-  color: var(--accent-hover);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  border: 1px dashed var(--accent);
+  opacity: 0.75;
 }
 
-.more:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.spanText {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
 }

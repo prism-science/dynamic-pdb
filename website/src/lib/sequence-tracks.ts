@@ -15,9 +15,10 @@ import {
  */
 export type SequenceTrack = {
   key: string;
+  /** The whole of the row's name, identifier included, on one line: "UniProt
+   *  A0A0J4VP90". Counts and ranges are not part of it -- they are in the
+   *  features' own tooltips. */
   label: string;
-  /** Printed under the label, e.g. the UniProt accession the row is about. */
-  caption: string | null;
   kind: "span" | "point" | "level";
   features: SequenceFeature[];
 };
@@ -64,13 +65,12 @@ export function sequenceTracks(
     // The construct line is free text from the depositor; when it names a
     // range, that range is in UniProt numbering, not ours. Only its length is
     // comparable, so the bar spans what it covers of this sequence and the
-    // caption keeps the numbers as the depositor wrote them.
+    // tooltip keeps the numbers as the depositor wrote them.
     const range = constructRange(entity.construct);
     const covered = range ? Math.min(range.end - range.start + 1, length) : length;
     tracks.push({
       key: `uniprot-${mapping.accession}`,
-      label: "UniProt",
-      caption: mapping.accession,
+      label: `UniProt ${mapping.accession}`,
       kind: "span",
       features: [
         {
@@ -90,7 +90,6 @@ export function sequenceTracks(
     tracks.push({
       key: "mutations",
       label: "Mutations",
-      caption: `${mutations.length}`,
       kind: "point",
       features: mutations,
     });
@@ -110,7 +109,6 @@ function coordinateTracks(
     tracks.push({
       key: "secondary",
       label: "Secondary structure",
-      caption: `${structure.helices.length}H / ${structure.strands.length}E`,
       kind: "span",
       features: [
         ...structure.helices.map((span, index) => ({
@@ -138,7 +136,6 @@ function coordinateTracks(
     tracks.push({
       key: "unobserved",
       label: "Unobserved",
-      caption: `${missing.reduce((n, s) => n + (s.end - s.start + 1), 0)}`,
       kind: "span",
       features: missing.map((span, index) => ({
         key: `u${index}`,
@@ -153,7 +150,6 @@ function coordinateTracks(
     tracks.push({
       key: "alternates",
       label: "Alt conformers",
-      caption: `${structure.alternates.size}`,
       kind: "point",
       features: [...structure.alternates].sort((a, b) => a - b).map((seq) => ({
         key: `a${seq}`,
@@ -168,7 +164,6 @@ function coordinateTracks(
     tracks.push({
       key: "bfactor",
       label: "B-factor",
-      caption: bRange(structure.bFactor),
       kind: "level",
       features: bLevels(structure.bFactor),
     });
@@ -196,10 +191,6 @@ function bLevels(bFactor: Map<number, number>): SequenceFeature[] {
     }));
 }
 
-function bRange(bFactor: Map<number, number>): string {
-  const values = [...bFactor.values()];
-  return `${Math.min(...values).toFixed(0)}–${Math.max(...values).toFixed(0)} Å²`;
-}
 
 export function sequenceLength(entity: PolymerEntityView): number {
   const residues = residueLetters(entity);

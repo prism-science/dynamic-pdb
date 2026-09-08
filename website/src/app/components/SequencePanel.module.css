@@ -155,11 +155,15 @@
 
 /* One label column and one lane, shared by the ruler and every row, so a
    column read down the rows is one residue. The trailing column keeps the last
-   residue off the right edge. */
+   residue off the right edge.
+
+   The label column is wide enough for the longest name a row can carry --
+   "Secondary structure", and "UniProt" with an accession after it -- because a
+   name that outgrows its column has nowhere to go but out of the frame. */
 .ruler,
 .row {
   display: grid;
-  grid-template-columns: 148px var(--lane) 16px;
+  grid-template-columns: 156px var(--lane) 16px;
   align-items: center;
 }
 
@@ -218,12 +222,10 @@
 }
 
 .row {
-  min-height: 26px;
+  min-height: 24px;
 }
 
-/* Name over caption rather than side by side: "SECONDARY STRUCTURE 8H / 7E"
-   on one line does not fit the gutter at any width worth giving it, and a
-   label that overflows its column lands outside the frame.
+/* The row's name and nothing else, on one line, as RCSB writes it.
 
    Sticky, with a ground of its own: the labels are the only thing on the row
    that must not scroll away from the residues they name. */
@@ -232,15 +234,12 @@
   left: 0;
   z-index: 1;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 1px;
+  align-items: center;
+  justify-content: flex-end;
   box-sizing: border-box;
   height: 100%;
   padding: 0 14px 0 16px;
   background: var(--surface);
-  line-height: 1.25;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -248,13 +247,6 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.rowCaption {
-  color: var(--text-muted);
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 /* The empty lane behind each row, so a feature that covers part of the

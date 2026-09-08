@@ -101,6 +101,102 @@ export function bestMatchStats(matches: SimilarEntryMatch[]): {
 }
 
 /**
+ * The match a one-line summary should quote: the best-scoring of a hit's
+ * per-chain matches, with its own stats.
+ *
+ * One match rather than the best number from each -- identity, coverage,
+ * e-value and the matched span all describe the same alignment, and mixing
+ * them across chains would describe an alignment that does not exist.
+ */
+export function bestMatch(
+  matches: SimilarEntryMatch[],
+): { match: SimilarEntryMatch; stats: SimilarityStats } | null {
+  let best: SimilarEntryMatch | null = null;
+  for (const match of matches) {
+    if (best === null || match.score > best.score) {
+      best = match;
+    }
+  }
+  return best === null
+    ? null
+    : { match: best, stats: similarityStats(best.metadata) };
+}
+
+/** How much weight to give an identity figure: sequence identity above 60%
+ *  usually means the same protein, below 25% means little on its own. */
+export function identityGrade(fident: number | null): string | undefined {
+  if (fident == null) {
+    return undefined;
+  }
+  return fident >= 0.6 ? "good" : fident >= 0.25 ? "warn" : "dim";
+}
+
+export type MatchedSpan = {
+  /** Percent of the chain, for positioning a bar drawn over its full length. */
+  left: number;
+  width: number;
+  /** False when the run recorded no positions and the span is a guess from
+   *  coverage: same width, but anchored at the start rather than measured. */
+  exact: boolean;
+};
+
+/**
+ * The matched span on a chain: exact when the run recorded positions,
+ * approximated from coverage (anchored at the start) when it did not.
+ */
+export function matchedSpan(
+  start: number | null,
+  end: number | null,
+  coverage: number | null,
+  length: number | null,
+): MatchedSpan | null {
+  if (length == null || length === 0) {
+    return null;
+  }
+  const exact = start != null && end != null;
+  const from = start ?? 1;
+  const span = exact ? end - start + 1 : Math.round((coverage ?? 1) * length);
+  if (span <= 0) {
+    return null;
+  }
+  return {
+    left: ((from - 1) / length) * 100,
+    width: (span / length) * 100,
+    exact,
+  };
+}
+
+/** "12–141 · 141 aa" when the run recorded positions, "141 aa" when not. */
+export function spanLabel(
+  start: number | null,
+  end: number | null,
+  length: number | null,
+): string {
+  const total = length != null ? `${length} aa` : "";
+  if (start != null && end != null) {
+    return total ? `${start}–${end} · ${total}` : `${start}–${end}`;
+  }
+  return total;
+}
+
+/**
+ * E-values span forty orders of magnitude, so they are read as exponents:
+ * "3e-52", not "0.000...". Only the leading digit carries information.
+ */
+export function formatEvalue(value: number | null): string {
+  if (value == null) {
+    return "—";
+  }
+  if (value === 0) {
+    return "0";
+  }
+  if (value < 0.01 || value >= 1000) {
+    return value.toExponential(0);
+  }
+  return String(Number(value.toPrecision(2)));
+}
+
+/**
  * "2MHB_1|Chain A|Hemoglobin subunit alpha|Equus caballus" -> "2MHB:A".
  *
  * Deflines inside one file are written by one producer (see SequenceView), so

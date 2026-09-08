@@ -20,6 +20,7 @@ import { downloadGroups } from "@/lib/download-files";
 import { defaultModel } from "@/lib/model-metrics";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { sequenceChains } from "@/lib/sequence-tracks";
+import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { readModelStructure } from "@/lib/api/coordinates";
 import { scopeRailModels } from "@/lib/scope-rail";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
@@ -243,16 +244,13 @@ export default async function ScopePage({
           {active === "sequence" ? (
             <section aria-label="Sequence">
               <SequencePanel chains={sequenceChains(entities, modelChains)} />
-              {similarEntries.length > 0 ? (
-                <div className={styles.similarBlock}>
-                  <SimilarProteins
-                    entryId={data.entry.id}
-                    entryLabel={entryLabel}
-                    sequences={data.entry.protein_sequences ?? []}
-                    items={similarEntries}
-                  />
-                </div>
-              ) : null}
+              {/* The table is the width of the tab and spaces itself off the
+                  viewer, so it needs no wrapper to place it. */}
+              <SimilarProteins
+                entryId={data.entry.id}
+                sequences={data.entry.protein_sequences ?? []}
+                items={similarEntries}
+              />
             </section>
           ) : null}
           </div>
@@ -303,7 +301,9 @@ async function loadSimilarEntries(
   entryId: string,
 ): Promise<SimilarEntry[]> {
   try {
-    return await listSimilarEntries(token, entryId, { limit: 20 });
+    return await listSimilarEntries(token, entryId, {
+      limit: SIMILAR_ENTRIES_FETCH_LIMIT,
+    });
   } catch (error) {
     console.error("list similar entries failed", error);
     return [];
