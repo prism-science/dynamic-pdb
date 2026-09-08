@@ -75,3 +75,71 @@ export function defaultModel(models: Model[]): Model | null {
   );
   return deposited ?? models[0] ?? null;
 }
+
+/**
+ * The names a metrics payload's figures go by, in the order they are shown.
+ *
+ * One list rather than one per view: the dialog prints these names and the CSV
+ * it downloads carries the same ones, so the file and the screen agree.
+ */
+export const metricLabels: { key: keyof MetricsPayload; label: string }[] = [
+  { key: "r_work", label: "R-work" },
+  { key: "r_free", label: "R-free" },
+  { key: "cc", label: "CC" },
+  { key: "rscc", label: "RSCC" },
+];
+
+/**
+ * A metrics record as a two-column CSV: the name of each figure and its value.
+ *
+ * Metrics are not a file -- there is nothing on object storage to link to --
+ * so the only way to hand them over is to assemble one here. Every number the
+ * record holds goes in, the known ones first under the names the dialog shows
+ * and anything else after them under its own key: a file you take away should
+ * not quietly drop what was recorded.
+ *
+ * Values are written as they are stored, not as they are displayed. The screen
+ * rounds to three decimals and groups thousands with a comma, and a comma in a
+ * CSV field is a new column.
+ */
+export function metricsCSV(payload: Record<string, unknown>): string {
+  const known = new Set<string>(metricLabels.map((metric) => String(metric.key)));
+  const rows: [string, string][] = [];
+
+  for (const metric of metricLabels) {
+    const value = payload[metric.key as string];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      rows.push([metric.label, String(value)]);
+    }
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (known.has(key)) {
+      continue;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      rows.push([key, String(value)]);
+    } else if (typeof value === "string" && value.trim() !== "") {
+      rows.push([key, value.trim()]);
+    }
+  }
+
+  // CRLF and a header row, which is what a spreadsheet expects to open.
+  return [["Metric", "Value"], ...rows]
+    .map((row) => row.map(field).join(","))
+    .join("\r\n");
+}
+
+// Anything that would otherwise be read as structure -- a separator, a quote,
+// a line break -- puts the field in quotes, and a quote inside it is doubled.
+function field(value: string): string {
+  return /[",\r\n]|^\s|\s$/.test(value)
+    ? `"${value.replace(/"/g, '""')}"`
+    : value;
+}
+
+/** A name a browser will accept as a download, ending in .csv exactly once. */
+export function csvFileName(name: string): string {
+  const base = name.trim().replace(/\.csv$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
+  return `${base || "metrics"}.csv`;
+}

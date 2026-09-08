@@ -130,7 +130,9 @@
 
 /* White pills on the tinted strip, the same outlined control the app uses on
    any light surface: hairline border, accent on hover. Copy and Download are
-   drawn identically so they sit level. */
+   drawn identically so they sit level -- and either can be a link or a button
+   (metrics have no file to link to), so both carry the font and the cursor a
+   button does not inherit on its own. */
 .download,
 .copy {
   height: 32px;
@@ -139,8 +141,10 @@
   border-radius: 999px;
   background: var(--dialog-field);
   color: var(--dialog-fg);
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
+  cursor: pointer;
   transition:
     border-color 120ms ease,
     color 120ms ease,
@@ -152,13 +156,6 @@
   align-items: center;
   gap: 6px;
   text-decoration: none;
-}
-
-.copy {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .download:hover,

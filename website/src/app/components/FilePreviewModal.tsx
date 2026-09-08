@@ -11,6 +11,7 @@ import type {
   MetricsPayload,
 } from "@/lib/api/entries";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
+import { csvFileName, metricLabels, metricsCSV } from "@/lib/model-metrics";
 import { fastaRecordText, fastaRecords } from "@/lib/fasta";
 import { detectStructureKind, type StructureMap } from "@/lib/structureKind";
 import SequenceView from "./SequenceView";
@@ -20,13 +21,6 @@ import styles from "./FilePreviewModal.module.css";
 const StructureViewer = dynamic(() => import("./StructureViewer"), {
   ssr: false,
 });
-
-const METRIC_LABELS: { key: keyof MetricsPayload; label: string }[] = [
-  { key: "r_work", label: "R-work" },
-  { key: "r_free", label: "R-free" },
-  { key: "cc", label: "CC" },
-  { key: "rscc", label: "RSCC" },
-];
 
 const metricFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 3,
@@ -102,6 +96,24 @@ export default function FilePreviewModal({
     }
   }
 
+  // Metrics are not a file, so there is nothing to link to: the two columns
+  // the dialog is showing are assembled here and handed over as one.
+  function downloadMetrics() {
+    if (!entity) {
+      return;
+    }
+    const blob = new Blob([metricsCSV(entity.payload as Record<string, unknown>)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = csvFileName(entity.name);
+    link.click();
+    // The object URL holds the blob alive until it is let go of.
+    URL.revokeObjectURL(href);
+  }
+
   return createPortal(
     <div
       className={styles.backdrop}
@@ -126,6 +138,16 @@ export default function FilePreviewModal({
             {isFasta && payload.metadata ? (
               <button type="button" className={styles.copy} onClick={copyFasta}>
                 {copied ? "Copied" : "Copy"}
+              </button>
+            ) : null}
+            {isMetrics ? (
+              <button
+                type="button"
+                className={styles.download}
+                onClick={downloadMetrics}
+              >
+                <DownloadIcon />
+                Download
               </button>
             ) : null}
             {url ? (
@@ -169,7 +191,7 @@ export default function FilePreviewModal({
 }
 
 function MetricsView({ payload }: { payload: MetricsPayload }) {
-  const rows = METRIC_LABELS.filter(
+  const rows = metricLabels.filter(
     (metric) => typeof payload?.[metric.key] === "number",
   );
   if (rows.length === 0) {

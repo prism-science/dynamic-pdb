@@ -5,7 +5,9 @@ const test = require("node:test");
 
 const {
   buildModelMetrics,
+  csvFileName,
   defaultModel,
+  metricsCSV,
   modelTitle,
 } = require("../src/lib/model-metrics.ts");
 
@@ -67,4 +69,72 @@ test("should name a model by its title, and fall back for one without", () => {
   assert.equal(modelTitle({ title: "  qFit run 3  " }), "qFit run 3");
   assert.equal(modelTitle({ title: "   " }), "Model");
   assert.equal(modelTitle({ title: null }), "Model");
+});
+
+test("should write a metrics record as two columns, known figures first", () => {
+  // given: the record's own order is not the order the dialog shows
+  const payload = { rscc: 0.941, r_free: 0.2255, r_work: 0.1839 };
+
+  // when / then
+  assert.equal(
+    metricsCSV(payload),
+    ["Metric,Value", "R-work,0.1839", "R-free,0.2255", "RSCC,0.941"].join("\r\n"),
+  );
+});
+
+test("should carry figures the dialog has no name for rather than drop them", () => {
+  // given
+  const payload = { r_free: 0.2255, clashscore: 4.2, refined_by: "PHENIX" };
+
+  // when
+  const lines = metricsCSV(payload).split("\r\n");
+
+  // then: the known one under its name, the rest under their own keys
+  assert.deepEqual(lines, [
+    "Metric,Value",
+    "R-free,0.2255",
+    "clashscore,4.2",
+    "refined_by,PHENIX",
+  ]);
+});
+
+test("should write values as stored, not as the screen rounds them", () => {
+  // given: three decimals on screen, and a thousands separator would be a
+  // column break
+  const payload = { r_free: 0.22551234, reflections: 36853 };
+
+  // when / then
+  assert.equal(
+    metricsCSV(payload),
+    ["Metric,Value", "R-free,0.22551234", "reflections,36853"].join("\r\n"),
+  );
+});
+
+test("should quote a field that would otherwise be read as structure", () => {
+  // given
+  const payload = { note: 'refined, then "rebuilt"', trailing: " padded " };
+
+  // when
+  const lines = metricsCSV(payload).split("\r\n");
+
+  // then: the trailing value is trimmed, so it needs no quoting
+  assert.deepEqual(lines, [
+    "Metric,Value",
+    'note,"refined, then ""rebuilt"""',
+    "trailing,padded",
+  ]);
+});
+
+test("should skip what is not a figure at all", () => {
+  // when / then
+  assert.equal(metricsCSV({}), "Metric,Value");
+  assert.equal(metricsCSV({ r_free: null, cc: undefined, rscc: NaN }), "Metric,Value");
+});
+
+test("should name the file after the record, ending in .csv once", () => {
+  // when / then
+  assert.equal(csvFileName("qfit_run3_metrics"), "qfit_run3_metrics.csv");
+  assert.equal(csvFileName("metrics.csv"), "metrics.csv");
+  assert.equal(csvFileName("run 3/final:metrics"), "run 3-final-metrics.csv");
+  assert.equal(csvFileName("   "), "metrics.csv");
 });
