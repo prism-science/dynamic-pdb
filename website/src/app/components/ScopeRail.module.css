@@ -107,27 +107,6 @@
   white-space: nowrap;
 }
 
-/* R-free is the one number that fits beside a name, and the one that tells the
-   models apart. Tabular figures so the column reads down. */
-.metric {
-  flex: none;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.row[data-current="true"] .metric {
-  color: var(--accent-hover);
-}
-
-/* Lower is better. The best value is marked where it stands rather than sorted
-   to the top, because the order the models were made in is itself information. */
-.metric[data-best="true"] {
-  color: var(--success-fg);
-  font-weight: 700;
-}
-
 /* Padded to sit on the tabs' own text line: the rail's first line and the tab
    labels start at the same height, so the two columns read as one row. */
 .heading {

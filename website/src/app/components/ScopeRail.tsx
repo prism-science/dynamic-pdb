@@ -30,14 +30,6 @@ export default function ScopeRail({
   const base = `/entries/${encodeURIComponent(entryId)}`;
   const carried = tab ? `?tab=${tab}` : "";
 
-  // Lower is better, so the best is the smallest recorded value. Marked rather
-  // than sorted: the rail keeps the order the models were made in, because that
-  // order is itself information.
-  const scored = models
-    .map((model) => model.rFree)
-    .filter((value): value is number => value != null);
-  const best = scored.length > 0 ? Math.min(...scored) : null;
-
   return (
     <div className={styles.column}>
       <aside className={styles.rail} aria-label="Models">
@@ -65,15 +57,6 @@ export default function ScopeRail({
               <span className={styles.name} title={model.title}>
                 {model.title}
               </span>
-              {model.rFree != null ? (
-                <span
-                  className={styles.metric}
-                  data-best={model.rFree === best ? "true" : undefined}
-                  title="R-free"
-                >
-                  {model.rFree.toFixed(3)}
-                </span>
-              ) : null}
             </Link>
           ))}
         </nav>
