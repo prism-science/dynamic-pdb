@@ -14,10 +14,10 @@ import {
   getEntityFileURL,
   getFilePayload,
 } from "@/lib/entities";
-import { formatEntryLabel } from "@/lib/entry-label";
+import { entryIdentity, formatEntryLabel } from "@/lib/entry-label";
 import { crystallographyView } from "@/lib/crystallography";
 import { downloadGroups } from "@/lib/download-files";
-import { defaultModel } from "@/lib/model-metrics";
+import { defaultModel, modelTitle } from "@/lib/model-metrics";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { sequenceChains } from "@/lib/sequence-tracks";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
@@ -85,6 +85,13 @@ export default async function ScopePage({
   }
 
   const entryLabel = formatEntryLabel(data.entry);
+  const identity = entryIdentity(data.entry);
+  // The page is the entry seen through one model, so the model is what names
+  // it; the entry's own identity goes underneath, where a reader looks for a
+  // code to quote rather than for the name of the thing on screen. An entry
+  // with no models at all has nothing else to be headed by.
+  const heading =
+    model !== null ? modelTitle(model) : (identity.name ?? identity.id);
   const canAddModel = session !== null;
   const provenance = buildProvenance(data.entities, data.relations);
 
@@ -124,7 +131,7 @@ export default async function ScopePage({
     model === null
       ? null
       : {
-          title: model.title?.trim() || "Model",
+          title: modelTitle(model),
           previewURL,
           facts: summaryModelFacts(
             metadata,
@@ -186,7 +193,25 @@ export default async function ScopePage({
                 <ImagePlaceholderIcon size={26} />
               )}
             </div>
-            <h1 className={styles.identityName}>{entryLabel}</h1>
+            <div className={styles.identityNames}>
+              {/* Kept to one line, with the whole of it in the tooltip: the
+                  head is sticky and a fixed height, and the rail truncates
+                  the same titles the same way. */}
+              <h1 className={styles.identityName} title={heading}>
+                {heading}
+              </h1>
+              <p className={styles.identityRef}>
+                {model !== null && identity.name !== null ? (
+                  <>
+                    <span className={styles.identityRefName}>
+                      {identity.name}
+                    </span>
+                    <span className={styles.identityRefSep}>|</span>
+                  </>
+                ) : null}
+                {identity.id}
+              </p>
+            </div>
             <DownloadFiles
               groups={downloadGroups(data.entities, model?.id ?? null)}
             />

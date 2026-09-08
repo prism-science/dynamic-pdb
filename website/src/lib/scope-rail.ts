@@ -1,5 +1,5 @@
 import type { EntryPageData } from "@/lib/api/entries";
-import { buildModelMetrics } from "@/lib/model-metrics";
+import { buildModelMetrics, modelTitle } from "@/lib/model-metrics";
 
 /**
  * One row of the scope rail. R-free is what tells the models apart, so it is
@@ -26,7 +26,7 @@ export function scopeRailModels(data: EntryPageData): ScopeRailModel[] {
     const rFree = metrics.get(model.id)?.r_free;
     return {
       id: model.id,
-      title: model.title?.trim() || "Model",
+      title: modelTitle(model),
       thumbnailImageURL:
         model.thumbnail_image_url?.trim() ||
         data.entry.thumbnail_image_url?.trim() ||

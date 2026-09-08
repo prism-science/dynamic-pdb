@@ -62,6 +62,13 @@ export function buildModelMetrics(
  * model would replace this outright and turn "first returned" back into a
  * fallback instead of the common path.
  */
+/** What to call a model. A model with no title of its own is rare -- the
+ *  depositor names them -- and "Model" is what the rail has always shown, so
+ *  the heading and the rail row agree whatever the data holds. */
+export function modelTitle(model: { title: string | null }): string {
+  return model.title?.trim() || "Model";
+}
+
 export function defaultModel(models: Model[]): Model | null {
   const deposited = models.find((model) =>
     (model.title ?? "").toLowerCase().includes("deposited"),

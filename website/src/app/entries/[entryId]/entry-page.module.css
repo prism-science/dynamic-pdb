@@ -55,7 +55,7 @@
 
 /* The name takes the room it needs and the download button sits against the
    page's right edge, where it is on every other structure database. */
-.scopeHead .identityName {
+.scopeHead .identityNames {
   margin-right: auto;
 }
 
@@ -179,6 +179,13 @@
   border: 1px solid var(--border);
 }
 
+/* Two lines: the model this page is about, and under it the entry the model
+   belongs to. Together they come to less than the thumbnail beside them, so
+   the sticky head keeps the height it had. */
+.identityNames {
+  min-width: 0;
+}
+
 .identityName {
   min-width: 0;
   margin: 0;
@@ -186,7 +193,34 @@
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.012em;
-  overflow-wrap: anywhere;
+  /* One line, ellipsis, full text in the tooltip -- a model title long enough
+     to wrap would push the tabs out from under a head of fixed height. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The code is what a reader scans for and the id is what a link needs; run
+   together in one length of monospace they read as a single opaque string, so
+   the two are set apart. */
+.identityRef {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.identityRefName {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.identityRefSep {
+  margin: 0 6px;
+  opacity: 0.5;
 }
 
 /* --------------------------------------------------------------------- */

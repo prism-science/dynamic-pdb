@@ -3,7 +3,11 @@ require("./register.cjs");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { buildModelMetrics, defaultModel } = require("../src/lib/model-metrics.ts");
+const {
+  buildModelMetrics,
+  defaultModel,
+  modelTitle,
+} = require("../src/lib/model-metrics.ts");
 
 test("should lead with the deposited model whatever it was named", () => {
   // given -- the two spellings the archive already uses
@@ -57,3 +61,10 @@ function model(id, title) {
     updated_at: "2026-01-01T00:00:00Z",
   };
 }
+
+test("should name a model by its title, and fall back for one without", () => {
+  // when / then
+  assert.equal(modelTitle({ title: "  qFit run 3  " }), "qFit run 3");
+  assert.equal(modelTitle({ title: "   " }), "Model");
+  assert.equal(modelTitle({ title: null }), "Model");
+});
