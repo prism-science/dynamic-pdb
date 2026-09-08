@@ -19,7 +19,7 @@
 .card {
   display: flex;
   flex-direction: column;
-  width: min(520px, 100%);
+  width: min(var(--dialog-width), 100%);
   max-height: calc(100vh - 64px);
   overflow: hidden;
   border-radius: 14px;
@@ -45,6 +45,50 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* White pills on the tinted strip, the same outlined control the preview
+   dialog puts there: hairline border, accent on hover. View and Download are
+   drawn identically so they sit level -- neither is the thing to do with a
+   file, that depends on what the reader came for. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--dialog-border);
+  border-radius: 999px;
+  background: var(--dialog-field);
+  color: var(--dialog-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.action:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.action:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--dialog-ring);
 }
 
 .close {
@@ -189,78 +233,6 @@
   font-family: var(--font-mono);
   line-height: 1.55;
   overflow-wrap: anywhere;
-}
-
-/* Right-aligned, with the way into the viewer last: it is the step forward, and
-   the corner a dialog's primary action is looked for in. */
-.actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-/* Preview is the filled button and Download the outlined one: the dialog exists
-   because the row no longer opens the viewer, so the way in has to be the
-   obvious thing in the window. */
-.preview {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: #ffffff;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.preview:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.preview:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-.download {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease,
-    color 120ms ease;
-}
-
-.download:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-}
-
-.download:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--ring);
 }
 
 @media (max-width: 720px) {

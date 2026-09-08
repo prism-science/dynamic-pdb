@@ -1,0 +1,71 @@
+/* ---------------------------------------------------------------------- */
+/* Version history                                                        */
+/* ---------------------------------------------------------------------- */
+
+.box {
+  border: 1px solid var(--border);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table thead th {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* The version and its date are as wide as they need to be; the reason and the
+   change split the rest evenly, because those are the two that will grow --
+   and an even split keeps the empty one reading as a column rather than as
+   space left over at the end of the row. */
+.table th.number,
+.table thead th:first-child,
+.table thead th:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.table thead th:nth-child(3),
+.table thead th:nth-child(4) {
+  width: 50%;
+}
+
+.table tbody th,
+.table tbody td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.table tbody tr:first-child th,
+.table tbody tr:first-child td {
+  border-top: 0;
+}
+
+/* Figures, so a column of versions and a column of dates read down. */
+.number,
+.date {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.number {
+  color: var(--text);
+  font-weight: 600;
+}

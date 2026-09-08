@@ -124,7 +124,7 @@ func (s *Server) createInitialEntryRevision(
 	if err != nil {
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("generate entry id: %w", err)
 	}
-	metadata, err := entryMetadataFromRequest(req.Entry.Metadata)
+	metadata, err := entryMetadataFromAPIFields(req.Entry)
 	if err != nil {
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("decode initial entry metadata: %w", err)
 	}
@@ -245,15 +245,27 @@ func applyEntryRevisionChange(
 			revision.ThumbnailImageURL = trimmedStringPtr(change.ThumbnailImageUrl)
 		}
 	}
-	if raw, present := fields["metadata"]; present {
-		if isJSONNull(raw) || change.Metadata == nil {
-			return invalidRequest("entry metadata cannot be null")
-		}
-		metadata, err := entryMetadataFromRequest(change.Metadata)
-		if err != nil {
-			return fmt.Errorf("decode changed entry metadata: %w", err)
-		}
-		revision.Metadata = metadata
+	metadata, err := entryMetadataFromAPIFields(change)
+	if err != nil {
+		return fmt.Errorf("decode changed entry fields: %w", err)
+	}
+	if _, present := fields["external_refs"]; present {
+		revision.Metadata.ExternalRefs = metadata.ExternalRefs
+	}
+	if _, present := fields["details"]; present {
+		revision.Metadata.Details = metadata.Details
+	}
+	if _, present := fields["resolution"]; present {
+		revision.Metadata.Resolution = metadata.Resolution
+	}
+	if _, present := fields["method"]; present {
+		revision.Metadata.Method = metadata.Method
+	}
+	if _, present := fields["space_group"]; present {
+		revision.Metadata.SpaceGroup = metadata.SpaceGroup
+	}
+	if _, present := fields["crystallography"]; present {
+		revision.Metadata.Crystallography = metadata.Crystallography
 	}
 	return nil
 }
@@ -737,7 +749,15 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
-	metadata, err := metadataFromValue(revision.Metadata)
+	polymerEntities, err := s.database.PolymerEntities.List(r.Context(), db.PolymerEntityFilters{
+		EntryRevisionID: &revision.ID,
+	})
+	if err != nil {
+		slog.Error("list entry polymer entities failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
+	properties, err := entryPropertiesFromModel(revision.Metadata)
 	if err != nil {
 		slog.Error("build entry response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
@@ -773,10 +793,16 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 			Attributes: EntryAttributes{
 				Title:             revision.Title,
 				ThumbnailImageUrl: revision.ThumbnailImageURL,
-				Metadata:          metadata,
+				ExternalRefs:      properties.ExternalRefs,
+				Details:           properties.Details,
+				Resolution:        properties.Resolution,
+				Method:            properties.Method,
+				SpaceGroup:        properties.SpaceGroup,
+				Crystallography:   properties.Crystallography,
 				PublishedAt:       revision.PublishedAt,
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
+				PolymerEntities:   polymerEntitiesFromModels(polymerEntities),
 			},
 			Relationships: EntryRelationships{
 				CreatedBy: EntryCreatedByRelationship{
@@ -1229,12 +1255,14 @@ func (s *Server) modelAttributesFromRevisions(
 }
 
 func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (EntryInfoAttributes, error) {
-	metadata, err := metadataFromValue(revision.Metadata)
+	properties, err := entryPropertiesFromModel(revision.Metadata)
 	if err != nil {
-		return EntryInfoAttributes{}, fmt.Errorf("build entry metadata response: %w", err)
+		return EntryInfoAttributes{}, fmt.Errorf("build entry fields response: %w", err)
 	}
 	return EntryInfoAttributes{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Title: revision.Title,
-		ThumbnailImageUrl: revision.ThumbnailImageURL, Metadata: &metadata,
+		ThumbnailImageUrl: revision.ThumbnailImageURL, ExternalRefs: properties.ExternalRefs,
+		Details: properties.Details, Resolution: properties.Resolution, Method: properties.Method,
+		SpaceGroup: properties.SpaceGroup, Crystallography: properties.Crystallography,
 		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
 }
 
@@ -1366,6 +1394,40 @@ func proteinSequenceFromModel(sequence domainmodels.ProteinSequence) ProteinSequ
 		CreatedAt: sequence.CreatedAt}
 }
 
+func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerEntity {
+	items := make([]PolymerEntity, 0, len(entities))
+	for _, entity := range entities {
+		sourceOrganisms := make([]PolymerEntityOrganism, 0, len(entity.Metadata.SourceOrganisms))
+		for _, organism := range entity.Metadata.SourceOrganisms {
+			sourceOrganisms = append(sourceOrganisms, PolymerEntityOrganism{
+				ScientificName: organism.ScientificName,
+				NcbiTaxonomyId: organism.NCBITaxonomyID,
+			})
+		}
+
+		uniProtMappings := make([]PolymerEntityUniProtMapping, 0, len(entity.Metadata.UniProtMappings))
+		for _, mapping := range entity.Metadata.UniProtMappings {
+			uniProtMappings = append(uniProtMappings, PolymerEntityUniProtMapping{
+				Accession:  mapping.Accession,
+				Source:     PolymerEntityUniProtMappingSource(mapping.Source),
+				UnpRelease: mapping.UniProtRelease,
+			})
+		}
+
+		items = append(items, PolymerEntity{
+			Id:              entity.ID,
+			LabelEntityId:   entity.Metadata.LabelEntityID,
+			Description:     entity.Metadata.Description,
+			SourceOrganisms: sourceOrganisms,
+			Construct:       entity.Metadata.Construct,
+			Mutations:       entity.Metadata.Mutations,
+			UniprotMappings: uniProtMappings,
+			CreatedAt:       entity.CreatedAt,
+		})
+	}
+	return items
+}
+
 func metadataFromValue(value any) (map[string]interface{}, error) {
 	if value == nil {
 		return map[string]interface{}{}, nil
@@ -1483,13 +1545,26 @@ func (s *Server) activeModelRevision(
 	return revision, nil
 }
 
-func entryMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.EntryMetadata, error) {
-	if metadata == nil {
-		return domainmodels.EntryMetadata{}, nil
+func entryMetadataFromAPIFields(fields any) (domainmodels.EntryMetadata, error) {
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return domainmodels.EntryMetadata{}, invalidPayloadRequest("encode entry fields", err)
 	}
 	var result domainmodels.EntryMetadata
-	if err := decodeMetadataRequest(*metadata, &result); err != nil {
-		return domainmodels.EntryMetadata{}, invalidPayloadRequest("decode entry metadata", err)
+	if err := json.Unmarshal(data, &result); err != nil {
+		return domainmodels.EntryMetadata{}, invalidPayloadRequest("decode entry fields", err)
+	}
+	return result, nil
+}
+
+func entryPropertiesFromModel(metadata domainmodels.EntryMetadata) (EntryProperties, error) {
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return EntryProperties{}, fmt.Errorf("marshal entry fields: %w", err)
+	}
+	var result EntryProperties
+	if err := json.Unmarshal(data, &result); err != nil {
+		return EntryProperties{}, fmt.Errorf("unmarshal entry fields: %w", err)
 	}
 	return result, nil
 }
@@ -1627,7 +1702,8 @@ func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPaylo
 }
 
 var entryRevisionFields = map[string]struct{}{
-	"title": {}, "thumbnail_image_url": {}, "metadata": {},
+	"title": {}, "thumbnail_image_url": {}, "external_refs": {}, "details": {},
+	"resolution": {}, "method": {}, "space_group": {}, "crystallography": {},
 }
 
 var modelRevisionFields = map[string]struct{}{

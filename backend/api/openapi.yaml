@@ -504,7 +504,7 @@ paths:
             maxLength: 256
         - name: pdb_id
           in: query
-          description: PDB IDs to match against entry metadata.external_refs.pdb.
+          description: PDB IDs to match against entry external_refs.pdb.
           required: false
           schema:
             type: array
@@ -2230,34 +2230,100 @@ components:
           items:
             type: string
 
-    EntryInfoAttributes:
+    EntryProperties:
       type: object
-      required: [id, created_by, title, created_at, updated_at]
+      properties:
+        external_refs:
+          type: object
+          additionalProperties:
+            type: string
+        details:
+          type: string
+          description: Additional structure remarks; RCSB sync maps struct.pdbx_details here.
+        resolution:
+          type: number
+          format: double
+        method:
+          type: string
+        space_group:
+          type: string
+        crystallography:
+          $ref: "#/components/schemas/EntryCrystallography"
+
+    EntryCrystallography:
+      type: object
+      description: Crystals and diffraction datasets reported for this entry.
+      properties:
+        crystals:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryCrystal"
+
+    EntryCrystal:
+      type: object
+      required: [id]
       properties:
         id:
           type: string
-        created_by:
+          description: RCSB exptl_crystal.id.
+        growth:
+          $ref: "#/components/schemas/EntryCrystalGrowth"
+        diffractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryDiffraction"
+
+    EntryCrystalGrowth:
+      type: object
+      properties:
+        ph:
+          type: number
+          format: double
+          description: Crystal-growth pH from RCSB exptl_crystal_grow.pH.
+        temperature_kelvin:
+          type: number
+          format: double
+          description: Crystal-growth temperature in kelvins from RCSB exptl_crystal_grow.temp.
+
+    EntryDiffraction:
+      type: object
+      required: [id]
+      properties:
+        id:
           type: string
-          format: uuid
-        title:
-          type: string
-          nullable: true
-        thumbnail_image_url:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
-        published_at:
-          type: string
-          format: date-time
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+          description: RCSB diffrn.id.
+        temperature_kelvin:
+          type: number
+          format: double
+          description: Data-collection temperature in kelvins from RCSB diffrn.ambient_temp.
+
+    EntryInfoAttributes:
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - type: object
+          required: [id, created_by, title, created_at, updated_at]
+          properties:
+            id:
+              type: string
+            created_by:
+              type: string
+              format: uuid
+            title:
+              type: string
+              nullable: true
+            thumbnail_image_url:
+              type: string
+              nullable: true
+            published_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
 
     SimilarEntryAttributes:
       type: object
@@ -2307,55 +2373,53 @@ components:
             $ref: "#/components/schemas/AddModelOperation"
 
     CreateEntryData:
-      type: object
-      required: [title]
-      properties:
-        title:
-          type: string
-          minLength: 1
-        thumbnail_image_url:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
-        artifacts:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreateArtifactRequest"
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - type: object
+          required: [title]
+          properties:
+            title:
+              type: string
+              minLength: 1
+            thumbnail_image_url:
+              type: string
+              nullable: true
+            artifacts:
+              type: array
+              items:
+                $ref: "#/components/schemas/CreateArtifactRequest"
 
     Entry:
-      type: object
-      required: [id, created_by, title, metadata, created_at, updated_at, protein_sequences]
-      properties:
-        id:
-          type: string
-        created_by:
-          type: string
-          format: uuid
-        title:
-          type: string
-          nullable: true
-        thumbnail_image_url:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
-        published_at:
-          type: string
-          format: date-time
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        protein_sequences:
-          type: array
-          items:
-            $ref: "#/components/schemas/ProteinSequence"
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - type: object
+          required: [id, created_by, title, created_at, updated_at, protein_sequences]
+          properties:
+            id:
+              type: string
+            created_by:
+              type: string
+              format: uuid
+            title:
+              type: string
+              nullable: true
+            thumbnail_image_url:
+              type: string
+              nullable: true
+            published_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            protein_sequences:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProteinSequence"
 
     EntryDocument:
       type: object
@@ -2383,28 +2447,80 @@ components:
           $ref: "#/components/schemas/EntryRelationships"
 
     EntryAttributes:
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - type: object
+          required: [title, created_at, updated_at, polymer_entities]
+          properties:
+            title:
+              type: string
+              nullable: true
+            thumbnail_image_url:
+              type: string
+              nullable: true
+            published_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            polymer_entities:
+              type: array
+              items:
+                $ref: "#/components/schemas/PolymerEntity"
+
+    PolymerEntity:
       type: object
-      required: [title, metadata, created_at, updated_at]
+      required: [id, source_organisms, uniprot_mappings, created_at]
       properties:
-        title:
+        id:
           type: string
-          nullable: true
-        thumbnail_image_url:
+          format: uuid
+        label_entity_id:
           type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
-        published_at:
+        description:
           type: string
-          format: date-time
-          nullable: true
+        source_organisms:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntityOrganism"
+        construct:
+          type: string
+        mutations:
+          type: string
+          description: Mutation description from RCSB. Multiple mutations may be stored in one string.
+        uniprot_mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntityUniProtMapping"
         created_at:
           type: string
           format: date-time
-        updated_at:
+
+    PolymerEntityOrganism:
+      type: object
+      required: [scientific_name]
+      properties:
+        scientific_name:
           type: string
-          format: date-time
+        ncbi_taxonomy_id:
+          type: integer
+
+    PolymerEntityUniProtMapping:
+      type: object
+      required: [accession, source]
+      properties:
+        accession:
+          type: string
+        source:
+          type: string
+          enum: [sifts, struct_ref]
+        unp_release:
+          type: string
 
     EntryRelationships:
       type: object
@@ -2815,18 +2931,17 @@ components:
           $ref: "#/components/schemas/EntryRevisionChange"
 
     EntryRevisionChange:
-      type: object
-      minProperties: 1
-      properties:
-        title:
-          type: string
-          minLength: 1
-        thumbnail_image_url:
-          type: string
-          nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - type: object
+          minProperties: 1
+          properties:
+            title:
+              type: string
+              minLength: 1
+            thumbnail_image_url:
+              type: string
+              nullable: true
 
     CreateModelRequest:
       type: object
@@ -3129,15 +3244,13 @@ components:
     EntryRevisionAttributes:
       allOf:
         - $ref: "#/components/schemas/EntryRevisionSummaryAttributes"
+        - $ref: "#/components/schemas/EntryProperties"
         - type: object
-          required: [metadata, protein_sequences, artifacts]
+          required: [protein_sequences, artifacts]
           properties:
             thumbnail_image_url:
               type: string
               nullable: true
-            metadata:
-              type: object
-              additionalProperties: true
             protein_sequences:
               type: array
               items:

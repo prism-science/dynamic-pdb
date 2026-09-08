@@ -64,15 +64,13 @@ export type ProgramDraft = {
  * Properties of the structure, not of any one model. Kept on the entry
  * because two models of the same crystal share them.
  *
- * Method is constrained to what the record accepts; the rest are free text
- * because a space group or an organism has no closed list worth enforcing.
+ * Method is constrained to what the record accepts; space group is free text.
  */
 export type EntryMetadataDraft = {
   pdb: string;
   resolution: string;
   method: string;
   spaceGroup: string;
-  organism: string;
 };
 
 export const METHODS = ["X-ray crystallography", "CryoEM"] as const;
@@ -86,7 +84,7 @@ export const MODEL_TYPES = [
 ] as const;
 
 export function emptyEntryMetadataDraft(): EntryMetadataDraft {
-  return { pdb: "", resolution: "", method: "", spaceGroup: "", organism: "" };
+  return { pdb: "", resolution: "", method: "", spaceGroup: "" };
 }
 
 export type ModelDraft = {

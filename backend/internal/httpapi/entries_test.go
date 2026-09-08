@@ -222,6 +222,67 @@ func Test_should_reject_state_field_when_entry_revision_is_created(t *testing.T)
 	require.ErrorIs(t, err, errInvalidRequest)
 }
 
+func Test_should_apply_flat_properties_when_entry_revision_is_created(t *testing.T) {
+	// given
+	details := "crystal structure"
+	resolution := 1.8
+	method := "X-ray crystallography"
+	spaceGroup := "P 21 21 21"
+	ph := 7.4
+	crystals := []EntryCrystal{{
+		Id: "1",
+		Growth: &EntryCrystalGrowth{
+			Ph: &ph,
+		},
+	}}
+	change := EntryRevisionChange{
+		ExternalRefs:    &map[string]string{"pdb": "1ABC"},
+		Details:         &details,
+		Resolution:      &resolution,
+		Method:          &method,
+		SpaceGroup:      &spaceGroup,
+		Crystallography: &EntryCrystallography{Crystals: &crystals},
+	}
+	fields := map[string]json.RawMessage{
+		"external_refs":   json.RawMessage(`{"pdb":"1ABC"}`),
+		"details":         json.RawMessage(`"crystal structure"`),
+		"resolution":      json.RawMessage(`1.8`),
+		"method":          json.RawMessage(`"X-ray crystallography"`),
+		"space_group":     json.RawMessage(`"P 21 21 21"`),
+		"crystallography": json.RawMessage(`{"crystals":[{"id":"1","growth":{"ph":7.4}}]}`),
+	}
+	revision := domainmodels.EntryRevision{}
+
+	// when
+	err := applyEntryRevisionChange(&revision, change, fields)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "1ABC", revision.Metadata.ExternalRefs[domainmodels.EntrySourcePDB])
+	require.NotNil(t, revision.Metadata.Details)
+	assert.Equal(t, details, *revision.Metadata.Details)
+	require.NotNil(t, revision.Metadata.Resolution)
+	assert.Equal(t, resolution, *revision.Metadata.Resolution)
+	require.NotNil(t, revision.Metadata.Method)
+	assert.Equal(t, domainmodels.StructureMethodXRayCrystallography, *revision.Metadata.Method)
+	require.NotNil(t, revision.Metadata.SpaceGroup)
+	assert.Equal(t, spaceGroup, *revision.Metadata.SpaceGroup)
+	require.NotNil(t, revision.Metadata.Crystallography)
+	require.Len(t, revision.Metadata.Crystallography.Crystals, 1)
+	assert.Equal(t, "1", revision.Metadata.Crystallography.Crystals[0].ID)
+}
+
+func Test_should_reject_metadata_field_when_entry_revision_is_created(t *testing.T) {
+	// given
+	fields := map[string]json.RawMessage{"metadata": json.RawMessage(`{}`)}
+
+	// when
+	err := validateRevisionFields(fields, entryRevisionFields)
+
+	// then
+	require.ErrorIs(t, err, errInvalidRequest)
+}
+
 func Test_should_reject_state_field_when_model_revision_is_created(t *testing.T) {
 	// given
 	fields := map[string]json.RawMessage{"state": json.RawMessage(`"deleted"`)}

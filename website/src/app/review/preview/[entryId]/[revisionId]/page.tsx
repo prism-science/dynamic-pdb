@@ -66,7 +66,7 @@ export default async function EntryRevisionPreviewPage({ params }: Props) {
       title={formatEntryLabel({
         id: revision.entry_id,
         title: revision.title,
-        metadata: revision.metadata,
+        external_refs: revision.external_refs,
       })}
     >
       <EntryRevisionPreview revision={revision} models={models} />

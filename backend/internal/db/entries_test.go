@@ -21,7 +21,7 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
 	method := models.StructureMethodXRayCrystallography
-	organism := "Homo sapiens"
+	details := "Additional structure details"
 	revision := models.EntryRevision{
 		ID:                uuid.New(),
 		EntryID:           "entry-1abc",
@@ -32,8 +32,19 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 			ExternalRefs: map[models.EntrySource]string{
 				models.EntrySourcePDB: "1ABC",
 			},
-			Organism: &organism,
-			Method:   &method,
+			Details: &details,
+			Method:  &method,
+			Crystallography: &models.EntryCrystallography{Crystals: []models.EntryCrystal{{
+				ID: "1",
+				Growth: &models.EntryCrystalGrowth{
+					PH:                ptr(7.5),
+					TemperatureKelvin: ptr(293.0),
+				},
+				Diffractions: []models.EntryDiffraction{{
+					ID:                "1",
+					TemperatureKelvin: ptr(100.0),
+				}},
+			}}},
 		},
 		CreatedBy: createdBy,
 		CreatedAt: now,
@@ -55,10 +66,10 @@ func Test_should_return_entry_revision_with_metadata_when_entries_create_and_get
 	require.NotNil(t, got.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *got.ThumbnailImageURL)
 	assert.Equal(t, "1ABC", got.Metadata.ExternalRefs[models.EntrySourcePDB])
-	require.NotNil(t, got.Metadata.Organism)
-	assert.Equal(t, organism, *got.Metadata.Organism)
 	require.NotNil(t, got.Metadata.Method)
 	assert.Equal(t, method, *got.Metadata.Method)
+	assert.Equal(t, revision.Metadata.Details, got.Metadata.Details)
+	assert.Equal(t, revision.Metadata.Crystallography, got.Metadata.Crystallography)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
 	assert.Equal(t, now.Unix(), got.UpdatedAt.Unix())
 	newEntryState := models.EntryStateNew

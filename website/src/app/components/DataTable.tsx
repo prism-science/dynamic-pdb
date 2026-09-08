@@ -61,9 +61,8 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
     >
       {columns.map(({ level, items }) => (
         <div className={styles.column} key={level}>
-          <div className={styles.columnHead} data-level={level}>
-            <span className={styles.levelBadge}>{level}</span>
-            <span className={styles.levelTitle}>{LEVEL_TITLE[level]}</span>
+          <div className={styles.columnHead}>
+            {level} {LEVEL_TITLE[level]}
           </div>
 
           <div className={styles.cells}>
@@ -75,9 +74,6 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
                 onClick={() => open(entity)}
                 title="Open preview"
               >
-                <span className={styles.cellType} data-type={entity.type}>
-                  {entity.type}
-                </span>
                 <span className={styles.cellName}>{entity.name}</span>
               </button>
             ))}

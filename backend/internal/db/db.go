@@ -23,6 +23,7 @@ type DB struct {
 	Metrics                     *MetricsRepository
 	Runs                        *RunsRepository
 	ProteinSequences            *ProteinSequencesRepository
+	PolymerEntities             *PolymerEntitiesRepository
 	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
 
 	sqlx      *sqlx.DB
@@ -76,6 +77,7 @@ func NewDB(cfg Config) (*DB, error) {
 		Metrics:                     NewMetricsRepository(sqlxDB, queriers),
 		Runs:                        NewRunsRepository(sqlxDB, queriers),
 		ProteinSequences:            NewProteinSequencesRepository(sqlxDB, queriers),
+		PolymerEntities:             NewPolymerEntitiesRepository(sqlxDB, queriers),
 		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		txManager:                   txManager,

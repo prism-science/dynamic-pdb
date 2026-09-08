@@ -33,6 +33,24 @@ export function dataTableEntities(entities: Entity[]): Entity[] {
   );
 }
 
+/**
+ * The entry's artifacts as one model sees them: the model's own, plus the
+ * entry-owned ones that belong to every model.
+ *
+ * An artifact with no model_id is the entry's -- the deposited reflections, the
+ * sequence -- and every model of the entry is entitled to it. Everything else
+ * was made for one model and is nobody else's business, which is what makes
+ * the page follow the rail instead of listing the whole entry every time.
+ */
+export function modelScopedEntities(
+  entities: Entity[],
+  modelId: string | null,
+): Entity[] {
+  return entities.filter(
+    (entity) => entity.model_id === null || entity.model_id === modelId,
+  );
+}
+
 export function getFilePayload(
   entity: Entity,
 ): DataPayload | ModelPayload | null {

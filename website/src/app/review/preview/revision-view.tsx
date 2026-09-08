@@ -16,7 +16,7 @@ import FileTable from "@/app/components/FileTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
-  entryMetadataFacts,
+  entryInfoFacts,
   hasModelEvaluations,
   ImagePlaceholderIcon,
   InfoGrid,
@@ -67,13 +67,13 @@ export function EntryRevisionPreview({
     (total, sequence) => total + sequence.sequence.length,
     0,
   );
-  const facts = entryMetadataFacts(revision.metadata);
+  const facts = entryInfoFacts(revision);
   const files = fileItems(revision.artifacts);
   const thumbnail = revision.thumbnail_image_url?.trim() || null;
   const entryLabel = formatEntryLabel({
     id: revision.entry_id,
     title: revision.title,
-    metadata: revision.metadata,
+    external_refs: revision.external_refs,
   });
 
   return (

@@ -64,7 +64,7 @@ func Test_should_update_entry_when_data_sync_job_is_scheduled(t *testing.T) {
 	require.NotNil(t, entry.Title)
 	assert.Equal(t, "example structure", *entry.Title)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
-	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
+	assert.NotContains(t, entry.Metadata, "organism")
 	assert.Equal(t, 1.4, entry.Metadata["resolution"])
 	assert.Equal(t, "P 21 21 21", entry.Metadata["space_group"])
 	require.Len(t, entry.ProteinSequences, 1)

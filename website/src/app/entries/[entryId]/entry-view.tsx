@@ -24,9 +24,8 @@ export type MetadataFact = {
   // Set when the value identifies the record in an external database; rendered
   // as the only coloured value in the block so it reads as clickable.
   href?: string;
-  // Identifiers and symmetry symbols are glyph-sensitive (P 21 21 21, 5GY3);
-  // organism names are conventionally italicised.
-  format?: "mono" | "italic";
+  // Identifiers and symmetry symbols are glyph-sensitive (P 21 21 21, 5GY3).
+  format?: "mono";
 };
 
 export function buildProvenance(
@@ -141,20 +140,27 @@ function FactValue({ fact }: { fact: MetadataFact }) {
 // punches a hole into the left column; separate lists let each side pack
 // tight. Splitting at ceil(n / 2) also keeps the reading order down the left
 // column and stays balanced whichever facts happen to be missing.
-export function InfoGrid({ facts }: { facts: MetadataFact[] }) {
+export function InfoGrid({
+  facts,
+  columns: count = 2,
+}: {
+  facts: MetadataFact[];
+  /** One column when the caller is already laying columns out itself. */
+  columns?: 1 | 2;
+}) {
   if (facts.length === 0) {
     return null;
   }
-  const half = Math.ceil(facts.length / 2);
+  const half = count === 1 ? facts.length : Math.ceil(facts.length / 2);
   const columns = [facts.slice(0, half), facts.slice(half)];
 
   return (
-    <div className={styles.infoColumns}>
+    <div className={styles.infoColumns} data-columns={count}>
       {columns.map((column, index) =>
         column.length > 0 ? (
           <dl key={index} className={styles.infoColumn}>
-            {column.map((fact) => (
-              <div key={fact.label} className={styles.infoRow}>
+            {column.map((fact, index) => (
+              <div key={`${fact.label}-${index}`} className={styles.infoRow}>
                 <dt>{fact.label}</dt>
                 <dd data-format={fact.format}>
                   <FactValue fact={fact} />
@@ -211,6 +217,45 @@ const modelMetricTiles: MetricSpec[] = [
   },
 ];
 
+export type MetricColumn = {
+  key: string;
+  label: string;
+  value: string;
+  status: MetricStatus;
+};
+
+/**
+ * The figures themselves: a label over a number, and nothing around them.
+ *
+ * Not a table. Two or four values need no head row, no rules and no frame --
+ * the label is the head, and a frame around four numbers is a frame around
+ * nothing.
+ */
+export function MetricTiles({ metrics }: { metrics: MetricColumn[] }) {
+  if (metrics.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.metricGrid}>
+      {metrics.map((metric) => (
+        <div key={metric.key} className={styles.metricTile}>
+          <div className={styles.metricLabel}>{metric.label}</div>
+          {/* Only a value outside its range is coloured. A page where every
+              number is green says nothing; one amber figure is the whole
+              report. */}
+          <div
+            className={styles.metricValue}
+            data-status={metric.status === "good" ? undefined : metric.status}
+          >
+            {metric.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ModelEvaluations({
   entity,
   provenance,
@@ -218,39 +263,117 @@ export function ModelEvaluations({
   entity: Entity;
   provenance: Provenance;
 }) {
+  return (
+    <MetricTiles
+      metrics={buildColumns(mergedModelMetrics(entity, provenance), null)}
+    />
+  );
+}
+
+/**
+ * Every metric recorded for this model, merged into one payload.
+ *
+ * Metrics arrive as separate entities -- one per evaluation run -- and a reader
+ * wants one row of numbers, not one row per run. Later runs win on conflict,
+ * which is the same rule the tiles have always used.
+ */
+export function mergedModelMetrics(
+  entity: Entity,
+  provenance: Provenance,
+): MetricsPayload {
   const merged: MetricsPayload = {};
   for (const metric of provenance.metricsOf(entity.id)) {
     Object.assign(merged, metric.payload as MetricsPayload);
   }
-  const tiles = modelMetricTiles.filter(
-    (tile) => typeof merged[tile.key] === "number",
-  );
-  if (tiles.length === 0) {
-    return null;
+  return merged;
+}
+
+/**
+ * The two R-factors, and only those.
+ *
+ * They are what every model in the archive actually carries; RSCC and CC are
+ * recorded for almost none of them, and a column that is empty on all but a
+ * handful of records is a column that teaches the reader to ignore the table.
+ * The full set is still shown wherever every metric is listed.
+ *
+ * A metric the model does not carry is left out rather than printed as a dash,
+ * so a column only appears when there is a number under it.
+ */
+const SUMMARY_METRICS: (keyof MetricsPayload)[] = ["r_work", "r_free"];
+
+export function metricColumns(merged: MetricsPayload): MetricColumn[] {
+  return buildColumns(merged, SUMMARY_METRICS);
+}
+
+function buildColumns(
+  merged: MetricsPayload,
+  only: (keyof MetricsPayload)[] | null,
+): MetricColumn[] {
+  return modelMetricTiles
+    .filter((tile) => only === null || only.includes(tile.key))
+    .filter((tile) => typeof merged[tile.key] === "number")
+    .map((tile) => {
+      const value = merged[tile.key] as number;
+      return {
+        key: String(tile.key),
+        label: tile.label,
+        value: metricFormatter.format(value),
+        status: tile.status(value),
+      };
+    });
+}
+
+/**
+ * The selected model's facts, as plain labelled fields.
+ *
+ * Six of them, split down the middle into two columns by the caller, so the
+ * order here is also the reading order: how it was made on the left, what came
+ * out on the right.
+ *
+ * Counts are separate fields rather than one joined sentence -- reading a
+ * number out of "4 812 atoms · 310 residues" means parsing a sentence to find
+ * it. The crystal's own facts are not here at all: method, resolution and
+ * space group belong to the experiment and have their own tab.
+ */
+export function summaryModelFacts(
+  metadata: Record<string, unknown>,
+  program: Entity | null,
+): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const modelType = stringValue(metadata.model_type);
+  const purpose = stringValue(metadata.purpose);
+  const authors = stringArrayValue(metadata.authors);
+  const atoms = numberValue(metadata.atom_count);
+  const residues = numberValue(metadata.modeled_residues);
+
+  if (program) {
+    facts.push({ label: "Program", value: formatProgram(program) });
+  }
+  if (modelType) {
+    facts.push({ label: "Model type", value: modelType });
+  }
+  if (purpose) {
+    facts.push({ label: "Purpose", value: purpose });
+  }
+  if (authors.length > 0) {
+    facts.push({ label: "Authors", value: authors.join(", ") });
+  }
+  if (atoms != null) {
+    facts.push({
+      label: "Atoms",
+      value: numberFormatter.format(atoms),
+      format: "mono",
+    });
+  }
+  if (residues != null) {
+    facts.push({
+      label: "Residues",
+      value: numberFormatter.format(residues),
+      format: "mono",
+    });
   }
 
-  return (
-    <div className={styles.metricGrid}>
-      {tiles.map((tile) => {
-        const value = merged[tile.key] as number;
-        const status = tile.status(value);
-        return (
-          <div key={tile.key} className={styles.metricTile}>
-            <div className={styles.metricLabel}>{tile.label}</div>
-            {/* Only a value outside its range is coloured. A page where every
-                number is green says nothing; one amber figure is the whole
-                report. */}
-            <div
-              className={styles.metricValue}
-              data-status={status === "good" ? undefined : status}
-            >
-              {metricFormatter.format(value)}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return facts;
 }
 
 export function hasModelEvaluations(entity: Entity, provenance: Provenance) {
@@ -313,16 +436,15 @@ function formatProgram(program: Entity): string {
   return program.name;
 }
 
-export function entryMetadataFacts(
-  metadata: Record<string, unknown> | undefined,
+export function entryInfoFacts(
+  entry: Record<string, unknown>,
 ): MetadataFact[] {
   const facts: MetadataFact[] = [];
-  const externalRefs = recordValue(metadata?.external_refs);
+  const externalRefs = recordValue(entry.external_refs);
   const pdb = stringValue(externalRefs?.pdb);
-  const resolution = numberValue(metadata?.resolution);
-  const organism = stringValue(metadata?.organism);
-  const method = stringValue(metadata?.method);
-  const spaceGroup = stringValue(metadata?.space_group);
+  const resolution = numberValue(entry.resolution);
+  const method = stringValue(entry.method);
+  const spaceGroup = stringValue(entry.space_group);
 
   if (pdb) {
     facts.push({
@@ -344,11 +466,14 @@ export function entryMetadataFacts(
   if (spaceGroup) {
     facts.push({ label: "Space group", value: spaceGroup, format: "mono" });
   }
-  if (organism) {
-    facts.push({ label: "Organism", value: organism, format: "italic" });
-  }
 
   return facts;
+}
+
+export function entryDetails(
+  entry: Record<string, unknown>,
+): string | null {
+  return stringValue(entry.details);
 }
 
 // A PDB ID is four alphanumerics starting with a digit; anything else is not

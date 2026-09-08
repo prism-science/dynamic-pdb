@@ -1,0 +1,225 @@
+/* One framed table per entity: a 1px --border rule and the muted column header
+   the file table and the crystallography table already use. The band above the
+   header is the only thing this component adds. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Square: a rounded frame reads as a card, and four cards stacked look like
+   four things to click. These are records, so they get a plain rule around
+   them. (No overflow clipping either -- it was only there to cut the band's
+   fill to the rounded corners, and it would clip a focus ring.) */
+.box {
+  border: 1px solid var(--border);
+}
+
+/* Six columns are the point of this component, so a narrow viewport scrolls
+   them instead of stacking them. */
+.scroll {
+  overflow-x: auto;
+}
+
+/* Fixed layout and one shared set of column widths: the frames are separate
+   tables, and without this each would size itself, putting the residue counts
+   of four entities in four different places.
+
+   The widths are shares rather than pixels: a molecule name and an organism
+   name have no bound, so they should take the surplus when the page is wide
+   instead of wrapping while a pixel-sized Details column sits half empty. */
+.table {
+  width: 100%;
+  min-width: 720px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.colMolecule {
+  width: 22%;
+}
+
+.colChains {
+  width: 11%;
+}
+
+.colLength {
+  width: 10%;
+}
+
+.colOrganism {
+  width: 19%;
+}
+
+.colUniProt {
+  width: 16%;
+}
+
+/* Which entity this frame is. Kept apart from the column header by colour
+   rather than by weight: both are mono uppercase, and a second grey band would
+   read as a second header. */
+.band th {
+  padding: 7px 14px;
+  text-align: left;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.head th {
+  padding: 9px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.table td {
+  padding: 10px 14px;
+  vertical-align: top;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.molecule {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.number {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Several accessions, or several organisms, stack inside their cell rather
+   than running together on one line. Inside one item the parts stay inline, so
+   `Homo sapiens 9606` wraps as a phrase instead of breaking onto two lines the
+   moment the column is narrow. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two unlike things share the details cell, so each is labelled and each gets
+   its own line. */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detailLabel {
+  display: block;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cell's whole value is the handle on its FASTA: clicking it opens the
+   preview of the artifact these chains were read out of. A button rather than a
+   link -- it opens a dialog on this page, it does not navigate. The auth label
+   inside keeps its own colour: it annotates a chain, it is not part of the
+   control's text, and an inline-block does not take the underline anyway. */
+.chains {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-hover);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chains:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The author's own chain label, when the depositor renamed it: an annotation on
+   the chain, not a second chain. */
+.auth {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.link {
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The taxonomy id is the organism's identifier, so it reads as an annotation on
+   the name rather than as a value of its own. */
+.reference {
+  margin-left: 6px;
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-decoration: none;
+}
+
+.reference:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Under the accession rather than beside it: the column is too narrow to hold
+   both, and the release is a footnote to the accession either way. */
+.caption {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* A fixed column cannot collapse when the deposit recorded nothing, so it says
+   so. */
+.absent {
+  color: var(--text-muted);
+}

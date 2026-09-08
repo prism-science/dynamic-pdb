@@ -25,7 +25,6 @@ export type StructureFacts = {
   metadata: {
     resolution?: number;
     space_group?: string;
-    organism?: string;
     /** One of the backend's StructureMethod values, or absent. The header
      *  writes "X-RAY DIFFRACTION"; the record stores "X-ray crystallography",
      *  and a value outside the enum would be saved verbatim and never match a
@@ -136,14 +135,6 @@ function parsePdb(text: string): StructureFacts {
       const method = canonicalMethod(line.slice(10).trim());
       if (method) {
         facts.metadata.method = method;
-      }
-      continue;
-    }
-
-    if (record === "SOURCE") {
-      const match = /ORGANISM_SCIENTIFIC:\s*([^;]+)/i.exec(line);
-      if (match && !facts.metadata.organism) {
-        facts.metadata.organism = binomial(match[1].trim());
       }
       continue;
     }
@@ -295,13 +286,6 @@ function parseMmcif(text: string): StructureFacts {
     facts.metadata.method = method;
   }
 
-  const organism =
-    cifValue(text, "_entity_src_gen.pdbx_gene_src_scientific_name") ??
-    cifValue(text, "_entity_src_nat.pdbx_organism_scientific");
-  if (organism) {
-    facts.metadata.organism = binomial(organism);
-  }
-
   const atomSite = cifLoop(text, "_atom_site");
   if (atomSite) {
     let atomCount = 0;
@@ -415,7 +399,10 @@ function applyCounts(
  * Anything else returns null: storing an off-enum string would render as a
  * one-off label nobody can search for.
  */
-function canonicalMethod(raw: string): string | null {
+/** The header's spelling of the method mapped onto the record's own
+ *  vocabulary. Null for anything outside it: a value the record cannot hold
+ *  would be saved verbatim and never match a filter. */
+export function canonicalMethod(raw: string): string | null {
   const value = raw.trim().toLowerCase();
   if (!value) {
     return null;
@@ -431,23 +418,6 @@ function canonicalMethod(raw: string): string | null {
     return "CryoEM";
   }
   return null;
-}
-
-/**
- * `KLEBSIELLA PNEUMONIAE` is not a title: under binomial nomenclature the
- * genus is capitalised and the species epithet never is. Title-casing the
- * whole string, as the PDB's shouting invites, produces a name no journal
- * would print.
- *
- * Anything already mixed-case came from mmCIF, which stores it correctly.
- */
-function binomial(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed !== trimmed.toUpperCase()) {
-    return trimmed;
-  }
-  const lower = trimmed.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function normalizePdbId(raw: string): string | null {

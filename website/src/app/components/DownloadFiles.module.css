@@ -1,0 +1,104 @@
+/* ---------------------------------------------------------------------- */
+/* Download Files — the record's named files, behind one button            */
+/* ---------------------------------------------------------------------- */
+
+.wrapper {
+  position: relative;
+  flex: none;
+}
+
+/* The one filled control on the page. Nothing else here competes for the
+   click, and a reader who came to get the files should not have to look for
+   the way to do it. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.caret {
+  width: 0;
+  height: 0;
+  margin-left: 1px;
+  border-top: 4px solid currentColor;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.button[aria-expanded="true"] .caret {
+  transform: rotate(180deg);
+}
+
+/* Right-aligned to the button: the labels are long and the button is at the
+   page's right edge, so a left-aligned menu would hang off it. */
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 232px;
+  padding: 5px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(26 30 42 / 14%);
+}
+
+/* A rule between kinds of file -- sequence, coordinates, measured data -- and
+   none between files of the same kind. */
+.group + .group {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.item {
+  display: block;
+  padding: 6px 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* A file whose address could not be resolved renders as a span, not a link:
+   it stays listed, greyed, rather than silently disappearing. */
+a.item:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+a.item:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+span.item {
+  color: var(--text-muted);
+  cursor: default;
+}

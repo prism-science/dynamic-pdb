@@ -407,7 +407,6 @@ export default function NewEntryForm({
         (facts.resolution !== undefined ? String(facts.resolution) : ""),
       method: current.method || facts.method || "",
       spaceGroup: current.spaceGroup || facts.spaceGroup || "",
-      organism: current.organism || facts.organism || "",
     }));
   }, []);
 
@@ -437,16 +436,14 @@ export default function NewEntryForm({
         return;
       }
 
+      const pdb = metadata.pdb.trim();
       const input: CreateEntryInput = {
-        metadata: {
-          pdb: metadata.pdb.trim() || null,
-          resolution: metadata.resolution.trim()
-            ? Number.parseFloat(metadata.resolution)
-            : null,
-          organism: metadata.organism.trim() || null,
-          method: metadata.method.trim() || null,
-          space_group: metadata.spaceGroup.trim() || null,
-        },
+        external_refs: pdb ? { pdb: pdb.toUpperCase() } : undefined,
+        resolution: metadata.resolution.trim()
+          ? Number.parseFloat(metadata.resolution)
+          : undefined,
+        method: metadata.method.trim() || undefined,
+        space_group: metadata.spaceGroup.trim() || undefined,
         title: title.trim(),
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),
@@ -619,21 +616,6 @@ export default function NewEntryForm({
                 }))
               }
               placeholder="e.g. P 21 21 21"
-              autoComplete="off"
-            />
-          </label>
-          <label className={styles.metricField}>
-            <span>Organism</span>
-            <input
-              className={styles.input}
-              value={metadata.organism}
-              onChange={(event) =>
-                setMetadata((current) => ({
-                  ...current,
-                  organism: event.target.value,
-                }))
-              }
-              placeholder="e.g. Klebsiella pneumoniae"
               autoComplete="off"
             />
           </label>

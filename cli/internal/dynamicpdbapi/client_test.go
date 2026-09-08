@@ -15,6 +15,8 @@ import (
 
 func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testing.T) {
 	// given
+	details := "crystal structure"
+	method := "X-ray crystallography"
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/v1/entries", request.URL.Path)
@@ -26,7 +28,10 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"entry": map[string]any{
-				"title": "5amf",
+				"title":         "5amf",
+				"external_refs": map[string]any{"pdb": "5AMF"},
+				"details":       "crystal structure",
+				"method":        "X-ray crystallography",
 			},
 			"model_operations": []any{
 				map[string]any{
@@ -56,7 +61,14 @@ func Test_should_send_bearer_token_from_client_when_create_entry_called(t *testi
 
 	// when
 	result, err := client.CreateEntry(context.Background(), CreateEntryRequest{
-		Entry: CreateEntryData{Title: "5amf"},
+		Entry: CreateEntryData{
+			EntryProperties: EntryProperties{
+				ExternalRefs: map[string]string{"pdb": "5AMF"},
+				Details:      &details,
+				Method:       &method,
+			},
+			Title: "5amf",
+		},
 		ModelOperations: []AddModelOperation{
 			{
 				Op: "add",
@@ -88,8 +100,8 @@ func Test_should_send_pdb_id_filters_when_list_entries_called(t *testing.T) {
 				jsonAPIResourceData("entries", "entry-1", Entry{
 					ID:    "entry-1",
 					Title: ptr("1YJO"),
-					Metadata: map[string]any{
-						"external_refs": map[string]string{"pdb": "1YJO"},
+					EntryProperties: EntryProperties{
+						ExternalRefs: map[string]string{"pdb": "1YJO"},
 					},
 				}),
 			},
@@ -106,6 +118,7 @@ func Test_should_send_pdb_id_filters_when_list_entries_called(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "entry-1", entries[0].ID)
+	assert.Equal(t, "1YJO", entries[0].ExternalRefs["pdb"])
 }
 
 func Test_should_decode_file_upload_grant_when_create_file_upload_called(t *testing.T) {

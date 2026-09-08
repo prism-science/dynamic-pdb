@@ -1074,9 +1074,9 @@ func (s *Server) entryRevisionAttributesFromModel(
 	ctx context.Context,
 	revision domainmodels.EntryRevision,
 ) (EntryRevisionAttributes, error) {
-	metadata, err := metadataFromValue(revision.Metadata)
+	properties, err := entryPropertiesFromModel(revision.Metadata)
 	if err != nil {
-		return EntryRevisionAttributes{}, fmt.Errorf("build entry revision metadata: %w", err)
+		return EntryRevisionAttributes{}, fmt.Errorf("build entry revision fields: %w", err)
 	}
 	artifacts, err := s.database.Artifacts.List(ctx, db.ArtifactFilters{EntryRevisionID: &revision.ID})
 	if err != nil {
@@ -1104,7 +1104,12 @@ func (s *Server) entryRevisionAttributesFromModel(
 		CreatedAt:         listItem.CreatedAt,
 		UpdatedAt:         listItem.UpdatedAt,
 		ThumbnailImageUrl: revision.ThumbnailImageURL,
-		Metadata:          metadata,
+		ExternalRefs:      properties.ExternalRefs,
+		Details:           properties.Details,
+		Resolution:        properties.Resolution,
+		Method:            properties.Method,
+		SpaceGroup:        properties.SpaceGroup,
+		Crystallography:   properties.Crystallography,
 		ProteinSequences:  proteinSequencesFromModels(sequences),
 		Artifacts:         artifactAttributes,
 	}, nil

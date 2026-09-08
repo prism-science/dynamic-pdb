@@ -100,8 +100,11 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 		switch r.URL.Path {
 		case "/rest/v1/core/entry/5AMF":
 			writeText(t, w, `{
-				"struct": {"title": "example structure"},
+				"struct": {"title": "example structure", "pdbx_details": "entry details"},
 				"exptl": [{"method": "X-RAY DIFFRACTION"}],
+				"exptl_crystal": [{"id": "1"}],
+				"exptl_crystal_grow": [{"crystal_id": "1", "pH": 7.5, "temp": 293}],
+				"diffrn": [{"id": "1", "crystal_id": "1", "ambient_temp": 100}],
 				"rcsb_entry_info": {
 					"resolution_combined": [1.5],
 					"deposited_atom_count": 1383,
@@ -122,7 +125,24 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 			}`)
 		case "/rest/v1/core/polymer_entity/5AMF/2":
 			writeText(t, w, `{
-				"rcsb_entity_source_organism": [{"ncbi_scientific_name": "Homo sapiens"}, {"ncbi_scientific_name": "Escherichia coli"}]
+				"entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+				"rcsb_polymer_entity": {
+					"pdbx_description": "Example protein",
+					"pdbx_fragment": "Catalytic domain",
+					"pdbx_mutation": "A12G"
+				},
+				"rcsb_polymer_entity_container_identifiers": {
+					"entity_id": "2",
+					"reference_sequence_identifiers": [{
+						"database_accession": "P12345",
+						"database_name": "UniProt",
+						"provenance_source": "SIFTS"
+					}]
+				},
+				"rcsb_entity_source_organism": [
+					{"ncbi_scientific_name": "Homo sapiens", "ncbi_taxonomy_id": 9606},
+					{"ncbi_scientific_name": "Escherichia coli", "ncbi_taxonomy_id": 562}
+				]
 			}`)
 		default:
 			http.NotFound(w, r)
@@ -163,12 +183,33 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, 0.21, refinement["ls_R_factor_R_free"])
 	assert.Equal(t, 0.18, refinement["ls_R_factor_R_work"])
 	assert.Equal(t, "example structure", entryDetails.Structure.Title)
+	assert.Equal(t, "entry details", entryDetails.Structure.Details)
 	assert.Equal(t, "X-RAY DIFFRACTION", entryDetails.Experiments[0].Method)
+	require.Len(t, entryDetails.Crystals, 1)
+	assert.Equal(t, "1", entryDetails.Crystals[0].ID)
+	require.Len(t, entryDetails.CrystalGrowth, 1)
+	assert.Equal(t, "1", entryDetails.CrystalGrowth[0].CrystalID)
+	assert.Equal(t, 7.5, *entryDetails.CrystalGrowth[0].PH)
+	assert.Equal(t, 293.0, *entryDetails.CrystalGrowth[0].TemperatureKelvin)
+	require.Len(t, entryDetails.Diffractions, 1)
+	assert.Equal(t, "1", entryDetails.Diffractions[0].ID)
+	assert.Equal(t, "1", entryDetails.Diffractions[0].CrystalID)
+	assert.Equal(t, 100.0, *entryDetails.Diffractions[0].TemperatureKelvin)
 	assert.Equal(t, []float64{1.5}, entryDetails.Info.CombinedResolution)
 	assert.Equal(t, "P 21 21 21", entryDetails.Symmetry.SpaceGroup)
 	assert.Equal(t, []string{"1", "2"}, entryDetails.Identifiers.PolymerEntityIDs)
 	assert.Equal(t, "Homo sapiens", polymerEntityDetails.SourceOrganisms[0].ScientificName)
 	assert.Equal(t, "Escherichia coli", polymerEntityDetails.SourceOrganisms[1].ScientificName)
+	assert.Equal(t, 9606, *polymerEntityDetails.SourceOrganisms[0].NCBITaxonomyID)
+	assert.Equal(t, "ACDE", polymerEntityDetails.Polymer.CanonicalSequence)
+	assert.Equal(t, "Example protein", polymerEntityDetails.Entity.Description)
+	assert.Equal(t, "Catalytic domain", polymerEntityDetails.Entity.Fragment)
+	assert.Equal(t, "A12G", polymerEntityDetails.Entity.Mutation)
+	assert.Equal(t, "2", polymerEntityDetails.Identifiers.EntityID)
+	require.Len(t, polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers, 1)
+	assert.Equal(t, "P12345", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseAccession)
+	assert.Equal(t, "UniProt", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseName)
+	assert.Equal(t, "SIFTS", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].ProvenanceSource)
 }
 
 func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {

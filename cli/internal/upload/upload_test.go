@@ -47,13 +47,11 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	entryRequest := dynamicPDBClient.entries[0]
 	entry := entryRequest.Entry
 	assert.Equal(t, "example structure", entry.Title)
-	assert.Equal(t, "example structure", entry.Metadata["title"])
-	assert.Equal(t, "Homo sapiens", entry.Metadata["organism"])
-	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
-	assert.Equal(t, "P 21 21 21", entry.Metadata["space_group"])
-	externalRefs, ok := entry.Metadata["external_refs"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "5AMF", externalRefs["pdb"])
+	require.NotNil(t, entry.Method)
+	assert.Equal(t, "X-ray crystallography", *entry.Method)
+	require.NotNil(t, entry.SpaceGroup)
+	assert.Equal(t, "P 21 21 21", *entry.SpaceGroup)
+	assert.Equal(t, "5AMF", entry.ExternalRefs["pdb"])
 	require.NotNil(t, entry.ThumbnailImageURL)
 	assert.Contains(t, *entry.ThumbnailImageURL, "https://cdn.example.test/")
 	assert.Contains(t, *entry.ThumbnailImageURL, "/5amf_assembly-1.jpeg")
@@ -326,8 +324,8 @@ func Test_should_add_models_to_existing_entry_when_pdb_id_already_exists(t *test
 			{
 				ID:    existingEntryID,
 				Title: stringPtr("Existing 5AMF"),
-				Metadata: map[string]any{
-					"external_refs": map[string]any{"pdb": "5AMF"},
+				EntryProperties: dynamicpdbapi.EntryProperties{
+					ExternalRefs: map[string]string{"pdb": "5AMF"},
 				},
 			},
 		},
@@ -366,8 +364,8 @@ func Test_should_add_models_to_existing_entry_when_create_entry_hits_pdb_ref_con
 				{
 					ID:    existingEntryID,
 					Title: stringPtr("Existing 5AMF"),
-					Metadata: map[string]any{
-						"external_refs": map[string]any{"pdb": "5AMF"},
+					EntryProperties: dynamicpdbapi.EntryProperties{
+						ExternalRefs: map[string]string{"pdb": "5AMF"},
 					},
 				},
 			},
@@ -1044,7 +1042,6 @@ func testManifest(dataRoot string, coordinateSource string, logSource string, mt
 	entry.Metadata = manifest.EntryMetadata{
 		"title":       rcsbJSONExtraction("entry", "struct.title"),
 		"method":      rcsbJSONExtraction("entry", "exptl[0].method"),
-		"organism":    rcsbJSONExtraction("polymer_entity", "rcsb_entity_source_organism.ncbi_scientific_name"),
 		"resolution":  rcsbJSONExtraction("entry", "rcsb_entry_info.resolution_combined[0]"),
 		"space_group": rcsbJSONExtraction("entry", "symmetry.space_group_name_H_M"),
 	}

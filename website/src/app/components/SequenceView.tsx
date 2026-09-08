@@ -3,14 +3,9 @@
 import { useMemo, useState } from "react";
 
 import type { FastaMetadata } from "@/lib/api/entries";
-import { FASTA_LINE, fastaRecords } from "@/lib/fasta";
+import { fastaRecords, sequenceLines } from "@/lib/fasta";
 
 import styles from "./SequenceView.module.css";
-
-// Residues in blocks of ten, sixty to a line, as every sequence database prints
-// them.
-const GROUP = 10;
-const PER_LINE = FASTA_LINE;
 
 type Chain = {
   fields: string[];
@@ -115,7 +110,7 @@ function parse(metadata: FastaMetadata): Parsed {
       fields: rows[index],
       header: headers[index],
       sequence: record.sequence,
-      lines: toLines(record.sequence),
+      lines: sequenceLines(record.sequence),
     })),
     switchColumn: records.length > 1 ? findSwitchColumn(rows, records.length) : null,
   };
@@ -149,19 +144,6 @@ function findSwitchColumn(rows: string[][], count: number): number | null {
   }
 
   return null;
-}
-
-function toLines(sequence: string): string[] {
-  const lines: string[] = [];
-  for (let offset = 0; offset < sequence.length; offset += PER_LINE) {
-    const slice = sequence.slice(offset, offset + PER_LINE);
-    const groups: string[] = [];
-    for (let position = 0; position < slice.length; position += GROUP) {
-      groups.push(slice.slice(position, position + GROUP));
-    }
-    lines.push(groups.join(" "));
-  }
-  return lines;
 }
 
 function ChevronIcon() {

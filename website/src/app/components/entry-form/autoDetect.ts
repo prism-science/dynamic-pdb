@@ -33,7 +33,6 @@ export type EntryFacts = {
   resolution?: number;
   method?: string;
   spaceGroup?: string;
-  organism?: string;
 };
 
 export async function detectFromFile(
@@ -59,9 +58,6 @@ export async function detectFromFile(
       ...(facts.metadata.method ? { method: facts.metadata.method } : {}),
       ...(facts.metadata.space_group
         ? { spaceGroup: facts.metadata.space_group }
-        : {}),
-      ...(facts.metadata.organism
-        ? { organism: facts.metadata.organism }
         : {}),
     });
     return applyStructure(draft, parsedFile, facts, file.name);

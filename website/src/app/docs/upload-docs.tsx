@@ -164,7 +164,7 @@ export default function UploadDocs() {
       <p className={styles.bodyText}>From JSON, by dotted path:</p>
       <pre className={styles.pre}>
         <code>
-          {"metadata:   # title, method, resolution, organism, space_group\n" +
+          {"metadata:   # title, method, resolution, space_group\n" +
             "  resolution:\n" +
             "    - source:\n" +
             "        files:\n" +
