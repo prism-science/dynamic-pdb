@@ -21,7 +21,8 @@ import (
 
 const (
 	dataSyncLockName        = "data-sync"
-	dataSyncInterval        = time.Hour
+	dataSyncPollingInterval = 5 * time.Second
+	dataSyncRetryInterval   = time.Hour
 	dataSyncBatchTimeout    = 5 * time.Minute
 	dataSyncMinimumInterval = 7 * 24 * time.Hour
 	dataSyncScheduleJitter  = 7 * 24 * time.Hour
@@ -77,7 +78,7 @@ func (j *DataSyncJob) Run(ctx context.Context) {
 		} else if !ran && ctx.Err() == nil {
 			j.logger.Info("data sync iteration skipped", "reason", "lock is already held")
 		}
-		if !waitForDataSync(ctx, dataSyncInterval) {
+		if !waitForDataSync(ctx, dataSyncPollingInterval) {
 			return
 		}
 	}
@@ -123,7 +124,7 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 	}
 
 	if executionErr := j.execute(ctx, *job); executionErr != nil {
-		job.ScheduledAt = j.now().Add(dataSyncInterval)
+		job.ScheduledAt = j.now().Add(dataSyncRetryInterval)
 		if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
 			return false, errors.Join(
 				fmt.Errorf("execute data sync job: %w", executionErr),
