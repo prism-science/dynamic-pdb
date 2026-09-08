@@ -23,6 +23,10 @@ import styles from "./FileDetailsModal.module.css";
  * The viewer is one step further in rather than what a click on the row does:
  * most visits to a file are about what it is, not about looking inside it, and
  * the structure viewer is heavy enough that opening it by accident is a cost.
+ *
+ * View and Download sit on the header strip, where the preview dialog keeps
+ * its own actions: the body of either window is about the file, and the strip
+ * above it is what you can do with it.
  */
 export default function FileDetailsModal({
   item,
@@ -91,14 +95,41 @@ export default function FileDetailsModal({
       >
         <div className={styles.head}>
           <span className={styles.title}>{item.name}</span>
-          <button
-            type="button"
-            className={styles.close}
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
+          {/* On the strip beside the name, the way the preview dialog carries
+              its own actions: what you can do with the file is the same
+              question in both windows, so it is answered in the same place. */}
+          <div className={styles.actions}>
+            {canPreview && entity ? (
+              <button
+                type="button"
+                className={styles.action}
+                onClick={() => onPreview(entity)}
+              >
+                <MoleculeIcon />
+                View
+              </button>
+            ) : null}
+            {item.url ? (
+              <ResolvedFileLink
+                className={styles.action}
+                href={item.url}
+                download
+                rel="noreferrer"
+                target="_blank"
+              >
+                <DownloadIcon />
+                Download
+              </ResolvedFileLink>
+            ) : null}
+            <button
+              type="button"
+              className={styles.close}
+              onClick={onClose}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className={styles.body}>
@@ -137,31 +168,6 @@ export default function FileDetailsModal({
               <code className={styles.checksumValue}>{sha256}</code>
             </div>
           ) : null}
-
-          <div className={styles.actions}>
-            {canPreview && entity ? (
-              <button
-                type="button"
-                className={styles.preview}
-                onClick={() => onPreview(entity)}
-              >
-                <MoleculeIcon />
-                View
-              </button>
-            ) : null}
-            {item.url ? (
-              <ResolvedFileLink
-                className={styles.download}
-                href={item.url}
-                download
-                rel="noreferrer"
-                target="_blank"
-              >
-                <DownloadIcon />
-                Download
-              </ResolvedFileLink>
-            ) : null}
-          </div>
         </div>
       </div>
     </div>,
