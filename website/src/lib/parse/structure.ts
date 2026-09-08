@@ -399,7 +399,10 @@ function applyCounts(
  * Anything else returns null: storing an off-enum string would render as a
  * one-off label nobody can search for.
  */
-function canonicalMethod(raw: string): string | null {
+/** The header's spelling of the method mapped onto the record's own
+ *  vocabulary. Null for anything outside it: a value the record cannot hold
+ *  would be saved verbatim and never match a filter. */
+export function canonicalMethod(raw: string): string | null {
   const value = raw.trim().toLowerCase();
   if (!value) {
     return null;

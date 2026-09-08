@@ -16,15 +16,16 @@ import {
 } from "@/lib/entities";
 import { entryIdentity, formatEntryLabel } from "@/lib/entry-label";
 import { crystallographyView } from "@/lib/crystallography";
+import { experimentView, hasExperimentRecord } from "@/lib/experiment";
 import { downloadGroups } from "@/lib/download-files";
 import { defaultModel, modelTitle } from "@/lib/model-metrics";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { sequenceChains } from "@/lib/sequence-tracks";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
-import { readModelStructure } from "@/lib/api/coordinates";
+import { readModelFile, readModelStructure } from "@/lib/api/coordinates";
 import { scopeRailModels } from "@/lib/scope-rail";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
-import Crystallography from "@/app/components/Crystallography";
+import Experiment from "@/app/components/Experiment";
 import DownloadFiles from "@/app/components/DownloadFiles";
 import EntryOverview, {
   type SummaryModel,
@@ -129,6 +130,18 @@ export default async function ScopePage({
       ? await readModelStructure(structure?.url ?? null)
       : [];
 
+  // Most of what we know about the experiment is in the model's own coordinate
+  // file rather than in the record, so the Experiment tab reads it -- and, for
+  // the same reason as the sequence tracks, only while that tab is open.
+  const experiment =
+    requestedTab === "experiment"
+      ? experimentView(
+          data.entry,
+          crystallography,
+          await readModelFile(structure?.url ?? null),
+        )
+      : null;
+
   // Everything the Summary tab needs about the selected model, flattened here
   // so the component stays a renderer and the page keeps the joining.
   const summaryModel: SummaryModel | null =
@@ -158,7 +171,9 @@ export default async function ScopePage({
   if (structure) {
     tabs.push({ id: "structure", label: "Structure" });
   }
-  if (crystallography) {
+  // Offered on what the record holds plus the presence of a file to read:
+  // the strip is built on every render, and the file is not.
+  if (hasExperimentRecord(data.entry) || crystallography || structure) {
     tabs.push({ id: "experiment", label: "Experiment" });
   }
   // One tab for everything about the sequence: the residues themselves, and
@@ -253,9 +268,9 @@ export default async function ScopePage({
             </section>
           ) : null}
 
-          {active === "experiment" && crystallography ? (
-            <section aria-label="Crystallography">
-              <Crystallography view={crystallography} />
+          {active === "experiment" && experiment ? (
+            <section aria-label="Experiment">
+              <Experiment view={experiment} />
             </section>
           ) : null}
 

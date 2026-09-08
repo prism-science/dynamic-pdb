@@ -23,25 +23,34 @@ const MAX_BYTES = 24 * 1024 * 1024;
 export async function readModelStructure(
   url: string | null,
 ): Promise<StructureResidues[]> {
+  const text = await readModelFile(url);
+  return text === null ? [] : readStructure(text);
+}
+
+/**
+ * The coordinate file itself, for the readers that want more of it than the
+ * residue tracks -- the Experiment tab reads its header categories.
+ *
+ * Null on anything going wrong, for the reasons above. Next's data cache means
+ * two tabs reading the same file in one render fetch it once.
+ */
+export async function readModelFile(url: string | null): Promise<string | null> {
   if (!url || !/^https?:/i.test(url)) {
-    return [];
+    return null;
   }
   try {
     const response = await fetch(url, { next: { revalidate: CACHE_SECONDS } });
     if (!response.ok) {
-      return [];
+      return null;
     }
     const length = Number(response.headers.get("content-length") ?? "0");
     if (length > MAX_BYTES) {
-      return [];
+      return null;
     }
     const text = await response.text();
-    if (text.length > MAX_BYTES) {
-      return [];
-    }
-    return readStructure(text);
+    return text.length > MAX_BYTES ? null : text;
   } catch (error) {
     console.error("read model coordinates failed", url, error);
-    return [];
+    return null;
   }
 }
