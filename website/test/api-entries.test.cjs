@@ -92,7 +92,15 @@ test("should get entry from json api document", async () => {
         created_by: "user-1",
         title: "Entry",
         thumbnail_image_url: "https://cdn.example/entry.png",
-        metadata: { method: "X-ray crystallography" },
+        method: "X-ray crystallography",
+        details: "Additional structure details",
+        crystallography: {
+          crystals: [{
+            id: "1",
+            growth: { ph: 7.5, temperature_kelvin: 293 },
+            diffractions: [{ id: "1", temperature_kelvin: 100 }],
+          }],
+        },
         protein_sequences: [
           {
             id: "sequence-1",
@@ -133,7 +141,15 @@ test("should get entry from json api document", async () => {
       created_by: "user-1",
       title: "Entry",
       thumbnail_image_url: "https://cdn.example/entry.png",
-      metadata: { method: "X-ray crystallography" },
+      method: "X-ray crystallography",
+      details: "Additional structure details",
+      crystallography: {
+        crystals: [{
+          id: "1",
+          growth: { ph: 7.5, temperature_kelvin: 293 },
+          diffractions: [{ id: "1", temperature_kelvin: 100 }],
+        }],
+      },
       protein_sequences: [
         {
           id: "sequence-1",
@@ -238,6 +254,18 @@ test("should post create entry using the new backend graph shape", async () => {
 
     const result = await createEntry("token-123", {
       title: "Entry",
+      external_refs: { pdb: "5GY3" },
+      details: "Additional structure details",
+      resolution: 1.77,
+      method: "X-ray crystallography",
+      space_group: "P 21 21 21",
+      crystallography: {
+        crystals: [{
+          id: "1",
+          growth: { ph: 9, temperature_kelvin: 293 },
+          diffractions: [{ id: "1", temperature_kelvin: 100 }],
+        }],
+      },
       entities: [
         {
           id: "baseline",
@@ -302,6 +330,13 @@ test("should post create entry using the new backend graph shape", async () => {
     assert.equal(request.init.headers["Content-Type"], jsonApiMediaType);
     assert.equal(request.init.headers.Authorization, "Bearer token-123");
     assert.equal(request.body.entities, undefined);
+    assert.equal(request.body.entry.metadata, undefined);
+    assert.deepEqual(request.body.entry.external_refs, { pdb: "5GY3" });
+    assert.equal(request.body.entry.details, "Additional structure details");
+    assert.equal(request.body.entry.resolution, 1.77);
+    assert.equal(request.body.entry.method, "X-ray crystallography");
+    assert.equal(request.body.entry.space_group, "P 21 21 21");
+    assert.equal(request.body.entry.crystallography.crystals[0].growth.ph, 9);
     assert.deepEqual(request.body.entry.artifacts, [
       {
         id: "baseline",
@@ -468,7 +503,7 @@ test("should group the review queue by entry and pair each revision with the one
               entry: {
                 id: "entry-1",
                 title: "Entry",
-                metadata: { external_refs: { pdb: "7B3H" } },
+                external_refs: { pdb: "7B3H" },
               },
               entry_revisions: [
                 revisionSummary("entry-revision-1", "2026-01-01T01:00:00Z"),
@@ -798,7 +833,12 @@ function entryDocument(entry) {
       attributes: {
         title: entry.title,
         thumbnail_image_url: entry.thumbnail_image_url,
-        metadata: entry.metadata ?? {},
+        external_refs: entry.external_refs,
+        details: entry.details,
+        resolution: entry.resolution,
+        method: entry.method,
+        space_group: entry.space_group,
+        crystallography: entry.crystallography,
         polymer_entities: entry.polymer_entities ?? [],
         published_at: entry.published_at ?? null,
         created_at: entry.created_at,

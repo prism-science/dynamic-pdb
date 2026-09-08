@@ -436,15 +436,14 @@ export default function NewEntryForm({
         return;
       }
 
+      const pdb = metadata.pdb.trim();
       const input: CreateEntryInput = {
-        metadata: {
-          pdb: metadata.pdb.trim() || null,
-          resolution: metadata.resolution.trim()
-            ? Number.parseFloat(metadata.resolution)
-            : null,
-          method: metadata.method.trim() || null,
-          space_group: metadata.spaceGroup.trim() || null,
-        },
+        external_refs: pdb ? { pdb: pdb.toUpperCase() } : undefined,
+        resolution: metadata.resolution.trim()
+          ? Number.parseFloat(metadata.resolution)
+          : undefined,
+        method: metadata.method.trim() || undefined,
+        space_group: metadata.spaceGroup.trim() || undefined,
         title: title.trim(),
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),

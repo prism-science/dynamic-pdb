@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const {
   chainsLabel,
+  groupedPolymerEntities,
   hasEntityDetails,
   mutationTokens,
   organismLabel,
@@ -209,6 +210,115 @@ test("should strip the reading spaces when a sequence is copied", () => {
   assert.equal(copied, "VLSPADKTNVKAAWGKVGAHAGEYGAEALE");
 });
 
+test("should read one molecule in several constructs as one group", () => {
+  // given -- 5NX1: one inhibitor deposited as three fragments plus the enzyme
+  const entities = [
+    entity({
+      label_entity_id: "1",
+      description: "Kallikrein-6",
+      source_organisms: [{ scientific_name: "Homo sapiens", ncbi_taxonomy_id: 9606 }],
+      uniprot_mappings: [{ accession: "Q92876", source: "sifts" }],
+    }),
+    entity({
+      label_entity_id: "2",
+      description: "Amyloid-beta A4 protein",
+      source_organisms: [{ scientific_name: "Homo sapiens", ncbi_taxonomy_id: 9606 }],
+      uniprot_mappings: [{ accession: "P05067", source: "sifts" }],
+    }),
+    entity({
+      label_entity_id: "3",
+      description: "Amyloid-beta A4 protein",
+      source_organisms: [{ scientific_name: "Homo sapiens", ncbi_taxonomy_id: 9606 }],
+      uniprot_mappings: [{ accession: "P05067", source: "sifts" }],
+    }),
+  ];
+  const sequences = [
+    sequence("5NX1_1|Chain A|Kallikrein-6", "A".repeat(223)),
+    sequence("5NX1_2|Chain B|Amyloid-beta A4 protein", "A".repeat(25)),
+    sequence("5NX1_3|Chain C|Amyloid-beta A4 protein", "A".repeat(56)),
+  ];
+
+  // when
+  const groups = groupedPolymerEntities(polymerEntityViews(entities, sequences));
+
+  // then
+  assert.equal(groups.length, 2);
+  assert.deepEqual(
+    groups.map((group) => [group.name, group.chains, group.residues, group.entityCount]),
+    [
+      ["Kallikrein-6", ["A"], 223, 1],
+      ["Amyloid-beta A4 protein", ["B", "C"], 81, 2],
+    ],
+  );
+});
+
+test("should group by molecule name when there is no uniprot mapping", () => {
+  // given
+  const entities = [
+    entity({ label_entity_id: "1", description: "DNA polymerase" }),
+    entity({ label_entity_id: "2", description: "DNA polymerase" }),
+    entity({ label_entity_id: "3", description: "Thioredoxin" }),
+  ];
+
+  // when
+  const groups = groupedPolymerEntities(polymerEntityViews(entities, []));
+
+  // then
+  assert.deepEqual(groups.map((group) => group.entityCount), [2, 1]);
+});
+
+test("should keep every distinct organism of a group and no duplicates", () => {
+  // given
+  const entities = [
+    entity({
+      label_entity_id: "1",
+      description: "Chimera",
+      source_organisms: [{ scientific_name: "Homo sapiens" }],
+      uniprot_mappings: [{ accession: "P00001", source: "sifts" }],
+    }),
+    entity({
+      label_entity_id: "2",
+      description: "Chimera",
+      source_organisms: [
+        { scientific_name: "Homo sapiens" },
+        { scientific_name: "Escherichia coli" },
+      ],
+      uniprot_mappings: [{ accession: "P00001", source: "sifts" }],
+    }),
+  ];
+
+  // when
+  const [group] = groupedPolymerEntities(polymerEntityViews(entities, []));
+
+  // then
+  assert.deepEqual(
+    group.organisms.map((organism) => organism.scientific_name),
+    ["Homo sapiens", "Escherichia coli"],
+  );
+});
+
+test("should carry the artifact of the matched sequence, and nothing when none matched", () => {
+  // given -- two FASTA files, one record each: a chain must lead to the file it
+  // was read out of, not to whichever file came first.
+  const entities = [
+    entity({ label_entity_id: "1", description: "Kallikrein-6" }),
+    entity({ label_entity_id: "2", description: "Amyloid-beta A4 protein" }),
+    entity({ label_entity_id: "3", description: "tRNA-Phe" }),
+  ];
+  const sequences = [
+    sequence("5NX1_1|Chain A|Kallikrein-6", "LVHGGPCDKT", "artifact-kallikrein"),
+    sequence("5NX1_2|Chain B|Amyloid-beta A4 protein", "YVDYK", "artifact-appi"),
+  ];
+
+  // when
+  const views = polymerEntityViews(entities, sequences);
+
+  // then
+  assert.equal(views[0].sequenceArtifactId, "artifact-kallikrein");
+  assert.equal(views[1].sequenceArtifactId, "artifact-appi");
+  assert.equal(views[2].sequenceArtifactId, null);
+});
+
 function entity(overrides) {
   return {
     id: `entity-${overrides.label_entity_id ?? "x"}`,
@@ -219,10 +329,10 @@ function entity(overrides) {
   };
 }
 
-function sequence(header, residues) {
+function sequence(header, residues, artifactId = "artifact-1") {
   return {
     id: `sequence-${header}`,
-    source_artifact_id: "artifact-1",
+    source_artifact_id: artifactId,
     record_index: 0,
     header,
     sequence: residues,

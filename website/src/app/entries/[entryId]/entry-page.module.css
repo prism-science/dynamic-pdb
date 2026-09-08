@@ -6,6 +6,121 @@
   color: var(--text);
 }
 
+
+
+/* --------------------------------------------------------------------- */
+/* Scope — the rail beside the record it selects                          */
+/* --------------------------------------------------------------------- */
+
+/* Half the side padding the other pages use. The modifier is on this page
+   only -- `.page` is shared with the review preview, which is a single column
+   and still wants the site's spacing. */
+.scopeWide {
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.scope {
+  /* The page's top padding, the identity strip, and the space under it. The
+     tabs stick directly below this, so the number lives here rather than being
+     guessed twice. */
+  --scope-head-height: 96px;
+
+  /* Wider than the site's 1120, by exactly the rail: this page carries a
+     navigation column the other pages do not, and at 1120 the record was
+     paying for it. The record itself keeps the measure it reads best at. */
+  width: min(1380px, 100%);
+  margin: 0 auto;
+}
+
+/* The name of the record, across both columns, and it does not move: it is
+   the answer to "where am I", which is exactly what should not scroll away.
+   The negative margin lets it cover the page's own top padding as it sticks,
+   and the space under the name is padding rather than margin so that the strip
+   is opaque all the way down to the tabs. */
+.scopeHead {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 3;
+  box-sizing: border-box;
+  height: var(--scope-head-height);
+  margin-top: -28px;
+  padding: 28px 0 18px;
+  background: var(--bg);
+}
+
+.scopeHead .identityBar {
+  margin-bottom: 0;
+}
+
+/* The name takes the room it needs and the download button sits against the
+   page's right edge, where it is on every other structure database. */
+.scopeHead .identityName {
+  margin-right: auto;
+}
+
+/* Only over the column they change. Sticky right under the name, for the same
+   reason the name is sticky. */
+.scopeTabs {
+  position: sticky;
+  top: calc(var(--header-height) + var(--scope-head-height));
+  z-index: 2;
+  padding-bottom: 24px;
+  background: var(--bg);
+}
+
+.scopeTabs > nav {
+  margin-bottom: 0;
+}
+
+/* No `align-items: start` here, on purpose. Start-aligned, each column's box
+   is only as tall as its own content, and a sticky child then has nowhere to
+   travel -- the rail would scroll away with the page. Stretched, the rail's
+   box is as tall as the record beside it, which is exactly the distance it
+   needs to hold still over. */
+.scopeGrid {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+}
+
+/* Room under the last section so the record can scroll clear of the rail's
+   full-height column rather than ending flush against the fold. */
+.scopeBody {
+  padding-bottom: 40px;
+}
+
+.scopeBody {
+  min-width: 0;
+  padding-left: 30px;
+}
+
+/* The parent record, above the model's own name: the rail says which entry we
+   are in, but the heading is where a reader looks for it. */
+.scopeParent {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+
+.scopeParent a {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+.scopeParent a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .scopeGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scopeBody {
+    padding-left: 0;
+  }
+}
+
 .shell {
   width: min(1120px, 100%);
   margin: 0 auto;
@@ -25,6 +140,115 @@
   grid-template-columns: 240px minmax(0, 1fr);
   gap: 36px;
   align-items: start;
+}
+
+/* --------------------------------------------------------------------- */
+/* Entry — identity strip above the tabs                                  */
+/* --------------------------------------------------------------------- */
+
+/* The name and the picture, and nothing else: every fact that used to sit in
+   the rail now belongs to a tab, so this strip only has to say which record
+   you are looking at. */
+.identityBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.identityThumb {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.identityThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.identityThumb[data-empty="true"] {
+  border: 1px solid var(--border);
+}
+
+.identityName {
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------- */
+/* Model overview — facts on the left, the picture and its actions right   */
+/* --------------------------------------------------------------------- */
+
+.modelOverview {
+  min-width: 0;
+}
+
+/* The selected model's name, with its counts on the same line: the heading
+   says which model everything below is about, and the counts are the cheapest
+   description of it. */
+.scopeSectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.scopeSectionHead .contentHeading {
+  margin-bottom: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+/* Atoms, residues, chains, on the heading's line. Not tiles -- they would
+   compete with the evaluation metrics, which are the numbers worth reading. */
+.modelVitals {
+  margin-bottom: 14px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.scopeInfo {
+  margin-top: 22px;
+}
+
+/* The blocks of the overview are separated by space, not by rules: each one
+   already carries its own frame, and a divider on top of that is a second
+   frame around the same break. */
+.scopeSection {
+  margin-top: 30px;
+  padding: 0;
+}
+
+/* A tab's own controls sit above its content, on the line the section heading
+   used to occupy. */
+.tabActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+/* The similarity list was drawn for a 240px rail; under the sequence it keeps
+   that measure instead of stretching its rows across the page. */
+.similarBlock {
+  width: min(320px, 100%);
+  margin-top: 30px;
 }
 
 .sidebar {
@@ -88,6 +312,18 @@
   color: var(--text-secondary);
   font-size: 15px;
   line-height: 1.6;
+}
+
+.details {
+  margin: -12px 0 22px;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.contentHeading + .details {
+  margin-top: 0;
 }
 
 /* No rules between sections: the file list and the model table carry their
@@ -234,6 +470,13 @@
   align-items: start;
   column-gap: 40px;
   width: min(720px, 100%);
+}
+
+/* One column: the caller is arranging the columns, so this block is just a
+   list and takes whatever width it was given. */
+.infoColumns[data-columns="1"] {
+  grid-template-columns: minmax(0, 1fr);
+  width: auto;
 }
 
 .infoColumn {

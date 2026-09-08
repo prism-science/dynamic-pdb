@@ -308,3 +308,9 @@
     gap: 6px;
   }
 }
+
+/* On its own tab the viewer is the page, and a page does not have corners. */
+.structureViewer[data-square="true"],
+.structureViewer[data-square="true"] .structureCanvas {
+  border-radius: 0;
+}

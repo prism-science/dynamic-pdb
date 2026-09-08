@@ -8,13 +8,41 @@ import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 type JSONRecord = Record<string, unknown>;
 
-export type Entry = {
+export type EntryCrystalGrowth = {
+  ph?: number;
+  temperature_kelvin?: number;
+};
+
+export type EntryDiffraction = {
+  id: string;
+  temperature_kelvin?: number;
+};
+
+export type EntryCrystal = {
+  id: string;
+  growth?: EntryCrystalGrowth;
+  diffractions?: EntryDiffraction[];
+};
+
+export type EntryCrystallography = {
+  crystals?: EntryCrystal[];
+};
+
+export type EntryProperties = {
+  external_refs?: Record<string, string>;
+  details?: string;
+  resolution?: number;
+  method?: string;
+  space_group?: string;
+  crystallography?: EntryCrystallography;
+};
+
+export type Entry = EntryProperties & {
   id: string;
   created_by: string;
   title: string | null;
   thumbnail_image_url: string | null;
   idempotency_key?: string | null;
-  metadata?: JSONRecord;
   protein_sequences?: ProteinSequence[];
   polymer_entities?: PolymerEntity[];
   published_at?: string | null;
@@ -102,10 +130,9 @@ type EntryData = {
   relationships: EntryRelationships;
 };
 
-type EntryAttributes = {
+type EntryAttributes = EntryProperties & {
   title: string | null;
   thumbnail_image_url: string | null;
-  metadata: JSONRecord;
   polymer_entities?: PolymerEntity[];
   published_at?: string | null;
   created_at: string;
@@ -334,10 +361,9 @@ type BackendCreateModelData = {
 };
 
 type BackendCreateEntryRequest = {
-  entry: {
+  entry: EntryProperties & {
     title: string;
     thumbnail_image_url?: string | null;
-    metadata: JSONRecord;
     artifacts: CreateArtifactRequest[];
   };
   model_operations: {
@@ -497,20 +523,11 @@ export type CreateModelInput = {
   metadata?: JSONRecord;
 };
 
-export type CreateEntryMetadata = {
-  pdb?: string | null;
-  resolution?: number | null;
-  method?: string | null;
-  space_group?: string | null;
-};
-
-export type CreateEntryInput = {
+export type CreateEntryInput = EntryProperties & {
   title: string;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
-  /** Properties of the structure rather than of any one model. */
-  metadata?: CreateEntryMetadata;
 };
 
 /** Creates a model and immediately places its initial revision in review. */
@@ -621,9 +638,8 @@ export type ReviewQueuePage = {
 
 
 
-export type EntryRevision = EntryRevisionSummary & {
+export type EntryRevision = EntryRevisionSummary & EntryProperties & {
   thumbnail_image_url: string | null;
-  metadata: JSONRecord;
   protein_sequences: ProteinSequence[];
   artifacts: Artifact[];
 };
@@ -1163,12 +1179,31 @@ function entryFromDocument(document: EntryDocument): Entry {
     created_by: data.relationships.created_by.data.id,
     title: attributes.title,
     thumbnail_image_url: attributes.thumbnail_image_url,
-    metadata: attributes.metadata,
+    ...definedEntryProperties(attributes),
     protein_sequences: proteinSequences,
     polymer_entities: attributes.polymer_entities ?? [],
     published_at: attributes.published_at,
     created_at: attributes.created_at,
     updated_at: attributes.updated_at,
+  };
+}
+
+function definedEntryProperties(properties: EntryProperties): EntryProperties {
+  return {
+    ...(properties.external_refs !== undefined
+      ? { external_refs: properties.external_refs }
+      : {}),
+    ...(properties.details !== undefined ? { details: properties.details } : {}),
+    ...(properties.resolution !== undefined
+      ? { resolution: properties.resolution }
+      : {}),
+    ...(properties.method !== undefined ? { method: properties.method } : {}),
+    ...(properties.space_group !== undefined
+      ? { space_group: properties.space_group }
+      : {}),
+    ...(properties.crystallography !== undefined
+      ? { crystallography: properties.crystallography }
+      : {}),
   };
 }
 
@@ -1192,7 +1227,12 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
     entry: {
       title: input.title,
       thumbnail_image_url: input.thumbnail_image_url,
-      metadata: entryMetadataRequest(input.metadata),
+      external_refs: input.external_refs,
+      details: input.details,
+      resolution: input.resolution,
+      method: input.method,
+      space_group: input.space_group,
+      crystallography: input.crystallography,
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
     },
     model_operations: (input.models ?? []).map((model) => ({
@@ -1200,36 +1240,6 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
       data: createModelData(model),
     })),
   };
-}
-
-/**
- * Shapes the entry's own facts the way the record stores them. Empty fields
- * are omitted rather than sent as null: the backend decodes into a struct of
- * pointers, and an explicit null is indistinguishable from "unset" once it
- * lands, so leaving the key out keeps the stored object honest.
- */
-function entryMetadataRequest(metadata?: CreateEntryMetadata): JSONRecord {
-  if (!metadata) {
-    return {};
-  }
-  const result: JSONRecord = {};
-  const pdb = stringOrNull(metadata.pdb);
-  if (pdb) {
-    result.external_refs = { pdb: pdb.toUpperCase() };
-  }
-  const resolution = numberOrNull(metadata.resolution);
-  if (resolution !== null) {
-    result.resolution = resolution;
-  }
-  const method = stringOrNull(metadata.method);
-  if (method) {
-    result.method = method;
-  }
-  const spaceGroup = stringOrNull(metadata.space_group);
-  if (spaceGroup) {
-    result.space_group = spaceGroup;
-  }
-  return result;
 }
 
 function createModelData(input: CreateModelInput): BackendCreateModelData {

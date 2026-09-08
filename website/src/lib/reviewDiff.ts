@@ -64,13 +64,29 @@ function entryFieldRows(
 ): DiffRow[] {
   return [
     scalarRow("Title", before?.title, after.title),
-    ...metadataRows(before?.metadata, after.metadata),
+    ...metadataRows(entryProperties(before), entryProperties(after)),
     scalarRow(
       "Protein sequences",
       before ? String(before.protein_sequences.length) : undefined,
       String(after.protein_sequences.length),
     ),
   ];
+}
+
+function entryProperties(entry: ReviewEntry | null): Record<string, unknown> {
+  if (!entry) {
+    return {};
+  }
+  return Object.fromEntries(
+    [
+      ["external_refs", entry.external_refs],
+      ["details", entry.details],
+      ["resolution", entry.resolution],
+      ["method", entry.method],
+      ["space_group", entry.space_group],
+      ["crystallography", entry.crystallography],
+    ].filter((property) => property[1] !== undefined),
+  );
 }
 
 function modelFieldRows(

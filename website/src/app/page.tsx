@@ -316,9 +316,7 @@ function latestDepositionFromModel(
     modelId: model.id,
     modelType:
       stringMetadataValue(model.metadata ?? {}, "model_type") ?? "Unknown",
-    experiment: experimentLabel(
-      stringMetadataValue(entry.metadata ?? {}, "method"),
-    ),
+    experiment: experimentLabel(entry.method ?? null),
     updatedAt: model.updated_at,
   };
 }

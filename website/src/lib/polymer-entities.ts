@@ -16,6 +16,9 @@ export type PolymerEntityView = {
   chains: string[];
   residues: number | null;
   sequence: string | null;
+  /** The artifact the matched FASTA record came from: the file that holds this
+   *  entity's chains, and the only thing that can be linked to from a chain. */
+  sequenceArtifactId: string | null;
   organisms: PolymerEntityOrganism[];
   construct: string | null;
   /** Single substitutions, when the field holds a plain list of them. Null for
@@ -46,6 +49,7 @@ export function polymerEntityViews(
         chains: sequence ? chainsFromHeader(sequence.header) : [],
         residues,
         sequence: sequence?.sequence ?? null,
+        sequenceArtifactId: sequence?.source_artifact_id ?? null,
         organisms: entity.source_organisms ?? [],
         construct: trimmed(entity.construct),
         mutations: mutationsText ? mutationTokens(mutationsText) : null,
@@ -54,6 +58,58 @@ export function polymerEntityViews(
       };
     })
     .sort(byEntityId);
+}
+
+/** The same molecule in three constructs is one line, not three: entities that
+ *  point at one UniProt accession -- or, without a mapping, carry one
+ *  description -- are read as one molecule of the deposit. */
+export type EntityGroup = {
+  key: string;
+  name: string;
+  chains: string[];
+  residues: number | null;
+  organisms: PolymerEntityOrganism[];
+  entityCount: number;
+};
+
+export function groupedPolymerEntities(
+  views: PolymerEntityView[],
+): EntityGroup[] {
+  const groups = new Map<string, EntityGroup>();
+
+  for (const view of views) {
+    const key =
+      view.uniprotMappings[0]?.accession.toLowerCase() ?? view.name.toLowerCase();
+    const group = groups.get(key);
+
+    if (!group) {
+      groups.set(key, {
+        key,
+        name: view.name,
+        chains: [...view.chains],
+        residues: view.residues,
+        organisms: [...view.organisms],
+        entityCount: 1,
+      });
+      continue;
+    }
+
+    group.chains.push(...view.chains);
+    group.entityCount += 1;
+    if (view.residues !== null) {
+      group.residues = (group.residues ?? 0) + view.residues;
+    }
+    for (const organism of view.organisms) {
+      const known = group.organisms.some(
+        (existing) => existing.scientific_name === organism.scientific_name,
+      );
+      if (!known) {
+        group.organisms.push(organism);
+      }
+    }
+  }
+
+  return [...groups.values()];
 }
 
 export function chainsLabel(chains: string[]): string | null {

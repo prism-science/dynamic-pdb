@@ -1,0 +1,204 @@
+/* ---------------------------------------------------------------------- */
+/* Scope rail — what the page is about: the entry, or one of its models     */
+/* ---------------------------------------------------------------------- */
+
+/* The grid item, and the only thing in this column that is full height: the
+   rule beside the record has to run its whole length.
+
+   The sticky box inside it is deliberately NOT this element. A sticky child
+   can only travel as far as its containing block is taller than itself, so a
+   rail that is both the grid item and a viewport-tall box defines the row it
+   is trying to stay put inside -- travel is zero and it scrolls away with the
+   page. Splitting them gives the sticky box a container as tall as the record
+   beside it, which is exactly the distance it must hold still over. */
+.column {
+  border-right: 1px solid var(--border);
+}
+
+/* Its own column, in every sense: it holds still while the record scrolls
+   beside it, and when the list is longer than the screen it scrolls itself
+   rather than dragging the page along.
+
+   No tint: filled, this column would read as a panel dropped on the page
+   rather than part of it. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: calc(var(--header-height) + var(--scope-head-height));
+  max-height: calc(100vh - var(--header-height) - var(--scope-head-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 18px 20px 0;
+}
+
+/* The rail is short and mostly empty; a scrollbar drawn across it whenever the
+   pointer passes is more noticeable than the few rows it would be scrolling. */
+.rail::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rail::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.row:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.row[data-current="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+.row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.thumb {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* R-free is the one number that fits beside a name, and the one that tells the
+   models apart. Tabular figures so the column reads down. */
+.metric {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.row[data-current="true"] .metric {
+  color: var(--accent-hover);
+}
+
+/* Lower is better. The best value is marked where it stands rather than sorted
+   to the top, because the order the models were made in is itself information. */
+.metric[data-best="true"] {
+  color: var(--success-fg);
+  font-weight: 700;
+}
+
+/* Padded to sit on the tabs' own text line: the rail's first line and the tab
+   labels start at the same height, so the two columns read as one row. */
+.heading {
+  display: flex;
+  align-items: baseline;
+  margin: 0;
+  padding: 9px 8px 7px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Directly under the list it adds to, not at the foot of the rail: on a long
+   page the foot is a screen away from the thing it acts on. */
+.add {
+  padding: 10px 8px 0;
+  color: var(--accent-hover);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.add:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Narrow: the rail lies down above the page as a scrolling strip of chips. The
+   list is short and the names are short, so a row of them still reads. */
+@media (max-width: 900px) {
+  .column {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    position: static;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 0 0 10px;
+  }
+
+  .heading {
+    display: none;
+  }
+
+  .list {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .row {
+    flex: none;
+    border: 1px solid transparent;
+  }
+
+  .row[data-current="true"] {
+    border-color: var(--border-strong);
+  }
+
+  .add {
+    flex: none;
+    margin: 0 0 0 auto;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+}

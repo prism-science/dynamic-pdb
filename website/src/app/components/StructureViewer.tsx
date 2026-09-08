@@ -200,11 +200,14 @@ export default function StructureViewer({
   url,
   kind,
   maps,
+  square,
   fill = false,
 }: {
   url: string;
   kind: StructureKind;
   maps?: StructureMap[];
+  /** Drop the rounded corners: the viewer is the tab, not a card on it. */
+  square?: boolean;
   // Take the height of the container instead of a fixed canvas height. Used by
   // the full-screen preview, where the viewer is the whole window.
   fill?: boolean;
@@ -547,6 +550,7 @@ export default function StructureViewer({
       className={styles.structureViewer}
       data-has-bar={layers.length > 0 ? "true" : undefined}
       data-fill={fill ? "true" : undefined}
+      data-square={square ? "true" : undefined}
     >
       {layers.length > 0 ? (
         <div className={styles.layerBar}>

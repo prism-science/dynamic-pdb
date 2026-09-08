@@ -1,18 +1,21 @@
-import type { ReactNode } from "react";
+import Link from "next/link";
+import { Fragment, type ReactNode } from "react";
 
-import type { Entity, PolymerEntityUniProtMapping } from "@/lib/api/entries";
-import { isPreviewable } from "@/lib/entities";
 import {
+  type PolymerEntityUniProtMapping,
   type PolymerEntityView,
   taxonomyURL,
   uniProtSourceLabel,
   uniProtURL,
 } from "@/lib/polymer-entities";
-import EntityChains from "./EntityChains";
 
 import styles from "./PolymerEntities.module.css";
 
 const COLUMNS = 6;
+
+/** A chain the depositor renamed: `C [auth D]` is asym C, called D in the
+ *  coordinates. The FASTA header carries both, glued together. */
+const AUTH_CHAIN = /^(.*?)\s*\[\s*auth\s+(.+?)\s*\]$/i;
 
 /**
  * The entry's polymer entities, one framed table each.
@@ -29,33 +32,38 @@ const COLUMNS = 6;
  */
 export default function PolymerEntities({
   views,
-  artifacts,
+  sequenceHref,
 }: {
   views: PolymerEntityView[];
-  /** The entry's artifacts by id: a chain opens the FASTA it was read out of,
-   *  and this is where that artifact comes from. */
-  artifacts: Map<string, Entity>;
+  /** Where the sequences live -- the FASTA is a file, not a field. Omitted when
+   *  the entry has no file to point at. */
+  sequenceHref?: string | null;
 }) {
   if (views.length === 0) {
     return null;
   }
 
+  const hasSequence = views.some((view) => view.sequence);
+
   return (
     <div className={styles.list}>
       {views.map((view) => (
-        <EntityTable key={view.key} view={view} artifacts={artifacts} />
+        <EntityTable key={view.key} view={view} />
       ))}
+
+      {hasSequence && sequenceHref ? (
+        <p className={styles.footnote}>
+          Sequences of every entity{" "}
+          <Link className={styles.link} href={sequenceHref}>
+            FASTA →
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function EntityTable({
-  view,
-  artifacts,
-}: {
-  view: PolymerEntityView;
-  artifacts: Map<string, Entity>;
-}) {
+function EntityTable({ view }: { view: PolymerEntityView }) {
   return (
     <div className={styles.box}>
       <div className={styles.scroll}>
@@ -88,8 +96,10 @@ function EntityTable({
           <tbody>
             <tr>
               <td className={styles.molecule}>{view.name}</td>
-              <td>{chainsCell(view, artifacts)}</td>
-              <td className={styles.number}>{view.residues ?? <Absent />}</td>
+              <td>{chainsCell(view.chains)}</td>
+              <td className={styles.number}>
+                {view.residues ?? <Absent />}
+              </td>
               <td>{organismCell(view)}</td>
               <td>{uniProtCell(view.uniprotMappings)}</td>
               <td>{detailsCell(view)}</td>
@@ -101,49 +111,31 @@ function EntityTable({
   );
 }
 
-function chainsCell(
-  view: PolymerEntityView,
-  artifacts: Map<string, Entity>,
-): ReactNode {
-  if (view.chains.length === 0) {
+function chainsCell(chains: string[]): ReactNode {
+  if (chains.length === 0) {
     return <Absent />;
   }
 
-  return (
-    <EntityChains chains={view.chains} entity={fastaArtifact(view, artifacts)} />
-  );
+  return chains.map((chain, index) => (
+    <Fragment key={chain}>
+      {index > 0 ? <span className={styles.separator}>, </span> : null}
+      <ChainToken chain={chain} />
+    </Fragment>
+  ));
 }
 
-/**
- * The artifact a chain came from.
- *
- * Chains exist in the view only because a FASTA record was matched to the
- * entity, so that record's artifact must be one of the entry's, and must carry
- * the parsed records the preview draws. If either is untrue the sync wrote a
- * sequence the entry cannot show -- a broken join, not a missing optional
- * field -- and the page says so instead of drawing a chain that does nothing.
- */
-function fastaArtifact(
-  view: PolymerEntityView,
-  artifacts: Map<string, Entity>,
-): Entity {
-  const id = view.sequenceArtifactId;
-  const artifact = id ? artifacts.get(id) : undefined;
-  const which = `entity ${view.entityId ?? view.key}, chain(s) ${view.chains.join(", ")}`;
+function ChainToken({ chain }: { chain: string }) {
+  const auth = AUTH_CHAIN.exec(chain);
+  if (!auth) {
+    return <span className={styles.mono}>{chain}</span>;
+  }
 
-  if (!artifact) {
-    throw new Error(
-      `Polymer ${which}: the FASTA they were read from is not among the ` +
-        `entry's artifacts (artifact ${id ?? "unknown"}).`,
-    );
-  }
-  if (!isPreviewable(artifact)) {
-    throw new Error(
-      `Polymer ${which}: artifact ${artifact.id} (${artifact.name}) carries no ` +
-        `parsed FASTA to open.`,
-    );
-  }
-  return artifact;
+  return (
+    <>
+      <span className={styles.mono}>{auth[1]}</span>
+      <span className={styles.auth}>auth {auth[2]}</span>
+    </>
+  );
 }
 
 function organismCell(view: PolymerEntityView): ReactNode {
@@ -234,7 +226,7 @@ function detailsCell(view: PolymerEntityView): ReactNode {
     return <Absent />;
   }
 
-  return <ul className={styles.details}>{details}</ul>;
+  return <ul className={styles.stack}>{details}</ul>;
 }
 
 function Absent() {

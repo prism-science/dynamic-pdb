@@ -10,7 +10,7 @@ test("should format an entry label from its PDB reference and Dynamic PDB ID", (
     formatEntryLabel({
       id: "dpdb_c7oclw12",
       title: "Legacy entry title",
-      metadata: { external_refs: { pdb: " 7b3h " } },
+      external_refs: { pdb: " 7b3h " },
     }),
     "PDB 7B3H | dpdb_c7oclw12",
   );

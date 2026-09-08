@@ -5,8 +5,6 @@
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
 }
 
 /* One column stretched edge to edge stops reading as a column at all, so it
