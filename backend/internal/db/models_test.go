@@ -31,6 +31,9 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 		Title:             &title,
 		ThumbnailImageURL: &thumbnailImageURL,
 		Metadata: models.ModelMetadata{
+			ExternalRefs: map[models.ModelSource]string{
+				models.ModelSourcePDB: "5AMF",
+			},
 			Authors:     []string{"Hendrickson, W.A.", "Teeter, M.M."},
 			Affiliation: &affiliation,
 			Purpose:     &purpose,
@@ -54,6 +57,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, entryRevision.EntryID, got.EntryID)
 	assert.Equal(t, revision.ModelID, got.ModelID)
 	assert.Equal(t, models.ModelStateActive, got.ModelState)
+	assert.Equal(t, revision.Metadata.ExternalRefs, got.Metadata.ExternalRefs)
 	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, revision.Title, got.Title)
 	require.NotNil(t, got.ThumbnailImageURL)

@@ -43,15 +43,23 @@ type ModelRevision struct {
 	UpdatedAt         time.Time
 }
 
+type ModelSource string
+
+const (
+	ModelSourcePDB ModelSource = "pdb"
+	ModelSourceEXT ModelSource = "ext"
+)
+
 type ModelMetadata struct {
-	Authors             []string            `json:"authors,omitempty"`
-	Affiliation         *string             `json:"affiliation,omitempty"`
-	Purpose             *ModelPurpose       `json:"purpose,omitempty"`
-	ModelType           *StructureModelType `json:"model_type,omitempty"`
-	AtomCount           *int                `json:"atom_count,omitempty"`
-	ModeledResidues     *int                `json:"modeled_residues,omitempty"`
-	UniqueProteinChains *int                `json:"unique_protein_chains,omitempty"`
-	Ligands             []string            `json:"ligands,omitempty"`
+	ExternalRefs        map[ModelSource]string `json:"external_refs,omitempty"`
+	Authors             []string               `json:"authors,omitempty"`
+	Affiliation         *string                `json:"affiliation,omitempty"`
+	Purpose             *ModelPurpose          `json:"purpose,omitempty"`
+	ModelType           *StructureModelType    `json:"model_type,omitempty"`
+	AtomCount           *int                   `json:"atom_count,omitempty"`
+	ModeledResidues     *int                   `json:"modeled_residues,omitempty"`
+	UniqueProteinChains *int                   `json:"unique_protein_chains,omitempty"`
+	Ligands             []string               `json:"ligands,omitempty"`
 }
 
 type ModelPurpose string
