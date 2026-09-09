@@ -27,9 +27,13 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	assert.Equal(t, database, job.database)
-	assert.Equal(t, rcsbClient, job.rcsbClient)
-	assert.Equal(t, siftsClient, job.siftsClient)
 	assert.NotNil(t, job.logger)
+	require.Len(t, job.strategies, 1)
+	entryStrategy, ok := job.strategies[0].(*entrySyncStrategy)
+	require.True(t, ok)
+	assert.Equal(t, database, entryStrategy.database)
+	assert.Equal(t, rcsbClient, entryStrategy.rcsbClient)
+	assert.Equal(t, siftsClient, entryStrategy.siftsClient)
 }
 
 func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {

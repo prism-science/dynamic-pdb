@@ -32,11 +32,15 @@ var dataSyncUserID = uuid.MustParse(models.SystemUserID)
 
 type polymerEntitySnapshot = models.PolymerEntity
 
+type dataSyncStrategy interface {
+	appliesTo(models.DataSyncJob) bool
+	sync(context.Context, models.DataSyncJob) error
+}
+
 type DataSyncJob struct {
 	database        *db.DB
-	rcsbClient      *rcsb.RemoteClient
-	siftsClient     *sifts.RemoteClient
 	logger          *slog.Logger
+	strategies      []dataSyncStrategy
 	now             func() time.Time
 	nextScheduledAt func(time.Time) time.Time
 }
@@ -60,12 +64,12 @@ func NewDataSyncJob(
 		logger = slog.Default()
 	}
 
+	now := func() time.Time { return time.Now().UTC() }
 	return &DataSyncJob{
 		database:        database,
-		rcsbClient:      rcsbClient,
-		siftsClient:     siftsClient,
 		logger:          logger,
-		now:             func() time.Time { return time.Now().UTC() },
+		strategies:      []dataSyncStrategy{newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now)},
+		now:             now,
 		nextScheduledAt: nextDataSyncScheduledAt,
 	}, nil
 }
@@ -147,65 +151,10 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 }
 
 func (j *DataSyncJob) execute(ctx context.Context, job models.DataSyncJob) error {
-	if job.ModelID != nil {
-		return nil
-	}
-	if err := j.syncEntry(ctx, job.EntryID); err != nil {
-		return fmt.Errorf("sync entry %s: %w", job.EntryID, err)
-	}
-	return nil
-}
-
-func (j *DataSyncJob) syncEntry(ctx context.Context, entryID string) error {
-	currentRevision, err := j.database.Entries.Get(ctx, db.EntryRevisionFilters{
-		EntryID:    &entryID,
-		State:      new(models.RevisionStateActive),
-		EntryState: new(models.EntryStateActive),
-	})
-	if err != nil {
-		return fmt.Errorf("get current entry revision: %w", err)
-	}
-	pdbID := strings.TrimSpace(currentRevision.Metadata.ExternalRefs[models.EntrySourcePDB])
-	if pdbID == "" {
-		return nil
-	}
-
-	currentPolymerEntities, err := j.database.PolymerEntities.List(ctx, db.PolymerEntityFilters{
-		EntryRevisionID: &currentRevision.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("list current polymer entities: %w", err)
-	}
-	proteinSequences, err := j.database.ProteinSequences.List(ctx, db.ProteinSequenceFilters{
-		EntryRevisionID: &currentRevision.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("list current protein sequences: %w", err)
-	}
-
-	desiredRevision, desiredPolymerEntities, err := j.buildEntryUpdate(ctx, pdbID, proteinSequences)
-	if err != nil {
-		return fmt.Errorf("build entry update: %w", err)
-	}
-
-	entryRevisionChanged, polymerEntitiesChanged := compareEntryUpdate(
-		*currentRevision,
-		desiredRevision,
-		currentPolymerEntities,
-		desiredPolymerEntities,
-	)
-	if !entryRevisionChanged && !polymerEntitiesChanged {
-		return nil
-	}
-
-	if err := j.saveEntryUpdate(
-		ctx,
-		*currentRevision,
-		desiredRevision,
-		desiredPolymerEntities,
-		polymerEntitiesChanged,
-	); err != nil {
-		return fmt.Errorf("save entry update: %w", err)
+	for _, strategy := range j.strategies {
+		if strategy.appliesTo(job) {
+			return strategy.sync(ctx, job)
+		}
 	}
 	return nil
 }
@@ -229,7 +178,7 @@ func compareEntryUpdate(
 	return entryRevisionChanged, polymerEntitiesChanged
 }
 
-func (j *DataSyncJob) saveEntryUpdate(
+func (j *entrySyncStrategy) saveEntryUpdate(
 	ctx context.Context,
 	currentRevision models.EntryRevision,
 	desiredRevision models.EntryRevision,
@@ -309,7 +258,7 @@ func (j *DataSyncJob) saveEntryUpdate(
 	return nil
 }
 
-func (j *DataSyncJob) saveEntryRevisionData(
+func (j *entrySyncStrategy) saveEntryRevisionData(
 	ctx context.Context,
 	fromRevisionID uuid.UUID,
 	toRevisionID uuid.UUID,
@@ -349,7 +298,7 @@ func (j *DataSyncJob) saveEntryRevisionData(
 	return nil
 }
 
-func (j *DataSyncJob) reindexEntry(ctx context.Context, revision models.EntryRevision) error {
+func (j *entrySyncStrategy) reindexEntry(ctx context.Context, revision models.EntryRevision) error {
 	if err := j.database.EntrySearch.DeleteEntry(ctx, revision.EntryID); err != nil {
 		return fmt.Errorf("clear entry search index: %w", err)
 	}
@@ -373,7 +322,7 @@ func (j *DataSyncJob) reindexEntry(ctx context.Context, revision models.EntryRev
 	return nil
 }
 
-func (j *DataSyncJob) buildEntryUpdate(
+func (j *entrySyncStrategy) buildEntryUpdate(
 	ctx context.Context,
 	pdbID string,
 	proteinSequences []models.ProteinSequence,
@@ -397,7 +346,7 @@ func (j *DataSyncJob) buildEntryUpdate(
 	return desiredRevision, desiredPolymerEntities, nil
 }
 
-func (j *DataSyncJob) buildPolymerEntities(
+func (j *entrySyncStrategy) buildPolymerEntities(
 	ctx context.Context,
 	pdbID string,
 	polymerEntityIDs []string,
