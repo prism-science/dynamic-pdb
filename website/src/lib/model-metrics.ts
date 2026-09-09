@@ -85,7 +85,8 @@ export function defaultModel(models: Model[]): Model | null {
 export const metricLabels: { key: keyof MetricsPayload; label: string }[] = [
   { key: "r_work", label: "R-work" },
   { key: "r_free", label: "R-free" },
-  { key: "cc", label: "CC" },
+  { key: "clashscore", label: "Clashscore" },
+  { key: "molprobity_score", label: "MolProbity score" },
   { key: "rscc", label: "RSCC" },
 ];
 
@@ -114,7 +115,7 @@ export function metricsCSV(payload: Record<string, unknown>): string {
   }
 
   for (const [key, value] of Object.entries(payload)) {
-    if (known.has(key)) {
+    if (known.has(key) || key === "cc") {
       continue;
     }
     if (typeof value === "number" && Number.isFinite(value)) {

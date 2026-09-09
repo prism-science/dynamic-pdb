@@ -16,6 +16,7 @@ function atomLine({
   serial = 1,
   name = " N  ",
   resName = "MET",
+  altLoc = " ",
   chain = "A",
   resSeq = 1,
   element = "N",
@@ -25,7 +26,7 @@ function atomLine({
     String(serial).padStart(5) +
     " " +
     name.padEnd(4) +
-    " " +
+    altLoc +
     resName.padStart(3) +
     " " +
     chain +
@@ -58,7 +59,14 @@ const PDB = [
   "REMARK   3   RESOLUTION RANGE HIGH (ANGSTROMS) : 1.77",
   "CRYST1   45.120   67.330   98.410  90.00  90.00  90.00 P 21 21 21    4",
   atomLine({ serial: 1, resSeq: 1, chain: "A" }),
-  atomLine({ serial: 2, name: " CA ", resSeq: 1, chain: "A", element: "C" }),
+  atomLine({
+    serial: 2,
+    name: " CA ",
+    resSeq: 1,
+    chain: "A",
+    element: "C",
+    altLoc: "A",
+  }),
   atomLine({ serial: 3, name: " N  ", resSeq: 2, chain: "A" }),
   atomLine({ serial: 4, name: " H  ", resSeq: 2, chain: "A", element: "H" }),
   atomLine({
@@ -97,6 +105,7 @@ test("pdb header yields program, metrics and composition", () => {
   assert.equal(facts.metadata.atom_count, 4);
   assert.equal(facts.metadata.modeled_residues, 2);
   assert.equal(facts.metadata.unique_protein_chains, 1);
+  assert.equal(facts.metadata.altloc_fraction, 0.5);
   assert.deepEqual(facts.metadata.ligands, ["NAG"]);
   // Shouted `A.ATTIGANI` becomes the `Surname, I.N.` form the pages display,
   // and a continuation line continues the same comma-separated list.
@@ -138,11 +147,12 @@ const MMCIF = [
   "_atom_site.label_comp_id",
   "_atom_site.auth_asym_id",
   "_atom_site.auth_seq_id",
-  "ATOM   1 N MET A 1",
-  "ATOM   2 C MET A 1",
-  "ATOM   3 N ALA A 2",
-  "HETATM 4 C NAG A 401",
-  "HETATM 5 O HOH A 501",
+  "_atom_site.label_alt_id",
+  "ATOM   1 N MET A 1 .",
+  "ATOM   2 C MET A 1 A",
+  "ATOM   3 N ALA A 2 .",
+  "HETATM 4 C NAG A 401 .",
+  "HETATM 5 O HOH A 501 .",
   "#",
 ].join("\n");
 
@@ -157,6 +167,7 @@ test("mmcif picks the refinement software, not the first one listed", () => {
   assert.equal(facts.metadata.atom_count, 4);
   assert.equal(facts.metadata.modeled_residues, 2);
   assert.equal(facts.metadata.unique_protein_chains, 1);
+  assert.equal(facts.metadata.altloc_fraction, 0.5);
   assert.deepEqual(facts.metadata.ligands, ["NAG"]);
   // mmCIF already stores the display form, so it is taken verbatim.
   assert.deepEqual(facts.authors, ["Attigani, A.", "Li, S.P."]);

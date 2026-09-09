@@ -73,18 +73,31 @@ test("should name a model by its title, and fall back for one without", () => {
 
 test("should write a metrics record as two columns, known figures first", () => {
   // given: the record's own order is not the order the dialog shows
-  const payload = { rscc: 0.941, r_free: 0.2255, r_work: 0.1839 };
+  const payload = {
+    rscc: 0.941,
+    molprobity_score: 1.42,
+    clashscore: 4.2,
+    r_free: 0.2255,
+    r_work: 0.1839,
+  };
 
   // when / then
   assert.equal(
     metricsCSV(payload),
-    ["Metric,Value", "R-work,0.1839", "R-free,0.2255", "RSCC,0.941"].join("\r\n"),
+    [
+      "Metric,Value",
+      "R-work,0.1839",
+      "R-free,0.2255",
+      "Clashscore,4.2",
+      "MolProbity score,1.42",
+      "RSCC,0.941",
+    ].join("\r\n"),
   );
 });
 
 test("should carry figures the dialog has no name for rather than drop them", () => {
   // given
-  const payload = { r_free: 0.2255, clashscore: 4.2, refined_by: "PHENIX" };
+  const payload = { r_free: 0.2255, custom_score: 4.2, refined_by: "PHENIX" };
 
   // when
   const lines = metricsCSV(payload).split("\r\n");
@@ -93,9 +106,17 @@ test("should carry figures the dialog has no name for rather than drop them", ()
   assert.deepEqual(lines, [
     "Metric,Value",
     "R-free,0.2255",
-    "clashscore,4.2",
+    "custom_score,4.2",
     "refined_by,PHENIX",
   ]);
+});
+
+test("should omit unsupported CC metric", () => {
+  // when / then
+  assert.equal(
+    metricsCSV({ r_free: 0.2255, cc: 0.98 }),
+    ["Metric,Value", "R-free,0.2255"].join("\r\n"),
+  );
 });
 
 test("should write values as stored, not as the screen rounds them", () => {
@@ -128,7 +149,7 @@ test("should quote a field that would otherwise be read as structure", () => {
 test("should skip what is not a figure at all", () => {
   // when / then
   assert.equal(metricsCSV({}), "Metric,Value");
-  assert.equal(metricsCSV({ r_free: null, cc: undefined, rscc: NaN }), "Metric,Value");
+  assert.equal(metricsCSV({ r_free: null, rscc: NaN }), "Metric,Value");
 });
 
 test("should name the file after the record, ending in .csv once", () => {

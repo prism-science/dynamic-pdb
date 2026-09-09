@@ -203,8 +203,9 @@ export type ModelPayload = {
 export type MetricsPayload = {
   r_free?: number;
   r_work?: number;
+  clashscore?: number;
+  molprobity_score?: number;
   rscc?: number;
-  cc?: number;
 };
 
 export type ProgramPayload = {
@@ -1589,10 +1590,16 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   // The pages show it as a property of the model, so it is copied across
   // rather than left where only a file preview would find it.
   const parsed = objectRecord(payload.metadata);
+  const details = stringOrNull(parsed.details);
+  if (details) {
+    metadata.details = details;
+  }
   for (const key of [
     "atom_count",
     "modeled_residues",
     "unique_protein_chains",
+    "altloc_fraction",
+    "unmodeled_fraction",
   ] as const) {
     const value = numberOrNull(parsed[key]);
     if (value !== null) {
@@ -1602,6 +1609,10 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   const ligands = stringArray(parsed.ligands);
   if (ligands.length > 0) {
     metadata.ligands = ligands;
+  }
+  const cofactors = stringArray(parsed.cofactors);
+  if (cofactors.length > 0) {
+    metadata.cofactors = cofactors;
   }
 
   return metadata;

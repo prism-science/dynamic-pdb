@@ -17,6 +17,8 @@ import styles from "./EntryOverview.module.css";
 export type SummaryModel = {
   title: string;
   previewURL: string | null;
+  /** The depositor's description of it; null on a model without one. */
+  details: string | null;
   /** Program, model type, counts -- as ordinary labelled fields. */
   facts: MetadataFact[];
   metrics: MetricColumn[];
@@ -75,7 +77,14 @@ export default function EntryOverview({
           {/* Which structure this model is of. Dropped when the heading is
               already the structure's own name, so it is never printed twice. */}
           {model && title ? <p className={styles.subtitle}>{title}</p> : null}
+          {/* Two descriptions, in the order they narrow: the structure first,
+              then the model of it. Both are prose from a depositor, so both are
+              paragraphs -- the model's used to be a labelled field in the grid
+              below, where the value track is narrower than the label. */}
           {details ? <p className={styles.details}>{details}</p> : null}
+          {model?.details ? (
+            <p className={styles.details}>{model.details}</p>
+          ) : null}
 
           {/* Split down the middle rather than handed to InfoGrid whole: the
               two halves have to line up with the column measure of this page,

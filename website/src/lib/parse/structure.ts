@@ -33,6 +33,7 @@ export type StructureFacts = {
     atom_count?: number;
     modeled_residues?: number;
     unique_protein_chains?: number;
+    altloc_fraction?: number;
     ligands?: string[];
   };
 };
@@ -82,6 +83,7 @@ function parsePdb(text: string): StructureFacts {
 
   const atoms = { count: 0 };
   const residues = new Set<string>();
+  const altLocResidues = new Set<string>();
   const chains = new Set<string>();
   const ligands = new Set<string>();
 
@@ -102,7 +104,11 @@ function parsePdb(text: string): StructureFacts {
       atoms.count += 1;
       const chain = line.slice(21, 22).trim();
       if (record === "ATOM  ") {
-        residues.add(`${chain}|${line.slice(22, 27).trim()}`);
+        const residue = `${chain}|${line.slice(22, 27).trim()}`;
+        residues.add(residue);
+        if (line.slice(16, 17).trim()) {
+          altLocResidues.add(residue);
+        }
         if (chain) {
           chains.add(chain);
         }
@@ -175,7 +181,14 @@ function parsePdb(text: string): StructureFacts {
     .filter(Boolean)
     .map(pdbAuthorName);
 
-  applyCounts(facts, atoms.count, residues.size, chains.size, ligands);
+  applyCounts(
+    facts,
+    atoms.count,
+    residues.size,
+    chains.size,
+    altLocResidues.size,
+    ligands,
+  );
   return facts;
 }
 
@@ -290,6 +303,7 @@ function parseMmcif(text: string): StructureFacts {
   if (atomSite) {
     let atomCount = 0;
     const residues = new Set<string>();
+    const altLocResidues = new Set<string>();
     const chains = new Set<string>();
     const ligands = new Set<string>();
 
@@ -315,13 +329,25 @@ function parseMmcif(text: string): StructureFacts {
           loopValue(atomSite, row, "auth_seq_id") ??
           loopValue(atomSite, row, "label_seq_id") ??
           "";
-        residues.add(`${chain}|${seq}`);
+        const residue = `${chain}|${seq}`;
+        residues.add(residue);
+        const altID = loopValue(atomSite, row, "label_alt_id") ?? "";
+        if (altID && altID !== "." && altID !== "?") {
+          altLocResidues.add(residue);
+        }
         if (chain) {
           chains.add(chain);
         }
       }
     }
-    applyCounts(facts, atomCount, residues.size, chains.size, ligands);
+    applyCounts(
+      facts,
+      atomCount,
+      residues.size,
+      chains.size,
+      altLocResidues.size,
+      ligands,
+    );
   }
 
   return facts;
@@ -378,6 +404,7 @@ function applyCounts(
   atomCount: number,
   residueCount: number,
   chainCount: number,
+  altLocResidueCount: number,
   ligands: Set<string>,
 ): void {
   if (atomCount > 0) {
@@ -388,6 +415,9 @@ function applyCounts(
   }
   if (chainCount > 0) {
     facts.metadata.unique_protein_chains = chainCount;
+  }
+  if (residueCount > 0) {
+    facts.metadata.altloc_fraction = altLocResidueCount / residueCount;
   }
   if (ligands.size > 0) {
     facts.metadata.ligands = [...ligands].sort();

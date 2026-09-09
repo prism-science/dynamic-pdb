@@ -45,6 +45,7 @@ import {
   ImagePlaceholderIcon,
   mergedModelMetrics,
   metricColumns,
+  modelDetails,
   modelMetadata,
   modelPreviewURL,
   summaryModelFacts,
@@ -151,6 +152,7 @@ export default async function ScopePage({
       : {
           title: modelTitle(model),
           previewURL,
+          details: modelDetails(metadata),
           facts: summaryModelFacts(
             metadata,
             modelEntity ? provenance.programOf(modelEntity.id) : null,

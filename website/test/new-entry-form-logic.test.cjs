@@ -85,7 +85,7 @@ test("should convert files and metrics into create entry entities", () => {
     type: "metrics",
     level: "L3",
     name: "Metrics",
-    payload: { r_free: 0.231, cc: 0.98 },
+    payload: { r_free: 0.231 },
   });
 });
 
@@ -173,7 +173,7 @@ test("should build explicit graph relations for model metrics and program", () =
     id: "model-1",
     title: " Refined model ",
     files: [modelFile, densityFile],
-    metrics: [{ id: "metrics-1", values: { r_free: "0.231", cc: "0.98" } }],
+    metrics: [{ id: "metrics-1", values: { r_free: "0.231" } }],
     programs: [
       {
         id: "program-1",
@@ -459,7 +459,7 @@ test("should serialize and restore persisted draft files safely", () => {
     thumbUploadStatus: "uploaded",
     thumbUploadError: null,
     files: [file],
-    metrics: [{ id: "metrics-1", values: { cc: "0.9" } }],
+    metrics: [{ id: "metrics-1", values: { rscc: "0.9" } }],
     programs: [
       {
         id: "program-1",
