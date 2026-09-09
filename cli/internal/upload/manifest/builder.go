@@ -431,6 +431,8 @@ func modelPatternFromGroup(id string, group coordinateGroup) ModelPattern {
 
 func depositedModelMetadata() ModelMetadata {
 	return ModelMetadata{
+		"details":               rcsbJSONField("struct.pdbx_model_details"),
+		"altloc_fraction":       coordinateField("altloc_fraction", map[string]struct{}{".cif": {}}),
 		"atom_count":            rcsbJSONField("rcsb_entry_info.deposited_atom_count"),
 		"modeled_residues":      rcsbJSONField("rcsb_entry_info.deposited_modeled_polymer_monomer_count"),
 		"unique_protein_chains": rcsbJSONField("rcsb_entry_info.deposited_polymer_entity_instance_count"),
@@ -442,6 +444,7 @@ func depositedModelMetadata() ModelMetadata {
 
 func coordinateModelMetadata(extensions map[string]struct{}) ModelMetadata {
 	return ModelMetadata{
+		"altloc_fraction":       coordinateField("altloc_fraction", extensions),
 		"atom_count":            coordinateField("atom_count", extensions),
 		"modeled_residues":      coordinateField("modeled_residues", extensions),
 		"unique_protein_chains": coordinateField("unique_protein_chains", extensions),
@@ -462,8 +465,9 @@ func coordinateField(field string, extensions map[string]struct{}) []FieldExtrac
 
 func jsonRefinementMetrics() Metrics {
 	return Metrics{
-		"r_free": rcsbJSONField("refine[0].ls_R_factor_R_free"),
-		"r_work": rcsbJSONField("refine[0].ls_R_factor_R_work"),
+		"r_free":     rcsbJSONField("refine[0].ls_R_factor_R_free"),
+		"r_work":     rcsbJSONField("refine[0].ls_R_factor_R_work"),
+		"clashscore": rcsbJSONField("pdbx_vrpt_summary_geometry[0].clashscore"),
 	}
 }
 

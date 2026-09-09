@@ -66,9 +66,12 @@ func NewDataSyncJob(
 
 	now := func() time.Time { return time.Now().UTC() }
 	return &DataSyncJob{
-		database:        database,
-		logger:          logger,
-		strategies:      []dataSyncStrategy{newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now)},
+		database: database,
+		logger:   logger,
+		strategies: []dataSyncStrategy{
+			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now),
+			newModelSyncStrategy(database, rcsbClient, logger, now),
+		},
 		now:             now,
 		nextScheduledAt: nextDataSyncScheduledAt,
 	}, nil

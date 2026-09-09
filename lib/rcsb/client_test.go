@@ -100,7 +100,11 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 		switch r.URL.Path {
 		case "/rest/v1/core/entry/5AMF":
 			writeText(t, w, `{
-				"struct": {"title": "example structure", "pdbx_details": "entry details"},
+				"struct": {
+					"title": "example structure",
+					"pdbx_details": "entry details",
+					"pdbx_model_details": "deposited model details"
+				},
 				"exptl": [{"method": "X-RAY DIFFRACTION"}],
 				"exptl_crystal": [{"id": "1"}],
 				"exptl_crystal_grow": [{"crystal_id": "1", "pH": 7.5, "temp": 293}],
@@ -108,7 +112,9 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 				"rcsb_entry_info": {
 					"resolution_combined": [1.5],
 					"deposited_atom_count": 1383,
+					"deposited_polymer_monomer_count": 171,
 					"deposited_modeled_polymer_monomer_count": 164,
+					"deposited_unmodeled_polymer_monomer_count": 7,
 					"deposited_polymer_entity_instance_count": 1,
 					"nonpolymer_bound_components": ["ATP", "HOH", "ZN", "ACY"]
 				},
@@ -117,7 +123,8 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 				"refine": [{"ls_R_factor_R_free": 0.21, "ls_R_factor_R_work": 0.18}],
 				"audit_author": [{"name": "Nelson, R."}, {"name": "Sawaya, M.R."}],
 				"rcsb_primary_citation": {"rcsb_authors": ["Citation, A."]},
-				"pubmed": {"rcsb_pubmed_affiliation_info": ["Howard Hughes Medical Institute, UCLA, USA."]}
+				"pubmed": {"rcsb_pubmed_affiliation_info": ["Howard Hughes Medical Institute, UCLA, USA."]},
+				"pdbx_vrpt_summary_geometry": [{"clashscore": 4.8, "percent_ramachandran_outliers": 0.13}]
 			}`)
 		case "/rest/v1/core/polymer_entity/5AMF/1":
 			writeText(t, w, `{
@@ -196,8 +203,21 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, "1", entryDetails.Diffractions[0].CrystalID)
 	assert.Equal(t, 100.0, *entryDetails.Diffractions[0].TemperatureKelvin)
 	assert.Equal(t, []float64{1.5}, entryDetails.Info.CombinedResolution)
+	assert.Equal(t, "deposited model details", entryDetails.Structure.ModelDetails)
+	assert.Equal(t, 1383, *entryDetails.Info.DepositedAtomCount)
+	assert.Equal(t, 171, *entryDetails.Info.DepositedPolymerMonomerCount)
+	assert.Equal(t, 164, *entryDetails.Info.DepositedModeledPolymerMonomerCount)
+	assert.Equal(t, 7, *entryDetails.Info.DepositedUnmodeledPolymerMonomerCount)
+	assert.Equal(t, 1, *entryDetails.Info.DepositedPolymerEntityInstanceCount)
+	assert.Equal(t, []string{"ATP", "HOH", "ZN", "ACY"}, entryDetails.Info.NonpolymerBoundComponents)
 	assert.Equal(t, "P 21 21 21", entryDetails.Symmetry.SpaceGroup)
 	assert.Equal(t, []string{"1", "2"}, entryDetails.Identifiers.PolymerEntityIDs)
+	assert.Equal(t, "Nelson, R.", entryDetails.Authors[0].Name)
+	assert.Equal(t, []string{"Howard Hughes Medical Institute, UCLA, USA."}, entryDetails.Publication.Affiliations)
+	assert.Equal(t, 0.21, *entryDetails.Refinements[0].RFree)
+	assert.Equal(t, 0.18, *entryDetails.Refinements[0].RWork)
+	assert.Equal(t, 4.8, *entryDetails.ValidationGeometry[0].Clashscore)
+	assert.Equal(t, 0.13, *entryDetails.ValidationGeometry[0].RamachandranOutliersPercent)
 	assert.Equal(t, "Homo sapiens", polymerEntityDetails.SourceOrganisms[0].ScientificName)
 	assert.Equal(t, "Escherichia coli", polymerEntityDetails.SourceOrganisms[1].ScientificName)
 	assert.Equal(t, 9606, *polymerEntityDetails.SourceOrganisms[0].NCBITaxonomyID)

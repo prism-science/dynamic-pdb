@@ -28,12 +28,16 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	require.NotNil(t, job)
 	assert.Equal(t, database, job.database)
 	assert.NotNil(t, job.logger)
-	require.Len(t, job.strategies, 1)
+	require.Len(t, job.strategies, 2)
 	entryStrategy, ok := job.strategies[0].(*entrySyncStrategy)
 	require.True(t, ok)
 	assert.Equal(t, database, entryStrategy.database)
 	assert.Equal(t, rcsbClient, entryStrategy.rcsbClient)
 	assert.Equal(t, siftsClient, entryStrategy.siftsClient)
+	modelStrategy, ok := job.strategies[1].(*modelSyncStrategy)
+	require.True(t, ok)
+	assert.Equal(t, database, modelStrategy.database)
+	assert.Equal(t, rcsbClient, modelStrategy.rcsbClient)
 }
 
 func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
@@ -165,6 +169,131 @@ func Test_should_clear_rcsb_fields_when_details_are_empty(t *testing.T) {
 	assert.Nil(t, revision.Metadata.Method)
 	assert.Nil(t, revision.Metadata.SpaceGroup)
 	assert.Nil(t, revision.Metadata.Crystallography)
+}
+
+func Test_should_apply_rcsb_details_to_model_revision_copy(t *testing.T) {
+	// given
+	purpose := models.ModelPurposeRefinement
+	modelType := models.StructureModelTypeSingleConformer
+	original := models.ModelRevision{Metadata: models.ModelMetadata{
+		ExternalRefs: map[models.ModelSource]string{models.ModelSourcePDB: "5AMF"},
+		Purpose:      &purpose,
+		ModelType:    &modelType,
+	}}
+	updated := original
+	details := rcsb.EntryDetails{
+		Structure: rcsb.EntryStructure{ModelDetails: " Deposited model details "},
+		Authors:   []rcsb.EntryAuthor{{Name: " Nelson, R. "}, {Name: "Sawaya, M.R."}},
+		Publication: rcsb.EntryPublication{
+			Affiliations: []string{" Howard Hughes Medical Institute ", "UCLA"},
+		},
+		Info: rcsb.EntryInfo{
+			DepositedAtomCount:                    new(1383),
+			DepositedPolymerMonomerCount:          new(200),
+			DepositedModeledPolymerMonomerCount:   new(164),
+			DepositedUnmodeledPolymerMonomerCount: new(36),
+			DepositedPolymerEntityInstanceCount:   new(1),
+			NonpolymerBoundComponents:             []string{"ATP", " HOH ", "ZN"},
+		},
+	}
+
+	// when
+	applyRCSBModelDetails(&updated, details)
+
+	// then
+	assert.Equal(t, []string{"Nelson, R.", "Sawaya, M.R."}, updated.Metadata.Authors)
+	assert.Equal(t, optionalString("Deposited model details"), updated.Metadata.Details)
+	assert.Equal(t, optionalString("Howard Hughes Medical Institute; UCLA"), updated.Metadata.Affiliation)
+	assert.Equal(t, new(1383), updated.Metadata.AtomCount)
+	assert.Equal(t, new(164), updated.Metadata.ModeledResidues)
+	assert.Equal(t, new(1), updated.Metadata.UniqueProteinChains)
+	assert.Equal(t, new(0.18), updated.Metadata.UnmodeledFraction)
+	assert.Equal(t, []string{"ATP", "ZN"}, updated.Metadata.Ligands)
+	assert.Equal(t, "5AMF", updated.Metadata.ExternalRefs[models.ModelSourcePDB])
+	assert.Equal(t, &purpose, updated.Metadata.Purpose)
+	assert.Equal(t, &modelType, updated.Metadata.ModelType)
+	assert.Empty(t, original.Metadata.Authors)
+}
+
+func Test_should_clear_rcsb_model_fields_when_details_are_empty(t *testing.T) {
+	// given
+	revision := models.ModelRevision{Metadata: models.ModelMetadata{
+		Details:           optionalString("old details"),
+		UnmodeledFraction: new(0.25),
+	}}
+
+	// when
+	applyRCSBModelDetails(&revision, rcsb.EntryDetails{})
+
+	// then
+	assert.Nil(t, revision.Metadata.Details)
+	assert.Nil(t, revision.Metadata.UnmodeledFraction)
+}
+
+func Test_should_map_rcsb_model_metrics(t *testing.T) {
+	// given
+	details := rcsb.EntryDetails{
+		Refinements: []rcsb.EntryRefinement{{
+			RFree: new(0.21),
+			RWork: new(0.18),
+		}},
+		ValidationGeometry: []rcsb.EntryValidationGeometry{{
+			Clashscore:                  new(4.8),
+			RamachandranOutliersPercent: new(0.13),
+		}},
+	}
+
+	// when
+	metrics := modelMetricsFromRCSB(details)
+
+	// then
+	assert.Equal(t, []models.Metric{
+		{Key: models.MetricKeyClashscore, Value: 4.8},
+		{Key: models.MetricKeyRFree, Value: 0.21},
+		{Key: models.MetricKeyRWork, Value: 0.18},
+		{Key: models.MetricKeyRamachandranOutliers, Value: 0.13},
+	}, metrics)
+}
+
+func Test_should_detect_model_update_when_rcsb_fields_or_metrics_changed(t *testing.T) {
+	// given
+	currentRevision := models.ModelRevision{Metadata: models.ModelMetadata{AtomCount: new(100)}}
+	desiredRevision := models.ModelRevision{Metadata: models.ModelMetadata{AtomCount: new(101)}}
+	currentMetrics := []models.Metric{
+		{Key: models.MetricKeyRFree, Value: 0.22},
+		{Key: "custom_score", Value: 12},
+	}
+	desiredMetrics := []models.Metric{{Key: models.MetricKeyRFree, Value: 0.21}}
+
+	// when
+	modelChanged, metricsChanged := compareModelUpdate(
+		currentRevision,
+		desiredRevision,
+		currentMetrics,
+		desiredMetrics,
+	)
+
+	// then
+	assert.True(t, modelChanged)
+	assert.True(t, metricsChanged)
+}
+
+func Test_should_ignore_non_rcsb_metrics_when_comparing_model_update(t *testing.T) {
+	// given
+	revision := models.ModelRevision{}
+	currentMetrics := []models.Metric{{Key: "custom_score", Value: 12}}
+
+	// when
+	modelChanged, metricsChanged := compareModelUpdate(
+		revision,
+		revision,
+		currentMetrics,
+		nil,
+	)
+
+	// then
+	assert.False(t, modelChanged)
+	assert.False(t, metricsChanged)
 }
 
 func Test_should_group_rcsb_crystallography_by_crystal(t *testing.T) {

@@ -210,6 +210,7 @@ func normalizedFieldKey(key string) string {
 func pdbFields(text string) map[string]any {
 	fields := map[string]any{}
 	residues := map[string]struct{}{}
+	altLocResidues := map[string]struct{}{}
 	chains := map[string]struct{}{}
 	ligands := map[string]struct{}{}
 	for _, line := range strings.Split(text, "\n") {
@@ -230,7 +231,11 @@ func pdbFields(text string) map[string]any {
 		}
 		chain := slice(line, 21, 22)
 		if record == "ATOM" {
-			residues[chain+"|"+slice(line, 22, 27)] = struct{}{}
+			residue := chain + "|" + slice(line, 22, 27)
+			residues[residue] = struct{}{}
+			if slice(line, 16, 17) != "" {
+				altLocResidues[residue] = struct{}{}
+			}
 			if chain != "" {
 				chains[chain] = struct{}{}
 			}
@@ -243,6 +248,7 @@ func pdbFields(text string) map[string]any {
 	addPositiveInt(fields, "atom_count", pdbAtomCount(text))
 	addPositiveInt(fields, "modeled_residues", len(residues))
 	addPositiveInt(fields, "unique_protein_chains", len(chains))
+	addFraction(fields, "altloc_fraction", len(altLocResidues), len(residues))
 	if len(ligands) > 0 {
 		addField(fields, "ligands", sortedKeys(ligands))
 	}
@@ -303,6 +309,7 @@ func mmcifFields(text string) map[string]any {
 		return fields
 	}
 	residues := map[string]struct{}{}
+	altLocResidues := map[string]struct{}{}
 	chains := map[string]struct{}{}
 	ligands := map[string]struct{}{}
 	atomCount := 0
@@ -329,7 +336,11 @@ func mmcifFields(text string) map[string]any {
 			continue
 		}
 		seq := firstNonEmpty(loop.value(row, "auth_seq_id"), loop.value(row, "label_seq_id"))
-		residues[chain+"|"+seq] = struct{}{}
+		residue := chain + "|" + seq
+		residues[residue] = struct{}{}
+		if loop.value(row, "label_alt_id") != "" {
+			altLocResidues[residue] = struct{}{}
+		}
 		if chain != "" {
 			chains[chain] = struct{}{}
 		}
@@ -337,6 +348,7 @@ func mmcifFields(text string) map[string]any {
 	addPositiveInt(fields, "atom_count", atomCount)
 	addPositiveInt(fields, "modeled_residues", len(residues))
 	addPositiveInt(fields, "unique_protein_chains", len(chains))
+	addFraction(fields, "altloc_fraction", len(altLocResidues), len(residues))
 	if len(ligands) > 0 {
 		addField(fields, "ligands", sortedKeys(ligands))
 	}
@@ -346,6 +358,12 @@ func mmcifFields(text string) map[string]any {
 func addPositiveInt(fields map[string]any, key string, value int) {
 	if value > 0 {
 		addField(fields, key, value)
+	}
+}
+
+func addFraction(fields map[string]any, key string, numerator int, denominator int) {
+	if denominator > 0 {
+		addField(fields, key, float64(numerator)/float64(denominator))
 	}
 }
 

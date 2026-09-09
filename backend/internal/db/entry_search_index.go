@@ -144,9 +144,11 @@ func entryRevisionSearchParts(revision models.EntryRevision) []string {
 func modelRevisionSearchParts(revision models.ModelRevision) []string {
 	parts := []string{
 		stringFromPtr(revision.Title),
+		stringFromPtr(revision.Metadata.Details),
 		strings.Join(revision.Metadata.Authors, " "),
 		stringFromPtr(revision.Metadata.Affiliation),
 		strings.Join(revision.Metadata.Ligands, " "),
+		strings.Join(revision.Metadata.Cofactors, " "),
 	}
 
 	if revision.Metadata.Purpose != nil {

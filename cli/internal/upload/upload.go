@@ -1174,8 +1174,14 @@ func toCanonicalModelMetadataValue(key string, value any) any {
 		if number, ok := integerValue(value); ok {
 			return number
 		}
+	case "altloc_fraction", "unmodeled_fraction":
+		if number, ok := floatValue(value); ok {
+			return number
+		}
 	case "ligands":
 		return rcsbLigands(appendStringValues(nil, value))
+	case "cofactors":
+		return canonicalModelComponents(appendStringValues(nil, value))
 	case "authors":
 		authors := appendStringValues(nil, value)
 		if len(authors) > 0 {
@@ -1626,6 +1632,16 @@ func rcsbLigands(components []string) []string {
 		}
 	}
 	return ligands
+}
+
+func canonicalModelComponents(components []string) []string {
+	values := []string{}
+	for _, component := range components {
+		for _, value := range strings.FieldsFunc(component, ligandSeparator) {
+			values = appendUniqueNonEmptyString(values, strings.ToUpper(value))
+		}
+	}
+	return values
 }
 
 func ligandSeparator(value rune) bool {

@@ -52,6 +52,7 @@ const (
 
 type ModelMetadata struct {
 	ExternalRefs        map[ModelSource]string `json:"external_refs,omitempty"`
+	Details             *string                `json:"details,omitempty"`
 	Authors             []string               `json:"authors,omitempty"`
 	Affiliation         *string                `json:"affiliation,omitempty"`
 	Purpose             *ModelPurpose          `json:"purpose,omitempty"`
@@ -59,7 +60,10 @@ type ModelMetadata struct {
 	AtomCount           *int                   `json:"atom_count,omitempty"`
 	ModeledResidues     *int                   `json:"modeled_residues,omitempty"`
 	UniqueProteinChains *int                   `json:"unique_protein_chains,omitempty"`
+	AltLocFraction      *float64               `json:"altloc_fraction,omitempty"`
+	UnmodeledFraction   *float64               `json:"unmodeled_fraction,omitempty"`
 	Ligands             []string               `json:"ligands,omitempty"`
+	Cofactors           []string               `json:"cofactors,omitempty"`
 }
 
 type ModelPurpose string
@@ -84,6 +88,8 @@ const (
 	MetricKeyRWork                MetricKey = "r_work"
 	MetricKeyRamachandranOutliers MetricKey = "ramachandran_outliers"
 	MetricKeyClashscore           MetricKey = "clashscore"
+	MetricKeyMolProbityScore      MetricKey = "molprobity_score"
+	MetricKeyRSCC                 MetricKey = "rscc"
 )
 
 type Metric struct {

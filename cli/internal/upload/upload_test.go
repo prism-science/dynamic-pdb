@@ -66,6 +66,7 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	require.NotNil(t, models[1].Artifacts[0].SHA256)
 	assert.Equal(t, *models[1].Artifacts[0].SHA256, *models[1].IdempotencyKey)
 	assert.Equal(t, []string{"Nelson, R.", "Sawaya, M.R."}, models[0].Metadata["authors"])
+	assert.Equal(t, "Deposited model details", models[0].Metadata["details"])
 	assert.Equal(t, "Howard Hughes Medical Institute, UCLA, USA.", models[0].Metadata["affiliation"])
 	assert.Equal(t, 1383, models[0].Metadata["atom_count"])
 	assert.Equal(t, 164, models[0].Metadata["modeled_residues"])
@@ -100,9 +101,11 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	require.NotNil(t, models[1].Runs[0].SoftwareVersion)
 	assert.Equal(t, "2.0_5824", *models[1].Runs[0].SoftwareVersion)
 	assertRunArtifactDirections(t, models[1].Runs[0].Artifacts, []string{"output", "output", "input"})
-	require.Len(t, models[0].Metrics, 2)
+	require.Len(t, models[0].Metrics, 3)
 	assert.Equal(t, "r_free", models[0].Metrics[0].Key)
 	assert.Equal(t, 0.21, models[0].Metrics[0].Value)
+	assert.Equal(t, "clashscore", models[0].Metrics[2].Key)
+	assert.Equal(t, 4.8, models[0].Metrics[2].Value)
 	require.Len(t, models[1].Metrics, 2)
 	assert.Equal(t, "r_free", models[1].Metrics[0].Key)
 	assert.Equal(t, 0.243, models[1].Metrics[0].Value)
@@ -697,6 +700,20 @@ func Test_should_split_semicolon_ligands_when_model_metadata_is_canonicalized(t 
 	assert.Equal(t, []string{"CL", "BME"}, metadataValue)
 }
 
+func Test_should_canonicalize_new_model_metadata_fields(t *testing.T) {
+	// given
+	cofactors := "mg; HEM,mg"
+	unmodeledFraction := "0.125"
+
+	// when
+	canonicalCofactors := toCanonicalModelMetadataValue("cofactors", cofactors)
+	canonicalFraction := toCanonicalModelMetadataValue("unmodeled_fraction", unmodeledFraction)
+
+	// then
+	assert.Equal(t, []string{"MG", "HEM"}, canonicalCofactors)
+	assert.Equal(t, 0.125, canonicalFraction)
+}
+
 func Test_should_parse_entry_resolution_string_when_metadata_is_canonicalized(t *testing.T) {
 	// given
 	value := "1.30"
@@ -862,8 +879,11 @@ type fakeRCSB struct{}
 
 func (fakeRCSB) GetEntry(_ context.Context, _ string) (map[string]any, error) {
 	return map[string]any{
-		"struct": map[string]any{"title": "example structure"},
-		"exptl":  []any{map[string]any{"method": "X-RAY DIFFRACTION"}},
+		"struct": map[string]any{
+			"title":              "example structure",
+			"pdbx_model_details": "Deposited model details",
+		},
+		"exptl": []any{map[string]any{"method": "X-RAY DIFFRACTION"}},
 		"symmetry": map[string]any{
 			"space_group_name_H_M": "P 21 21 21",
 		},
@@ -889,6 +909,9 @@ func (fakeRCSB) GetEntry(_ context.Context, _ string) (map[string]any, error) {
 				"ls_R_factor_R_free": float64(0.21),
 				"ls_R_factor_R_work": float64(0.18),
 			},
+		},
+		"pdbx_vrpt_summary_geometry": []any{
+			map[string]any{"clashscore": float64(4.8)},
 		},
 	}, nil
 }
@@ -1104,6 +1127,7 @@ func depositedModel() manifest.ModelPattern {
 		ModelType: "Deposited",
 		Purpose:   "Reference",
 		Metadata: manifest.ModelMetadata{
+			"details":               rcsbJSONExtraction("entry", "struct.pdbx_model_details"),
 			"atom_count":            rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_atom_count"),
 			"modeled_residues":      rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_modeled_polymer_monomer_count"),
 			"unique_protein_chains": rcsbJSONExtraction("entry", "rcsb_entry_info.deposited_polymer_entity_instance_count"),
@@ -1116,8 +1140,9 @@ func depositedModel() manifest.ModelPattern {
 			rcsbFileArtifact("structure_factors_1", "{{ pdb_id }}-sf.cif", "L1"),
 		},
 		Metrics: manifest.Metrics{
-			"r_free": rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_free"),
-			"r_work": rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_work"),
+			"r_free":     rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_free"),
+			"r_work":     rcsbJSONExtraction("entry", "refine[0].ls_R_factor_R_work"),
+			"clashscore": rcsbJSONExtraction("entry", "pdbx_vrpt_summary_geometry[0].clashscore"),
 		},
 	}
 }
