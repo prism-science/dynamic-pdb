@@ -2,6 +2,21 @@
 /* Sequence — the feature viewer, one chain at a time                      */
 /* ---------------------------------------------------------------------- */
 
+/* The literal colours below are RCSB's, read off their own 1D viewer
+   (rcsb.org/sequence/5NX1) with the DOM open rather than remembered:
+   helix #e43372, sheet #f1d23b, unmodelled #cccccc, sequence variant #ff6666,
+   per-residue B #af5a33, and #faf3c0 for the column a click holds.
+
+   The opacities are theirs too, and they are half the picture: every feature
+   is drawn at fill-opacity 0.5, which is what keeps the board quiet -- at full
+   strength the same hues shout. The held column is 0.75 and sits second in
+   every row, behind the features; because the features are half-transparent it
+   reads as crossing them.
+   They are written as literals and not as tokens because they are theirs: a
+   reader who knows that viewer should read this one the same way, and that has
+   to survive a change to our own palette. Lilac stays where they have nothing
+   to align to. */
+
 .panel {
   border: 1px solid var(--border);
 }
@@ -135,16 +150,29 @@
 }
 
 /* The scrollport. No horizontal padding of its own: the row label sticks to
-   this box's left edge, and padding here would slide out from under it. */
+   this box's left edge, and padding here would slide out from under it.
+
+   A pinch over this box is the viewer's own zoom, not the browser's, so the
+   gesture must reach the handler rather than being turned into a page zoom
+   first: hence touch-action, and preventDefault in the listener. */
 .viewer {
   padding: 14px 0 16px;
   overflow-x: auto;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
 }
 
 /* As wide as the lanes ask for, so the labels have a box to stay put inside
    while the residues scroll under them. Fitted to the column, that is exactly
    the width of the viewer and nothing scrolls at all. */
 .rows {
+  /* The two gutters, named once: the column marker has to place itself in the
+     lane between them, and it is the only thing here that cannot do that with
+     the grid. */
+  --gutter-left: 156px;
+  --gutter-right: 16px;
+  --track: calc(100% - var(--gutter-left) - var(--gutter-right));
+  position: relative;
   width: max-content;
   min-width: 100%;
 }
@@ -153,28 +181,52 @@
   width: 100%;
 }
 
+/* The residues a click is holding, marked from the ruler to the last row, so
+   the column can be read down every track at once. Painted over the tracks --
+   it is the last child of the board, which is what puts it there -- and deaf to
+   the pointer: a mark on the board, not a thing to hit. Its wash is light
+   enough that what it covers still reads through it. */
+.column {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--gutter-left) + var(--at) * var(--track));
+  /* Never thinner than a hairline: in a long chain a residue is a fraction of
+     a pixel, and a mark that cannot be seen is not a mark. */
+  width: max(2px, calc(var(--span) * var(--track) / var(--residues)));
+  /* Their #faf3c0, at the alpha that lets a feature underneath still be told
+     apart -- over the top it has to wash, not hide. */
+  background: rgb(250 243 192 / 45%);
+  pointer-events: none;
+}
+
 /* One label column and one lane, shared by the ruler and every row, so a
    column read down the rows is one residue. The trailing column keeps the last
    residue off the right edge.
 
    The label column is wide enough for the longest name a row can carry --
-   "Secondary structure", and "UniProt" with an accession after it -- because a
-   name that outgrows its column has nowhere to go but out of the frame. */
+   "Secondary structure" -- because a name that outgrows its column has nowhere
+   to go but out of the frame. */
 .ruler,
 .row {
   display: grid;
-  grid-template-columns: 156px var(--lane) 16px;
+  grid-template-columns: var(--gutter-left) var(--lane) var(--gutter-right);
   align-items: center;
 }
 
+/* The air under the ruler belongs to the ruler's own row rather than sitting
+   between two rows as a margin. The row labels tile the left column with no
+   seam that way, and the held column -- which runs the height of the board --
+   has nothing to show through: a margin here put a six-pixel band of it
+   straight across the row names. */
 .ruler {
-  height: 18px;
-  margin-bottom: 6px;
+  height: 24px;
+  align-items: start;
 }
 
 .rulerTrack {
   position: relative;
-  height: 100%;
+  height: 18px;
   border-bottom: 1px solid var(--border-strong);
 }
 
@@ -268,33 +320,56 @@
   top: 0;
   bottom: 0;
   background: var(--accent);
-  opacity: 0.55;
+  /* Their fill-opacity, on every feature of every row. */
+  opacity: 0.5;
+  /* Clicking one holds its whole range, which is more than clicking the ground
+     under it does. */
+  cursor: pointer;
 }
 
 /* A profile, not a presence: the bar grows from the baseline in proportion to
-   the value, so the row is read as a shape. */
+   the value, so the row is read as a shape.
+   
+   Drawn the way RCSB draws the same quantity, which they title OCC WT AVG B:
+   the hue at a fifth, with the profile itself carried by a hairline along the
+   top. Their line is one path over an area; ours is the top edge of each bar,
+   which comes to the same staircase. */
 .feature[data-kind="level"] {
   top: auto;
   bottom: 0;
   min-width: 1px;
-  background: var(--accent-hover);
-  opacity: 0.7;
+  /* Their numbers for the same row: the hue at a fifth under a full-strength
+     hairline. Not the 0.5 the other rows carry -- the alpha is in the fill
+     here, and the line has to stay a line. */
+  opacity: 1;
+  background: rgb(175 90 51 / 20%);
+  border-top: 1px solid #af5a33;
 }
 
-/* A single residue can be a fraction of a pixel wide when the whole sequence
-   is fitted to the column, which is nothing to see; zoomed in it is a cell
-   like any other. */
+/* A single residue can be a fraction of a pixel wide with the whole chain
+   fitted to the column, which is nothing to see, so a point is given a width a
+   reader can find. In RCSB's red for a sequence variant, which is what a
+   depositor's substitution is. */
 .feature[data-kind="point"] {
   min-width: 2px;
-  background: var(--danger-fg, #b3261e);
-  opacity: 1;
+  background: #ff6666;
 }
 
 /* Two kinds of span share the secondary-structure row, and a row where both
-   are drawn the same colour says only "there is structure here". */
+   are drawn the same colour says only "there is structure here". RCSB's own
+   pair, so a reader coming from there reads ours without relearning it. */
+.feature[data-variant="helix"] {
+  background: #e43372;
+}
+
 .feature[data-variant="strand"] {
-  background: var(--success-fg);
-  opacity: 0.5;
+  background: #f1d23b;
+}
+
+/* Absent from the model, and drawn as absence: RCSB's grey for their
+   UNMODELED row. A gap in the coordinates is not a feature of the protein. */
+.feature[data-track="unobserved"] {
+  background: #cccccc;
 }
 
 /* An alternate conformation is a fact about the model, not a defect in it, so
@@ -307,15 +382,18 @@
 /* The residues themselves                                                 */
 /* ---------------------------------------------------------------------- */
 
-.letters {
+.residues {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
 }
 
-.letter {
-  flex: 0 0 var(--cell);
+/* Equal shares of the lane, so a residue sits under the part of every feature
+   above it that covers that residue. */
+.residue {
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
   font-family: var(--font-mono);
@@ -326,14 +404,46 @@
   cursor: default;
 }
 
+/* Too dense to give a residue an element of its own: the same dots, drawn as
+   one repeating tile per residue. They touch at this size, which is what the
+   sequence looks like when a pixel holds more than one residue. */
+.residues[data-mode="dense"] {
+  background-image: radial-gradient(
+    circle var(--dot) at 50% 50%,
+    var(--text-secondary) 99%,
+    transparent 100%
+  );
+  background-repeat: repeat-x;
+  background-position: 0 50%;
+  background-size: calc(100% / var(--residues)) 100%;
+  opacity: 0.6;
+}
+
+/* Too narrow for a letter: one grey dot per residue, so the row still reads as
+   a sequence counted out residue by residue rather than as a bar. */
+.residues[data-mode="dots"] .residue::before {
+  content: "";
+  display: block;
+  width: var(--dot);
+  height: var(--dot);
+  margin: 0 auto;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  opacity: 0.8;
+}
+
 /* A residue with no atoms in this model: still part of the sequence, so it is
    drawn, but not as something the coordinates account for. */
-.letter[data-missing="true"] {
+.residues[data-mode="letters"] .residue[data-missing="true"] {
   color: var(--text-muted);
   opacity: 0.45;
 }
 
-.letter:hover {
+.residues[data-mode="dots"] .residue[data-missing="true"]::before {
+  opacity: 0.3;
+}
+
+.residue:hover {
   background: var(--accent-soft);
   color: var(--accent-hover);
 }

@@ -158,3 +158,25 @@ test("should draw no chain row: the chain is chosen above the viewer", () => {
   // then
   assert.ok(!keys.includes("chain"));
 });
+
+test("should draw no UniProt row: the mapping records an accession, not a range", () => {
+  // given: a construct line with two numbers and a dash in it, which the row
+  // used to read as the mapped range
+  const [entity] = polymerEntityViews(
+    [
+      {
+        id: "e1",
+        label_entity_id: "1",
+        construct: "UNP residues 24-333, C-terminal His6 tag",
+        uniprot_mappings: [{ accession: "P00698", source: "sifts" }],
+      },
+    ],
+    [{ header: ">1ABC_1|Chain A", sequence: "ACDEFGHIK" }],
+  );
+
+  // when
+  const keys = sequenceTracks(entity, null).map((track) => track.key);
+
+  // then
+  assert.ok(!keys.some((key) => key.startsWith("uniprot")));
+});
