@@ -15,9 +15,9 @@ import {
  */
 export type SequenceTrack = {
   key: string;
-  /** The whole of the row's name, identifier included, on one line: "UniProt
-   *  A0A0J4VP90". Counts and ranges are not part of it -- they are in the
-   *  features' own tooltips. */
+  /** The whole of the row's name on one line: "Secondary structure". Counts
+   *  and ranges are not part of it -- they are in the features' own
+   *  tooltips. */
   label: string;
   kind: "span" | "point" | "level";
   features: SequenceFeature[];
@@ -37,11 +37,11 @@ export type SequenceFeature = {
 /**
  * The rows we can fill, in the order they are read.
  *
- * The first two come from the entry and never change: the UniProt mapping and
- * the depositor's substitutions. The rest are read out of the selected model's
- * coordinates and therefore *do* change with the rail -- which is the point of
- * the whole page. Two models of one crystal share a sequence and differ in
- * exactly these rows.
+ * The first comes from the entry and never changes: the depositor's
+ * substitutions. The rest are read out of the selected model's coordinates and
+ * therefore *do* change with the rail -- which is the point of the whole page.
+ * Two models of one crystal share a sequence and differ in exactly these
+ * rows.
  *
  * Of RCSB's fifteen we cannot draw the ones that come from the wwPDB
  * validation report -- RSRZ, RSR, RSCC per residue, clashes, plane outliers --
@@ -61,29 +61,14 @@ export function sequenceTracks(
   // sequence, which the panel draws from the residue letters.
   const tracks: SequenceTrack[] = [];
 
-  for (const mapping of entity.uniprotMappings) {
-    // The construct line is free text from the depositor; when it names a
-    // range, that range is in UniProt numbering, not ours. Only its length is
-    // comparable, so the bar spans what it covers of this sequence and the
-    // tooltip keeps the numbers as the depositor wrote them.
-    const range = constructRange(entity.construct);
-    const covered = range ? Math.min(range.end - range.start + 1, length) : length;
-    tracks.push({
-      key: `uniprot-${mapping.accession}`,
-      label: `UniProt ${mapping.accession}`,
-      kind: "span",
-      features: [
-        {
-          key: mapping.accession,
-          start: 1,
-          end: covered,
-          title: range
-            ? `${mapping.accession} · UNP residues ${range.start}-${range.end}`
-            : mapping.accession,
-        },
-      ],
-    });
-  }
+  // No UniProt row: a reference records an accession and where it came from,
+  // and nothing about extent -- no unp_begin/unp_end, no seq_begin/seq_end, on
+  // either side of the API. The row used to draw a coverage bar by pulling the
+  // first "24-333" out of the depositor's free-text construct line, which
+  // borrowed a length from UniProt numbering and anchored it at residue 1. The
+  // accession is on the entity's line in Macromolecules, where it needs no
+  // position; here it would only be a bar across the whole sequence, saying
+  // nothing. It comes back when the record carries the spans.
 
   const mutations = mutationPositions(entity.mutations, length);
   if (mutations.length > 0) {
@@ -205,24 +190,6 @@ export function sequenceLength(entity: PolymerEntityView): number {
 export function residueLetters(entity: PolymerEntityView): string | null {
   const letters = entity.sequence?.replace(/\s+/g, "");
   return letters ? letters : null;
-}
-
-// "UNP residues 24-333" and the handful of ways depositors write the same
-// thing. Anything else is left alone: a wrong range drawn confidently is worse
-// than no range.
-function constructRange(
-  construct: string | null,
-): { start: number; end: number } | null {
-  if (!construct) {
-    return null;
-  }
-  const match = /(\d+)\s*[-–]\s*(\d+)/.exec(construct);
-  if (!match) {
-    return null;
-  }
-  const start = Number(match[1]);
-  const end = Number(match[2]);
-  return end > start ? { start, end } : null;
 }
 
 // "A123G" -- the position is the digits in the middle. A substitution outside

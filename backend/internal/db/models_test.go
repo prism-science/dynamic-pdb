@@ -21,8 +21,11 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	thumbnailImageURL := "s3://dynamic-pdb/thumbnails/" + uuid.NewString() + ".png"
 	createdBy := createDBTestUser(t)
 	affiliation := "Department of Chemistry, Boston University"
+	details := "Multiconformer refinement"
 	purpose := models.ModelPurposeRefinement
 	modelType := models.StructureModelTypeMulticonformer
+	altLocFraction := 0.31
+	unmodeledFraction := 0.04
 	idempotencyKey := uuid.NewString()
 	revision := models.ModelRevision{
 		ID:                uuid.New(),
@@ -31,11 +34,18 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 		Title:             &title,
 		ThumbnailImageURL: &thumbnailImageURL,
 		Metadata: models.ModelMetadata{
-			Authors:     []string{"Hendrickson, W.A.", "Teeter, M.M."},
-			Affiliation: &affiliation,
-			Purpose:     &purpose,
-			ModelType:   &modelType,
-			Ligands:     []string{"HEM"},
+			ExternalRefs: map[models.ModelSource]string{
+				models.ModelSourcePDB: "5AMF",
+			},
+			Details:           &details,
+			Authors:           []string{"Hendrickson, W.A.", "Teeter, M.M."},
+			Affiliation:       &affiliation,
+			Purpose:           &purpose,
+			ModelType:         &modelType,
+			AltLocFraction:    &altLocFraction,
+			UnmodeledFraction: &unmodeledFraction,
+			Ligands:           []string{"ATP"},
+			Cofactors:         []string{"HEM"},
 		},
 		IdempotencyKey: &idempotencyKey,
 		CreatedBy:      createdBy,
@@ -54,18 +64,26 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, entryRevision.EntryID, got.EntryID)
 	assert.Equal(t, revision.ModelID, got.ModelID)
 	assert.Equal(t, models.ModelStateActive, got.ModelState)
+	assert.Equal(t, revision.Metadata.ExternalRefs, got.Metadata.ExternalRefs)
 	assert.Equal(t, createdBy, got.CreatedBy)
 	assert.Equal(t, revision.Title, got.Title)
 	require.NotNil(t, got.ThumbnailImageURL)
 	assert.Equal(t, thumbnailImageURL, *got.ThumbnailImageURL)
 	assert.Equal(t, []string{"Hendrickson, W.A.", "Teeter, M.M."}, got.Metadata.Authors)
+	require.NotNil(t, got.Metadata.Details)
+	assert.Equal(t, details, *got.Metadata.Details)
 	require.NotNil(t, got.Metadata.Affiliation)
 	assert.Equal(t, affiliation, *got.Metadata.Affiliation)
 	require.NotNil(t, got.Metadata.Purpose)
 	assert.Equal(t, purpose, *got.Metadata.Purpose)
 	require.NotNil(t, got.Metadata.ModelType)
 	assert.Equal(t, modelType, *got.Metadata.ModelType)
-	assert.Equal(t, []string{"HEM"}, got.Metadata.Ligands)
+	require.NotNil(t, got.Metadata.AltLocFraction)
+	assert.Equal(t, altLocFraction, *got.Metadata.AltLocFraction)
+	require.NotNil(t, got.Metadata.UnmodeledFraction)
+	assert.Equal(t, unmodeledFraction, *got.Metadata.UnmodeledFraction)
+	assert.Equal(t, []string{"ATP"}, got.Metadata.Ligands)
+	assert.Equal(t, []string{"HEM"}, got.Metadata.Cofactors)
 	require.NotNil(t, got.IdempotencyKey)
 	assert.Equal(t, idempotencyKey, *got.IdempotencyKey)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())

@@ -25,6 +25,8 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	detailsToken := "detailstoken" + token
 	authorToken := "author" + token
 	ligandToken := "ligand" + token
+	modelDetailsToken := "modeldetails" + token
+	cofactorToken := "cofactor" + token
 	spaceGroup := "spacegroup " + entryToken
 	method := models.StructureMethodCryoEM
 	modelType := models.StructureModelTypeMulticonformer
@@ -41,10 +43,12 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	}
 	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "model "+modelToken, now)
 	modelRevision.Metadata = models.ModelMetadata{
+		Details:   ptr("Model details " + modelDetailsToken),
 		Authors:   []string{"Researcher " + authorToken},
 		ModelType: &modelType,
 		AtomCount: &atomCount,
 		Ligands:   []string{ligandToken},
+		Cofactors: []string{cofactorToken},
 	}
 
 	// when
@@ -61,6 +65,8 @@ func Test_should_index_entry_and_model_revision_text_when_search_index_called(t 
 	assertEntryRevisionSearchContains(ctx, t, modelToken, entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, authorToken, entryRevision.EntryID)
 	assertEntryRevisionSearchContains(ctx, t, ligandToken, entryRevision.EntryID)
+	assertEntryRevisionSearchContains(ctx, t, modelDetailsToken, entryRevision.EntryID)
+	assertEntryRevisionSearchContains(ctx, t, cofactorToken, entryRevision.EntryID)
 	assertEntryRevisionSearchDoesNotContain(ctx, t, string(models.EntrySourcePDB), entryRevision.EntryID)
 	assertEntryRevisionSearchDoesNotContain(ctx, t, "123456789", entryRevision.EntryID)
 	assertEntryRevisionSearchDoesNotContain(ctx, t, "1.23", entryRevision.EntryID)

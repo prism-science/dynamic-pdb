@@ -115,8 +115,13 @@ export const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 export const METRIC_FIELDS: { key: string; label: string; example: string }[] = [
   { key: "r_work", label: "R-work", example: "e.g. 0.196" },
   { key: "r_free", label: "R-free", example: "e.g. 0.231" },
+  { key: "clashscore", label: "Clashscore", example: "e.g. 4.8" },
+  {
+    key: "molprobity_score",
+    label: "MolProbity score",
+    example: "e.g. 1.42",
+  },
   { key: "rscc", label: "RSCC", example: "e.g. 0.96" },
-  { key: "cc", label: "CC", example: "e.g. 0.98" },
 ];
 
 export const DRAFT_STORAGE_KEY = "dpdb:new-entry-draft";

@@ -494,20 +494,28 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/rest/v1/core/entry/" + s.pdbID:
 		writeJSON(w, map[string]any{
-			"struct": map[string]any{"title": "example structure"},
-			"exptl":  []map[string]any{{"method": "X-RAY DIFFRACTION"}},
+			"struct": map[string]any{
+				"title":              "example structure",
+				"pdbx_model_details": "Deposited model details",
+			},
+			"exptl": []map[string]any{{"method": "X-RAY DIFFRACTION"}},
 			"rcsb_entry_info": map[string]any{
-				"resolution_combined":                     []float64{1.4},
-				"deposited_atom_count":                    1383,
-				"deposited_modeled_polymer_monomer_count": 164,
-				"deposited_polymer_entity_instance_count": 1,
-				"nonpolymer_bound_components":             []string{"ATP", "HOH"},
+				"resolution_combined":                       []float64{1.4},
+				"deposited_atom_count":                      1383,
+				"deposited_polymer_monomer_count":           200,
+				"deposited_modeled_polymer_monomer_count":   164,
+				"deposited_unmodeled_polymer_monomer_count": 36,
+				"deposited_polymer_entity_instance_count":   1,
+				"nonpolymer_bound_components":               []string{"ATP", "HOH"},
 			},
 			"symmetry": map[string]any{"space_group_name_H_M": "P 21 21 21"},
 			"rcsb_entry_container_identifiers": map[string]any{
 				"polymer_entity_ids": []string{"1"},
 			},
 			"refine": []map[string]any{{"ls_R_factor_R_free": 0.21, "ls_R_factor_R_work": 0.18}},
+			"pdbx_vrpt_summary_geometry": []map[string]any{{
+				"clashscore": 4.8, "percent_ramachandran_outliers": 0.13,
+			}},
 			"audit_author": []map[string]any{
 				{"name": "Nelson, R."},
 				{"name": "Sawaya, M.R."},
@@ -516,7 +524,9 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/rest/v1/core/polymer_entity/" + s.pdbID + "/1":
 		writeJSON(w, map[string]any{
-			"rcsb_entity_source_organism": []map[string]any{{"ncbi_scientific_name": "Homo sapiens"}},
+			"entity_poly": map[string]any{"pdbx_seq_one_letter_code_can": "ACDE"},
+			"rcsb_polymer_entity_container_identifiers": map[string]any{"entity_id": "1"},
+			"rcsb_entity_source_organism":               []map[string]any{{"ncbi_scientific_name": "Homo sapiens"}},
 		})
 	case "/download/" + s.pdbID + ".cif":
 		writeText(w, `data_`+pdbIDLower+`
@@ -642,6 +652,42 @@ type entryAttributesResponse struct {
 	Title             *string        `json:"title"`
 	ThumbnailImageURL *string        `json:"thumbnail_image_url"`
 	Metadata          map[string]any `json:"metadata"`
+}
+
+func (r *entryAttributesResponse) UnmarshalJSON(data []byte) error {
+	var attributes struct {
+		Title             *string `json:"title"`
+		ThumbnailImageURL *string `json:"thumbnail_image_url"`
+	}
+	if err := json.Unmarshal(data, &attributes); err != nil {
+		return err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+
+	r.Title = attributes.Title
+	r.ThumbnailImageURL = attributes.ThumbnailImageURL
+	r.Metadata = make(map[string]any)
+	if metadata, ok := fields["metadata"].(map[string]any); ok {
+		for key, value := range metadata {
+			r.Metadata[key] = value
+		}
+	}
+	for _, key := range []string{
+		"external_refs",
+		"details",
+		"resolution",
+		"method",
+		"space_group",
+		"crystallography",
+	} {
+		if value, ok := fields[key]; ok {
+			r.Metadata[key] = value
+		}
+	}
+	return nil
 }
 
 type proteinSequenceResourceResponse struct {

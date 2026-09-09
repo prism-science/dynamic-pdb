@@ -38,7 +38,7 @@ func Test_should_build_field_map_from_pdb_contents(t *testing.T) {
 		"REMARK   3   R VALUE     (WORKING SET) : 0.191\n" +
 		"REMARK   3   FREE R VALUE                     : 0.243\n" +
 		"ATOM      1  N   ALA A   1      11.104  13.207   9.447  1.00 20.00           N\n" +
-		"ATOM      2  CA  ALA A   1      12.104  13.207   9.447  1.00 20.00           C\n" +
+		"ATOM      2  CA AALA A   1      12.104  13.207   9.447  1.00 20.00           C\n" +
 		"ATOM      3  N   GLY A   2      13.104  13.207   9.447  1.00 20.00           N\n" +
 		"HETATM    4  C1  ATP B 101      14.104  13.207   9.447  1.00 20.00           C\n" +
 		"HETATM    5  O   HOH B 201      15.104  13.207   9.447  1.00 20.00           O\n" +
@@ -57,6 +57,7 @@ func Test_should_build_field_map_from_pdb_contents(t *testing.T) {
 	assert.Equal(t, 4, fields["atom_count"])
 	assert.Equal(t, 2, fields["modeled_residues"])
 	assert.Equal(t, 1, fields["unique_protein_chains"])
+	assert.Equal(t, 0.5, fields["altloc_fraction"])
 	assert.Equal(t, []string{"ATP"}, fields["ligands"])
 }
 
@@ -84,12 +85,13 @@ _atom_site.type_symbol
 _atom_site.label_comp_id
 _atom_site.auth_asym_id
 _atom_site.auth_seq_id
-ATOM N ALA A 1
-ATOM C ALA A 1
-ATOM N GLY A 2
-HETATM C ATP B 101
-HETATM O HOH B 201
-HETATM H ATP B 101
+_atom_site.label_alt_id
+ATOM N ALA A 1 .
+ATOM C ALA A 1 A
+ATOM N GLY A 2 .
+HETATM C ATP B 101 .
+HETATM O HOH B 201 .
+HETATM H ATP B 101 .
 #
 loop_
 _software.name
@@ -110,5 +112,6 @@ REFMAC refinement 5.2.0005
 	assert.Equal(t, 4, fields["atom_count"])
 	assert.Equal(t, 2, fields["modeled_residues"])
 	assert.Equal(t, 1, fields["unique_protein_chains"])
+	assert.Equal(t, 0.5, fields["altloc_fraction"])
 	assert.Equal(t, []string{"ATP"}, fields["ligands"])
 }

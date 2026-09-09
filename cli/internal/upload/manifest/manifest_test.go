@@ -150,6 +150,8 @@ func Test_should_include_rcsb_model_when_requested(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(contents), "title: Deposited model")
 	assert.Contains(t, string(contents), "file: '{{ pdb_id }}.cif'")
+	assert.Contains(t, string(contents), "field: struct.pdbx_model_details")
+	assert.Contains(t, string(contents), "field: pdbx_vrpt_summary_geometry[0].clashscore")
 	assert.Contains(t, string(contents), "- Rerefined/final_model/{{ pdb_id }}_020.pdb")
 }
 

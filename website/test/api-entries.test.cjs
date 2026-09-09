@@ -293,6 +293,12 @@ test("should post create entry using the new backend graph shape", async () => {
                 file_url: "s3://dynamic-pdb/model.cif",
                 sha256: "ABCDEF123456",
                 authors: ["Alice"],
+                metadata: {
+                  details: "Model details",
+                  altloc_fraction: 0.25,
+                  unmodeled_fraction: 0.1,
+                  cofactors: ["HEM"],
+                },
               },
             },
             {
@@ -363,6 +369,10 @@ test("should post create entry using the new backend graph shape", async () => {
     );
     assert.deepEqual(request.body.model_operations[0].data.metadata, {
       authors: ["Alice"],
+      details: "Model details",
+      altloc_fraction: 0.25,
+      unmodeled_fraction: 0.1,
+      cofactors: ["HEM"],
     });
     assert.deepEqual(request.body.model_operations[0].data.runs[0].artifacts, [
       { artifact_id: "baseline", direction: "input", position: null },

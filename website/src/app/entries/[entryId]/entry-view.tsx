@@ -206,13 +206,18 @@ const modelMetricTiles: MetricSpec[] = [
     status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
   },
   {
-    key: "rscc",
-    label: "RSCC",
-    status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
+    key: "clashscore",
+    label: "Clashscore",
+    status: (value) => (value < 10 ? "good" : value < 20 ? "warn" : "bad"),
   },
   {
-    key: "cc",
-    label: "CC",
+    key: "molprobity_score",
+    label: "MolProbity score",
+    status: (value) => (value < 2 ? "good" : value < 3 ? "warn" : "bad"),
+  },
+  {
+    key: "rscc",
+    label: "RSCC",
     status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
   },
 ];
@@ -288,21 +293,9 @@ export function mergedModelMetrics(
   return merged;
 }
 
-/**
- * The two R-factors, and only those.
- *
- * They are what every model in the archive actually carries; RSCC and CC are
- * recorded for almost none of them, and a column that is empty on all but a
- * handful of records is a column that teaches the reader to ignore the table.
- * The full set is still shown wherever every metric is listed.
- *
- * A metric the model does not carry is left out rather than printed as a dash,
- * so a column only appears when there is a number under it.
- */
-const SUMMARY_METRICS: (keyof MetricsPayload)[] = ["r_work", "r_free"];
-
+// A metric the model does not carry is left out rather than printed as a dash.
 export function metricColumns(merged: MetricsPayload): MetricColumn[] {
-  return buildColumns(merged, SUMMARY_METRICS);
+  return buildColumns(merged, null);
 }
 
 function buildColumns(
@@ -326,14 +319,14 @@ function buildColumns(
 /**
  * The selected model's facts, as plain labelled fields.
  *
- * Six of them, split down the middle into two columns by the caller, so the
- * order here is also the reading order: how it was made on the left, what came
- * out on the right.
- *
  * Counts are separate fields rather than one joined sentence -- reading a
  * number out of "4 812 atoms · 310 residues" means parsing a sentence to find
  * it. The crystal's own facts are not here at all: method, resolution and
  * space group belong to the experiment and have their own tab.
+ *
+ * `details` is not here either. It is a paragraph the depositor wrote, and the
+ * value track in this grid is around 140px wide; it is read with modelDetails
+ * and set beside the entry's own description instead.
  */
 export function summaryModelFacts(
   metadata: Record<string, unknown>,
@@ -345,6 +338,11 @@ export function summaryModelFacts(
   const authors = stringArrayValue(metadata.authors);
   const atoms = numberValue(metadata.atom_count);
   const residues = numberValue(metadata.modeled_residues);
+  const chains = numberValue(metadata.unique_protein_chains);
+  const altLocFraction = numberValue(metadata.altloc_fraction);
+  const unmodeledFraction = numberValue(metadata.unmodeled_fraction);
+  const ligands = stringArrayValue(metadata.ligands);
+  const cofactors = stringArrayValue(metadata.cofactors);
 
   if (program) {
     facts.push({ label: "Program", value: formatProgram(program) });
@@ -369,6 +367,41 @@ export function summaryModelFacts(
     facts.push({
       label: "Residues",
       value: numberFormatter.format(residues),
+      format: "mono",
+    });
+  }
+  if (chains != null) {
+    facts.push({
+      label: "Protein chains",
+      value: numberFormatter.format(chains),
+      format: "mono",
+    });
+  }
+  if (altLocFraction != null) {
+    facts.push({
+      label: "Alternate-location fraction",
+      value: fractionFormatter.format(altLocFraction),
+      format: "mono",
+    });
+  }
+  if (unmodeledFraction != null) {
+    facts.push({
+      label: "Unmodeled fraction",
+      value: fractionFormatter.format(unmodeledFraction),
+      format: "mono",
+    });
+  }
+  if (ligands.length > 0) {
+    facts.push({
+      label: ligands.length === 1 ? "Ligand" : "Ligands",
+      value: ligands.join(", "),
+      format: "mono",
+    });
+  }
+  if (cofactors.length > 0) {
+    facts.push({
+      label: cofactors.length === 1 ? "Cofactor" : "Cofactors",
+      value: cofactors.join(", "),
       format: "mono",
     });
   }
@@ -476,6 +509,19 @@ export function entryDetails(
   return stringValue(entry.details);
 }
 
+/**
+ * The depositor's description of the model, the same way entryDetails reads
+ * the entry's.
+ *
+ * The sync fills it from RCSB's `pdbx_model_details`, which runs anywhere from
+ * one clause to a paragraph, so it is prose and is returned as prose.
+ */
+export function modelDetails(
+  metadata: Record<string, unknown>,
+): string | null {
+  return stringValue(metadata.details);
+}
+
 // A PDB ID is four alphanumerics starting with a digit; anything else is not
 // addressable on rcsb.org and stays plain text rather than a broken link.
 function rcsbStructureURL(pdb: string): string | undefined {
@@ -522,8 +568,12 @@ export function modelInfoFacts(
   const facts: MetadataFact[] = [];
   const purpose = stringValue(metadata.purpose);
   const modelType = stringValue(metadata.model_type);
+  const details = stringValue(metadata.details);
   const ligands = stringArrayValue(metadata.ligands);
+  const cofactors = stringArrayValue(metadata.cofactors);
   const authors = stringArrayValue(metadata.authors);
+  const altLocFraction = numberValue(metadata.altloc_fraction);
+  const unmodeledFraction = numberValue(metadata.unmodeled_fraction);
 
   if (program) {
     facts.push({ label: "Made with", value: formatProgram(program) });
@@ -534,10 +584,34 @@ export function modelInfoFacts(
   if (modelType) {
     facts.push({ label: "Model type", value: modelType });
   }
+  if (details) {
+    facts.push({ label: "Details", value: details });
+  }
   if (ligands.length > 0) {
     facts.push({
       label: ligands.length === 1 ? "Ligand" : "Ligands",
       value: ligands.join(", "),
+      format: "mono",
+    });
+  }
+  if (cofactors.length > 0) {
+    facts.push({
+      label: cofactors.length === 1 ? "Cofactor" : "Cofactors",
+      value: cofactors.join(", "),
+      format: "mono",
+    });
+  }
+  if (altLocFraction != null) {
+    facts.push({
+      label: "Alternate-location fraction",
+      value: fractionFormatter.format(altLocFraction),
+      format: "mono",
+    });
+  }
+  if (unmodeledFraction != null) {
+    facts.push({
+      label: "Unmodeled fraction",
+      value: fractionFormatter.format(unmodeledFraction),
       format: "mono",
     });
   }
@@ -589,3 +663,8 @@ const metricFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+
+const fractionFormatter = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
