@@ -131,6 +131,21 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 	}
 
 	if executionErr := j.execute(ctx, *job); executionErr != nil {
+		if errors.Is(executionErr, rcsb.ErrNotFound) {
+			if err := j.database.DataSyncJobs.Delete(ctx, *job); err != nil {
+				return false, errors.Join(
+					fmt.Errorf("execute data sync job: %w", executionErr),
+					fmt.Errorf("delete data sync job after RCSB 404: %w", err),
+				)
+			}
+			j.logger.Warn(
+				"data sync job removed after RCSB resource was not found",
+				"entry_id", job.EntryID,
+				"model_id", stringValue(job.ModelID),
+				"err", executionErr,
+			)
+			return true, nil
+		}
 		job.ScheduledAt = j.now().Add(dataSyncRetryInterval)
 		if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
 			return false, errors.Join(

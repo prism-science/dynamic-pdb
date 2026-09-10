@@ -62,6 +62,45 @@ func Test_should_return_oldest_due_data_sync_job_when_jobs_scheduled(t *testing.
 	assert.Nil(t, next)
 }
 
+func Test_should_delete_exact_data_sync_job_when_job_selected(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "deleted-data-sync-entry", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "deleted-data-sync-model", now)
+	entryJob := models.DataSyncJob{
+		EntryID:     entryRevision.EntryID,
+		ScheduledAt: now.Add(-2 * time.Hour),
+	}
+	modelJob := models.DataSyncJob{
+		EntryID:     entryRevision.EntryID,
+		ModelID:     &modelRevision.ModelID,
+		ScheduledAt: now.Add(-time.Hour),
+	}
+	require.NoError(t, testDB.DataSyncJobs.Schedule(ctx, entryJob))
+	require.NoError(t, testDB.DataSyncJobs.Schedule(ctx, modelJob))
+
+	// when
+	err := testDB.DataSyncJobs.Delete(ctx, entryJob)
+
+	// then
+	require.NoError(t, err)
+	next, err := testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, next)
+	require.NotNil(t, next.ModelID)
+	assert.Equal(t, modelRevision.ModelID, *next.ModelID)
+
+	// when
+	err = testDB.DataSyncJobs.Delete(ctx, modelJob)
+
+	// then
+	require.NoError(t, err)
+	next, err = testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+	require.NoError(t, err)
+	assert.Nil(t, next)
+}
+
 func Test_should_run_callback_when_advisory_lock_acquired(t *testing.T) {
 	// given
 	callbackCalled := false
