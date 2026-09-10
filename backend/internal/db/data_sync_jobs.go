@@ -47,6 +47,16 @@ func (r *DataSyncJobsRepository) Schedule(ctx context.Context, job models.DataSy
 	return nil
 }
 
+func (r *DataSyncJobsRepository) Delete(ctx context.Context, job models.DataSyncJob) error {
+	query := `delete from data_sync_jobs
+	          where entry_id = $1
+	            and model_id is not distinct from $2`
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, job.EntryID, job.ModelID); err != nil {
+		return fmt.Errorf("delete data sync job: %w", err)
+	}
+	return nil
+}
+
 func (r *DataSyncJobsRepository) GetNextScheduled(
 	ctx context.Context,
 	scheduledBefore time.Time,
