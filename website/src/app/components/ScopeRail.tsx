@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import type { ScopeRailModel } from "@/lib/scope-rail";
@@ -17,6 +17,18 @@ import styles from "./ScopeRail.module.css";
 
 /** Kept in step with the transition the rows are given below. */
 const ROW_SLIDE_MS = 320;
+
+/**
+ * How long the pointer has to mean it.
+ *
+ * Opening waits a moment so that crossing the column on the way somewhere else
+ * does nothing at all; closing waits longer, because leaving by a few pixels --
+ * rounding a corner, overshooting a chip -- is not leaving. Either wait is
+ * cancelled if the pointer comes back, so a hand moving in and out never starts
+ * the animation, let alone reverses it half way.
+ */
+const OPEN_AFTER_MS = 110;
+const CLOSE_AFTER_MS = 260;
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -59,6 +71,29 @@ export default function ScopeRail({
   /** Omitted for signed-out visitors, who cannot add one. */
   addModelHref?: string | null;
 }) {
+  const [open, setOpen] = useState(false);
+  const intent = useRef<number | null>(null);
+
+  const cancelIntent = () => {
+    if (intent.current !== null) {
+      window.clearTimeout(intent.current);
+      intent.current = null;
+    }
+  };
+  const intendTo = (next: boolean) => {
+    cancelIntent();
+    intent.current = window.setTimeout(() => {
+      intent.current = null;
+      setOpen(next);
+    }, next ? OPEN_AFTER_MS : CLOSE_AFTER_MS);
+  };
+  // Keyboard has no hesitation to model: focus lands, the panel is open.
+  const settleTo = (next: boolean) => {
+    cancelIntent();
+    setOpen(next);
+  };
+  useEffect(() => cancelIntent, []);
+
   const [order, setOrder] = useState<{ spec: MetricSpec | null; ascending: boolean }>(
     () => {
       const spec = metricSpec(sort);
@@ -187,7 +222,19 @@ export default function ScopeRail({
 
   return (
     <div className={styles.column}>
-      <aside className={styles.rail} aria-label="Models">
+      <aside
+        className={styles.rail}
+        aria-label="Models"
+        data-open={open ? "true" : undefined}
+        onPointerEnter={() => intendTo(true)}
+        onPointerLeave={() => intendTo(false)}
+        onFocus={() => settleTo(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            settleTo(false);
+          }
+        }}
+      >
         <p className={styles.heading}>
           Models
           <span className={styles.count}>{models.length}</span>

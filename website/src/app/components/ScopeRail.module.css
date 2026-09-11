@@ -47,16 +47,17 @@
   overscroll-behavior: contain;
   padding: 0 18px 20px 0;
   background: var(--surface);
-  /* The delay belongs on the closing side: a pointer on its way to the record
-     crosses this column, and a panel that shut the instant it left would
-     flicker on every pass. */
+  /* No delay here. Waiting is the component's job -- it holds the pointer for a
+     moment before deciding, and a pointer that leaves again in that moment
+     never opened anything. A delay written into the transition cannot do that:
+     it postpones rather than cancels, so a quick move out and back froze the
+     panel mid-width and then reversed, which is the stutter. */
   transition:
-    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
-    padding 240ms ease 200ms;
+    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1),
+    padding 240ms ease;
 }
 
-.rail:hover,
-.rail:focus-within {
+.rail[data-open="true"] {
   width: 560px;
   /* Over everything the record puts in its own column -- including the map
      menu the structure viewer opens at 20 -- and under the site header and the
@@ -68,7 +69,6 @@
      panel, and against a page this white the panel then reads as a different
      shade of white rather than as the column having simply got wider. */
   border-right: 1px solid var(--border);
-  transition-delay: 100ms;
 }
 
 /* The rail is short and mostly empty; a scrollbar drawn across it whenever the
@@ -122,16 +122,14 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1),
     opacity 140ms ease;
 }
 
-.rail:hover .toolbar,
-.rail:focus-within .toolbar {
+.rail[data-open="true"] .toolbar {
   height: 32px;
   opacity: 1;
   pointer-events: auto;
-  transition-delay: 100ms, 180ms;
 }
 
 .toolbarLabel {
@@ -247,15 +245,13 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
   transition:
-    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
-    margin 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms;
+    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1),
+    margin 240ms cubic-bezier(0.19, 0.72, 0.24, 1);
 }
 
-.rail:hover .rank,
-.rail:focus-within .rank {
+.rail[data-open="true"] .rank {
   width: 14px;
   margin-right: 8px;
-  transition-delay: 100ms;
 }
 
 .thumb {
@@ -301,15 +297,13 @@
   white-space: nowrap;
   opacity: 0;
   transition:
-    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1),
     opacity 140ms ease;
 }
 
-.rail:hover .meta,
-.rail:focus-within .meta {
+.rail[data-open="true"] .meta {
   height: 14px;
   opacity: 1;
-  transition-delay: 100ms, 180ms;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -328,17 +322,15 @@
   overflow: hidden;
   opacity: 0;
   transition:
-    max-height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
-    margin-top 240ms ease 200ms,
+    max-height 240ms cubic-bezier(0.19, 0.72, 0.24, 1),
+    margin-top 240ms ease,
     opacity 140ms ease;
 }
 
-.rail:hover .strip,
-.rail:focus-within .strip {
+.rail[data-open="true"] .strip {
   max-height: 44px;
   margin-top: 6px;
   opacity: 1;
-  transition-delay: 100ms, 100ms, 180ms;
 }
 
 /* A filled cell per figure, not rules between them. Most models carry two or
@@ -459,8 +451,7 @@
   }
 
   .rail,
-  .rail:hover,
-  .rail:focus-within {
+  .rail[data-open="true"] {
     position: static;
     width: auto;
     height: auto;
