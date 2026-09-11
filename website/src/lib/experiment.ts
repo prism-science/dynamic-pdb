@@ -3,6 +3,11 @@ import { type CrystallographyView, formatKelvin, formatPH } from "@/lib/crystall
 import { cifLoop, cifValue, loopValue } from "@/lib/parse/cif";
 import { canonicalMethod } from "@/lib/parse/structure";
 
+export type ExperimentEntry = Pick<
+  Entry,
+  "method" | "resolution" | "space_group"
+>;
+
 /**
  * What the experiment was, read out of the model's own coordinate file.
  *
@@ -98,7 +103,7 @@ export type ExperimentView = {
  * is actually on the tab -- so the offer is made on what the record holds and
  * on whether there is a file to read at all.
  */
-export function hasExperimentRecord(entry: Entry): boolean {
+export function hasExperimentRecord(entry: ExperimentEntry): boolean {
   return (
     trimmed(entry.method) !== null ||
     finite(entry.resolution) !== null ||
@@ -107,7 +112,7 @@ export function hasExperimentRecord(entry: Entry): boolean {
 }
 
 export function experimentView(
-  entry: Entry,
+  entry: ExperimentEntry,
   crystallography: CrystallographyView | null,
   /** The selected model's coordinate file; null when there is none to read. */
   cif: string | null,
@@ -492,7 +497,7 @@ function atoms(text: string): ExperimentRows | null {
 /* Values                                                              */
 /* ------------------------------------------------------------------ */
 
-function method(entry: Entry, text: string): string | null {
+function method(entry: ExperimentEntry, text: string): string | null {
   const recorded = trimmed(entry.method);
   if (recorded) {
     return recorded;
@@ -501,7 +506,7 @@ function method(entry: Entry, text: string): string | null {
   return canonicalMethod(raw ?? "") ?? sentence(raw);
 }
 
-function resolution(entry: Entry, text: string): number | null {
+function resolution(entry: ExperimentEntry, text: string): number | null {
   return (
     finite(entry.resolution) ??
     number(text, "_refine.ls_d_res_high") ??
@@ -509,7 +514,7 @@ function resolution(entry: Entry, text: string): number | null {
   );
 }
 
-function spaceGroup(entry: Entry, text: string): string | null {
+function spaceGroup(entry: ExperimentEntry, text: string): string | null {
   return (
     trimmed(entry.space_group) ??
     cifValue(text, "_symmetry.space_group_name_h-m") ??

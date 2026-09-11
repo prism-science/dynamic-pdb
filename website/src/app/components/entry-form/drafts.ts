@@ -5,13 +5,9 @@ import { DRAFT_STORAGE_KEY, DRAFT_VERSION } from "./types";
 import type {
   EntryMetadataDraft,
   FileSource,
-  MetricDraft,
-  ModelDraft,
   ParsedFile,
-  ProgramDraft,
   UploadStatus,
 } from "./types";
-import { assignCanonicalArtifactTypes } from "./helpers";
 
 export type StoredFile = {
   id: string;
@@ -29,31 +25,15 @@ export type StoredFile = {
   extReference?: ExtFileReference;
 };
 
-export type StoredModel = {
-  id: string;
-  title: string;
-  thumbUrl: string | null;
-  thumbPreview?: string;
-  files: StoredFile[];
-  metrics: MetricDraft[];
-  purpose?: string;
-  modelType?: string;
-  programs?: ProgramDraft[];
-  /** Version 1 shape, read once so an in-flight draft is not thrown away. */
-  program?: ProgramDraft | null;
-};
-
 export type StoredDraft = {
   version: number;
   entryId: string;
   metadata?: EntryMetadataDraft;
-  extExperimentId?: string | null;
   title: string;
   thumbUrl: string | null;
   thumbPreview?: string;
   thumbUploadStatus: UploadStatus;
   files: StoredFile[];
-  models: StoredModel[];
 };
 
 export function isPersistable(file: ParsedFile): boolean {
@@ -103,77 +83,11 @@ export function fileFromDraft(file: StoredFile): ParsedFile {
   };
 }
 
-export function modelToDraft(modelDraft: ModelDraft): StoredModel {
-  return {
-    id: modelDraft.id,
-    title: modelDraft.title,
-    thumbUrl: modelDraft.thumbUrl,
-    thumbPreview: httpOnly(modelDraft.thumbPreview),
-    files: modelDraft.files.filter(isPersistable).map(fileToDraft),
-    metrics: modelDraft.metrics,
-    purpose: modelDraft.purpose,
-    modelType: modelDraft.modelType,
-    programs: modelDraft.programs,
-  };
-}
-
-export function modelFromDraft(modelDraft: StoredModel): ModelDraft {
-  return {
-    id: modelDraft.id,
-    title: modelDraft.title,
-    thumbFileId: crypto.randomUUID(),
-    thumbFile: null,
-    thumbPreview: modelDraft.thumbPreview ?? null,
-    thumbUrl: modelDraft.thumbUrl,
-    thumbProgress: modelDraft.thumbUrl ? 1 : 0,
-    thumbUploadStatus: modelDraft.thumbUrl ? "uploaded" : "idle",
-    thumbUploadError: null,
-    files: assignCanonicalArtifactTypes(
-      [],
-      modelDraft.files.map(fileFromDraft),
-      "model",
-    ),
-    metrics: modelDraft.metrics,
-    purpose: modelDraft.purpose ?? "",
-    modelType: modelDraft.modelType ?? "",
-    programs: storedPrograms(modelDraft),
-  };
-}
-
-// A version 1 draft carried a single `program` with no links. Its one run took
-// every data file and produced the model, so that is what it is restored as —
-// the same graph the old form would have submitted.
-function storedPrograms(modelDraft: StoredModel): ProgramDraft[] {
-  if (modelDraft.programs) {
-    return modelDraft.programs;
-  }
-  const legacy = modelDraft.program;
-  if (!legacy) {
-    return [];
-  }
-  const files = modelDraft.files;
-  const isModel = (file: StoredFile) =>
-    file.artifactType === "model" ||
-    (file.artifactType == null &&
-      (file.type === "pdb" || file.type === "mmcif"));
-  return [
-    {
-      ...legacy,
-      inputFileIds: files.filter((file) => !isModel(file)).map((file) => file.id),
-      outputFileIds: files.filter(isModel).map((file) => file.id),
-      expectedInputs: [],
-      origin: "manual" as const,
-    },
-  ];
-}
-
 export function draftHasContent(draft: StoredDraft): boolean {
   return (
     draft.title.trim().length > 0 ||
-    Boolean(draft.extExperimentId) ||
     Boolean(draft.thumbUrl) ||
-    draft.files.length > 0 ||
-    draft.models.length > 0
+    draft.files.length > 0
   );
 }
 
@@ -191,9 +105,6 @@ export function readStoredDraft(): StoredDraft | null {
       return null;
     }
     parsed.files = Array.isArray(parsed.files) ? parsed.files : [];
-    parsed.models = Array.isArray(parsed.models)
-      ? parsed.models
-      : [];
     return parsed;
   } catch {
     return null;

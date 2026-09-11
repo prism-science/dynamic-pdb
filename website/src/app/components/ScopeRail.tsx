@@ -284,6 +284,7 @@ export default function ScopeRail({
                   order.spec,
                   order.ascending,
                 )}`}
+                prefetch={false}
                 scroll={false}
               >
                 <span className={styles.rowGutter}>
