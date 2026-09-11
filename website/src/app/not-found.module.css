@@ -60,8 +60,8 @@
   box-shadow: var(--ring);
 }
 
-/* Same weight as the breadcrumb separator, which is the other place on the
-   site where a dot stands between two links. */
+/* Muted enough to read as punctuation between the two links, not as a third
+   one. */
 .sep {
   color: var(--border-strong);
 }
