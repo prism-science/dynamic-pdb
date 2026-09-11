@@ -9,9 +9,17 @@ export default async function ModelPage({
   searchParams,
 }: {
   params: Promise<{ entryId: string; modelId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; sort?: string; dir?: string }>;
 }) {
   const { entryId, modelId } = await params;
-  const { tab } = await searchParams;
-  return <ScopePage entryId={entryId} modelId={modelId} requestedTab={tab} />;
+  const { tab, sort, dir } = await searchParams;
+  return (
+    <ScopePage
+      entryId={entryId}
+      modelId={modelId}
+      requestedTab={tab}
+      requestedSort={sort}
+      requestedDirection={dir}
+    />
+  );
 }

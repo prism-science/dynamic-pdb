@@ -66,11 +66,17 @@ export default async function ScopePage({
   entryId,
   modelId,
   requestedTab,
+  requestedSort,
+  requestedDirection,
 }: {
   entryId: string;
   /** null on the entry route, which then starts on the deposited model. */
   modelId: string | null;
   requestedTab: string | undefined;
+  /** The rail's ordering, kept in the URL so it survives the move between
+   *  models and can be sent to someone else. */
+  requestedSort: string | undefined;
+  requestedDirection: string | undefined;
 }) {
   const session = await getAuthSession();
   const [data, similarEntries] = await Promise.all([
@@ -246,6 +252,8 @@ export default async function ScopePage({
             models={scopeRailModels(data)}
             activeModelId={model?.id ?? null}
             tab={active === OVERVIEW_TAB ? null : active}
+            sort={requestedSort ?? null}
+            direction={requestedDirection ?? null}
             addModelHref={
               canAddModel
                 ? `/entries/${encodeURIComponent(data.entry.id)}/models/new`
