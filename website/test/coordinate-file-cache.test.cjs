@@ -129,16 +129,85 @@ test("should reject oversized binary structure files", async () => {
   }
 });
 
-test("should forward cancellation when a coordinate file is loaded", async () => {
+test("should keep the shared download alive when one reader cancels", async () => {
+  // given a reader that attaches, detaches and immediately attaches again --
+  // what React's Strict Mode does to every effect in development.
+  const originalFetch = global.fetch;
+  let requestCount = 0;
+  global.fetch = async (_url, init) => {
+    requestCount += 1;
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 10);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      });
+    });
+    return new Response("data_SHARED", {
+      headers: { "content-length": "11" },
+    });
+  };
+
+  try {
+    const url = "https://files.example/shared.cif";
+    const first = new AbortController();
+    const second = new AbortController();
+
+    // when
+    const dropped = loadCoordinateFile(url, first.signal);
+    first.abort();
+    const kept = loadCoordinateFile(url, second.signal);
+
+    // then
+    assert.equal(await dropped, null);
+    assert.equal(await kept, "data_SHARED");
+    assert.equal(requestCount, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("should cancel the download once the last reader has gone", async () => {
   // given
   const originalFetch = global.fetch;
   let requestSignal;
   global.fetch = async (_url, init) => {
     requestSignal = init?.signal;
-    return new Response("coordinates", {
-      headers: { "content-length": "11" },
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 50);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      });
+    });
+    return new Response("data_ABANDONED", {
+      headers: { "content-length": "14" },
     });
   };
+
+  try {
+    const url = "https://files.example/abandoned.cif";
+    const controller = new AbortController();
+
+    // when
+    const abandoned = loadCoordinateFile(url, controller.signal);
+    controller.abort();
+
+    // then
+    assert.equal(await abandoned, null);
+    assert.notEqual(requestSignal, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(requestSignal?.aborted, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("should read a coordinate file for a reader that never cancels", async () => {
+  // given
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response("coordinates", { headers: { "content-length": "11" } });
   const controller = new AbortController();
 
   try {
@@ -150,7 +219,6 @@ test("should forward cancellation when a coordinate file is loaded", async () =>
 
     // then
     assert.equal(text, "coordinates");
-    assert.equal(requestSignal, controller.signal);
   } finally {
     global.fetch = originalFetch;
   }
