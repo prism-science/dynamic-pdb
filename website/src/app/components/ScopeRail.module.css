@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------- */
-/* Scope rail — what the page is about: the entry, or one of its models     */
+/* Scope rail — what the page is about: one of the entry's models          */
 /* ---------------------------------------------------------------------- */
 
 /* The grid item, and the only thing in this column that is full height: the
@@ -13,24 +13,62 @@
    beside it, which is exactly the distance it must hold still over. */
 .column {
   border-right: 1px solid var(--border);
+  /* A screen at the least, so the rule beside the record does not stop halfway
+     down the window on a short entry, and so the rail -- which is exactly that
+     tall -- always has a column to sit inside. */
+  min-height: calc(100vh - var(--header-height) - var(--scope-head-height));
 }
 
 /* Its own column, in every sense: it holds still while the record scrolls
    beside it, and when the list is longer than the screen it scrolls itself
    rather than dragging the page along.
 
-   No tint: filled, this column would read as a panel dropped on the page
-   rather than part of it. */
+   Closed it is 232px of names and no tint -- filled, this column would read as
+   a panel dropped on the page rather than part of it. Open it is 560px and
+   does become a panel, laid OVER the record rather than pushing it: widening
+   the grid track would shove the structure viewer sideways every time a
+   pointer crossed the list. */
 .rail {
   display: flex;
   flex-direction: column;
   gap: 2px;
   position: sticky;
   top: calc(var(--header-height) + var(--scope-head-height));
-  max-height: calc(100vh - var(--header-height) - var(--scope-head-height));
+  /* Not the 232px of the grid track: that number includes the column's own
+     rule, and an opaque panel exactly that wide paints over it. The content
+     box stops short of the rule and leaves it drawn. */
+  width: 100%;
+  /* Fixed, not content-sized: a box that grows downwards at the same time as it
+     grows sideways reads as being dragged into the corner. Only the width
+     changes on opening, so the panel travels right and nothing else moves. */
+  height: calc(100vh - var(--header-height) - var(--scope-head-height));
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 18px 20px 0;
+  background: var(--surface);
+  /* The delay belongs on the closing side: a pointer on its way to the record
+     crosses this column, and a panel that shut the instant it left would
+     flicker on every pass. */
+  transition:
+    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    padding 240ms ease 200ms;
+}
+
+.rail:hover,
+.rail:focus-within {
+  width: 560px;
+  /* Over everything the record puts in its own column -- including the map
+     menu the structure viewer opens at 20 -- and under the site header and the
+     dialogs, which are still allowed to cover it. */
+  z-index: 30;
+  padding-right: 12px;
+  /* The same rule the column already draws, moved out with it -- no shadow.
+     A 40px drop shadow washes grey over the record on either side of the
+     panel, and against a page this white the panel then reads as a different
+     shade of white rather than as the column having simply got wider. */
+  border-right: 1px solid var(--border);
+  transition-delay: 100ms;
 }
 
 /* The rail is short and mostly empty; a scrollbar drawn across it whenever the
@@ -44,6 +82,103 @@
   background: var(--border-strong);
 }
 
+/* Padded to sit on the tabs' own text line: the rail's first line and the tab
+   labels start at the same height, so the two columns read as one row. */
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 9px 8px 7px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.count {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Sorting                                                                 */
+/* ---------------------------------------------------------------------- */
+
+/* Collapsed rather than hidden: it keeps its place in the flow, so opening the
+   rail slides the list down by exactly the height of one control row instead
+   of re-laying it out. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 0;
+  margin-bottom: 2px;
+  padding: 0 4px 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    opacity 140ms ease;
+}
+
+.rail:hover .toolbar,
+.rail:focus-within .toolbar {
+  height: 32px;
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 100ms, 180ms;
+}
+
+.toolbarLabel {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chip {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.chip[data-active="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Rows                                                                    */
+/* ---------------------------------------------------------------------- */
+
 .list {
   display: flex;
   flex-direction: column;
@@ -52,7 +187,7 @@
 
 .row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
@@ -72,12 +207,55 @@
 .row[data-current="true"] {
   background: var(--accent-soft);
   color: var(--accent-hover);
+}
+
+.row[data-current="true"] .name {
   font-weight: 600;
 }
 
 .row:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* Everything that is not the model itself -- its place in the order and its
+   picture -- stands outside the text column, so that the figures below line up
+   with the name above them instead of starting half an inch to its left. */
+.rowGutter {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+.rowBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Only means anything once a metric is chosen, so it takes no room until then
+   -- margin included -- and the closed rail keeps the indent it has always had. */
+.rank {
+  flex: none;
+  width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transition:
+    width 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    margin 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms;
+}
+
+.rail:hover .rank,
+.rail:focus-within .rank {
+  width: 14px;
+  margin-right: 8px;
+  transition-delay: 100ms;
 }
 
 .thumb {
@@ -99,27 +277,149 @@
   object-fit: cover;
 }
 
-.name {
+.rowText {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Padded to sit on the tabs' own text line: the rail's first line and the tab
-   labels start at the same height, so the two columns read as one row. */
-.heading {
-  display: flex;
-  align-items: baseline;
-  margin: 0;
-  padding: 9px 8px 7px;
+/* The provenance line has no room in 232px and would only truncate; it appears
+   with the figures it belongs to. */
+.meta {
+  height: 0;
+  overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 9.5px;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    opacity 140ms ease;
+}
+
+.rail:hover .meta,
+.rail:focus-within .meta {
+  height: 14px;
+  opacity: 1;
+  transition-delay: 100ms, 180ms;
+}
+
+/* ---------------------------------------------------------------------- */
+/* The figures                                                             */
+/* ---------------------------------------------------------------------- */
+
+/* Every value keeps its own label, so the panel needs no head row -- which is
+   what lets it read at 560px instead of the 1000px a five-column table with
+   headings would ask for. */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  max-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 240ms cubic-bezier(0.19, 0.72, 0.24, 1) 200ms,
+    margin-top 240ms ease 200ms,
+    opacity 140ms ease;
+}
+
+.rail:hover .strip,
+.rail:focus-within .strip {
+  max-height: 44px;
+  margin-top: 6px;
+  opacity: 1;
+  transition-delay: 100ms, 100ms, 180ms;
+}
+
+/* A filled cell per figure, not rules between them. Most models carry two or
+   three of the five, and a rule drawn between two empty slots divides nothing
+   -- the fill is what tells a slot with no value from the white around it. */
+.stripCell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+}
+
+/* Nothing deposited here: the slot stays, so the columns still line up down the
+   list, but it sinks towards the page instead of holding a place in the eye. */
+.stripCell[data-status="none"] {
+  background: #f8f9fc;
+}
+
+.row[data-current="true"] .stripCell {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.stripCell[data-sorted="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px #ddd2fb;
+}
+
+/* Sorted, but this model has no such figure: the column keeps its place and
+   loses its voice, rather than shouting about a value that is not there. */
+.stripCell[data-sorted="true"][data-status="none"] {
+  background: #faf8fe;
+  box-shadow: inset 0 0 0 1px #efe9fc;
+}
+
+.stripLabel {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.stripCell[data-sorted="true"] .stripLabel {
+  color: var(--accent-hover);
+}
+
+.stripValue {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thresholds, not a ranking: the same figure is coloured the same way here as
+   on the model page it came from. */
+.stripCell[data-status="warn"] .stripValue {
+  color: var(--warning-fg);
+}
+
+.stripCell[data-status="bad"] .stripValue {
+  color: var(--danger-fg);
+  font-weight: 700;
+}
+
+.stripCell[data-status="none"] .stripValue {
+  color: var(--border-strong);
+}
+
+/* The one mark that is about the comparison rather than the value. */
+.stripCell[data-best="true"] .stripLabel::after {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
 }
 
 /* Directly under the list it adds to, not at the foot of the rail: on a long
@@ -130,6 +430,7 @@
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .add:hover {
@@ -137,32 +438,54 @@
   text-underline-offset: 3px;
 }
 
+/* Without a pointer there is nothing to hover with, so the controls have to be
+   there from the start; tapping one focuses the rail, which opens it. */
+@media (hover: none) {
+  .toolbar {
+    height: 32px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Narrow: the rail lies down above the page as a scrolling strip of chips. The
-   list is short and the names are short, so a row of them still reads. */
+   list is short and the names are short, so a row of them still reads, and the
+   figures wait for a screen with room for them. */
 @media (max-width: 900px) {
   .column {
     border-right: none;
     border-bottom: 1px solid var(--border);
+    min-height: 0;
   }
 
-  .rail {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
+  .rail,
+  .rail:hover,
+  .rail:focus-within {
     position: static;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: visible;
+    width: auto;
+    height: auto;
+    overflow: visible;
     padding: 0 0 10px;
+    border-right: none;
   }
 
   .heading {
     display: none;
   }
 
+  .toolbar {
+    height: auto;
+    padding: 0 0 8px;
+    overflow-x: auto;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .list {
     flex-direction: row;
     gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .row {
@@ -174,10 +497,26 @@
     border-color: var(--border-strong);
   }
 
+  .rail .rank,
+  .rail .meta,
+  .rail .strip {
+    display: none;
+  }
+
   .add {
     flex: none;
     margin: 0 0 0 auto;
     padding: 6px 8px;
-    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail,
+  .toolbar,
+  .strip,
+  .meta,
+  .rank,
+  .row {
+    transition: none;
   }
 }

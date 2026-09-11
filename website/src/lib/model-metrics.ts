@@ -144,3 +144,128 @@ export function csvFileName(name: string): string {
   const base = name.trim().replace(/\.csv$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
   return `${base || "metrics"}.csv`;
 }
+
+export type MetricStatus = "good" | "warn" | "bad";
+
+export type MetricSpec = {
+  key: keyof MetricsPayload;
+  label: string;
+  /** What the rail's own column head says, where the room is 86px. */
+  short: string;
+  /** R-factors and clash counts fall; correlation coefficients rise. */
+  lowerIsBetter: boolean;
+  decimals: number;
+  status: (value: number) => MetricStatus;
+};
+
+/**
+ * Every figure a model can be ordered by, in the order they are shown.
+ *
+ * The thresholds are the ones the model page already colours its tiles with,
+ * so a value that reads as bad on the record reads as bad in the rail.
+ */
+export const metricSpecs: MetricSpec[] = [
+  {
+    key: "r_work",
+    label: "R-work",
+    short: "R-work",
+    lowerIsBetter: true,
+    decimals: 3,
+    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
+  },
+  {
+    key: "r_free",
+    label: "R-free",
+    short: "R-free",
+    lowerIsBetter: true,
+    decimals: 3,
+    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
+  },
+  {
+    key: "rscc",
+    label: "RSCC",
+    short: "RSCC",
+    lowerIsBetter: false,
+    decimals: 3,
+    status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
+  },
+  {
+    key: "clashscore",
+    label: "Clashscore",
+    short: "Clash",
+    lowerIsBetter: true,
+    decimals: 1,
+    status: (value) => (value < 10 ? "good" : value < 20 ? "warn" : "bad"),
+  },
+  {
+    key: "molprobity_score",
+    label: "MolProbity score",
+    short: "MolProb",
+    lowerIsBetter: true,
+    decimals: 2,
+    status: (value) => (value < 2 ? "good" : value < 3 ? "warn" : "bad"),
+  },
+];
+
+const specByKey = new Map(metricSpecs.map((spec) => [String(spec.key), spec]));
+
+/** The spec for a key that arrived from a URL, or null if it is not one. */
+export function metricSpec(key: string | null | undefined): MetricSpec | null {
+  return key ? (specByKey.get(key) ?? null) : null;
+}
+
+export function formatMetric(spec: MetricSpec, value: number): string {
+  return value.toFixed(spec.decimals);
+}
+
+/**
+ * Models ordered by one figure, with the ones that do not carry it at the
+ * bottom.
+ *
+ * A predicted model has no R-factors and a model refined without a map has no
+ * RSCC, so a missing value is the normal case rather than an error. Sinking
+ * them keeps the top of the list answering the question that was asked; sorting
+ * them as zero would put every one of them first under "lower is better".
+ */
+export function sortModelsByMetric<T extends { metrics: MetricsPayload }>(
+  models: T[],
+  spec: MetricSpec,
+  ascending: boolean,
+): T[] {
+  const direction = ascending ? 1 : -1;
+  return models.slice().sort((first, second) => {
+    const a = first.metrics[spec.key];
+    const b = second.metrics[spec.key];
+    const aHas = typeof a === "number";
+    const bHas = typeof b === "number";
+    if (!aHas && !bHas) {
+      return 0;
+    }
+    if (!aHas) {
+      return 1;
+    }
+    if (!bHas) {
+      return -1;
+    }
+    return direction * (a - b);
+  });
+}
+
+/** The best value in each column, for the mark that points at it. */
+export function bestMetricValues(
+  models: { metrics: MetricsPayload }[],
+): Map<keyof MetricsPayload, number> {
+  const best = new Map<keyof MetricsPayload, number>();
+  for (const spec of metricSpecs) {
+    const values = models
+      .map((model) => model.metrics[spec.key])
+      .filter((value): value is number => typeof value === "number");
+    if (values.length > 0) {
+      best.set(
+        spec.key,
+        spec.lowerIsBetter ? Math.min(...values) : Math.max(...values),
+      );
+    }
+  }
+  return best;
+}
