@@ -10,7 +10,6 @@ import MetricsEditor from "./MetricsEditor";
 import PipelineEditor from "./PipelineEditor";
 import PipelinePreview from "./PipelinePreview";
 import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
-import type { EntryFacts } from "./autoDetect";
 import { UploadIcon } from "./icons";
 import { MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type { ModelDraft, ParsedFile } from "./types";
@@ -48,7 +47,6 @@ export default function ModelDraftFields({
   entryId,
   extExperiment = null,
   baselineFiles = [],
-  onEntryFacts,
   onUpdate,
   onError,
 }: {
@@ -57,8 +55,6 @@ export default function ModelDraftFields({
   extExperiment?: ExtExperiment | null;
   /** Entry-level files this model's runs may consume. */
   baselineFiles?: ParsedFile[];
-  /** Structure-level facts read from the model file, for the entry to keep. */
-  onEntryFacts?: (facts: EntryFacts) => void;
   onUpdate: ModelDraftUpdater;
   onError: (message: string | null) => void;
 }) {
@@ -312,12 +308,7 @@ export default function ModelDraftFields({
             if (!source) {
               continue;
             }
-            void detectFromFile(
-              source,
-              parsed[index],
-              draftRef.current,
-              onEntryFacts,
-            )
+            void detectFromFile(source, parsed[index], draftRef.current)
               .then((patch) => {
                 const { notes, ...rest } = patch;
                 if (Object.keys(rest).length === 0) {

@@ -626,22 +626,14 @@ export function uploadStatusText(status: UploadStatus, error: string | null): st
 
 export function uploadsReady(
   files: ParsedFile[],
-  models: ModelDraft[],
   thumbFile: File | null,
   thumbUrl: string | null,
 ): boolean {
   if (thumbFile && !thumbUrl) {
     return false;
   }
-  if (files.some((file) => file.uploadStatus !== "uploaded" || !file.url)) {
-    return false;
-  }
-  return models.every(
-    (modelDraft) =>
-      (!modelDraft.thumbFile || Boolean(modelDraft.thumbUrl)) &&
-      modelDraft.files.every(
-        (file) => file.uploadStatus === "uploaded" && Boolean(file.url),
-      ),
+  return files.every(
+    (file) => file.uploadStatus === "uploaded" && Boolean(file.url),
   );
 }
 

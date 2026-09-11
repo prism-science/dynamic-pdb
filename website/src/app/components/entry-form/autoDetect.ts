@@ -24,22 +24,10 @@ export type DetectionResult = {
   notes: string[];
 };
 
-/**
- * Structure-level facts, which belong to the entry rather than to one of its
- * models: two models of the same crystal share a resolution and a space group.
- */
-export type EntryFacts = {
-  pdb?: string;
-  resolution?: number;
-  method?: string;
-  spaceGroup?: string;
-};
-
 export async function detectFromFile(
   file: File,
   parsedFile: ParsedFile,
   draft: ModelDraft,
-  onEntryFacts?: (facts: EntryFacts) => void,
 ): Promise<Partial<ModelDraft> & { notes: string[] }> {
   const { detectStructureFormat, parseStructureFacts } = await import(
     "@/lib/parse/structure"
@@ -50,16 +38,6 @@ export async function detectFromFile(
   if (format) {
     const text = await readHead(file, STRUCTURE_HEAD_BYTES);
     const facts = parseStructureFacts(text, format);
-    onEntryFacts?.({
-      ...(facts.pdbId ? { pdb: facts.pdbId } : {}),
-      ...(facts.metadata.resolution !== undefined
-        ? { resolution: facts.metadata.resolution }
-        : {}),
-      ...(facts.metadata.method ? { method: facts.metadata.method } : {}),
-      ...(facts.metadata.space_group
-        ? { spaceGroup: facts.metadata.space_group }
-        : {}),
-    });
     return applyStructure(draft, parsedFile, facts, file.name);
   }
 

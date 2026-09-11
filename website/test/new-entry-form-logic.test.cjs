@@ -12,9 +12,7 @@ const {
   draftHasContent,
   extFileKeys,
   extFileToParsed,
-  modelFromDraft,
   modelValidationMessage,
-  modelToDraft,
   fileEntityType,
   fileFromDraft,
   fileNameFromUrl,
@@ -419,26 +417,12 @@ test("should parse URL files and skip unsafe URLs", async () => {
 test("should decide upload readiness from file and thumbnail states", () => {
   const uploaded = parsedFile({ id: "uploaded", url: "s3://dynamic-pdb/file.cif" });
   const pending = parsedFile({ id: "pending", url: "", uploadStatus: "uploading" });
-  const model = {
-    id: "model-1",
-    title: "Model",
-    thumbFileId: "thumb-1",
-    thumbFile: null,
-    thumbPreview: null,
-    thumbUrl: null,
-    thumbProgress: 0,
-    thumbUploadStatus: "idle",
-    thumbUploadError: null,
-    files: [uploaded],
-    metrics: [],
-    program: null,
-  };
 
   assert.equal(isPersistable(uploaded), true);
   assert.equal(isPersistable(pending), false);
-  assert.equal(uploadsReady([uploaded], [model], null, null), true);
-  assert.equal(uploadsReady([pending], [], null, null), false);
-  assert.equal(uploadsReady([uploaded], [model], new File(["x"], "thumb.png"), null), false);
+  assert.equal(uploadsReady([uploaded], null, null), true);
+  assert.equal(uploadsReady([pending], null, null), false);
+  assert.equal(uploadsReady([uploaded], new File(["x"], "thumb.png"), null), false);
 });
 
 test("should serialize and restore persisted draft files safely", () => {
@@ -448,69 +432,19 @@ test("should serialize and restore persisted draft files safely", () => {
     preview: "blob:local-preview",
     metadata: { length: 42 },
   });
-  const model = {
-    id: "model-1",
-    title: "Model",
-    thumbFileId: "thumb-1",
-    thumbFile: null,
-    thumbPreview: "https://example.com/thumb.png",
-    thumbUrl: "s3://dynamic-pdb/thumb.png",
-    thumbProgress: 1,
-    thumbUploadStatus: "uploaded",
-    thumbUploadError: null,
-    files: [file],
-    metrics: [{ id: "metrics-1", values: { rscc: "0.9" } }],
-    programs: [
-      {
-        id: "program-1",
-        name: "phenix.refine",
-        version: "1.21.2",
-        description: "Refinement",
-        inputFileIds: [],
-        outputFileIds: ["file-1"],
-        expectedInputs: [],
-        origin: "manual",
-      },
-    ],
-  };
 
   const storedFile = fileToDraft(file);
-  const storedModel = modelToDraft(model);
   const restoredFile = fileFromDraft(storedFile);
-  const restoredModel = modelFromDraft(storedModel);
 
   assert.equal(httpOnly("blob:local-preview"), undefined);
   assert.equal(httpOnly("https://example.com/thumb.png"), "https://example.com/thumb.png");
+  // A blob: preview is local to the tab that made it, so it is dropped rather
+  // than restored as a broken image.
   assert.equal(storedFile.preview, undefined);
   assert.equal(restoredFile.uploadStatus, "uploaded");
   assert.equal(restoredFile.progress, 1);
-  assert.equal(storedModel.thumbPreview, "https://example.com/thumb.png");
-  assert.equal(restoredModel.thumbUploadStatus, "uploaded");
-  assert.deepEqual(restoredModel.metrics, model.metrics);
-  assert.deepEqual(restoredModel.programs, model.programs);
+  assert.deepEqual(restoredFile.metadata, { length: 42 });
 
-  // A draft saved by the previous version carried one unlinked program; it is
-  // restored as the star the old form would have submitted rather than dropped.
-  const { artifactType: _artifactType, ...legacyStoredFile } = storedFile;
-  const legacy = modelFromDraft({
-    id: "model-1",
-    title: "Model",
-    thumbUrl: null,
-    files: [
-      { ...legacyStoredFile, id: "coords-1", type: "mmcif" },
-      { ...legacyStoredFile, id: "map-1", type: "ccp4" },
-    ],
-    metrics: [],
-    program: {
-      id: "legacy-program",
-      name: "refmac5",
-      version: "5.8",
-      description: "Refinement",
-    },
-  });
-  assert.equal(legacy.programs.length, 1);
-  assert.deepEqual(legacy.programs[0].inputFileIds, ["map-1"]);
-  assert.deepEqual(legacy.programs[0].outputFileIds, ["coords-1"]);
   assert.equal(
     draftHasContent({
       version: 1,
@@ -519,7 +453,6 @@ test("should serialize and restore persisted draft files safely", () => {
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
-      models: [],
     }),
     false,
   );
@@ -531,7 +464,17 @@ test("should serialize and restore persisted draft files safely", () => {
       thumbUrl: null,
       thumbUploadStatus: "idle",
       files: [],
-      models: [],
+    }),
+    true,
+  );
+  assert.equal(
+    draftHasContent({
+      version: 1,
+      entryId: "entry-1",
+      title: "",
+      thumbUrl: null,
+      thumbUploadStatus: "idle",
+      files: [storedFile],
     }),
     true,
   );

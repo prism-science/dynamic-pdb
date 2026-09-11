@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -10,25 +9,11 @@ import {
 } from "react";
 
 import type { CreateEntryInput } from "@/lib/api/entries";
-import {
-  extFileKey,
-  getExtExperiment,
-  parseExtExperimentRef,
-  type ExtExperiment,
-  type ExtFile,
-} from "@/lib/api/ext";
 import { uploadFileToObjectStorage } from "@/lib/api/uploads";
 import { createEntryAction } from "@/app/entries/new/actions";
 
-import ExtSourceField, {
-  EXT_LINK_INVALID,
-} from "./entry-form/ExtSourceField";
 import FilesEditor, { ProgressBar } from "./entry-form/FilesEditor";
-import ModelDraftFields, {
-  emptyModelDraft,
-} from "./entry-form/ModelDraftFields";
-import type { EntryFacts } from "./entry-form/autoDetect";
-import { PlusIcon, UploadIcon } from "./entry-form/icons";
+import { UploadIcon } from "./entry-form/icons";
 import {
   DRAFT_VERSION,
   METHODS,
@@ -36,18 +21,11 @@ import {
 } from "./entry-form/types";
 import type {
   EntryMetadataDraft,
-  ModelDraft,
   ParsedFile,
   UploadStatus,
 } from "./entry-form/types";
 import {
   assignCanonicalArtifactTypes,
-  buildCreateModelInput,
-  extFileKeys,
-  extFileToParsed,
-  MODEL_FILE_MISSING,
-  missingExpectedInputs,
-  modelValidationMessage,
   parseFile,
   parseUrlFile,
   sanitizeNumeric,
@@ -64,8 +42,6 @@ import {
   fileToDraft,
   httpOnly,
   isPersistable,
-  modelFromDraft,
-  modelToDraft,
   readStoredDraft,
   writeStoredDraft,
   type StoredDraft,
@@ -78,27 +54,7 @@ export * from "./entry-form/types";
 export * from "./entry-form/helpers";
 export * from "./entry-form/drafts";
 
-type NewEntryFormProps = {
-  extExperimentId?: string | null;
-};
-
-export default function NewEntryForm({
-  extExperimentId: initialExtExperimentId = null,
-}: NewEntryFormProps) {
-  // The ?ext_experiment_id query param only seeds the field; from here on the
-  // link is form state the user can change or clear.
-  const seededExtExperimentId =
-    parseExtExperimentRef(initialExtExperimentId ?? "") ?? null;
-  const [extExperimentId, setExtExperimentId] = useState<string | null>(
-    seededExtExperimentId,
-  );
-  const [extExperiment, setExtExperiment] = useState<ExtExperiment | null>(null);
-  const [extExperimentError, setExtExperimentError] = useState<string | null>(
-    initialExtExperimentId && !seededExtExperimentId ? EXT_LINK_INVALID : null,
-  );
-  const [extExperimentLoading, setExtExperimentLoading] = useState(
-    Boolean(seededExtExperimentId),
-  );
+export default function NewEntryForm() {
   const [entryId, setEntryId] = useState(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
   const activeThumbFileId = useRef<string | null>(null);
@@ -112,65 +68,13 @@ export default function NewEntryForm({
     emptyEntryMetadataDraft,
   );
   const [files, setFiles] = useState<ParsedFile[]>([]);
-  const [models, setModels] = useState<ModelDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [missingWarning, setMissingWarning] = useState<
-    { program: string; name: string; source: string }[]
-  >([]);
-  const [missingAcknowledged, setMissingAcknowledged] = useState(false);
 
   // Draft persistence: restore prompt + gate so we never overwrite a saved
   // draft before the user decides whether to continue or discard it.
   const [draftPrompt, setDraftPrompt] = useState<StoredDraft | null>(null);
   const [storageReady, setStorageReady] = useState(false);
-
-  useEffect(() => {
-    setExtExperiment(null);
-    if (!extExperimentId) {
-      setExtExperimentLoading(false);
-      return;
-    }
-    setExtExperimentError(null);
-    setExtExperimentLoading(true);
-
-    const controller = new AbortController();
-    void getExtExperiment(extExperimentId, controller.signal)
-      .then((experiment) => {
-        setExtExperiment(experiment);
-        setTitle((current) => current || experiment.name);
-      })
-      .catch((loadError: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setExtExperimentId(null);
-        setExtExperimentError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Could not load the Ext experiment.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setExtExperimentLoading(false);
-        }
-      });
-    return () => controller.abort();
-  }, [extExperimentId]);
-
-  const linkExtExperiment = (experimentId: string) => {
-    setExtExperimentError(null);
-    setExtExperimentId(experimentId);
-  };
-
-  const unlinkExtExperiment = () => {
-    // Files already pulled from Ext keep working — each one carries its own
-    // experiment reference — so only the form-level link is dropped.
-    setExtExperimentId(null);
-    setExtExperiment(null);
-    setExtExperimentError(null);
-  };
 
   useEffect(() => {
     const stored = readStoredDraft();
@@ -191,13 +95,11 @@ export default function NewEntryForm({
     const draft: StoredDraft = {
       version: DRAFT_VERSION,
       entryId,
-      extExperimentId,
       title,
       thumbUrl,
       thumbPreview: httpOnly(thumbPreview),
       thumbUploadStatus: thumbUrl ? "uploaded" : "idle",
       files: files.filter(isPersistable).map(fileToDraft),
-      models: models.map(modelToDraft),
     };
     if (draftHasContent(draft)) {
       writeStoredDraft(draft);
@@ -207,12 +109,10 @@ export default function NewEntryForm({
   }, [
     storageReady,
     entryId,
-    extExperimentId,
     title,
     thumbUrl,
     thumbPreview,
     files,
-    models,
   ]);
 
   const continueDraft = () => {
@@ -221,12 +121,6 @@ export default function NewEntryForm({
       return;
     }
     setEntryId(draft.entryId);
-    const draftExtExperimentId = parseExtExperimentRef(
-      typeof draft.extExperimentId === "string" ? draft.extExperimentId : "",
-    );
-    if (draftExtExperimentId) {
-      linkExtExperiment(draftExtExperimentId);
-    }
     setTitle(draft.title);
     setThumbUrl(draft.thumbUrl);
     setThumbPreview(draft.thumbPreview ?? null);
@@ -239,7 +133,6 @@ export default function NewEntryForm({
         "entry",
       ),
     );
-    setModels(draft.models.map(modelFromDraft));
     setDraftPrompt(null);
     setStorageReady(true);
   };
@@ -248,18 +141,12 @@ export default function NewEntryForm({
     clearStoredDraft();
     setDraftPrompt(null);
     setStorageReady(true);
-    // "Start fresh" means a blank form: drop the linked experiment along with
-    // the title it prefilled.
-    unlinkExtExperiment();
     setTitle("");
   };
 
   const resetForm = () => {
     clearStoredDraft();
     setEntryId(crypto.randomUUID());
-    // The link is something the user entered, so it resets with everything
-    // else instead of re-seeding the title from the experiment.
-    unlinkExtExperiment();
     setTitle("");
     activeThumbFileId.current = null;
     setThumbFile(null);
@@ -269,7 +156,6 @@ export default function NewEntryForm({
     setThumbUploadStatus("idle");
     setThumbUploadError(null);
     setFiles([]);
-    setModels([]);
     setError(null);
   };
 
@@ -311,31 +197,6 @@ export default function NewEntryForm({
     ]);
   };
 
-  const addEntryExtFiles = (selected: ExtFile[]) => {
-    if (!extExperiment) {
-      return;
-    }
-    const existing = extFileKeys(files);
-    const parsed = selected
-      .filter((file) => !existing.has(extFileKey(file)))
-      .map((file) => extFileToParsed(file, extExperiment.id, "L0"));
-    if (parsed.length === 0) {
-      return;
-    }
-    setFiles((current) => [
-      ...current,
-      ...assignCanonicalArtifactTypes(current, parsed, "entry"),
-    ]);
-  };
-
-  const addModel = () => {
-    setModels((prev) => [...prev, emptyModelDraft()]);
-  };
-
-  const removeModel = (id: string) => {
-    setModels((prev) => prev.filter((modelDraft) => modelDraft.id !== id));
-  };
-
   const patchEntryFile = (id: string, patch: Partial<ParsedFile>) => {
     setFiles((prev) =>
       prev.map((file) => (file.id === id ? { ...file, ...patch } : file)),
@@ -371,66 +232,28 @@ export default function NewEntryForm({
 
   const hasPendingUploads =
     thumbUploadStatus === "uploading" ||
-    files.some((file) => file.uploadStatus === "uploading") ||
-    models.some(
-      (modelDraft) =>
-        modelDraft.thumbUploadStatus === "uploading" ||
-        modelDraft.files.some((file) => file.uploadStatus === "uploading"),
-    );
+    files.some((file) => file.uploadStatus === "uploading");
 
   const hasFailedUploads =
     thumbUploadStatus === "failed" ||
-    files.some((file) => file.uploadStatus === "failed") ||
-    models.some(
-      (modelDraft) =>
-        modelDraft.thumbUploadStatus === "failed" ||
-        modelDraft.files.some((file) => file.uploadStatus === "failed"),
-    );
+    files.some((file) => file.uploadStatus === "failed");
 
   const canSubmit =
     title.trim().length > 0 &&
-    models.every(
-      (modelDraft) =>
-        modelDraft.title.trim().length > 0 && !modelValidationMessage(modelDraft),
-    ) &&
     !hasPendingUploads &&
     !hasFailedUploads &&
     !submitting;
-
-  // Prefill only: the header supplies what the depositor has not typed, and
-  // never argues with what they have.
-  const applyEntryFacts = useCallback((facts: EntryFacts) => {
-    setMetadata((current) => ({
-      pdb: current.pdb || facts.pdb || "",
-      resolution:
-        current.resolution ||
-        (facts.resolution !== undefined ? String(facts.resolution) : ""),
-      method: current.method || facts.method || "",
-      spaceGroup: current.spaceGroup || facts.spaceGroup || "",
-    }));
-  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) {
       return;
     }
-    // Inputs a run named but nobody uploaded. Worth stopping over once — a
-    // deposit missing its free-R set is easy to make and hard to notice later
-    // — but never worth blocking: the record is still true without them.
-    const missing = models.flatMap((modelDraft) =>
-      missingExpectedInputs(modelDraft.programs),
-    );
-    if (missing.length > 0 && !missingAcknowledged) {
-      setMissingWarning(missing);
-      setMissingAcknowledged(true);
-      return;
-    }
     setSubmitting(true);
     setError(null);
 
     try {
-      if (!uploadsReady(files, models, thumbFile, thumbUrl)) {
+      if (!uploadsReady(files, thumbFile, thumbUrl)) {
         setError("Wait until all files are uploaded.");
         setSubmitting(false);
         return;
@@ -447,7 +270,6 @@ export default function NewEntryForm({
         title: title.trim(),
         thumbnail_image_url: thumbUrl,
         entities: files.map(toEntity),
-        models: models.map((modelDraft) => buildCreateModelInput(modelDraft)),
       };
 
       // The server action redirects on success, so clear the saved draft up
@@ -533,19 +355,9 @@ export default function NewEntryForm({
             ) : null}
           </div>
         </div>
-
-        <ExtSourceField
-          experiment={extExperiment}
-          error={extExperimentError}
-          loading={extExperimentLoading}
-          onLink={linkExtExperiment}
-          onUnlink={unlinkExtExperiment}
-        />
       </section>
 
-      {/* Properties of the structure itself. Prefilled from the model file's
-          header when one is uploaded — the depositor confirms rather than
-          retypes. */}
+      {/* Properties of the structure itself, typed by the depositor. */}
       <section className={styles.field}>
         <span className={styles.label}>Info</span>
         <div className={styles.entryMetaGrid}>
@@ -627,10 +439,8 @@ export default function NewEntryForm({
         <FilesEditor
           files={files}
           lockLevel
-          extExperiment={extExperiment}
           onAdd={addEntryFiles}
           onAddUrl={addEntryUrl}
-          onAddExt={addEntryExtFiles}
           onRemove={(id) => setFiles((p) => p.filter((f) => f.id !== id))}
           onLevel={(id, level) =>
             setFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
@@ -640,89 +450,6 @@ export default function NewEntryForm({
           }
         />
       </section>
-
-      <section className={styles.field}>
-        <div className={styles.modelDraftHead}>
-          <span className={styles.label}>Models</span>
-          <button type="button" className={styles.addModel} onClick={addModel}>
-            <PlusIcon />
-            Add model
-          </button>
-        </div>
-
-        {models.length === 0 ? (
-          <p className={styles.modelDraftEmpty}>No models yet.</p>
-        ) : (
-          <div className={styles.modelDraftList}>
-            {models.map((modelDraft, index) => (
-              <div key={modelDraft.id} className={styles.modelDraftCard}>
-                {(() => {
-                  const validationMessage = modelValidationMessage(modelDraft);
-                  return validationMessage &&
-                    validationMessage !== MODEL_FILE_MISSING ? (
-                    <p className={styles.inlineError}>{validationMessage}</p>
-                  ) : null;
-                })()}
-                <div className={styles.modelDraftCardHead}>
-                  <span className={styles.modelDraftIndex}>
-                    Model {index + 1}
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.remove}
-                    onClick={() => removeModel(modelDraft.id)}
-                    aria-label="Remove model"
-                  >
-                    ×
-                  </button>
-                </div>
-                <ModelDraftFields
-                  draft={modelDraft}
-                  entryId={entryId}
-                  extExperiment={extExperiment}
-                  baselineFiles={files}
-                  onEntryFacts={applyEntryFacts}
-                  onUpdate={(update) =>
-                    setModels((prev) =>
-                      prev.map((current) =>
-                        current.id === modelDraft.id ? update(current) : current,
-                      ),
-                    )
-                  }
-                  onError={setError}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {missingWarning.length > 0 ? (
-        <div className={styles.missingWarning}>
-          <strong>
-            {missingWarning.length === 1
-              ? "A declared input was not uploaded"
-              : `${missingWarning.length} declared inputs were not uploaded`}
-          </strong>
-          <ul>
-            {/* A chain missing twenty inputs is a list nobody reads; the count
-                in the heading already carries the scale. */}
-            {missingWarning.slice(0, 5).map((item) => (
-              <li key={`${item.program}-${item.name}`}>
-                <code>{item.name}</code> — input to {item.program}, declared in{" "}
-                {item.source}
-              </li>
-            ))}
-            {missingWarning.length > 5 ? (
-              <li>and {missingWarning.length - 5} more</li>
-            ) : null}
-          </ul>
-          <span>
-            Upload them to complete the chain, or submit again to deposit
-            without them.
-          </span>
-        </div>
-      ) : null}
 
       {error ? <p className={styles.error}>{error}</p> : null}
 
@@ -756,23 +483,13 @@ function DraftRestorePrompt({
   onContinue: () => void;
   onDiscard: () => void;
 }) {
-  const fileCount =
-    draft.files.length +
-    draft.models.reduce((sum, modelDraft) => sum + modelDraft.files.length, 0);
+  const fileCount = draft.files.length;
   const parts: string[] = [];
   if (draft.title.trim()) {
     parts.push(`“${draft.title.trim()}”`);
   }
   if (fileCount > 0) {
     parts.push(`${fileCount} uploaded file${fileCount === 1 ? "" : "s"}`);
-  }
-  if (draft.models.length > 0) {
-    parts.push(
-      `${draft.models.length} model${draft.models.length === 1 ? "" : "s"}`,
-    );
-  }
-  if (draft.extExperimentId) {
-    parts.push("a linked Ext experiment");
   }
   const summary = parts.length > 0 ? parts.join(" · ") : "an unfinished entry";
 
