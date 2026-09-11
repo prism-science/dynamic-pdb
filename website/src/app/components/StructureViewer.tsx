@@ -13,7 +13,10 @@ import { Volume } from "molstar/lib/mol-model/volume";
 import { Vec3, Mat4, Tensor } from "molstar/lib/mol-math/linear-algebra";
 import { Color } from "molstar/lib/mol-util/color";
 
-import { fetchFileURL } from "@/lib/api/ext";
+import {
+  loadCoordinateBytes,
+  loadCoordinateFile,
+} from "@/lib/coordinate-file-cache";
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
 
 import styles from "./StructureViewer.module.css";
@@ -214,6 +217,7 @@ export default function StructureViewer({
 }) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
+  const layerControllersRef = useRef(new Map<number, AbortController>());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const modelStructureRef = useRef<any>(null);
   const [pluginElement, setPluginElement] = useState<ReactNode>(null);
@@ -329,14 +333,24 @@ export default function StructureViewer({
         throw new Error(`unsupported structure format: ${kind}`);
       }
 
-      const response = await fetchFileURL(url, { signal: controller.signal });
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
+      let content: string | Uint8Array<ArrayBuffer>;
+      if (kind === "ccp4") {
+        const bytes = await loadCoordinateBytes(url, controller.signal);
+        if (bytes === null) {
+          throw new Error(
+            "Structure file is unavailable or exceeds the 100 MiB limit.",
+          );
+        }
+        content = bytes;
+      } else {
+        const text = await loadCoordinateFile(url, controller.signal);
+        if (text === null) {
+          throw new Error(
+            "Structure file is unavailable or exceeds the 100 MiB limit.",
+          );
+        }
+        content = text;
       }
-      const content =
-        kind === "ccp4"
-          ? new Uint8Array(await response.arrayBuffer())
-          : await response.text();
       if (cancelled) {
         return;
       }
@@ -379,6 +393,10 @@ export default function StructureViewer({
     return () => {
       cancelled = true;
       controller.abort();
+      for (const layerController of layerControllersRef.current.values()) {
+        layerController.abort();
+      }
+      layerControllersRef.current.clear();
       pluginRef.current = null;
       created?.dispose();
     };
@@ -430,12 +448,18 @@ export default function StructureViewer({
 
     // First enable (idle / retry after error): fetch + parse + render lazily.
     setLayerAt(index, { status: "loading", error: undefined });
+    const layerController = new AbortController();
+    layerControllersRef.current.set(index, layerController);
     try {
-      const response = await fetchFileURL(layer.url);
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
+      const bytes = await loadCoordinateBytes(layer.url, layerController.signal);
+      if (bytes === null) {
+        if (layerController.signal.aborted) {
+          return;
+        }
+        throw new Error(
+          "Density map is unavailable or exceeds the 100 MiB limit.",
+        );
       }
-      const bytes = new Uint8Array(await response.arrayBuffer());
       const provider = activePlugin.dataFormats.get("mtz");
       if (!provider) {
         throw new Error("MTZ maps are not supported by this viewer build.");
@@ -540,6 +564,10 @@ export default function StructureViewer({
         visible: false,
         error: structureErrorMessage(err),
       });
+    } finally {
+      if (layerControllersRef.current.get(index) === layerController) {
+        layerControllersRef.current.delete(index);
+      }
     }
   };
 

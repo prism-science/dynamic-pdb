@@ -35,6 +35,7 @@ export default function EntryTabs({
             key={tab.id}
             className={styles.tab}
             href={tab.id === OVERVIEW_TAB ? base : `${base}?tab=${tab.id}`}
+            prefetch={false}
             data-current={current ? "true" : undefined}
             aria-current={current ? "page" : undefined}
             scroll={false}

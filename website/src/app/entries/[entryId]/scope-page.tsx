@@ -16,17 +16,18 @@ import {
 } from "@/lib/entities";
 import { entryIdentity, formatEntryLabel } from "@/lib/entry-label";
 import { crystallographyView } from "@/lib/crystallography";
-import { experimentView, hasExperimentRecord } from "@/lib/experiment";
+import { hasExperimentRecord } from "@/lib/experiment";
 import { downloadGroups } from "@/lib/download-files";
 import { defaultModel, modelTitle } from "@/lib/model-metrics";
 import { polymerEntityViews } from "@/lib/polymer-entities";
-import { sequenceChains } from "@/lib/sequence-tracks";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
-import { readModelFile, readModelStructure } from "@/lib/api/coordinates";
 import { scopeRailModels } from "@/lib/scope-rail";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
-import Experiment from "@/app/components/Experiment";
+import {
+  CoordinateExperiment,
+  CoordinateSequencePanel,
+} from "@/app/components/CoordinatePanels";
 import DownloadFiles from "@/app/components/DownloadFiles";
 import EntryOverview, {
   type SummaryModel,
@@ -37,7 +38,6 @@ import EntryTabs, {
   resolveTab,
 } from "@/app/components/EntryTabs";
 import ScopeRail from "@/app/components/ScopeRail";
-import SequencePanel from "@/app/components/SequencePanel";
 import StructurePanel from "@/app/components/StructurePanel";
 import SimilarProteins from "@/app/components/SimilarProteins";
 import {
@@ -129,26 +129,6 @@ export default async function ScopePage({
   // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
   const structure = viewableStructure(modelEntity);
-
-  // The chains of the selected model, as its coordinates hold them. Only read
-  // when the Sequence tab is open: it is a network fetch and a parse, and no
-  // other tab uses it.
-  const modelChains =
-    requestedTab === "sequence"
-      ? await readModelStructure(structure?.url ?? null)
-      : [];
-
-  // Most of what we know about the experiment is in the model's own coordinate
-  // file rather than in the record, so the Experiment tab reads it -- and, for
-  // the same reason as the sequence tracks, only while that tab is open.
-  const experiment =
-    requestedTab === "experiment"
-      ? experimentView(
-          data.entry,
-          crystallography,
-          await readModelFile(structure?.url ?? null),
-        )
-      : null;
 
   // Everything the Summary tab needs about the selected model, flattened here
   // so the component stays a renderer and the page keeps the joining.
@@ -282,15 +262,26 @@ export default async function ScopePage({
             </section>
           ) : null}
 
-          {active === "experiment" && experiment ? (
+          {active === "experiment" ? (
             <section aria-label="Experiment">
-              <Experiment view={experiment} />
+              <CoordinateExperiment
+                entry={{
+                  method: data.entry.method,
+                  resolution: data.entry.resolution,
+                  space_group: data.entry.space_group,
+                }}
+                crystallography={crystallography}
+                url={structure?.url ?? null}
+              />
             </section>
           ) : null}
 
           {active === "sequence" ? (
             <section aria-label="Sequence">
-              <SequencePanel chains={sequenceChains(entities, modelChains)} />
+              <CoordinateSequencePanel
+                entities={entities}
+                url={structure?.url ?? null}
+              />
               {/* The table is the width of the tab and spaces itself off the
                   viewer, so it needs no wrapper to place it. */}
               <SimilarProteins
