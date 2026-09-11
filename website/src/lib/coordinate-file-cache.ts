@@ -3,19 +3,32 @@ import { fetchFileURL } from "@/lib/api/ext";
 const MAX_CACHED_FILES = 2;
 export const MAX_COORDINATE_FILE_BYTES = 100 * 1024 * 1024;
 
-const coordinateFiles = new Map<string, Promise<string | null>>();
+/**
+ * One coordinate file, being downloaded or already downloaded.
+ *
+ * The transfer belongs to the cache rather than to whoever asked for it first.
+ * The same file is read by the Structure viewer, the Experiment tab and the
+ * Sequence tab, and each of them mounts and unmounts on its own -- so a reader
+ * that walks away only detaches itself. The transfer is cancelled once the
+ * last reader has gone and it has not finished yet; handing one reader's abort
+ * straight to a shared download would resolve it as null for everybody else.
+ */
+type CoordinateFileEntry = {
+  /** The shared download. Settles once, whatever any single reader does. */
+  promise: Promise<string | null>;
+  /** Cancels the transfer itself. Fired only when no reader is left. */
+  controller: AbortController;
+  /** Readers still waiting on `promise`. */
+  readers: number;
+  settled: boolean;
+  /** A pending "nobody is waiting any more" cancellation, held for a tick so
+   *  that a reader which detaches and immediately re-attaches keeps the
+   *  download -- which is exactly what React does to every effect in
+   *  development, where Strict Mode runs mount, cleanup and mount again. */
+  release: ReturnType<typeof setTimeout> | null;
+};
 
-function getCachedCoordinateFile(
-  url: string,
-): Promise<string | null> | null {
-  const cached = coordinateFiles.get(url);
-  if (!cached) {
-    return null;
-  }
-  coordinateFiles.delete(url);
-  coordinateFiles.set(url, cached);
-  return cached;
-}
+const coordinateFiles = new Map<string, CoordinateFileEntry>();
 
 /** Load a coordinate file in the browser, retaining at most two files. */
 export function loadCoordinateFile(
@@ -25,21 +38,11 @@ export function loadCoordinateFile(
   if (!url || !/^(https?:|ext:)/i.test(url)) {
     return Promise.resolve(null);
   }
-
-  const cached = getCachedCoordinateFile(url);
-  if (cached) {
-    return cached;
+  if (signal?.aborted) {
+    return Promise.resolve(null);
   }
 
-  const pending = downloadCoordinateFile(url, signal);
-  coordinateFiles.set(url, pending);
-  trimCache();
-  void pending.then((text) => {
-    if (text === null && coordinateFiles.get(url) === pending) {
-      coordinateFiles.delete(url);
-    }
-  });
-  return pending;
+  return attach(url, acquire(url), signal);
 }
 
 /** Load a binary structure file in the browser without retaining it. */
@@ -66,6 +69,94 @@ export async function loadCoordinateBytes(
     }
     return null;
   }
+}
+
+/** The cache entry for this file, started if it is not there yet. */
+function acquire(url: string): CoordinateFileEntry {
+  const cached = coordinateFiles.get(url);
+  if (cached) {
+    // Re-insert to keep the map in least-recently-used order.
+    coordinateFiles.delete(url);
+    coordinateFiles.set(url, cached);
+    if (cached.release !== null) {
+      clearTimeout(cached.release);
+      cached.release = null;
+    }
+    return cached;
+  }
+
+  const controller = new AbortController();
+  const entry: CoordinateFileEntry = {
+    promise: Promise.resolve(null),
+    controller,
+    readers: 0,
+    settled: false,
+    release: null,
+  };
+  entry.promise = downloadCoordinateFile(url, controller.signal).then(
+    (text) => {
+      entry.settled = true;
+      // A file we could not read is not worth keeping: the next reader should
+      // try again rather than be handed the failure for the whole session.
+      if (text === null && coordinateFiles.get(url) === entry) {
+        coordinateFiles.delete(url);
+      }
+      return text;
+    },
+  );
+  coordinateFiles.set(url, entry);
+  trimCache();
+  return entry;
+}
+
+/**
+ * Wait on a shared download on behalf of one reader.
+ *
+ * Aborting `signal` drops this reader -- it resolves null and stops listening
+ * -- and leaves the download alone for as long as anyone else still wants it.
+ */
+function attach(
+  url: string,
+  entry: CoordinateFileEntry,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (!signal) {
+    return entry.promise;
+  }
+
+  entry.readers += 1;
+  return new Promise<string | null>((resolve) => {
+    let done = false;
+    const finish = (text: string | null) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      signal.removeEventListener("abort", onAbort);
+      release(url, entry);
+      resolve(text);
+    };
+    const onAbort = () => finish(null);
+    signal.addEventListener("abort", onAbort);
+    void entry.promise.then(finish, () => finish(null));
+  });
+}
+
+function release(url: string, entry: CoordinateFileEntry): void {
+  entry.readers -= 1;
+  if (entry.readers > 0 || entry.settled || entry.release !== null) {
+    return;
+  }
+  entry.release = setTimeout(() => {
+    entry.release = null;
+    if (entry.readers > 0 || entry.settled) {
+      return;
+    }
+    entry.controller.abort();
+    if (coordinateFiles.get(url) === entry) {
+      coordinateFiles.delete(url);
+    }
+  }, 0);
 }
 
 async function downloadCoordinateFile(
