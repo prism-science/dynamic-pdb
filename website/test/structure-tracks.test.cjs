@@ -279,3 +279,46 @@ test("should leave a chain it cannot line up on its own numbering", () => {
   assert.equal(sequenceShift(deposited, "A".repeat(40)), 0);
   assert.equal(sequenceShift(deposited, null), 0);
 });
+
+test("should read two records that meet end to end as one span", () => {
+  // given -- a sheet recorded strand by strand, two of which touch, and a
+  // helix in two records that overlap
+  const cif = `data_JOIN
+loop_
+_struct_sheet_range.sheet_id
+_struct_sheet_range.beg_label_asym_id
+_struct_sheet_range.beg_label_seq_id
+_struct_sheet_range.end_label_seq_id
+A A 14 20
+B A 21 24
+C A 30 33
+#
+loop_
+_struct_conf.conf_type_id
+_struct_conf.beg_label_asym_id
+_struct_conf.beg_label_seq_id
+_struct_conf.end_label_seq_id
+HELX_P A 40 46
+HELX_P A 44 50
+#
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+ATOM A A 1 14
+ATOM A A 1 50
+#
+`;
+
+  // when
+  const [chain] = readStructure(cif);
+
+  // then -- 14-20 and 21-24 are one bar; 30-33 stays its own
+  assert.deepEqual(chain.strands, [
+    { start: 14, end: 24 },
+    { start: 30, end: 33 },
+  ]);
+  assert.deepEqual(chain.helices, [{ start: 40, end: 50 }]);
+});

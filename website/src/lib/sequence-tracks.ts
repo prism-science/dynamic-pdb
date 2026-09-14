@@ -205,12 +205,7 @@ function coordinateTracks(
       key: "alternates",
       label: agreement === null ? "Alt conformers" : "Alt · this model",
       kind: "point",
-      features: [...structure.alternates].sort((a, b) => a - b).map((seq) => ({
-        key: `a${seq}`,
-        start: seq,
-        end: seq,
-        title: `Residue ${seq} modelled in more than one conformation`,
-      })),
+      features: conformerRuns(structure.alternates, length, "a"),
     });
   }
 
@@ -225,12 +220,12 @@ function coordinateTracks(
       key: `alt:${other.modelId}`,
       label: `Alt · ${other.title}`,
       kind: "point",
-      features: other.positions.map((seq) => ({
-        key: `a${seq}`,
-        start: seq,
-        end: seq,
-        title: `${other.title}: residue ${seq} modelled in more than one conformation`,
-      })),
+      features: conformerRuns(
+        new Set(other.positions),
+        length,
+        "a",
+        other.title,
+      ),
     });
   }
 
@@ -315,6 +310,34 @@ function disagreementTrack(
 function niceCeiling(value: number): number {
   const steps = [0.5, 1, 2, 3, 5, 10, 20, 50];
   return steps.find((step) => value <= step) ?? Math.ceil(value);
+}
+
+/**
+ * Split residues as the runs they form, not as loose residues.
+ *
+ * A multiconformer model splits three quarters of a chain, and fifteen
+ * neighbouring single-residue marks are drawn as one unbroken bar. Clicking
+ * that bar then held one residue of it -- a mark a fraction of the width of
+ * the thing that was clicked, which reads as the feature being broken rather
+ * than as the row being a row of residues. What looks like one block is one
+ * block.
+ */
+function conformerRuns(
+  positions: Set<number>,
+  length: number,
+  prefix: string,
+  model?: string,
+): SequenceFeature[] {
+  const who = model === undefined ? "" : `${model}: `;
+  return spansOf(positions, length).map((span, index) => ({
+    key: `${prefix}${index}`,
+    start: span.start,
+    end: span.end,
+    title:
+      span.start === span.end
+        ? `${who}residue ${span.start} modelled in more than one conformation`
+        : `${who}residues ${span.start}-${span.end} modelled in more than one conformation`,
+  }));
 }
 
 /** Scattered residue numbers as the runs they form. */

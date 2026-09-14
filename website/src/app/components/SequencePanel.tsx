@@ -147,6 +147,19 @@ export default function SequencePanel({
   }, [viewerNode, laneNode, fitCell]);
 
   useEffect(() => {
+    if (selection === null) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelection(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection]);
+
+  useEffect(() => {
     const held = anchor.current;
     anchor.current = null;
     if (viewerNode === null || laneNode === null || held === null) {
@@ -161,16 +174,12 @@ export default function SequencePanel({
     return null;
   }
 
-  // Clicking what is already held lets it go: without that the mark can be
-  // moved but never taken off.
-  const hold = (next: Span) =>
-    setSelection((current) =>
-      current !== null &&
-      current.start === next.start &&
-      current.end === next.end
-        ? null
-        : next,
-    );
+  // A click always marks what was clicked. It used to toggle -- clicking the
+  // held range let it go -- and that made the mark look broken: ground in two
+  // different rows at the same place is the same one residue, so clicking down
+  // a column turned the mark on, off, on. Escape takes it off, and so does a
+  // click outside the lane.
+  const hold = (next: Span) => setSelection(next);
 
   const cell = zoom ?? fitCell;
   const laneWidth = zoom === FIT ? null : active.length * zoom;

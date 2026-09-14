@@ -195,11 +195,14 @@ export function readStructure(cif: string): StructureResidues[] {
   // Secondary structure is recorded per chain, not per entity, so each span is
   // attributed to the entity that chain belongs to.
   const keyOfLabelChain = labelChainToKey(atoms, entityAt);
+  // With no author numbering in the atoms, the residues were read in label
+  // numbering and a span's label numbers need no translating.
+  const translate = seqAt !== -1;
   addSpans(
     byEntity,
     loops.get("_struct_conf"),
     keyOfLabelChain,
-    authOfLabel,
+    translate ? authOfLabel : null,
     "helices",
     true,
   );
@@ -207,12 +210,35 @@ export function readStructure(cif: string): StructureResidues[] {
     byEntity,
     loops.get("_struct_sheet_range"),
     keyOfLabelChain,
-    authOfLabel,
+    translate ? authOfLabel : null,
     "strands",
     false,
   );
 
+  // Touching spans of one kind are one span. A sheet is recorded strand by
+  // strand and a helix can be broken in two by a kink, so two records that
+  // meet end to end are drawn as a single unbroken bar -- and clicking a bar
+  // that is secretly two features held half of it.
+  for (const entity of byEntity.values()) {
+    entity.helices = joinSpans(entity.helices);
+    entity.strands = joinSpans(entity.strands);
+  }
+
   return [...byEntity.values()].sort(byEntityThenChain);
+}
+
+/** Spans of one kind, sorted and with the ones that touch or overlap joined. */
+export function joinSpans(spans: Span[]): Span[] {
+  const joined: Span[] = [];
+  for (const span of [...spans].sort((a, b) => a.start - b.start)) {
+    const last = joined[joined.length - 1];
+    if (last && span.start <= last.end + 1) {
+      last.end = Math.max(last.end, span.end);
+      continue;
+    }
+    joined.push({ ...span });
+  }
+  return joined;
 }
 
 /**
@@ -311,7 +337,8 @@ function addSpans(
   byEntity: Map<string, StructureResidues>,
   loop: { columns: string[]; rows: string[][] } | undefined,
   keyOfLabelChain: Map<string, string>,
-  authOfLabel: Map<string, Map<number, number>>,
+  /** Null when the residues are already in the numbering the spans use. */
+  authOfLabel: Map<string, Map<number, number>> | null,
   field: "helices" | "strands",
   helicesOnly: boolean,
 ): void {
@@ -351,14 +378,17 @@ function addSpans(
     // numbering put through the chain's own label-to-author table. A span
     // neither route can place is dropped: drawn in the wrong numbering it
     // would sit on residues it says nothing about.
-    const labels = authOfLabel.get(target);
+    const labels = authOfLabel?.get(target);
     const authOf = (at: number, labelAt: number): number | null => {
       const direct = at === -1 ? null : cifNumber(row[at]);
       if (direct !== null) {
         return direct;
       }
       const own = labelAt === -1 ? null : cifNumber(row[labelAt]);
-      return own === null ? null : (labels?.get(own) ?? null);
+      if (own === null) {
+        return null;
+      }
+      return authOfLabel === null ? own : (labels?.get(own) ?? null);
     };
     const start = authOf(begAuthAt, begAt);
     const end = authOf(endAuthAt, endAt);
