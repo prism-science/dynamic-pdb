@@ -15,7 +15,8 @@ import styles from "./MetricScales.module.css";
  *
  * Every track runs poor on the left to good on the right, whichever way the
  * figure itself happens to point, so the good end is the same end all the way
- * down the block.
+ * down the block -- and nothing has to say which way the figure runs, because
+ * the numbers along it already do.
  *
  * Two kinds of dot and no more: this model, and the rest of the entry. The
  * block is about where one model stands, and a dot per model in a colour per
@@ -36,12 +37,7 @@ export default function MetricScales({ scales }: { scales: MetricScale[] }) {
           className={styles.scale}
           data-absent={scale.currentLabel === null ? "true" : undefined}
         >
-          <div className={styles.name}>
-            {scale.label}
-            <span className={styles.direction} aria-hidden="true">
-              {scale.direction}
-            </span>
-          </div>
+          <div className={styles.name}>{scale.label}</div>
 
           <div className={styles.track} title={`${scale.label} — ${scale.guide}`}>
             {/* The numbers of the scale itself. Without them a dot two thirds

@@ -59,8 +59,6 @@ export type ScalePoint = {
 export type MetricScale = {
   key: string;
   label: string;
-  /** Which way is better, for the arrow beside the name. */
-  direction: "↓" | "↑";
   /** Poor, acceptable and good, in that order: the track runs worse to better. */
   bands: MetricBand[];
   /** The ends and the two thresholds, as numbers to print along the track. */
@@ -126,7 +124,6 @@ export function metricScales(
       {
         key: String(spec.key),
         label: spec.label,
-        direction: spec.lowerIsBetter ? ("↓" as const) : ("↑" as const),
         bands: [
           { status: "bad" as const, start: 0, width: poorAt },
           { status: "warn" as const, start: poorAt, width: goodAt - poorAt },

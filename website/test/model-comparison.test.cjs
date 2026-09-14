@@ -28,7 +28,6 @@ test("should place every model on the metric's own fixed scale, not on the entry
   );
   assert.equal(scale.currentLabel, "0.163");
   assert.equal(scale.currentStatus, "good");
-  assert.equal(scale.direction, "↓");
   assert.equal(scale.points[0].best, true);
   assert.equal(scale.points[0].current, true);
 });
@@ -65,7 +64,6 @@ test("should run a rising figure the same way round: poor left, good right", () 
   const scale = metricScales(data, "m1").find((s) => s.key === "rscc");
 
   // then -- 0.60 at the left end, 1.00 at the right, both models near the good end
-  assert.equal(scale.direction, "↑");
   assert.deepEqual(
     scale.ticks.map((t) => [t.label, Math.round(t.position)]),
     [

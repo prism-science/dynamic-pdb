@@ -33,14 +33,6 @@
   color: var(--text-secondary);
 }
 
-.direction {
-  margin-left: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--text-muted);
-}
-
 /* Exactly the ruler and the bar. Names are not printed under the dots: on a
    fixed scale two well-refined models land a hair apart, and two names a hair
    apart are one unreadable name. */
