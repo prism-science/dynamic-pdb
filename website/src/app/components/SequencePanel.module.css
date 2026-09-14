@@ -299,6 +299,20 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
+  /* A row named after a model can be named after a long one, and the label
+     column is fixed: cut rather than overflow into the lane. The whole name is
+     in the label's tooltip. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tall row is a hundred pixels deep, so its name can have the second line
+   the others cannot -- which is where the bracket saying what the quantity is
+   between goes. */
+.rowLabel[data-tall="true"] {
+  white-space: normal;
+  text-align: right;
+  line-height: 1.45;
 }
 
 /* The empty lane behind each row, so a feature that covers part of the
@@ -313,6 +327,106 @@
    line of text rather than of a bar. */
 .rowTrack[data-sequence="true"] {
   height: 19px;
+}
+
+/* The row that draws a quantity rather than a presence. Tall because it is a
+   chart: at twelve pixels a profile is a texture, and the number its height
+   stands for has nowhere to go. */
+.rowTrack[data-tall="true"] {
+  height: 104px;
+  margin-top: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-right: none;
+}
+
+.laneTop,
+.laneMid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.laneTop {
+  top: 0;
+}
+
+.laneMid {
+  top: 50%;
+}
+
+/* The numbers, printed inside the lane at the lines they name. The holder is
+   sticky and zero-width, so both labels stay readable once the board is zoomed
+   in and scrolled sideways, and neither takes any room from the columns. */
+/* Pinned just inside the lane rather than to the scrollport, which begins
+   under the row labels: 4px from the scrollport's own edge is behind them, and
+   an element that cannot reach where it is pinned drifts with the scroll
+   instead of holding still. */
+.laneAxis {
+  position: sticky;
+  left: calc(var(--gutter-left) + 4px);
+  z-index: 1;
+  display: block;
+  width: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
+.laneTick {
+  position: absolute;
+  left: 0;
+  padding: 0 3px;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.laneTick[data-at="top"] {
+  top: 3px;
+}
+
+.laneTick[data-at="mid"] {
+  top: 50%;
+  margin-top: 2px;
+}
+
+/* The tall row before its numbers arrive. */
+.waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.ghost {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--border);
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 .feature {
@@ -338,12 +452,49 @@
   top: auto;
   bottom: 0;
   min-width: 1px;
+  min-height: 1px;
   /* Their numbers for the same row: the hue at a fifth under a full-strength
      hairline. Not the 0.5 the other rows carry -- the alpha is in the fill
      here, and the line has to stay a line. */
   opacity: 1;
   background: rgb(175 90 51 / 20%);
   border-top: 1px solid #af5a33;
+}
+
+/* Why the board is empty, on the models whose coordinates these rows cannot
+   be read from. The only line of prose left over the board. */
+.method {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* This model against the others, in the brand hue: it is the one row on the
+   board that is a claim about the model the page is on. */
+.feature[data-track="departure"] {
+  background: rgb(102 59 228 / 18%);
+  border-top-color: #663be4;
+}
+
+/* The same quantity among the others, drawn grey: it is the background the row
+   above has to be read against, not a finding of its own. */
+.feature[data-track="spread"] {
+  background: rgb(95 97 107 / 14%);
+  border-top-color: #9aa0b4;
+}
+
+/* Built by another model of the entry and not by this one -- an absence here,
+   so a cool grey rather than a colour, but not the same grey as UNMODELED,
+   which the row sits next to. */
+.feature[data-track="onlyOthers"] {
+  background: #a9b0c9;
+}
+
+/* The other way round: atoms only this model dares to place. */
+.feature[data-track="onlyMine"] {
+  background: var(--accent-hover);
 }
 
 /* A single residue can be a fraction of a pixel wide with the whole chain
@@ -372,9 +523,50 @@
   background: #cccccc;
 }
 
+/* Where the models disagree. Grey until it clears the floor: a spread inside
+   the noise is a fact about the refinement, and only a run above it is a
+   finding -- which is what the purple marks, and what the cards under the
+   board are about. */
+.feature[data-track="disagreement"] {
+  opacity: 1;
+  background: #9aa0b4;
+  border-top: 1px solid #6f768f;
+}
+
+.feature[data-track="disagreement"][data-variant="flagged"] {
+  background: rgb(102 59 228 / 45%);
+  border-top-color: var(--accent);
+}
+
+/* A hairline of ground on the right of every column, so two neighbours read
+   as two residues rather than as one block. Drawn as a transparent border
+   with the fill clipped to the padding box -- the columns are placed as
+   percentages of the lane, so there is no gap property to set. */
+.rowTrack[data-separated="true"] .feature[data-track="disagreement"] {
+  box-sizing: border-box;
+  border-right: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Under the pointer, and in the column being held. The row is the one place
+   on the board a reader reads a number off, so the residue they are asking
+   about is picked out rather than left to the tooltip alone. */
+.feature[data-track="disagreement"]:hover,
+.feature[data-track="disagreement"][data-held="true"] {
+  background: var(--accent);
+  border-top-color: var(--accent-hover);
+}
+
 /* An alternate conformation is a fact about the model, not a defect in it, so
    it is not drawn in the colour the mutations row uses. */
 .feature[data-track="alternates"] {
+  background: var(--accent-hover);
+}
+
+/* The same thing in another model, one row each. The rows are told apart by
+   their labels, not by hue -- and this has to come after the point rule above
+   it, which would otherwise paint them in the mutations red. */
+.feature[data-track^="alt:"] {
   background: var(--accent-hover);
 }
 

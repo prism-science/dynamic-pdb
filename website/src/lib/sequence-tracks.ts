@@ -1,6 +1,15 @@
+import {
+  chainAgreement,
+  chainCounterpart,
+  type ChainAgreement,
+  type OtherChain,
+} from "@/lib/model-agreement";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
 import {
   chainsOfEntity,
+  sequenceShift,
+  shiftResidues,
+  type Span,
   type StructureResidues,
   unobservedSpans,
 } from "@/lib/structure-tracks";
@@ -20,6 +29,23 @@ export type SequenceTrack = {
    *  tooltips. */
   label: string;
   kind: "span" | "point" | "level";
+  /**
+   * What a full-height feature stands for, on a row that draws a quantity.
+   *
+   * Present only on the rows that need an axis, and the row is drawn tall when
+   * it is there: a profile in angstroms is unreadable without the number its
+   * height is a share of, and there is no room for that number in a 12px lane.
+   */
+  scale?: { max: number; unit: string };
+  /**
+   * How the row was arrived at, for the tooltip on its name.
+   *
+   * On the tooltip rather than on the page: a row drawn from a superposition
+   * of several files needs that said somewhere, and a line of prose over the
+   * board is a line every reader pays for so that the few who ask the question
+   * can have an answer.
+   */
+  hint?: string;
   features: SequenceFeature[];
 };
 
@@ -51,6 +77,7 @@ export type SequenceFeature = {
 export function sequenceTracks(
   entity: PolymerEntityView,
   structure?: StructureResidues | null,
+  agreement?: ChainAgreement | null,
 ): SequenceTrack[] {
   const length = sequenceLength(entity);
   if (length === 0) {
@@ -80,15 +107,19 @@ export function sequenceTracks(
     });
   }
 
-  return structure ? [...tracks, ...coordinateTracks(structure, length)] : tracks;
+  return structure
+    ? [...tracks, ...coordinateTracks(structure, length, agreement ?? null)]
+    : tracks;
 }
 
-/** The rows read out of this model's coordinate file. */
+/** The rows read out of this model's coordinate file, and the other models'. */
 function coordinateTracks(
   structure: StructureResidues,
   length: number,
+  agreement: ChainAgreement | null,
 ): SequenceTrack[] {
   const tracks: SequenceTrack[] = [];
+
 
   if (structure.helices.length > 0 || structure.strands.length > 0) {
     tracks.push({
@@ -131,17 +162,70 @@ function coordinateTracks(
     });
   }
 
+  // Coverage, this model against the others: which residues exist in one file
+  // and not the other. A difference here is not a small one -- it is one model
+  // claiming to know where a stretch of chain goes and another declining to
+  // say -- and until now the page could only show the gaps in the file it
+  // happened to be on.
+  if (agreement !== null) {
+    for (const [key, label, positions, note] of [
+      [
+        "onlyOthers",
+        "Only in others",
+        agreement.onlyOthers,
+        "modelled by another model of this entry and not by this one",
+      ],
+      [
+        "onlyMine",
+        "Only in this model",
+        agreement.onlyMine,
+        "modelled here and by no other model of this entry",
+      ],
+    ] as [string, string, Set<number>, string][]) {
+      const spans = spansOf(positions, length);
+      if (spans.length === 0) {
+        continue;
+      }
+      tracks.push({
+        key,
+        label,
+        kind: "span",
+        features: spans.map((span, index) => ({
+          key: `${key}${index}`,
+          start: span.start,
+          end: span.end,
+          title: `Residues ${span.start}-${span.end}: ${note}`,
+        })),
+      });
+    }
+  }
+
   if (structure.alternates.size > 0) {
     tracks.push({
       key: "alternates",
-      label: "Alt conformers",
+      label: agreement === null ? "Alt conformers" : "Alt · this model",
       kind: "point",
-      features: [...structure.alternates].sort((a, b) => a - b).map((seq) => ({
-        key: `a${seq}`,
-        start: seq,
-        end: seq,
-        title: `Residue ${seq} modelled in more than one conformation`,
-      })),
+      features: conformerRuns(structure.alternates, length, "a"),
+    });
+  }
+
+  // A row per model rather than one row for all of them: the whole question
+  // about an alternate conformation is WHO put it there. One model splitting a
+  // residue its neighbours leave alone is that model's own claim about the
+  // density, and it is invisible in a merged row. Models with no alternates
+  // get no row, so this stays one line on most entries and only grows on the
+  // ones where it is the story.
+  for (const other of agreement?.alternatesByModel ?? []) {
+    tracks.push({
+      key: `alt:${other.modelId}`,
+      label: `Alt · ${other.title}`,
+      kind: "point",
+      features: conformerRuns(
+        new Set(other.positions),
+        length,
+        "a",
+        other.title,
+      ),
     });
   }
 
@@ -154,7 +238,123 @@ function coordinateTracks(
     });
   }
 
+  // Last, and the tall one. It is the only row here that is about more than
+  // one model, and it is read against the rows above it -- a peak over a run
+  // the chain marks unobserved, or over a residue one model split in two, is
+  // a different finding each time -- so it belongs on the same ruler as them
+  // rather than in a chart of its own above the board.
+  if (agreement !== null) {
+    const row = disagreementTrack(agreement, length);
+    if (row !== null) {
+      tracks.push(row);
+    }
+  }
+
   return tracks;
+}
+
+function disagreementTrack(
+  agreement: ChainAgreement,
+  length: number,
+): SequenceTrack | null {
+  if (agreement.worst === null || agreement.disagreement.size === 0) {
+    return null;
+  }
+
+  const flagged = new Set<number>();
+  for (const region of agreement.regions) {
+    for (let seq = region.start; seq <= region.end; seq += 1) {
+      flagged.add(seq);
+    }
+  }
+
+  const max = niceCeiling(agreement.worst.value);
+  const features: SequenceFeature[] = [];
+  for (const [seq, value] of [...agreement.disagreement.entries()].sort(
+    (a, b) => a[0] - b[0],
+  )) {
+    if (seq < 1 || seq > length) {
+      continue;
+    }
+    features.push({
+      key: `g${seq}`,
+      start: seq,
+      end: seq,
+      level: value / max,
+      variant: flagged.has(seq) ? "flagged" : undefined,
+      title:
+        `Residue ${seq}: the models place it ${value.toFixed(2)} Å apart` +
+        (agreement.alternates.has(seq)
+          ? ", and at least one of them modelled it in more than one conformation"
+          : ""),
+    });
+  }
+
+  return {
+    key: "disagreement",
+    // A noun, like every other row's name, and one that says what is measured:
+    // backbone, not side chains. The bracket says between what, which is the
+    // one thing a reader cannot get from the row itself -- it does not fit on
+    // one line of the label column, and this is the row tall enough to take
+    // two. The space inside the bracket is non-breaking so the wrap lands
+    // between the name and the bracket rather than inside it.
+    label: "Backbone spread (between models)",
+    kind: "level",
+    scale: { max, unit: "Å" },
+    features,
+  };
+}
+
+// A round number for the axis, so the height of a bar can be read off it
+// rather than guessed from the tallest one.
+function niceCeiling(value: number): number {
+  const steps = [0.5, 1, 2, 3, 5, 10, 20, 50];
+  return steps.find((step) => value <= step) ?? Math.ceil(value);
+}
+
+/**
+ * Split residues as the runs they form, not as loose residues.
+ *
+ * A multiconformer model splits three quarters of a chain, and fifteen
+ * neighbouring single-residue marks are drawn as one unbroken bar. Clicking
+ * that bar then held one residue of it -- a mark a fraction of the width of
+ * the thing that was clicked, which reads as the feature being broken rather
+ * than as the row being a row of residues. What looks like one block is one
+ * block.
+ */
+function conformerRuns(
+  positions: Set<number>,
+  length: number,
+  prefix: string,
+  model?: string,
+): SequenceFeature[] {
+  const who = model === undefined ? "" : `${model}: `;
+  return spansOf(positions, length).map((span, index) => ({
+    key: `${prefix}${index}`,
+    start: span.start,
+    end: span.end,
+    title:
+      span.start === span.end
+        ? `${who}residue ${span.start} modelled in more than one conformation`
+        : `${who}residues ${span.start}-${span.end} modelled in more than one conformation`,
+  }));
+}
+
+/** Scattered residue numbers as the runs they form. */
+function spansOf(positions: Set<number>, length: number): Span[] {
+  const sorted = [...positions]
+    .filter((seq) => seq >= 1 && seq <= length)
+    .sort((a, b) => a - b);
+  const spans: Span[] = [];
+  for (const seq of sorted) {
+    const last = spans[spans.length - 1];
+    if (last && seq === last.end + 1) {
+      last.end = seq;
+      continue;
+    }
+    spans.push({ start: seq, end: seq });
+  }
+  return spans;
 }
 
 // Scaled against this model's own range rather than an absolute one: B-factors
@@ -262,7 +462,19 @@ export type SequenceChain = {
   /** Whether this chain's rows were read from the model's coordinates, as
    *  opposed to only from what the entry records. */
   modelled: boolean;
+  /** What the comparison with the entry's other models came to, for the line
+   *  that says how the disagreement rows were measured. Null when there was
+   *  nothing to compare with. */
+  agreement: ChainAgreement | null;
   tracks: SequenceTrack[];
+};
+
+/** One other model of the entry, already read. */
+export type OtherModelCoordinates = {
+  modelId: string;
+  title: string;
+  /** Every chain of that model, as its own file gives them. */
+  chains: StructureResidues[];
 };
 
 /**
@@ -277,6 +489,7 @@ export type SequenceChain = {
 export function sequenceChains(
   entities: PolymerEntityView[],
   coordinates: StructureResidues[],
+  others: OtherModelCoordinates[] = [],
 ): SequenceChain[] {
   const chains: SequenceChain[] = [];
 
@@ -286,11 +499,15 @@ export function sequenceChains(
       continue;
     }
 
-    const modelled = chainsOfEntity(coordinates, entity.entityId);
+    const modelled = chainsOfEntity(
+      coordinates,
+      entity.entityId,
+      entity.chains,
+    );
     if (modelled.length > 0) {
       for (const residues of modelled) {
         chains.push(
-          chainView(entity, residues.chainId || null, residues, length),
+          chainView(entity, residues.chainId || null, residues, length, others),
         );
       }
       continue;
@@ -298,12 +515,12 @@ export function sequenceChains(
 
     if (entity.chains.length > 0) {
       for (const chainId of entity.chains) {
-        chains.push(chainView(entity, chainId, null, length));
+        chains.push(chainView(entity, chainId, null, length, others));
       }
       continue;
     }
 
-    chains.push(chainView(entity, null, null, length));
+    chains.push(chainView(entity, null, null, length, others));
   }
 
   return chains;
@@ -314,7 +531,21 @@ function chainView(
   chainId: string | null,
   residues: StructureResidues | null,
   length: number,
+  others: OtherModelCoordinates[],
 ): SequenceChain {
+  // Every file is moved onto the entry's sequence before anything is drawn or
+  // compared. Each of them is numbered however its own program saw fit, and
+  // this is the one coordinate they all have in common -- the same one the
+  // ruler above the rows is drawn in.
+  const sequence = residueLetters(entity);
+  const aligned = residues === null ? null : onSequence(residues, sequence);
+  // Only a chain we actually read coordinates for can be compared: the rows
+  // are differences between two sets of atoms, and a chain we know only from
+  // the entry's sequence has none.
+  const agreement =
+    aligned === null
+      ? null
+      : chainAgreement(aligned, counterparts(aligned, others, sequence));
   return {
     key: `${entity.key}:${chainId ?? ""}`,
     chainId,
@@ -322,8 +553,41 @@ function chainView(
     moleculeName: entity.name,
     organism: entity.organisms[0]?.scientific_name ?? null,
     length,
-    sequence: residueLetters(entity),
+    sequence,
     modelled: residues !== null,
-    tracks: sequenceTracks(entity, residues),
+    agreement,
+    tracks: sequenceTracks(entity, aligned, agreement),
   };
+}
+
+function onSequence(
+  residues: StructureResidues,
+  sequence: string | null,
+): StructureResidues {
+  return shiftResidues(residues, sequenceShift(residues, sequence));
+}
+
+// A model that does not contain this chain at all is left out rather than
+// counted as disagreeing with it.
+function counterparts(
+  residues: StructureResidues,
+  others: OtherModelCoordinates[],
+  sequence: string | null,
+): OtherChain[] {
+  return others.flatMap((other) => {
+    const match = chainCounterpart(
+      other.chains,
+      residues.entityId,
+      residues.chainId,
+    );
+    return match
+      ? [
+          {
+            modelId: other.modelId,
+            title: other.title,
+            residues: onSequence(match, sequence),
+          },
+        ]
+      : [];
+  });
 }

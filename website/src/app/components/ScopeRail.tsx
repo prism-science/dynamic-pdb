@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-import type { ScopeRailModel } from "@/lib/scope-rail";
+import type { EntryModel } from "@/lib/entry-models";
 import {
   bestMetricValues,
   formatMetric,
@@ -60,7 +60,7 @@ export default function ScopeRail({
   addModelHref,
 }: {
   entryId: string;
-  models: ScopeRailModel[];
+  models: EntryModel[];
   activeModelId: string | null;
   /** The tab the reader is on, carried across the switch. */
   tab: string | null;

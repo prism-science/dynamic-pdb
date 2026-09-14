@@ -12,11 +12,18 @@ import { VolumeRepresentation3DHelpers } from "molstar/lib/mol-plugin-state/tran
 import { Volume } from "molstar/lib/mol-model/volume";
 import { Vec3, Mat4, Tensor } from "molstar/lib/mol-math/linear-algebra";
 import { Color } from "molstar/lib/mol-util/color";
+import {
+  QueryContext,
+  StructureSelection,
+} from "molstar/lib/mol-model/structure";
+import { alignAndSuperpose } from "molstar/lib/mol-model/structure/structure/util/superposition";
+import { StructureSelectionQueries } from "molstar/lib/mol-plugin-state/helpers/structure-selection-query";
 
 import {
   loadCoordinateBytes,
   loadCoordinateFile,
 } from "@/lib/coordinate-file-cache";
+import { modelColorHex, type OverlayModel } from "@/lib/model-overlays";
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
 
 import styles from "./StructureViewer.module.css";
@@ -29,6 +36,7 @@ const CARVE_RADIUS = 2;
 const BOX_MARGIN = 3;
 // Cap on resampled grid points, to bound the cost of the resample loop.
 const MAX_POINTS = 2_600_000;
+
 
 // Trilinear sample of a periodic grid at fractional grid coordinates (which may
 // fall outside [0,dim); indices wrap around because the map is periodic).
@@ -176,6 +184,95 @@ function expandMapAroundModel(
   };
 }
 
+/**
+ * The Cα trace of one structure -- what two models of the same crystal are
+ * lined up on.
+ *
+ * Only the trace, deliberately. A multiconformer model and a single-conformer
+ * one differ in their side chains by construction, and fitting on those would
+ * let the very difference the reader came to see drag the alignment around.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function traceLoci(structure: any) {
+  const { query } = StructureSelectionQueries.trace;
+  return StructureSelection.toLociWithSourceUnits(
+    query(new QueryContext(structure)),
+  );
+}
+
+/**
+ * Lay one model over the one already on screen and report how far apart they
+ * are.
+ *
+ * Models of one entry usually already share a crystal frame, in which case the
+ * transform is near enough the identity and the number is the honest distance
+ * between them. When they do not -- a model rebuilt somewhere else, a predicted
+ * one docked in -- this is what brings them together, and the number is then
+ * the residual after the fit. Either way the figure shown is the one the fit
+ * actually achieved.
+ *
+ * Returns undefined when the two share too little to align, and leaves the
+ * model where it was: an overlay in the wrong place is still worth seeing, and
+ * saying nothing about the distance is better than inventing one.
+ */
+async function superposeOnBase(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  activePlugin: any,
+  targetRef: string,
+): Promise<number | undefined> {
+  const structures = activePlugin.managers.structure.hierarchy.current.structures;
+  const base = structures[0]?.cell.obj?.data;
+  const target = structures.find(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (item: any) => item.cell.transform.ref === targetRef,
+  )?.cell.obj?.data;
+  if (!base || !target || base === target) {
+    return undefined;
+  }
+
+  const [result] = alignAndSuperpose([traceLoci(base), traceLoci(target)]);
+  if (!result) {
+    return undefined;
+  }
+
+  // Inserted rather than appended: the node slides in between the structure and
+  // the representations already hanging off it, so they are redrawn on the
+  // moved coordinates instead of having to be rebuilt.
+  await activePlugin
+    .build()
+    .to(targetRef)
+    .insert(StateTransforms.Model.TransformStructureConformation, {
+      transform: {
+        name: "matrix",
+        params: { data: result.bTransform, transpose: false },
+      },
+    })
+    .commit();
+
+  return result.rmsd;
+}
+
+type OverlayState = OverlayModel & {
+  status: "idle" | "loading" | "ready" | "error";
+  visible: boolean;
+  /** The state ref this overlay hangs off, for hiding it without unloading. */
+  refs: string[];
+  /** Cα RMSD against the model on screen, once it has been laid over it. */
+  rmsd?: number;
+  error?: string;
+};
+
+function initialOverlays(
+  overlays: OverlayModel[] | undefined,
+): OverlayState[] {
+  return (overlays ?? []).map((model) => ({
+    ...model,
+    status: "idle",
+    visible: false,
+    refs: [],
+  }));
+}
+
 type MapLayerState = {
   url: string;
   name: string;
@@ -203,12 +300,21 @@ export default function StructureViewer({
   url,
   kind,
   maps,
+  overlays,
+  overlaysSkipped = 0,
+  baseColor,
   square,
   fill = false,
 }: {
   url: string;
   kind: StructureKind;
   maps?: StructureMap[];
+  /** The entry's other models, offered for comparison. None: no bar at all. */
+  overlays?: OverlayModel[];
+  /** Other models that exist but carry nothing this viewer can draw. */
+  overlaysSkipped?: number;
+  /** What to paint the model on screen while a comparison is running. */
+  baseColor?: number;
   /** Drop the rounded corners: the viewer is the tab, not a card on it. */
   square?: boolean;
   // Take the height of the container instead of a fixed canvas height. Used by
@@ -228,24 +334,37 @@ export default function StructureViewer({
   const [layers, setLayers] = useState<MapLayerState[]>(() =>
     initialLayers(maps),
   );
+  const [overlayState, setOverlayState] = useState<OverlayState[]>(() =>
+    initialOverlays(overlays),
+  );
+  const overlayControllersRef = useRef(new Map<string, AbortController>());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelQuery, setModelQuery] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const modelsMenuRef = useRef<HTMLDivElement>(null);
 
   const mapsKey = (maps ?? []).map((map) => map.url).join("|");
+  const overlaysKey = (overlays ?? []).map((model) => model.modelId).join("|");
 
-  // Close the maps dropdown when clicking outside it.
+  // Close either dropdown when clicking outside it.
   useEffect(() => {
-    if (!menuOpen) {
+    if (!menuOpen && !modelsOpen) {
       return;
     }
     const onDown = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) {
         setMenuOpen(false);
+      }
+      if (modelsMenuRef.current && !modelsMenuRef.current.contains(target)) {
+        setModelsOpen(false);
+        setModelQuery("");
       }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [menuOpen]);
+  }, [menuOpen, modelsOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,6 +377,7 @@ export default function StructureViewer({
     setError(null);
     setLoading(true);
     setLayers(initialLayers(maps));
+    setOverlayState(initialOverlays(overlays));
 
     (async () => {
       if (cancelled || !viewerRef.current) {
@@ -397,11 +517,15 @@ export default function StructureViewer({
         layerController.abort();
       }
       layerControllersRef.current.clear();
+      for (const overlayController of overlayControllersRef.current.values()) {
+        overlayController.abort();
+      }
+      overlayControllersRef.current.clear();
       pluginRef.current = null;
       created?.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, kind, mapsKey]);
+  }, [url, kind, mapsKey, overlaysKey]);
 
   const resetView = () => {
     plugin?.canvas3d?.requestCameraReset();
@@ -571,66 +695,345 @@ export default function StructureViewer({
     }
   };
 
+  const setOverlayFor = (modelId: string, patch: Partial<OverlayState>) => {
+    setOverlayState((prev) =>
+      prev.map((overlay) =>
+        overlay.modelId === modelId ? { ...overlay, ...patch } : overlay,
+      ),
+    );
+  };
+
+  /**
+   * Paint the model on screen its own colour while a comparison is running,
+   * and give it its ordinary colouring back when the last overlay goes away.
+   *
+   * Without this the base model keeps the preset's per-chain rainbow while the
+   * overlays are flat, and the reader has to work out which of the things on
+   * screen is the one the page is about.
+   */
+  const paintBase = async (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    activePlugin: any,
+    comparing: boolean,
+  ) => {
+    const base =
+      activePlugin.managers.structure.hierarchy.current.structures[0];
+    if (!base || baseColor === undefined) {
+      return;
+    }
+    await activePlugin.managers.structure.component.updateRepresentationsTheme(
+      base.components,
+      comparing
+        ? { color: "uniform", colorParams: { value: Color(baseColor) } }
+        : { color: "default" },
+    );
+  };
+
+  const toggleOverlay = async (modelId: string) => {
+    const activePlugin = pluginRef.current;
+    const overlay = overlayState.find((item) => item.modelId === modelId);
+    if (!activePlugin || !overlay || overlay.status === "loading") {
+      return;
+    }
+
+    // Already drawn: flip it, and let the base model follow whether anything
+    // is still laid over it.
+    if (overlay.status === "ready") {
+      const nextVisible = !overlay.visible;
+      for (const ref of overlay.refs) {
+        setSubtreeVisibility(activePlugin.state.data, ref, !nextVisible);
+      }
+      const stillComparing = overlayState.some((item) =>
+        item.modelId === modelId
+          ? nextVisible
+          : item.status === "ready" && item.visible,
+      );
+      setOverlayFor(modelId, { visible: nextVisible });
+      await paintBase(activePlugin, stillComparing);
+      return;
+    }
+
+    // First time on (or a retry after a failure): fetch, draw, line it up.
+    setOverlayFor(modelId, { status: "loading", error: undefined });
+    const controller = new AbortController();
+    overlayControllersRef.current.set(modelId, controller);
+    try {
+      const text = await loadCoordinateFile(overlay.url, controller.signal);
+      if (text === null) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        throw new Error(
+          "Model file is unavailable or exceeds the 100 MiB limit.",
+        );
+      }
+      const provider = activePlugin.dataFormats.get(overlay.kind);
+      if (!provider) {
+        throw new Error(`unsupported structure format: ${overlay.kind}`);
+      }
+
+      // Which structure is the new one is read off the hierarchy rather than
+      // assumed to be the last: the preset decides how many objects it adds.
+      const before = new Set(
+        activePlugin.managers.structure.hierarchy.current.structures.map(
+          (item) => item.cell.transform.ref,
+        ),
+      );
+      const data = await activePlugin.builders.data.rawData(
+        { data: text, label: overlay.title },
+        { state: { isGhost: true } },
+      );
+      const parsed = await provider.parse(activePlugin, data);
+      if (provider.visuals) {
+        await provider.visuals(activePlugin, parsed);
+      }
+      const added =
+        activePlugin.managers.structure.hierarchy.current.structures.find(
+          (item) => !before.has(item.cell.transform.ref),
+        );
+      if (!added) {
+        throw new Error("the viewer did not load this model");
+      }
+      const addedRef: string = added.cell.transform.ref;
+
+      let rmsd: number | undefined;
+      try {
+        rmsd = await superposeOnBase(activePlugin, addedRef);
+      } catch {
+        // Left where it was, and the row simply shows no distance.
+        rmsd = undefined;
+      }
+
+      // Re-read after the transform: superposing rebuilds the subtree, so the
+      // components captured before it are stale.
+      const settled =
+        activePlugin.managers.structure.hierarchy.current.structures.find(
+          (item) => item.cell.transform.ref === addedRef,
+        ) ?? added;
+      await activePlugin.managers.structure.component.updateRepresentationsTheme(
+        settled.components,
+        { color: "uniform", colorParams: { value: Color(overlay.color) } },
+      );
+
+      await paintBase(activePlugin, true);
+
+      const sphere = modelStructureRef.current?.boundary?.sphere;
+      if (sphere) {
+        activePlugin.managers.camera.focusSphere(sphere);
+      }
+
+      setOverlayFor(modelId, {
+        status: "ready",
+        visible: true,
+        refs: [addedRef],
+        rmsd,
+      });
+    } catch (err) {
+      setOverlayFor(modelId, {
+        status: "error",
+        visible: false,
+        error: structureErrorMessage(err),
+      });
+    } finally {
+      if (overlayControllersRef.current.get(modelId) === controller) {
+        overlayControllersRef.current.delete(modelId);
+      }
+    }
+  };
+
+  // Filtering is about the list, not the scene: a model already laid over the
+  // structure stays on screen when the query stops matching its name.
+  const modelQueryText = modelQuery.trim().toLowerCase();
+  const shownOverlays = modelQueryText
+    ? overlayState.filter((overlay) =>
+        overlay.title.toLowerCase().includes(modelQueryText),
+      )
+    : overlayState;
+
+  const hasBar =
+    layers.length > 0 || overlayState.length > 0 || overlaysSkipped > 0;
   const ready = plugin != null && !loading && !error;
 
   return (
     <div
       className={styles.structureViewer}
-      data-has-bar={layers.length > 0 ? "true" : undefined}
+      data-has-bar={hasBar ? "true" : undefined}
       data-fill={fill ? "true" : undefined}
       data-square={square ? "true" : undefined}
     >
-      {layers.length > 0 ? (
+      {hasBar ? (
         <div className={styles.layerBar}>
-          <span className={styles.layerBarLabel}>Density maps</span>
-          <div className={styles.mapMenu} ref={menuRef}>
-            <button
-              type="button"
-              className={styles.mapMenuTrigger}
-              data-open={menuOpen ? "true" : undefined}
-              disabled={!ready}
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-            >
-              <span className={styles.mapMenuTriggerText}>
-                {mapsSummary(layers)}
+          {overlayState.length === 0 && overlaysSkipped > 0 ? (
+            <>
+              <span className={styles.layerBarLabel}>Compare with</span>
+              <span className={styles.layerBarNote}>
+                {overlaysSkipped === 1
+                  ? "the entry's other model has no coordinates to draw"
+                  : `none of the entry's other ${overlaysSkipped} models has coordinates to draw`}
               </span>
-              <ChevronIcon />
-            </button>
-            {menuOpen ? (
-              <div className={styles.mapMenuList} role="menu">
-                {layers.map((layer, index) => {
-                  const on = layer.status === "ready" && layer.visible;
-                  const label = layer.name.replace(/\.[^.]+$/, "");
-                  return (
-                    <button
-                      key={layer.url}
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={on}
-                      className={styles.mapMenuRow}
-                      data-active={on ? "true" : undefined}
-                      data-error={layer.status === "error" ? "true" : undefined}
-                      disabled={layer.status === "loading"}
-                      onClick={() => toggleLayer(index)}
-                      title={layer.error ?? layer.name}
-                    >
-                      <span className={styles.mapMenuRowName}>{label}</span>
-                      {layer.status === "loading" ? (
-                        <span
-                          className={styles.layerToggleSpinner}
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <EyeIcon on={on} />
-                      )}
-                    </button>
-                  );
-                })}
+            </>
+          ) : null}
+          {overlayState.length > 0 ? (
+            <>
+              <span className={styles.layerBarLabel}>Compare with</span>
+              <div className={styles.mapMenu} ref={modelsMenuRef}>
+                <button
+                  type="button"
+                  className={styles.mapMenuTrigger}
+                  data-open={modelsOpen ? "true" : undefined}
+                  disabled={!ready}
+                  onClick={() => {
+                    setModelsOpen((open) => !open);
+                    setModelQuery("");
+                  }}
+                  aria-haspopup="true"
+                  aria-expanded={modelsOpen}
+                >
+                  <span className={styles.mapMenuTriggerText}>
+                    {overlaysSummary(overlayState)}
+                  </span>
+                  <ChevronIcon />
+                </button>
+                {modelsOpen ? (
+                  <div className={styles.mapMenuList} role="menu">
+                    <div className={styles.mapMenuSearch}>
+                      <SearchIcon />
+                      <input
+                        type="search"
+                        className={styles.mapMenuSearchInput}
+                        value={modelQuery}
+                        onChange={(event) => setModelQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setModelQuery("");
+                            setModelsOpen(false);
+                          }
+                        }}
+                        placeholder={
+                          overlayState.length === 1
+                            ? "Filter 1 model"
+                            : `Filter ${overlayState.length} models`
+                        }
+                        aria-label="Filter models"
+                        autoFocus
+                      />
+                      {modelQueryText ? (
+                        <span className={styles.mapMenuSearchCount}>
+                          {shownOverlays.length} of {overlayState.length}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className={styles.mapMenuScroll}>
+                      {shownOverlays.length === 0 ? (
+                        <p className={styles.mapMenuEmpty}>
+                          No model matches that.
+                        </p>
+                      ) : null}
+                      {shownOverlays.map((overlay) => {
+                        const on = overlay.status === "ready" && overlay.visible;
+                        return (
+                          <button
+                            key={overlay.modelId}
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={on}
+                            className={styles.mapMenuRow}
+                            data-active={on ? "true" : undefined}
+                            data-error={
+                              overlay.status === "error" ? "true" : undefined
+                            }
+                            disabled={overlay.status === "loading"}
+                            onClick={() => toggleOverlay(overlay.modelId)}
+                            title={overlay.error ?? overlay.title}
+                          >
+                            <span
+                              className={styles.modelSwatch}
+                              style={{ background: modelColorHex(overlay.color) }}
+                              aria-hidden="true"
+                            />
+                            <span className={styles.mapMenuRowName}>
+                              {overlay.title}
+                            </span>
+                            {typeof overlay.rmsd === "number" ? (
+                              <span
+                                className={styles.mapMenuRowMeta}
+                                title="Cα RMSD against the model on screen"
+                              >
+                                {overlay.rmsd.toFixed(2)} Å
+                              </span>
+                            ) : null}
+                            {overlay.status === "loading" ? (
+                              <span
+                                className={styles.layerToggleSpinner}
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <EyeIcon on={on} />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
+            </>
+          ) : null}
+          {layers.length > 0 ? (
+            <>
+              <span className={styles.layerBarLabel}>Density maps</span>
+              <div className={styles.mapMenu} ref={menuRef}>
+                <button
+                  type="button"
+                  className={styles.mapMenuTrigger}
+                  data-open={menuOpen ? "true" : undefined}
+                  disabled={!ready}
+                  onClick={() => setMenuOpen((open) => !open)}
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                >
+                  <span className={styles.mapMenuTriggerText}>
+                    {mapsSummary(layers)}
+                  </span>
+                  <ChevronIcon />
+                </button>
+                {menuOpen ? (
+                  <div className={styles.mapMenuList} role="menu">
+                    {layers.map((layer, index) => {
+                      const on = layer.status === "ready" && layer.visible;
+                      const label = layer.name.replace(/\.[^.]+$/, "");
+                      return (
+                        <button
+                          key={layer.url}
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={on}
+                          className={styles.mapMenuRow}
+                          data-active={on ? "true" : undefined}
+                          data-error={
+                            layer.status === "error" ? "true" : undefined
+                          }
+                          disabled={layer.status === "loading"}
+                          onClick={() => toggleLayer(index)}
+                          title={layer.error ?? layer.name}
+                        >
+                          <span className={styles.mapMenuRowName}>{label}</span>
+                          {layer.status === "loading" ? (
+                            <span
+                              className={styles.layerToggleSpinner}
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <EyeIcon on={on} />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
       <div ref={viewerRef} className={styles.structureCanvas}>
@@ -674,6 +1077,23 @@ export default function StructureViewer({
       </div>
     </div>
   );
+}
+
+/** What the closed menu says: the shortest true thing about the overlays. */
+function overlaysSummary(overlays: OverlayState[]): string {
+  if (overlays.some((overlay) => overlay.status === "loading")) {
+    return "Loading…";
+  }
+  const visible = overlays.filter(
+    (overlay) => overlay.status === "ready" && overlay.visible,
+  );
+  if (visible.length === 0) {
+    return `None of ${overlays.length}`;
+  }
+  if (visible.length === 1) {
+    return visible[0].title;
+  }
+  return `${visible.length} laid over`;
 }
 
 function mapsSummary(layers: MapLayerState[]): string {
@@ -743,6 +1163,25 @@ function EyeIcon({ on }: { on: boolean }) {
     >
       <path d="M3 3 21 21" />
       <path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c6.4 0 10 6 10 6a16 16 0 0 1-3.1 3.8M6.3 7.8A15.8 15.8 0 0 0 2 12s3.6 6 10 6a9.9 9.9 0 0 0 4.1-.9" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.6-3.6" />
     </svg>
   );
 }

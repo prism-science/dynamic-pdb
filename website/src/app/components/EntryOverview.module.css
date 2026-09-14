@@ -68,9 +68,9 @@
   line-height: 1.65;
 }
 
-/* Two columns of plain labelled fields: the structure's on the left, the
-   selected model's on the right. No headings over them -- the labels say what
-   each is, and a heading would imply the two lists behave the same way. */
+/* Two columns of plain labelled fields. No headings over them -- the labels
+   say what each is, and a heading would imply the two lists behave the same
+   way. */
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -80,13 +80,15 @@
 }
 
 .section {
-  margin-top: 30px;
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
 }
 
-/* Under the fields, in the same column. Closer than a full section break --
-   it is the rest of what this column is saying, not a new subject. */
-.evaluations {
-  margin-top: 24px;
+.sectionHint {
+  margin: -6px 0 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
 }
 
 .heading {

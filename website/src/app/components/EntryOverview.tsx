@@ -1,5 +1,6 @@
 import type { Entity, Entry } from "@/lib/api/entries";
 import { dataTableEntities } from "@/lib/entities";
+import type { MetricScale } from "@/lib/model-comparison";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
 import {
   ImagePlaceholderIcon,
@@ -9,6 +10,7 @@ import {
   MetricTiles,
 } from "@/app/entries/[entryId]/entry-view";
 import DataTable from "./DataTable";
+import MetricScales from "./MetricScales";
 import PolymerEntities from "./PolymerEntities";
 
 import styles from "./EntryOverview.module.css";
@@ -25,12 +27,20 @@ export type SummaryModel = {
 };
 
 /**
- * The Summary tab: the model's picture, what the structure is, and the numbers.
+ * The Overview tab: what this model is, how it stands against the entry's
+ * other models, and the record both belong to.
  *
- * The picture is the selected model's, and so is everything in the right-hand
- * column below the description -- switch models in the rail and that column
- * changes while the left one does not. Macromolecules and Data sit under both
- * at full width, because neither table fits in half a page.
+ * Three bands, narrowing outwards. The model itself comes first -- its
+ * picture and its fields. Then where each of its figures stands on the scale
+ * that figure is judged on, with the entry's other models on the same scale.
+ * Then the record: the macromolecules, which are the same in every model, and
+ * the files.
+ *
+ * The figures are tracks rather than tiles because "0.171" on its own says
+ * nothing about whether 0.171 is any good. A block of deltas against each
+ * other model used to sit under them and has gone: it re-stated in arithmetic
+ * what the tracks already draw, and the other models' own values are on the
+ * track under the pointer.
  *
  * The crystal is deliberately absent: pH and temperatures have their own tab,
  * and a fact printed in two places is a fact that will disagree with itself.
@@ -41,6 +51,7 @@ export default function EntryOverview({
   artifacts,
   dataEntities,
   model,
+  scales,
 }: {
   entry: Entry;
   entities: PolymerEntityView[];
@@ -50,6 +61,8 @@ export default function EntryOverview({
   dataEntities: Entity[];
   /** Null on an entry that has no models yet. */
   model: SummaryModel | null;
+  /** One track per figure. Empty when no model of the entry carries any. */
+  scales: MetricScale[];
 }) {
   const title = entry.title?.trim() ?? null;
   const details = entry.details?.trim() ?? null;
@@ -79,8 +92,7 @@ export default function EntryOverview({
           {model && title ? <p className={styles.subtitle}>{title}</p> : null}
           {/* Two descriptions, in the order they narrow: the structure first,
               then the model of it. Both are prose from a depositor, so both are
-              paragraphs -- the model's used to be a labelled field in the grid
-              below, where the value track is narrower than the label. */}
+              paragraphs. */}
           {details ? <p className={styles.details}>{details}</p> : null}
           {model?.details ? (
             <p className={styles.details}>{model.details}</p>
@@ -95,22 +107,32 @@ export default function EntryOverview({
               <InfoGrid facts={secondHalf(model.facts)} columns={1} />
             </div>
           ) : null}
-
-          {/* Inside this column, under the fields it belongs with: the numbers
-              describe the same model those fields describe. Only Macromolecules
-              is wide, because only Macromolecules needs the width. */}
-          {model && model.metrics.length > 0 ? (
-            <section className={styles.evaluations}>
-              <h2 className={styles.heading}>Evaluations</h2>
-              <MetricTiles metrics={model.metrics} />
-            </section>
-          ) : null}
         </div>
       </div>
+
+      {/* A section of its own, the full width of the page. The tracks are
+          rulers: squeezed into the right-hand column they had a third of the
+          room and every model on them landed on top of the next. */}
+      {model && scales.length > 0 ? (
+        <section className={styles.section}>
+          <h2 className={styles.heading}>Evaluations</h2>
+          <MetricScales scales={scales} />
+        </section>
+      ) : model && model.metrics.length > 0 ? (
+        <section className={styles.section}>
+          <h2 className={styles.heading}>Evaluations</h2>
+          <MetricTiles metrics={model.metrics} />
+        </section>
+      ) : null}
 
       {entities.length > 0 ? (
         <section className={styles.section}>
           <h2 className={styles.heading}>Macromolecules</h2>
+          {/* Said out loud because the page is otherwise entirely about one
+              model, and this table is the one thing on it that is not. */}
+          <p className={styles.sectionHint}>
+            The same in every model of this entry.
+          </p>
           <PolymerEntities views={entities} artifacts={artifacts} />
         </section>
       ) : null}

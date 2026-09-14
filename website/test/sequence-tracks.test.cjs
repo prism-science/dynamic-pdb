@@ -180,3 +180,109 @@ test("should draw no UniProt row: the mapping records an accession, not a range"
   // then
   assert.ok(!keys.some((key) => key.startsWith("uniprot")));
 });
+
+// One chain of eight residues, written twice: this model, and another that
+// puts residue 4 well off, splits residue 2 into two conformers, and leaves
+// residue 8 out altogether. A zig-zag rather than a straight run, so the
+// superposition is properly determined and cannot absorb the difference.
+function chainCif(rows) {
+  return `data_CMP
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_comp_id
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+${rows}
+#
+`;
+}
+
+const NAMES = ["ALA", "CYS", "ASP", "GLU", "PHE", "GLY", "HIS", "ILE"];
+const SPOTS = [
+  [0, 0, 0],
+  [3.8, 1.4, 0.5],
+  [7.6, 0, 1.1],
+  [11.4, 1.4, 0.2],
+  [15.2, 0, 0.9],
+  [19, 1.4, 0],
+  [22.8, 0, 0.7],
+  [26.6, 1.4, 0.3],
+];
+
+function atom(index, [x, y, z], alt = ".") {
+  return `ATOM A A 1 ${index + 1} ${index + 1} ${NAMES[index]} CA ${alt} ${x} ${y} ${z}`;
+}
+
+const MINE = chainCif(SPOTS.map((spot, index) => atom(index, spot)).join("\n"));
+
+const THEIRS = chainCif(
+  [
+    ...SPOTS.slice(0, 7).map((spot, index) =>
+      atom(index, index === 3 ? [spot[0], spot[1], spot[2] + 1.5] : spot),
+    ),
+    // Residue 2 again, in a second conformation a tenth of an angstrom away.
+    atom(1, [SPOTS[1][0] + 0.1, SPOTS[1][1], SPOTS[1][2]], "B"),
+  ].join("\n"),
+);
+
+function oneEntity() {
+  return polymerEntityViews(
+    [{ id: "e1", label_entity_id: "1", description: "Thing" }],
+    [{ header: ">1XYZ_1|Chain A|Thing", sequence: "ACDEFGHI" }],
+  );
+}
+
+test("should draw the comparison rows from the other models' own coordinates", () => {
+  // when
+  const [chain] = sequenceChains(oneEntity(), readStructure(MINE), [
+    { modelId: "m2", title: "qFit model", chains: readStructure(THEIRS) },
+  ]);
+  const track = (key) => chain.tracks.find((row) => row.key === key);
+
+  // then -- one fit, on the alpha carbons the two agree about
+  assert.equal(chain.agreement.fitted.length, 1);
+  assert.ok(chain.agreement.fitted[0].matched >= 3);
+
+  // the residue the other model moves is the worst on the chain, and the
+  // chart -- not a row in the viewer -- is where that is drawn
+  assert.equal(chain.agreement.worst.seq, 4);
+  assert.ok(chain.agreement.worst.value > 1);
+  assert.equal(track("departure"), undefined);
+  assert.equal(track("spread"), undefined);
+
+  // residue 8 is ours alone; nothing is theirs alone
+  assert.deepEqual(
+    track("onlyMine").features.map(({ start, end }) => [start, end]),
+    [[8, 8]],
+  );
+  assert.equal(track("onlyOthers"), undefined);
+
+  // and their split residue is named after them, on a row of its own
+  const alt = chain.tracks.find((row) => row.key === "alt:m2");
+  assert.equal(alt.label, "Alt · qFit model");
+  assert.deepEqual(alt.features.map((feature) => feature.start), [2]);
+});
+
+test("should draw no comparison rows when there is nothing to compare with", () => {
+  // when
+  const [chain] = sequenceChains(oneEntity(), readStructure(MINE));
+
+  // then
+  assert.equal(chain.agreement, null);
+  assert.deepEqual(
+    chain.tracks.map((row) => row.key).filter((key) => key.startsWith("alt:")),
+    [],
+  );
+  assert.equal(
+    chain.tracks.find((row) => row.key === "departure"),
+    undefined,
+  );
+});

@@ -19,9 +19,11 @@ import { crystallographyView } from "@/lib/crystallography";
 import { hasExperimentRecord } from "@/lib/experiment";
 import { downloadGroups } from "@/lib/download-files";
 import { defaultModel, modelTitle } from "@/lib/model-metrics";
+import { metricScales } from "@/lib/model-comparison";
+import { modelOverlays } from "@/lib/model-overlays";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
-import { scopeRailModels } from "@/lib/scope-rail";
+import { entryModels } from "@/lib/entry-models";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import {
@@ -129,6 +131,15 @@ export default async function ScopePage({
   // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
   const structure = viewableStructure(modelEntity);
+  // The entry's other models, for the Structure tab to lay over this one. Built
+  // from the whole record rather than from the model-scoped slice: the point of
+  // the overlay is exactly the models this page is not currently about.
+  const overlays = modelOverlays(data, model?.id ?? null);
+
+  // The comparison the page is built around. All of it is derived from the
+  // entry's own metrics, so an entry recording different figures -- or none --
+  // simply gets different rows rather than a page full of dashes.
+  const scales = metricScales(data, model?.id ?? null);
 
   // Everything the Summary tab needs about the selected model, flattened here
   // so the component stays a renderer and the page keeps the joining.
@@ -156,7 +167,9 @@ export default async function ScopePage({
       ? `/entries/${encodeURIComponent(data.entry.id)}/models/${encodeURIComponent(modelId)}`
       : `/entries/${encodeURIComponent(data.entry.id)}`;
 
-  const tabs: EntryTabDescriptor[] = [{ id: OVERVIEW_TAB, label: "Summary" }];
+  // "Overview" rather than "Summary": the tab is no longer a summary of one
+  // model, it is that model set against the entry's others.
+  const tabs: EntryTabDescriptor[] = [{ id: OVERVIEW_TAB, label: "Overview" }];
   if (structure) {
     tabs.push({ id: "structure", label: "Structure" });
   }
@@ -178,6 +191,8 @@ export default async function ScopePage({
 
   const hrefFor = (id: string) =>
     tabs.some((item) => item.id === id) ? `${base}?tab=${id}` : null;
+
+  const entryBase = `/entries/${encodeURIComponent(data.entry.id)}`;
 
   return (
     <main
@@ -229,14 +244,14 @@ export default async function ScopePage({
         <div className={styles.scopeGrid}>
           <ScopeRail
             entryId={data.entry.id}
-            models={scopeRailModels(data)}
+            models={entryModels(data)}
             activeModelId={model?.id ?? null}
             tab={active === OVERVIEW_TAB ? null : active}
             sort={requestedSort ?? null}
             direction={requestedDirection ?? null}
             addModelHref={
               canAddModel
-                ? `/entries/${encodeURIComponent(data.entry.id)}/models/new`
+                ? `${entryBase}/models/new`
                 : null
             }
           />
@@ -246,19 +261,27 @@ export default async function ScopePage({
               <EntryTabs base={base} tabs={tabs} active={active} />
             </div>
 
-            {active === OVERVIEW_TAB ? (
-              <EntryOverview
-                entry={data.entry}
-                entities={entities}
-                artifacts={artifacts}
-                dataEntities={modelEntities}
-                model={summaryModel}
-              />
-            ) : null}
+          {active === OVERVIEW_TAB ? (
+            <EntryOverview
+              entry={data.entry}
+              entities={entities}
+              artifacts={artifacts}
+              dataEntities={modelEntities}
+              model={summaryModel}
+              scales={scales}
+            />
+          ) : null}
 
           {active === "structure" && structure ? (
             <section aria-label="Structure">
-              <StructurePanel url={structure.url} kind={structure.kind} square />
+              <StructurePanel
+                url={structure.url}
+                kind={structure.kind}
+                overlays={overlays.others}
+                overlaysSkipped={overlays.skipped}
+                baseColor={overlays.baseColor}
+                square
+              />
             </section>
           ) : null}
 
@@ -281,6 +304,8 @@ export default async function ScopePage({
               <CoordinateSequencePanel
                 entities={entities}
                 url={structure?.url ?? null}
+                kind={structure?.kind ?? null}
+                others={overlays.others}
               />
               {/* The table is the width of the tab and spaces itself off the
                   viewer, so it needs no wrapper to place it. */}

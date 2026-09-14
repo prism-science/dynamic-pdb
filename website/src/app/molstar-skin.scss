@@ -39,6 +39,22 @@
 
 @use 'molstar/lib/mol-plugin-ui/skin/base/base';
 
+// The two greys the viewer chrome is built from, handed to the rest of the app
+// as custom properties. Mol* derives them in Sass from $default-background
+// above, and anything of ours that has to sit flush against the viewer -- the
+// bar over it, for one -- needs the same values without guessing at them.
+// Read them off the module rather than copying the hex, so they follow if the
+// brand tint ever moves.
+@use 'molstar/lib/mol-plugin-ui/skin/base/vars' as msp;
+
+:root {
+  // Panel ground: the sequence pane, the right-hand controls.
+  --viewer-panel-background: #{msp.$default-background};
+  // One step darker: the strip the "Sequence of" row sits on, and every
+  // control row like it.
+  --viewer-control-background: #{msp.$control-background};
+}
+
 /* Mol*'s transfer-function editor (the volume/density curve control) is the one
    place in the skin that hardcodes colours instead of reading the colour module,
    so the sand canvas and its ochre point hover survive the retheme. Everything
