@@ -23,7 +23,7 @@ import {
   loadCoordinateBytes,
   loadCoordinateFile,
 } from "@/lib/coordinate-file-cache";
-import type { OverlayModel } from "@/lib/model-overlays";
+import { modelColorHex, type OverlayModel } from "@/lib/model-overlays";
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
 
 import styles from "./StructureViewer.module.css";
@@ -948,7 +948,7 @@ export default function StructureViewer({
                           >
                             <span
                               className={styles.modelSwatch}
-                              style={{ background: hexColor(overlay.color) }}
+                              style={{ background: modelColorHex(overlay.color) }}
                               aria-hidden="true"
                             />
                             <span className={styles.mapMenuRowName}>
@@ -1094,11 +1094,6 @@ function overlaysSummary(overlays: OverlayState[]): string {
     return visible[0].title;
   }
   return `${visible.length} laid over`;
-}
-
-/** The model palette is stored as numbers, because that is what Mol* takes. */
-function hexColor(color: number): string {
-  return `#${color.toString(16).padStart(6, "0")}`;
 }
 
 function mapsSummary(layers: MapLayerState[]): string {

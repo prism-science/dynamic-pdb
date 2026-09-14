@@ -1,0 +1,238 @@
+.scales {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 4px 18px 6px;
+  background: var(--surface);
+}
+
+.scale {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 124px;
+  gap: 20px;
+  /* Top-aligned so the name and the value sit on the line of the bar rather
+     than halfway down the numbers printed above it. */
+  align-items: start;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scale:last-child {
+  border-bottom: none;
+}
+
+/* The figure the model on screen does not carry. The row still belongs on the
+   page -- another model of this entry was measured on it -- but it is not
+   about this model, so it steps back. */
+.scale[data-absent="true"] .track {
+  opacity: 0.62;
+}
+
+.name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.direction {
+  margin-left: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Exactly the ruler and the bar. Names are not printed under the dots: on a
+   fixed scale two well-refined models land a hair apart, and two names a hair
+   apart are one unreadable name. */
+.track {
+  position: relative;
+  height: 25px;
+}
+
+.ruler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 11px;
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tick[data-anchor="start"] {
+  transform: none;
+}
+
+.tick[data-anchor="end"] {
+  transform: translateX(-100%);
+}
+
+/* Poor on the left, good on the right, on every row -- the arrow by the name
+   says which way the figure itself runs, the bar says which way is better. */
+.bar {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.band[data-status="bad"] {
+  background: var(--danger-border);
+}
+
+.band[data-status="warn"] {
+  background: var(--warning-border);
+}
+
+.band[data-status="good"] {
+  background: var(--success-border);
+}
+
+/* A hairline of page colour at each threshold, so the cut reads as a mark on a
+   scale rather than as a gradient that happens to change hue. */
+.band + .band {
+  border-left: 1px solid var(--surface);
+}
+
+/* Holds a dot and its hover label. Nothing of its own: both children are
+   placed against the track. */
+.marker {
+  display: contents;
+}
+
+/* Every other model of the entry, in one colour. Which one a dot is belongs to
+   the dot, not to a key above the block, so it is on the dot's own label. */
+.dot {
+  position: absolute;
+  top: 13px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  /* A ring of page colour, so two models landing on the same value read as two
+     marks rather than one smudge -- and so a dot stays legible on the band it
+     is standing in. */
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* This model. Bigger and the only coloured thing on the row, because the row
+   exists to answer where this one stands. */
+.dot[data-current="true"] {
+  top: 10px;
+  width: 15px;
+  height: 15px;
+  margin-left: -7.5px;
+  background: #0e9b7f;
+  box-shadow: 0 0 0 3px var(--surface);
+  z-index: 1;
+}
+
+/* Parked at the end because the value is past it. Drawn as an arrowhead
+   pointing off the scale, so the position is not read as the value. */
+.dot[data-off] {
+  border-radius: 2px;
+}
+
+.dot[data-off="better"] {
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.dot[data-off="worse"] {
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.tip {
+  position: absolute;
+  top: 26px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: none;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--text);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dot:hover + .tip,
+.dot:focus-visible + .tip {
+  display: block;
+}
+
+/* Near the ends the label is anchored rather than centred, so it stays inside
+   the row instead of hanging over the column beside it. */
+.tip[data-anchor="start"] {
+  transform: none;
+}
+
+.tip[data-anchor="end"] {
+  transform: translateX(-100%);
+}
+
+.current {
+  text-align: right;
+  padding-top: 3px;
+}
+
+.currentValue {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.currentValue[data-status="good"] {
+  color: var(--success-fg);
+}
+
+.currentValue[data-status="warn"] {
+  color: var(--warning-fg);
+}
+
+.currentValue[data-status="bad"] {
+  color: var(--danger-fg);
+}
+
+.currentMissing {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--border-strong);
+}
+
+@media (max-width: 760px) {
+  .scale {
+    grid-template-columns: minmax(0, 1fr) 84px;
+  }
+
+  .name {
+    grid-column: 1 / -1;
+  }
+
+  .current {
+    text-align: left;
+  }
+}

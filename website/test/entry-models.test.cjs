@@ -3,7 +3,7 @@ require("./register.cjs");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { scopeRailModels } = require("../src/lib/scope-rail.ts");
+const { entryModels } = require("../src/lib/entry-models.ts");
 const {
   bestMetricValues,
   metricSpec,
@@ -24,7 +24,7 @@ test("should_carry_each_models_metrics_into_its_rail_row", () => {
   });
 
   // when
-  const rows = scopeRailModels(data);
+  const rows = entryModels(data);
 
   // then
   assert.deepEqual(rows[0].metrics, { r_work: 0.184, r_free: 0.226 });
@@ -43,7 +43,7 @@ test("should_name_the_program_that_produced_a_model_with_its_version", () => {
   });
 
   // when
-  const rows = scopeRailModels(data);
+  const rows = entryModels(data);
 
   // then
   assert.equal(rows[0].software, "PDB-REDO 8.03");
@@ -58,7 +58,7 @@ test("should_leave_the_software_line_empty_when_no_program_was_recorded", () => 
   });
 
   // when
-  const rows = scopeRailModels(data);
+  const rows = entryModels(data);
 
   // then
   assert.equal(rows[0].software, null);
@@ -76,7 +76,7 @@ test("should_name_a_program_without_a_version_by_its_name_alone", () => {
   });
 
   // when
-  const rows = scopeRailModels(data);
+  const rows = entryModels(data);
 
   // then
   assert.equal(rows[0].software, "ISOLDE");
@@ -92,7 +92,7 @@ test("should_fall_back_to_the_entry_thumbnail_when_the_model_has_none", () => {
   });
 
   // when
-  const rows = scopeRailModels(data);
+  const rows = entryModels(data);
 
   // then
   assert.equal(rows[0].thumbnailImageURL, "https://cdn.example/entry.png");

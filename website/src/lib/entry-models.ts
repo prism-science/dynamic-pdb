@@ -8,15 +8,14 @@ import type {
 import { buildModelMetrics, modelTitle } from "@/lib/model-metrics";
 
 /**
- * One row of the scope rail.
+ * One model of an entry, with the few things every list of models needs.
  *
- * The rail used to carry a name and nothing else, on the grounds that the
- * numbers telling models apart live on each model's own page. That is exactly
- * what made choosing between six models a tour of six pages, so the figures
- * come with the list now: closed, the rail still shows only the name, and the
- * rest is what it opens into.
+ * The figures travel with the name on purpose. They used to live only on each
+ * model's own page, which made choosing between six models a tour of six
+ * pages; carrying them here is what lets the strip under the tabs be both the
+ * navigation and the comparison.
  */
-export type ScopeRailModel = {
+export type EntryModel = {
   id: string;
   title: string;
   thumbnailImageURL: string | null;
@@ -27,14 +26,14 @@ export type ScopeRailModel = {
 };
 
 /**
- * The rail's model list, in the order the backend returned -- which is the
- * order they were made in, and that order is itself information. Sorting is
- * the reader's to ask for.
+ * The entry's models, in the order the backend returned -- which is the order
+ * they were made in, and that order is itself information. It is also what the
+ * model colours are pinned to, so it must not be re-sorted here.
  *
- * Built here rather than on each page so the entry and the model render the
+ * Built here rather than on each page so every view of the entry renders the
  * same list from the same data.
  */
-export function scopeRailModels(data: EntryPageData): ScopeRailModel[] {
+export function entryModels(data: EntryPageData): EntryModel[] {
   const metricsByModelId = buildModelMetrics(data.entities, data.relations);
   const softwareByModelId = modelSoftware(data.entities, data.relations);
 

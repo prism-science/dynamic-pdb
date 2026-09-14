@@ -25,6 +25,15 @@ export function modelColor(index: number): number {
   return index < MODEL_COLORS.length ? MODEL_COLORS[index] : MODEL_COLOR_REST;
 }
 
+/**
+ * A model colour as CSS. The palette is stored as numbers because that is what
+ * Mol* takes; everything drawn in HTML needs the same value as a string, and
+ * both have to come from one place or the viewer and the page drift apart.
+ */
+export function modelColorHex(color: number): string {
+  return `#${color.toString(16).padStart(6, "0")}`;
+}
+
 /** One model of the entry, as the structure viewer sees it. */
 export type ComparableModel = {
   modelId: string;

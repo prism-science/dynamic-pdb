@@ -155,57 +155,116 @@ export type MetricSpec = {
   /** R-factors and clash counts fall; correlation coefficients rise. */
   lowerIsBetter: boolean;
   decimals: number;
+  /**
+   * The fixed track a value is read against: what the poor end of the scale
+   * stands for, and what the good end does.
+   *
+   * Fixed on purpose. A track stretched to fit whatever an entry happens to
+   * hold makes a thousandth of a difference fill the page on one entry and a
+   * tenth fill it on the next, so the same picture means something different
+   * every time. Against a fixed track a dot near the good end means the model
+   * is good, full stop, and two entries can be read against each other.
+   */
+  worstEnd: number;
+  bestEnd: number;
+  /**
+   * The two cuts in that track, from the poor end: poor|acceptable first,
+   * acceptable|good second.
+   */
+  breaks: [number, number];
   status: (value: number) => MetricStatus;
 };
 
 /**
  * Every figure a model can be ordered by, in the order they are shown.
  *
- * The thresholds are the ones the model page already colours its tiles with,
- * so a value that reads as bad on the record reads as bad in the rail.
+ * The thresholds are the conventional ones the model page already colours its
+ * tiles with, so a value that reads as bad on the record reads as bad in the
+ * rail and lands in the red band of its scale. They are fixed values and not
+ * percentiles of the archive: a percentile needs the distribution over every
+ * structure ever deposited, which is not something we hold.
+ *
+ * The ends are set wide enough to take the values that actually occur and no
+ * wider -- an R-free axis running to 1.0 would squeeze every real model into
+ * its first third. Anything outside them is drawn at the end it ran off.
  */
 export const metricSpecs: MetricSpec[] = [
-  {
+  graded({
     key: "r_work",
     label: "R-work",
     short: "R-work",
     lowerIsBetter: true,
     decimals: 3,
-    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
-  },
-  {
+    worstEnd: 0.4,
+    bestEnd: 0.1,
+    breaks: [0.3, 0.25],
+  }),
+  graded({
     key: "r_free",
     label: "R-free",
     short: "R-free",
     lowerIsBetter: true,
     decimals: 3,
-    status: (value) => (value < 0.25 ? "good" : value < 0.3 ? "warn" : "bad"),
-  },
-  {
+    worstEnd: 0.4,
+    bestEnd: 0.1,
+    breaks: [0.3, 0.25],
+  }),
+  graded({
     key: "rscc",
     label: "RSCC",
     short: "RSCC",
     lowerIsBetter: false,
     decimals: 3,
-    status: (value) => (value >= 0.9 ? "good" : value >= 0.8 ? "warn" : "bad"),
-  },
-  {
+    worstEnd: 0.6,
+    bestEnd: 1,
+    breaks: [0.8, 0.9],
+  }),
+  graded({
     key: "clashscore",
     label: "Clashscore",
     short: "Clash",
     lowerIsBetter: true,
     decimals: 1,
-    status: (value) => (value < 10 ? "good" : value < 20 ? "warn" : "bad"),
-  },
-  {
+    worstEnd: 30,
+    bestEnd: 0,
+    breaks: [20, 10],
+  }),
+  graded({
     key: "molprobity_score",
     label: "MolProbity score",
     short: "MolProb",
     lowerIsBetter: true,
     decimals: 2,
-    status: (value) => (value < 2 ? "good" : value < 3 ? "warn" : "bad"),
-  },
+    worstEnd: 4,
+    bestEnd: 0,
+    breaks: [3, 2],
+  }),
 ];
+
+/**
+ * One spec with its verdict read off its own thresholds.
+ *
+ * Derived rather than written twice so the band a reader sees a dot standing
+ * in and the colour that same value is given elsewhere cannot drift apart.
+ */
+function graded(spec: Omit<MetricSpec, "status">): MetricSpec {
+  const [poor, good] = spec.breaks;
+  return {
+    ...spec,
+    status: (value) =>
+      spec.lowerIsBetter
+        ? value < good
+          ? "good"
+          : value < poor
+            ? "warn"
+            : "bad"
+        : value >= good
+          ? "good"
+          : value >= poor
+            ? "warn"
+            : "bad",
+  };
+}
 
 const specByKey = new Map(metricSpecs.map((spec) => [String(spec.key), spec]));
 
