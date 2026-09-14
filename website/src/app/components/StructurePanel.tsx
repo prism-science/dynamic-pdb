@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 
+import type { OverlayModel } from "@/lib/model-overlays";
 import type { StructureKind } from "@/lib/structureKind";
 
 import styles from "./StructurePanel.module.css";
@@ -24,16 +25,39 @@ const StructureViewer = dynamic(() => import("./StructureViewer"), {
  * No density maps are handed to it: the Layers bar stays off this tab for now.
  * Passing none is what hides it -- the bar draws itself only when there is a
  * layer to list.
+ *
+ * The entry's other models are handed to it, though. Comparing models is what
+ * this record is for, and on this tab the comparison is a thing you look at
+ * rather than a table you read, so it belongs in the viewer itself rather than
+ * on a page of its own.
  */
 export default function StructurePanel({
   url,
   kind,
+  overlays,
+  overlaysSkipped,
+  baseColor,
   square,
 }: {
   url: string;
   kind: StructureKind;
+  /** The entry's other models, for laying over this one. */
+  overlays?: OverlayModel[];
+  /** Other models that exist but have no coordinates the viewer can draw. */
+  overlaysSkipped?: number;
+  /** This model's own colour, used once a comparison is running. */
+  baseColor?: number;
   /** Square the canvas off, for a tab where it is the page rather than a card. */
   square?: boolean;
 }) {
-  return <StructureViewer url={url} kind={kind} square={square} />;
+  return (
+    <StructureViewer
+      url={url}
+      kind={kind}
+      overlays={overlays}
+      overlaysSkipped={overlaysSkipped}
+      baseColor={baseColor}
+      square={square}
+    />
+  );
 }

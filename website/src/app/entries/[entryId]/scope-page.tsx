@@ -19,6 +19,7 @@ import { crystallographyView } from "@/lib/crystallography";
 import { hasExperimentRecord } from "@/lib/experiment";
 import { downloadGroups } from "@/lib/download-files";
 import { defaultModel, modelTitle } from "@/lib/model-metrics";
+import { modelOverlays } from "@/lib/model-overlays";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { scopeRailModels } from "@/lib/scope-rail";
@@ -129,6 +130,10 @@ export default async function ScopePage({
   // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
   const structure = viewableStructure(modelEntity);
+  // The entry's other models, for the Structure tab to lay over this one. Built
+  // from the whole record rather than from the model-scoped slice: the point of
+  // the overlay is exactly the models this page is not currently about.
+  const overlays = modelOverlays(data, model?.id ?? null);
 
   // Everything the Summary tab needs about the selected model, flattened here
   // so the component stays a renderer and the page keeps the joining.
@@ -258,7 +263,14 @@ export default async function ScopePage({
 
           {active === "structure" && structure ? (
             <section aria-label="Structure">
-              <StructurePanel url={structure.url} kind={structure.kind} square />
+              <StructurePanel
+                url={structure.url}
+                kind={structure.kind}
+                overlays={overlays.others}
+                overlaysSkipped={overlays.skipped}
+                baseColor={overlays.baseColor}
+                square
+              />
             </section>
           ) : null}
 

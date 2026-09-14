@@ -114,8 +114,13 @@
   flex-wrap: wrap;
   gap: 10px;
   padding: 6px 10px;
-  background: #f4f5fa;
-  border-bottom: 1px solid #e1e3ee;
+  /* The same grey as the "Sequence of" strip right below it -- Mol*'s
+     $control-background, published as a custom property by molstar-skin.scss.
+     The bar and that strip are the same kind of thing, so they are the same
+     colour, and the hairline between them is the panel ground showing through,
+     which is exactly how Mol* separates its own stacked control rows. */
+  background: var(--viewer-control-background, #d4d6e9);
+  border-bottom: 1px solid var(--viewer-panel-background, #eaebf4);
   font-family: "Helvetica Neue", "Segoe UI", Helvetica, "Source Sans Pro", Arial, sans-serif;
   font-size: 13px;
   color: #1a1e2a;
@@ -124,6 +129,10 @@
 .layerBarLabel {
   color: #1a1e2a;
   font-weight: 700;
+}
+
+.layerBarNote {
+  color: #5f616b;
 }
 
 .mapMenu {
@@ -176,11 +185,72 @@
   top: calc(100% + 4px);
   left: 0;
   z-index: 20;
-  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  /* Caps the drop at roughly nine rows: enough that a short list never
+     scrolls, little enough that a hundred models do not cover the viewer. */
+  max-height: 336px;
   padding: 3px;
   background: #f4f5fa;
   border: 1px solid #d5d7e4;
   box-shadow: 0 6px 18px rgba(26, 30, 42, 0.14);
+}
+
+/* The rows scroll; the filter above them does not. */
+.mapMenuScroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mapMenuSearch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  margin-bottom: 3px;
+  padding: 0 8px;
+  background: #fafbfd;
+  border: 1px solid #d5d7e4;
+  color: #5f616b;
+}
+
+.mapMenuSearch:focus-within {
+  border-color: #663be4;
+}
+
+.mapMenuSearchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: #1a1e2a;
+  font: inherit;
+  outline: none;
+}
+
+.mapMenuSearchInput::placeholder {
+  color: #8b8fa6;
+}
+
+/* The browser's own clear button on type="search" does not match this chrome. */
+.mapMenuSearchInput::-webkit-search-cancel-button {
+  display: none;
+}
+
+.mapMenuSearchCount {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #5f616b;
+}
+
+.mapMenuEmpty {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  color: #5f616b;
 }
 
 .mapMenuRow {
@@ -229,9 +299,28 @@
 }
 
 .mapMenuRowName {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The model's colour, always with its name beside it: the swatch narrows the
+   list down, the name is what actually identifies the row. */
+.modelSwatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* The distance to the model on screen, once it has been laid over it. */
+.mapMenuRowMeta {
+  flex: none;
+  color: #5f616b;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .layerEye {
