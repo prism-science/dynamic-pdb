@@ -16,6 +16,8 @@ import {
   type SequenceTrack,
 } from "@/lib/sequence-tracks";
 
+import DisagreementRegions from "./DisagreementRegions";
+
 import styles from "./SequencePanel.module.css";
 
 /** Fitted to the column: one lane the width of the viewer. */
@@ -57,7 +59,15 @@ const PINCH = 100;
  * come out of the wwPDB validation report, which we hold as a PDF rather than
  * as data. See sequenceTracks for what is left and why.
  */
-export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
+export default function SequencePanel({
+  chains,
+  comparison,
+}: {
+  chains: SequenceChain[];
+  /** How the read of the coordinates is going, for the line that says what
+   *  the rows were measured against and what could not be read. */
+  comparison?: Comparison;
+}) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   /** Pixels per residue, or FIT. Fitted until the reader says otherwise. */
   const [zoom, setZoom] = useState<number | null>(FIT);
@@ -166,6 +176,7 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
   const laneWidth = zoom === FIT ? null : active.length * zoom;
   const mode = residueMode(cell);
   const missing = unmodelledResidues(active.tracks);
+  const note = formatNote(comparison);
   const ticks = rulerTicks(
     active.length,
     laneWidth === null ? 12 : Math.max(2, Math.floor(laneWidth / 58)),
@@ -235,6 +246,12 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
           </span>
         </span>
       </header>
+
+      {/* How the chart was arrived at, said out loud: it is a set of
+          differences between coordinate files, measured after a superposition,
+          and neither of those is visible in a bar. */}
+      {note ? <p className={styles.method}>{note}</p> : null}
+
 
       {/* The lanes are sized in pixels once zoomed in, which is what makes the
           viewer scroll instead of squeezing 300 residues into the column. The
@@ -340,7 +357,16 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
           </Row>
 
           {active.tracks.map((track) => (
-            <Row key={track.key} label={track.label}>
+            <Row
+              key={track.key}
+              label={track.label}
+              hint={track.hint}
+              scale={track.scale}
+              // A hairline of ground between the columns, once there is room
+              // for one: at three pixels a residue they run together into a
+              // silhouette, and below that the gap would eat the bar.
+              separated={cell !== null && cell >= 3}
+            >
               {track.features.map((feature) => (
                 <span
                   key={feature.key}
@@ -348,6 +374,7 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
                   data-kind={track.kind}
                   data-track={track.key}
                   data-variant={feature.variant}
+                  data-held={holds(selection, feature) ? "true" : undefined}
                   style={featureStyle(feature, active.length)}
                   title={feature.title}
                   onClick={(event) => {
@@ -358,6 +385,31 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
               ))}
             </Row>
           ))}
+
+          {/* Nothing has arrived yet, and the tall row is where it will land.
+              Held open rather than left out, because every figure on it comes
+              out of a coordinate file read in the browser -- seconds on a
+              large model -- and without this the board looks finished. */}
+          {active.agreement === null && waiting(comparison) ? (
+            <Row
+              label={`Backbone spread${
+                pendingFiles(comparison) > 0
+                  ? ` · reading ${pendingFiles(comparison)}`
+                  : " (between models)"
+              }`}
+              scale={{ max: 0, unit: "" }}
+            >
+              <span className={styles.waiting} aria-hidden="true">
+                {GHOSTS.map((height, index) => (
+                  <span
+                    key={index}
+                    className={styles.ghost}
+                    style={{ height: `${height}%` }}
+                  />
+                ))}
+              </span>
+            </Row>
+          ) : null}
 
           {/* Last, so it paints over every track: the mark is on top of the
               board, not under it. Still under the row labels, which carry a
@@ -376,27 +428,72 @@ export default function SequencePanel({ chains }: { chains: SequenceChain[] }) {
           )}
         </div>
       </div>
+
+      {active.agreement ? (
+        <DisagreementRegions regions={active.agreement.regions} />
+      ) : null}
     </div>
   );
 }
 
 function Row({
   label,
+  hint,
   sequence,
+  scale,
+  separated,
   children,
 }: {
   label: string;
+  /** What to say on the label's tooltip instead of the label itself. */
+  hint?: string;
   /** The chain's own row, which holds residues and so runs taller. */
   sequence?: boolean;
+  /** Set on a row that draws a quantity: it runs tall and carries an axis. */
+  scale?: { max: number; unit: string };
+  /** There is room to leave a hairline between neighbouring columns. */
+  separated?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className={styles.row}>
-      <span className={styles.rowLabel}>{label}</span>
+      {/* Titled as well as printed: a row named after a model carries that
+          model's whole name, and the label column is 156px wide. A row that
+          was computed rather than read says how, here. */}
+      <span
+        className={styles.rowLabel}
+        data-tall={scale ? "true" : undefined}
+        title={hint ?? label}
+      >
+        {label}
+      </span>
       <div
         className={styles.rowTrack}
         data-sequence={sequence ? "true" : undefined}
+        data-tall={scale ? "true" : undefined}
+        data-separated={separated ? "true" : undefined}
       >
+        {/* The axis, inside the lane: the label column is taken, and a profile
+            whose height stands for nothing stated is not a profile. Both lines
+            are numbered -- one number at the top tells a reader what full
+            height means, two tell them the row is linear, which is the other
+            half of reading a bar off it. */}
+        {scale ? (
+          <>
+            <span className={styles.laneTop} aria-hidden="true" />
+            <span className={styles.laneMid} aria-hidden="true" />
+            {scale.max > 0 ? (
+              <span className={styles.laneAxis} aria-hidden="true">
+                <span className={styles.laneTick} data-at="top">
+                  {axisValue(scale.max)} {scale.unit}
+                </span>
+                <span className={styles.laneTick} data-at="mid">
+                  {axisValue(scale.max / 2)}
+                </span>
+              </span>
+            ) : null}
+          </>
+        ) : null}
         {children}
       </div>
       {/* Keeps the last residue off the right edge once the viewer scrolls. */}
@@ -405,8 +502,52 @@ function Row({
   );
 }
 
+// Enough decimals to tell the two ticks apart, and no more: half of 0.50 is
+// 0.25, and half of 3 is 1.5.
+function axisValue(value: number): string {
+  return value >= 1 ? String(Number(value.toFixed(1))) : value.toFixed(2);
+}
+
+/** Whether a feature falls inside the column the reader is holding. */
+function holds(selection: Span | null, feature: SequenceFeature): boolean {
+  return (
+    selection !== null &&
+    feature.start >= selection.start &&
+    feature.end <= selection.end
+  );
+}
+
+function pendingFiles(comparison?: Comparison): number {
+  return (
+    (comparison?.loadingBase ? 1 : 0) + (comparison?.pending ?? 0)
+  );
+}
+
+/** A deterministic profile for the row held open while files arrive -- no
+ *  randomness, so the server and the browser draw the same thing. */
+const GHOSTS = Array.from({ length: 120 }, (_, index) =>
+  Math.round(
+    28 +
+      18 * Math.sin(index / 4.5) +
+      12 * Math.sin(index / 1.7) +
+      8 * Math.sin(index / 11),
+  ),
+);
+
 /** A run of residues, 1-based and inclusive, in the chain's own numbering. */
 type Span = { start: number; end: number };
+
+type Comparison = {
+  /** Other models still to read. */
+  pending: number;
+  /** Other models that could not be read at all. */
+  unread: number;
+  /** The format of this model's own coordinates when it is not one these rows
+   *  can be read from, or null when it is. */
+  unreadableBase: string | null;
+  /** This model's own file has not arrived yet. */
+  loadingBase: boolean;
+};
 
 /**
  * What the residue row can say in the room each residue gets: a letter, a dot,
@@ -464,10 +605,13 @@ function featureStyle(feature: SequenceFeature, length: number): CSSProperties {
     width: `${(width / length) * 100}%`,
   };
   // A level row draws its value as height from the baseline, so the row reads
-  // as a profile rather than as presence.
+  // as a profile rather than as presence. No floor under the height: on a tall
+  // row a floor would give every residue a visible bar, and "these models
+  // agree here" would look the same as "they are a little apart". A hairline
+  // minimum comes from the stylesheet instead.
   return feature.level === undefined
     ? box
-    : { ...box, height: `${Math.max(feature.level * 100, 6)}%` };
+    : { ...box, height: `${feature.level * 100}%` };
 }
 
 // The residues the coordinates hold no atoms for, so they can be drawn as
@@ -510,4 +654,27 @@ function chainGroups(chains: SequenceChain[]): ChainGroup[] {
 
 function chainName(chain: SequenceChain): string {
   return chain.chainId ?? chain.moleculeName;
+}
+
+// Something is still coming: either this model's own coordinates, or the other
+// models the comparison is with.
+function waiting(comparison?: Comparison): boolean {
+  return (
+    comparison !== undefined &&
+    (comparison.loadingBase || comparison.pending > 0)
+  );
+}
+
+/**
+ * The one sentence that is not a caveat but an explanation of an empty board.
+ *
+ * Everything else that used to be printed here -- what the comparison was
+ * with, how well it fitted, what could not be read -- is on the tooltip of the
+ * row it belongs to. This stays on the page because without it a PDB-format
+ * model looks like a model nothing is known about.
+ */
+function formatNote(comparison?: Comparison): string | null {
+  return comparison?.unreadableBase
+    ? `Residue rows are read from mmCIF, and this model's coordinates are ${comparison.unreadableBase.toUpperCase()}.`
+    : null;
 }

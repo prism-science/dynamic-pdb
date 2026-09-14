@@ -6,6 +6,8 @@ const test = require("node:test");
 const {
   chainsOfEntity,
   readStructure,
+  sequenceShift,
+  shiftResidues,
   unobservedSpans,
 } = require("../src/lib/structure-tracks.ts");
 
@@ -169,4 +171,111 @@ test("should return no chains for an entity the coordinates do not name", () => 
   // when / then
   assert.deepEqual(chainsOfEntity(readStructure(CIF), "7"), []);
   assert.deepEqual(chainsOfEntity(readStructure(CIF), null), []);
+});
+
+// The same three residues written by two programs: the deposit numbers them in
+// the entity's sequence and by the author's numbering, and a re-refinement
+// renumbers its own sequence from 1 while keeping the author's numbers.
+const DEPOSITED = `data_DEP
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_comp_id
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM A A 1 4 21 GLU CA . 1.0 0.0 0.0
+ATOM A A 1 5 22 LEU CA . 4.8 0.0 0.0
+ATOM A A 1 6 23 TRP CA . 8.6 0.0 0.0
+#
+`;
+
+const REREFINED = `data_REF
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_comp_id
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM A A ? 1 21 GLU CA . 1.0 0.0 0.0
+ATOM A A ? 2 22 LEU CA . 4.8 0.0 0.0
+ATOM A A ? 3 23 TRP CA . 8.6 0.0 0.0
+#
+`;
+
+test("should number residues the way the author does, not the way the file's own sequence does", () => {
+  // when -- two files that disagree about every label_seq_id in them
+  const [deposited] = readStructure(DEPOSITED);
+  const [rerefined] = readStructure(REREFINED);
+
+  // then -- both come out in author numbering, which is the one they share
+  assert.deepEqual([...deposited.observed], [21, 22, 23]);
+  assert.deepEqual([...rerefined.observed], [21, 22, 23]);
+  assert.deepEqual([...deposited.names.values()], ["GLU", "LEU", "TRP"]);
+});
+
+test("should read one alpha carbon per residue", () => {
+  // when
+  const [deposited] = readStructure(DEPOSITED);
+
+  // then
+  assert.deepEqual([...deposited.alpha.keys()], [21, 22, 23]);
+  assert.deepEqual(deposited.alpha.get(22), { x: 4.8, y: 0, z: 0 });
+});
+
+test("should still read a file that does not say which entity its chains belong to", () => {
+  // when -- qFit writes label_entity_id as unknown
+  const [rerefined] = readStructure(REREFINED);
+
+  // then -- the chain is kept, with an empty entity id, and found by its name
+  assert.equal(rerefined.entityId, "");
+  assert.equal(rerefined.chainId, "A");
+  assert.deepEqual(chainsOfEntity([rerefined], "1", ["A"]), [rerefined]);
+  // ...and not claimed by an entity that names other chains
+  assert.deepEqual(chainsOfEntity([rerefined], "1", ["B"]), []);
+});
+
+test("should find where a chain's numbering sits on the entry's sequence", () => {
+  // given -- the entry's sequence, with the chain's three residues at 21-23
+  const sequence = `${"A".repeat(20)}ELW${"A".repeat(10)}`;
+  const [deposited] = readStructure(DEPOSITED);
+
+  // when
+  const shift = sequenceShift(deposited, sequence);
+
+  // then -- author numbering already lands on the sequence here
+  assert.equal(shift, 0);
+
+  // and a chain numbered from 1 is moved onto the same positions
+  const renumbered = { ...deposited, observed: new Set([1, 2, 3]),
+    names: new Map([[1, "GLU"], [2, "LEU"], [3, "TRP"]]),
+    alpha: new Map([[1, { x: 1, y: 0, z: 0 }]]), bFactor: new Map(),
+    alternates: new Set([2]), helices: [{ start: 1, end: 2 }], strands: [] };
+  const moved = shiftResidues(renumbered, sequenceShift(renumbered, sequence));
+  assert.deepEqual([...moved.observed], [21, 22, 23]);
+  assert.deepEqual([...moved.alternates], [22]);
+  assert.deepEqual(moved.helices, [{ start: 21, end: 22 }]);
+  assert.ok(moved.alpha.has(21));
+});
+
+test("should leave a chain it cannot line up on its own numbering", () => {
+  // given -- a sequence the residues do not occur in
+  const [deposited] = readStructure(DEPOSITED);
+
+  // when / then
+  assert.equal(sequenceShift(deposited, "A".repeat(40)), 0);
+  assert.equal(sequenceShift(deposited, null), 0);
 });

@@ -1,4 +1,6 @@
 import { cifNumber, cifValue, columnIndex, parseCifLoops } from "@/lib/mmcif";
+import { oneLetter } from "@/lib/residue-codes";
+import type { Point } from "@/lib/superpose";
 
 /**
  * What the coordinates say about each residue of one entity.
@@ -8,20 +10,57 @@ import { cifNumber, cifValue, columnIndex, parseCifLoops } from "@/lib/mmcif";
  * same sequence and different coordinates, and this is where that difference
  * becomes visible.
  *
- * Positions are `label_seq_id`, the residue's index in the entity's sequence.
- * That is the same coordinate the sequence tracks use, so the rows line up.
+ * Positions are the file's own author residue numbers -- `auth_seq_id`, the
+ * numbering a paper cites and a depositor assigns. NOT `label_seq_id`, which
+ * is an index into each file's own `_entity_poly_seq` and therefore means
+ * something different in every file: qFit's output for 4GS3 numbers the
+ * deposit's residue 10 as residue 1, and its own numbering skips nothing where
+ * the deposit skips eight residues, so no single offset relates the two. The
+ * author numbering is the one thing two independently written files of the
+ * same protein agree on.
+ *
+ * Which means these positions are not yet the positions the rows are drawn in.
+ * `sequenceShift` and `shiftResidues` move a chain onto the entry's sequence,
+ * and the caller does that before drawing or comparing anything.
  */
 export type StructureResidues = {
-  /** Entity id as the coordinates label it, e.g. "1". */
+  /**
+   * Entity id as the coordinates label it, e.g. "1" -- empty when the file
+   * does not say.
+   *
+   * Plenty of them do not. qFit writes `label_entity_id` as unknown, and a
+   * file is not useless for that: it still names its chains and still numbers
+   * its residues in the entity's own sequence, which is everything these rows
+   * are drawn from. So the id is recorded when it is there and the chain is
+   * matched on its author id when it is not.
+   */
   entityId: string;
   /** Author chain id, the one the entity's `chains` list uses. */
   chainId: string;
   /** Residues that have at least one atom. */
   observed: Set<number>;
+  /** What each residue is called, for lining this chain up against the
+   *  sequence the entry records. */
+  names: Map<number, string>;
   /** Mean B-factor per residue, over the atoms that carry one. */
   bFactor: Map<number, number>;
   /** Residues modelled in more than one conformation. */
   alternates: Set<number>;
+  /**
+   * Where this model puts each residue's alpha carbon.
+   *
+   * One position per residue, and the first one the file gives: mmCIF writes
+   * conformer A before B and ensemble member 1 before 2, so first-wins picks
+   * a single consistent copy of the chain out of a multiconformer or ensemble
+   * file. Averaging them would invent a position no conformer holds, and
+   * keeping them all would mean this map could not answer "where is residue
+   * 66" at all.
+   *
+   * Backbone only, and one atom of it, because this exists to be compared
+   * between models: the alpha carbon is the atom every amino acid has exactly
+   * one of, so it is the one thing two models can always be lined up on.
+   */
+  alpha: Map<number, Point>;
   /** Helix spans, inclusive, in label_seq_id. */
   helices: Span[];
   /** Strand spans, inclusive. */
@@ -52,17 +91,29 @@ export function readStructure(cif: string): StructureResidues[] {
   }
 
   const entityAt = columnIndex(atoms, "label_entity_id");
-  const seqAt = columnIndex(atoms, "label_seq_id");
+  const seqAt = columnIndex(atoms, "auth_seq_id");
+  const labelSeqAt = columnIndex(atoms, "label_seq_id");
   const authAt = columnIndex(atoms, "auth_asym_id");
   const labelAsymAt = columnIndex(atoms, "label_asym_id");
   const altAt = columnIndex(atoms, "label_alt_id");
   const bAt = columnIndex(atoms, "B_iso_or_equiv");
+  const atomAt = columnIndex(atoms, "label_atom_id");
+  const compAt = columnIndex(atoms, "label_comp_id");
+  const xAt = columnIndex(atoms, "Cartn_x");
+  const yAt = columnIndex(atoms, "Cartn_y");
+  const zAt = columnIndex(atoms, "Cartn_z");
   const groupAt = columnIndex(atoms, "group_PDB");
-  if (entityAt === -1 || seqAt === -1) {
+  // A residue number of some kind is the one thing there is no working around.
+  // The entity id is a nicety.
+  if (seqAt === -1 && labelSeqAt === -1) {
     return [];
   }
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
+  // Secondary structure is recorded in label numbering even where the atoms
+  // are read in author numbering, so the two have to be joined -- through the
+  // atoms, which carry both.
+  const authOfLabel = new Map<string, Map<number, number>>();
 
   for (const row of atoms.rows) {
     // HETATM rows are ligands, ions and waters; they carry no label_seq_id in
@@ -71,9 +122,10 @@ export function readStructure(cif: string): StructureResidues[] {
     if (groupAt !== -1 && cifValue(row[groupAt]) !== "ATOM") {
       continue;
     }
-    const entityId = cifValue(row[entityAt]);
-    const seq = cifNumber(row[seqAt]);
-    if (entityId === null || seq === null) {
+    const entityId = (entityAt === -1 ? null : cifValue(row[entityAt])) ?? "";
+    const labelSeq = labelSeqAt === -1 ? null : cifNumber(row[labelSeqAt]);
+    const seq = (seqAt === -1 ? null : cifNumber(row[seqAt])) ?? labelSeq;
+    if (seq === null) {
       continue;
     }
     const chainId =
@@ -84,8 +136,37 @@ export function readStructure(cif: string): StructureResidues[] {
     const entity = ensure(byEntity, key, entityId, chainId);
     entity.observed.add(seq);
 
+    if (labelSeq !== null) {
+      const labels = authOfLabel.get(key) ?? new Map<number, number>();
+      if (!labels.has(labelSeq)) {
+        labels.set(labelSeq, seq);
+      }
+      authOfLabel.set(key, labels);
+    }
+
+    if (compAt !== -1 && !entity.names.has(seq)) {
+      const name = cifValue(row[compAt]);
+      if (name !== null) {
+        entity.names.set(seq, name);
+      }
+    }
+
     if (altAt !== -1 && cifValue(row[altAt]) !== null) {
       entity.alternates.add(seq);
+    }
+
+    if (
+      atomAt !== -1 &&
+      xAt !== -1 &&
+      !entity.alpha.has(seq) &&
+      cifValue(row[atomAt]) === "CA"
+    ) {
+      const x = cifNumber(row[xAt]);
+      const y = yAt === -1 ? null : cifNumber(row[yAt]);
+      const z = zAt === -1 ? null : cifNumber(row[zAt]);
+      if (x !== null && y !== null && z !== null) {
+        entity.alpha.set(seq, { x, y, z });
+      }
     }
 
     if (bAt !== -1) {
@@ -114,11 +195,19 @@ export function readStructure(cif: string): StructureResidues[] {
   // Secondary structure is recorded per chain, not per entity, so each span is
   // attributed to the entity that chain belongs to.
   const keyOfLabelChain = labelChainToKey(atoms, entityAt);
-  addSpans(byEntity, loops.get("_struct_conf"), keyOfLabelChain, "helices", true);
+  addSpans(
+    byEntity,
+    loops.get("_struct_conf"),
+    keyOfLabelChain,
+    authOfLabel,
+    "helices",
+    true,
+  );
   addSpans(
     byEntity,
     loops.get("_struct_sheet_range"),
     keyOfLabelChain,
+    authOfLabel,
     "strands",
     false,
   );
@@ -126,15 +215,30 @@ export function readStructure(cif: string): StructureResidues[] {
   return [...byEntity.values()].sort(byEntityThenChain);
 }
 
-/** The chains of one entity, in the order a picker should list them. */
+/**
+ * The chains of one entity, in the order a picker should list them.
+ *
+ * Matched on the entity id the file gives, and failing that on the author
+ * chain ids the entry lists for this entity -- which is the only handle left
+ * on a file that writes its entity ids as unknown. Without the fallback such a
+ * model shows no residue rows at all, which is what it used to do.
+ */
 export function chainsOfEntity(
   chains: StructureResidues[],
   entityId: string | null,
+  authorChains: readonly string[] = [],
 ): StructureResidues[] {
-  if (entityId === null) {
-    return [];
+  const named =
+    entityId === null
+      ? []
+      : chains.filter((chain) => chain.entityId === entityId);
+  if (named.length > 0) {
+    return named;
   }
-  return chains.filter((chain) => chain.entityId === entityId);
+  const wanted = new Set(authorChains);
+  return chains.filter(
+    (chain) => chain.entityId === "" && wanted.has(chain.chainId),
+  );
 }
 
 // Entity ids are numbers kept as text, so a plain string sort puts entity 10
@@ -168,8 +272,10 @@ function ensure(
     entityId,
     chainId,
     observed: new Set(),
+    names: new Map(),
     bFactor: new Map(),
     alternates: new Set(),
+    alpha: new Map(),
     helices: [],
     strands: [],
   };
@@ -191,10 +297,10 @@ function labelChainToKey(
   }
   for (const row of atoms.rows) {
     const label = cifValue(row[labelAt]);
-    const entityId = cifValue(row[entityAt]);
-    if (label === null || entityId === null || map.has(label)) {
+    if (label === null || map.has(label)) {
       continue;
     }
+    const entityId = (entityAt === -1 ? null : cifValue(row[entityAt])) ?? "";
     const auth = (authAt === -1 ? null : cifValue(row[authAt])) ?? label;
     map.set(label, `${entityId}:${auth}`);
   }
@@ -205,6 +311,7 @@ function addSpans(
   byEntity: Map<string, StructureResidues>,
   loop: { columns: string[]; rows: string[][] } | undefined,
   keyOfLabelChain: Map<string, string>,
+  authOfLabel: Map<string, Map<number, number>>,
   field: "helices" | "strands",
   helicesOnly: boolean,
 ): void {
@@ -213,9 +320,11 @@ function addSpans(
   }
   const begAt = loop.columns.indexOf("beg_label_seq_id");
   const endAt = loop.columns.indexOf("end_label_seq_id");
+  const begAuthAt = loop.columns.indexOf("beg_auth_seq_id");
+  const endAuthAt = loop.columns.indexOf("end_auth_seq_id");
   const chainAt = loop.columns.indexOf("beg_label_asym_id");
   const typeAt = loop.columns.indexOf("conf_type_id");
-  if (begAt === -1 || endAt === -1) {
+  if ((begAt === -1 || endAt === -1) && (begAuthAt === -1 || endAuthAt === -1)) {
     return;
   }
 
@@ -228,22 +337,129 @@ function addSpans(
         continue;
       }
     }
-    const start = cifNumber(row[begAt]);
-    const end = cifNumber(row[endAt]);
-    if (start === null || end === null || end < start) {
-      continue;
-    }
     const label = chainAt === -1 ? null : cifValue(row[chainAt]);
     const key = label === null ? null : (keyOfLabelChain.get(label) ?? null);
     // With no chain to attribute it to, the span goes to the only row there is;
     // with several, it is dropped rather than drawn on the wrong one.
     const target = key ?? (byEntity.size === 1 ? [...byEntity.keys()][0] : null);
     const row_ = target === null ? null : byEntity.get(target);
-    if (!row_) {
+    if (!row_ || target === null) {
+      continue;
+    }
+
+    // Author numbering if the record carries it, and otherwise the label
+    // numbering put through the chain's own label-to-author table. A span
+    // neither route can place is dropped: drawn in the wrong numbering it
+    // would sit on residues it says nothing about.
+    const labels = authOfLabel.get(target);
+    const authOf = (at: number, labelAt: number): number | null => {
+      const direct = at === -1 ? null : cifNumber(row[at]);
+      if (direct !== null) {
+        return direct;
+      }
+      const own = labelAt === -1 ? null : cifNumber(row[labelAt]);
+      return own === null ? null : (labels?.get(own) ?? null);
+    };
+    const start = authOf(begAuthAt, begAt);
+    const end = authOf(endAuthAt, endAt);
+    if (start === null || end === null || end < start) {
       continue;
     }
     row_[field].push({ start, end });
   }
+}
+
+/**
+ * Where this chain's own residue numbering sits on the entry's sequence.
+ *
+ * Returns the number to add to a residue number from the file to get a
+ * position in that sequence, and 0 when it cannot be worked out.
+ *
+ * This is not paranoia about a spec. `label_seq_id` is an index into the
+ * file's own `_entity_poly_seq`, and a program that writes out only the part
+ * of the chain it modelled writes a sequence that starts there -- qFit's
+ * output for 4GS3 numbers the deposit's residue 10 as residue 1. Two files of
+ * the same protein can therefore disagree about every residue number in them
+ * while agreeing about the protein, and a comparison that trusted the numbers
+ * would report the whole chain as moved by several angstroms. Lining both up
+ * against the entry's sequence by residue name puts them in one coordinate,
+ * which is also the coordinate the ruler is drawn in.
+ *
+ * Candidates come from the first residue's name: the offsets that could put it
+ * anywhere in the sequence it actually occurs. Each is then scored over every
+ * named residue, and the best wins only if it is convincing -- four fifths of
+ * the residues have to agree, and it has to beat the runner-up. A chain that
+ * does not align stays on its own numbering rather than being moved somewhere
+ * arbitrary.
+ */
+export function sequenceShift(
+  residues: StructureResidues,
+  sequence: string | null,
+): number {
+  if (!sequence || residues.names.size === 0) {
+    return 0;
+  }
+
+  const named = [...residues.names.entries()]
+    .map(([seq, name]) => [seq, oneLetter(name)] as const)
+    .filter((pair): pair is readonly [number, string] => pair[1] !== null)
+    .sort((a, b) => a[0] - b[0]);
+  if (named.length === 0) {
+    return 0;
+  }
+
+  const [firstSeq, firstLetter] = named[0];
+  const candidates = new Set<number>();
+  for (let index = 0; index < sequence.length; index += 1) {
+    if (sequence[index] === firstLetter) {
+      candidates.add(index + 1 - firstSeq);
+    }
+  }
+
+  let best = 0;
+  let bestScore = 0;
+  let runnerUp = 0;
+  for (const shift of candidates) {
+    let score = 0;
+    for (const [seq, letter] of named) {
+      if (sequence[seq + shift - 1] === letter) {
+        score += 1;
+      }
+    }
+    if (score > bestScore) {
+      runnerUp = bestScore;
+      bestScore = score;
+      best = shift;
+    } else if (score > runnerUp) {
+      runnerUp = score;
+    }
+  }
+
+  return bestScore >= named.length * 0.8 && bestScore > runnerUp ? best : 0;
+}
+
+/** The same chain with every residue number moved by `shift`. */
+export function shiftResidues(
+  residues: StructureResidues,
+  shift: number,
+): StructureResidues {
+  if (shift === 0) {
+    return residues;
+  }
+  const move = <T>(entries: Iterable<[number, T]>) =>
+    new Map([...entries].map(([seq, value]) => [seq + shift, value] as [number, T]));
+  const span = (spans: Span[]) =>
+    spans.map(({ start, end }) => ({ start: start + shift, end: end + shift }));
+  return {
+    ...residues,
+    observed: new Set([...residues.observed].map((seq) => seq + shift)),
+    names: move(residues.names),
+    bFactor: move(residues.bFactor),
+    alternates: new Set([...residues.alternates].map((seq) => seq + shift)),
+    alpha: move(residues.alpha),
+    helices: span(residues.helices),
+    strands: span(residues.strands),
+  };
 }
 
 /** Residues of 1..length that the coordinates do not contain. */

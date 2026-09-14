@@ -304,6 +304,8 @@ export default async function ScopePage({
               <CoordinateSequencePanel
                 entities={entities}
                 url={structure?.url ?? null}
+                kind={structure?.kind ?? null}
+                others={overlays.others}
               />
               {/* The table is the width of the tab and spaces itself off the
                   viewer, so it needs no wrapper to place it. */}
