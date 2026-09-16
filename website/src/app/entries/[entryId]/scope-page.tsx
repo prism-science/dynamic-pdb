@@ -202,7 +202,7 @@ export default async function ScopePage({
 
   return (
     <main
-      className={styles.page}
+      className={`${styles.page} ${styles.scopePage}`}
       aria-label={`${entryLabel} entry`}
     >
       <div className={styles.scope}>

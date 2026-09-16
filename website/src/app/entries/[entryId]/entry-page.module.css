@@ -12,11 +12,31 @@
 /* Scope — the rail beside the record it selects                          */
 /* --------------------------------------------------------------------- */
 
+/* This page only: its bottom room is spent inside .scopeGrid instead, so that
+   the rail's column runs to the end of the document. .page keeps its padding
+   for the three other pages that use it. */
+.scopePage {
+  padding-bottom: 0;
+}
+
 .scope {
   /* The page's top padding, the identity strip, and the space under it. The
      tabs stick directly below this, so the number lives here rather than being
      guessed twice. */
   --scope-head-height: 96px;
+
+  /* The room under the record, which has to be spent INSIDE the grid.
+     A sticky box holds still only for as long as its container outlasts it,
+     and the rail is exactly one viewport tall, so its travel is the grid row's
+     height minus its own. Anything below the grid row is page that scrolls
+     while the rail has already run out of container -- the rail gives up
+     exactly as many pixels at the foot of the scroll as there is page beneath
+     the grid. On .page's padding-bottom, where this used to live, that was 88
+     of them: the model list drifted up by 88px every time the record was
+     scrolled to the end. .scopePage zeroes the page padding and .scopeBody
+     spends it instead, which puts it inside the row and takes the drift to
+     nothing. */
+  --scope-foot-height: 88px;
 
   /* The site's own measure. This page is the reason it is as wide as it is --
      it carries a navigation column the others do not -- and the header, the
@@ -77,14 +97,12 @@
 }
 
 /* Room under the last section so the record can scroll clear of the rail's
-   full-height column rather than ending flush against the fold. */
-.scopeBody {
-  padding-bottom: 40px;
-}
-
+   full-height column rather than ending flush against the fold, plus the
+   page's own bottom room, moved in here off .page -- see --scope-foot-height. */
 .scopeBody {
   min-width: 0;
   padding-left: 30px;
+  padding-bottom: calc(40px + var(--scope-foot-height));
 }
 
 /* The parent record, above the model's own name: the rail says which entry we
