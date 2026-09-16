@@ -1,0 +1,35 @@
+/* The viewer fills whatever box it is given, so the box lives here. Same height
+   the Mol* canvas held on this tab before, so switching viewers does not move
+   the page, and square like the panel it replaced: on this tab the viewer is the
+   page rather than a card on it. */
+.frame {
+  height: min(78vh, 780px);
+  min-height: 560px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  /* The viewer layers its own chrome over the canvas with z-index values in the
+     tens -- the tray in the top-right corner is z-10 -- which are numbers about
+     its own box, not about this page. Unscoped they land in the root stacking
+     context, where they outrank the entry's sticky header (z-3) and tab strip
+     (z-2), so the tray rode over both on the way up instead of sliding under
+     them. Only the app header (z-50) was high enough to cover it.
+
+     A stacking context here confines every z-index the viewer uses to this
+     element's own place in the page, so page chrome outside the frame wins
+     whatever numbers the viewer picks internally. `isolation` rather than
+     `position: relative; z-index: 0`, because it does not make this a
+     containing block: the viewer's hover flyouts are position:fixed precisely
+     so they can escape the overflow above, and they still do. */
+  isolation: isolate;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 13px;
+}

@@ -1,4 +1,5 @@
 let values = {};
+let requestHeaders = {};
 
 exports.cookies = async function cookies() {
   return {
@@ -13,4 +14,12 @@ exports.cookies = async function cookies() {
 
 exports.__setCookieValues = function setCookieValues(nextValues) {
   values = { ...nextValues };
+};
+
+exports.headers = async function headers() {
+  return new Headers(requestHeaders);
+};
+
+exports.__setRequestHeaders = function setRequestHeaders(nextHeaders) {
+  requestHeaders = { ...nextHeaders };
 };

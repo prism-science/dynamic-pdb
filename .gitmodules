@@ -1,0 +1,4 @@
+[submodule "website/vendor/hetstar"]
+	path = website/vendor/hetstar
+	url = https://github.com/rtviii/hetstar.git
+	branch = main

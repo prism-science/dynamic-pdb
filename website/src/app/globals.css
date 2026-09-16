@@ -96,6 +96,14 @@
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Monaco,
     Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* The heterogeneity viewer was drawn against IBM Plex and reads these two
+     names, falling back to system fonts when the host leaves them unset --
+     which would put the viewer in a different typeface from the page around
+     it. Pointed at our own stacks instead, so it matches. It already shares
+     the palette: its Tailwind theme copies the tokens above. */
+  --font-plex-sans: var(--font-sans);
+  --font-plex-mono: var(--font-mono);
 }
 
 html,
