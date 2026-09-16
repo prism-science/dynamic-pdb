@@ -2,6 +2,12 @@
 FROM harbor.astera.sh/dockerhub-cache/node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+# @dynamic-pdb/hetkit and @dynamic-pdb/hetstar are `file:` deps pointing into the
+# vendored submodule, so npm has to read their manifests to resolve the lock. Only
+# the manifests are copied here: their source arrives with `COPY . .` in the builder
+# stage, and this keeps the install layer cached across ordinary hetstar edits.
+COPY vendor/hetstar/packages/hetkit/package.json ./vendor/hetstar/packages/hetkit/
+COPY vendor/hetstar/packages/hetstar/package.json ./vendor/hetstar/packages/hetstar/
 RUN npm ci
 
 FROM harbor.astera.sh/dockerhub-cache/node:22-alpine AS builder

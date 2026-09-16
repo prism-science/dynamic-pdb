@@ -4,6 +4,10 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // hetstar and hetkit are vendored as a git submodule (website/vendor/hetstar)
+  // and ship their `src/` as raw TypeScript rather than a built bundle, so Next
+  // has to compile them the way it compiles our own source.
+  transpilePackages: ["@dynamic-pdb/hetkit", "@dynamic-pdb/hetstar"],
   devIndicators: false,
   // The dev server is reached through an ngrok tunnel as well as localhost, and
   // Next blocks dev-time requests (assets, HMR) whose Origin it does not know:

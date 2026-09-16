@@ -168,6 +168,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # website/vendor/hetstar is a submodule the build compiles from source.
+          submodules: true
 
       - uses: actions/setup-node@v4
         with:
@@ -215,6 +218,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The website image is built from website/, submodule included.
+          submodules: true
 
       - name: Login to Harbor
         env:

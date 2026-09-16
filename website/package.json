@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dynamic-pdb/hetkit": "file:vendor/hetstar/packages/hetkit",
+    "@dynamic-pdb/hetstar": "file:vendor/hetstar/packages/hetstar",
     "@scalar/api-reference": "^1.66.1",
     "@xyflow/react": "^12.11.2",
-    "molstar": "^5.10.1",
+    "molstar": "^5.11.0",
     "next": "^16.3.2",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"

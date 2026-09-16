@@ -19,5 +19,8 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // The vendored submodule carries its own tsconfigs and its own Next 14 dev shell;
+  // it is not part of this project's program. Files it exports are still checked
+  // where we import them.
+  "exclude": ["node_modules", "vendor"]
 }

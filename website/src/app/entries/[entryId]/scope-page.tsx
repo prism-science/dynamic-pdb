@@ -24,6 +24,7 @@ import { modelOverlays } from "@/lib/model-overlays";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { entryModels } from "@/lib/entry-models";
+import { hetstarDpdbConfig } from "@/lib/hetstar";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import {
@@ -40,7 +41,7 @@ import EntryTabs, {
   resolveTab,
 } from "@/app/components/EntryTabs";
 import ScopeRail from "@/app/components/ScopeRail";
-import StructurePanel from "@/app/components/StructurePanel";
+import HetstarPanel from "@/app/components/HetstarPanel";
 import SimilarProteins from "@/app/components/SimilarProteins";
 import {
   buildProvenance,
@@ -131,10 +132,15 @@ export default async function ScopePage({
   // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
   const structure = viewableStructure(modelEntity);
-  // The entry's other models, for the Structure tab to lay over this one. Built
-  // from the whole record rather than from the model-scoped slice: the point of
-  // the overlay is exactly the models this page is not currently about.
+  // The entry's other models, for the Sequence tab to read alongside this one.
+  // Built from the whole record rather than from the model-scoped slice: the
+  // point of the comparison is exactly the models this page is not about.
+  // (The Structure tab no longer uses these -- the heterogeneity viewer picks
+  // its own qFit/deposited pair.)
   const overlays = modelOverlays(data, model?.id ?? null);
+  // Resolved per request: whether the viewer can call the catalogue directly
+  // depends on the origin this page is being served from.
+  const dpdb = await hetstarDpdbConfig();
 
   // The comparison the page is built around. All of it is derived from the
   // entry's own metrics, so an entry recording different figures -- or none --
@@ -196,7 +202,7 @@ export default async function ScopePage({
 
   return (
     <main
-      className={styles.page}
+      className={`${styles.page} ${styles.scopePage}`}
       aria-label={`${entryLabel} entry`}
     >
       <div className={styles.scope}>
@@ -274,14 +280,7 @@ export default async function ScopePage({
 
           {active === "structure" && structure ? (
             <section aria-label="Structure">
-              <StructurePanel
-                url={structure.url}
-                kind={structure.kind}
-                overlays={overlays.others}
-                overlaysSkipped={overlays.skipped}
-                baseColor={overlays.baseColor}
-                square
-              />
+              <HetstarPanel entryId={data.entry.id} dpdb={dpdb} />
             </section>
           ) : null}
 

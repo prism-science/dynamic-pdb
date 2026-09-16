@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "./molstar-skin.scss";
+// Precompiled from Tailwind inside the package; every utility is scoped under
+// the .hetstar wrapper the viewer renders, and preflight is off.
+import "@dynamic-pdb/hetstar/styles.css";
 import "./globals.css";
 import AppHeader from "./components/AppHeader";
 
