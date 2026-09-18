@@ -1,3 +1,40 @@
+/* The viewer owns all four of its own corners, so its full-screen control sits
+   out here instead of fighting them for the same eight pixels. */
+.bar {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.expand:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.expand:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 /* The viewer fills whatever box it is given, so the box lives here. Same height
    the Mol* canvas held on this tab before, so switching viewers does not move
    the page, and square like the panel it replaced: on this tab the viewer is the
@@ -32,4 +69,32 @@
   background: var(--surface-muted);
   color: var(--text-muted);
   font-size: 13px;
+}
+
+/* Full screen, both ways in. The bar comes along so the way back out is still on
+   screen, which is why the shell rather than the frame is what expands. */
+.shell:fullscreen,
+.shell[data-overlay] {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  background: var(--bg);
+}
+
+/* The frame stops being 78vh of a page it is no longer on and takes whatever the
+   bar leaves. min-height has to go with it, or 560px would hold the floor up on
+   a short screen and push the bar off the top. */
+.shell:fullscreen .frame,
+.shell[data-overlay] .frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* No Fullscreen API, or it was refused: cover the viewport by hand. Above the
+   site header, which sits at 50. */
+.shell[data-overlay] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
 }
