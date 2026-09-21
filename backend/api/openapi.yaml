@@ -2501,6 +2501,41 @@ components:
           type: string
           format: date-time
 
+    ResidueData:
+      type: object
+      required: [label_asym_id, label_seq_id]
+      properties:
+        label_asym_id:
+          type: string
+        label_seq_id:
+          type: integer
+        label_comp_id:
+          type: string
+        auth_asym_id:
+          type: string
+        auth_seq_id:
+          type: integer
+        pdbx_pdb_ins_code:
+          type: string
+        label_alt_id:
+          type: string
+        uniprot_position:
+          type: string
+        rscc:
+          type: number
+          format: double
+        b_iso:
+          type: number
+          format: double
+        occupancy:
+          type: number
+          format: double
+        conformer_count:
+          type: integer
+        rmsf:
+          type: number
+          format: double
+
     PolymerEntityOrganism:
       type: object
       required: [scientific_name]
@@ -2626,7 +2661,7 @@ components:
 
     ModelAttributes:
       type: object
-      required: [id, entry_id, created_by, title, metadata, created_at, updated_at, metrics]
+      required: [id, entry_id, created_by, title, metadata, residue_data, created_at, updated_at, metrics]
       properties:
         id:
           type: string
@@ -2644,6 +2679,10 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        residue_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResidueData"
         idempotency_key:
           type: string
           nullable: true
@@ -3263,7 +3302,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
         - type: object
-          required: [metadata, metrics, artifacts]
+          required: [metadata, residue_data, metrics, artifacts]
           properties:
             thumbnail_image_url:
               type: string
@@ -3275,6 +3314,10 @@ components:
             metadata:
               type: object
               additionalProperties: true
+            residue_data:
+              type: array
+              items:
+                $ref: "#/components/schemas/ResidueData"
             metrics:
               type: array
               items:

@@ -132,7 +132,11 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 			}`)
 		case "/rest/v1/core/polymer_entity/5AMF/2":
 			writeText(t, w, `{
-				"entity_poly": {"pdbx_seq_one_letter_code_can": "ACDE"},
+				"entity_poly": {
+					"pdbx_seq_one_letter_code": "ACDE",
+					"pdbx_seq_one_letter_code_can": "ACDE",
+					"type": "polypeptide(L)"
+				},
 				"rcsb_polymer_entity": {
 					"pdbx_description": "Example protein",
 					"pdbx_fragment": "Catalytic domain",
@@ -140,6 +144,8 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 				},
 				"rcsb_polymer_entity_container_identifiers": {
 					"entity_id": "2",
+					"asym_ids": ["A"],
+					"auth_asym_ids": ["X"],
 					"reference_sequence_identifiers": [{
 						"database_accession": "P12345",
 						"database_name": "UniProt",
@@ -149,7 +155,35 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 				"rcsb_entity_source_organism": [
 					{"ncbi_scientific_name": "Homo sapiens", "ncbi_taxonomy_id": 9606},
 					{"ncbi_scientific_name": "Escherichia coli", "ncbi_taxonomy_id": 562}
-				]
+				],
+				"rcsb_polymer_entity_align": [{
+					"provenance_source": "SIFTS",
+					"reference_database_name": "UniProt",
+					"reference_database_accession": "P12345",
+					"aligned_regions": [{"entity_beg_seq_id": 1, "ref_beg_seq_id": 10, "length": 4}]
+				}]
+			}`)
+		case "/rest/v1/core/polymer_entity_instance/5AMF/A":
+			writeText(t, w, `{
+				"rcsb_polymer_entity_instance_container_identifiers": {
+					"entry_id": "5AMF",
+					"entity_id": "2",
+					"asym_id": "A",
+					"auth_asym_id": "X",
+					"auth_to_entity_poly_seq_mapping": ["10"]
+				},
+				"pdbx_poly_seq_scheme": [{
+					"asym_id": "A",
+					"seq_id": 1,
+					"mon_id": "ALA",
+					"auth_seq_num": 10,
+					"pdb_strand_id": "X",
+					"pdb_ins_code": "."
+				}],
+				"rcsb_polymer_instance_feature": [{
+					"type": "RSCC",
+					"feature_positions": [{"beg_seq_id": 1, "beg_comp_id": "ALA", "values": [0.97]}]
+				}]
 			}`)
 		default:
 			http.NotFound(w, r)
@@ -166,6 +200,8 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	entryDetails, err := client.GetEntryDetails(context.Background(), "5amf")
 	require.NoError(t, err)
 	polymerEntityDetails, err := client.GetPolymerEntityDetails(context.Background(), "5amf", "2")
+	require.NoError(t, err)
+	polymerInstanceDetails, err := client.GetPolymerEntityInstanceDetails(context.Background(), "5amf", "A")
 
 	// then
 	require.NoError(t, err)
@@ -222,14 +258,28 @@ func Test_should_get_metadata_and_metrics_from_configured_data_base_url(t *testi
 	assert.Equal(t, "Escherichia coli", polymerEntityDetails.SourceOrganisms[1].ScientificName)
 	assert.Equal(t, 9606, *polymerEntityDetails.SourceOrganisms[0].NCBITaxonomyID)
 	assert.Equal(t, "ACDE", polymerEntityDetails.Polymer.CanonicalSequence)
+	assert.Equal(t, "ACDE", polymerEntityDetails.Polymer.Sequence)
+	assert.Equal(t, "polypeptide(L)", polymerEntityDetails.Polymer.Type)
 	assert.Equal(t, "Example protein", polymerEntityDetails.Entity.Description)
 	assert.Equal(t, "Catalytic domain", polymerEntityDetails.Entity.Fragment)
 	assert.Equal(t, "A12G", polymerEntityDetails.Entity.Mutation)
 	assert.Equal(t, "2", polymerEntityDetails.Identifiers.EntityID)
+	assert.Equal(t, []string{"A"}, polymerEntityDetails.Identifiers.AsymIDs)
+	assert.Equal(t, []string{"X"}, polymerEntityDetails.Identifiers.AuthAsymIDs)
 	require.Len(t, polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers, 1)
 	assert.Equal(t, "P12345", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseAccession)
 	assert.Equal(t, "UniProt", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].DatabaseName)
 	assert.Equal(t, "SIFTS", polymerEntityDetails.Identifiers.ReferenceSequenceIdentifiers[0].ProvenanceSource)
+	require.Len(t, polymerEntityDetails.Alignments, 1)
+	assert.Equal(t, "P12345", polymerEntityDetails.Alignments[0].ReferenceDatabaseAccession)
+	require.Len(t, polymerInstanceDetails.SequenceScheme, 1)
+	assert.Equal(t, "A", polymerInstanceDetails.Identifiers.AsymID)
+	assert.Equal(t, "X", polymerInstanceDetails.Identifiers.AuthAsymID)
+	assert.Equal(t, []string{"10"}, polymerInstanceDetails.Identifiers.AuthToEntityPolySeqMapping)
+	assert.Equal(t, 10, *polymerInstanceDetails.SequenceScheme[0].AuthSeqNum)
+	require.Len(t, polymerInstanceDetails.Features, 1)
+	assert.Equal(t, "RSCC", polymerInstanceDetails.Features[0].Type)
+	assert.Equal(t, 0.97, *polymerInstanceDetails.Features[0].Positions[0].Values[0])
 }
 
 func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {

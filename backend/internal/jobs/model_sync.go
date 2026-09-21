@@ -113,7 +113,43 @@ func (s *modelSyncStrategy) buildModelUpdate(
 
 	desiredRevision := models.ModelRevision{}
 	applyRCSBModelDetails(&desiredRevision, details)
+	residueData, err := s.buildResidueData(ctx, pdbID, details.Identifiers.PolymerEntityIDs)
+	if err != nil {
+		return models.ModelRevision{}, nil, fmt.Errorf("build RCSB residue data for %s: %w", pdbID, err)
+	}
+	desiredRevision.Metadata.ResidueData = residueData
 	return desiredRevision, modelMetricsFromRCSB(details), nil
+}
+
+func (s *modelSyncStrategy) buildResidueData(
+	ctx context.Context,
+	pdbID string,
+	polymerEntityIDs []string,
+) ([]models.ResidueData, error) {
+	var residues []models.ResidueData
+	for _, entityID := range normalizedUniqueStrings(polymerEntityIDs) {
+		entity, err := s.rcsbClient.GetPolymerEntityDetails(ctx, pdbID, entityID)
+		if err != nil {
+			return nil, fmt.Errorf("get polymer entity %s_%s: %w", pdbID, entityID, err)
+		}
+		for _, asymID := range normalizedUniqueStrings(entity.Identifiers.AsymIDs) {
+			instance, err := s.rcsbClient.GetPolymerEntityInstanceDetails(ctx, pdbID, asymID)
+			if err != nil {
+				return nil, fmt.Errorf("get polymer entity instance %s.%s: %w", pdbID, asymID, err)
+			}
+			residues = append(residues, residueDataFromRCSB(entity, instance, asymID)...)
+		}
+	}
+	sort.Slice(residues, func(first int, second int) bool {
+		if residues[first].LabelAsymID != residues[second].LabelAsymID {
+			return residues[first].LabelAsymID < residues[second].LabelAsymID
+		}
+		if residues[first].LabelSeqID != residues[second].LabelSeqID {
+			return residues[first].LabelSeqID < residues[second].LabelSeqID
+		}
+		return stringValue(residues[first].LabelAltID) < stringValue(residues[second].LabelAltID)
+	})
+	return residues, nil
 }
 
 func compareModelUpdate(
@@ -129,7 +165,8 @@ func compareModelUpdate(
 		!reflect.DeepEqual(currentRevision.Metadata.ModeledResidues, desiredRevision.Metadata.ModeledResidues) ||
 		!reflect.DeepEqual(currentRevision.Metadata.UniqueProteinChains, desiredRevision.Metadata.UniqueProteinChains) ||
 		!reflect.DeepEqual(currentRevision.Metadata.UnmodeledFraction, desiredRevision.Metadata.UnmodeledFraction) ||
-		!reflect.DeepEqual(currentRevision.Metadata.Ligands, desiredRevision.Metadata.Ligands)
+		!reflect.DeepEqual(currentRevision.Metadata.Ligands, desiredRevision.Metadata.Ligands) ||
+		!reflect.DeepEqual(currentRevision.Metadata.ResidueData, desiredRevision.Metadata.ResidueData)
 	metricsChanged := !modelMetricsHaveSameData(currentMetrics, desiredMetrics)
 	return modelRevisionChanged, metricsChanged
 }
@@ -153,6 +190,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	revision.Metadata.UniqueProteinChains = desiredRevision.Metadata.UniqueProteinChains
 	revision.Metadata.UnmodeledFraction = desiredRevision.Metadata.UnmodeledFraction
 	revision.Metadata.Ligands = desiredRevision.Metadata.Ligands
+	revision.Metadata.ResidueData = desiredRevision.Metadata.ResidueData
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil

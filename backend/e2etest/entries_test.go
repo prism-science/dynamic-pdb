@@ -52,6 +52,11 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 			"op": "add",
 			"data": map[string]any{
 				"title": "independent model", "primary_artifact_id": modelArtifactID,
+				"metadata": map[string]any{
+					"residue_data": []map[string]any{{
+						"label_asym_id": "A", "label_seq_id": 1, "label_comp_id": "MET", "rscc": 0.97,
+					}},
+				},
 				"artifacts": []map[string]any{
 					artifactRequest(modelArtifactID, "model coordinates", "L2", "cif", "s3://model/model.cif", nil),
 				},
@@ -87,6 +92,9 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	submitted := getModelRevisionForTest(s.T(), userModelPath, ownerToken)
 	s.Equal(httpapi.RevisionStateInReview, submitted.State)
 	s.Equal(httpapi.ModelStateActive, submitted.ModelState)
+	s.Equal([]httpapi.ResidueData{{
+		LabelAsymId: "A", LabelSeqId: 1, LabelCompId: new("MET"), Rscc: new(0.97),
+	}}, submitted.ResidueData)
 
 	adminModelPath := fmt.Sprintf(
 		"/v1/entries/%s/models/%s/revisions/%s",
@@ -103,6 +111,8 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	model := getModelForTest(s.T(), entryID, modelID)
 	s.Equal("independent model", stringValue(model.Title))
 	s.Require().NotNil(metricByKey(model.Metrics, "r_free"))
+	s.Equal(submitted.ResidueData, model.ResidueData)
+	s.NotContains(model.Metadata, "residue_data")
 
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	artifactsResponse := getWithToken(

@@ -57,6 +57,7 @@ export type Model = {
   title: string | null;
   thumbnail_image_url: string | null;
   metadata?: JSONRecord;
+  residue_data: ResidueData[];
   primary_artifact_id?: string | null;
   metrics?: Metric[];
   published_at?: string | null;
@@ -103,6 +104,22 @@ export type PolymerEntityUniProtMapping = {
   accession: string;
   source: PolymerEntityUniProtSource;
   unp_release?: string;
+};
+
+export type ResidueData = {
+  label_asym_id: string;
+  label_seq_id: number;
+  label_comp_id?: string;
+  auth_asym_id?: string;
+  auth_seq_id?: number;
+  pdbx_pdb_ins_code?: string;
+  label_alt_id?: string;
+  uniprot_position?: string;
+  rscc?: number;
+  b_iso?: number;
+  occupancy?: number;
+  conformer_count?: number;
+  rmsf?: number;
 };
 
 /** One distinct polymer chain of the deposited structure, as RCSB defines it:
@@ -649,6 +666,7 @@ export type ModelRevision = ModelRevisionSummary & {
   thumbnail_image_url: string | null;
   primary_artifact_id: string | null;
   metadata: JSONRecord;
+  residue_data: ResidueData[];
   metrics: Metric[];
   artifacts: Artifact[];
 };
@@ -1400,6 +1418,7 @@ export function modelFromRevision(revision: ModelRevision): Model {
     title: revision.title,
     thumbnail_image_url: revision.thumbnail_image_url,
     metadata: revision.metadata,
+    residue_data: revision.residue_data,
     primary_artifact_id: revision.primary_artifact_id,
     metrics: revision.metrics,
     published_at: revision.published_at,

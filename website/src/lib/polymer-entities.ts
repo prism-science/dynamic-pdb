@@ -4,6 +4,7 @@ import type {
   PolymerEntityUniProtMapping,
   PolymerEntityUniProtSource,
   ProteinSequence,
+  ResidueData,
 } from "@/lib/api/entries";
 
 /** A polymer entity joined with the stored sequence it describes. Chains and
@@ -27,11 +28,13 @@ export type PolymerEntityView = {
   mutations: string[] | null;
   mutationsText: string | null;
   uniprotMappings: PolymerEntityUniProtMapping[];
+  residueData: ResidueData[];
 };
 
 export function polymerEntityViews(
   entities: PolymerEntity[],
   sequences: ProteinSequence[],
+  residueData: ResidueData[] = [],
 ): PolymerEntityView[] {
   return entities
     .map((entity, index) => {
@@ -39,6 +42,7 @@ export function polymerEntityViews(
       const sequence = sequenceForEntity(entityId, sequences);
       const mutationsText = trimmed(entity.mutations);
       const residues = sequence ? residueCount(sequence.sequence) : null;
+      const chains = sequence ? chainsFromHeader(sequence.header) : [];
 
       return {
         key: entity.id || entityId || String(index),
@@ -46,7 +50,7 @@ export function polymerEntityViews(
         name:
           trimmed(entity.description) ??
           (entityId ? `Entity ${entityId}` : "Polymer entity"),
-        chains: sequence ? chainsFromHeader(sequence.header) : [],
+        chains,
         residues,
         sequence: sequence?.sequence ?? null,
         sequenceArtifactId: sequence?.source_artifact_id ?? null,
@@ -55,9 +59,31 @@ export function polymerEntityViews(
         mutations: mutationsText ? mutationTokens(mutationsText) : null,
         mutationsText,
         uniprotMappings: entity.uniprot_mappings ?? [],
+        residueData: residueDataForChains(chains, residueData, entities.length),
       };
     })
     .sort(byEntityId);
+}
+
+function residueDataForChains(
+  chains: string[],
+  residues: ResidueData[],
+  entityCount: number,
+): ResidueData[] {
+  if (chains.length === 0) {
+    return entityCount === 1 ? residues : [];
+  }
+  const chainIds = new Set(chains.flatMap(chainIdentifiers));
+  return residues.filter(
+    (residue) =>
+      chainIds.has(residue.label_asym_id) ||
+      (residue.auth_asym_id !== undefined && chainIds.has(residue.auth_asym_id)),
+  );
+}
+
+function chainIdentifiers(chain: string): string[] {
+  const match = /^(.*?)\s*\[\s*auth\s+(.+?)\s*\]$/i.exec(chain);
+  return match ? [match[1].trim(), match[2].trim()] : [chain];
 }
 
 /** The same molecule in three constructs is one line, not three: entities that

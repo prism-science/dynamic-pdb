@@ -181,6 +181,100 @@ test("should draw no UniProt row: the mapping records an accession, not a range"
   assert.ok(!keys.some((key) => key.startsWith("uniprot")));
 });
 
+test("should draw stored residue metrics on the shared sequence ruler", () => {
+  // given
+  const [entity] = polymerEntityViews(
+    [
+      {
+        id: "e1",
+        label_entity_id: "1",
+      },
+    ],
+    [{ header: ">1ABC_1|Chain X", sequence: "ACDE" }],
+    [
+      {
+        label_asym_id: "A",
+        label_seq_id: 2,
+        label_comp_id: "CYS",
+        auth_asym_id: "X",
+        auth_seq_id: 12,
+        rscc: 0.924,
+        b_iso: 18.5,
+        occupancy: 0.86,
+        conformer_count: 2,
+        rmsf: 0.41,
+      },
+      {
+        label_asym_id: "A",
+        auth_asym_id: "X",
+        label_seq_id: 3,
+        b_iso: 24.5,
+        occupancy: 1,
+        rscc: 0.98,
+        conformer_count: 1,
+        rmsf: 0.82,
+      },
+    ],
+  );
+
+  // when
+  const tracks = sequenceTracks(entity, null);
+
+  // then
+  assert.deepEqual(
+    tracks.map((track) => track.key),
+    ["bfactor", "occupancy", "rscc", "conformerCount", "rmsf"],
+  );
+  assert.equal(tracks[1].features[0].level, 0.86);
+  assert.equal(tracks[2].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
+  assert.equal(tracks[3].features[0].level, 1);
+  assert.equal(tracks[4].features[0].level, 0.5);
+});
+
+test("should prefer stored B-factor values over the coordinate fallback", () => {
+  // given
+  const [entity] = polymerEntityViews(
+    [
+      {
+        id: "e1",
+        label_entity_id: "1",
+      },
+    ],
+    [{ header: ">1ABC_1|Chain A", sequence: "ACDEF" }],
+    [
+      { label_asym_id: "A", label_seq_id: 1, b_iso: 70 },
+      { label_asym_id: "A", label_seq_id: 2, b_iso: 90 },
+    ],
+  );
+
+  // when
+  const tracks = sequenceTracks(entity, readStructure(CIF)[0]);
+  const bFactors = tracks.filter((track) => track.key === "bfactor");
+
+  // then
+  assert.equal(bFactors.length, 1);
+  assert.equal(bFactors[0].features[0].title, "B-factor: 70.00 Å² | Residue 1 | Chain A");
+});
+
+test("should show model revision residue metrics for the selected chain", () => {
+  // given
+  const entities = polymerEntityViews(
+    [{ id: "e1", label_entity_id: "1" }],
+    [{ header: ">1ABC_1|Chains A, C", sequence: "AC" }],
+    [
+      { label_asym_id: "A", label_seq_id: 1, b_iso: 20 },
+      { label_asym_id: "C", label_seq_id: 1, b_iso: 40 },
+    ],
+  );
+
+  // when
+  const chains = sequenceChains(entities, []);
+
+  // then
+  assert.equal(chains[0].tracks[0].features[0].title, "B-factor: 20.00 Å² | Residue 1 | Chain A");
+  assert.equal(chains[1].tracks[0].features[0].title, "B-factor: 40.00 Å² | Residue 1 | Chain C");
+});
+
 // One chain of eight residues, written twice: this model, and another that
 // puts residue 4 well off, splits residue 2 into two conformers, and leaves
 // residue 8 out altogether. A zig-zag rather than a straight run, so the

@@ -46,6 +46,10 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 			UnmodeledFraction: &unmodeledFraction,
 			Ligands:           []string{"ATP"},
 			Cofactors:         []string{"HEM"},
+			ResidueData: []models.ResidueData{{
+				LabelAsymID: "A", LabelSeqID: 52, LabelCompID: "ILE", AuthAsymID: ptr("X"),
+				AuthSeqID: ptr(52), UniProtPosition: ptr("P69441:52"), RSCC: ptr(0.97),
+			}},
 		},
 		IdempotencyKey: &idempotencyKey,
 		CreatedBy:      createdBy,
@@ -84,6 +88,7 @@ func Test_should_return_model_revision_with_metadata_when_models_create_and_get_
 	assert.Equal(t, unmodeledFraction, *got.Metadata.UnmodeledFraction)
 	assert.Equal(t, []string{"ATP"}, got.Metadata.Ligands)
 	assert.Equal(t, []string{"HEM"}, got.Metadata.Cofactors)
+	assert.Equal(t, revision.Metadata.ResidueData, got.Metadata.ResidueData)
 	require.NotNil(t, got.IdempotencyKey)
 	assert.Equal(t, idempotencyKey, *got.IdempotencyKey)
 	assert.Equal(t, now.Unix(), got.CreatedAt.Unix())
