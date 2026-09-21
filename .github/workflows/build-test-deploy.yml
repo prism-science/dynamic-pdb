@@ -209,7 +209,8 @@ jobs:
       - website
     if: |
       always() &&
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
       needs.changes.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.cli.result == 'success' || needs.cli.result == 'skipped') &&
@@ -221,6 +222,16 @@ jobs:
         with:
           # The website image is built from website/, submodule included.
           submodules: true
+
+      - name: Configure image tags
+        run: |
+          set -euo pipefail
+          {
+            echo "DEPLOY_IMAGE_TAG=sha-${GITHUB_SHA}"
+            echo "MOVING_IMAGE_TAG=latest"
+            echo "DEV_DEPLOY_IMAGE_TAG=dev-sha-${GITHUB_SHA}"
+            echo "DEV_MOVING_IMAGE_TAG=dev-latest"
+          } >> "${GITHUB_ENV}"
 
       - name: Login to Harbor
         env:
@@ -235,55 +246,69 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-backend"
-          SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
             --build-context lib=lib \
-            -t "${IMAGE}:sha-${SHA}" \
-            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/Dockerfile backend
 
       - name: Build and push migrations image
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-migrations"
-          SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
-            -t "${IMAGE}:sha-${SHA}" \
-            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/migrations/Dockerfile backend/migrations
 
       - name: Build and push mmseqs job image
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-mmseqs-job"
-          SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
             --build-context lib=lib \
-            -t "${IMAGE}:sha-${SHA}" \
-            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/cmd/mmseqs-job/Dockerfile backend
 
-      - name: Build and push website image
+      - name: Build and push production website image
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
-          SHA="$(git rev-parse HEAD)"
           docker buildx build --push \
-            -t "${IMAGE}:sha-${SHA}" \
-            -t "${IMAGE}:latest" \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="https://dynamicpdb.com/api" \
+            -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -f website/Dockerfile website
+
+      - name: Build and push dev website image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
+          docker buildx build --push \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="https://dev.dynamicpdb.com/api" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f website/Dockerfile website
 
       - name: Build and push CLI image
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-cli"
-          SHA="$(git rev-parse HEAD)"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker buildx build --push \
             --build-context lib=lib \
-            --build-arg VERSION="sha-${SHA}" \
-            --build-arg COMMIT="${SHA}" \
+            --build-arg VERSION="${DEPLOY_IMAGE_TAG}" \
+            --build-arg COMMIT="${GITHUB_SHA}" \
             --build-arg DATE="${DATE}" \
-            -t "${IMAGE}:sha-${SHA}" \
-            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f cli/Dockerfile cli

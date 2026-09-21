@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dynamic-pdb-website
+  name: {{ include "dynamic-pdb.websiteName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
     {{- include "dynamic-pdb.website.selectorLabels" . | nindent 4 }}
@@ -29,6 +29,8 @@ spec:
               value: {{ .Values.website.publicApiBaseUrl | quote }}
             - name: APP_BASE_URL
               value: {{ .Values.website.appBaseUrl | quote }}
+            - name: DYNAMIC_PDB_FILE_BASE_URL
+              value: {{ .Values.website.fileBaseUrl | quote }}
             - name: GITHUB_CLIENT_ID
               value: {{ .Values.website.auth.githubClientId | quote }}
           livenessProbe:

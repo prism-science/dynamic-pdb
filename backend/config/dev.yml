@@ -1,0 +1,35 @@
+server:
+  addr: ":8080"
+auth:
+  allowed_orgs:
+    - Astera-org
+    - prism-science
+  github:
+    client_id: "Ov23liRjWaMI9Ur5X57e"
+    client_secret: ""
+  jwt:
+    secret: ""
+    issuer: dynamic-pdb-backend
+    ttl: 720h
+db:
+  host: ""
+  port: 5432
+  name: ""
+  username: ""
+  password: ""
+  connection_params: sslmode=require
+  max_open_connections: 20
+  max_idle_connections: 10
+  max_connection_idle_time: 5m
+  max_connection_lifetime: 30m
+cdn:
+  s3:
+    endpoint: ""
+    region: us-west-1
+    bucket: dev-dynamic-pdb-data
+    access_key_id: ""
+    secret_access_key: ""
+    upload_max_file_size: 1073741824
+    upload_url_ttl: 15m
+  cloudfront:
+    base_url: https://dev-files.dynamicpdb.com

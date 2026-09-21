@@ -2,7 +2,7 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: dynamic-pdb-strip-api-prefix
+  name: {{ include "dynamic-pdb.stripApiPrefixName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
 spec:

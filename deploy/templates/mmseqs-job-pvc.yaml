@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: dynamic-pdb-mmseqs-cache
+  name: {{ include "dynamic-pdb.mmseqsCacheName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
     {{- include "dynamic-pdb.mmseqsJob.selectorLabels" . | nindent 4 }}

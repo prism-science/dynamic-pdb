@@ -50,6 +50,23 @@ func Test_should_use_client_added_by_outer_proxy_when_environment_is_production(
 	assert.Equal(t, "198.51.100.1", clientIP)
 }
 
+func Test_should_use_client_added_by_outer_proxy_when_environment_is_dev(t *testing.T) {
+	// given
+	var clientIP string
+	handler := GlobalRateLimitMiddleware("dev")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		clientIP = middleware.GetClientIP(r.Context())
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "10.0.0.2:1234"
+	request.Header.Set("X-Forwarded-For", "203.0.113.9, 198.51.100.1, 10.0.0.1")
+
+	// when
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	// then
+	assert.Equal(t, "198.51.100.1", clientIP)
+}
+
 func Test_should_reject_request_when_global_ip_limit_was_exceeded(t *testing.T) {
 	// given
 	handler := GlobalRateLimitMiddleware("local")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

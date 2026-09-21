@@ -276,3 +276,23 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 }
+
+func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "env-github-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "env-jwt-secret")
+
+	// when
+	cfg, err := config.ReadFromFile("dev")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "env-github-secret", cfg.Auth.GitHub.ClientSecret)
+	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
+	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
+	assert.Equal(t, "dev-dynamic-pdb-data", cfg.CDN.S3.Bucket)
+	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
+	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
+	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
+}

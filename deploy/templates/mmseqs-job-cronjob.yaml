@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: dynamic-pdb-mmseqs-job
+  name: {{ include "dynamic-pdb.mmseqsJobName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
     {{- include "dynamic-pdb.mmseqsJob.selectorLabels" . | nindent 4 }}
@@ -31,31 +31,31 @@ spec:
               imagePullPolicy: {{ .Values.mmseqsJob.image.pullPolicy }}
               env:
                 - name: DYNAMIC_PDB_ENV
-                  value: production
+                  value: {{ .Values.backend.configProfile | quote }}
                 - name: DYNAMIC_PDB_DB_HOST
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.backend.dbSecretName }}
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: host
                 - name: DYNAMIC_PDB_DB_PORT
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.backend.dbSecretName }}
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: port
                 - name: DYNAMIC_PDB_DB_NAME
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.backend.dbSecretName }}
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: database
                 - name: DYNAMIC_PDB_DB_USERNAME
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.backend.dbSecretName }}
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: username
                 - name: DYNAMIC_PDB_DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.backend.dbSecretName }}
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: password
                 - name: DYNAMIC_PDB_MMSEQS_CACHE_DIR
                   value: {{ .Values.mmseqsJob.cache.mountPath | quote }}
@@ -67,5 +67,5 @@ spec:
           volumes:
             - name: mmseqs-cache
               persistentVolumeClaim:
-                claimName: dynamic-pdb-mmseqs-cache
+                claimName: {{ include "dynamic-pdb.mmseqsCacheName" . }}
 {{- end }}

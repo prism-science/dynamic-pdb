@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: dynamic-pdb-s3proxy
+  name: {{ include "dynamic-pdb.s3proxyName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
     {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 4 }}
