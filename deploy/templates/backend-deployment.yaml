@@ -77,8 +77,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "dynamic-pdb.s3SecretName" . }}
                   key: S3_BUCKET
-            - name: DYNAMIC_PDB_CDN_CLOUDFRONT_BASE_URL
-              value: {{ .Values.backend.cdn.baseUrl | quote }}
           livenessProbe:
             httpGet:
               path: /livez

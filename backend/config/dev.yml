@@ -32,4 +32,4 @@ cdn:
     upload_max_file_size: 1073741824
     upload_url_ttl: 15m
   cloudfront:
-    base_url: https://files.dynamicpdb.com
+    base_url: https://dev-files.dynamicpdb.com

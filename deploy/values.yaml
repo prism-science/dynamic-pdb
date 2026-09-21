@@ -12,8 +12,6 @@ backend:
   dbSecretName: ""
   appSecretName: ""
   s3SecretName: ""
-  cdn:
-    baseUrl: https://files.dynamicpdb.com
   auth:
     githubClientId: Ov23liRjWaMI9Ur5X57e
   resources:
