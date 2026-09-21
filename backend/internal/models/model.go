@@ -64,6 +64,23 @@ type ModelMetadata struct {
 	UnmodeledFraction   *float64               `json:"unmodeled_fraction,omitempty"`
 	Ligands             []string               `json:"ligands,omitempty"`
 	Cofactors           []string               `json:"cofactors,omitempty"`
+	ResidueData         []ResidueData          `json:"residue_data,omitempty"`
+}
+
+type ResidueData struct {
+	LabelAsymID     string   `json:"label_asym_id"`
+	LabelSeqID      int      `json:"label_seq_id"`
+	LabelCompID     string   `json:"label_comp_id,omitempty"`
+	AuthAsymID      *string  `json:"auth_asym_id,omitempty"`
+	AuthSeqID       *int     `json:"auth_seq_id,omitempty"`
+	PDBxPDBInsCode  *string  `json:"pdbx_pdb_ins_code,omitempty"`
+	LabelAltID      *string  `json:"label_alt_id,omitempty"`
+	UniProtPosition *string  `json:"uniprot_position,omitempty"`
+	RSCC            *float64 `json:"rscc,omitempty"`
+	BIso            *float64 `json:"b_iso,omitempty"`
+	Occupancy       *float64 `json:"occupancy,omitempty"`
+	ConformerCount  *int     `json:"conformer_count,omitempty"`
+	RMSF            *float64 `json:"rmsf,omitempty"`
 }
 
 type ModelPurpose string

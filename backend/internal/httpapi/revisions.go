@@ -1119,7 +1119,7 @@ func (s *Server) modelRevisionAttributesFromModel(
 	ctx context.Context,
 	revision domainmodels.ModelRevision,
 ) (ModelRevisionAttributes, error) {
-	metadata, err := metadataFromValue(revision.Metadata)
+	metadata, err := modelMetadataForResponse(revision.Metadata)
 	if err != nil {
 		return ModelRevisionAttributes{}, fmt.Errorf("build model revision metadata: %w", err)
 	}
@@ -1152,6 +1152,7 @@ func (s *Server) modelRevisionAttributesFromModel(
 		ThumbnailImageUrl: revision.ThumbnailImageURL,
 		PrimaryArtifactId: revision.PrimaryArtifactID,
 		Metadata:          metadata,
+		ResidueData:       residueDataFromModels(revision.Metadata.ResidueData),
 		PublishedAt:       listItem.PublishedAt,
 		Metrics:           metricsFromModels(metrics),
 		Artifacts:         artifactAttributes,

@@ -55,9 +55,8 @@ const PINCH = 100;
  * there is space for one, otherwise a grey dot per residue, which still reads
  * as a sequence counted out one residue at a time rather than as a bar.
  *
- * Only the rows we can fill are drawn. RCSB has fifteen; several of theirs
- * come out of the wwPDB validation report, which we hold as a PDF rather than
- * as data. See sequenceTracks for what is left and why.
+ * Only the rows we can fill are drawn. Stored residue metrics and values read
+ * from the coordinate file share the same sequence ruler.
  */
 export default function SequencePanel({
   chains,

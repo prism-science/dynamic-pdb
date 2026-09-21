@@ -319,6 +319,23 @@ test("should carry the artifact of the matched sequence, and nothing when none m
   assert.equal(views[2].sequenceArtifactId, null);
 });
 
+test("should select residue data from the model revision by polymer chain", () => {
+  // given
+  const residues = [
+    { label_asym_id: "A", label_seq_id: 7, rscc: 0.97 },
+  ];
+
+  // when
+  const [view] = polymerEntityViews(
+    [entity({ label_entity_id: "1" })],
+    [sequence("1ABC_1|Chain A", "ACDEFGH")],
+    residues,
+  );
+
+  // then
+  assert.deepEqual(view.residueData, residues);
+});
+
 function entity(overrides) {
   return {
     id: `entity-${overrides.label_entity_id ?? "x"}`,

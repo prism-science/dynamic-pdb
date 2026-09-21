@@ -22,8 +22,8 @@ import { readStructure } from "@/lib/structure-tracks";
 /**
  * How many of the entry's other models we read without being asked.
  *
- * Nothing per-residue is stored on our side, so every model on the
- * disagreement rows is a coordinate file downloaded and parsed in the browser.
+ * Model-to-model disagreement still requires each coordinate file to be
+ * downloaded and parsed in the browser.
  * Four is about where a comparison stops being readable anyway -- past that
  * the rows are a wall -- so the ceiling costs nothing a reader would miss, and
  * it stops an entry with thirty models from quietly pulling thirty files.

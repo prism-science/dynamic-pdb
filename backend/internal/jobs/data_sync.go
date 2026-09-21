@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -411,6 +412,313 @@ func (j *entrySyncStrategy) buildPolymerEntities(
 		return stringValue(entities[first].Metadata.LabelEntityID) < stringValue(entities[second].Metadata.LabelEntityID)
 	})
 	return entities, nil
+}
+
+func normalizedUniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		known := false
+		for _, existing := range result {
+			if existing == value {
+				known = true
+				break
+			}
+		}
+		if !known {
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func residueDataFromRCSB(
+	entity rcsb.PolymerEntityDetails,
+	instance rcsb.PolymerEntityInstanceDetails,
+	fallbackAsymID string,
+) []models.ResidueData {
+	labelAsymID := strings.TrimSpace(instance.Identifiers.AsymID)
+	if labelAsymID == "" {
+		labelAsymID = strings.TrimSpace(fallbackAsymID)
+	}
+	authAsymID := optionalString(instance.Identifiers.AuthAsymID)
+
+	metrics := make(map[int]*rcsbResidueMetrics)
+	componentIDs := make(map[int]string)
+	sequenceComponentIDs := polymerComponentIDs(entity.Polymer)
+	for _, feature := range instance.Features {
+		metricType := strings.ToUpper(strings.TrimSpace(feature.Type))
+		if metricType != "RSCC" && metricType != "OWAB" && metricType != "AVERAGE_OCCUPANCY" {
+			continue
+		}
+		for _, position := range feature.Positions {
+			if position.BeginSequenceID < 1 {
+				continue
+			}
+			if componentID := strings.TrimSpace(position.BeginComponentID); componentID != "" {
+				componentIDs[position.BeginSequenceID] = componentID
+			}
+			for offset, value := range position.Values {
+				if value == nil {
+					continue
+				}
+				sequenceID := position.BeginSequenceID + offset
+				residueMetrics := metrics[sequenceID]
+				if residueMetrics == nil {
+					residueMetrics = &rcsbResidueMetrics{}
+					metrics[sequenceID] = residueMetrics
+				}
+				switch metricType {
+				case "RSCC":
+					residueMetrics.RSCC = value
+				case "OWAB":
+					residueMetrics.BIso = value
+				case "AVERAGE_OCCUPANCY":
+					residueMetrics.Occupancy = value
+				}
+			}
+		}
+	}
+
+	identityBySequenceID := make(map[int]models.ResidueData)
+	for _, scheme := range instance.SequenceScheme {
+		if scheme.SequenceID < 1 {
+			continue
+		}
+		if asymID := strings.TrimSpace(scheme.AsymID); asymID != "" && asymID != labelAsymID {
+			continue
+		}
+		if _, exists := identityBySequenceID[scheme.SequenceID]; exists {
+			continue
+		}
+		residueAuthAsymID := optionalString(firstNonEmpty(scheme.PDBStrandID, stringValue(authAsymID)))
+		identityBySequenceID[scheme.SequenceID] = models.ResidueData{
+			LabelAsymID:     labelAsymID,
+			LabelSeqID:      scheme.SequenceID,
+			LabelCompID:     strings.TrimSpace(scheme.MonomerID),
+			AuthAsymID:      residueAuthAsymID,
+			AuthSeqID:       scheme.AuthSeqNum,
+			PDBxPDBInsCode:  optionalCIFString(scheme.PDBInsCode),
+			UniProtPosition: uniProtPosition(entity.Alignments, scheme.SequenceID),
+		}
+	}
+	residuesBySequenceID := make(map[int]models.ResidueData, len(metrics))
+	for sequenceID, residueMetrics := range metrics {
+		residue, exists := identityBySequenceID[sequenceID]
+		if !exists {
+			authSeqID, insertionCode := authSequencePosition(
+				instance.Identifiers.AuthToEntityPolySeqMapping,
+				sequenceID,
+			)
+			residue = models.ResidueData{
+				LabelAsymID:     labelAsymID,
+				LabelSeqID:      sequenceID,
+				LabelCompID:     firstNonEmpty(componentIDs[sequenceID], sequenceComponentIDs[sequenceID]),
+				AuthAsymID:      authAsymID,
+				AuthSeqID:       authSeqID,
+				PDBxPDBInsCode:  insertionCode,
+				UniProtPosition: uniProtPosition(entity.Alignments, sequenceID),
+			}
+		}
+		residue.RSCC = residueMetrics.RSCC
+		residue.BIso = residueMetrics.BIso
+		residue.Occupancy = residueMetrics.Occupancy
+		residuesBySequenceID[sequenceID] = residue
+	}
+
+	sequenceIDs := make([]int, 0, len(residuesBySequenceID))
+	for sequenceID := range residuesBySequenceID {
+		sequenceIDs = append(sequenceIDs, sequenceID)
+	}
+	sort.Ints(sequenceIDs)
+	residues := make([]models.ResidueData, 0, len(sequenceIDs))
+	for _, sequenceID := range sequenceIDs {
+		residues = append(residues, residuesBySequenceID[sequenceID])
+	}
+	return residues
+}
+
+func authSequencePosition(mapping []string, labelSequenceID int) (*int, *string) {
+	if labelSequenceID < 1 || labelSequenceID > len(mapping) {
+		return nil, nil
+	}
+	value := strings.TrimSpace(mapping[labelSequenceID-1])
+	if value == "" || value == "." || value == "?" {
+		return nil, nil
+	}
+
+	digitEnd := 0
+	if value[0] == '+' || value[0] == '-' {
+		digitEnd++
+	}
+	digitStart := digitEnd
+	for digitEnd < len(value) && value[digitEnd] >= '0' && value[digitEnd] <= '9' {
+		digitEnd++
+	}
+	if digitEnd == digitStart {
+		return nil, nil
+	}
+	position, err := strconv.Atoi(value[:digitEnd])
+	if err != nil {
+		return nil, nil
+	}
+	return &position, optionalCIFString(value[digitEnd:])
+}
+
+func polymerComponentIDs(polymer rcsb.PolymerData) map[int]string {
+	sequence := polymer.Sequence
+	if strings.TrimSpace(sequence) == "" {
+		sequence = polymer.CanonicalSequence
+	}
+	components := make(map[int]string)
+	sequenceID := 0
+	for index := 0; index < len(sequence); {
+		character := sequence[index]
+		if character == ' ' || character == '\t' || character == '\r' || character == '\n' {
+			index++
+			continue
+		}
+		if character == '(' {
+			closingOffset := strings.IndexByte(sequence[index+1:], ')')
+			if closingOffset < 0 {
+				break
+			}
+			componentID := strings.ToUpper(strings.TrimSpace(sequence[index+1 : index+1+closingOffset]))
+			if componentID != "" {
+				sequenceID++
+				components[sequenceID] = componentID
+			}
+			index += closingOffset + 2
+			continue
+		}
+		sequenceID++
+		components[sequenceID] = componentIDForOneLetter(character, polymer.Type)
+		index++
+	}
+	return components
+}
+
+func componentIDForOneLetter(character byte, polymerType string) string {
+	if character >= 'a' && character <= 'z' {
+		character -= 'a' - 'A'
+	}
+	polymerType = strings.ToLower(strings.TrimSpace(polymerType))
+	if strings.Contains(polymerType, "polypeptide") {
+		switch character {
+		case 'A':
+			return "ALA"
+		case 'R':
+			return "ARG"
+		case 'N':
+			return "ASN"
+		case 'D':
+			return "ASP"
+		case 'C':
+			return "CYS"
+		case 'Q':
+			return "GLN"
+		case 'E':
+			return "GLU"
+		case 'G':
+			return "GLY"
+		case 'H':
+			return "HIS"
+		case 'I':
+			return "ILE"
+		case 'L':
+			return "LEU"
+		case 'K':
+			return "LYS"
+		case 'M':
+			return "MET"
+		case 'F':
+			return "PHE"
+		case 'P':
+			return "PRO"
+		case 'S':
+			return "SER"
+		case 'T':
+			return "THR"
+		case 'W':
+			return "TRP"
+		case 'Y':
+			return "TYR"
+		case 'V':
+			return "VAL"
+		case 'U':
+			return "SEC"
+		case 'O':
+			return "PYL"
+		case 'B':
+			return "ASX"
+		case 'Z':
+			return "GLX"
+		case 'J':
+			return "XLE"
+		default:
+			return "UNK"
+		}
+	}
+	if strings.Contains(polymerType, "polydeoxyribonucleotide") &&
+		!strings.Contains(polymerType, "hybrid") {
+		return "D" + string(character)
+	}
+	return string(character)
+}
+
+type rcsbResidueMetrics struct {
+	RSCC      *float64
+	BIso      *float64
+	Occupancy *float64
+}
+
+func uniProtPosition(alignments []rcsb.PolymerEntityAlignment, labelSequenceID int) *string {
+	for _, requireSIFTS := range []bool{true, false} {
+		for _, alignment := range alignments {
+			if !strings.EqualFold(strings.TrimSpace(alignment.ReferenceDatabaseName), "UniProt") {
+				continue
+			}
+			isSIFTS := strings.EqualFold(strings.TrimSpace(alignment.ProvenanceSource), "SIFTS")
+			if requireSIFTS != isSIFTS {
+				continue
+			}
+			accession := strings.TrimSpace(alignment.ReferenceDatabaseAccession)
+			if accession == "" {
+				continue
+			}
+			for _, region := range alignment.AlignedRegions {
+				if region.Length < 1 || labelSequenceID < region.EntityBeginSequenceID ||
+					labelSequenceID >= region.EntityBeginSequenceID+region.Length {
+					continue
+				}
+				position := region.ReferenceBeginSequenceID + labelSequenceID - region.EntityBeginSequenceID
+				value := fmt.Sprintf("%s:%d", accession, position)
+				return &value
+			}
+		}
+	}
+	return nil
+}
+
+func optionalCIFString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == "?" {
+		return nil
+	}
+	return &value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func hasSIFTSMapping(details rcsb.PolymerEntityDetails) bool {

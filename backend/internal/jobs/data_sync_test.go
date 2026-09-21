@@ -296,6 +296,23 @@ func Test_should_ignore_non_rcsb_metrics_when_comparing_model_update(t *testing.
 	assert.False(t, metricsChanged)
 }
 
+func Test_should_detect_model_update_when_residue_data_changed(t *testing.T) {
+	// given
+	currentRevision := models.ModelRevision{Metadata: models.ModelMetadata{ResidueData: []models.ResidueData{{
+		LabelAsymID: "A", LabelSeqID: 1, BIso: new(18.4),
+	}}}}
+	desiredRevision := models.ModelRevision{Metadata: models.ModelMetadata{ResidueData: []models.ResidueData{{
+		LabelAsymID: "A", LabelSeqID: 1, BIso: new(20.1),
+	}}}}
+
+	// when
+	modelChanged, metricsChanged := compareModelUpdate(currentRevision, desiredRevision, nil, nil)
+
+	// then
+	assert.True(t, modelChanged)
+	assert.False(t, metricsChanged)
+}
+
 func Test_should_group_rcsb_crystallography_by_crystal(t *testing.T) {
 	// given
 	details := rcsb.EntryDetails{
@@ -400,6 +417,102 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 		{Accession: "P0DTC2", Source: models.UniProtReferenceSourceSIFTS, UniProtRelease: &release},
 		{Accession: "Q9BYF1", Source: models.UniProtReferenceSourceStructRef},
 	}, metadata.UniProtMappings)
+}
+
+func Test_should_map_rcsb_instance_metrics_to_residue_data(t *testing.T) {
+	// given
+	entity := rcsb.PolymerEntityDetails{
+		Polymer: rcsb.PolymerData{Sequence: "AIL", Type: "polypeptide(L)"},
+		Alignments: []rcsb.PolymerEntityAlignment{
+			{
+				ProvenanceSource:           "PDB",
+				ReferenceDatabaseName:      "UniProt",
+				ReferenceDatabaseAccession: "IGNORED",
+				AlignedRegions: []rcsb.PolymerEntityAlignmentRegion{{
+					EntityBeginSequenceID: 2, ReferenceBeginSequenceID: 500, Length: 2,
+				}},
+			},
+			{
+				ProvenanceSource:           "SIFTS",
+				ReferenceDatabaseName:      "UniProt",
+				ReferenceDatabaseAccession: "P69441",
+				AlignedRegions: []rcsb.PolymerEntityAlignmentRegion{{
+					EntityBeginSequenceID: 2, ReferenceBeginSequenceID: 52, Length: 2,
+				}},
+			},
+		},
+	}
+	instance := rcsb.PolymerEntityInstanceDetails{
+		Identifiers: rcsb.PolymerEntityInstanceContainerIdentifiers{
+			AsymID: "A", AuthAsymID: "X", AuthToEntityPolySeqMapping: []string{"51", "52A", "53"},
+		},
+		SequenceScheme: []rcsb.PolymerSequenceScheme{
+			{AsymID: "A", SequenceID: 2, MonomerID: "ILE", AuthSeqNum: new(52), PDBStrandID: "X", PDBInsCode: "A"},
+		},
+		Features: []rcsb.PolymerInstanceFeature{
+			{Type: "RSCC", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(0.97), new(0.95)},
+			}}},
+			{Type: "OWAB", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(18.4), new(20.1)},
+			}}},
+			{Type: "AVERAGE_OCCUPANCY", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(0.6), new(1.0)},
+			}}},
+			{Type: "HELIX_P", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, Values: []*float64{new(1.0)},
+			}}},
+		},
+	}
+
+	// when
+	residues := residueDataFromRCSB(entity, instance, "fallback")
+
+	// then
+	assert.Equal(t, []models.ResidueData{
+		{
+			LabelAsymID: "A", LabelSeqID: 2, LabelCompID: "ILE", AuthAsymID: new("X"),
+			AuthSeqID: new(52), PDBxPDBInsCode: new("A"), UniProtPosition: new("P69441:52"),
+			RSCC: new(0.97), BIso: new(18.4), Occupancy: new(0.6),
+		},
+		{
+			LabelAsymID: "A", LabelSeqID: 3, LabelCompID: "LEU", AuthAsymID: new("X"),
+			AuthSeqID: new(53), UniProtPosition: new("P69441:53"),
+			RSCC: new(0.95), BIso: new(20.1), Occupancy: new(1.0),
+		},
+	}, residues)
+}
+
+func Test_should_parse_author_sequence_mapping_with_insertion_code(t *testing.T) {
+	// given
+	mapping := []string{"?", "-2", "52A"}
+
+	// when
+	missingPosition, missingInsertionCode := authSequencePosition(mapping, 1)
+	negativePosition, negativeInsertionCode := authSequencePosition(mapping, 2)
+	insertedPosition, insertionCode := authSequencePosition(mapping, 3)
+
+	// then
+	assert.Nil(t, missingPosition)
+	assert.Nil(t, missingInsertionCode)
+	assert.Equal(t, -2, *negativePosition)
+	assert.Nil(t, negativeInsertionCode)
+	assert.Equal(t, 52, *insertedPosition)
+	assert.Equal(t, "A", *insertionCode)
+}
+
+func Test_should_map_polymer_sequence_to_component_ids(t *testing.T) {
+	// given
+	polymer := rcsb.PolymerData{
+		Sequence: "A(SEP)L",
+		Type:     "polypeptide(L)",
+	}
+
+	// when
+	components := polymerComponentIDs(polymer)
+
+	// then
+	assert.Equal(t, map[int]string{1: "ALA", 2: "SEP", 3: "LEU"}, components)
 }
 
 func Test_should_match_polymer_entity_to_rcsb_fasta_record(t *testing.T) {

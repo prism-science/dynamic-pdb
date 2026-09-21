@@ -1267,14 +1267,15 @@ func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (Entry
 }
 
 func modelAttributesFromRevision(revision domainmodels.ModelRevision, metrics []domainmodels.Metric) (ModelAttributes, error) {
-	metadata, err := metadataFromValue(revision.Metadata)
+	metadata, err := modelMetadataForResponse(revision.Metadata)
 	if err != nil {
 		return ModelAttributes{}, fmt.Errorf("build model metadata response: %w", err)
 	}
 	return ModelAttributes{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
 		Title: revision.Title, ThumbnailImageUrl: revision.ThumbnailImageURL,
 		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
-		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics)}, nil
+		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics),
+		ResidueData: residueDataFromModels(revision.Metadata.ResidueData)}, nil
 }
 
 func artifactAttributesFromModels(artifacts []domainmodels.Artifact) ([]ArtifactAttributes, error) {
@@ -1369,6 +1370,28 @@ func metricsFromModels(metrics []domainmodels.Metric) []Metric {
 	return items
 }
 
+func residueDataFromModels(residues []domainmodels.ResidueData) []ResidueData {
+	items := make([]ResidueData, 0, len(residues))
+	for _, residue := range residues {
+		items = append(items, ResidueData{
+			LabelAsymId:     residue.LabelAsymID,
+			LabelSeqId:      residue.LabelSeqID,
+			LabelCompId:     trimmedStringValuePtr(residue.LabelCompID),
+			AuthAsymId:      residue.AuthAsymID,
+			AuthSeqId:       residue.AuthSeqID,
+			PdbxPdbInsCode:  residue.PDBxPDBInsCode,
+			LabelAltId:      residue.LabelAltID,
+			UniprotPosition: residue.UniProtPosition,
+			Rscc:            residue.RSCC,
+			BIso:            residue.BIso,
+			Occupancy:       residue.Occupancy,
+			ConformerCount:  residue.ConformerCount,
+			Rmsf:            residue.RMSF,
+		})
+	}
+	return items
+}
+
 func runFromModel(run domainmodels.Run) Run {
 	return Run{Id: run.ID, Name: run.Name, SoftwareName: run.SoftwareName, SoftwareVersion: run.SoftwareVersion,
 		Command: run.Command, Parameters: mapFromNil(run.Parameters), Metadata: mapFromNil(run.Metadata),
@@ -1441,6 +1464,11 @@ func metadataFromValue(value any) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("unmarshal metadata: %w", err)
 	}
 	return metadata, nil
+}
+
+func modelMetadataForResponse(metadata domainmodels.ModelMetadata) (map[string]interface{}, error) {
+	metadata.ResidueData = nil
+	return metadataFromValue(metadata)
 }
 
 func mapFromNil(value map[string]any) map[string]interface{} {
@@ -1600,6 +1628,10 @@ func trimmedStringPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func trimmedStringValuePtr(value string) *string {
+	return trimmedStringPtr(&value)
 }
 
 func modelRevisionIdempotencyKeyFromCreateModelData(data CreateModelData) *string {
