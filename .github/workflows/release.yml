@@ -15,7 +15,7 @@ concurrency:
 env:
   AWS_REGION: us-west-1
   AWS_DEFAULT_REGION: us-west-1
-  S3_BUCKET: dynamic-pdb-dynamicpdb-com
+  S3_BUCKETS: dynamic-pdb-dynamicpdb-com dev-dynamic-pdb-dynamicpdb-com
   AWS_DEPLOY_ROLE_ARN: arn:aws:iam::928648268654:role/astera-sh-dynamic-pdb-web-ci
   REGISTRY: harbor.astera.sh
   IMAGE_PREFIX: library
@@ -102,7 +102,9 @@ jobs:
         run: |
           set -euo pipefail
           aws sts get-caller-identity
-          aws s3 ls "s3://${S3_BUCKET}/" >/dev/null
+          for bucket in ${S3_BUCKETS}; do
+            aws s3 ls "s3://${bucket}/" >/dev/null
+          done
 
       - name: Cross-compile dynamic-pdb release archives
         working-directory: cli
@@ -148,9 +150,11 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          for f in dist/*.tar.gz dist/checksums.txt; do
-            aws s3 cp "$f" "s3://${S3_BUCKET}/releases/${VERSION}/$(basename "$f")" \
-              --cache-control 'public, max-age=31536000, immutable'
+          for bucket in ${S3_BUCKETS}; do
+            for f in dist/*.tar.gz dist/checksums.txt; do
+              aws s3 cp "$f" "s3://${bucket}/releases/${VERSION}/$(basename "$f")" \
+                --cache-control 'public, max-age=31536000, immutable'
+            done
           done
 
       - name: Update latest.txt
@@ -159,9 +163,11 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "${VERSION}" > /tmp/latest.txt
-          aws s3 cp /tmp/latest.txt "s3://${S3_BUCKET}/releases/latest.txt" \
-            --content-type 'text/plain; charset=utf-8' \
-            --cache-control 'public, no-cache'
+          for bucket in ${S3_BUCKETS}; do
+            aws s3 cp /tmp/latest.txt "s3://${bucket}/releases/latest.txt" \
+              --content-type 'text/plain; charset=utf-8' \
+              --cache-control 'public, no-cache'
+          done
 
   release-cli-image:
     needs: build
@@ -210,14 +216,18 @@ jobs:
         run: |
           set -euo pipefail
           aws sts get-caller-identity
-          aws s3 ls "s3://${S3_BUCKET}/" >/dev/null
+          for bucket in ${S3_BUCKETS}; do
+            aws s3 ls "s3://${bucket}/" >/dev/null
+          done
 
       - name: Sync install.sh and config to S3
         run: |
           set -euo pipefail
-          aws s3 cp install.sh "s3://${S3_BUCKET}/install.sh" \
-            --content-type 'text/x-shellscript; charset=utf-8' \
-            --cache-control 'public, no-cache'
-          aws s3 cp cli/config/dynamic-pdb.yaml "s3://${S3_BUCKET}/config/dynamic-pdb.yaml" \
-            --content-type 'application/yaml; charset=utf-8' \
-            --cache-control 'public, no-cache'
+          for bucket in ${S3_BUCKETS}; do
+            aws s3 cp install.sh "s3://${bucket}/install.sh" \
+              --content-type 'text/x-shellscript; charset=utf-8' \
+              --cache-control 'public, no-cache'
+            aws s3 cp cli/config/dynamic-pdb.yaml "s3://${bucket}/config/dynamic-pdb.yaml" \
+              --content-type 'application/yaml; charset=utf-8' \
+              --cache-control 'public, no-cache'
+          done

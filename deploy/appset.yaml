@@ -1,5 +1,6 @@
-# ArgoCD ApplicationSet that deploys dynamic-pdb from main without CI writing
-# image-tag commits back to git. Apply once with:
+# ArgoCD ApplicationSet for production and dev. Environment differences are
+# data in the list generator; both applications use the same chart and values.
+# Apply this file once with:
 #   kubectl apply -f deploy/appset.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -12,21 +13,44 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    - plugin:
-        configMapRef:
-          name: branch-head-plugin
-        input:
-          parameters:
-            repo: prism-science/dynamic-pdb
-            branch: main
-        requeueAfterSeconds: 600
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: production
+                  applicationName: dynamic-pdb
+                  targetBranch: main
+                  namespace: dynamicpdb
+                  host: dynamicpdb.com
+                  filesHost: files.dynamicpdb.com
+                  releaseBucketName: dynamic-pdb-dynamicpdb-com
+                  imageTagPrefix: ""
+                  githubClientId: Ov23liRjWaMI9Ur5X57e
+                - environment: dev
+                  applicationName: dev-dynamic-pdb
+                  targetBranch: dev
+                  namespace: dev-dynamicpdb
+                  host: dev.dynamicpdb.com
+                  filesHost: dev-files.dynamicpdb.com
+                  releaseBucketName: dev-dynamic-pdb-dynamicpdb-com
+                  imageTagPrefix: dev-
+                  githubClientId: Ov23liRjWaMI9Ur5X57e
+          - plugin:
+              configMapRef:
+                name: branch-head-plugin
+              input:
+                parameters:
+                  repo: prism-science/dynamic-pdb
+                  branch: "{{ .targetBranch }}"
+              requeueAfterSeconds: 600
   template:
     metadata:
-      name: dynamic-pdb
+      name: "{{ .applicationName }}"
       labels:
         app.kubernetes.io/part-of: dynamic-pdb
+        app.kubernetes.io/environment: "{{ .environment }}"
       annotations:
-        app.astera.sh/url: https://dynamicpdb.com
+        app.astera.sh/url: "https://{{ .host }}"
     spec:
       project: default
       source:
@@ -34,22 +58,36 @@ spec:
         targetRevision: "{{ .sha }}"
         path: deploy
         helm:
+          releaseName: "{{ .applicationName }}"
           valuesObject:
+            host: "{{ .host }}"
             backend:
+              cdn:
+                baseUrl: "https://{{ .filesHost }}"
+              auth:
+                githubClientId: "{{ .githubClientId }}"
               image:
-                tag: "sha-{{ .sha }}"
+                tag: "{{ .imageTagPrefix }}sha-{{ .sha }}"
             website:
+              appBaseUrl: "https://{{ .host }}"
+              publicApiBaseUrl: "https://{{ .host }}/api"
+              fileBaseUrl: "https://{{ .filesHost }}"
+              auth:
+                githubClientId: "{{ .githubClientId }}"
               image:
-                tag: "sha-{{ .sha }}"
+                tag: "{{ .imageTagPrefix }}sha-{{ .sha }}"
             migrations:
               image:
-                tag: "sha-{{ .sha }}"
+                tag: "{{ .imageTagPrefix }}sha-{{ .sha }}"
+            s3proxy:
+              s3:
+                bucketName: "{{ .releaseBucketName }}"
             mmseqsJob:
               image:
-                tag: "sha-{{ .sha }}"
+                tag: "{{ .imageTagPrefix }}sha-{{ .sha }}"
       destination:
         server: https://kubernetes.default.svc
-        namespace: dynamicpdb
+        namespace: "{{ .namespace }}"
       syncPolicy:
         automated:
           prune: true

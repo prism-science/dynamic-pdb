@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dynamic-pdb-s3proxy
+  name: {{ include "dynamic-pdb.s3proxyName" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
     {{- include "dynamic-pdb.s3proxy.selectorLabels" . | nindent 4 }}
@@ -36,12 +36,12 @@ spec:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.s3proxy.awsSecretName }}
+                  name: {{ include "dynamic-pdb.s3proxySecretName" . }}
                   key: AWS_ACCESS_KEY_ID
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.s3proxy.awsSecretName }}
+                  name: {{ include "dynamic-pdb.s3proxySecretName" . }}
                   key: AWS_SECRET_ACCESS_KEY
           livenessProbe:
             httpGet:

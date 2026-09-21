@@ -1,3 +1,3 @@
-# Runtime configuration for the Dynamic PDB CLI. Served from
-# dynamicpdb.com/config/dynamic-pdb.yaml for future client gates and tunables.
+# Runtime configuration for the Dynamic PDB CLI. Served by each environment
+# under /config/dynamic-pdb.yaml for future client gates and tunables.
 minVersion: v0.0.1

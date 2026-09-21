@@ -1,6 +1,7 @@
 host: dynamicpdb.com
 
 backend:
+  configProfile: production
   image:
     repository: harbor.astera.sh/library/dynamic-pdb-backend
     tag: latest
@@ -8,9 +9,11 @@ backend:
   replicaCount: 2
   service:
     port: 8080
-  dbSecretName: dynamic-pdb
-  appSecretName: dynamic-pdb-backend
-  s3SecretName: dynamic-pdb-s3-data
+  dbSecretName: ""
+  appSecretName: ""
+  s3SecretName: ""
+  cdn:
+    baseUrl: https://files.dynamicpdb.com
   auth:
     githubClientId: Ov23liRjWaMI9Ur5X57e
   resources:
@@ -31,6 +34,7 @@ website:
     port: 3000
   appBaseUrl: https://dynamicpdb.com
   publicApiBaseUrl: https://dynamicpdb.com/api
+  fileBaseUrl: https://files.dynamicpdb.com
   auth:
     githubClientId: Ov23liRjWaMI9Ur5X57e
   resources:
@@ -47,7 +51,7 @@ s3proxy:
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
-  awsSecretName: dynamic-pdb-s3proxy-aws
+  awsSecretName: ""
   s3:
     bucketName: dynamic-pdb-dynamicpdb-com
     region: us-west-1

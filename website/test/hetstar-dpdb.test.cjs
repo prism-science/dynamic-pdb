@@ -122,6 +122,30 @@ test("should refuse to proxy a plaintext target", async () => {
   assert.equal(response.status, 403);
 });
 
+test("should proxy the configured dev files host", async () => {
+  const previousFileBaseURL = process.env.DYNAMIC_PDB_FILE_BASE_URL;
+  const previousFetch = global.fetch;
+  try {
+    process.env.DYNAMIC_PDB_FILE_BASE_URL = "https://dev-files.dynamicpdb.com";
+    global.fetch = async () => new Response("dev artifact", { status: 200 });
+    const uri = "https://dev-files.dynamicpdb.com/entries/dev/model.cif";
+
+    const response = await getFile(
+      new Request(`https://dev.dynamicpdb.com/dpdb-file?u=${encodeURIComponent(uri)}`),
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "dev artifact");
+  } finally {
+    if (previousFileBaseURL === undefined) {
+      delete process.env.DYNAMIC_PDB_FILE_BASE_URL;
+    } else {
+      process.env.DYNAMIC_PDB_FILE_BASE_URL = previousFileBaseURL;
+    }
+    global.fetch = previousFetch;
+  }
+});
+
 test("should stream an allowed artifact back without stale encoding headers", async () => {
   const previousFetch = global.fetch;
   try {

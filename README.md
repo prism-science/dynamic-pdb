@@ -11,7 +11,7 @@ deployment assets:
 | ---- | ---------- |
 | [`backend/`](backend/) | Go HTTP API for auth, entries, models, entities, provenance relations, search, and file-upload grants |
 | [`website/`](website/) | Next.js app for browsing proteins, creating entries, uploading files, linking Ext experiments, and viewing models |
-| [`deploy/`](deploy/) | Helm chart and ArgoCD ApplicationSet for `dynamicpdb.com` |
+| [`deploy/`](deploy/) | Generalized Helm chart and ArgoCD ApplicationSet for production and dev |
 | [`backend/migrations/`](backend/migrations/) | Flyway migrations plus helper CLI for local and deployed database changes |
 | [`backend/tools/`](backend/tools/) | Dedicated Go tool module for generators and other project tooling |
 

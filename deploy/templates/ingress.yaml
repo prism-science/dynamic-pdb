@@ -1,11 +1,11 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: dynamic-pdb
+  name: {{ include "dynamic-pdb.fullname" . }}
   labels:
     {{- include "dynamic-pdb.labels" . | nindent 4 }}
   annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: "{{ .Release.Namespace }}-dynamic-pdb-strip-api-prefix@kubernetescrd"
+    traefik.ingress.kubernetes.io/router.middlewares: {{ printf "%s-%s@kubernetescrd" .Release.Namespace (include "dynamic-pdb.stripApiPrefixName" .) | quote }}
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -19,34 +19,34 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: dynamic-pdb-backend
+                name: {{ include "dynamic-pdb.backendName" . }}
                 port:
                   name: http
           - path: /install.sh
             pathType: Exact
             backend:
               service:
-                name: dynamic-pdb-s3proxy
+                name: {{ include "dynamic-pdb.s3proxyName" . }}
                 port:
                   name: http
           - path: /releases
             pathType: Prefix
             backend:
               service:
-                name: dynamic-pdb-s3proxy
+                name: {{ include "dynamic-pdb.s3proxyName" . }}
                 port:
                   name: http
           - path: /config
             pathType: Prefix
             backend:
               service:
-                name: dynamic-pdb-s3proxy
+                name: {{ include "dynamic-pdb.s3proxyName" . }}
                 port:
                   name: http
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: dynamic-pdb-website
+                name: {{ include "dynamic-pdb.websiteName" . }}
                 port:
                   name: http
