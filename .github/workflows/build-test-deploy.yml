@@ -210,7 +210,7 @@ jobs:
     if: |
       always() &&
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      github.ref == 'refs/heads/main' &&
       needs.changes.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.cli.result == 'success' || needs.cli.result == 'skipped') &&
@@ -223,29 +223,14 @@ jobs:
           # The website image is built from website/, submodule included.
           submodules: true
 
-      - name: Configure environment-specific image tags
+      - name: Configure image tags
         run: |
           set -euo pipefail
-          case "${GITHUB_REF_NAME}" in
-            main)
-              deploy_image_tag="sha-${GITHUB_SHA}"
-              moving_image_tag="latest"
-              website_api_base_url="https://dynamicpdb.com/api"
-              ;;
-            dev)
-              deploy_image_tag="dev-sha-${GITHUB_SHA}"
-              moving_image_tag="dev-latest"
-              website_api_base_url="https://dev.dynamicpdb.com/api"
-              ;;
-            *)
-              echo "unsupported deploy branch: ${GITHUB_REF_NAME}" >&2
-              exit 1
-              ;;
-          esac
           {
-            echo "DEPLOY_IMAGE_TAG=${deploy_image_tag}"
-            echo "MOVING_IMAGE_TAG=${moving_image_tag}"
-            echo "WEBSITE_API_BASE_URL=${website_api_base_url}"
+            echo "DEPLOY_IMAGE_TAG=sha-${GITHUB_SHA}"
+            echo "MOVING_IMAGE_TAG=latest"
+            echo "DEV_DEPLOY_IMAGE_TAG=dev-sha-${GITHUB_SHA}"
+            echo "DEV_MOVING_IMAGE_TAG=dev-latest"
           } >> "${GITHUB_ENV}"
 
       - name: Login to Harbor
@@ -265,6 +250,8 @@ jobs:
             --build-context lib=lib \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/Dockerfile backend
 
       - name: Build and push migrations image
@@ -274,6 +261,8 @@ jobs:
           docker buildx build --push \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/migrations/Dockerfile backend/migrations
 
       - name: Build and push mmseqs job image
@@ -284,16 +273,28 @@ jobs:
             --build-context lib=lib \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f backend/cmd/mmseqs-job/Dockerfile backend
 
-      - name: Build and push website image
+      - name: Build and push production website image
         run: |
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
           docker buildx build --push \
-            --build-arg NEXT_PUBLIC_API_BASE_URL="${WEBSITE_API_BASE_URL}" \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="https://dynamicpdb.com/api" \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -f website/Dockerfile website
+
+      - name: Build and push dev website image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
+          docker buildx build --push \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="https://dev.dynamicpdb.com/api" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f website/Dockerfile website
 
       - name: Build and push CLI image
@@ -308,4 +309,6 @@ jobs:
             --build-arg DATE="${DATE}" \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
+            -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
             -f cli/Dockerfile cli

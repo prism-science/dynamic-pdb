@@ -19,7 +19,6 @@ spec:
               elements:
                 - environment: production
                   applicationName: dynamic-pdb
-                  targetBranch: main
                   namespace: dynamicpdb
                   host: dynamicpdb.com
                   filesHost: files.dynamicpdb.com
@@ -28,7 +27,6 @@ spec:
                   githubClientId: Ov23liRjWaMI9Ur5X57e
                 - environment: dev
                   applicationName: dev-dynamic-pdb
-                  targetBranch: dev
                   namespace: dev-dynamicpdb
                   host: dev.dynamicpdb.com
                   filesHost: dev-files.dynamicpdb.com
@@ -41,7 +39,7 @@ spec:
               input:
                 parameters:
                   repo: prism-science/dynamic-pdb
-                  branch: "{{ .targetBranch }}"
+                  branch: main
               requeueAfterSeconds: 600
   template:
     metadata:

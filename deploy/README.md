@@ -12,7 +12,7 @@ templates or values files.
 | Environment | Branch | Release | Namespace | Host | Image tag |
 | --- | --- | --- | --- | --- | --- |
 | production | `main` | `dynamic-pdb` | `dynamicpdb` | `dynamicpdb.com` | `sha-<commit>` |
-| dev | `dev` | `dev-dynamic-pdb` | `dev-dynamicpdb` | `dev.dynamicpdb.com` | `dev-sha-<commit>` |
+| dev | `main` | `dev-dynamic-pdb` | `dev-dynamicpdb` | `dev.dynamicpdb.com` | `dev-sha-<commit>` |
 
 `astera-k3s` creates each namespace and three release-derived secrets:
 
@@ -48,11 +48,10 @@ kubectl apply -f deploy/appset.yaml
 ```
 
 The GitHub Actions workflow builds backend, migrations, website, CLI, and
-MMseqs job images for `main` and `dev`. Production images use `sha-<commit>` and
-`latest`; dev images use `dev-sha-<commit>` and `dev-latest`. The ApplicationSet
-resolves each branch head and deploys the matching immutable tag, so CI does
-not commit image-tag changes back to git. The `dev` branch must exist before
-the dev generator can resolve its first revision.
+MMseqs job images from `main`. Production images use `sha-<commit>` and
+`latest`; dev images use `dev-sha-<commit>` and `dev-latest`. Both ApplicationSet
+entries resolve the same `main` branch head and deploy environment-specific
+tags for that commit, so CI does not commit image-tag changes back to git.
 
 ## MMseqs job
 
