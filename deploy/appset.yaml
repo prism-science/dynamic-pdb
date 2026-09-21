@@ -60,6 +60,7 @@ spec:
           valuesObject:
             host: "{{ .host }}"
             backend:
+              configProfile: "{{ .environment }}"
               cdn:
                 baseUrl: "https://{{ .filesHost }}"
               auth:

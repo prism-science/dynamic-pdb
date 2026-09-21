@@ -32,7 +32,7 @@ type Server struct {
 
 func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
 	resolveClientIP := middleware.ClientIPFromRemoteAddr
-	if env == "production" {
+	if env == "production" || env == "dev" {
 		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
 	}
 

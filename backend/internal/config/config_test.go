@@ -276,3 +276,19 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 }
+
+func Test_should_match_production_config_when_reading_repository_dev_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "env-github-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "env-jwt-secret")
+
+	// when
+	productionConfig, productionErr := config.ReadFromFile("production")
+	devConfig, devErr := config.ReadFromFile("dev")
+
+	// then
+	require.NoError(t, productionErr)
+	require.NoError(t, devErr)
+	assert.Equal(t, productionConfig, devConfig)
+}
