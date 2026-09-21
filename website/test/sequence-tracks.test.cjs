@@ -38,6 +38,30 @@ ATOM C C 2 1 . 50.0
 #
 `;
 
+const ENSEMBLE_CIF = `data_ENSEMBLE
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_alt_id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.pdbx_PDB_model_num
+ATOM A A 1 1 1 . C CA 0 0 0 1
+ATOM A A 1 2 2 A C CA 5 0 0 1
+ATOM A A 1 2 2 B C CA 6 0 0 1
+ATOM A A 1 1 1 . C CA 1 0 0 2
+ATOM A A 1 2 2 A C CA 6 0 0 2
+ATOM A A 1 2 2 B C CA 7 0 0 2
+#
+`;
+
 function views() {
   return polymerEntityViews(
     [
@@ -82,6 +106,37 @@ test("should give each chain of one entity its own coordinate rows", () => {
     ],
   );
   assert.ok(!rows(chains[1]).includes("secondary"));
+});
+
+test("should draw conformer count and RMSF calculated from coordinates", () => {
+  // given
+  const [entity] = polymerEntityViews(
+    [{ id: "e1", label_entity_id: "1" }],
+    [{ header: ">1ABC_1|Chain A", sequence: "AC" }],
+  );
+
+  // when
+  const [chain] = sequenceChains([entity], readStructure(ENSEMBLE_CIF));
+  const conformers = chain.tracks.find(
+    (track) => track.key === "conformerCount",
+  );
+  const rmsf = chain.tracks.find((track) => track.key === "rmsf");
+
+  // then
+  assert.deepEqual(
+    conformers.features.map((feature) => feature.title),
+    [
+      "Conformer count: 1 | Residue 1 | Chain A",
+      "Conformer count: 2 | Residue 2 | Chain A",
+    ],
+  );
+  assert.deepEqual(
+    rmsf.features.map((feature) => feature.title),
+    [
+      "RMSF: 0.500 Å | Residue 1 | Chain A",
+      "RMSF: 0.500 Å | Residue 2 | Chain A",
+    ],
+  );
 });
 
 test("should fall back to the chains the entry names when a model has none", () => {

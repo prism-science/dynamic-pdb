@@ -239,9 +239,17 @@ function coordinateTracks(
     });
   }
 
-  const storedBFactor = residueTracks.find((track) => track.key === "bfactor");
-  if (storedBFactor) {
-    tracks.push(storedBFactor);
+  const coordinateResidueTracks = residueMetricTracks(
+    residueDataFromCoordinates(structure),
+    length,
+  );
+  const preferredResidueTrack = (key: ResidueMetric["key"]) =>
+    residueTracks.find((track) => track.key === key) ??
+    coordinateResidueTracks.find((track) => track.key === key);
+
+  const preferredBFactor = preferredResidueTrack("bfactor");
+  if (preferredBFactor) {
+    tracks.push(preferredBFactor);
   } else if (structure.bFactor.size > 0) {
     tracks.push({
       key: "bfactor",
@@ -251,7 +259,17 @@ function coordinateTracks(
     });
   }
 
-  tracks.push(...residueTracks.filter((track) => track.key !== "bfactor"));
+  for (const key of [
+    "occupancy",
+    "rscc",
+    "conformerCount",
+    "rmsf",
+  ] as const) {
+    const track = preferredResidueTrack(key);
+    if (track) {
+      tracks.push(track);
+    }
+  }
 
   // Last, and the tall one. It is the only row here that is about more than
   // one model, and it is read against the rows above it -- a peak over a run
@@ -471,6 +489,21 @@ function residueMetricTracks(
       },
     ];
   });
+}
+
+function residueDataFromCoordinates(structure: StructureResidues): ResidueData[] {
+  const sequenceIDs = new Set([
+    ...structure.conformerCount.keys(),
+    ...structure.rmsf.keys(),
+  ]);
+  return [...sequenceIDs]
+    .sort((first, second) => first - second)
+    .map((sequenceID) => ({
+      label_asym_id: structure.chainId,
+      label_seq_id: sequenceID,
+      conformer_count: structure.conformerCount.get(sequenceID),
+      rmsf: structure.rmsf.get(sequenceID),
+    }));
 }
 
 function residueMetricTitle(
