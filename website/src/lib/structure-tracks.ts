@@ -44,6 +44,10 @@ export type StructureResidues = {
   names: Map<number, string>;
   /** Mean B-factor per residue, over the atoms that carry one. */
   bFactor: Map<number, number>;
+  /** Number of distinct alternate-conformer letters, or one when unsplit. */
+  conformerCount: Map<number, number>;
+  /** Mean heavy-atom RMSF across members of a multi-model ensemble. */
+  rmsf: Map<number, number>;
   /** Residues modelled in more than one conformation. */
   alternates: Set<number>;
   /**
@@ -68,6 +72,14 @@ export type StructureResidues = {
 };
 
 export type Span = { start: number; end: number };
+
+type PositionSums = {
+  count: number;
+  x: number;
+  y: number;
+  z: number;
+  squared: number;
+};
 
 /**
  * Read one model's coordinates into per-chain residue facts.
@@ -99,6 +111,9 @@ export function readStructure(cif: string): StructureResidues[] {
   const bAt = columnIndex(atoms, "B_iso_or_equiv");
   const atomAt = columnIndex(atoms, "label_atom_id");
   const compAt = columnIndex(atoms, "label_comp_id");
+  const elementAt = columnIndex(atoms, "type_symbol");
+  const insertionAt = columnIndex(atoms, "pdbx_PDB_ins_code");
+  const modelAt = columnIndex(atoms, "pdbx_PDB_model_num");
   const xAt = columnIndex(atoms, "Cartn_x");
   const yAt = columnIndex(atoms, "Cartn_y");
   const zAt = columnIndex(atoms, "Cartn_z");
@@ -110,6 +125,24 @@ export function readStructure(cif: string): StructureResidues[] {
   }
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
+  const conformers = new Map<string, Map<number, Set<string>>>();
+  const firstMemberResidues = new Map<string, Set<number>>();
+  const firstMemberAtoms = new Map<string, Map<number, Set<string>>>();
+  const atomPositions = new Map<string, Map<string, PositionSums>>();
+  const modelNumbers = new Set<number>();
+  if (modelAt !== -1) {
+    for (const row of atoms.rows) {
+      if (groupAt !== -1 && cifValue(row[groupAt]) !== "ATOM") {
+        continue;
+      }
+      const modelNumber = cifNumber(row[modelAt]);
+      if (modelNumber !== null) {
+        modelNumbers.add(modelNumber);
+      }
+    }
+  }
+  const firstModelNumber = modelNumbers.values().next().value ?? null;
+  const isEnsemble = modelNumbers.size > 1;
   // Secondary structure is recorded in label numbering even where the atoms
   // are read in author numbering, so the two have to be joined -- through the
   // atoms, which carry both.
@@ -136,6 +169,15 @@ export function readStructure(cif: string): StructureResidues[] {
     const entity = ensure(byEntity, key, entityId, chainId);
     entity.observed.add(seq);
 
+    const modelNumber = modelAt === -1 ? null : cifNumber(row[modelAt]);
+    const belongsToFirstMember =
+      modelAt === -1 || modelNumber === firstModelNumber;
+    if (belongsToFirstMember) {
+      const residues = firstMemberResidues.get(key) ?? new Set<number>();
+      residues.add(seq);
+      firstMemberResidues.set(key, residues);
+    }
+
     if (labelSeq !== null) {
       const labels = authOfLabel.get(key) ?? new Map<number, number>();
       if (!labels.has(labelSeq)) {
@@ -151,8 +193,63 @@ export function readStructure(cif: string): StructureResidues[] {
       }
     }
 
-    if (altAt !== -1 && cifValue(row[altAt]) !== null) {
+    const alternateID = altAt === -1 ? null : cifValue(row[altAt]);
+    if (alternateID !== null) {
       entity.alternates.add(seq);
+    }
+
+    const element =
+      elementAt === -1 ? null : cifValue(row[elementAt])?.toUpperCase();
+    const isHeavyAtom = element !== "H" && element !== "D";
+    if (belongsToFirstMember && isHeavyAtom && alternateID !== null) {
+      const perResidue = conformers.get(key) ?? new Map<number, Set<string>>();
+      const letters = perResidue.get(seq) ?? new Set<string>();
+      letters.add(alternateID);
+      perResidue.set(seq, letters);
+      conformers.set(key, perResidue);
+    }
+
+    if (
+      isEnsemble &&
+      modelNumber !== null &&
+      isHeavyAtom &&
+      atomAt !== -1 &&
+      xAt !== -1 &&
+      yAt !== -1 &&
+      zAt !== -1
+    ) {
+      const atomName = cifValue(row[atomAt]);
+      const x = cifNumber(row[xAt]);
+      const y = cifNumber(row[yAt]);
+      const z = cifNumber(row[zAt]);
+      if (atomName !== null && x !== null && y !== null && z !== null) {
+        const insertionCode =
+          insertionAt === -1 ? "" : (cifValue(row[insertionAt]) ?? "");
+        const atomKey = `${seq}|${insertionCode}|${atomName}|${alternateID ?? ""}`;
+        const perAtom = atomPositions.get(key) ?? new Map();
+        const position = perAtom.get(atomKey) ?? {
+          count: 0,
+          x: 0,
+          y: 0,
+          z: 0,
+          squared: 0,
+        };
+        position.count += 1;
+        position.x += x;
+        position.y += y;
+        position.z += z;
+        position.squared += x * x + y * y + z * z;
+        perAtom.set(atomKey, position);
+        atomPositions.set(key, perAtom);
+
+        if (belongsToFirstMember) {
+          const perResidue = firstMemberAtoms.get(key) ?? new Map();
+          const atomKeys = perResidue.get(seq) ?? new Set<string>();
+          atomKeys.add(atomKey);
+          perResidue.set(seq, atomKeys);
+          firstMemberAtoms.set(key, perResidue);
+        }
+      }
     }
 
     if (
@@ -189,6 +286,50 @@ export function readStructure(cif: string): StructureResidues[] {
     }
     for (const [seq, cell] of perResidue) {
       entity.bFactor.set(seq, cell.total / cell.count);
+    }
+  }
+
+  for (const [key, residues] of firstMemberResidues) {
+    const entity = byEntity.get(key);
+    if (!entity) {
+      continue;
+    }
+    const perResidue = conformers.get(key);
+    for (const seq of residues) {
+      entity.conformerCount.set(seq, Math.max(1, perResidue?.get(seq)?.size ?? 0));
+    }
+  }
+
+  if (isEnsemble) {
+    for (const [key, residues] of firstMemberAtoms) {
+      const entity = byEntity.get(key);
+      const perAtom = atomPositions.get(key);
+      if (!entity || !perAtom) {
+        continue;
+      }
+      for (const [seq, atomKeys] of residues) {
+        let totalRMSF = 0;
+        let atomCount = 0;
+        for (const atomKey of atomKeys) {
+          const position = perAtom.get(atomKey);
+          if (!position || position.count < 2) {
+            continue;
+          }
+          const meanX = position.x / position.count;
+          const meanY = position.y / position.count;
+          const meanZ = position.z / position.count;
+          const variance = Math.max(
+            0,
+            position.squared / position.count -
+              (meanX * meanX + meanY * meanY + meanZ * meanZ),
+          );
+          totalRMSF += Math.sqrt(variance);
+          atomCount += 1;
+        }
+        if (atomCount > 0) {
+          entity.rmsf.set(seq, totalRMSF / atomCount);
+        }
+      }
     }
   }
 
@@ -300,6 +441,8 @@ function ensure(
     observed: new Set(),
     names: new Map(),
     bFactor: new Map(),
+    conformerCount: new Map(),
+    rmsf: new Map(),
     alternates: new Set(),
     alpha: new Map(),
     helices: [],
@@ -485,6 +628,8 @@ export function shiftResidues(
     observed: new Set([...residues.observed].map((seq) => seq + shift)),
     names: move(residues.names),
     bFactor: move(residues.bFactor),
+    conformerCount: move(residues.conformerCount),
+    rmsf: move(residues.rmsf),
     alternates: new Set([...residues.alternates].map((seq) => seq + shift)),
     alpha: move(residues.alpha),
     helices: span(residues.helices),

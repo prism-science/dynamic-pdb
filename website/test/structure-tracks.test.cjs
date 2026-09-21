@@ -72,6 +72,56 @@ test("should mark a residue modelled in more than one conformation", () => {
   assert.deepEqual([...entity.alternates], [2]);
 });
 
+test("should count alternate conformers for every residue", () => {
+  // when
+  const entity = chainsOfEntity(readStructure(CIF), "1")[0];
+
+  // then
+  assert.deepEqual([...entity.conformerCount], [
+    [1, 1],
+    [2, 2],
+    [4, 1],
+  ]);
+});
+
+test("should calculate residue RMSF across ensemble members", () => {
+  // given: both residues move one angstrom between two MODEL frames
+  const ensemble = `data_ENSEMBLE
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_alt_id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.pdbx_PDB_model_num
+ATOM A A 1 1 1 . C CA 0 0 0 1
+ATOM A A 1 2 2 A C CA 5 0 0 1
+ATOM A A 1 2 2 B C CA 6 0 0 1
+ATOM A A 1 1 1 . C CA 1 0 0 2
+ATOM A A 1 2 2 A C CA 6 0 0 2
+ATOM A A 1 2 2 B C CA 7 0 0 2
+#
+`;
+
+  // when
+  const [entity] = readStructure(ensemble);
+
+  // then
+  assert.deepEqual([...entity.conformerCount], [
+    [1, 1],
+    [2, 2],
+  ]);
+  assert.ok(Math.abs(entity.rmsf.get(1) - 0.5) < 1e-8);
+  assert.ok(Math.abs(entity.rmsf.get(2) - 0.5) < 1e-8);
+});
+
 test("should take helices from struct_conf and leave turns out of them", () => {
   // when
   const entity = chainsOfEntity(readStructure(CIF), "1")[0];
@@ -263,10 +313,13 @@ test("should find where a chain's numbering sits on the entry's sequence", () =>
   const renumbered = { ...deposited, observed: new Set([1, 2, 3]),
     names: new Map([[1, "GLU"], [2, "LEU"], [3, "TRP"]]),
     alpha: new Map([[1, { x: 1, y: 0, z: 0 }]]), bFactor: new Map(),
+    conformerCount: new Map([[2, 2]]), rmsf: new Map([[2, 0.5]]),
     alternates: new Set([2]), helices: [{ start: 1, end: 2 }], strands: [] };
   const moved = shiftResidues(renumbered, sequenceShift(renumbered, sequence));
   assert.deepEqual([...moved.observed], [21, 22, 23]);
   assert.deepEqual([...moved.alternates], [22]);
+  assert.equal(moved.conformerCount.get(22), 2);
+  assert.equal(moved.rmsf.get(22), 0.5);
   assert.deepEqual(moved.helices, [{ start: 21, end: 22 }]);
   assert.ok(moved.alpha.has(21));
 });
