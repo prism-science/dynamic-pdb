@@ -32,6 +32,8 @@ func Test_should_create_and_list_polymer_entity_when_repository_called(t *testin
 		ProteinSequenceID: sequences[0].ID,
 		Metadata: models.PolymerEntityMetadata{
 			LabelEntityID: ptr("1"),
+			LabelAsymID:   ptr("A"),
+			AuthAsymID:    ptr("X"),
 			Description:   ptr("test polymer"),
 			SourceOrganisms: []models.PolymerEntityOrganism{
 				{
@@ -48,6 +50,10 @@ func Test_should_create_and_list_polymer_entity_when_repository_called(t *testin
 					UniProtRelease: ptr("2026_03"),
 				},
 			},
+			ResidueData: []models.ResidueData{{
+				LabelAsymID: "A", LabelSeqID: 52, LabelCompID: "ILE", AuthAsymID: ptr("X"),
+				AuthSeqID: ptr(52), UniProtPosition: ptr("P69441:52"), RSCC: ptr(0.97),
+			}},
 		},
 		CreatedAt: now,
 	}

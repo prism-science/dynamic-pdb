@@ -151,6 +151,8 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	s.Require().Len(sequences, 1)
 	polymerEntityID := uuid.New()
 	labelEntityID := "1"
+	labelAsymID := "A"
+	authAsymID := "A"
 	description := "Spike glycoprotein"
 	construct := "receptor-binding domain"
 	mutations := "D614G,N501Y,E484K"
@@ -162,6 +164,8 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 		ProteinSequenceID: sequences[0].ID,
 		Metadata: models.PolymerEntityMetadata{
 			LabelEntityID: &labelEntityID,
+			LabelAsymID:   &labelAsymID,
+			AuthAsymID:    &authAsymID,
 			Description:   &description,
 			SourceOrganisms: []models.PolymerEntityOrganism{{
 				ScientificName: "Severe acute respiratory syndrome coronavirus 2",
@@ -173,6 +177,15 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 				Accession:      "P0DTC2",
 				Source:         models.UniProtReferenceSourceSIFTS,
 				UniProtRelease: &uniProtRelease,
+			}},
+			ResidueData: []models.ResidueData{{
+				LabelAsymID:     labelAsymID,
+				LabelSeqID:      1,
+				LabelCompID:     "MET",
+				AuthAsymID:      &authAsymID,
+				AuthSeqID:       new(1),
+				UniProtPosition: new("P0DTC2:1"),
+				RSCC:            new(0.97),
 			}},
 		},
 		CreatedAt: createdAt,
@@ -208,7 +221,10 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	s.Require().Len(document.Data.Attributes.PolymerEntities, 1)
 	entity := document.Data.Attributes.PolymerEntities[0]
 	s.Equal(polymerEntityID, entity.Id)
+	s.Equal(sequences[0].ID, entity.ProteinSequenceId)
 	s.Equal(labelEntityID, stringValue(entity.LabelEntityId))
+	s.Equal(labelAsymID, stringValue(entity.LabelAsymId))
+	s.Equal(authAsymID, stringValue(entity.AuthAsymId))
 	s.Equal(description, stringValue(entity.Description))
 	s.Equal(construct, stringValue(entity.Construct))
 	s.Equal(mutations, stringValue(entity.Mutations))
@@ -221,12 +237,21 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 		Source:     httpapi.Sifts,
 		UnpRelease: &uniProtRelease,
 	}}, entity.UniprotMappings)
+	s.Equal([]httpapi.ResidueData{{
+		LabelAsymId:     labelAsymID,
+		LabelSeqId:      1,
+		LabelCompId:     new("MET"),
+		AuthAsymId:      &authAsymID,
+		AuthSeqId:       new(1),
+		UniprotPosition: new("P0DTC2:1"),
+		Rscc:            new(0.97),
+	}}, entity.ResidueData)
 	encoded, err := json.Marshal(entity)
 	s.Require().NoError(err)
 	var fields map[string]json.RawMessage
 	s.Require().NoError(json.Unmarshal(encoded, &fields))
 	s.NotContains(fields, "metadata")
-	s.NotContains(fields, "protein_sequence_id")
+	s.Contains(fields, "protein_sequence_id")
 }
 
 func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {

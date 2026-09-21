@@ -402,6 +402,84 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 	}, metadata.UniProtMappings)
 }
 
+func Test_should_map_rcsb_instance_metrics_to_residue_data(t *testing.T) {
+	// given
+	entity := rcsb.PolymerEntityDetails{
+		Polymer: rcsb.PolymerData{Sequence: "AIL", Type: "polypeptide(L)"},
+		Alignments: []rcsb.PolymerEntityAlignment{
+			{
+				ProvenanceSource:           "PDB",
+				ReferenceDatabaseName:      "UniProt",
+				ReferenceDatabaseAccession: "IGNORED",
+				AlignedRegions: []rcsb.PolymerEntityAlignmentRegion{{
+					EntityBeginSequenceID: 2, ReferenceBeginSequenceID: 500, Length: 2,
+				}},
+			},
+			{
+				ProvenanceSource:           "SIFTS",
+				ReferenceDatabaseName:      "UniProt",
+				ReferenceDatabaseAccession: "P69441",
+				AlignedRegions: []rcsb.PolymerEntityAlignmentRegion{{
+					EntityBeginSequenceID: 2, ReferenceBeginSequenceID: 52, Length: 2,
+				}},
+			},
+		},
+	}
+	instance := rcsb.PolymerEntityInstanceDetails{
+		Identifiers: rcsb.PolymerEntityInstanceContainerIdentifiers{
+			AsymID: "A", AuthAsymID: "X",
+		},
+		SequenceScheme: []rcsb.PolymerSequenceScheme{
+			{AsymID: "A", SequenceID: 2, MonomerID: "ILE", AuthSeqNum: new(52), PDBStrandID: "X", PDBInsCode: "A"},
+		},
+		Features: []rcsb.PolymerInstanceFeature{
+			{Type: "RSCC", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(0.97), new(0.95)},
+			}}},
+			{Type: "OWAB", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(18.4), new(20.1)},
+			}}},
+			{Type: "AVERAGE_OCCUPANCY", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, BeginComponentID: "ILE", Values: []*float64{new(0.6), new(1.0)},
+			}}},
+			{Type: "HELIX_P", Positions: []rcsb.PolymerInstanceFeaturePosition{{
+				BeginSequenceID: 2, Values: []*float64{new(1.0)},
+			}}},
+		},
+	}
+
+	// when
+	residues := residueDataFromRCSB(entity, instance, "fallback")
+
+	// then
+	assert.Equal(t, []models.ResidueData{
+		{
+			LabelAsymID: "A", LabelSeqID: 2, LabelCompID: "ILE", AuthAsymID: new("X"),
+			AuthSeqID: new(52), PDBxPDBInsCode: new("A"), UniProtPosition: new("P69441:52"),
+			RSCC: new(0.97), BIso: new(18.4), Occupancy: new(0.6),
+		},
+		{
+			LabelAsymID: "A", LabelSeqID: 3, LabelCompID: "LEU", AuthAsymID: new("X"),
+			UniProtPosition: new("P69441:53"),
+			RSCC:            new(0.95), BIso: new(20.1), Occupancy: new(1.0),
+		},
+	}, residues)
+}
+
+func Test_should_map_polymer_sequence_to_component_ids(t *testing.T) {
+	// given
+	polymer := rcsb.PolymerData{
+		Sequence: "A(SEP)L",
+		Type:     "polypeptide(L)",
+	}
+
+	// when
+	components := polymerComponentIDs(polymer)
+
+	// then
+	assert.Equal(t, map[int]string{1: "ALA", 2: "SEP", 3: "LEU"}, components)
+}
+
 func Test_should_match_polymer_entity_to_rcsb_fasta_record(t *testing.T) {
 	// given
 	expectedID := uuid.New()
@@ -459,4 +537,26 @@ func Test_should_detect_polymer_entity_metadata_change(t *testing.T) {
 
 	// then
 	assert.False(t, same)
+}
+
+func Test_should_compare_equal_sequence_chains_by_asym_id(t *testing.T) {
+	// given
+	sequenceID := uuid.New()
+	entityID := "1"
+	chainA := "A"
+	chainC := "C"
+	stored := []models.PolymerEntity{
+		{ProteinSequenceID: sequenceID, Metadata: models.PolymerEntityMetadata{LabelEntityID: &entityID, LabelAsymID: &chainC}},
+		{ProteinSequenceID: sequenceID, Metadata: models.PolymerEntityMetadata{LabelEntityID: &entityID, LabelAsymID: &chainA}},
+	}
+	desired := []polymerEntitySnapshot{
+		{ProteinSequenceID: sequenceID, Metadata: models.PolymerEntityMetadata{LabelEntityID: &entityID, LabelAsymID: &chainA}},
+		{ProteinSequenceID: sequenceID, Metadata: models.PolymerEntityMetadata{LabelEntityID: &entityID, LabelAsymID: &chainC}},
+	}
+
+	// when
+	same := polymerEntitiesHaveSameData(stored, desired)
+
+	// then
+	assert.True(t, same)
 }

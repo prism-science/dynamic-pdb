@@ -156,6 +156,35 @@ func (c *RemoteClient) GetPolymerEntityDetails(
 	return details, nil
 }
 
+func (c *RemoteClient) GetPolymerEntityInstanceDetails(
+	ctx context.Context,
+	pdbID string,
+	asymID string,
+) (PolymerEntityInstanceDetails, error) {
+	url := c.dataBaseURL + "/rest/v1/core/polymer_entity_instance/" +
+		strings.ToUpper(strings.TrimSpace(pdbID)) + "/" + strings.TrimSpace(asymID)
+	contents, err := c.get(ctx, url)
+	if err != nil {
+		return PolymerEntityInstanceDetails{}, fmt.Errorf(
+			"get RCSB polymer entity instance %s.%s: %w",
+			pdbID,
+			asymID,
+			err,
+		)
+	}
+
+	var details PolymerEntityInstanceDetails
+	if err := json.Unmarshal(contents, &details); err != nil {
+		return PolymerEntityInstanceDetails{}, fmt.Errorf(
+			"decode RCSB polymer entity instance %s.%s: %w",
+			pdbID,
+			asymID,
+			err,
+		)
+	}
+	return details, nil
+}
+
 func (c *RemoteClient) getEntry(ctx context.Context, pdbID string) ([]byte, error) {
 	url := c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(strings.TrimSpace(pdbID))
 	contents, err := c.get(ctx, url)

@@ -1413,16 +1413,38 @@ func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerE
 				UnpRelease: mapping.UniProtRelease,
 			})
 		}
+		residueData := make([]ResidueData, 0, len(entity.Metadata.ResidueData))
+		for _, residue := range entity.Metadata.ResidueData {
+			residueData = append(residueData, ResidueData{
+				LabelAsymId:     residue.LabelAsymID,
+				LabelSeqId:      residue.LabelSeqID,
+				LabelCompId:     trimmedStringValuePtr(residue.LabelCompID),
+				AuthAsymId:      residue.AuthAsymID,
+				AuthSeqId:       residue.AuthSeqID,
+				PdbxPdbInsCode:  residue.PDBxPDBInsCode,
+				LabelAltId:      residue.LabelAltID,
+				UniprotPosition: residue.UniProtPosition,
+				Rscc:            residue.RSCC,
+				BIso:            residue.BIso,
+				Occupancy:       residue.Occupancy,
+				ConformerCount:  residue.ConformerCount,
+				Rmsf:            residue.RMSF,
+			})
+		}
 
 		items = append(items, PolymerEntity{
-			Id:              entity.ID,
-			LabelEntityId:   entity.Metadata.LabelEntityID,
-			Description:     entity.Metadata.Description,
-			SourceOrganisms: sourceOrganisms,
-			Construct:       entity.Metadata.Construct,
-			Mutations:       entity.Metadata.Mutations,
-			UniprotMappings: uniProtMappings,
-			CreatedAt:       entity.CreatedAt,
+			Id:                entity.ID,
+			ProteinSequenceId: entity.ProteinSequenceID,
+			LabelEntityId:     entity.Metadata.LabelEntityID,
+			LabelAsymId:       entity.Metadata.LabelAsymID,
+			AuthAsymId:        entity.Metadata.AuthAsymID,
+			Description:       entity.Metadata.Description,
+			SourceOrganisms:   sourceOrganisms,
+			Construct:         entity.Metadata.Construct,
+			Mutations:         entity.Metadata.Mutations,
+			UniprotMappings:   uniProtMappings,
+			ResidueData:       residueData,
+			CreatedAt:         entity.CreatedAt,
 		})
 	}
 	return items
@@ -1600,6 +1622,10 @@ func trimmedStringPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func trimmedStringValuePtr(value string) *string {
+	return trimmedStringPtr(&value)
 }
 
 func modelRevisionIdempotencyKeyFromCreateModelData(data CreateModelData) *string {

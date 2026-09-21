@@ -63,6 +63,45 @@ test("should read every chain of a record that lists more than one", () => {
   assert.equal(chainsLabel([]), null);
 });
 
+test("should keep equal sequence chains separate and group them by sequence id", () => {
+  // given
+  const entities = [
+    entity({
+      id: "chain-a",
+      protein_sequence_id: "sequence-1",
+      label_entity_id: "1",
+      label_asym_id: "A",
+      auth_asym_id: "A",
+      description: "Hemoglobin subunit alpha",
+    }),
+    entity({
+      id: "chain-c",
+      protein_sequence_id: "sequence-1",
+      label_entity_id: "1",
+      label_asym_id: "C",
+      auth_asym_id: "C",
+      description: "Hemoglobin subunit alpha",
+    }),
+  ];
+  const storedSequence = sequence(
+    "4HHB_1|Chains A, C|Hemoglobin subunit alpha",
+    "VLSPADK",
+  );
+  storedSequence.id = "sequence-1";
+
+  // when
+  const views = polymerEntityViews(entities, [storedSequence]);
+  const groups = groupedPolymerEntities(views);
+
+  // then
+  assert.deepEqual(
+    views.map((view) => view.chains),
+    [["A"], ["C"]],
+  );
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].chains, ["A", "C"]);
+});
+
 test("should keep the author chain label a record spells out", () => {
   // given
   const entities = [entity({ label_entity_id: "3" })];
@@ -319,11 +358,29 @@ test("should carry the artifact of the matched sequence, and nothing when none m
   assert.equal(views[2].sequenceArtifactId, null);
 });
 
+test("should carry residue data from its own polymer chain", () => {
+  // given
+  const residues = [
+    { label_asym_id: "A", label_seq_id: 7, rscc: 0.97 },
+  ];
+
+  // when
+  const [view] = polymerEntityViews(
+    [entity({ label_entity_id: "1", label_asym_id: "A", residue_data: residues })],
+    [sequence("1ABC_1|Chain A", "ACDEFGH")],
+  );
+
+  // then
+  assert.deepEqual(view.residueData, residues);
+});
+
 function entity(overrides) {
   return {
     id: `entity-${overrides.label_entity_id ?? "x"}`,
+    protein_sequence_id: "",
     source_organisms: [],
     uniprot_mappings: [],
+    residue_data: [],
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };

@@ -89,6 +89,7 @@ type PolymerEntityDetails struct {
 	Polymer         PolymerData                       `json:"entity_poly"`
 	Identifiers     PolymerEntityContainerIdentifiers `json:"rcsb_polymer_entity_container_identifiers"`
 	SourceOrganisms []SourceOrganism                  `json:"rcsb_entity_source_organism"`
+	Alignments      []PolymerEntityAlignment          `json:"rcsb_polymer_entity_align"`
 }
 
 type PolymerEntityData struct {
@@ -98,12 +99,29 @@ type PolymerEntityData struct {
 }
 
 type PolymerData struct {
+	Sequence          string `json:"pdbx_seq_one_letter_code"`
 	CanonicalSequence string `json:"pdbx_seq_one_letter_code_can"`
+	Type              string `json:"type"`
 }
 
 type PolymerEntityContainerIdentifiers struct {
 	EntityID                     string                        `json:"entity_id"`
+	AsymIDs                      []string                      `json:"asym_ids"`
+	AuthAsymIDs                  []string                      `json:"auth_asym_ids"`
 	ReferenceSequenceIdentifiers []ReferenceSequenceIdentifier `json:"reference_sequence_identifiers"`
+}
+
+type PolymerEntityAlignment struct {
+	ProvenanceSource           string                         `json:"provenance_source"`
+	ReferenceDatabaseName      string                         `json:"reference_database_name"`
+	ReferenceDatabaseAccession string                         `json:"reference_database_accession"`
+	AlignedRegions             []PolymerEntityAlignmentRegion `json:"aligned_regions"`
+}
+
+type PolymerEntityAlignmentRegion struct {
+	EntityBeginSequenceID    int `json:"entity_beg_seq_id"`
+	ReferenceBeginSequenceID int `json:"ref_beg_seq_id"`
+	Length                   int `json:"length"`
 }
 
 type ReferenceSequenceIdentifier struct {
@@ -115,4 +133,37 @@ type ReferenceSequenceIdentifier struct {
 type SourceOrganism struct {
 	ScientificName string `json:"ncbi_scientific_name"`
 	NCBITaxonomyID *int   `json:"ncbi_taxonomy_id"`
+}
+
+type PolymerEntityInstanceDetails struct {
+	Identifiers    PolymerEntityInstanceContainerIdentifiers `json:"rcsb_polymer_entity_instance_container_identifiers"`
+	SequenceScheme []PolymerSequenceScheme                   `json:"pdbx_poly_seq_scheme"`
+	Features       []PolymerInstanceFeature                  `json:"rcsb_polymer_instance_feature"`
+}
+
+type PolymerEntityInstanceContainerIdentifiers struct {
+	EntryID    string `json:"entry_id"`
+	EntityID   string `json:"entity_id"`
+	AsymID     string `json:"asym_id"`
+	AuthAsymID string `json:"auth_asym_id"`
+}
+
+type PolymerSequenceScheme struct {
+	AsymID      string `json:"asym_id"`
+	SequenceID  int    `json:"seq_id"`
+	MonomerID   string `json:"mon_id"`
+	AuthSeqNum  *int   `json:"auth_seq_num"`
+	PDBStrandID string `json:"pdb_strand_id"`
+	PDBInsCode  string `json:"pdb_ins_code"`
+}
+
+type PolymerInstanceFeature struct {
+	Type      string                           `json:"type"`
+	Positions []PolymerInstanceFeaturePosition `json:"feature_positions"`
+}
+
+type PolymerInstanceFeaturePosition struct {
+	BeginSequenceID  int        `json:"beg_seq_id"`
+	BeginComponentID string     `json:"beg_comp_id"`
+	Values           []*float64 `json:"values"`
 }

@@ -5,6 +5,7 @@ import {
   type OtherChain,
 } from "@/lib/model-agreement";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
+import type { ResidueData } from "@/lib/api/entries";
 import {
   chainsOfEntity,
   sequenceShift,
@@ -69,10 +70,9 @@ export type SequenceFeature = {
  * Two models of one crystal share a sequence and differ in exactly these
  * rows.
  *
- * Of RCSB's fifteen we cannot draw the ones that come from the wwPDB
- * validation report -- RSRZ, RSR, RSCC per residue, clashes, plane outliers --
- * because we hold that report as a PDF, not as data. Hydropathy and disorder
- * are predictions from third-party services we do not call.
+ * Rows are only drawn when the entry actually carries their values. RCSB
+ * validation metrics stored on the polymer chain therefore sit on the same
+ * ruler as the rows read from the coordinate file.
  */
 export function sequenceTracks(
   entity: PolymerEntityView,
@@ -107,9 +107,18 @@ export function sequenceTracks(
     });
   }
 
+  const residueTracks = residueMetricTracks(entity.residueData, length);
   return structure
-    ? [...tracks, ...coordinateTracks(structure, length, agreement ?? null)]
-    : tracks;
+    ? [
+        ...tracks,
+        ...coordinateTracks(
+          structure,
+          length,
+          agreement ?? null,
+          residueTracks,
+        ),
+      ]
+    : [...tracks, ...residueTracks];
 }
 
 /** The rows read out of this model's coordinate file, and the other models'. */
@@ -117,6 +126,7 @@ function coordinateTracks(
   structure: StructureResidues,
   length: number,
   agreement: ChainAgreement | null,
+  residueTracks: SequenceTrack[],
 ): SequenceTrack[] {
   const tracks: SequenceTrack[] = [];
 
@@ -229,7 +239,10 @@ function coordinateTracks(
     });
   }
 
-  if (structure.bFactor.size > 0) {
+  const storedBFactor = residueTracks.find((track) => track.key === "bfactor");
+  if (storedBFactor) {
+    tracks.push(storedBFactor);
+  } else if (structure.bFactor.size > 0) {
     tracks.push({
       key: "bfactor",
       label: "B-factor",
@@ -237,6 +250,8 @@ function coordinateTracks(
       features: bLevels(structure.bFactor),
     });
   }
+
+  tracks.push(...residueTracks.filter((track) => track.key !== "bfactor"));
 
   // Last, and the tall one. It is the only row here that is about more than
   // one model, and it is read against the rows above it -- a peak over a run
@@ -374,6 +389,118 @@ function bLevels(bFactor: Map<number, number>): SequenceFeature[] {
       title: `Residue ${seq}: B ${value.toFixed(1)}`,
       level: (value - low) / span,
     }));
+}
+
+type ResidueMetric = {
+  key: "bfactor" | "occupancy" | "rscc" | "conformerCount" | "rmsf";
+  label: string;
+  value: (residue: ResidueData) => number | undefined;
+  format: (value: number) => string;
+  level: (value: number, values: number[]) => number;
+};
+
+const RESIDUE_METRICS: ResidueMetric[] = [
+  {
+    key: "bfactor",
+    label: "B-factor",
+    value: (residue) => residue.b_iso,
+    format: (value) => `${value.toFixed(2)} Å²`,
+    level: rangedLevel,
+  },
+  {
+    key: "occupancy",
+    label: "Average occupancy",
+    value: (residue) => residue.occupancy,
+    format: (value) => value.toFixed(3),
+    level: boundedLevel,
+  },
+  {
+    key: "rscc",
+    label: "RSCC",
+    value: (residue) => residue.rscc,
+    format: (value) => value.toFixed(3),
+    level: boundedLevel,
+  },
+  {
+    key: "conformerCount",
+    label: "Conformer count",
+    value: (residue) => residue.conformer_count,
+    format: (value) => String(value),
+    level: zeroBasedLevel,
+  },
+  {
+    key: "rmsf",
+    label: "RMSF",
+    value: (residue) => residue.rmsf,
+    format: (value) => `${value.toFixed(3)} Å`,
+    level: zeroBasedLevel,
+  },
+];
+
+function residueMetricTracks(
+  residues: ResidueData[],
+  length: number,
+): SequenceTrack[] {
+  return RESIDUE_METRICS.flatMap((metric) => {
+    const measured = residues
+      .map((residue) => ({ residue, value: metric.value(residue) }))
+      .filter(
+        (item): item is { residue: ResidueData; value: number } =>
+          item.value !== undefined &&
+          Number.isFinite(item.value) &&
+          item.residue.label_seq_id >= 1 &&
+          item.residue.label_seq_id <= length,
+      );
+    if (measured.length === 0) {
+      return [];
+    }
+
+    const values = measured.map((item) => item.value);
+    return [
+      {
+        key: metric.key,
+        label: metric.label,
+        kind: "level" as const,
+        features: measured.map(({ residue, value }) => ({
+          key: `${metric.key}${residue.label_seq_id}`,
+          start: residue.label_seq_id,
+          end: residue.label_seq_id,
+          level: metric.level(value, values),
+          title: residueMetricTitle(residue, metric.label, metric.format(value)),
+        })),
+      },
+    ];
+  });
+}
+
+function residueMetricTitle(
+  residue: ResidueData,
+  label: string,
+  value: string,
+): string {
+  const component = residue.label_comp_id
+    ? `${residue.label_comp_id} `
+    : "Residue ";
+  const authorPosition = residue.auth_seq_id
+    ? ` [auth ${residue.auth_seq_id}${residue.pdbx_pdb_ins_code ?? ""}]`
+    : "";
+  const chain = residue.auth_asym_id ?? residue.label_asym_id;
+  return `${label}: ${value} | ${component}${residue.label_seq_id}${authorPosition} | Chain ${chain}`;
+}
+
+function boundedLevel(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function zeroBasedLevel(value: number, values: number[]): number {
+  const high = Math.max(...values);
+  return high <= 0 ? 0 : Math.max(0, value) / high;
+}
+
+function rangedLevel(value: number, values: number[]): number {
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  return (value - low) / (high - low || 1);
 }
 
 

@@ -2475,12 +2475,19 @@ components:
 
     PolymerEntity:
       type: object
-      required: [id, source_organisms, uniprot_mappings, created_at]
+      required: [id, protein_sequence_id, source_organisms, uniprot_mappings, residue_data, created_at]
       properties:
         id:
           type: string
           format: uuid
+        protein_sequence_id:
+          type: string
+          format: uuid
         label_entity_id:
+          type: string
+        label_asym_id:
+          type: string
+        auth_asym_id:
           type: string
         description:
           type: string
@@ -2497,9 +2504,48 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PolymerEntityUniProtMapping"
+        residue_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResidueData"
         created_at:
           type: string
           format: date-time
+
+    ResidueData:
+      type: object
+      required: [label_asym_id, label_seq_id]
+      properties:
+        label_asym_id:
+          type: string
+        label_seq_id:
+          type: integer
+        label_comp_id:
+          type: string
+        auth_asym_id:
+          type: string
+        auth_seq_id:
+          type: integer
+        pdbx_pdb_ins_code:
+          type: string
+        label_alt_id:
+          type: string
+        uniprot_position:
+          type: string
+        rscc:
+          type: number
+          format: double
+        b_iso:
+          type: number
+          format: double
+        occupancy:
+          type: number
+          format: double
+        conformer_count:
+          type: integer
+        rmsf:
+          type: number
+          format: double
 
     PolymerEntityOrganism:
       type: object

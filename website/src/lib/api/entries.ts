@@ -105,16 +105,36 @@ export type PolymerEntityUniProtMapping = {
   unp_release?: string;
 };
 
-/** One distinct polymer chain of the deposited structure, as RCSB defines it:
- *  chains with the same sequence share an entity. */
+export type ResidueData = {
+  label_asym_id: string;
+  label_seq_id: number;
+  label_comp_id?: string;
+  auth_asym_id?: string;
+  auth_seq_id?: number;
+  pdbx_pdb_ins_code?: string;
+  label_alt_id?: string;
+  uniprot_position?: string;
+  rscc?: number;
+  b_iso?: number;
+  occupancy?: number;
+  conformer_count?: number;
+  rmsf?: number;
+};
+
+/** One stored polymer chain. Chains with the same sequence share a
+ *  protein_sequence_id and can be grouped by the UI. */
 export type PolymerEntity = {
   id: string;
+  protein_sequence_id: string;
   label_entity_id?: string;
+  label_asym_id?: string;
+  auth_asym_id?: string;
   description?: string;
   source_organisms: PolymerEntityOrganism[];
   construct?: string;
   mutations?: string;
   uniprot_mappings: PolymerEntityUniProtMapping[];
+  residue_data: ResidueData[];
   created_at: string;
 };
 

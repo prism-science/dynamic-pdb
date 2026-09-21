@@ -4,13 +4,13 @@ import type {
   PolymerEntityUniProtMapping,
   PolymerEntityUniProtSource,
   ProteinSequence,
+  ResidueData,
 } from "@/lib/api/entries";
 
-/** A polymer entity joined with the stored sequence it describes. Chains and
- *  residue counts are not part of the entity payload; they come from the FASTA
- *  record the sync matched to it. */
+/** A polymer entity joined with the stored sequence it describes. */
 export type PolymerEntityView = {
   key: string;
+  proteinSequenceId: string | null;
   entityId: string | null;
   name: string;
   chains: string[];
@@ -27,6 +27,7 @@ export type PolymerEntityView = {
   mutations: string[] | null;
   mutationsText: string | null;
   uniprotMappings: PolymerEntityUniProtMapping[];
+  residueData: ResidueData[];
 };
 
 export function polymerEntityViews(
@@ -36,17 +37,25 @@ export function polymerEntityViews(
   return entities
     .map((entity, index) => {
       const entityId = trimmed(entity.label_entity_id);
-      const sequence = sequenceForEntity(entityId, sequences);
+      const proteinSequenceId = trimmed(entity.protein_sequence_id);
+      const sequence = sequenceForEntity(proteinSequenceId, entityId, sequences);
       const mutationsText = trimmed(entity.mutations);
       const residues = sequence ? residueCount(sequence.sequence) : null;
+      const chain = chainForEntity(entity);
 
       return {
         key: entity.id || entityId || String(index),
+        proteinSequenceId,
         entityId,
         name:
           trimmed(entity.description) ??
           (entityId ? `Entity ${entityId}` : "Polymer entity"),
-        chains: sequence ? chainsFromHeader(sequence.header) : [],
+        chains:
+          chain === null
+            ? sequence
+              ? chainsFromHeader(sequence.header)
+              : []
+            : [chain],
         residues,
         sequence: sequence?.sequence ?? null,
         sequenceArtifactId: sequence?.source_artifact_id ?? null,
@@ -55,14 +64,14 @@ export function polymerEntityViews(
         mutations: mutationsText ? mutationTokens(mutationsText) : null,
         mutationsText,
         uniprotMappings: entity.uniprot_mappings ?? [],
+        residueData: entity.residue_data ?? [],
       };
     })
     .sort(byEntityId);
 }
 
-/** The same molecule in three constructs is one line, not three: entities that
- *  point at one UniProt accession -- or, without a mapping, carry one
- *  description -- are read as one molecule of the deposit. */
+/** Chains that share one stored sequence are one group. Legacy records without
+ *  that foreign key fall back to UniProt accession and then molecule name. */
 export type EntityGroup = {
   key: string;
   name: string;
@@ -79,7 +88,9 @@ export function groupedPolymerEntities(
 
   for (const view of views) {
     const key =
-      view.uniprotMappings[0]?.accession.toLowerCase() ?? view.name.toLowerCase();
+      view.proteinSequenceId ??
+      view.uniprotMappings[0]?.accession.toLowerCase() ??
+      view.name.toLowerCase();
     const group = groups.get(key);
 
     if (!group) {
@@ -164,13 +175,17 @@ export function mutationTokens(text: string): string[] | null {
   return tokens;
 }
 
-// The only link between a stored sequence and the entity it belongs to. RCSB
-// names each FASTA record "<PDB>_<entity>", which is what the sync matched on
-// when it created the entity; the API does not expose the foreign key.
 function sequenceForEntity(
+  proteinSequenceId: string | null,
   entityId: string | null,
   sequences: ProteinSequence[],
 ): ProteinSequence | null {
+  if (proteinSequenceId) {
+    const sequence = sequences.find((candidate) => candidate.id === proteinSequenceId);
+    if (sequence) {
+      return sequence;
+    }
+  }
   if (!entityId) {
     return null;
   }
@@ -180,6 +195,15 @@ function sequenceForEntity(
       recordID(sequence.header).toLowerCase().endsWith(suffix),
     ) ?? null
   );
+}
+
+function chainForEntity(entity: PolymerEntity): string | null {
+  const label = trimmed(entity.label_asym_id);
+  const author = trimmed(entity.auth_asym_id);
+  if (label && author && label !== author) {
+    return `${label}[auth ${author}]`;
+  }
+  return author ?? label;
 }
 
 function recordID(header: string): string {
