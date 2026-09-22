@@ -25,6 +25,7 @@ import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { entryModels } from "@/lib/entry-models";
 import { hetstarDpdbConfig } from "@/lib/hetstar";
+import { hetstarCanRender } from "@/lib/hetstar-support";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import {
@@ -42,6 +43,7 @@ import EntryTabs, {
 } from "@/app/components/EntryTabs";
 import ScopeRail from "@/app/components/ScopeRail";
 import HetstarPanel from "@/app/components/HetstarPanel";
+import StructurePanel from "@/app/components/StructurePanel";
 import SimilarProteins from "@/app/components/SimilarProteins";
 import {
   buildProvenance,
@@ -133,15 +135,28 @@ export default async function ScopePage({
   // and a reader on one model has no use for another model's.
   const modelEntities = modelScopedEntities(data.entities, model?.id ?? null);
   const structure = viewableStructure(modelEntity);
-  // The entry's other models, for the Sequence tab to read alongside this one.
-  // Built from the whole record rather than from the model-scoped slice: the
-  // point of the comparison is exactly the models this page is not about.
-  // (The Structure tab no longer uses these -- the heterogeneity viewer picks
-  // its own qFit/deposited pair.)
+  // The entry's other models, for the Sequence tab to read alongside this one,
+  // and for the fallback viewer on the Structure tab. Built from the whole
+  // record rather than from the model-scoped slice: the point of the comparison
+  // is exactly the models this page is not about. (The heterogeneity viewer
+  // takes none of them -- it picks its own qFit/deposited pair.)
   const overlays = modelOverlays(data, model?.id ?? null);
   // Resolved per request: whether the viewer can call the catalogue directly
   // depends on the origin this page is being served from.
   const dpdb = await hetstarDpdbConfig();
+  // Which viewer the Structure tab opens in. The heterogeneity viewer reads
+  // mmCIF and nothing else, and half of this catalogue's coordinates are PDB,
+  // so the tab falls back to the plain Mol* viewer -- the one the file preview
+  // opens, which reads both -- whenever CIF is not what would be loaded.
+  //
+  // Two ways that happens, and they are separate questions. The entry's:
+  // hetstar chooses its own pair of models and throws on the first one that is
+  // not CIF. And the reader's: hetstar ignores the rail, so on a PDB model it
+  // would draw a different model than the one selected, however well the entry
+  // suits it. Either is enough to fall back, and then the rail means what it
+  // says on this tab as it does on every other.
+  const useHetstar =
+    structure?.kind === "mmcif" && hetstarCanRender(data);
 
   // The comparison the page is built around. All of it is derived from the
   // entry's own metrics, so an entry recording different figures -- or none --
@@ -281,7 +296,18 @@ export default async function ScopePage({
 
           {active === "structure" && structure ? (
             <section aria-label="Structure">
-              <HetstarPanel entryId={data.entry.id} dpdb={dpdb} />
+              {useHetstar ? (
+                <HetstarPanel entryId={data.entry.id} dpdb={dpdb} />
+              ) : (
+                <StructurePanel
+                  url={structure.url}
+                  kind={structure.kind}
+                  overlays={overlays.others}
+                  overlaysSkipped={overlays.skipped}
+                  baseColor={overlays.baseColor}
+                  square
+                />
+              )}
             </section>
           ) : null}
 
