@@ -21,7 +21,8 @@ _struct_conf.beg_label_asym_id
 _struct_conf.beg_label_seq_id
 _struct_conf.end_label_seq_id
 HELX_P A 1 2
-TURN_P A 3 4
+TURN_P A 3 3
+BEND A 5 5
 #
 loop_
 _struct_sheet_range.sheet_id
@@ -122,13 +123,15 @@ ATOM A A 1 2 2 B C CA 7 0 0 2
   assert.ok(Math.abs(entity.rmsf.get(2) - 0.5) < 1e-8);
 });
 
-test("should take helices from struct_conf and leave turns out of them", () => {
+test("should read recorded secondary structure from struct_conf", () => {
   // when
   const entity = chainsOfEntity(readStructure(CIF), "1")[0];
 
   // then
   assert.deepEqual(entity.helices, [{ start: 1, end: 2 }]);
   assert.deepEqual(entity.strands, [{ start: 4, end: 4 }]);
+  assert.deepEqual(entity.turns, [{ start: 3, end: 3 }]);
+  assert.deepEqual(entity.bends, [{ start: 5, end: 5 }]);
 });
 
 test("should report the residues the coordinates do not contain", () => {
@@ -324,6 +327,13 @@ const PDB = [
     [33, "A"],
     [34, "  24"],
   ]),
+  pdbRecord([
+    [1, "TURN  "],
+    [20, "A"],
+    [21, "  23"],
+    [31, "A"],
+    [32, "  23"],
+  ]),
   pdbAtom({
     serial: 1, atom: "CA", residue: "GLU", chain: "A", sequence: 21,
     x: 1, y: 0, z: 0, bFactor: 10, element: "C",
@@ -373,6 +383,8 @@ test("should read residue tracks from PDB coordinates", () => {
   assert.deepEqual(chain.alpha.get(22), { x: 4.8, y: 0, z: 0 });
   assert.deepEqual(chain.helices, [{ start: 21, end: 22 }]);
   assert.deepEqual(chain.strands, [{ start: 24, end: 24 }]);
+  assert.deepEqual(chain.turns, [{ start: 23, end: 23 }]);
+  assert.deepEqual(chain.bends, []);
   assert.deepEqual(chainsOfEntity([chain], "1", ["X[auth A]"]), [chain]);
 });
 
@@ -448,13 +460,16 @@ test("should find where a chain's numbering sits on the entry's sequence", () =>
     names: new Map([[1, "GLU"], [2, "LEU"], [3, "TRP"]]),
     alpha: new Map([[1, { x: 1, y: 0, z: 0 }]]), bFactor: new Map(),
     conformerCount: new Map([[2, 2]]), rmsf: new Map([[2, 0.5]]),
-    alternates: new Set([2]), helices: [{ start: 1, end: 2 }], strands: [] };
+    alternates: new Set([2]), helices: [{ start: 1, end: 2 }], strands: [],
+    turns: [{ start: 3, end: 3 }], bends: [{ start: 2, end: 2 }] };
   const moved = shiftResidues(renumbered, sequenceShift(renumbered, sequence));
   assert.deepEqual([...moved.observed], [21, 22, 23]);
   assert.deepEqual([...moved.alternates], [22]);
   assert.equal(moved.conformerCount.get(22), 2);
   assert.equal(moved.rmsf.get(22), 0.5);
   assert.deepEqual(moved.helices, [{ start: 21, end: 22 }]);
+  assert.deepEqual(moved.turns, [{ start: 23, end: 23 }]);
+  assert.deepEqual(moved.bends, [{ start: 22, end: 22 }]);
   assert.ok(moved.alpha.has(21));
 });
 

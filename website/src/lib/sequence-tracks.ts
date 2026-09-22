@@ -10,7 +10,6 @@ import {
   chainsOfEntity,
   sequenceShift,
   shiftResidues,
-  type Span,
   type StructureResidues,
   unobservedSpans,
 } from "@/lib/structure-tracks";
@@ -132,8 +131,12 @@ function coordinateTracks(
 ): SequenceTrack[] {
   const tracks: SequenceTrack[] = [];
 
-
-  if (structure.helices.length > 0 || structure.strands.length > 0) {
+  if (
+    structure.helices.length > 0 ||
+    structure.strands.length > 0 ||
+    structure.turns.length > 0 ||
+    structure.bends.length > 0
+  ) {
     tracks.push({
       key: "secondary",
       label: "Secondary structure",
@@ -145,6 +148,20 @@ function coordinateTracks(
           end: span.end,
           title: `Helix ${span.start}-${span.end}`,
           variant: "helix",
+        })),
+        ...structure.bends.map((span, index) => ({
+          key: `b${index}`,
+          start: span.start,
+          end: span.end,
+          title: `Bend ${span.start}-${span.end}`,
+          variant: "bend",
+        })),
+        ...structure.turns.map((span, index) => ({
+          key: `t${index}`,
+          start: span.start,
+          end: span.end,
+          title: `Turn ${span.start}-${span.end}`,
+          variant: "turn",
         })),
         ...structure.strands.map((span, index) => ({
           key: `e${index}`,
@@ -172,44 +189,6 @@ function coordinateTracks(
         title: `No atoms modelled for residues ${span.start}-${span.end}`,
       })),
     });
-  }
-
-  // Coverage, this model against the others: which residues exist in one file
-  // and not the other. A difference here is not a small one -- it is one model
-  // claiming to know where a stretch of chain goes and another declining to
-  // say -- and until now the page could only show the gaps in the file it
-  // happened to be on.
-  if (agreement !== null) {
-    for (const [key, label, positions, note] of [
-      [
-        "onlyOthers",
-        "Only in others",
-        agreement.onlyOthers,
-        "modelled by another model of this entry and not by this one",
-      ],
-      [
-        "onlyMine",
-        "Only in this model",
-        agreement.onlyMine,
-        "modelled here and by no other model of this entry",
-      ],
-    ] as [string, string, Set<number>, string][]) {
-      const spans = spansOf(positions, length);
-      if (spans.length === 0) {
-        continue;
-      }
-      tracks.push({
-        key,
-        label,
-        kind: "span",
-        features: spans.map((span, index) => ({
-          key: `${key}${index}`,
-          start: span.start,
-          end: span.end,
-          title: `Residues ${span.start}-${span.end}: ${note}`,
-        })),
-      });
-    }
   }
 
   const coordinateResidueTracks = residueMetricTracks(
@@ -310,23 +289,6 @@ function disagreementTrack(
 function niceCeiling(value: number): number {
   const steps = [0.5, 1, 2, 3, 5, 10, 20, 50];
   return steps.find((step) => value <= step) ?? Math.ceil(value);
-}
-
-/** Scattered residue numbers as the runs they form. */
-function spansOf(positions: Set<number>, length: number): Span[] {
-  const sorted = [...positions]
-    .filter((seq) => seq >= 1 && seq <= length)
-    .sort((a, b) => a - b);
-  const spans: Span[] = [];
-  for (const seq of sorted) {
-    const last = spans[spans.length - 1];
-    if (last && seq === last.end + 1) {
-      last.end = seq;
-      continue;
-    }
-    spans.push({ start: seq, end: seq });
-  }
-  return spans;
 }
 
 type ResidueMetric = {

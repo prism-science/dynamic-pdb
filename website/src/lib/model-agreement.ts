@@ -115,10 +115,6 @@ export type ChainAgreement = {
   alternates: Set<number>;
   /** The same, per model, for the rows that say who. */
   alternatesByModel: { modelId: string; title: string; positions: number[] }[];
-  /** Residues another model places atoms in and this one does not. */
-  onlyOthers: Set<number>;
-  /** Residues this model places atoms in and no other model does. */
-  onlyMine: Set<number>;
 };
 
 /**
@@ -238,13 +234,6 @@ export function chainAgreement(
     }
   }
 
-  const theirObserved = new Set<number>();
-  for (const other of others) {
-    for (const seq of other.residues.observed) {
-      theirObserved.add(seq);
-    }
-  }
-
   return {
     fitted,
     unfitted,
@@ -261,8 +250,6 @@ export function chainAgreement(
         title: other.title,
         positions: [...other.residues.alternates].sort((a, b) => a - b),
       })),
-    onlyOthers: difference(theirObserved, base.observed),
-    onlyMine: difference(base.observed, theirObserved),
   };
 }
 
@@ -395,14 +382,4 @@ function peak(values: Map<number, number>): Peak | null {
     }
   }
   return found;
-}
-
-function difference(from: Set<number>, without: Set<number>): Set<number> {
-  const result = new Set<number>();
-  for (const value of from) {
-    if (!without.has(value)) {
-      result.add(value);
-    }
-  }
-  return result;
 }

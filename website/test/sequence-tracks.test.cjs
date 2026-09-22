@@ -21,6 +21,8 @@ _struct_conf.beg_label_asym_id
 _struct_conf.beg_label_seq_id
 _struct_conf.end_label_seq_id
 HELX_P A 2 4
+TURN_P A 1 1
+BEND A 5 5
 #
 loop_
 _atom_site.group_PDB
@@ -96,6 +98,16 @@ test("should give each chain of one entity its own coordinate rows", () => {
   // only residue 1, and no helix is recorded for it
   assert.ok(rows(chains[0]).includes("secondary"));
   assert.ok(rows(chains[0]).includes("bfactor"));
+  assert.deepEqual(
+    chains[0].tracks
+      .find((track) => track.key === "secondary")
+      .features.map(({ start, end, variant }) => ({ start, end, variant })),
+    [
+      { start: 2, end: 4, variant: "helix" },
+      { start: 5, end: 5, variant: "bend" },
+      { start: 1, end: 1, variant: "turn" },
+    ],
+  );
   assert.deepEqual(
     chains[0].tracks
       .find((track) => track.key === "unobserved")
@@ -395,13 +407,6 @@ test("should draw the comparison rows from the other models' own coordinates", (
   assert.ok(chain.agreement.worst.value > 1);
   assert.equal(track("departure"), undefined);
   assert.equal(track("spread"), undefined);
-
-  // residue 8 is ours alone; nothing is theirs alone
-  assert.deepEqual(
-    track("onlyMine").features.map(({ start, end }) => [start, end]),
-    [[8, 8]],
-  );
-  assert.equal(track("onlyOthers"), undefined);
 
   // alternate conformations do not get separate rows in the sequence view
   assert.equal(track("alternates"), undefined);

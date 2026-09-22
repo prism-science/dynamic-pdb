@@ -76,6 +76,10 @@ export type StructureResidues = {
   helices: Span[];
   /** Strand spans, inclusive. */
   strands: Span[];
+  /** Turn spans explicitly recorded by the coordinate file. */
+  turns: Span[];
+  /** Bend spans explicitly recorded by the coordinate file. */
+  bends: Span[];
 };
 
 export type Span = { start: number; end: number };
@@ -371,7 +375,23 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
     keyOfLabelChain,
     translate ? authOfLabel : null,
     "helices",
-    true,
+    "HELX",
+  );
+  addSpans(
+    byEntity,
+    loops.get("_struct_conf"),
+    keyOfLabelChain,
+    translate ? authOfLabel : null,
+    "turns",
+    "TURN",
+  );
+  addSpans(
+    byEntity,
+    loops.get("_struct_conf"),
+    keyOfLabelChain,
+    translate ? authOfLabel : null,
+    "bends",
+    "BEND",
   );
   addSpans(
     byEntity,
@@ -379,7 +399,7 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
     keyOfLabelChain,
     translate ? authOfLabel : null,
     "strands",
-    false,
+    null,
   );
 
   // Touching spans of one kind are one span. A sheet is recorded strand by
@@ -389,6 +409,8 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   for (const entity of byEntity.values()) {
     entity.helices = joinSpans(entity.helices);
     entity.strands = joinSpans(entity.strands);
+    entity.turns = joinSpans(entity.turns);
+    entity.bends = joinSpans(entity.bends);
   }
 
   return [...byEntity.values()].sort(byEntityThenChain);
@@ -419,7 +441,7 @@ const PDB_ATOM_COLUMNS = [
  */
 function readPDBStructure(pdb: string): StructureResidues[] {
   const atoms = cifLoop("_atom_site", PDB_ATOM_COLUMNS);
-  const helices = cifLoop("_struct_conf", [
+  const conformations = cifLoop("_struct_conf", [
     "conf_type_id",
     "beg_label_asym_id",
     "beg_auth_seq_id",
@@ -447,8 +469,20 @@ function readPDBStructure(pdb: string): StructureResidues[] {
     if (record === "HELIX") {
       const span = pdbSpan(line, 20, 22, 25, 32, 34, 37);
       if (span !== null) {
-        helices.rows.push([
+        conformations.rows.push([
           "HELX_P",
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record === "TURN") {
+      const span = pdbSpan(line, 20, 21, 24, 31, 32, 35);
+      if (span !== null) {
+        conformations.rows.push([
+          "TURN_TY_1_P",
           cifCell(span.chainId),
           String(span.start),
           String(span.end),
@@ -499,8 +533,8 @@ function readPDBStructure(pdb: string): StructureResidues[] {
   }
 
   const loops = new Map<string, CifLoop>([[atoms.category, atoms]]);
-  if (helices.rows.length > 0) {
-    loops.set(helices.category, helices);
+  if (conformations.rows.length > 0) {
+    loops.set(conformations.category, conformations);
   }
   if (strands.rows.length > 0) {
     loops.set(strands.category, strands);
@@ -647,6 +681,8 @@ function ensure(
     alpha: new Map(),
     helices: [],
     strands: [],
+    turns: [],
+    bends: [],
   };
   byEntity.set(key, created);
   return created;
@@ -682,8 +718,8 @@ function addSpans(
   keyOfLabelChain: Map<string, string>,
   /** Null when the residues are already in the numbering the spans use. */
   authOfLabel: Map<string, Map<number, number>> | null,
-  field: "helices" | "strands",
-  helicesOnly: boolean,
+  field: "helices" | "strands" | "turns" | "bends",
+  typePrefix: string | null,
 ): void {
   if (!loop) {
     return;
@@ -699,11 +735,12 @@ function addSpans(
   }
 
   for (const row of loop.rows) {
-    // `_struct_conf` also carries turns and bends; only the helices are worth a
-    // row of their own, and the rest would draw as noise along the whole chain.
-    if (helicesOnly && typeAt !== -1) {
+    if (typePrefix !== null) {
+      if (typeAt === -1) {
+        continue;
+      }
       const type = cifValue(row[typeAt]) ?? "";
-      if (!type.toUpperCase().startsWith("HELX")) {
+      if (!type.toUpperCase().startsWith(typePrefix)) {
         continue;
       }
     }
@@ -834,6 +871,8 @@ export function shiftResidues(
     alpha: move(residues.alpha),
     helices: span(residues.helices),
     strands: span(residues.strands),
+    turns: span(residues.turns),
+    bends: span(residues.bends),
   };
 }
 

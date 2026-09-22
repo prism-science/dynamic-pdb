@@ -32,6 +32,8 @@ function chain(count, options = {}) {
     alpha,
     helices: options.helices ?? [],
     strands: [],
+    turns: [],
+    bends: [],
   };
 }
 
@@ -156,16 +158,13 @@ test("should say which models split residues inside a region", () => {
   );
 });
 
-test("should say which residues exist in one model and not the other", () => {
+test("should not measure a gap where only one model has coordinates", () => {
   // given -- we skip 5-6, they skip 15
   const agreement = chainAgreement(chain(20, { skip: [5, 6] }), [
     other(chain(20, { skip: [15] })),
   ]);
 
   // then
-  assert.deepEqual([...agreement.onlyOthers].sort((a, b) => a - b), [5, 6]);
-  assert.deepEqual([...agreement.onlyMine], [15]);
-  // a residue only one model places has no gap to report
   assert.equal(agreement.disagreement.has(15), false);
   assert.equal(agreement.placed.get(15), 1);
 });
