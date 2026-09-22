@@ -278,15 +278,15 @@ test("should draw stored residue metrics on the shared sequence ruler", () => {
   // then
   assert.deepEqual(
     tracks.map((track) => track.key),
-    ["bfactor", "occupancy", "rscc", "conformerCount", "rmsf"],
+    ["occupancy", "rscc", "conformerCount", "rmsf"],
   );
-  assert.equal(tracks[1].features[0].level, 0.86);
-  assert.equal(tracks[2].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
-  assert.equal(tracks[3].features[0].level, 1);
-  assert.equal(tracks[4].features[0].level, 0.5);
+  assert.equal(tracks[0].features[0].level, 0.86);
+  assert.equal(tracks[1].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
+  assert.equal(tracks[2].features[0].level, 1);
+  assert.equal(tracks[3].features[0].level, 0.5);
 });
 
-test("should prefer stored B-factor values over the coordinate fallback", () => {
+test("should prefer calculated B-factor values over stored metrics", () => {
   // given
   const [entity] = polymerEntityViews(
     [
@@ -308,10 +308,10 @@ test("should prefer stored B-factor values over the coordinate fallback", () => 
 
   // then
   assert.equal(bFactors.length, 1);
-  assert.equal(bFactors[0].features[0].title, "B-factor: 70.00 Å² | Residue 1 | Chain A");
+  assert.equal(bFactors[0].features[0].title, "B-factor: 10.00 Å² | Residue 1 | Chain A");
 });
 
-test("should show model revision residue metrics for the selected chain", () => {
+test("should not show a stored B-factor without coordinates", () => {
   // given
   const entities = polymerEntityViews(
     [{ id: "e1", label_entity_id: "1" }],
@@ -326,8 +326,8 @@ test("should show model revision residue metrics for the selected chain", () => 
   const chains = sequenceChains(entities, []);
 
   // then
-  assert.equal(chains[0].tracks[0].features[0].title, "B-factor: 20.00 Å² | Residue 1 | Chain A");
-  assert.equal(chains[1].tracks[0].features[0].title, "B-factor: 40.00 Å² | Residue 1 | Chain C");
+  assert.deepEqual(chains[0].tracks, []);
+  assert.deepEqual(chains[1].tracks, []);
 });
 
 // One chain of eight residues, written twice: this model, and another that

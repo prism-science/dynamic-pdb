@@ -107,7 +107,9 @@ export function sequenceTracks(
     });
   }
 
-  const residueTracks = residueMetricTracks(entity.residueData, length);
+  const residueTracks = residueMetricTracks(entity.residueData, length).filter(
+    (track) => track.key !== "bfactor",
+  );
   return structure
     ? [
         ...tracks,
@@ -247,16 +249,11 @@ function coordinateTracks(
     residueTracks.find((track) => track.key === key) ??
     coordinateResidueTracks.find((track) => track.key === key);
 
-  const preferredBFactor = preferredResidueTrack("bfactor");
+  const preferredBFactor = coordinateResidueTracks.find(
+    (track) => track.key === "bfactor",
+  );
   if (preferredBFactor) {
     tracks.push(preferredBFactor);
-  } else if (structure.bFactor.size > 0) {
-    tracks.push({
-      key: "bfactor",
-      label: "B-factor",
-      kind: "level",
-      features: bLevels(structure.bFactor),
-    });
   }
 
   for (const key of [
@@ -390,25 +387,6 @@ function spansOf(positions: Set<number>, length: number): Span[] {
   return spans;
 }
 
-// Scaled against this model's own range rather than an absolute one: B-factors
-// are only comparable within a structure, and a fixed scale would flatten a
-// well-ordered model into a blank row.
-function bLevels(bFactor: Map<number, number>): SequenceFeature[] {
-  const values = [...bFactor.values()];
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  const span = high - low || 1;
-  return [...bFactor.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([seq, value]) => ({
-      key: `b${seq}`,
-      start: seq,
-      end: seq,
-      title: `Residue ${seq}: B ${value.toFixed(1)}`,
-      level: (value - low) / span,
-    }));
-}
-
 type ResidueMetric = {
   key: "bfactor" | "occupancy" | "rscc" | "conformerCount" | "rmsf";
   label: string;
@@ -493,6 +471,7 @@ function residueMetricTracks(
 
 function residueDataFromCoordinates(structure: StructureResidues): ResidueData[] {
   const sequenceIDs = new Set([
+    ...structure.bFactor.keys(),
     ...structure.conformerCount.keys(),
     ...structure.rmsf.keys(),
   ]);
@@ -501,6 +480,7 @@ function residueDataFromCoordinates(structure: StructureResidues): ResidueData[]
     .map((sequenceID) => ({
       label_asym_id: structure.chainId,
       label_seq_id: sequenceID,
+      b_iso: structure.bFactor.get(sequenceID),
       conformer_count: structure.conformerCount.get(sequenceID),
       rmsf: structure.rmsf.get(sequenceID),
     }));

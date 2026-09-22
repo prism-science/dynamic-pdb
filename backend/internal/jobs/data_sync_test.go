@@ -473,12 +473,12 @@ func Test_should_map_rcsb_instance_metrics_to_residue_data(t *testing.T) {
 		{
 			LabelAsymID: "A", LabelSeqID: 2, LabelCompID: "ILE", AuthAsymID: new("X"),
 			AuthSeqID: new(52), PDBxPDBInsCode: new("A"), UniProtPosition: new("P69441:52"),
-			RSCC: new(0.97), BIso: new(18.4), Occupancy: new(0.6),
+			RSCC: new(0.97), Occupancy: new(0.6),
 		},
 		{
 			LabelAsymID: "A", LabelSeqID: 3, LabelCompID: "LEU", AuthAsymID: new("X"),
 			AuthSeqID: new(53), UniProtPosition: new("P69441:53"),
-			RSCC: new(0.95), BIso: new(20.1), Occupancy: new(1.0),
+			RSCC: new(0.95), Occupancy: new(1.0),
 		},
 	}, residues)
 }
