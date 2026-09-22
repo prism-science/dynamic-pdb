@@ -573,19 +573,6 @@
   border-top-color: var(--accent-hover);
 }
 
-/* An alternate conformation is a fact about the model, not a defect in it, so
-   it is not drawn in the colour the mutations row uses. */
-.feature[data-track="alternates"] {
-  background: var(--accent-hover);
-}
-
-/* The same thing in another model, one row each. The rows are told apart by
-   their labels, not by hue -- and this has to come after the point rule above
-   it, which would otherwise paint them in the mutations red. */
-.feature[data-track^="alt:"] {
-  background: var(--accent-hover);
-}
-
 /* ---------------------------------------------------------------------- */
 /* The residues themselves                                                 */
 /* ---------------------------------------------------------------------- */

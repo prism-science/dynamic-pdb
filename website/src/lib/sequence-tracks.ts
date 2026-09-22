@@ -212,35 +212,6 @@ function coordinateTracks(
     }
   }
 
-  if (structure.alternates.size > 0) {
-    tracks.push({
-      key: "alternates",
-      label: agreement === null ? "Alt conformers" : "Alt · this model",
-      kind: "point",
-      features: conformerRuns(structure.alternates, length, "a"),
-    });
-  }
-
-  // A row per model rather than one row for all of them: the whole question
-  // about an alternate conformation is WHO put it there. One model splitting a
-  // residue its neighbours leave alone is that model's own claim about the
-  // density, and it is invisible in a merged row. Models with no alternates
-  // get no row, so this stays one line on most entries and only grows on the
-  // ones where it is the story.
-  for (const other of agreement?.alternatesByModel ?? []) {
-    tracks.push({
-      key: `alt:${other.modelId}`,
-      label: `Alt · ${other.title}`,
-      kind: "point",
-      features: conformerRuns(
-        new Set(other.positions),
-        length,
-        "a",
-        other.title,
-      ),
-    });
-  }
-
   const coordinateResidueTracks = residueMetricTracks(
     residueDataFromCoordinates(structure),
     length,
@@ -269,9 +240,9 @@ function coordinateTracks(
 
   // Last, and the tall one. It is the only row here that is about more than
   // one model, and it is read against the rows above it -- a peak over a run
-  // the chain marks unobserved, or over a residue one model split in two, is
-  // a different finding each time -- so it belongs on the same ruler as them
-  // rather than in a chart of its own above the board.
+  // the chain marks unobserved is a different finding from an isolated peak --
+  // so it belongs on the same ruler as them rather than in a chart of its own
+  // above the board.
   if (agreement !== null) {
     const row = disagreementTrack(agreement, length);
     if (row !== null) {
@@ -339,34 +310,6 @@ function disagreementTrack(
 function niceCeiling(value: number): number {
   const steps = [0.5, 1, 2, 3, 5, 10, 20, 50];
   return steps.find((step) => value <= step) ?? Math.ceil(value);
-}
-
-/**
- * Split residues as the runs they form, not as loose residues.
- *
- * A multiconformer model splits three quarters of a chain, and fifteen
- * neighbouring single-residue marks are drawn as one unbroken bar. Clicking
- * that bar then held one residue of it -- a mark a fraction of the width of
- * the thing that was clicked, which reads as the feature being broken rather
- * than as the row being a row of residues. What looks like one block is one
- * block.
- */
-function conformerRuns(
-  positions: Set<number>,
-  length: number,
-  prefix: string,
-  model?: string,
-): SequenceFeature[] {
-  const who = model === undefined ? "" : `${model}: `;
-  return spansOf(positions, length).map((span, index) => ({
-    key: `${prefix}${index}`,
-    start: span.start,
-    end: span.end,
-    title:
-      span.start === span.end
-        ? `${who}residue ${span.start} modelled in more than one conformation`
-        : `${who}residues ${span.start}-${span.end} modelled in more than one conformation`,
-  }));
 }
 
 /** Scattered residue numbers as the runs they form. */

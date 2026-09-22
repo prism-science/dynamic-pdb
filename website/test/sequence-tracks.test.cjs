@@ -403,10 +403,12 @@ test("should draw the comparison rows from the other models' own coordinates", (
   );
   assert.equal(track("onlyOthers"), undefined);
 
-  // and their split residue is named after them, on a row of its own
-  const alt = chain.tracks.find((row) => row.key === "alt:m2");
-  assert.equal(alt.label, "Alt · qFit model");
-  assert.deepEqual(alt.features.map((feature) => feature.start), [2]);
+  // alternate conformations do not get separate rows in the sequence view
+  assert.equal(track("alternates"), undefined);
+  assert.deepEqual(
+    chain.tracks.filter((row) => row.key.startsWith("alt:")),
+    [],
+  );
 });
 
 test("should draw no comparison rows when there is nothing to compare with", () => {
@@ -415,10 +417,6 @@ test("should draw no comparison rows when there is nothing to compare with", () 
 
   // then
   assert.equal(chain.agreement, null);
-  assert.deepEqual(
-    chain.tracks.map((row) => row.key).filter((key) => key.startsWith("alt:")),
-    [],
-  );
   assert.equal(
     chain.tracks.find((row) => row.key === "departure"),
     undefined,
