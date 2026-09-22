@@ -1,0 +1,129 @@
+/* ---------------------------------------------------------------------- */
+/* The residue inspector — one residue, under the board                    */
+/* ---------------------------------------------------------------------- */
+
+/* Part of the panel, not a card under it: the border it is divided from the
+   board by is the panel's own, so the two read as one instrument. */
+.inspector {
+  border-top: 1px solid var(--border-strong);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+/* The residue's name, at the size of a heading: it is the one thing on the
+   panel a reader looks for to check they are reading the right column. */
+.title {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* How much of the chain the click is holding, when it is more than this one
+   residue. Plain text and not a badge: a badge beside the name is read as a
+   property of the residue, and this is a property of the selection. */
+.held {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.end {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.keys {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.close {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.close:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* Four groups where there is room and two where there is not: the groups are
+   what makes twelve fields readable, so they wrap rather than squeeze. */
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  padding: 14px 16px 14px;
+}
+
+.group {
+  flex: 1 1 210px;
+  min-width: 0;
+}
+
+.groupHead {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.fact {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* What the field is, in words. Set in the page's own face and not in the mono
+   one: the line under it is the data, and this is the reading around it. The
+   schema's name for the field is on the tooltip. */
+.factLabel {
+  display: block;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.factValue {
+  display: block;
+  margin-top: 1px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  /* A long value wraps rather than pushing the column wider. */
+  overflow-wrap: anywhere;
+}

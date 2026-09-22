@@ -15,8 +15,9 @@ import {
   type SequenceFeature,
   type SequenceTrack,
 } from "@/lib/sequence-tracks";
+import { residueDetail } from "@/lib/residue-detail";
 
-import DisagreementRegions from "./DisagreementRegions";
+import ResidueInspector from "./ResidueInspector";
 
 import styles from "./SequencePanel.module.css";
 
@@ -49,7 +50,11 @@ const PINCH = 100;
  * scrolls sideways and the row labels stay put.
  *
  * Clicking holds a column: open ground holds the residue under the pointer, a
- * feature holds the whole feature, and clicking what is held lets it go.
+ * feature holds the whole feature, and clicking what is held lets it go. What
+ * is held is then read out in full under the board -- the residue's name, the
+ * numbering its own file gives it, its mapped UniProt position, the
+ * conformations this model gave it and every stored metric -- because a column
+ * of bars says where a residue is and nothing about what it is.
  *
  * How much room a residue gets decides what its row can say: a letter where
  * there is space for one, otherwise a grey dot per residue, which still reads
@@ -91,6 +96,26 @@ export default function SequencePanel({
       : (chains.find((chain) => chain.key === activeKey) ?? chains[0]);
   const fitCell =
     active === null || fitLane === null ? null : fitLane / active.length;
+  const length = active?.length ?? 0;
+
+  // Gathered once per held residue rather than per row: the panel wants every
+  // field of one residue, and nearly all of them are already in maps this
+  // chain is carrying.
+  const detail = useMemo(
+    () =>
+      active === null || selection === null
+        ? null
+        : residueDetail(
+            {
+              sequence: active.sequence,
+              structure: active.structure,
+              residueData: active.residueData,
+              agreement: active.agreement,
+            },
+            selection.start,
+          ),
+    [active, selection],
+  );
 
   useEffect(() => {
     if (
@@ -150,13 +175,31 @@ export default function SequencePanel({
       return;
     }
     const onKey = (event: KeyboardEvent) => {
+      // An arrow pressed inside the chain picker belongs to the chain picker.
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) {
+        return;
+      }
       if (event.key === "Escape") {
         setSelection(null);
+        return;
       }
+      const step =
+        event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+      if (step === 0 || length === 0) {
+        return;
+      }
+      // Walking one residue at a time is how a reader finds out whether a peak
+      // is a single residue or a run of them. A held feature collapses to the
+      // residue it starts at rather than sliding along whole: the panel
+      // describes one residue, so the mark should end up on one.
+      event.preventDefault();
+      const next = Math.min(Math.max(selection.start + step, 1), length);
+      setSelection({ start: next, end: next });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selection]);
+  }, [selection, length]);
 
   useEffect(() => {
     const held = anchor.current;
@@ -437,8 +480,16 @@ export default function SequencePanel({
         </div>
       </div>
 
-      {active.agreement ? (
-        <DisagreementRegions regions={active.agreement.regions} />
+      {detail ? (
+        <ResidueInspector
+          detail={detail}
+          held={
+            selection !== null && selection.end > selection.start
+              ? selection
+              : null
+          }
+          onClose={() => setSelection(null)}
+        />
       ) : null}
     </div>
   );

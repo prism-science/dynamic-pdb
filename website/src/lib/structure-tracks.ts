@@ -58,6 +58,15 @@ export type StructureResidues = {
   /** Residues modelled in more than one conformation. */
   alternates: Set<number>;
   /**
+   * The alternate conformers of each split residue.
+   *
+   * `conformerCount` says how many there are, which is all a row can draw;
+   * this says which letters they are and how much of the residue each holds,
+   * which is what a reader asking about one residue came for -- a residue
+   * split 0.52/0.48 and one split 0.9/0.1 are different findings.
+   */
+  conformers: Map<number, Conformer[]>;
+  /**
    * Where this model puts each residue's alpha carbon.
    *
    * One position per residue, and the first one the file gives: mmCIF writes
@@ -82,7 +91,17 @@ export type StructureResidues = {
   bends: Span[];
 };
 
+/** One alternate conformation of a residue, as the coordinates record it. */
+export type Conformer = {
+  /** `label_alt_id`: the letter the file gives this conformation. */
+  id: string;
+  /** Mean occupancy over its atoms, or null where the file states none. */
+  occupancy: number | null;
+};
+
 export type Span = { start: number; end: number };
+
+type Mean = { total: number; count: number };
 
 type PositionSums = {
   count: number;
@@ -139,6 +158,7 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   const labelAsymAt = columnIndex(atoms, "label_asym_id");
   const altAt = columnIndex(atoms, "label_alt_id");
   const bAt = columnIndex(atoms, "B_iso_or_equiv");
+  const occupancyAt = columnIndex(atoms, "occupancy");
   const atomAt = columnIndex(atoms, "label_atom_id");
   const compAt = columnIndex(atoms, "label_comp_id");
   const elementAt = columnIndex(atoms, "type_symbol");
@@ -155,7 +175,7 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   }
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
-  const conformers = new Map<string, Map<number, Set<string>>>();
+  const conformers = new Map<string, Map<number, Map<string, Mean>>>();
   const firstMemberResidues = new Map<string, Set<number>>();
   const firstMemberAtoms = new Map<string, Map<number, Set<string>>>();
   const atomPositions = new Map<string, Map<string, PositionSums>>();
@@ -232,9 +252,20 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
       elementAt === -1 ? null : cifValue(row[elementAt])?.toUpperCase();
     const isHeavyAtom = element !== "H" && element !== "D";
     if (belongsToFirstMember && isHeavyAtom && alternateID !== null) {
-      const perResidue = conformers.get(key) ?? new Map<number, Set<string>>();
-      const letters = perResidue.get(seq) ?? new Set<string>();
-      letters.add(alternateID);
+      const perResidue =
+        conformers.get(key) ?? new Map<number, Map<string, Mean>>();
+      const letters = perResidue.get(seq) ?? new Map<string, Mean>();
+      const held = letters.get(alternateID) ?? { total: 0, count: 0 };
+      // Averaged over the conformer's own atoms rather than taken from the
+      // first of them: a file may refine them separately, and one atom's
+      // number would then stand for the whole side chain.
+      const occupancy =
+        occupancyAt === -1 ? null : cifNumber(row[occupancyAt]);
+      if (occupancy !== null) {
+        held.total += occupancy;
+        held.count += 1;
+      }
+      letters.set(alternateID, held);
       perResidue.set(seq, letters);
       conformers.set(key, perResidue);
     }
@@ -326,7 +357,19 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
     }
     const perResidue = conformers.get(key);
     for (const seq of residues) {
-      entity.conformerCount.set(seq, Math.max(1, perResidue?.get(seq)?.size ?? 0));
+      const letters = perResidue?.get(seq);
+      entity.conformerCount.set(seq, Math.max(1, letters?.size ?? 0));
+      if (letters && letters.size > 0) {
+        entity.conformers.set(
+          seq,
+          [...letters.entries()]
+            .sort((first, second) => first[0].localeCompare(second[0]))
+            .map(([id, mean]) => ({
+              id,
+              occupancy: mean.count === 0 ? null : mean.total / mean.count,
+            })),
+        );
+      }
     }
   }
 
@@ -433,6 +476,7 @@ const PDB_ATOM_COLUMNS = [
   "Cartn_x",
   "Cartn_y",
   "Cartn_z",
+  "occupancy",
 ];
 
 /**
@@ -529,6 +573,7 @@ function readPDBStructure(pdb: string): StructureResidues[] {
       cifCell(pdbText(line, 31, 38)),
       cifCell(pdbText(line, 39, 46)),
       cifCell(pdbText(line, 47, 54)),
+      cifCell(pdbText(line, 55, 60)),
     ]);
   }
 
@@ -678,6 +723,7 @@ function ensure(
     conformerCount: new Map(),
     rmsf: new Map(),
     alternates: new Set(),
+    conformers: new Map(),
     alpha: new Map(),
     helices: [],
     strands: [],
@@ -868,6 +914,7 @@ export function shiftResidues(
     conformerCount: move(residues.conformerCount),
     rmsf: move(residues.rmsf),
     alternates: new Set([...residues.alternates].map((seq) => seq + shift)),
+    conformers: move(residues.conformers),
     alpha: move(residues.alpha),
     helices: span(residues.helices),
     strands: span(residues.strands),

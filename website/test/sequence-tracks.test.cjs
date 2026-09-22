@@ -427,3 +427,55 @@ test("should draw no comparison rows when there is nothing to compare with", () 
     undefined,
   );
 });
+
+test("should keep alternate conformations off the board", () => {
+  // given -- residue 3 of a six-residue chain, written as conformers A and B
+  const { shiftResidues } = require("../src/lib/structure-tracks.ts");
+  const cif = `data_SPLIT
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_comp_id
+_atom_site.label_alt_id
+_atom_site.occupancy
+ATOM A A 1 1 7 MET . 1.00
+ATOM A A 1 3 9 ILE A 0.60
+ATOM A A 1 3 9 ILE B 0.40
+ATOM A A 1 6 12 VAL . 1.00
+#
+`;
+  const entity = {
+    key: "e1",
+    entityId: "1",
+    name: "Test",
+    chains: ["A"],
+    residues: 6,
+    sequence: "MKIGLV",
+    sequenceArtifactId: null,
+    organisms: [],
+    construct: null,
+    mutations: null,
+    mutationsText: null,
+    uniprotMappings: [],
+    residueData: [],
+  };
+  const structure = shiftResidues(readStructure(cif)[0], -6);
+
+  // when
+  const tracks = sequenceTracks(entity, structure);
+
+  // then -- a row of its own was tried and dropped: RCSB's own annotations
+  // viewer has no such track either, and one dot per split residue says less
+  // than the inspector does with the conformers and their occupancies
+  assert.equal(
+    tracks.some((track) => track.key === "conformations"),
+    false,
+  );
+  // but the coordinates are still read for them, which is what the inspector
+  // draws on
+  assert.equal(structure.conformerCount.get(3), 2);
+});

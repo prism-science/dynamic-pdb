@@ -501,6 +501,14 @@ export type SequenceChain = {
    *  that says how the disagreement rows were measured. Null when there was
    *  nothing to compare with. */
   agreement: ChainAgreement | null;
+  /** This model's coordinates for the chain, already moved onto the entry's
+   *  sequence. Kept beside the rows because the panel that opens on one
+   *  residue reads fields no row draws -- its name, its author numbering, the
+   *  alternate conformations and what each one holds. */
+  structure: StructureResidues | null;
+  /** The entry's stored per-residue records for this chain, for the same
+   *  panel: the metric rows draw only the values they can plot. */
+  residueData: ResidueData[];
   tracks: SequenceTrack[];
 };
 
@@ -595,6 +603,8 @@ function chainView(
     sequence,
     modelled: residues !== null,
     agreement,
+    structure: aligned,
+    residueData: chainEntity.residueData,
     tracks: sequenceTracks(chainEntity, aligned, agreement),
   };
 }

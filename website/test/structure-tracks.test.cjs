@@ -524,3 +524,122 @@ ATOM A A 1 50
   ]);
   assert.deepEqual(chain.helices, [{ start: 40, end: 50 }]);
 });
+
+// Columns as the PDB format fixes them, so a test line is built rather than
+// counted out by eye -- which is the only way an off-by-one in the reader's
+// column numbers would show up as a wrong occupancy rather than as a crash.
+function pdbLine(fields) {
+  const line = " ".repeat(80).split("");
+  const put = (start, end, value) => {
+    const text = String(value);
+    for (let index = 0; index < text.length && start + index <= end; index += 1) {
+      line[start - 1 + index] = text[index];
+    }
+  };
+  put(1, 6, "ATOM");
+  put(13, 16, fields.atom);
+  put(17, 17, fields.alt ?? " ");
+  put(18, 20, fields.comp);
+  put(22, 22, fields.chain);
+  put(23, 26, String(fields.seq).padStart(4));
+  put(31, 38, fields.x.padStart(8));
+  put(39, 46, fields.y.padStart(8));
+  put(47, 54, fields.z.padStart(8));
+  put(55, 60, fields.occupancy.padStart(6));
+  put(61, 66, fields.b.padStart(6));
+  put(77, 78, fields.element.padStart(2));
+  return line.join("").trimEnd();
+}
+
+test("should record which conformers a residue has, not only how many", () => {
+  // when -- residue 2 is written twice, as conformer A and conformer B
+  const entity = chainsOfEntity(readStructure(CIF), "1")[0];
+
+  // then
+  assert.equal(entity.conformerCount.get(2), 2);
+  assert.deepEqual(entity.conformers.get(2), [
+    { id: "A", occupancy: null },
+    { id: "B", occupancy: null },
+  ]);
+  // and a residue written once has no conformer list at all
+  assert.equal(entity.conformers.has(1), false);
+});
+
+test("should average a conformer's occupancy over its own atoms", () => {
+  // given -- conformer A refined over two atoms, B over one
+  const cif = `data_OCC
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.label_alt_id
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+ATOM A 1 1 A 0.60 10.0
+ATOM A 1 1 A 0.60 12.0
+ATOM A 1 1 B 0.40 20.0
+#
+`;
+
+  // when
+  const [chain] = readStructure(cif);
+
+  // then
+  assert.deepEqual(chain.conformers.get(1), [
+    { id: "A", occupancy: 0.6 },
+    { id: "B", occupancy: 0.4 },
+  ]);
+});
+
+test("should move the conformer lists with the rest of the chain", () => {
+  // when
+  const moved = shiftResidues(readStructure(CIF)[0], 10);
+
+  // then
+  assert.equal(moved.conformers.has(12), true);
+  assert.equal(moved.conformers.has(2), false);
+});
+
+test("should read occupancy out of a legacy PDB file", () => {
+  // given
+  const pdb = [
+    pdbLine({
+      atom: " CA ",
+      alt: "A",
+      comp: "ILE",
+      chain: "A",
+      seq: 9,
+      x: "11.104",
+      y: "13.207",
+      z: "10.000",
+      occupancy: "0.60",
+      b: "18.00",
+      element: "C",
+    }),
+    pdbLine({
+      atom: " CA ",
+      alt: "B",
+      comp: "ILE",
+      chain: "A",
+      seq: 9,
+      x: "11.500",
+      y: "13.900",
+      z: "10.100",
+      occupancy: "0.40",
+      b: "22.00",
+      element: "C",
+    }),
+    "END",
+  ].join("\n");
+
+  // when
+  const [chain] = readStructure(pdb, "pdb");
+
+  // then -- the two conformers, and the B-factor over both of them
+  assert.deepEqual(chain.conformers.get(9), [
+    { id: "A", occupancy: 0.6 },
+    { id: "B", occupancy: 0.4 },
+  ]);
+  assert.equal(chain.bFactor.get(9), 20);
+});
