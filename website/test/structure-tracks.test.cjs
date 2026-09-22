@@ -266,6 +266,140 @@ ATOM A A ? 3 23 TRP CA . 8.6 0.0 0.0
 #
 `;
 
+function pdbRecord(fields) {
+  const line = Array(80).fill(" ");
+  for (const [column, value] of fields) {
+    const text = String(value);
+    line.splice(column - 1, text.length, ...text);
+  }
+  return line.join("");
+}
+
+function pdbAtom({
+  record = "ATOM",
+  serial,
+  atom,
+  alternate = " ",
+  residue,
+  chain,
+  sequence,
+  insertion = " ",
+  x,
+  y,
+  z,
+  occupancy = 1,
+  bFactor,
+  element,
+}) {
+  return pdbRecord([
+    [1, record.padEnd(6)],
+    [7, String(serial).padStart(5)],
+    [13, atom.padStart(4)],
+    [17, alternate],
+    [18, residue.padStart(3)],
+    [22, chain],
+    [23, String(sequence).padStart(4)],
+    [27, insertion],
+    [31, x.toFixed(3).padStart(8)],
+    [39, y.toFixed(3).padStart(8)],
+    [47, z.toFixed(3).padStart(8)],
+    [55, occupancy.toFixed(2).padStart(6)],
+    [61, bFactor.toFixed(2).padStart(6)],
+    [77, element.padStart(2)],
+  ]);
+}
+
+const PDB = [
+  pdbRecord([
+    [1, "HELIX "],
+    [20, "A"],
+    [22, "  21"],
+    [32, "A"],
+    [34, "  22"],
+  ]),
+  pdbRecord([
+    [1, "SHEET "],
+    [22, "A"],
+    [23, "  24"],
+    [33, "A"],
+    [34, "  24"],
+  ]),
+  pdbAtom({
+    serial: 1, atom: "CA", residue: "GLU", chain: "A", sequence: 21,
+    x: 1, y: 0, z: 0, bFactor: 10, element: "C",
+  }),
+  pdbAtom({
+    serial: 2, atom: "CB", residue: "GLU", chain: "A", sequence: 21,
+    x: 2, y: 0, z: 0, bFactor: 20, element: "C",
+  }),
+  pdbAtom({
+    serial: 3, atom: "CA", alternate: "A", residue: "LEU", chain: "A",
+    sequence: 22, x: 4.8, y: 0, z: 0, bFactor: 30, element: "C",
+  }),
+  pdbAtom({
+    serial: 4, atom: "CA", alternate: "B", residue: "LEU", chain: "A",
+    sequence: 22, x: 5, y: 0, z: 0, bFactor: 50, element: "C",
+  }),
+  pdbAtom({
+    serial: 5, atom: "CA", residue: "TRP", chain: "A", sequence: 24,
+    x: 8.6, y: 0, z: 0, bFactor: 40, element: "C",
+  }),
+  pdbAtom({
+    record: "HETATM", serial: 6, atom: "O", residue: "HOH", chain: "A",
+    sequence: 25, x: 9, y: 0, z: 0, bFactor: 99, element: "O",
+  }),
+  "END",
+].join("\n");
+
+test("should read residue tracks from PDB coordinates", () => {
+  // given: a PDB chain with a gap, alternate conformers and secondary structure
+
+  // when
+  const [chain] = readStructure(PDB, "pdb");
+
+  // then
+  assert.equal(chain.entityId, "");
+  assert.equal(chain.chainId, "A");
+  assert.deepEqual([...chain.observed], [21, 22, 24]);
+  assert.deepEqual([...chain.names.values()], ["GLU", "LEU", "TRP"]);
+  assert.equal(chain.bFactor.get(21), 15);
+  assert.equal(chain.bFactor.get(22), 40);
+  assert.deepEqual([...chain.alternates], [22]);
+  assert.deepEqual([...chain.conformerCount], [
+    [21, 1],
+    [22, 2],
+    [24, 1],
+  ]);
+  assert.deepEqual(chain.alpha.get(22), { x: 4.8, y: 0, z: 0 });
+  assert.deepEqual(chain.helices, [{ start: 21, end: 22 }]);
+  assert.deepEqual(chain.strands, [{ start: 24, end: 24 }]);
+  assert.deepEqual(chainsOfEntity([chain], "1", ["X[auth A]"]), [chain]);
+});
+
+test("should calculate residue RMSF across PDB model frames", () => {
+  // given: one alpha carbon moves one angstrom between two MODEL frames
+  const ensemble = [
+    "MODEL        1",
+    pdbAtom({
+      serial: 1, atom: "CA", residue: "GLU", chain: "A", sequence: 21,
+      x: 0, y: 0, z: 0, bFactor: 10, element: "C",
+    }),
+    "ENDMDL",
+    "MODEL        2",
+    pdbAtom({
+      serial: 2, atom: "CA", residue: "GLU", chain: "A", sequence: 21,
+      x: 1, y: 0, z: 0, bFactor: 10, element: "C",
+    }),
+    "ENDMDL",
+  ].join("\n");
+
+  // when
+  const [chain] = readStructure(ensemble, "pdb");
+
+  // then
+  assert.ok(Math.abs(chain.rmsf.get(21) - 0.5) < 1e-8);
+});
+
 test("should number residues the way the author does, not the way the file's own sequence does", () => {
   // when -- two files that disagree about every label_seq_id in them
   const [deposited] = readStructure(DEPOSITED);

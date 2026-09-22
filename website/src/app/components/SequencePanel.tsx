@@ -678,11 +678,11 @@ function waiting(comparison?: Comparison): boolean {
  *
  * Everything else that used to be printed here -- what the comparison was
  * with, how well it fitted, what could not be read -- is on the tooltip of the
- * row it belongs to. This stays on the page because without it a PDB-format
- * model looks like a model nothing is known about.
+ * row it belongs to. This stays on the page because an unsupported coordinate
+ * format otherwise looks like a model nothing is known about.
  */
 function formatNote(comparison?: Comparison): string | null {
   return comparison?.unreadableBase
-    ? `Residue rows are read from mmCIF, and this model's coordinates are ${comparison.unreadableBase.toUpperCase()}.`
+    ? `Residue rows cannot be read from ${comparison.unreadableBase.toUpperCase()} coordinates.`
     : null;
 }

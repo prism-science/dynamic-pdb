@@ -1,5 +1,12 @@
-import { cifNumber, cifValue, columnIndex, parseCifLoops } from "@/lib/mmcif";
+import {
+  cifNumber,
+  cifValue,
+  columnIndex,
+  parseCifLoops,
+  type CifLoop,
+} from "@/lib/mmcif";
 import { oneLetter } from "@/lib/residue-codes";
+import type { StructureKind } from "@/lib/structureKind";
 import type { Point } from "@/lib/superpose";
 
 /**
@@ -84,13 +91,32 @@ type PositionSums = {
 /**
  * Read one model's coordinates into per-chain residue facts.
  *
- * Only `_atom_site`, `_struct_conf` and `_struct_sheet_range` are touched.
- * A file missing any of them yields correspondingly fewer rows rather than an
- * error: plenty of coordinate files carry no secondary-structure records, and
- * that is not a reason to show nothing.
+ * The caller normally knows the file format. Detection is kept as a fallback
+ * for tests and other direct callers.
  */
-export function readStructure(cif: string): StructureResidues[] {
-  const loops = parseCifLoops(cif);
+export function readStructure(
+  coordinates: string,
+  kind: StructureKind | null = null,
+): StructureResidues[] {
+  if (kind === "pdb" || (kind === null && looksLikePDB(coordinates))) {
+    return readPDBStructure(coordinates);
+  }
+  return readMMCIFStructure(coordinates);
+}
+
+function looksLikePDB(coordinates: string): boolean {
+  return /(?:^|\n)(?:ATOM  |MODEL |HEADER|HELIX |SHEET )/.test(coordinates);
+}
+
+/**
+ * Read residue facts from the named mmCIF categories used by the sequence
+ * view. A missing category yields fewer rows rather than failing the file.
+ */
+function readMMCIFStructure(cif: string): StructureResidues[] {
+  return readStructureLoops(parseCifLoops(cif));
+}
+
+function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   // One row per chain, not per entity: two chains of one entity share a
   // sequence and differ in exactly the things these rows show, so merging them
   // would hide the difference the reader came for. The key is internal to this
@@ -368,6 +394,175 @@ export function readStructure(cif: string): StructureResidues[] {
   return [...byEntity.values()].sort(byEntityThenChain);
 }
 
+const PDB_ATOM_COLUMNS = [
+  "group_PDB",
+  "label_asym_id",
+  "auth_asym_id",
+  "label_entity_id",
+  "label_seq_id",
+  "auth_seq_id",
+  "label_comp_id",
+  "label_atom_id",
+  "label_alt_id",
+  "B_iso_or_equiv",
+  "type_symbol",
+  "pdbx_PDB_ins_code",
+  "pdbx_PDB_model_num",
+  "Cartn_x",
+  "Cartn_y",
+  "Cartn_z",
+];
+
+/**
+ * Convert legacy PDB records into the same small set of loops the mmCIF reader
+ * consumes. All residue calculations then have one implementation.
+ */
+function readPDBStructure(pdb: string): StructureResidues[] {
+  const atoms = cifLoop("_atom_site", PDB_ATOM_COLUMNS);
+  const helices = cifLoop("_struct_conf", [
+    "conf_type_id",
+    "beg_label_asym_id",
+    "beg_auth_seq_id",
+    "end_auth_seq_id",
+  ]);
+  const strands = cifLoop("_struct_sheet_range", [
+    "beg_label_asym_id",
+    "beg_auth_seq_id",
+    "end_auth_seq_id",
+  ]);
+  let currentModel: number | null = null;
+  let modelIndex = 0;
+
+  for (const line of pdb.split(/\r?\n/)) {
+    const record = line.slice(0, 6).trim();
+    if (record === "MODEL") {
+      modelIndex += 1;
+      currentModel = pdbInteger(line, 11, 14) ?? modelIndex;
+      continue;
+    }
+    if (record === "ENDMDL") {
+      currentModel = null;
+      continue;
+    }
+    if (record === "HELIX") {
+      const span = pdbSpan(line, 20, 22, 25, 32, 34, 37);
+      if (span !== null) {
+        helices.rows.push([
+          "HELX_P",
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record === "SHEET") {
+      const span = pdbSpan(line, 22, 23, 26, 33, 34, 37);
+      if (span !== null) {
+        strands.rows.push([
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record !== "ATOM" && record !== "HETATM") {
+      continue;
+    }
+
+    const seq = pdbInteger(line, 23, 26);
+    const name = pdbText(line, 18, 20);
+    const atomName = pdbText(line, 13, 16);
+    if (seq === null || name === null || atomName === null) {
+      continue;
+    }
+    const chainId = pdbText(line, 22, 22);
+    atoms.rows.push([
+      record,
+      cifCell(chainId),
+      cifCell(chainId),
+      "?",
+      String(seq),
+      String(seq),
+      name,
+      atomName,
+      cifCell(pdbText(line, 17, 17)),
+      cifCell(pdbText(line, 61, 66)),
+      pdbElement(line, atomName),
+      cifCell(pdbText(line, 27, 27)),
+      currentModel === null ? "?" : String(currentModel),
+      cifCell(pdbText(line, 31, 38)),
+      cifCell(pdbText(line, 39, 46)),
+      cifCell(pdbText(line, 47, 54)),
+    ]);
+  }
+
+  const loops = new Map<string, CifLoop>([[atoms.category, atoms]]);
+  if (helices.rows.length > 0) {
+    loops.set(helices.category, helices);
+  }
+  if (strands.rows.length > 0) {
+    loops.set(strands.category, strands);
+  }
+  return readStructureLoops(loops);
+}
+
+function cifLoop(category: string, columns: string[]): CifLoop {
+  return { category, columns, rows: [] };
+}
+
+function cifCell(value: string | null): string {
+  return value ?? "?";
+}
+
+function pdbElement(line: string, atomName: string): string {
+  const recorded = pdbText(line, 77, 78);
+  if (recorded !== null) {
+    return recorded.toUpperCase();
+  }
+  const hydrogen = /^\d*([HD])/i.exec(atomName)?.[1];
+  return hydrogen?.toUpperCase() ?? "?";
+}
+
+function pdbText(line: string, start: number, end: number): string | null {
+  const value = line.slice(start - 1, end).trim();
+  return value === "" ? null : value;
+}
+
+function pdbInteger(line: string, start: number, end: number): number | null {
+  const value = pdbText(line, start, end);
+  if (value === null || !/^-?\d+$/.test(value)) {
+    return null;
+  }
+  return Number(value);
+}
+
+type PDBSpan = {
+  chainId: string;
+  end: number;
+  start: number;
+};
+
+function pdbSpan(
+  line: string,
+  startChainAt: number,
+  startAt: number,
+  startEndAt: number,
+  endChainAt: number,
+  endAt: number,
+  endEndAt: number,
+): PDBSpan | null {
+  const chainId = pdbText(line, startChainAt, startChainAt) ?? "";
+  const endChainId = pdbText(line, endChainAt, endChainAt) ?? "";
+  const start = pdbInteger(line, startAt, startEndAt);
+  const end = pdbInteger(line, endAt, endEndAt);
+  if (chainId !== endChainId || start === null || end === null || end < start) {
+    return null;
+  }
+  return { chainId, start, end };
+}
+
 /** Spans of one kind, sorted and with the ones that touch or overlap joined. */
 export function joinSpans(spans: Span[]): Span[] {
   const joined: Span[] = [];
@@ -402,10 +597,15 @@ export function chainsOfEntity(
   if (named.length > 0) {
     return named;
   }
-  const wanted = new Set(authorChains);
+  const wanted = new Set(authorChains.flatMap(chainIdentifiers));
   return chains.filter(
     (chain) => chain.entityId === "" && wanted.has(chain.chainId),
   );
+}
+
+function chainIdentifiers(chain: string): string[] {
+  const match = /^(.*?)\s*\[\s*auth\s+(.+?)\s*\]$/i.exec(chain);
+  return match ? [match[1].trim(), match[2].trim()] : [chain];
 }
 
 // Entity ids are numbers kept as text, so a plain string sort puts entity 10

@@ -2,6 +2,10 @@ import { fetchFileURL } from "@/lib/api/ext";
 
 const MAX_CACHED_FILES = 2;
 export const MAX_COORDINATE_FILE_BYTES = 100 * 1024 * 1024;
+const PROXIED_COORDINATE_HOSTS = new Set([
+  "dynamicpdb.com",
+  "files.dynamicpdb.com",
+]);
 
 /**
  * One coordinate file, being downloaded or already downloaded.
@@ -55,7 +59,7 @@ export async function loadCoordinateBytes(
   }
 
   try {
-    const response = await fetchFileURL(url, {
+    const response = await fetchFileURL(coordinateRequestURL(url), {
       cache: "no-store",
       signal,
     });
@@ -164,7 +168,10 @@ async function downloadCoordinateFile(
   signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    const response = await fetchFileURL(url, { cache: "no-store", signal });
+    const response = await fetchFileURL(coordinateRequestURL(url), {
+      cache: "no-store",
+      signal,
+    });
     if (!response.ok) {
       throw new Error(`${response.status} ${response.statusText}`);
     }
@@ -175,6 +182,21 @@ async function downloadCoordinateFile(
     }
     return null;
   }
+}
+
+function coordinateRequestURL(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.protocol === "https:" &&
+      PROXIED_COORDINATE_HOSTS.has(parsed.host)
+    ) {
+      return `/dpdb-file?u=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Ext references and relative URLs are resolved by fetchFileURL itself.
+  }
+  return url;
 }
 
 async function readBoundedText(response: Response): Promise<string | null> {
