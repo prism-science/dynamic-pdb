@@ -259,7 +259,6 @@ function coordinateTracks(
   for (const key of [
     "occupancy",
     "rscc",
-    "conformerCount",
     "rmsf",
   ] as const) {
     const track = preferredResidueTrack(key);
@@ -388,7 +387,7 @@ function spansOf(positions: Set<number>, length: number): Span[] {
 }
 
 type ResidueMetric = {
-  key: "bfactor" | "occupancy" | "rscc" | "conformerCount" | "rmsf";
+  key: "bfactor" | "occupancy" | "rscc" | "rmsf";
   label: string;
   value: (residue: ResidueData) => number | undefined;
   format: (value: number) => string;
@@ -416,13 +415,6 @@ const RESIDUE_METRICS: ResidueMetric[] = [
     value: (residue) => residue.rscc,
     format: (value) => value.toFixed(3),
     level: boundedLevel,
-  },
-  {
-    key: "conformerCount",
-    label: "Conformer count",
-    value: (residue) => residue.conformer_count,
-    format: (value) => String(value),
-    level: zeroBasedLevel,
   },
   {
     key: "rmsf",
@@ -472,7 +464,6 @@ function residueMetricTracks(
 function residueDataFromCoordinates(structure: StructureResidues): ResidueData[] {
   const sequenceIDs = new Set([
     ...structure.bFactor.keys(),
-    ...structure.conformerCount.keys(),
     ...structure.rmsf.keys(),
   ]);
   return [...sequenceIDs]
@@ -481,7 +472,6 @@ function residueDataFromCoordinates(structure: StructureResidues): ResidueData[]
       label_asym_id: structure.chainId,
       label_seq_id: sequenceID,
       b_iso: structure.bFactor.get(sequenceID),
-      conformer_count: structure.conformerCount.get(sequenceID),
       rmsf: structure.rmsf.get(sequenceID),
     }));
 }

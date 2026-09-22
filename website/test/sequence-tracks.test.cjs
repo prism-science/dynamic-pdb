@@ -108,7 +108,7 @@ test("should give each chain of one entity its own coordinate rows", () => {
   assert.ok(!rows(chains[1]).includes("secondary"));
 });
 
-test("should draw conformer count and RMSF calculated from coordinates", () => {
+test("should draw RMSF calculated from coordinates", () => {
   // given
   const [entity] = polymerEntityViews(
     [{ id: "e1", label_entity_id: "1" }],
@@ -117,19 +117,9 @@ test("should draw conformer count and RMSF calculated from coordinates", () => {
 
   // when
   const [chain] = sequenceChains([entity], readStructure(ENSEMBLE_CIF));
-  const conformers = chain.tracks.find(
-    (track) => track.key === "conformerCount",
-  );
   const rmsf = chain.tracks.find((track) => track.key === "rmsf");
 
   // then
-  assert.deepEqual(
-    conformers.features.map((feature) => feature.title),
-    [
-      "Conformer count: 1 | Residue 1 | Chain A",
-      "Conformer count: 2 | Residue 2 | Chain A",
-    ],
-  );
   assert.deepEqual(
     rmsf.features.map((feature) => feature.title),
     [
@@ -278,12 +268,11 @@ test("should draw stored residue metrics on the shared sequence ruler", () => {
   // then
   assert.deepEqual(
     tracks.map((track) => track.key),
-    ["occupancy", "rscc", "conformerCount", "rmsf"],
+    ["occupancy", "rscc", "rmsf"],
   );
   assert.equal(tracks[0].features[0].level, 0.86);
   assert.equal(tracks[1].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
-  assert.equal(tracks[2].features[0].level, 1);
-  assert.equal(tracks[3].features[0].level, 0.5);
+  assert.equal(tracks[2].features[0].level, 0.5);
 });
 
 test("should prefer calculated B-factor values over stored metrics", () => {

@@ -472,11 +472,6 @@
   border-top-color: #9867c5;
 }
 
-.feature[data-track="conformerCount"] {
-  background: rgb(204 51 204 / 20%);
-  border-top-color: #cc33cc;
-}
-
 .feature[data-track="rmsf"] {
   background: rgb(218 165 32 / 20%);
   border-top-color: #daa520;
