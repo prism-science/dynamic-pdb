@@ -108,6 +108,11 @@ export function sequenceTracks(
   }
 
   const residueTracks = residueMetricTracks(entity.residueData, length);
+  const conformerOccupancy = conformerOccupancyTracks(
+    entity.residueData,
+    structure ?? null,
+    length,
+  );
   return structure
     ? [
         ...tracks,
@@ -116,9 +121,10 @@ export function sequenceTracks(
           length,
           agreement ?? null,
           residueTracks,
+          conformerOccupancy,
         ),
       ]
-    : [...tracks, ...residueTracks];
+    : [...tracks, ...residueTracks, ...conformerOccupancy];
 }
 
 /** The rows read out of this model's coordinate file, and the other models'. */
@@ -127,6 +133,7 @@ function coordinateTracks(
   length: number,
   agreement: ChainAgreement | null,
   residueTracks: SequenceTrack[],
+  conformerOccupancy: SequenceTrack[],
 ): SequenceTrack[] {
   const tracks: SequenceTrack[] = [];
 
@@ -259,12 +266,13 @@ function coordinateTracks(
     });
   }
 
-  for (const key of [
-    "occupancy",
-    "rscc",
-    "conformerCount",
-    "rmsf",
-  ] as const) {
+  const averageOccupancy = preferredResidueTrack("occupancy");
+  if (averageOccupancy) {
+    tracks.push(averageOccupancy);
+  }
+  tracks.push(...conformerOccupancy);
+
+  for (const key of ["rscc", "conformerCount", "rmsf"] as const) {
     const track = preferredResidueTrack(key);
     if (track) {
       tracks.push(track);
@@ -428,7 +436,8 @@ const RESIDUE_METRICS: ResidueMetric[] = [
   {
     key: "occupancy",
     label: "Average occupancy",
-    value: (residue) => residue.occupancy,
+    value: (residue) =>
+      residue.label_alt_id ? undefined : residue.occupancy,
     format: (value) => value.toFixed(3),
     level: boundedLevel,
   },
@@ -489,6 +498,82 @@ function residueMetricTracks(
       },
     ];
   });
+}
+
+function conformerOccupancyTracks(
+  residues: ResidueData[],
+  structure: StructureResidues | null,
+  length: number,
+): SequenceTrack[] {
+  const byAlternative = new Map<
+    string,
+    Map<number, { residue: ResidueData; value: number }>
+  >();
+  const add = (
+    alternativeID: string,
+    residue: ResidueData,
+    value: number,
+  ) => {
+    if (
+      !Number.isFinite(value) ||
+      residue.label_seq_id < 1 ||
+      residue.label_seq_id > length
+    ) {
+      return;
+    }
+    const measured = byAlternative.get(alternativeID) ?? new Map();
+    measured.set(residue.label_seq_id, { residue, value });
+    byAlternative.set(alternativeID, measured);
+  };
+
+  if (structure) {
+    for (const [sequenceID, alternatives] of structure.conformerOccupancy) {
+      for (const [alternativeID, occupancy] of alternatives) {
+        add(
+          alternativeID,
+          {
+            label_asym_id: structure.chainId,
+            label_seq_id: sequenceID,
+            label_comp_id: structure.names.get(sequenceID),
+            label_alt_id: alternativeID,
+            occupancy,
+          },
+          occupancy,
+        );
+      }
+    }
+  }
+
+  for (const residue of residues) {
+    const alternativeID = residue.label_alt_id?.trim();
+    if (alternativeID && residue.occupancy !== undefined) {
+      add(alternativeID, residue, residue.occupancy);
+    }
+  }
+
+  return [...byAlternative]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([alternativeID, measured]) => {
+      const label = `Occupancy · alt ${alternativeID}`;
+      return {
+        key: `occupancy:${alternativeID}`,
+        label,
+        kind: "level" as const,
+        features: [...measured]
+          .sort(([first], [second]) => first - second)
+          .map(([sequenceID, item]) => ({
+            key: `occupancy:${alternativeID}:${sequenceID}`,
+            start: sequenceID,
+            end: sequenceID,
+            level: boundedLevel(item.value),
+            title: residueMetricTitle(
+              item.residue,
+              label,
+              item.value.toFixed(3),
+            ),
+          })),
+      };
+    });
 }
 
 function residueDataFromCoordinates(structure: StructureResidues): ResidueData[] {

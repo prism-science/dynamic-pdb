@@ -37,12 +37,13 @@ _atom_site.label_entity_id
 _atom_site.label_seq_id
 _atom_site.label_alt_id
 _atom_site.B_iso_or_equiv
-ATOM A 1 1 . 10.0
-ATOM A 1 1 . 20.0
-ATOM A 1 2 A 30.0
-ATOM A 1 2 B 50.0
-ATOM A 1 4 . 40.0
-HETATM B 2 . . 99.0
+_atom_site.occupancy
+ATOM A 1 1 . 10.0 1.0
+ATOM A 1 1 . 20.0 1.0
+ATOM A 1 2 A 30.0 0.6
+ATOM A 1 2 B 50.0 0.4
+ATOM A 1 4 . 40.0 1.0
+HETATM B 2 . . 99.0 1.0
 #
 `;
 
@@ -84,6 +85,18 @@ test("should count alternate conformers for every residue", () => {
   ]);
 });
 
+test("should read occupancy for each alternate conformer", () => {
+  // when
+  const entity = chainsOfEntity(readStructure(CIF), "1")[0];
+
+  // then
+  assert.deepEqual([...entity.conformerOccupancy.get(2)], [
+    ["A", 0.6],
+    ["B", 0.4],
+  ]);
+  assert.equal(entity.conformerOccupancy.has(1), false);
+});
+
 test("should calculate residue RMSF across ensemble members", () => {
   // given: both residues move one angstrom between two MODEL frames
   const ensemble = `data_ENSEMBLE
@@ -95,18 +108,19 @@ _atom_site.label_entity_id
 _atom_site.label_seq_id
 _atom_site.auth_seq_id
 _atom_site.label_alt_id
+_atom_site.occupancy
 _atom_site.type_symbol
 _atom_site.label_atom_id
 _atom_site.Cartn_x
 _atom_site.Cartn_y
 _atom_site.Cartn_z
 _atom_site.pdbx_PDB_model_num
-ATOM A A 1 1 1 . C CA 0 0 0 1
-ATOM A A 1 2 2 A C CA 5 0 0 1
-ATOM A A 1 2 2 B C CA 6 0 0 1
-ATOM A A 1 1 1 . C CA 1 0 0 2
-ATOM A A 1 2 2 A C CA 6 0 0 2
-ATOM A A 1 2 2 B C CA 7 0 0 2
+ATOM A A 1 1 1 . 1.0 C CA 0 0 0 1
+ATOM A A 1 2 2 A 0.6 C CA 5 0 0 1
+ATOM A A 1 2 2 B 0.4 C CA 6 0 0 1
+ATOM A A 1 1 1 . 1.0 C CA 1 0 0 2
+ATOM A A 1 2 2 A 0.6 C CA 6 0 0 2
+ATOM A A 1 2 2 B 0.4 C CA 7 0 0 2
 #
 `;
 

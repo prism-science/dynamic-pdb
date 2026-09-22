@@ -46,6 +46,8 @@ export type StructureResidues = {
   bFactor: Map<number, number>;
   /** Number of distinct alternate-conformer letters, or one when unsplit. */
   conformerCount: Map<number, number>;
+  /** Mean atom occupancy for each named alternate conformer. */
+  conformerOccupancy: Map<number, Map<string, number>>;
   /** Mean heavy-atom RMSF across members of a multi-model ensemble. */
   rmsf: Map<number, number>;
   /** Residues modelled in more than one conformation. */
@@ -114,6 +116,7 @@ export function readStructure(cif: string): StructureResidues[] {
   const elementAt = columnIndex(atoms, "type_symbol");
   const insertionAt = columnIndex(atoms, "pdbx_PDB_ins_code");
   const modelAt = columnIndex(atoms, "pdbx_PDB_model_num");
+  const occupancyAt = columnIndex(atoms, "occupancy");
   const xAt = columnIndex(atoms, "Cartn_x");
   const yAt = columnIndex(atoms, "Cartn_y");
   const zAt = columnIndex(atoms, "Cartn_z");
@@ -126,6 +129,10 @@ export function readStructure(cif: string): StructureResidues[] {
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
   const conformers = new Map<string, Map<number, Set<string>>>();
+  const conformerOccupancySums = new Map<
+    string,
+    Map<number, Map<string, { total: number; count: number }>>
+  >();
   const firstMemberResidues = new Map<string, Set<number>>();
   const firstMemberAtoms = new Map<string, Map<number, Set<string>>>();
   const atomPositions = new Map<string, Map<string, PositionSums>>();
@@ -207,6 +214,26 @@ export function readStructure(cif: string): StructureResidues[] {
       letters.add(alternateID);
       perResidue.set(seq, letters);
       conformers.set(key, perResidue);
+
+      const occupancy =
+        occupancyAt === -1 ? null : cifNumber(row[occupancyAt]);
+      if (occupancy !== null) {
+        const occupancyByResidue =
+          conformerOccupancySums.get(key) ??
+          new Map<number, Map<string, { total: number; count: number }>>();
+        const occupancyByAlternative =
+          occupancyByResidue.get(seq) ??
+          new Map<string, { total: number; count: number }>();
+        const occupancySum = occupancyByAlternative.get(alternateID) ?? {
+          total: 0,
+          count: 0,
+        };
+        occupancySum.total += occupancy;
+        occupancySum.count += 1;
+        occupancyByAlternative.set(alternateID, occupancySum);
+        occupancyByResidue.set(seq, occupancyByAlternative);
+        conformerOccupancySums.set(key, occupancyByResidue);
+      }
     }
 
     if (
@@ -297,6 +324,24 @@ export function readStructure(cif: string): StructureResidues[] {
     const perResidue = conformers.get(key);
     for (const seq of residues) {
       entity.conformerCount.set(seq, Math.max(1, perResidue?.get(seq)?.size ?? 0));
+    }
+  }
+
+  for (const [key, residues] of conformerOccupancySums) {
+    const entity = byEntity.get(key);
+    if (!entity) {
+      continue;
+    }
+    for (const [seq, alternatives] of residues) {
+      entity.conformerOccupancy.set(
+        seq,
+        new Map(
+          [...alternatives].map(([alternativeID, occupancy]) => [
+            alternativeID,
+            occupancy.total / occupancy.count,
+          ]),
+        ),
+      );
     }
   }
 
@@ -442,6 +487,7 @@ function ensure(
     names: new Map(),
     bFactor: new Map(),
     conformerCount: new Map(),
+    conformerOccupancy: new Map(),
     rmsf: new Map(),
     alternates: new Set(),
     alpha: new Map(),
@@ -629,6 +675,7 @@ export function shiftResidues(
     names: move(residues.names),
     bFactor: move(residues.bFactor),
     conformerCount: move(residues.conformerCount),
+    conformerOccupancy: move(residues.conformerOccupancy),
     rmsf: move(residues.rmsf),
     alternates: new Set([...residues.alternates].map((seq) => seq + shift)),
     alpha: move(residues.alpha),

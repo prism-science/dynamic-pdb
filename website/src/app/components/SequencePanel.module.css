@@ -467,6 +467,11 @@
   border-top-color: #ace1af;
 }
 
+.feature[data-track^="occupancy:"] {
+  background: rgb(172 225 175 / 20%);
+  border-top-color: #ace1af;
+}
+
 .feature[data-track="rscc"] {
   background: rgb(152 103 197 / 20%);
   border-top-color: #9867c5;

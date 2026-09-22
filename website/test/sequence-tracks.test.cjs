@@ -47,18 +47,19 @@ _atom_site.label_entity_id
 _atom_site.label_seq_id
 _atom_site.auth_seq_id
 _atom_site.label_alt_id
+_atom_site.occupancy
 _atom_site.type_symbol
 _atom_site.label_atom_id
 _atom_site.Cartn_x
 _atom_site.Cartn_y
 _atom_site.Cartn_z
 _atom_site.pdbx_PDB_model_num
-ATOM A A 1 1 1 . C CA 0 0 0 1
-ATOM A A 1 2 2 A C CA 5 0 0 1
-ATOM A A 1 2 2 B C CA 6 0 0 1
-ATOM A A 1 1 1 . C CA 1 0 0 2
-ATOM A A 1 2 2 A C CA 6 0 0 2
-ATOM A A 1 2 2 B C CA 7 0 0 2
+ATOM A A 1 1 1 . 1.0 C CA 0 0 0 1
+ATOM A A 1 2 2 A 0.6 C CA 5 0 0 1
+ATOM A A 1 2 2 B 0.4 C CA 6 0 0 1
+ATOM A A 1 1 1 . 1.0 C CA 1 0 0 2
+ATOM A A 1 2 2 A 0.6 C CA 6 0 0 2
+ATOM A A 1 2 2 B 0.4 C CA 7 0 0 2
 #
 `;
 
@@ -108,7 +109,7 @@ test("should give each chain of one entity its own coordinate rows", () => {
   assert.ok(!rows(chains[1]).includes("secondary"));
 });
 
-test("should draw conformer count and RMSF calculated from coordinates", () => {
+test("should draw conformer occupancy, count and RMSF from coordinates", () => {
   // given
   const [entity] = polymerEntityViews(
     [{ id: "e1", label_entity_id: "1" }],
@@ -120,9 +121,23 @@ test("should draw conformer count and RMSF calculated from coordinates", () => {
   const conformers = chain.tracks.find(
     (track) => track.key === "conformerCount",
   );
+  const occupancyA = chain.tracks.find(
+    (track) => track.key === "occupancy:A",
+  );
+  const occupancyB = chain.tracks.find(
+    (track) => track.key === "occupancy:B",
+  );
   const rmsf = chain.tracks.find((track) => track.key === "rmsf");
 
   // then
+  assert.equal(
+    occupancyA.features[0].title,
+    "Occupancy · alt A: 0.600 | Residue 2 | Chain A",
+  );
+  assert.equal(
+    occupancyB.features[0].title,
+    "Occupancy · alt B: 0.400 | Residue 2 | Chain A",
+  );
   assert.deepEqual(
     conformers.features.map((feature) => feature.title),
     [
@@ -136,6 +151,43 @@ test("should draw conformer count and RMSF calculated from coordinates", () => {
       "RMSF: 0.500 Å | Residue 1 | Chain A",
       "RMSF: 0.500 Å | Residue 2 | Chain A",
     ],
+  );
+});
+
+test("should draw stored conformer occupancy without an average row", () => {
+  // given
+  const [entity] = polymerEntityViews(
+    [{ id: "e1", label_entity_id: "1" }],
+    [{ header: ">1ABC_1|Chain A", sequence: "AC" }],
+    [
+      {
+        label_asym_id: "A",
+        label_seq_id: 2,
+        label_comp_id: "CYS",
+        label_alt_id: "A",
+        occupancy: 0.7,
+      },
+      {
+        label_asym_id: "A",
+        label_seq_id: 2,
+        label_comp_id: "CYS",
+        label_alt_id: "B",
+        occupancy: 0.3,
+      },
+    ],
+  );
+
+  // when
+  const tracks = sequenceTracks(entity, null);
+
+  // then
+  assert.deepEqual(
+    tracks.map((track) => track.key),
+    ["occupancy:A", "occupancy:B"],
+  );
+  assert.equal(
+    tracks[0].features[0].title,
+    "Occupancy · alt A: 0.700 | CYS 2 | Chain A",
   );
 });
 
