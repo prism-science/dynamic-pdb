@@ -10,7 +10,6 @@ import {
   chainsOfEntity,
   sequenceShift,
   shiftResidues,
-  type Span,
   type StructureResidues,
   unobservedSpans,
 } from "@/lib/structure-tracks";
@@ -107,7 +106,9 @@ export function sequenceTracks(
     });
   }
 
-  const residueTracks = residueMetricTracks(entity.residueData, length);
+  const residueTracks = residueMetricTracks(entity.residueData, length).filter(
+    (track) => track.key !== "bfactor",
+  );
   return structure
     ? [
         ...tracks,
@@ -130,8 +131,12 @@ function coordinateTracks(
 ): SequenceTrack[] {
   const tracks: SequenceTrack[] = [];
 
-
-  if (structure.helices.length > 0 || structure.strands.length > 0) {
+  if (
+    structure.helices.length > 0 ||
+    structure.strands.length > 0 ||
+    structure.turns.length > 0 ||
+    structure.bends.length > 0
+  ) {
     tracks.push({
       key: "secondary",
       label: "Secondary structure",
@@ -143,6 +148,20 @@ function coordinateTracks(
           end: span.end,
           title: `Helix ${span.start}-${span.end}`,
           variant: "helix",
+        })),
+        ...structure.bends.map((span, index) => ({
+          key: `b${index}`,
+          start: span.start,
+          end: span.end,
+          title: `Bend ${span.start}-${span.end}`,
+          variant: "bend",
+        })),
+        ...structure.turns.map((span, index) => ({
+          key: `t${index}`,
+          start: span.start,
+          end: span.end,
+          title: `Turn ${span.start}-${span.end}`,
+          variant: "turn",
         })),
         ...structure.strands.map((span, index) => ({
           key: `e${index}`,
@@ -172,73 +191,6 @@ function coordinateTracks(
     });
   }
 
-  // Coverage, this model against the others: which residues exist in one file
-  // and not the other. A difference here is not a small one -- it is one model
-  // claiming to know where a stretch of chain goes and another declining to
-  // say -- and until now the page could only show the gaps in the file it
-  // happened to be on.
-  if (agreement !== null) {
-    for (const [key, label, positions, note] of [
-      [
-        "onlyOthers",
-        "Only in others",
-        agreement.onlyOthers,
-        "modelled by another model of this entry and not by this one",
-      ],
-      [
-        "onlyMine",
-        "Only in this model",
-        agreement.onlyMine,
-        "modelled here and by no other model of this entry",
-      ],
-    ] as [string, string, Set<number>, string][]) {
-      const spans = spansOf(positions, length);
-      if (spans.length === 0) {
-        continue;
-      }
-      tracks.push({
-        key,
-        label,
-        kind: "span",
-        features: spans.map((span, index) => ({
-          key: `${key}${index}`,
-          start: span.start,
-          end: span.end,
-          title: `Residues ${span.start}-${span.end}: ${note}`,
-        })),
-      });
-    }
-  }
-
-  if (structure.alternates.size > 0) {
-    tracks.push({
-      key: "alternates",
-      label: agreement === null ? "Alt conformers" : "Alt · this model",
-      kind: "point",
-      features: conformerRuns(structure.alternates, length, "a"),
-    });
-  }
-
-  // A row per model rather than one row for all of them: the whole question
-  // about an alternate conformation is WHO put it there. One model splitting a
-  // residue its neighbours leave alone is that model's own claim about the
-  // density, and it is invisible in a merged row. Models with no alternates
-  // get no row, so this stays one line on most entries and only grows on the
-  // ones where it is the story.
-  for (const other of agreement?.alternatesByModel ?? []) {
-    tracks.push({
-      key: `alt:${other.modelId}`,
-      label: `Alt · ${other.title}`,
-      kind: "point",
-      features: conformerRuns(
-        new Set(other.positions),
-        length,
-        "a",
-        other.title,
-      ),
-    });
-  }
-
   const coordinateResidueTracks = residueMetricTracks(
     residueDataFromCoordinates(structure),
     length,
@@ -247,22 +199,16 @@ function coordinateTracks(
     residueTracks.find((track) => track.key === key) ??
     coordinateResidueTracks.find((track) => track.key === key);
 
-  const preferredBFactor = preferredResidueTrack("bfactor");
+  const preferredBFactor = coordinateResidueTracks.find(
+    (track) => track.key === "bfactor",
+  );
   if (preferredBFactor) {
     tracks.push(preferredBFactor);
-  } else if (structure.bFactor.size > 0) {
-    tracks.push({
-      key: "bfactor",
-      label: "B-factor",
-      kind: "level",
-      features: bLevels(structure.bFactor),
-    });
   }
 
   for (const key of [
     "occupancy",
     "rscc",
-    "conformerCount",
     "rmsf",
   ] as const) {
     const track = preferredResidueTrack(key);
@@ -273,9 +219,9 @@ function coordinateTracks(
 
   // Last, and the tall one. It is the only row here that is about more than
   // one model, and it is read against the rows above it -- a peak over a run
-  // the chain marks unobserved, or over a residue one model split in two, is
-  // a different finding each time -- so it belongs on the same ruler as them
-  // rather than in a chart of its own above the board.
+  // the chain marks unobserved is a different finding from an isolated peak --
+  // so it belongs on the same ruler as them rather than in a chart of its own
+  // above the board.
   if (agreement !== null) {
     const row = disagreementTrack(agreement, length);
     if (row !== null) {
@@ -345,72 +291,8 @@ function niceCeiling(value: number): number {
   return steps.find((step) => value <= step) ?? Math.ceil(value);
 }
 
-/**
- * Split residues as the runs they form, not as loose residues.
- *
- * A multiconformer model splits three quarters of a chain, and fifteen
- * neighbouring single-residue marks are drawn as one unbroken bar. Clicking
- * that bar then held one residue of it -- a mark a fraction of the width of
- * the thing that was clicked, which reads as the feature being broken rather
- * than as the row being a row of residues. What looks like one block is one
- * block.
- */
-function conformerRuns(
-  positions: Set<number>,
-  length: number,
-  prefix: string,
-  model?: string,
-): SequenceFeature[] {
-  const who = model === undefined ? "" : `${model}: `;
-  return spansOf(positions, length).map((span, index) => ({
-    key: `${prefix}${index}`,
-    start: span.start,
-    end: span.end,
-    title:
-      span.start === span.end
-        ? `${who}residue ${span.start} modelled in more than one conformation`
-        : `${who}residues ${span.start}-${span.end} modelled in more than one conformation`,
-  }));
-}
-
-/** Scattered residue numbers as the runs they form. */
-function spansOf(positions: Set<number>, length: number): Span[] {
-  const sorted = [...positions]
-    .filter((seq) => seq >= 1 && seq <= length)
-    .sort((a, b) => a - b);
-  const spans: Span[] = [];
-  for (const seq of sorted) {
-    const last = spans[spans.length - 1];
-    if (last && seq === last.end + 1) {
-      last.end = seq;
-      continue;
-    }
-    spans.push({ start: seq, end: seq });
-  }
-  return spans;
-}
-
-// Scaled against this model's own range rather than an absolute one: B-factors
-// are only comparable within a structure, and a fixed scale would flatten a
-// well-ordered model into a blank row.
-function bLevels(bFactor: Map<number, number>): SequenceFeature[] {
-  const values = [...bFactor.values()];
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  const span = high - low || 1;
-  return [...bFactor.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([seq, value]) => ({
-      key: `b${seq}`,
-      start: seq,
-      end: seq,
-      title: `Residue ${seq}: B ${value.toFixed(1)}`,
-      level: (value - low) / span,
-    }));
-}
-
 type ResidueMetric = {
-  key: "bfactor" | "occupancy" | "rscc" | "conformerCount" | "rmsf";
+  key: "bfactor" | "occupancy" | "rscc" | "rmsf";
   label: string;
   value: (residue: ResidueData) => number | undefined;
   format: (value: number) => string;
@@ -438,13 +320,6 @@ const RESIDUE_METRICS: ResidueMetric[] = [
     value: (residue) => residue.rscc,
     format: (value) => value.toFixed(3),
     level: boundedLevel,
-  },
-  {
-    key: "conformerCount",
-    label: "Conformer count",
-    value: (residue) => residue.conformer_count,
-    format: (value) => String(value),
-    level: zeroBasedLevel,
   },
   {
     key: "rmsf",
@@ -493,7 +368,7 @@ function residueMetricTracks(
 
 function residueDataFromCoordinates(structure: StructureResidues): ResidueData[] {
   const sequenceIDs = new Set([
-    ...structure.conformerCount.keys(),
+    ...structure.bFactor.keys(),
     ...structure.rmsf.keys(),
   ]);
   return [...sequenceIDs]
@@ -501,7 +376,7 @@ function residueDataFromCoordinates(structure: StructureResidues): ResidueData[]
     .map((sequenceID) => ({
       label_asym_id: structure.chainId,
       label_seq_id: sequenceID,
-      conformer_count: structure.conformerCount.get(sequenceID),
+      b_iso: structure.bFactor.get(sequenceID),
       rmsf: structure.rmsf.get(sequenceID),
     }));
 }
@@ -626,6 +501,14 @@ export type SequenceChain = {
    *  that says how the disagreement rows were measured. Null when there was
    *  nothing to compare with. */
   agreement: ChainAgreement | null;
+  /** This model's coordinates for the chain, already moved onto the entry's
+   *  sequence. Kept beside the rows because the panel that opens on one
+   *  residue reads fields no row draws -- its name, its author numbering, the
+   *  alternate conformations and what each one holds. */
+  structure: StructureResidues | null;
+  /** The entry's stored per-residue records for this chain, for the same
+   *  panel: the metric rows draw only the values they can plot. */
+  residueData: ResidueData[];
   tracks: SequenceTrack[];
 };
 
@@ -720,6 +603,8 @@ function chainView(
     sequence,
     modelled: residues !== null,
     agreement,
+    structure: aligned,
+    residueData: chainEntity.residueData,
     tracks: sequenceTracks(chainEntity, aligned, agreement),
   };
 }

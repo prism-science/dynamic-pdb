@@ -32,6 +32,8 @@ function chain(count, options = {}) {
     alpha,
     helices: options.helices ?? [],
     strands: [],
+    turns: [],
+    bends: [],
   };
 }
 
@@ -90,7 +92,7 @@ test("should compare shape rather than position, whatever frame the file is in",
   assert.deepEqual(agreement.regions, []);
 });
 
-test("should name a run over the floor, and say which model stands apart in it", () => {
+test("should mark a run over the floor, and nothing either side of it", () => {
   // given -- four models; one of them builds 6-10 a long way off
   const base = chain(20);
   const agreement = chainAgreement(base, [
@@ -99,21 +101,10 @@ test("should name a run over the floor, and say which model stands apart in it",
     other(bend(chain(20), 6, 10, 1.4), "m4", "qFit model"),
   ]);
 
-  // then -- one region, covering the run and nothing else
-  assert.equal(agreement.regions.length, 1);
-  const [region] = agreement.regions;
-  assert.equal(region.start, 6);
-  assert.equal(region.end, 10);
-  assert.ok(region.peak.value > DISAGREEMENT_FLOOR);
-  assert.ok(region.peak.seq >= 6 && region.peak.seq <= 10);
-
-  // the model that moved is the one furthest from where the others average out
-  assert.equal(region.standouts[0].title, "qFit model");
-  assert.ok(region.standouts[0].value > region.standouts[1].value);
-
-  // and with no helix or strand over it, it is called a loop
-  assert.equal(region.loop, true);
-  assert.deepEqual(region.split, []);
+  // then -- one run, covering exactly the residues that moved
+  assert.deepEqual(agreement.regions, [{ start: 6, end: 10 }]);
+  assert.ok(agreement.worst.value > DISAGREEMENT_FLOOR);
+  assert.ok(agreement.worst.seq >= 6 && agreement.worst.seq <= 10);
 });
 
 test("should not name two residues a region", () => {
@@ -127,45 +118,23 @@ test("should not name two residues a region", () => {
   assert.deepEqual(agreement.regions, []);
 });
 
-test("should not call a run inside a helix a loop", () => {
-  // given
-  const base = chain(20, { helices: [{ start: 4, end: 12 }] });
-  const agreement = chainAgreement(base, [
-    other(bend(chain(20), 6, 10, 1.4)),
-  ]);
-
-  // then
-  assert.equal(agreement.regions[0].loop, false);
-});
-
-test("should say which models split residues inside a region", () => {
-  // given -- the moving model also modelled 7 in two conformations
+test("should collect the residues any model split, across the chain", () => {
+  // given -- this model split 15, the other one split 7
   const agreement = chainAgreement(chain(20, { alternates: [15] }), [
     other(bend(chain(20, { alternates: [7] }), 6, 10, 1.4)),
   ]);
 
-  // then -- named in the region, and collected for the chain as a whole
-  assert.deepEqual(
-    agreement.regions[0].split.map((model) => model.title),
-    ["qFit model"],
-  );
+  // then -- the tooltip on the disagreement row says one of them did
   assert.deepEqual([...agreement.alternates].sort((a, b) => a - b), [7, 15]);
-  assert.deepEqual(
-    agreement.alternatesByModel.map((row) => [row.title, row.positions]),
-    [["qFit model", [7]]],
-  );
 });
 
-test("should say which residues exist in one model and not the other", () => {
+test("should not measure a gap where only one model has coordinates", () => {
   // given -- we skip 5-6, they skip 15
   const agreement = chainAgreement(chain(20, { skip: [5, 6] }), [
     other(chain(20, { skip: [15] })),
   ]);
 
   // then
-  assert.deepEqual([...agreement.onlyOthers].sort((a, b) => a - b), [5, 6]);
-  assert.deepEqual([...agreement.onlyMine], [15]);
-  // a residue only one model places has no gap to report
   assert.equal(agreement.disagreement.has(15), false);
   assert.equal(agreement.placed.get(15), 1);
 });

@@ -21,6 +21,8 @@ _struct_conf.beg_label_asym_id
 _struct_conf.beg_label_seq_id
 _struct_conf.end_label_seq_id
 HELX_P A 2 4
+TURN_P A 1 1
+BEND A 5 5
 #
 loop_
 _atom_site.group_PDB
@@ -98,6 +100,16 @@ test("should give each chain of one entity its own coordinate rows", () => {
   assert.ok(rows(chains[0]).includes("bfactor"));
   assert.deepEqual(
     chains[0].tracks
+      .find((track) => track.key === "secondary")
+      .features.map(({ start, end, variant }) => ({ start, end, variant })),
+    [
+      { start: 2, end: 4, variant: "helix" },
+      { start: 5, end: 5, variant: "bend" },
+      { start: 1, end: 1, variant: "turn" },
+    ],
+  );
+  assert.deepEqual(
+    chains[0].tracks
       .find((track) => track.key === "unobserved")
       .features.map(({ start, end }) => ({ start, end })),
     [
@@ -108,7 +120,7 @@ test("should give each chain of one entity its own coordinate rows", () => {
   assert.ok(!rows(chains[1]).includes("secondary"));
 });
 
-test("should draw conformer count and RMSF calculated from coordinates", () => {
+test("should draw RMSF calculated from coordinates", () => {
   // given
   const [entity] = polymerEntityViews(
     [{ id: "e1", label_entity_id: "1" }],
@@ -117,19 +129,9 @@ test("should draw conformer count and RMSF calculated from coordinates", () => {
 
   // when
   const [chain] = sequenceChains([entity], readStructure(ENSEMBLE_CIF));
-  const conformers = chain.tracks.find(
-    (track) => track.key === "conformerCount",
-  );
   const rmsf = chain.tracks.find((track) => track.key === "rmsf");
 
   // then
-  assert.deepEqual(
-    conformers.features.map((feature) => feature.title),
-    [
-      "Conformer count: 1 | Residue 1 | Chain A",
-      "Conformer count: 2 | Residue 2 | Chain A",
-    ],
-  );
   assert.deepEqual(
     rmsf.features.map((feature) => feature.title),
     [
@@ -278,15 +280,14 @@ test("should draw stored residue metrics on the shared sequence ruler", () => {
   // then
   assert.deepEqual(
     tracks.map((track) => track.key),
-    ["bfactor", "occupancy", "rscc", "conformerCount", "rmsf"],
+    ["occupancy", "rscc", "rmsf"],
   );
-  assert.equal(tracks[1].features[0].level, 0.86);
-  assert.equal(tracks[2].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
-  assert.equal(tracks[3].features[0].level, 1);
-  assert.equal(tracks[4].features[0].level, 0.5);
+  assert.equal(tracks[0].features[0].level, 0.86);
+  assert.equal(tracks[1].features[0].title, "RSCC: 0.924 | CYS 2 [auth 12] | Chain X");
+  assert.equal(tracks[2].features[0].level, 0.5);
 });
 
-test("should prefer stored B-factor values over the coordinate fallback", () => {
+test("should prefer calculated B-factor values over stored metrics", () => {
   // given
   const [entity] = polymerEntityViews(
     [
@@ -308,10 +309,10 @@ test("should prefer stored B-factor values over the coordinate fallback", () => 
 
   // then
   assert.equal(bFactors.length, 1);
-  assert.equal(bFactors[0].features[0].title, "B-factor: 70.00 Å² | Residue 1 | Chain A");
+  assert.equal(bFactors[0].features[0].title, "B-factor: 10.00 Å² | Residue 1 | Chain A");
 });
 
-test("should show model revision residue metrics for the selected chain", () => {
+test("should not show a stored B-factor without coordinates", () => {
   // given
   const entities = polymerEntityViews(
     [{ id: "e1", label_entity_id: "1" }],
@@ -326,8 +327,8 @@ test("should show model revision residue metrics for the selected chain", () => 
   const chains = sequenceChains(entities, []);
 
   // then
-  assert.equal(chains[0].tracks[0].features[0].title, "B-factor: 20.00 Å² | Residue 1 | Chain A");
-  assert.equal(chains[1].tracks[0].features[0].title, "B-factor: 40.00 Å² | Residue 1 | Chain C");
+  assert.deepEqual(chains[0].tracks, []);
+  assert.deepEqual(chains[1].tracks, []);
 });
 
 // One chain of eight residues, written twice: this model, and another that
@@ -407,17 +408,12 @@ test("should draw the comparison rows from the other models' own coordinates", (
   assert.equal(track("departure"), undefined);
   assert.equal(track("spread"), undefined);
 
-  // residue 8 is ours alone; nothing is theirs alone
+  // alternate conformations do not get separate rows in the sequence view
+  assert.equal(track("alternates"), undefined);
   assert.deepEqual(
-    track("onlyMine").features.map(({ start, end }) => [start, end]),
-    [[8, 8]],
+    chain.tracks.filter((row) => row.key.startsWith("alt:")),
+    [],
   );
-  assert.equal(track("onlyOthers"), undefined);
-
-  // and their split residue is named after them, on a row of its own
-  const alt = chain.tracks.find((row) => row.key === "alt:m2");
-  assert.equal(alt.label, "Alt · qFit model");
-  assert.deepEqual(alt.features.map((feature) => feature.start), [2]);
 });
 
 test("should draw no comparison rows when there is nothing to compare with", () => {
@@ -426,12 +422,60 @@ test("should draw no comparison rows when there is nothing to compare with", () 
 
   // then
   assert.equal(chain.agreement, null);
-  assert.deepEqual(
-    chain.tracks.map((row) => row.key).filter((key) => key.startsWith("alt:")),
-    [],
-  );
   assert.equal(
     chain.tracks.find((row) => row.key === "departure"),
     undefined,
   );
+});
+
+test("should keep alternate conformations off the board", () => {
+  // given -- residue 3 of a six-residue chain, written as conformers A and B
+  const { shiftResidues } = require("../src/lib/structure-tracks.ts");
+  const cif = `data_SPLIT
+loop_
+_atom_site.group_PDB
+_atom_site.label_asym_id
+_atom_site.auth_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.label_comp_id
+_atom_site.label_alt_id
+_atom_site.occupancy
+ATOM A A 1 1 7 MET . 1.00
+ATOM A A 1 3 9 ILE A 0.60
+ATOM A A 1 3 9 ILE B 0.40
+ATOM A A 1 6 12 VAL . 1.00
+#
+`;
+  const entity = {
+    key: "e1",
+    entityId: "1",
+    name: "Test",
+    chains: ["A"],
+    residues: 6,
+    sequence: "MKIGLV",
+    sequenceArtifactId: null,
+    organisms: [],
+    construct: null,
+    mutations: null,
+    mutationsText: null,
+    uniprotMappings: [],
+    residueData: [],
+  };
+  const structure = shiftResidues(readStructure(cif)[0], -6);
+
+  // when
+  const tracks = sequenceTracks(entity, structure);
+
+  // then -- a row of its own was tried and dropped: RCSB's own annotations
+  // viewer has no such track either, and one dot per split residue says less
+  // than the inspector does with the conformers and their occupancies
+  assert.equal(
+    tracks.some((track) => track.key === "conformations"),
+    false,
+  );
+  // but the coordinates are still read for them, which is what the inspector
+  // draws on
+  assert.equal(structure.conformerCount.get(3), 2);
 });

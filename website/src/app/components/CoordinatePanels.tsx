@@ -66,24 +66,20 @@ export function CoordinateSequencePanel({
 }: {
   entities: PolymerEntityView[];
   url: string | null;
-  /** The format of that file. Only mmCIF can be read here. */
+  /** The coordinate format of that file. */
   kind?: StructureKind | null;
   /** The entry's other models, for the per-residue comparison. */
   others?: OverlayModel[];
 }) {
-  // A PDB-format model is not downloaded at all. Nothing on this tab can be
-  // read out of one -- the rows are drawn against label_seq_id, which the
-  // format has no notion of -- and pulling several megabytes to parse nothing
-  // out of them is worse than saying so.
-  const baseReadable = kind === "mmcif";
+  const baseReadable = sequenceReadable(kind);
   const { text, loading } = useCoordinateText(baseReadable ? url : null);
-  const coordinates = useMemo(() => readChains(text, url), [text, url]);
+  const coordinates = useMemo(
+    () => readChains(text, url, kind),
+    [text, url, kind],
+  );
 
-  // Only mmCIF: the residue rows are read out of named mmCIF categories, and a
-  // PDB-format file yields none of them. Counted as unread rather than left
-  // out silently, so the panel can say the comparison is partial.
   const readable = useMemo(
-    () => others.filter((model) => model.kind === "mmcif"),
+    () => others.filter((model) => sequenceReadable(model.kind)),
     [others],
   );
   const wanted = readable.slice(0, MAX_COMPARED_MODELS);
@@ -108,12 +104,20 @@ export function CoordinateSequencePanel({
   );
 }
 
-function readChains(text: string | null, url: string | null) {
+function sequenceReadable(kind: StructureKind | null | undefined): boolean {
+  return kind === "mmcif" || kind === "pdb";
+}
+
+function readChains(
+  text: string | null,
+  url: string | null,
+  kind: StructureKind | null | undefined,
+) {
   if (text === null) {
     return [];
   }
   try {
-    return readStructure(text);
+    return readStructure(text, kind ?? null);
   } catch (error) {
     console.error("parse model coordinates failed", url, error);
     return [];
@@ -176,7 +180,7 @@ function useOtherModels(models: OverlayModel[]): {
           unread += 1;
         } else {
           budget -= text.length;
-          const chains = readChains(text, model.url);
+          const chains = readChains(text, model.url, model.kind);
           if (chains.length === 0) {
             unread += 1;
           } else {

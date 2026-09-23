@@ -4,8 +4,9 @@
 
 /* The literal colours below are RCSB's, read off their own 1D viewer
    (rcsb.org/sequence/5NX1) with the DOM open rather than remembered:
-   helix #e43372, sheet #f1d23b, unmodelled #cccccc, sequence variant #ff6666,
-   per-residue B #af5a33, and #faf3c0 for the column a click holds.
+   helix #e43372, bend #65cbf3, turn #0053d6, sheet #f1d23b,
+   unmodelled #cccccc, sequence variant #ff6666, per-residue B #af5a33, and
+   #faf3c0 for the column a click holds.
 
    The opacities are theirs too, and they are half the picture: every feature
    is drawn at fill-opacity 0.5, which is what keeps the board quiet -- at full
@@ -472,11 +473,6 @@
   border-top-color: #9867c5;
 }
 
-.feature[data-track="conformerCount"] {
-  background: rgb(204 51 204 / 20%);
-  border-top-color: #cc33cc;
-}
-
 .feature[data-track="rmsf"] {
   background: rgb(218 165 32 / 20%);
   border-top-color: #daa520;
@@ -506,18 +502,6 @@
   border-top-color: #9aa0b4;
 }
 
-/* Built by another model of the entry and not by this one -- an absence here,
-   so a cool grey rather than a colour, but not the same grey as UNMODELED,
-   which the row sits next to. */
-.feature[data-track="onlyOthers"] {
-  background: #a9b0c9;
-}
-
-/* The other way round: atoms only this model dares to place. */
-.feature[data-track="onlyMine"] {
-  background: var(--accent-hover);
-}
-
 /* A single residue can be a fraction of a pixel wide with the whole chain
    fitted to the column, which is nothing to see, so a point is given a width a
    reader can find. In RCSB's red for a sequence variant, which is what a
@@ -527,11 +511,18 @@
   background: #ff6666;
 }
 
-/* Two kinds of span share the secondary-structure row, and a row where both
-   are drawn the same colour says only "there is structure here". RCSB's own
-   pair, so a reader coming from there reads ours without relearning it. */
+/* RCSB's secondary-structure palette, so a reader coming from there reads ours
+   without relearning it. */
 .feature[data-variant="helix"] {
   background: #e43372;
+}
+
+.feature[data-variant="bend"] {
+  background: #65cbf3;
+}
+
+.feature[data-variant="turn"] {
+  background: #0053d6;
 }
 
 .feature[data-variant="strand"] {
@@ -576,19 +567,6 @@
 .feature[data-track="disagreement"][data-held="true"] {
   background: var(--accent);
   border-top-color: var(--accent-hover);
-}
-
-/* An alternate conformation is a fact about the model, not a defect in it, so
-   it is not drawn in the colour the mutations row uses. */
-.feature[data-track="alternates"] {
-  background: var(--accent-hover);
-}
-
-/* The same thing in another model, one row each. The rows are told apart by
-   their labels, not by hue -- and this has to come after the point rule above
-   it, which would otherwise paint them in the mutations red. */
-.feature[data-track^="alt:"] {
-  background: var(--accent-hover);
 }
 
 /* ---------------------------------------------------------------------- */

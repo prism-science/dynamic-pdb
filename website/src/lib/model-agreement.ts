@@ -1,7 +1,6 @@
 import type { StructureResidues } from "@/lib/structure-tracks";
 import {
   apply,
-  centroid,
   distance,
   superposeCore,
   type Point,
@@ -65,35 +64,20 @@ export type FittedChain = {
 
 export type Peak = { seq: number; value: number };
 
-/** One model, and how far out of line it sits over some stretch of chain. */
-export type ModelStandout = {
-  modelId: string;
-  title: string;
-  /** Mean distance from where the models average out, over the region. */
-  value: number;
-};
-
 /**
- * A run of residues the models place differently.
+ * A run of residues the models place differently, over the floor and long
+ * enough to be a run rather than a rotamer.
  *
- * Named and described because a chart of 165 columns does not tell anyone what
- * to do next. A region with a range, a number and a sentence does: it says go
- * and look at residues 60 to 72, these two models are the ones that disagree,
- * and this one split them into two conformations.
+ * A range and nothing else. It used to carry a peak, the model that stood
+ * furthest out and who had split the residues, all of which went into a card
+ * of generated prose under the board; the card said less than the row above it
+ * and named runs after the wrong decade ("120s loop" for residues 128-130), so
+ * it is gone. What is left is what the row itself uses: which columns to paint
+ * as a finding rather than as noise.
  */
 export type DisagreementRegion = {
   start: number;
   end: number;
-  /** The widest gap anywhere in the region, and where it falls. */
-  peak: Peak;
-  /** Models ordered by how far out they sit here, furthest first. */
-  standouts: ModelStandout[];
-  /** Models that modelled more than one conformation inside the region. */
-  split: { modelId: string; title: string }[];
-  /** No helix or strand of the model on screen covers this run, so it is
-   *  loop -- which is where this kind of difference usually lives, and worth
-   *  saying because it changes how surprising the difference is. */
-  loop: boolean;
 };
 
 export type ChainAgreement = {
@@ -113,12 +97,6 @@ export type ChainAgreement = {
   regions: DisagreementRegion[];
   /** Residues any model of the entry modelled in more than one conformation. */
   alternates: Set<number>;
-  /** The same, per model, for the rows that say who. */
-  alternatesByModel: { modelId: string; title: string; positions: number[] }[];
-  /** Residues another model places atoms in and this one does not. */
-  onlyOthers: Set<number>;
-  /** Residues this model places atoms in and no other model does. */
-  onlyMine: Set<number>;
 };
 
 /**
@@ -238,13 +216,6 @@ export function chainAgreement(
     }
   }
 
-  const theirObserved = new Set<number>();
-  for (const other of others) {
-    for (const seq of other.residues.observed) {
-      theirObserved.add(seq);
-    }
-  }
-
   return {
     fitted,
     unfitted,
@@ -252,35 +223,20 @@ export function chainAgreement(
     disagreement,
     placed,
     worst: peak(disagreement),
-    regions: regionsOf(disagreement, frames, names, base, others),
+    regions: regionsOf(disagreement),
     alternates,
-    alternatesByModel: others
-      .filter((other) => other.residues.alternates.size > 0)
-      .map((other) => ({
-        modelId: other.modelId,
-        title: other.title,
-        positions: [...other.residues.alternates].sort((a, b) => a - b),
-      })),
-    onlyOthers: difference(theirObserved, base.observed),
-    onlyMine: difference(base.observed, theirObserved),
   };
 }
 
 /**
- * The runs of residues worth naming, and what to say about each.
+ * The runs the disagreement row paints as a finding rather than as noise.
  *
  * A run has to clear the floor and be at least a few residues long: one
- * residue over the line is a rotamer or a rounding, and a region that turns
- * out to be two residues wide is not somewhere to send anyone.
+ * residue over the line is a rotamer or a rounding, and two residues are not a
+ * run of anything.
  */
-function regionsOf(
-  disagreement: Map<number, number>,
-  frames: Map<number, Point>[],
-  names: { modelId: string; title: string }[],
-  base: StructureResidues,
-  others: OtherChain[],
-): DisagreementRegion[] {
-  const runs: { start: number; end: number }[] = [];
+function regionsOf(disagreement: Map<number, number>): DisagreementRegion[] {
+  const runs: DisagreementRegion[] = [];
   for (const seq of [...disagreement.keys()].sort((a, b) => a - b)) {
     if ((disagreement.get(seq) ?? 0) < DISAGREEMENT_FLOOR) {
       continue;
@@ -292,83 +248,7 @@ function regionsOf(
     }
     runs.push({ start: seq, end: seq });
   }
-
-  const structured = [...base.helices, ...base.strands];
-
-  return runs
-    .filter((run) => run.end - run.start + 1 >= MIN_REGION)
-    .map((run) => {
-      let worst: Peak = { seq: run.start, value: 0 };
-      for (let seq = run.start; seq <= run.end; seq += 1) {
-        const value = disagreement.get(seq) ?? 0;
-        if (value > worst.value) {
-          worst = { seq, value };
-        }
-      }
-
-      return {
-        start: run.start,
-        end: run.end,
-        peak: worst,
-        standouts: standoutsIn(run, frames, names),
-        split: [
-          ...(overlaps(base.alternates, run)
-            ? [{ modelId: "", title: "this model" }]
-            : []),
-          ...others
-            .filter((other) => overlaps(other.residues.alternates, run))
-            .map((other) => ({ modelId: other.modelId, title: other.title })),
-        ],
-        loop: !structured.some(
-          (span) => span.start <= run.end && span.end >= run.start,
-        ),
-      };
-    })
-    .sort((first, second) => second.peak.value - first.peak.value);
-}
-
-// How far each model sits from where the models average out, over the region.
-// Against the average of all of them rather than against this model, because
-// the region belongs to the entry: the answer to "who is the odd one out" must
-// not change when the reader switches models.
-function standoutsIn(
-  run: { start: number; end: number },
-  frames: Map<number, Point>[],
-  names: { modelId: string; title: string }[],
-): ModelStandout[] {
-  const totals = frames.map(() => ({ total: 0, count: 0 }));
-  for (let seq = run.start; seq <= run.end; seq += 1) {
-    const here = frames.map((frame) => frame.get(seq));
-    const present = here.filter((point): point is Point => point !== undefined);
-    if (present.length < 2) {
-      continue;
-    }
-    const middle = centroid(present);
-    here.forEach((point, index) => {
-      if (point === undefined) {
-        return;
-      }
-      totals[index].total += distance(point, middle);
-      totals[index].count += 1;
-    });
-  }
-  return totals
-    .map((cell, index) => ({
-      modelId: names[index]?.modelId ?? "",
-      title: names[index]?.title ?? "a model",
-      value: cell.count === 0 ? 0 : cell.total / cell.count,
-    }))
-    .filter((row) => row.value > 0)
-    .sort((first, second) => second.value - first.value);
-}
-
-function overlaps(positions: Set<number>, run: { start: number; end: number }) {
-  for (const seq of positions) {
-    if (seq >= run.start && seq <= run.end) {
-      return true;
-    }
-  }
-  return false;
+  return runs.filter((run) => run.end - run.start + 1 >= MIN_REGION);
 }
 
 // The widest gap between any two of them, which is what "how far apart are
@@ -395,14 +275,4 @@ function peak(values: Map<number, number>): Peak | null {
     }
   }
   return found;
-}
-
-function difference(from: Set<number>, without: Set<number>): Set<number> {
-  const result = new Set<number>();
-  for (const value of from) {
-    if (!without.has(value)) {
-      result.add(value);
-    }
-  }
-  return result;
 }

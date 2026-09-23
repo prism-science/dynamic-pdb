@@ -44,6 +44,28 @@ test("should retain only two coordinate files when more files are loaded", async
   }
 });
 
+test("should proxy Dynamic PDB coordinate files through the site origin", async () => {
+  // given
+  const originalFetch = global.fetch;
+  let requestedURL;
+  global.fetch = async (url) => {
+    requestedURL = String(url);
+    return new Response("ATOM", { headers: { "content-length": "4" } });
+  };
+
+  try {
+    const url = "https://files.dynamicpdb.com/models/rerefined.pdb";
+
+    // when
+    await loadCoordinateFile(url);
+
+    // then
+    assert.equal(requestedURL, `/dpdb-file?u=${encodeURIComponent(url)}`);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("should share an in-flight request when the same file is loaded twice", async () => {
   // given
   const originalFetch = global.fetch;

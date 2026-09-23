@@ -1,5 +1,12 @@
-import { cifNumber, cifValue, columnIndex, parseCifLoops } from "@/lib/mmcif";
+import {
+  cifNumber,
+  cifValue,
+  columnIndex,
+  parseCifLoops,
+  type CifLoop,
+} from "@/lib/mmcif";
 import { oneLetter } from "@/lib/residue-codes";
+import type { StructureKind } from "@/lib/structureKind";
 import type { Point } from "@/lib/superpose";
 
 /**
@@ -51,6 +58,15 @@ export type StructureResidues = {
   /** Residues modelled in more than one conformation. */
   alternates: Set<number>;
   /**
+   * The alternate conformers of each split residue.
+   *
+   * `conformerCount` says how many there are, which is all a row can draw;
+   * this says which letters they are and how much of the residue each holds,
+   * which is what a reader asking about one residue came for -- a residue
+   * split 0.52/0.48 and one split 0.9/0.1 are different findings.
+   */
+  conformers: Map<number, Conformer[]>;
+  /**
    * Where this model puts each residue's alpha carbon.
    *
    * One position per residue, and the first one the file gives: mmCIF writes
@@ -69,9 +85,23 @@ export type StructureResidues = {
   helices: Span[];
   /** Strand spans, inclusive. */
   strands: Span[];
+  /** Turn spans explicitly recorded by the coordinate file. */
+  turns: Span[];
+  /** Bend spans explicitly recorded by the coordinate file. */
+  bends: Span[];
+};
+
+/** One alternate conformation of a residue, as the coordinates record it. */
+export type Conformer = {
+  /** `label_alt_id`: the letter the file gives this conformation. */
+  id: string;
+  /** Mean occupancy over its atoms, or null where the file states none. */
+  occupancy: number | null;
 };
 
 export type Span = { start: number; end: number };
+
+type Mean = { total: number; count: number };
 
 type PositionSums = {
   count: number;
@@ -84,13 +114,32 @@ type PositionSums = {
 /**
  * Read one model's coordinates into per-chain residue facts.
  *
- * Only `_atom_site`, `_struct_conf` and `_struct_sheet_range` are touched.
- * A file missing any of them yields correspondingly fewer rows rather than an
- * error: plenty of coordinate files carry no secondary-structure records, and
- * that is not a reason to show nothing.
+ * The caller normally knows the file format. Detection is kept as a fallback
+ * for tests and other direct callers.
  */
-export function readStructure(cif: string): StructureResidues[] {
-  const loops = parseCifLoops(cif);
+export function readStructure(
+  coordinates: string,
+  kind: StructureKind | null = null,
+): StructureResidues[] {
+  if (kind === "pdb" || (kind === null && looksLikePDB(coordinates))) {
+    return readPDBStructure(coordinates);
+  }
+  return readMMCIFStructure(coordinates);
+}
+
+function looksLikePDB(coordinates: string): boolean {
+  return /(?:^|\n)(?:ATOM  |MODEL |HEADER|HELIX |SHEET )/.test(coordinates);
+}
+
+/**
+ * Read residue facts from the named mmCIF categories used by the sequence
+ * view. A missing category yields fewer rows rather than failing the file.
+ */
+function readMMCIFStructure(cif: string): StructureResidues[] {
+  return readStructureLoops(parseCifLoops(cif));
+}
+
+function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   // One row per chain, not per entity: two chains of one entity share a
   // sequence and differ in exactly the things these rows show, so merging them
   // would hide the difference the reader came for. The key is internal to this
@@ -109,6 +158,7 @@ export function readStructure(cif: string): StructureResidues[] {
   const labelAsymAt = columnIndex(atoms, "label_asym_id");
   const altAt = columnIndex(atoms, "label_alt_id");
   const bAt = columnIndex(atoms, "B_iso_or_equiv");
+  const occupancyAt = columnIndex(atoms, "occupancy");
   const atomAt = columnIndex(atoms, "label_atom_id");
   const compAt = columnIndex(atoms, "label_comp_id");
   const elementAt = columnIndex(atoms, "type_symbol");
@@ -125,7 +175,7 @@ export function readStructure(cif: string): StructureResidues[] {
   }
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
-  const conformers = new Map<string, Map<number, Set<string>>>();
+  const conformers = new Map<string, Map<number, Map<string, Mean>>>();
   const firstMemberResidues = new Map<string, Set<number>>();
   const firstMemberAtoms = new Map<string, Map<number, Set<string>>>();
   const atomPositions = new Map<string, Map<string, PositionSums>>();
@@ -202,9 +252,20 @@ export function readStructure(cif: string): StructureResidues[] {
       elementAt === -1 ? null : cifValue(row[elementAt])?.toUpperCase();
     const isHeavyAtom = element !== "H" && element !== "D";
     if (belongsToFirstMember && isHeavyAtom && alternateID !== null) {
-      const perResidue = conformers.get(key) ?? new Map<number, Set<string>>();
-      const letters = perResidue.get(seq) ?? new Set<string>();
-      letters.add(alternateID);
+      const perResidue =
+        conformers.get(key) ?? new Map<number, Map<string, Mean>>();
+      const letters = perResidue.get(seq) ?? new Map<string, Mean>();
+      const held = letters.get(alternateID) ?? { total: 0, count: 0 };
+      // Averaged over the conformer's own atoms rather than taken from the
+      // first of them: a file may refine them separately, and one atom's
+      // number would then stand for the whole side chain.
+      const occupancy =
+        occupancyAt === -1 ? null : cifNumber(row[occupancyAt]);
+      if (occupancy !== null) {
+        held.total += occupancy;
+        held.count += 1;
+      }
+      letters.set(alternateID, held);
       perResidue.set(seq, letters);
       conformers.set(key, perResidue);
     }
@@ -296,7 +357,19 @@ export function readStructure(cif: string): StructureResidues[] {
     }
     const perResidue = conformers.get(key);
     for (const seq of residues) {
-      entity.conformerCount.set(seq, Math.max(1, perResidue?.get(seq)?.size ?? 0));
+      const letters = perResidue?.get(seq);
+      entity.conformerCount.set(seq, Math.max(1, letters?.size ?? 0));
+      if (letters && letters.size > 0) {
+        entity.conformers.set(
+          seq,
+          [...letters.entries()]
+            .sort((first, second) => first[0].localeCompare(second[0]))
+            .map(([id, mean]) => ({
+              id,
+              occupancy: mean.count === 0 ? null : mean.total / mean.count,
+            })),
+        );
+      }
     }
   }
 
@@ -345,7 +418,23 @@ export function readStructure(cif: string): StructureResidues[] {
     keyOfLabelChain,
     translate ? authOfLabel : null,
     "helices",
-    true,
+    "HELX",
+  );
+  addSpans(
+    byEntity,
+    loops.get("_struct_conf"),
+    keyOfLabelChain,
+    translate ? authOfLabel : null,
+    "turns",
+    "TURN",
+  );
+  addSpans(
+    byEntity,
+    loops.get("_struct_conf"),
+    keyOfLabelChain,
+    translate ? authOfLabel : null,
+    "bends",
+    "BEND",
   );
   addSpans(
     byEntity,
@@ -353,7 +442,7 @@ export function readStructure(cif: string): StructureResidues[] {
     keyOfLabelChain,
     translate ? authOfLabel : null,
     "strands",
-    false,
+    null,
   );
 
   // Touching spans of one kind are one span. A sheet is recorded strand by
@@ -363,9 +452,194 @@ export function readStructure(cif: string): StructureResidues[] {
   for (const entity of byEntity.values()) {
     entity.helices = joinSpans(entity.helices);
     entity.strands = joinSpans(entity.strands);
+    entity.turns = joinSpans(entity.turns);
+    entity.bends = joinSpans(entity.bends);
   }
 
   return [...byEntity.values()].sort(byEntityThenChain);
+}
+
+const PDB_ATOM_COLUMNS = [
+  "group_PDB",
+  "label_asym_id",
+  "auth_asym_id",
+  "label_entity_id",
+  "label_seq_id",
+  "auth_seq_id",
+  "label_comp_id",
+  "label_atom_id",
+  "label_alt_id",
+  "B_iso_or_equiv",
+  "type_symbol",
+  "pdbx_PDB_ins_code",
+  "pdbx_PDB_model_num",
+  "Cartn_x",
+  "Cartn_y",
+  "Cartn_z",
+  "occupancy",
+];
+
+/**
+ * Convert legacy PDB records into the same small set of loops the mmCIF reader
+ * consumes. All residue calculations then have one implementation.
+ */
+function readPDBStructure(pdb: string): StructureResidues[] {
+  const atoms = cifLoop("_atom_site", PDB_ATOM_COLUMNS);
+  const conformations = cifLoop("_struct_conf", [
+    "conf_type_id",
+    "beg_label_asym_id",
+    "beg_auth_seq_id",
+    "end_auth_seq_id",
+  ]);
+  const strands = cifLoop("_struct_sheet_range", [
+    "beg_label_asym_id",
+    "beg_auth_seq_id",
+    "end_auth_seq_id",
+  ]);
+  let currentModel: number | null = null;
+  let modelIndex = 0;
+
+  for (const line of pdb.split(/\r?\n/)) {
+    const record = line.slice(0, 6).trim();
+    if (record === "MODEL") {
+      modelIndex += 1;
+      currentModel = pdbInteger(line, 11, 14) ?? modelIndex;
+      continue;
+    }
+    if (record === "ENDMDL") {
+      currentModel = null;
+      continue;
+    }
+    if (record === "HELIX") {
+      const span = pdbSpan(line, 20, 22, 25, 32, 34, 37);
+      if (span !== null) {
+        conformations.rows.push([
+          "HELX_P",
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record === "TURN") {
+      const span = pdbSpan(line, 20, 21, 24, 31, 32, 35);
+      if (span !== null) {
+        conformations.rows.push([
+          "TURN_TY_1_P",
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record === "SHEET") {
+      const span = pdbSpan(line, 22, 23, 26, 33, 34, 37);
+      if (span !== null) {
+        strands.rows.push([
+          cifCell(span.chainId),
+          String(span.start),
+          String(span.end),
+        ]);
+      }
+      continue;
+    }
+    if (record !== "ATOM" && record !== "HETATM") {
+      continue;
+    }
+
+    const seq = pdbInteger(line, 23, 26);
+    const name = pdbText(line, 18, 20);
+    const atomName = pdbText(line, 13, 16);
+    if (seq === null || name === null || atomName === null) {
+      continue;
+    }
+    const chainId = pdbText(line, 22, 22);
+    atoms.rows.push([
+      record,
+      cifCell(chainId),
+      cifCell(chainId),
+      "?",
+      String(seq),
+      String(seq),
+      name,
+      atomName,
+      cifCell(pdbText(line, 17, 17)),
+      cifCell(pdbText(line, 61, 66)),
+      pdbElement(line, atomName),
+      cifCell(pdbText(line, 27, 27)),
+      currentModel === null ? "?" : String(currentModel),
+      cifCell(pdbText(line, 31, 38)),
+      cifCell(pdbText(line, 39, 46)),
+      cifCell(pdbText(line, 47, 54)),
+      cifCell(pdbText(line, 55, 60)),
+    ]);
+  }
+
+  const loops = new Map<string, CifLoop>([[atoms.category, atoms]]);
+  if (conformations.rows.length > 0) {
+    loops.set(conformations.category, conformations);
+  }
+  if (strands.rows.length > 0) {
+    loops.set(strands.category, strands);
+  }
+  return readStructureLoops(loops);
+}
+
+function cifLoop(category: string, columns: string[]): CifLoop {
+  return { category, columns, rows: [] };
+}
+
+function cifCell(value: string | null): string {
+  return value ?? "?";
+}
+
+function pdbElement(line: string, atomName: string): string {
+  const recorded = pdbText(line, 77, 78);
+  if (recorded !== null) {
+    return recorded.toUpperCase();
+  }
+  const hydrogen = /^\d*([HD])/i.exec(atomName)?.[1];
+  return hydrogen?.toUpperCase() ?? "?";
+}
+
+function pdbText(line: string, start: number, end: number): string | null {
+  const value = line.slice(start - 1, end).trim();
+  return value === "" ? null : value;
+}
+
+function pdbInteger(line: string, start: number, end: number): number | null {
+  const value = pdbText(line, start, end);
+  if (value === null || !/^-?\d+$/.test(value)) {
+    return null;
+  }
+  return Number(value);
+}
+
+type PDBSpan = {
+  chainId: string;
+  end: number;
+  start: number;
+};
+
+function pdbSpan(
+  line: string,
+  startChainAt: number,
+  startAt: number,
+  startEndAt: number,
+  endChainAt: number,
+  endAt: number,
+  endEndAt: number,
+): PDBSpan | null {
+  const chainId = pdbText(line, startChainAt, startChainAt) ?? "";
+  const endChainId = pdbText(line, endChainAt, endChainAt) ?? "";
+  const start = pdbInteger(line, startAt, startEndAt);
+  const end = pdbInteger(line, endAt, endEndAt);
+  if (chainId !== endChainId || start === null || end === null || end < start) {
+    return null;
+  }
+  return { chainId, start, end };
 }
 
 /** Spans of one kind, sorted and with the ones that touch or overlap joined. */
@@ -402,10 +676,15 @@ export function chainsOfEntity(
   if (named.length > 0) {
     return named;
   }
-  const wanted = new Set(authorChains);
+  const wanted = new Set(authorChains.flatMap(chainIdentifiers));
   return chains.filter(
     (chain) => chain.entityId === "" && wanted.has(chain.chainId),
   );
+}
+
+function chainIdentifiers(chain: string): string[] {
+  const match = /^(.*?)\s*\[\s*auth\s+(.+?)\s*\]$/i.exec(chain);
+  return match ? [match[1].trim(), match[2].trim()] : [chain];
 }
 
 // Entity ids are numbers kept as text, so a plain string sort puts entity 10
@@ -444,9 +723,12 @@ function ensure(
     conformerCount: new Map(),
     rmsf: new Map(),
     alternates: new Set(),
+    conformers: new Map(),
     alpha: new Map(),
     helices: [],
     strands: [],
+    turns: [],
+    bends: [],
   };
   byEntity.set(key, created);
   return created;
@@ -482,8 +764,8 @@ function addSpans(
   keyOfLabelChain: Map<string, string>,
   /** Null when the residues are already in the numbering the spans use. */
   authOfLabel: Map<string, Map<number, number>> | null,
-  field: "helices" | "strands",
-  helicesOnly: boolean,
+  field: "helices" | "strands" | "turns" | "bends",
+  typePrefix: string | null,
 ): void {
   if (!loop) {
     return;
@@ -499,11 +781,12 @@ function addSpans(
   }
 
   for (const row of loop.rows) {
-    // `_struct_conf` also carries turns and bends; only the helices are worth a
-    // row of their own, and the rest would draw as noise along the whole chain.
-    if (helicesOnly && typeAt !== -1) {
+    if (typePrefix !== null) {
+      if (typeAt === -1) {
+        continue;
+      }
       const type = cifValue(row[typeAt]) ?? "";
-      if (!type.toUpperCase().startsWith("HELX")) {
+      if (!type.toUpperCase().startsWith(typePrefix)) {
         continue;
       }
     }
@@ -631,9 +914,12 @@ export function shiftResidues(
     conformerCount: move(residues.conformerCount),
     rmsf: move(residues.rmsf),
     alternates: new Set([...residues.alternates].map((seq) => seq + shift)),
+    conformers: move(residues.conformers),
     alpha: move(residues.alpha),
     helices: span(residues.helices),
     strands: span(residues.strands),
+    turns: span(residues.turns),
+    bends: span(residues.bends),
   };
 }
 
