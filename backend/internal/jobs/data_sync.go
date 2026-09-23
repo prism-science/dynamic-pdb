@@ -452,7 +452,7 @@ func residueDataFromRCSB(
 	sequenceComponentIDs := polymerComponentIDs(entity.Polymer)
 	for _, feature := range instance.Features {
 		metricType := strings.ToUpper(strings.TrimSpace(feature.Type))
-		if metricType != "RSCC" && metricType != "AVERAGE_OCCUPANCY" {
+		if metricType != "RSCC" && metricType != "OWAB" && metricType != "AVERAGE_OCCUPANCY" {
 			continue
 		}
 		for _, position := range feature.Positions {
@@ -475,6 +475,8 @@ func residueDataFromRCSB(
 				switch metricType {
 				case "RSCC":
 					residueMetrics.RSCC = value
+				case "OWAB":
+					residueMetrics.BIso = value
 				case "AVERAGE_OCCUPANCY":
 					residueMetrics.Occupancy = value
 				}
@@ -523,6 +525,7 @@ func residueDataFromRCSB(
 			}
 		}
 		residue.RSCC = residueMetrics.RSCC
+		residue.BIso = residueMetrics.BIso
 		residue.Occupancy = residueMetrics.Occupancy
 		residuesBySequenceID[sequenceID] = residue
 	}
@@ -669,6 +672,7 @@ func componentIDForOneLetter(character byte, polymerType string) string {
 
 type rcsbResidueMetrics struct {
 	RSCC      *float64
+	BIso      *float64
 	Occupancy *float64
 }
 
