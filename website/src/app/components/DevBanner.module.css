@@ -1,0 +1,11 @@
+.banner {
+  flex: none;
+  padding: 12px 24px;
+  background: #ffc93c;
+  color: #2b1d00;
+  border-bottom: 2px solid #e0a800;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
