@@ -1,0 +1,63 @@
+name: Feature request
+description: Ask for something new, or a change to something that exists
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Tell us **what you need and why**. 
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What do you want to do?
+      description: "One or two sentences. Try: As a ___, I want to ___ so that ___."
+      placeholder: |
+        As an ML researcher, I want to download per-residue B-factors for every model in an entry as one CSV, so that I can build a training set without opening each page.
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Share a reproducible example
+      description: A link, ID, file, or screenshot. Another database that already does this is great too. 
+      placeholder: |
+        https://dynamicpdb.com/entries/dpdb_htdapubv
+        The per-residue table on this page is what I want as a download.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where would this show up?
+      multiple: true
+      # Project-specific: edit these options per repo
+      options:
+        - Website pages or viewer
+        - Search and filters
+        - Downloads and file formats
+        - API or scripts
+        - New data, metric, or metadata field
+        - Submitting data
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: How would you know it's done?
+      description: What would you check to say "yes, this works"?
+        - [ ] 
+        - [ ] 
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: How much does this matter to your work?
+      options:
+        - Nice to have
+        - Slows me down
+        - Blocks my work
