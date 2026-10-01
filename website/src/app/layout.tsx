@@ -7,6 +7,7 @@ import "./molstar-skin.scss";
 import "@dynamic-pdb/hetstar/styles.css";
 import "./globals.css";
 import AppHeader from "./components/AppHeader";
+import DevBanner from "./components/DevBanner";
 
 export const metadata: Metadata = {
   title: "dynamic-pdb",
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <AppHeader />
+        <DevBanner />
         <div className="appContent">{children}</div>
       </body>
     </html>
