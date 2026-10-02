@@ -28,6 +28,7 @@ import { hetstarDpdbConfig } from "@/lib/hetstar";
 import { hetstarCanRender } from "@/lib/hetstar-support";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
+import GuidedTour from "@/app/components/GuidedTour";
 import {
   CoordinateExperiment,
   CoordinateSequencePanel,
@@ -238,7 +239,7 @@ export default async function ScopePage({
                 <ImagePlaceholderIcon size={26} />
               )}
             </div>
-            <div className={styles.identityNames}>
+            <div className={styles.identityNames} data-tour="identity">
               {/* Kept to one line, with the whole of it in the tooltip: the
                   head is sticky and a fixed height, and the rail truncates
                   the same titles the same way. */}
@@ -257,6 +258,11 @@ export default async function ScopePage({
                 {identity.id}
               </p>
             </div>
+            <GuidedTour
+              base={base}
+              tabs={tabs.map((tab) => tab.id)}
+              hetstar={useHetstar}
+            />
             <DownloadFiles
               groups={downloadGroups(data.entities, model?.id ?? null)}
             />
@@ -295,7 +301,7 @@ export default async function ScopePage({
           ) : null}
 
           {active === "structure" && structure ? (
-            <section aria-label="Structure">
+            <section aria-label="Structure" data-tour="structure">
               {useHetstar ? (
                 <HetstarPanel entryId={data.entry.id} dpdb={dpdb} />
               ) : (
@@ -312,7 +318,7 @@ export default async function ScopePage({
           ) : null}
 
           {active === "experiment" ? (
-            <section aria-label="Experiment">
+            <section aria-label="Experiment" data-tour="experiment">
               <CoordinateExperiment
                 entry={{
                   method: data.entry.method,
@@ -326,7 +332,7 @@ export default async function ScopePage({
           ) : null}
 
           {active === "sequence" ? (
-            <section aria-label="Sequence">
+            <section aria-label="Sequence" data-tour="sequence">
               <CoordinateSequencePanel
                 entities={entities}
                 url={structure?.url ?? null}
