@@ -15,7 +15,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 
-import type { Lineage, LineageNode } from "@/lib/lineage";
+import type { Lineage, LineageNode, LineageRegion } from "@/lib/lineage";
 
 import "@xyflow/react/dist/style.css";
 import styles from "./LineageFlow.module.css";
@@ -61,6 +61,8 @@ export const ROW_PITCH = FULL.rowPitch;
 const TRUNK_STROKE = "#8a8d9b";
 const BRANCH_STROKE = "#d5d7e4";
 
+type RegionData = { region: LineageRegion };
+
 type FlowNodeData = {
   node: LineageNode;
   onOpen?: (node: LineageNode) => void;
@@ -73,6 +75,7 @@ export default function LineageFlow({
   onSelect,
   onSupply,
   compact = false,
+  interactive = true,
 }: {
   lineage: Lineage;
   onSelect?: (node: LineageNode) => void;
@@ -80,6 +83,9 @@ export default function LineageFlow({
    *  placeholder can act as the upload button for exactly that slot. */
   onSupply?: (node: LineageNode) => void;
   compact?: boolean;
+  /** False for an illustration embedded in a scrolling page: no zoom or pan,
+   *  so the wheel scrolls the page instead of the canvas. */
+  interactive?: boolean;
 }) {
   const metrics = compact ? COMPACT : FULL;
   const { nodes, edges } = useMemo(
@@ -92,8 +98,9 @@ export default function LineageFlow({
   // selectable, draggable, or the graph has an onNodeClick — with all three
   // off, a handler on the node's own markup never receives a real cursor
   // event (a synthetic .click() still fires, which makes it easy to miss).
-  const handleNodeClick: NodeMouseHandler<Node<FlowNodeData>> = useCallback(
+  const handleNodeClick: NodeMouseHandler<Node<FlowNodeData | RegionData>> = useCallback(
     (_event, flowNode) => {
+      if (!("node" in flowNode.data)) return;
       const { node } = flowNode.data;
       if (node.kind === "artifact") {
         onSelect?.(node);
@@ -114,6 +121,7 @@ export default function LineageFlow({
   return (
     <ReactFlow
       key={shape}
+      className={interactive ? undefined : styles.illustration}
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
@@ -128,9 +136,13 @@ export default function LineageFlow({
       nodesConnectable={false}
       elementsSelectable={false}
       zoomOnDoubleClick={false}
+      zoomOnScroll={interactive}
+      zoomOnPinch={interactive}
+      panOnDrag={interactive}
+      preventScrolling={interactive}
     >
       <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-      <Controls showInteractive={false} />
+      {interactive ? <Controls showInteractive={false} /> : null}
     </ReactFlow>
   );
 }
@@ -148,7 +160,7 @@ function layout(
   metrics: Metrics,
   onSelect?: (node: LineageNode) => void,
   onSupply?: (node: LineageNode) => void,
-): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
+): { nodes: Node<FlowNodeData | RegionData>[]; edges: Edge[] } {
   const rows = new Map<number, LineageNode[]>();
   for (const node of lineage.nodes) {
     const row = rows.get(node.generation) ?? [];
@@ -172,11 +184,16 @@ function layout(
     let x = -trunkWidth / 2;
     for (const node of ordered) {
       const { width, height } = sizeOf(node, metrics);
+      const columnX =
+        node.column === undefined
+          ? null
+          : node.column * (metrics.artifactWidth + metrics.columnGap) +
+            (metrics.artifactWidth - width) / 2;
       nodes.push({
         id: node.id,
         type: node.kind,
         position: {
-          x,
+          x: columnX ?? x,
           // Rows share a pitch, so a short run pill sits centred in the band
           // rather than hugging the top of it.
           y: generation * metrics.rowPitch + (metrics.artifactHeight - height) / 2,
@@ -206,7 +223,51 @@ function layout(
     },
   }));
 
-  return { nodes, edges };
+  return { nodes: [...regionNodes(lineage.regions ?? [], nodes), ...nodes], edges };
+}
+
+// Nested regions get more room, so an outer boundary never touches an inner one.
+const REGION_PADDING = { external: 16, registry: 40 } as const;
+const REGION_LABEL_SPACE = 26;
+
+function regionNodes(
+  regions: LineageRegion[],
+  nodes: Node<FlowNodeData>[],
+): Node<RegionData>[] {
+  return regions.flatMap((region) => {
+    const members = nodes.filter((node) => region.nodeIds.includes(node.id));
+    if (members.length === 0) return [];
+    const padding = REGION_PADDING[region.tone];
+    const left = Math.min(...members.map((node) => node.position.x)) - padding;
+    const top =
+      Math.min(...members.map((node) => node.position.y)) - padding - REGION_LABEL_SPACE;
+    const right = Math.max(...members.map((node) => node.position.x + (node.width ?? 0))) + padding;
+    const bottom = Math.max(...members.map((node) => node.position.y + (node.height ?? 0))) + padding;
+    return [
+      {
+        id: `region:${region.id}`,
+        type: "region",
+        position: { x: left, y: top },
+        width: right - left,
+        height: bottom - top,
+        data: { region },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: -1,
+      },
+    ];
+  });
+}
+
+/** Drawn translucent: edges sit underneath nodes and must still read through. */
+function RegionNode({ data, width, height }: NodeProps) {
+  const { region } = data as RegionData;
+  return (
+    <div className={styles.region} data-tone={region.tone} style={{ width, height }}>
+      <span className={styles.regionLabel}>{region.label}</span>
+    </div>
+  );
 }
 
 function sizeOf(
@@ -345,4 +406,5 @@ const NODE_TYPES = {
   run: RunNode,
   expected: ExpectedNode,
   overflow: OverflowNode,
+  region: RegionNode,
 };
