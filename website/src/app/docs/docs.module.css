@@ -1,6 +1,7 @@
 
 .page {
-    --docs-rail: 288px;
+    --docs-rail: 248px;
+    --docs-toc: 224px;
     --docs-bar: 47px;
     --docs-key: 72px;
 
@@ -27,47 +28,84 @@
   margin: 0 auto;
 }
 
-.tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 26px;
-}
-
-.tab {
-  position: relative;
+.crumbs {
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.crumbLink {
   color: var(--text-muted);
-  font-size: 13.5px;
-  font-weight: 530;
   text-decoration: none;
+}
+
+.crumbLink:hover {
+  color: var(--text);
+}
+
+.crumbSep {
+  color: var(--border-strong);
+}
+
+.crumbCurrent {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tab:hover {
+.pagesMenu {
+  position: relative;
+  display: none;
+  align-self: center;
+  margin-right: 14px;
+}
+
+.pagesMenuAlways {
+  display: block;
+}
+
+.pagesMenuSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 550;
+  list-style: none;
+  cursor: pointer;
+}
+
+.pagesMenuSummary::-webkit-details-marker {
+  display: none;
+}
+
+.pagesMenu[open] .pagesMenuSummary,
+.pagesMenuSummary:hover {
+  background: var(--surface-muted);
   color: var(--text);
 }
 
-.tabOn,
-.tabOn:hover {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.tabOn::after {
-  content: "";
+.pagesMenuPanel {
   position: absolute;
-  right: 0;
-  bottom: -1px;
+  top: calc(100% + 8px);
   left: 0;
-  height: 2px;
-  background: var(--accent);
-}
-
-.tab:focus-visible {
-  outline: none;
-  border-radius: 4px;
-  box-shadow: var(--ring);
+  z-index: 50;
+  width: 280px;
+  max-height: calc(100vh - var(--header-height) - var(--docs-bar) - 24px);
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
 }
 
 .srOnly {
@@ -108,6 +146,46 @@
 .body {
   flex: 1 1 0;
   min-width: 0;
+}
+
+.toc {
+  flex: none;
+  width: var(--docs-toc);
+  padding: 28px 0 48px 24px;
+}
+
+.railLabel {
+  margin: 0 0 6px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.navGroup + .navGroup {
+  margin-top: 18px;
+}
+
+.tocMenu {
+  display: none;
+  margin: 20px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.tocMenuSummary {
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tocMenu nav {
+  padding: 0 6px 8px;
 }
 
 .body p {
@@ -733,7 +811,7 @@
 
 
 .prose {
-  width: min(660px, 100%);
+  width: min(720px, 100%);
   padding: 32px 40px 88px;
   box-sizing: content-box;
 }
@@ -745,7 +823,7 @@
 }
 
 .heading {
-  margin: 0;
+  margin: 40px 0 0;
   font-size: 22px;
   font-weight: 680;
   letter-spacing: -0.02em;
@@ -803,6 +881,498 @@
 }
 
 
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 6px 0 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.prose > .bodyText:first-of-type,
+.prose > .callout:first-of-type {
+  margin-top: 20px;
+}
+
+.list {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.list li + li {
+  margin-top: 6px;
+}
+
+.list strong,
+.bodyText strong,
+.table strong {
+  color: var(--text);
+  font-weight: 620;
+}
+
+.tableWrap {
+  margin: 18px 0 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.table th {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.table td {
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.table tr + tr td {
+  border-top: 1px solid var(--border);
+}
+
+.callout {
+  margin: 24px 0 0;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.calloutLabel {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.callout .bodyText {
+  margin-top: 6px;
+}
+
+.examples {
+  margin: 24px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.examplesTabs {
+  display: flex;
+  gap: 22px;
+  padding: 0 16px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.examplesTab {
+  position: relative;
+  flex: none;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 530;
+  cursor: pointer;
+}
+
+.examplesTab:hover {
+  color: var(--text);
+}
+
+.examplesTabOn,
+.examplesTabOn:hover {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.examplesTabOn::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.examplesTab:focus-visible,
+.examplesArrow:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: var(--ring);
+}
+
+.examplesCanvas {
+  height: 520px;
+  background: var(--surface-muted);
+}
+
+.examplesLoading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.examplesFooter {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.examplesCaption {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.examplesStepper {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.examplesArrow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.examplesArrow:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.examplesCount {
+  min-width: 36px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.tourRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin: 28px 0 0;
+}
+
+.tourButton {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tourButton:hover {
+  background: var(--accent-hover);
+}
+
+.tourButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tourHint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.prevNext {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 64px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.prevNextCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.prevNextCard:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.prevNextCardNext {
+  grid-column: 2;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.prevNextLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.prevNextTitle {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.apiPrevNext {
+  width: min(var(--content-max), calc(100% - 48px));
+  margin: 0 auto 64px;
+}
+
+.landing {
+  width: min(960px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 40px 0 88px;
+}
+
+.landing .lead {
+  margin-top: 12px;
+  color: var(--text-secondary);
+}
+
+.featured {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 32px;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 20px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 120ms ease;
+}
+
+a.feature:hover {
+  border-color: var(--accent);
+}
+
+.feature .railLabel {
+  padding: 0;
+  margin: 0;
+  color: var(--accent);
+}
+
+.featureTitle {
+  margin: 6px 0 0;
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.feature .cardBody {
+  margin: 8px 0 0;
+}
+
+.featureCode {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.featureMore {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.featureMore::after {
+  content: " \2192";
+}
+
+.steps {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  position: relative;
+  padding: 0 0 0 34px;
+  counter-increment: step;
+}
+
+.steps li + li {
+  margin-top: 14px;
+}
+
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.stepLink {
+  display: block;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 620;
+  text-decoration: none;
+}
+
+.stepLink:hover {
+  color: var(--accent);
+}
+
+.stepBody {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.landingGroup {
+  margin-top: 36px;
+}
+
+.landingGroup .railLabel {
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cardTitle {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.cardBody {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1100px) {
+  .toc {
+    display: none;
+  }
+
+  .tocMenu {
+    display: block;
+  }
+}
+
+
 @media (max-width: 900px) {
   .bar {
     width: calc(100% - 28px);
@@ -815,6 +1385,31 @@
 
   .rail {
     display: none;
+  }
+
+  .pagesMenu {
+    display: block;
+  }
+
+  .prevNext,
+  .featured {
+    grid-template-columns: 1fr;
+  }
+
+  .prevNextCardNext {
+    grid-column: 1;
+  }
+
+  .examplesCanvas {
+    height: 380px;
+  }
+
+  .examplesFooter {
+    flex-direction: column;
+  }
+
+  .apiPrevNext {
+    width: calc(100% - 28px);
   }
 
   .prose {

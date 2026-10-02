@@ -23,6 +23,12 @@ const config: NextConfig = {
   sassOptions: {
     includePaths: [path.join(process.cwd(), "node_modules")],
   },
+  // Docs pages are Markdown under content/docs. Bundled as plain strings so
+  // the production image, which ships .next but not content/, still has them.
+  webpack: (webpackConfig) => {
+    webpackConfig.module.rules.push({ test: /\.md$/, type: "asset/source" });
+    return webpackConfig;
+  },
 };
 
 export default config;
