@@ -225,6 +225,7 @@ export default function ScopeRail({
       <aside
         className={styles.rail}
         aria-label="Models"
+        data-tour="rail"
         data-open={open ? "true" : undefined}
         onPointerEnter={() => intendTo(true)}
         onPointerLeave={() => intendTo(false)}

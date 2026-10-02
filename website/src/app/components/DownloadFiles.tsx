@@ -48,7 +48,7 @@ export default function DownloadFiles({ groups }: { groups: DownloadGroup[] }) {
   }
 
   return (
-    <div className={styles.wrapper} ref={wrapper}>
+    <div className={styles.wrapper} ref={wrapper} data-tour="download">
       <button
         type="button"
         className={styles.button}

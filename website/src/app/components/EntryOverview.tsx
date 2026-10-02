@@ -114,12 +114,12 @@ export default function EntryOverview({
           rulers: squeezed into the right-hand column they had a third of the
           room and every model on them landed on top of the next. */}
       {model && scales.length > 0 ? (
-        <section className={styles.section}>
+        <section className={styles.section} data-tour="evaluations">
           <h2 className={styles.heading}>Evaluations</h2>
           <MetricScales scales={scales} />
         </section>
       ) : model && model.metrics.length > 0 ? (
-        <section className={styles.section}>
+        <section className={styles.section} data-tour="evaluations">
           <h2 className={styles.heading}>Evaluations</h2>
           <MetricTiles metrics={model.metrics} />
         </section>

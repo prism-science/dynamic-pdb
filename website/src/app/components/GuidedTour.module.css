@@ -1,0 +1,159 @@
+/* Sits beside Download as its quieter sibling: same height and type, outlined
+   rather than filled, so the primary action stays the primary action. */
+.start {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.start:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.start:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* The dimming is the spotlight's own shadow, so the target is the one thing
+   left at full brightness. It takes no clicks: the page stays usable under the
+   tour. */
+.spotlight {
+  position: fixed;
+  z-index: 1001;
+  border-radius: var(--radius);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 9999px rgba(26, 30, 42, 0.3);
+  pointer-events: none;
+  transition:
+    top 180ms ease,
+    left 180ms ease,
+    width 180ms ease,
+    height 180ms ease;
+}
+
+.card {
+  position: fixed;
+  z-index: 1002;
+  box-sizing: border-box;
+  width: 380px;
+  padding: 16px 18px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  transition:
+    top 180ms ease,
+    left 180ms ease;
+}
+
+.count {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0 0 2px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.body a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.body a:hover {
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.skip,
+.back,
+.next {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.skip {
+  margin-right: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+}
+
+.skip:hover {
+  color: var(--text-secondary);
+}
+
+.back {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.next {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.next:hover {
+  background: var(--accent-hover);
+}
+
+.skip:focus-visible,
+.back:focus-visible,
+.next:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
