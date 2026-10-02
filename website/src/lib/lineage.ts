@@ -33,6 +33,16 @@ export type LineageNode = {
   current: boolean;
   /** Set on an "overflow" node: how many siblings it stands in for. */
   hiddenCount?: number;
+  /** Pins the node to a column instead of centring its row. */
+  column?: number;
+};
+
+/** A labelled boundary drawn behind a set of nodes. */
+export type LineageRegion = {
+  id: string;
+  label: string;
+  nodeIds: string[];
+  tone: "registry" | "external";
 };
 
 /**
@@ -141,6 +151,7 @@ export type Lineage = {
   // Runs on the chain, oldest first. The rail button is only worth showing
   // when there is at least one.
   runCount: number;
+  regions?: LineageRegion[];
 };
 
 export function buildLineage(

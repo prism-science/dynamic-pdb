@@ -1,22 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { sectionIds, type DocsSection, type DocsTab } from "./tabs";
+import { sectionIds, type DocsSection } from "./pages";
 
 import styles from "./docs.module.css";
 
-export default function DocsRail({ current }: { current: DocsTab }) {
-  const active = useActiveSection(sectionIds(current.sections));
+export default function OnThisPage({ sections }: { sections: DocsSection[] }) {
+  const active = useActiveSection(sectionIds(sections));
+  if (sections.length === 0) return null;
 
   return (
-    <aside className={styles.rail}>
-      <nav className={styles.railInner} aria-label={`${current.label} sections`}>
-        {current.sections.map((section: DocsSection) => (
+    <aside className={styles.toc}>
+      <nav className={styles.railInner} aria-label="On this page">
+        <p className={styles.railLabel}>On this page</p>
+        {sections.map((section) => (
           <Item key={section.id} section={section} active={active} />
         ))}
       </nav>
     </aside>
+  );
+}
+
+/** The same list for narrow screens, folded into the top of the page. */
+export function OnThisPageMenu({ sections }: { sections: DocsSection[] }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  if (sections.length === 0) return null;
+
+  return (
+    <details
+      ref={menu}
+      className={styles.tocMenu}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a")) menu.current?.removeAttribute("open");
+      }}
+    >
+      <summary className={styles.tocMenuSummary}>On this page</summary>
+      <nav aria-label="On this page">
+        {sections.map((section) => (
+          <Item key={section.id} section={section} active={null} />
+        ))}
+      </nav>
+    </details>
   );
 }
 

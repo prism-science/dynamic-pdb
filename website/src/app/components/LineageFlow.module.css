@@ -258,3 +258,53 @@
 .overflow[data-compact="true"] .overflowLabel {
   font-size: 10px;
 }
+
+/* Docs illustrations sit on a tinted panel, so cards lift off it. */
+.illustration .artifact {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.illustration .run {
+  border-color: var(--text-muted);
+}
+
+.region {
+  box-sizing: border-box;
+  padding: 6px 12px;
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+}
+
+.region[data-tone="registry"] {
+  border: 1.5px solid rgba(102, 59, 228, 0.45);
+  background: rgba(102, 59, 228, 0.05);
+}
+
+.region[data-tone="external"] {
+  border: 1.5px dashed var(--l1);
+  background: rgba(26, 30, 42, 0.05);
+}
+
+.regionLabel {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.region[data-tone="registry"] .regionLabel {
+  background: var(--accent);
+  color: #fff;
+}
+
+.region[data-tone="external"] .regionLabel {
+  background: var(--brand-ink);
+  color: #fff;
+}

@@ -50,7 +50,7 @@ entries:
 
 export default function UploadDocs() {
   return (
-    <div className={styles.prose}>
+    <>
       <p className={styles.lead}>
         <code className={styles.code}>dynamic-pdb</code> is the command line
         client for the registry. Use it to deposit datasets: entries, models,
@@ -233,6 +233,6 @@ export default function UploadDocs() {
           leave these IDs out.
         </li>
       </ul>
-    </div>
+    </>
   );
 }
