@@ -37,8 +37,14 @@ const NAV = [
   { label: "Browse", href: "/browse" },
   { label: "Download", href: "/download" },
   { label: "Docs", href: "/docs" },
-  { label: "About", href: "/about" },
+  { label: "About", href: "/docs/about" },
 ] as const;
+
+// About is a page inside the docs, so Docs is the item that lights up there.
+function isCurrent(pathname: string, href: string): boolean {
+  if (href === "/docs/about") return false;
+  return pathname.startsWith(href);
+}
 
 export default function HeaderBar({ user, reviews }: Props) {
   const pathname = usePathname();
@@ -72,7 +78,7 @@ export default function HeaderBar({ user, reviews }: Props) {
                 className={styles.navLink}
                 href={item.href}
                 aria-current={
-                  pathname.startsWith(item.href) ? "page" : undefined
+                  isCurrent(pathname, item.href) ? "page" : undefined
                 }
               >
                 {item.label}
