@@ -1,13 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import AppFooter from "../components/AppFooter";
 
 import DocsBar from "./DocsBar";
-import LegacyHashRedirect from "./LegacyHashRedirect";
 import { docsGroups, docsHref } from "./pages";
 
 import styles from "./docs.module.css";
+
+export const metadata: Metadata = {
+  title: "About · Dynamic PDB",
+};
 
 const QUICK_START = [
   {
@@ -30,8 +34,6 @@ const QUICK_START = [
 const API_EXAMPLE = `curl -H 'Accept: application/vnd.api+json' \\
   'https://dynamicpdb.com/api/v1/entries?pdb_id=7C24'`;
 
-const CLI_EXAMPLE = "curl -fsSL https://dynamicpdb.com/install.sh | bash";
-
 type SearchParamValue = string | string[] | undefined;
 type Props = { searchParams?: Promise<Record<string, SearchParamValue>> };
 
@@ -39,18 +41,16 @@ export default async function Docs({ searchParams }: Props) {
   const params = (await searchParams) ?? {};
   const tab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
   if (tab === "api") redirect("/docs/api");
-  if (tab === "upload") redirect("/docs/cli");
 
   return (
     <>
       <main className={styles.page} aria-label="Docs">
-        <LegacyHashRedirect />
         <DocsBar page={null} menuAlways />
         <div className={styles.landing}>
-          <h1 className={styles.title}>Documentation</h1>
+          <h1 className={styles.title}>About</h1>
           <p className={styles.lead}>
             How The Dynamic PDB organizes structural models and their evidence,
-            and how to find, compare, download, and contribute data.
+            and how to find, compare, and download data.
           </p>
 
           <section className={styles.featured} aria-label="Start here">
@@ -67,6 +67,16 @@ export default async function Docs({ searchParams }: Props) {
                   </li>
                 ))}
               </ol>
+              <span className={styles.featureMore}>
+                <a
+                  className={styles.tourButton}
+                  href="/docs/tour"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Take the tour
+                </a>
+              </span>
             </div>
 
             <Link href="/docs/api" className={styles.feature}>
@@ -78,20 +88,9 @@ export default async function Docs({ searchParams }: Props) {
               <pre className={styles.featureCode}>
                 <code>{API_EXAMPLE}</code>
               </pre>
-              <span className={styles.featureMore}>API reference</span>
-            </Link>
-
-            <Link href="/docs/cli" className={styles.feature}>
-              <p className={styles.railLabel}>CLI</p>
-              <h2 className={styles.featureTitle}>Upload in batches</h2>
-              <p className={styles.cardBody}>
-                Scan a folder, review the generated manifest, and upload. For
-                approved depositors.
-              </p>
-              <pre className={styles.featureCode}>
-                <code>{CLI_EXAMPLE}</code>
-              </pre>
-              <span className={styles.featureMore}>CLI guide</span>
+              <span className={styles.featureMore}>
+                <span className={styles.tourButton}>API reference</span>
+              </span>
             </Link>
           </section>
 

@@ -43,7 +43,7 @@ export default function DocsBar({
 
         <nav className={styles.crumbs} aria-label="Breadcrumb">
           <Link href="/docs" className={styles.crumbLink}>
-            Docs
+            About
           </Link>
           {page ? (
             <>
