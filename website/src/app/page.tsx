@@ -24,6 +24,9 @@ import styles from "./landing.module.css";
  * and passing the fetched values in.
  */
 const PLACEHOLDER = {
+  // When the figures below were exported. Taken from the commit that added
+  // them, since the export itself carried no timestamp.
+  snapshotAt: "2026-08-19T15:11:51Z",
   counts: {
     // L0: raw source datasets (HDF5 diffraction, raw images, cryo-EM particles).
     // Genuinely zero, not a placeholder — today we only hold MTZs — so this one
@@ -144,6 +147,18 @@ function formatDepositedAt(iso: string): string {
   return `${depositTime.format(at)} ${depositDate.format(at)}`;
 }
 
+// The snapshot needs only the minute, and in UTC for the same reason as above.
+const snapshotTime = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "UTC",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function formatSnapshotAt(iso: string): string {
+  const at = new Date(iso);
+  return `${depositDate.format(at)} ${snapshotTime.format(at)} UTC`;
+}
+
 /**
  * Print a headline count as a round approximation.
  *
@@ -188,6 +203,12 @@ export default async function Home() {
           {/* A plain GET form, so search still works before any JavaScript
               arrives and lands on the same list the header search does. */}
           <LandingSearch samples={SAMPLE_SEARCHES} />
+
+          {/* /docs/tour picks the sample entry for this environment and opens
+              it with the guided tour running. */}
+          <Link className={styles.tour} href="/docs/tour" prefetch={false}>
+            Take the tour
+          </Link>
         </section>
 
         <section aria-label="Registry totals">
@@ -195,6 +216,7 @@ export default async function Home() {
             <CountCard
               value={PLACEHOLDER.counts.rawSource}
               label="Raw Source Experimental Datasets"
+              badge="In development"
             />
             <CountCard
               value={PLACEHOLDER.counts.processed}
@@ -208,7 +230,8 @@ export default async function Home() {
           {/* Says once, quietly, what the rounded figures already imply, so the
               numbers do not have to carry the caveat themselves. */}
           <p className={styles.countsNote}>
-            Totals from the latest snapshot, refreshed periodically.
+            Totals from the latest snapshot,{" "}
+            {formatSnapshotAt(PLACEHOLDER.snapshotAt)}.
           </p>
         </section>
 
@@ -343,11 +366,21 @@ function barWidth(count: number, total: number): string {
   return `max(3px, ${(count / total) * 100}%)`;
 }
 
-function CountCard({ value, label }: { value: number; label: string }) {
+function CountCard({
+  value,
+  label,
+  badge,
+}: {
+  value: number;
+  label: string;
+  /** A short status shown under the label, for a count that is not live yet. */
+  badge?: string;
+}) {
   return (
     <div className={styles.countCard}>
       <div className={styles.countValue}>{approximateCount(value)}</div>
       <div className={styles.countLabel}>{label}</div>
+      {badge ? <span className={styles.countBadge}>{badge}</span> : null}
     </div>
   );
 }

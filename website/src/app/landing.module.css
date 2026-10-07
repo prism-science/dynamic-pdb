@@ -1,6 +1,8 @@
+/* Narrower than --content-max: the landing page is a short stack of cards, and
+   at full width the counts and breakdown bars stretch too far to read. */
 .page {
   flex: 1 1 auto;
-  width: min(var(--content-max), calc(100% - 48px));
+  width: min(1040px, calc(100% - 48px));
   margin: 0 auto;
   padding: 56px 0 88px;
   color: var(--text);
@@ -140,6 +142,32 @@
   box-shadow: var(--ring);
 }
 
+/* The same button as Search, so the two calls to action read as a pair. */
+.tour {
+  display: inline-flex;
+  align-items: center;
+  height: 46px;
+  margin-top: 26px;
+  padding: 0 24px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+
+.tour:hover {
+  background: var(--accent-hover);
+}
+
+.tour:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 /* ---------------------------------------------------------------- counts -- */
 
 .counts {
@@ -179,6 +207,20 @@
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+/* Explains a count that is zero because the feature is not live yet, so the
+   zero is not read as an empty registry. */
+.countBadge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 3px 10px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 /* ---------------------------------------------------------------- panels -- */
