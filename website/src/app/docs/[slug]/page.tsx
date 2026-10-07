@@ -9,14 +9,8 @@ import DocsNav from "../DocsNav";
 import Markdown from "../Markdown";
 import OnThisPage, { OnThisPageMenu } from "../OnThisPage";
 import PrevNext from "../PrevNext";
-import UploadDocs from "../upload-docs";
 import { markdownFor } from "../content";
-import {
-  CLI_SECTIONS,
-  DOCS_PAGES,
-  docsPageFor,
-  extractHeadings,
-} from "../pages";
+import { DOCS_PAGES, docsPageFor, extractHeadings } from "../pages";
 
 import styles from "../docs.module.css";
 
@@ -30,7 +24,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = docsPageFor((await params).slug);
-  return page ? { title: `${page.title} · Dynamic PDB docs`, description: page.description } : {};
+  return page ? { title: `${page.title} · Dynamic PDB`, description: page.description } : {};
 }
 
 export default async function DocsPage({ params }: Props) {
@@ -53,8 +47,8 @@ export default async function DocsPage({ params }: Props) {
     );
   }
 
-  const markdown = page.kind === "markdown" ? (markdownFor(page.slug) ?? "") : null;
-  const sections = markdown === null ? CLI_SECTIONS : extractHeadings(markdown);
+  const markdown = markdownFor(page.slug) ?? "";
+  const sections = extractHeadings(markdown);
 
   return (
     <>
@@ -72,7 +66,7 @@ export default async function DocsPage({ params }: Props) {
               <p className={styles.eyebrow}>{page.group}</p>
               <h1 className={styles.title}>{page.title}</h1>
               <OnThisPageMenu sections={sections} />
-              {markdown === null ? <UploadDocs /> : <Markdown source={markdown} />}
+              <Markdown source={markdown} />
               <PrevNext slug={page.slug} />
             </div>
           </article>

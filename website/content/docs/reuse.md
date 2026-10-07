@@ -16,8 +16,8 @@ We want to understand how The Dynamic PDB serves the dynamic structural biology 
 
 We welcome examples of analyses, tools, and findings supported by the resource, as well as requests for missing data, metrics, or functionality. Knowing what is useful and what is difficult helps us prioritize development around community needs.
 
-## Get support or contribute
+## Get support
 
-Contact prism-core@astera.org to request deposition access, ask questions, report problems, or discuss collaborations. You do not need a completed result to get in touch.
+Contact prism-core@astera.org to ask questions, report problems, or discuss collaborations. You do not need a completed result to get in touch.
 
 For technical issues, include the affected entry or model ID, steps to reproduce the issue, and any error message. Do not include authentication tokens.

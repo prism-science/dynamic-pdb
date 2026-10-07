@@ -60,7 +60,7 @@ Use an output extension that matches the file format.
 
 ## Retrieve larger collections
 
-Bulk download is not currently implemented. Scripts can enumerate records through the API and download available files individually. The command-line client supports batch uploads; it is not yet a bulk-download client.
+Bulk download is not currently implemented. Scripts can enumerate records through the API and download available files individually.
 
 List endpoints support `limit` and `offset`, with a maximum of 100 records per request. To retrieve additional pages, use `limit=100` and increase `offset` to `100`, `200`, and so on until an empty `data` array is returned. Retrieve entry-level and model-level files separately.
 

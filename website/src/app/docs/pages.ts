@@ -9,14 +9,14 @@ export type DocsPage = {
   title: string;
   description: string;
   group: string;
-  kind: "markdown" | "cli" | "api";
+  kind: "markdown" | "api";
 };
 
 /** Reading order. Previous and next links follow it, and so does the nav. */
 export const DOCS_PAGES: DocsPage[] = [
   {
     slug: "about",
-    title: "About The Dynamic PDB",
+    title: "Overview",
     description: "What the database is, what you can do with it, and its current scope.",
     group: "Overview",
     kind: "markdown",
@@ -50,41 +50,12 @@ export const DOCS_PAGES: DocsPage[] = [
     kind: "api",
   },
   {
-    slug: "contributing",
-    title: "Contribute data",
-    description: "Prepare a submission, choose a method, and follow it through review.",
-    group: "Contribute",
-    kind: "markdown",
-  },
-  {
-    slug: "cli",
-    title: "Uploading with the CLI",
-    description: "Install the command-line client, write a manifest, and upload in batches.",
-    group: "Contribute",
-    kind: "cli",
-  },
-  {
     slug: "reuse",
     title: "Reuse, acknowledgment, and feedback",
     description: "Licensing, how to acknowledge the resource, and how to reach us.",
     group: "Community",
     kind: "markdown",
   },
-];
-
-export const CLI_SECTIONS: DocsSection[] = [
-  { id: "installation", label: "Installation" },
-  { id: "cli-authentication", label: "Authentication" },
-  {
-    id: "create-a-manifest",
-    label: "Create a manifest",
-    children: [
-      { id: "which-entries", label: "Which entries get uploaded" },
-      { id: "manifest-artifacts", label: "Artifacts" },
-      { id: "metadata-and-metrics", label: "Metadata and metrics" },
-    ],
-  },
-  { id: "upload-files", label: "Upload files" },
 ];
 
 export function docsPageFor(slug: string): DocsPage | undefined {
@@ -164,11 +135,4 @@ export function sectionIds(sections: readonly DocsSection[]): string[] {
     section.id,
     ...sectionIds(section.children ?? []),
   ]);
-}
-
-/** Hashes the single-page docs used, so old links land on the CLI page. */
-export function legacyHashTarget(hash: string): string | null {
-  const id = hash.replace(/^#/, "");
-  if (!id) return null;
-  return sectionIds(CLI_SECTIONS).includes(id) ? `/docs/cli#${id}` : null;
 }

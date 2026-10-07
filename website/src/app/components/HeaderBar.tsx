@@ -29,20 +29,18 @@ type Props = {
 /**
  * Main navigation, left aligned on every page.
  *
- * All four have a page behind them now, so the branch that rendered a pending
+ * All three have a page behind them now, so the branch that rendered a pending
  * item as plain text is gone along with its style. Git has it if a fifth item
  * ever arrives ahead of its page.
  */
 const NAV = [
   { label: "Browse", href: "/browse" },
   { label: "Download", href: "/download" },
-  { label: "Docs", href: "/docs" },
-  { label: "About", href: "/docs/about" },
+  // The docs live under /docs but are presented as About.
+  { label: "About", href: "/docs" },
 ] as const;
 
-// About is a page inside the docs, so Docs is the item that lights up there.
 function isCurrent(pathname: string, href: string): boolean {
-  if (href === "/docs/about") return false;
   return pathname.startsWith(href);
 }
 

@@ -1197,7 +1197,7 @@
 
 .featured {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
   margin-top: 32px;
 }
@@ -1251,16 +1251,17 @@ a.feature:hover {
   overflow-wrap: anywhere;
 }
 
+/* Pinned to the bottom of the card so the three buttons line up. In the API
+   and CLI cards the whole card is the link, so the button there is a span
+   that darkens with the card's hover. */
 .featureMore {
+  display: block;
   margin-top: auto;
-  padding-top: 14px;
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
+  padding-top: 16px;
 }
 
-.featureMore::after {
-  content: " \2192";
+a.feature:hover .tourButton {
+  background: var(--accent-hover);
 }
 
 .steps {
