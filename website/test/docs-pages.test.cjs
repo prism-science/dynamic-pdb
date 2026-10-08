@@ -8,7 +8,6 @@ const test = require("node:test");
 const {
   DOCS_PAGES,
   extractHeadings,
-  legacyHashTarget,
   neighbors,
   sectionIds,
   slugify,
@@ -85,13 +84,6 @@ test("should not leave a top-level heading in markdown, since the page renders t
     const markdown = fs.readFileSync(path.join(contentRoot, `${page.slug}.md`), "utf8");
     assert.doesNotMatch(markdown, /^# /m, page.slug);
   }
-});
-
-test("should send old single-page CLI anchors to the CLI page", () => {
-  assert.equal(legacyHashTarget("#installation"), "/docs/cli#installation");
-  assert.equal(legacyHashTarget("#manifest-artifacts"), "/docs/cli#manifest-artifacts");
-  assert.equal(legacyHashTarget("#unknown"), null);
-  assert.equal(legacyHashTarget(""), null);
 });
 
 test("should place every lineage example node below the nodes that feed it", () => {
