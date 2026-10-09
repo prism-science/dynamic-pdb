@@ -23,6 +23,7 @@ import (
 	"dynamic-pdb/backend/internal/integrations/github"
 	storage "dynamic-pdb/backend/internal/integrations/s3"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
 )
@@ -137,7 +138,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
-	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, testDatabase)
+	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}))
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())

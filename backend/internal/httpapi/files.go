@@ -12,6 +12,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 )
 
@@ -218,7 +219,9 @@ func (s *Server) writeEntryFile(
 	if s.writeFileSelectionError(w, err) {
 		return
 	}
-	s.redirectToArtifact(w, *artifact)
+	if s.redirectToArtifact(w, *artifact) {
+		s.trackDownload(r, analytics.Download{EntryID: entryID, Filename: entryID + ".fasta"})
+	}
 }
 
 func (s *Server) writeModelFile(
@@ -270,7 +273,9 @@ func (s *Server) writeModelFile(
 	if s.writeFileSelectionError(w, err) {
 		return
 	}
-	s.redirectToArtifact(w, *artifact)
+	if s.redirectToArtifact(w, *artifact) {
+		s.trackDownload(r, analytics.Download{EntryID: entryID, ModelID: modelID, Filename: filename})
+	}
 }
 
 func selectFileArtifact(
@@ -318,16 +323,28 @@ func (s *Server) writeFileSelectionError(w http.ResponseWriter, err error) bool 
 	}
 }
 
-func (s *Server) redirectToArtifact(w http.ResponseWriter, artifact domainmodels.Artifact) {
+func (s *Server) redirectToArtifact(w http.ResponseWriter, artifact domainmodels.Artifact) bool {
 	parsedLocation, err := url.Parse(strings.TrimSpace(*artifact.URI))
 	if err != nil ||
 		(parsedLocation.Scheme != "http" && parsedLocation.Scheme != "https") ||
 		parsedLocation.Host == "" {
 		slog.Warn("resolved artifact location is invalid", "artifact_id", artifact.ID)
 		writeError(w, http.StatusBadGateway, "BAD_GATEWAY", "artifact location could not be resolved")
-		return
+		return false
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", parsedLocation.String())
 	w.WriteHeader(http.StatusFound)
+	return true
+}
+
+// trackDownload counts GETs only, so link checkers sending HEAD do not inflate
+// the numbers.
+func (s *Server) trackDownload(r *http.Request, download analytics.Download) {
+	if s.downloads == nil || r.Method != http.MethodGet {
+		return
+	}
+	download.Path = r.URL.Path
+	download.UserAgent = r.UserAgent()
+	s.downloads.TrackDownload(download)
 }

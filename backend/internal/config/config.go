@@ -8,14 +8,16 @@ import (
 
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 )
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	Auth   auth.Config  `mapstructure:"auth"`
-	DB     db.Config    `mapstructure:"db"`
-	CDN    cdn.Config   `mapstructure:"cdn"`
+	Server    ServerConfig     `mapstructure:"server"`
+	Auth      auth.Config      `mapstructure:"auth"`
+	DB        db.Config        `mapstructure:"db"`
+	CDN       cdn.Config       `mapstructure:"cdn"`
+	Analytics analytics.Config `mapstructure:"analytics"`
 }
 
 type ServerConfig struct {

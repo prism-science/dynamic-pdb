@@ -13,4 +13,8 @@ The Dynamic PDB is under active development. Current entries primarily cover X-r
 
 The database stores or references results produced by external tools. It does not perform model building or refinement. Available files, processing records, and quality scores vary by entry.
 
+## Privacy
+
+We count visits, searches, viewer use, and file downloads with [Umami](https://umami.is/), a privacy-focused analytics tool. It sets no cookies and collects no personal information. We use the totals to understand how the database is used and to report on it.
+
 The Dynamic PDB is supported by [Prism](https://prismscience.org/), a program of [Radial](https://radial.org/), a division of the [Astera Institute](https://astera.org/).

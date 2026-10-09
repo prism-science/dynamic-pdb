@@ -2,6 +2,7 @@
 
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 
+import { track } from "@/lib/analytics";
 import { useResolvedFileURL } from "@/lib/api/useResolvedFileURL";
 
 type ResolvedFileLinkProps = Omit<
@@ -30,8 +31,22 @@ export default function ResolvedFileLink({
       </span>
     );
   }
+  // Every download button on the site is one of these, so this one handler
+  // counts them all. The catalogue href names the file; the resolved storage
+  // URL does not.
+  const { onClick, download } = props;
   return (
-    <a className={className} href={resolved.url} {...props}>
+    <a
+      className={className}
+      href={resolved.url}
+      {...props}
+      onClick={(event) => {
+        if (download) {
+          track("download-click", { file: href });
+        }
+        onClick?.(event);
+      }}
+    >
       {children}
     </a>
   );

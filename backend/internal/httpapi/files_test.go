@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 )
 
@@ -470,4 +471,52 @@ func Test_should_return_bad_gateway_when_artifact_location_is_not_http(t *testin
 
 	// then
 	require.Equal(t, http.StatusBadGateway, recorder.Code)
+}
+
+type downloadTrackerStub struct {
+	downloads []analytics.Download
+}
+
+func (stub *downloadTrackerStub) TrackDownload(download analytics.Download) {
+	stub.downloads = append(stub.downloads, download)
+}
+
+func Test_should_track_download_when_file_is_fetched_with_get(t *testing.T) {
+	// given
+	tracker := &downloadTrackerStub{}
+	server := &Server{downloads: tracker}
+	request := httptest.NewRequest(http.MethodGet, "/v1/files/dpdb_1/m1/dpdb_1.cif", nil)
+	request.Header.Set("User-Agent", "curl/8.7.1")
+
+	// when
+	server.trackDownload(request, analytics.Download{EntryID: "dpdb_1", ModelID: "m1", Filename: "dpdb_1.cif"})
+
+	// then
+	require.Len(t, tracker.downloads, 1)
+	assert.Equal(t, "/v1/files/dpdb_1/m1/dpdb_1.cif", tracker.downloads[0].Path)
+	assert.Equal(t, "curl/8.7.1", tracker.downloads[0].UserAgent)
+}
+
+func Test_should_not_track_download_when_file_is_checked_with_head(t *testing.T) {
+	// given
+	tracker := &downloadTrackerStub{}
+	server := &Server{downloads: tracker}
+	request := httptest.NewRequest(http.MethodHead, "/v1/files/dpdb_1/m1/dpdb_1.cif", nil)
+
+	// when
+	server.trackDownload(request, analytics.Download{EntryID: "dpdb_1"})
+
+	// then
+	assert.Empty(t, tracker.downloads)
+}
+
+func Test_should_not_panic_when_no_download_tracker_is_configured(t *testing.T) {
+	// given
+	server := &Server{}
+	request := httptest.NewRequest(http.MethodGet, "/v1/files/dpdb_1.fasta", nil)
+
+	// when / then
+	assert.NotPanics(t, func() {
+		server.trackDownload(request, analytics.Download{EntryID: "dpdb_1"})
+	})
 }

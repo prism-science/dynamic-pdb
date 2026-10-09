@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { track } from "@/lib/analytics";
 import type { HetstarDpdbConfig } from "@/lib/hetstar";
 
 import styles from "./HetstarPanel.module.css";
@@ -119,6 +120,11 @@ export default function HetstarPanel({
   // Set once we have waited long enough to believe the tray is not coming, so
   // that the fallback does not flash past while the viewer is still mounting.
   const [trayMissing, setTrayMissing] = useState(false);
+
+  // The panel only mounts when the Structure tab is open, so mounting is the open.
+  useEffect(() => {
+    track("viewer-open", { viewer: "hetstar", entry: entryId });
+  }, [entryId]);
 
   useEffect(() => {
     const sync = () =>

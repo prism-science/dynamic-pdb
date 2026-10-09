@@ -33,3 +33,7 @@ cdn:
     upload_url_ttl: 15m
   cloudfront:
     base_url: https://files.dynamicpdb.com
+analytics:
+  endpoint: https://cloud.umami.is/api/send
+  website_id: 41e0ae39-0a08-45d0-bf1a-3a4f34bbc40c
+  hostname: dynamicpdb.com

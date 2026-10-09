@@ -1,6 +1,7 @@
 import { ApiRequestError, listEntries } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import EntriesBrowser from "@/app/components/EntriesBrowser";
+import SearchTracker from "@/app/components/SearchTracker";
 
 import styles from "./browse.module.css";
 
@@ -30,6 +31,7 @@ export default async function Browse({ searchParams }: BrowseProps) {
     <main className={styles.page} aria-label="dynamic-pdb entries">
       <section className={styles.entriesShell}>
         <EntriesBrowser entries={entries} canCreate={false} query={query} />
+        <SearchTracker query={query} results={entries.length} />
       </section>
     </main>
   );

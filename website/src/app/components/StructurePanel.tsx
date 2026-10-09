@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect } from "react";
 
+import { track } from "@/lib/analytics";
 import type { OverlayModel } from "@/lib/model-overlays";
 import type { StructureKind } from "@/lib/structureKind";
 
@@ -57,6 +59,10 @@ export default function StructurePanel({
   /** Square the canvas off, for a tab where it is the page rather than a card. */
   square?: boolean;
 }) {
+  useEffect(() => {
+    track("viewer-open", { viewer: "molstar" });
+  }, [url]);
+
   return (
     <StructureViewer
       url={url}
