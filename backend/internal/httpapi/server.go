@@ -17,6 +17,7 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/integrations/github"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
 )
@@ -28,6 +29,7 @@ type Server struct {
 	jwt          *auth.JWT
 	authorizer   auth.Authorizer
 	database     *db.DB
+	downloads    analytics.Tracker
 }
 
 func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
@@ -50,6 +52,7 @@ func NewServer(
 	authConfig auth.Config,
 	jwt *auth.JWT,
 	database *db.DB,
+	downloads analytics.Tracker,
 ) *Server {
 	return &Server{
 		githubClient: githubClient,
@@ -58,6 +61,7 @@ func NewServer(
 		jwt:          jwt,
 		authorizer:   auth.NewAuthorizer(database),
 		database:     database,
+		downloads:    downloads,
 	}
 }
 

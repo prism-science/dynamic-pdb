@@ -6,6 +6,7 @@ import "./molstar-skin.scss";
 // the .hetstar wrapper the viewer renders, and preflight is off.
 import "@dynamic-pdb/hetstar/styles.css";
 import "./globals.css";
+import Analytics from "./components/Analytics";
 import AppHeader from "./components/AppHeader";
 import DevBanner from "./components/DevBanner";
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <AppHeader />
         <DevBanner />
         <div className="appContent">{children}</div>
+        <Analytics />
       </body>
     </html>
   );

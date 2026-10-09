@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 
+import { track } from "@/lib/analytics";
 import type { StructureKind, StructureMap } from "@/lib/structureKind";
 import ResolvedFileLink from "./ResolvedFileLink";
 import styles from "./StructureViewerModal.module.css";
@@ -46,7 +47,10 @@ export default function StructureViewerModal({
       <button
         type="button"
         className={styles.structureThumb}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          track("viewer-open", { viewer: "molstar", name });
+        }}
         title="Click to view in 3D"
         aria-label="Open 3D structure viewer"
       >

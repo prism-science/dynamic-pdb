@@ -22,6 +22,7 @@ import (
 	"dynamic-pdb/backend/internal/integrations/github"
 	"dynamic-pdb/backend/internal/integrations/s3"
 	"dynamic-pdb/backend/internal/jobs"
+	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
@@ -70,7 +71,7 @@ func run() int {
 		slog.Error("file CDN init failed", "err", err)
 		return 1
 	}
-	srv := httpapi.NewServer(githubClient, fileCDN, cfg.Auth, jwt, database)
+	srv := httpapi.NewServer(githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics))
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
