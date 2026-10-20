@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -323,4 +324,64 @@ func dbTestEntryRevisionWithPDBID(
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
 	}
+}
+
+func Test_should_return_every_entry_revision_once_in_order_when_entries_list_walks_pages_with_after(t *testing.T) {
+	// given
+	ctx := context.Background()
+	createdBy := createDBTestUser(t)
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	createdAts := []time.Time{base, base.Add(time.Second), base.Add(time.Second), base.Add(2 * time.Second), base.Add(3 * time.Second)}
+	for index, createdAt := range createdAts {
+		_, err := testDB.Entries.Create(ctx, models.EntryRevision{
+			ID:        uuid.New(),
+			EntryID:   "entry-" + uuid.NewString(),
+			State:     models.RevisionStatePending,
+			Title:     ptr(fmt.Sprintf("keyset entry %d", index)),
+			CreatedBy: createdBy,
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+		})
+		require.NoError(t, err)
+	}
+	all, err := testDB.Entries.List(ctx, db.EntryRevisionFilters{CreatedBy: &createdBy})
+	require.NoError(t, err)
+	require.Len(t, all, len(createdAts))
+
+	// when
+	walked := make([]uuid.UUID, 0, len(all))
+	var after *db.ListPosition
+	for range len(all) {
+		page, err := testDB.Entries.List(ctx, db.EntryRevisionFilters{CreatedBy: &createdBy, Limit: ptr(2), After: after})
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		for _, revision := range page {
+			walked = append(walked, revision.ID)
+		}
+		last := page[len(page)-1]
+		after = &db.ListPosition{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	// then
+	expected := make([]uuid.UUID, 0, len(all))
+	for _, revision := range all {
+		expected = append(expected, revision.ID)
+	}
+	assert.Equal(t, expected, walked)
+}
+
+func Test_should_reject_after_with_offset_when_entries_list_called(t *testing.T) {
+	// given
+	filters := db.EntryRevisionFilters{
+		Offset: ptr(1),
+		After:  &db.ListPosition{CreatedAt: time.Now().UTC(), ID: uuid.New()},
+	}
+
+	// when
+	_, err := testDB.Entries.List(context.Background(), filters)
+
+	// then
+	require.Error(t, err)
 }

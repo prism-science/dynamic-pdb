@@ -10,8 +10,10 @@ const {
   decideEntryReview,
   getEntry,
   getEntryReview,
+  getModel,
   getModelPageData,
   listEntries,
+  listEntriesPage,
   listModels,
   listReviews,
   listUserEntryRevisionGroups,
@@ -46,7 +48,7 @@ test("should list entries with trimmed query and optional authorization", async 
   }
 });
 
-test("should list models with pagination and optional authorization", async () => {
+test("should list models with a limit and optional authorization", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -59,18 +61,54 @@ test("should list models with pagination and optional authorization", async () =
       return jsonResponse(collectionDocument("models", [{ id: "model-1", title: "Model 1" }]));
     };
 
-    const models = await listModels("token-123", {
-      limit: 5,
-      offset: 10,
-    });
+    const models = await listModels("token-123", { limit: 5 });
 
-    assert.equal(
-      requestedURL,
-      "https://backend.example/v1/models?limit=5&offset=10",
-    );
+    assert.equal(requestedURL, "https://backend.example/v1/models?limit=5");
     assert.equal(requestedHeaders.Accept, jsonApiMediaType);
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
     assert.deepEqual(models, [{ id: "model-1", title: "Model 1" }]);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should send the cursor and return the next cursor when listing an entries page", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    let requestedURL = "";
+    global.fetch = async (url) => {
+      requestedURL = String(url);
+      return jsonResponse({
+        ...collectionDocument("entries", [{ id: "entry-2", title: "Entry 2" }]),
+        links: { next: "https://backend.example/v1/entries?cursor=next-cursor" },
+        meta: { next_cursor: "next-cursor" },
+      });
+    };
+
+    const page = await listEntriesPage(undefined, { query: "kinase", limit: 1, cursor: "a+b/c" });
+
+    assert.equal(requestedURL, "https://backend.example/v1/entries?query=kinase&limit=1&cursor=a%2Bb%2Fc");
+    assert.deepEqual(page.items, [{ id: "entry-2", title: "Entry 2" }]);
+    assert.equal(page.nextCursor, "next-cursor");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should report no next cursor on the last entries page", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    global.fetch = async () => jsonResponse(collectionDocument("entries", [{ id: "entry-1" }]));
+
+    const page = await listEntriesPage(undefined, { limit: 1 });
+
+    assert.equal(page.nextCursor, null);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
@@ -657,6 +695,28 @@ test("should decide the entry revision and each model revision at its own path",
         body: JSON.stringify({ state: "rejected" }),
       },
     ]);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should get model residue data from the model detail endpoint", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const residueData = [{ label_asym_id: "A", label_seq_id: 52, rscc: 0.97 }];
+    let requestedURL = "";
+    global.fetch = async (url) => {
+      requestedURL = String(url);
+      return jsonResponse(resourceDocument("models", { id: "model 1", residue_data: residueData }));
+    };
+
+    const model = await getModel("token-123", "entry/1", "model 1");
+
+    assert.equal(requestedURL, "https://backend.example/v1/entries/entry%2F1/models/model%201");
+    assert.deepEqual(model.residue_data, residueData);
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);

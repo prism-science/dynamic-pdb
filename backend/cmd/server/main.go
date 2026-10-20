@@ -75,7 +75,9 @@ func run() int {
 		slog.Error("file CDN init failed", "err", err)
 		return 1
 	}
-	srv := httpapi.NewServer(githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics))
+	srv := httpapi.NewServer(
+		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
+	)
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)

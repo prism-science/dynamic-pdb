@@ -111,8 +111,12 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	model := getModelForTest(s.T(), entryID, modelID)
 	s.Equal("independent model", stringValue(model.Title))
 	s.Require().NotNil(metricByKey(model.Metrics, "r_free"))
-	s.Equal(submitted.ResidueData, model.ResidueData)
+	s.Require().NotNil(model.ResidueData)
+	s.Equal(submitted.ResidueData, *model.ResidueData)
 	s.NotContains(model.Metadata, "residue_data")
+	listedModels := listEntryModelsForTest(s.T(), entryID)
+	s.Require().Len(listedModels, 1)
+	s.Nil(listedModels[0].ResidueData, "model lists must not carry residue_data")
 
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	artifactsResponse := getWithToken(
@@ -777,6 +781,18 @@ func getModelForTest(t *testing.T, entryID, modelID string) httpapi.ModelAttribu
 	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")
 	document := decodeJSONResponse[httpapi.ModelDocument](t, response, http.StatusOK)
 	return document.Data.Attributes
+}
+
+func listEntryModelsForTest(t *testing.T, entryID string) []httpapi.ModelAttributes {
+	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models", entryID), "")
+	document := decodeJSONResponse[httpapi.ModelCollectionDocument](t, response, http.StatusOK)
+	models := make([]httpapi.ModelAttributes, 0, len(document.Data))
+	for _, item := range document.Data {
+		models = append(models, item.Attributes)
+	}
+	return models
 }
 
 func decodeJSONResponse[T any](t *testing.T, response *http.Response, expectedStatus int) T {

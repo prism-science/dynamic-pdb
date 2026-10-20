@@ -57,7 +57,8 @@ export type Model = {
   title: string | null;
   thumbnail_image_url: string | null;
   metadata?: JSONRecord;
-  residue_data: ResidueData[];
+  /** Present on model detail responses (getModel) only; model lists omit it. */
+  residue_data?: ResidueData[];
   primary_artifact_id?: string | null;
   metrics?: Metric[];
   published_at?: string | null;
@@ -435,15 +436,31 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** One page of a cursor-paged backend list. nextCursor is null on the last page. */
+export type ListPage<T> = {
+  items: T[];
+  nextCursor: string | null;
+};
+
+export type ListEntriesOptions = {
+  query?: string | null;
+  pdbIds?: string[] | null;
+  limit?: number | null;
+  /** meta.next_cursor of the previous page; omit for the first page. */
+  cursor?: string | null;
+};
+
 export async function listEntries(
   token?: string,
-  opts?: {
-    query?: string | null;
-    pdbIds?: string[] | null;
-    limit?: number | null;
-    offset?: number | null;
-  },
+  opts?: ListEntriesOptions,
 ): Promise<Entry[]> {
+  return (await listEntriesPage(token, opts)).items;
+}
+
+export async function listEntriesPage(
+  token?: string,
+  opts?: ListEntriesOptions,
+): Promise<ListPage<Entry>> {
   const params = new URLSearchParams();
   const query = opts?.query?.trim();
   if (query) {
@@ -452,8 +469,8 @@ export async function listEntries(
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
   }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
   }
   for (const pdbId of opts?.pdbIds ?? []) {
     const trimmed = pdbId.trim();
@@ -466,22 +483,21 @@ export async function listEntries(
     `/v1/entries${suffix}`,
     token,
   );
-  return attributesFromCollection(document);
+  return {
+    items: attributesFromCollection(document),
+    nextCursor: nextCursorFromCollection(document),
+  };
 }
 
 export async function listModels(
   token?: string,
   opts?: {
     limit?: number | null;
-    offset?: number | null;
   },
 ): Promise<Model[]> {
   const params = new URLSearchParams();
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
-  }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   const document = await fetchBackend<JSONAPIDataCollectionDocument<Model>>(
@@ -1115,21 +1131,27 @@ export async function getEntryPageData(
   };
 }
 
+export async function getModel(
+  token: string | undefined,
+  entryId: string,
+  modelId: string,
+): Promise<Model> {
+  const document = await fetchBackend<JSONAPIDataDocument<Model>>(
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(modelId)}`,
+    token,
+  );
+  return attributesFromDocument(document);
+}
+
 export async function getModelPageData(
   token: string | undefined,
   entryId: string,
   modelId: string,
 ): Promise<ModelPageData> {
-  const encodedEntryId = encodeURIComponent(entryId);
-  const encodedModelId = encodeURIComponent(modelId);
-  const [entry, modelDocument] = await Promise.all([
+  const [entry, model] = await Promise.all([
     getEntry(token, entryId),
-    fetchBackend<JSONAPIDataDocument<Model>>(
-      `/v1/entries/${encodedEntryId}/models/${encodedModelId}`,
-      token,
-    ),
+    getModel(token, entryId, modelId),
   ]);
-  const model = attributesFromDocument(modelDocument);
   const graph = await fetchModelGraph(token, entry.id, model);
 
   return {
@@ -1161,6 +1183,13 @@ function attributesFromCollection<T>(
   document: JSONAPIDataCollectionDocument<T>,
 ): T[] {
   return document.data.map((item) => item.attributes);
+}
+
+function nextCursorFromCollection<T>(
+  document: JSONAPIDataCollectionDocument<T>,
+): string | null {
+  const nextCursor = document.meta?.next_cursor;
+  return typeof nextCursor === "string" && nextCursor !== "" ? nextCursor : null;
 }
 
 function modelArtifactListFromDocument(

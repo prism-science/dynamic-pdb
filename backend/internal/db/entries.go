@@ -26,15 +26,18 @@ type EntriesRepository struct {
 }
 
 type EntryRevisionFilters struct {
-	ID              *uuid.UUID
-	EntryID         *string
-	State           *models.RevisionState
-	States          []models.RevisionState
-	EntryState      *models.EntryState
-	CreatedBy       *uuid.UUID
-	PDBIDs          []string
-	Limit           *int
-	Offset          *int
+	ID         *uuid.UUID
+	EntryID    *string
+	State      *models.RevisionState
+	States     []models.RevisionState
+	EntryState *models.EntryState
+	CreatedBy  *uuid.UUID
+	PDBIDs     []string
+	Limit      *int
+	Offset     *int
+	// After continues the list (ordered by created_at desc, id desc) past this position.
+	// It cannot be combined with Offset.
+	After           *ListPosition
 	Query           string
 	ProteinSequence string
 }
@@ -401,6 +404,9 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	if filters.Offset != nil && *filters.Offset < 0 {
 		return "", nil, errors.New("offset must be non-negative")
 	}
+	if filters.After != nil && filters.Offset != nil {
+		return "", nil, errors.New("after and offset cannot be combined")
+	}
 
 	args := map[string]any{}
 	conditions := make([]string, 0)
@@ -466,6 +472,11 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 			  and protein_sequence.sequence like '%' || :protein_sequence || '%'
 		)`)
 		args["protein_sequence"] = proteinSequence
+	}
+	if filters.After != nil {
+		conditions = append(conditions, "(created_at, id) < (:after_created_at, :after_id)")
+		args["after_created_at"] = filters.After.CreatedAt
+		args["after_id"] = filters.After.ID
 	}
 
 	query := `select id, entry_id, parent_revision_id, revision_number, state,

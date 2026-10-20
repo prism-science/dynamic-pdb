@@ -1,5 +1,6 @@
 server:
   addr: ":8080"
+  public_base_url: http://localhost:8080
 auth:
   allowed_orgs:
     - Astera-org

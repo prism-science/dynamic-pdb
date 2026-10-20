@@ -78,12 +78,11 @@ func Test_should_reject_fasta_type_when_artifact_format_is_not_fasta(t *testing.
 func Test_should_apply_default_limit_when_list_entries_limit_is_missing(t *testing.T) {
 	// given
 	// when
-	got, err := entryFiltersFromParams(ListEntriesParams{})
+	_, page, err := entryFiltersFromParams(ListEntriesParams{})
 
 	// then
 	require.NoError(t, err)
-	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, page.Limit)
 }
 
 func Test_should_keep_explicit_limit_when_list_entries_limit_is_provided(t *testing.T) {
@@ -91,12 +90,13 @@ func Test_should_keep_explicit_limit_when_list_entries_limit_is_provided(t *test
 	limit := 7
 
 	// when
-	got, err := entryFiltersFromParams(ListEntriesParams{Limit: &limit})
+	got, page, err := entryFiltersFromParams(ListEntriesParams{Limit: &limit})
 
 	// then
 	require.NoError(t, err)
+	assert.Equal(t, limit, page.Limit)
 	require.NotNil(t, got.Limit)
-	assert.Equal(t, limit, *got.Limit)
+	assert.Equal(t, limit+1, *got.Limit, "lists fetch one row past the page to detect a next page")
 }
 
 func Test_should_cap_limit_when_list_entries_limit_exceeds_maximum(t *testing.T) {
@@ -104,12 +104,11 @@ func Test_should_cap_limit_when_list_entries_limit_exceeds_maximum(t *testing.T)
 	limit := 5000
 
 	// when
-	got, err := entryFiltersFromParams(ListEntriesParams{Limit: &limit})
+	_, page, err := entryFiltersFromParams(ListEntriesParams{Limit: &limit})
 
 	// then
 	require.NoError(t, err)
-	require.NotNil(t, got.Limit)
-	assert.Equal(t, maxListLimit, *got.Limit)
+	assert.Equal(t, maxListLimit, page.Limit)
 }
 
 func Test_should_truncate_search_query_when_list_entries_query_is_too_long(t *testing.T) {
@@ -117,7 +116,7 @@ func Test_should_truncate_search_query_when_list_entries_query_is_too_long(t *te
 	query := strings.Repeat("Ж", maxEntrySearchQueryLength+1)
 
 	// when
-	got, err := entryFiltersFromParams(ListEntriesParams{Query: &query})
+	got, _, err := entryFiltersFromParams(ListEntriesParams{Query: &query})
 
 	// then
 	require.NoError(t, err)
@@ -132,7 +131,7 @@ func Test_should_bound_pdb_filters_when_list_entries_has_too_many_long_values(t 
 	}
 
 	// when
-	got, err := entryFiltersFromParams(ListEntriesParams{PdbId: &pdbIDs})
+	got, _, err := entryFiltersFromParams(ListEntriesParams{PdbId: &pdbIDs})
 
 	// then
 	require.NoError(t, err)
@@ -170,12 +169,11 @@ func Test_should_cap_limit_when_revision_pagination_limit_exceeds_maximum(t *tes
 func Test_should_apply_default_limit_when_list_models_across_entries_limit_is_missing(t *testing.T) {
 	// given
 	// when
-	got, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{})
+	_, page, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{})
 
 	// then
 	require.NoError(t, err)
-	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, page.Limit)
 }
 
 func Test_should_reject_negative_offset_when_list_models_across_entries_offset_is_provided(t *testing.T) {
@@ -183,7 +181,7 @@ func Test_should_reject_negative_offset_when_list_models_across_entries_offset_i
 	offset := -1
 
 	// when
-	_, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{Offset: &offset})
+	_, _, err := modelFiltersFromParams(ListModelsAcrossEntriesParams{Offset: &offset})
 
 	// then
 	require.Error(t, err)

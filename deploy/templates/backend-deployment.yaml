@@ -30,6 +30,8 @@ spec:
           env:
             - name: DYNAMIC_PDB_ENV
               value: {{ .Values.backend.configProfile | quote }}
+            - name: DYNAMIC_PDB_SERVER_PUBLIC_BASE_URL
+              value: {{ .Values.website.publicApiBaseUrl | quote }}
             - name: DYNAMIC_PDB_DB_HOST
               valueFrom:
                 secretKeyRef:

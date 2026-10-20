@@ -37,6 +37,12 @@ type ModelRevisionFilters struct {
 	IdempotencyKey *string
 	Limit          *int
 	Offset         *int
+	// After continues the list (ordered by created_at asc, id asc) past this position.
+	// It cannot be combined with Offset.
+	After *ListPosition
+	// ExcludeResidueData leaves metadata.residue_data out of the returned rows.
+	// List responses set it because per-residue data is large and only model details return it.
+	ExcludeResidueData bool
 }
 
 func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
@@ -422,6 +428,9 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	if filters.Offset != nil && *filters.Offset < 0 {
 		return "", nil, errors.New("offset must be non-negative")
 	}
+	if filters.After != nil && filters.Offset != nil {
+		return "", nil, errors.New("after and offset cannot be combined")
+	}
 
 	conditions := make([]string, 0)
 	args := map[string]any{}
@@ -466,11 +475,21 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "model_revisions.idempotency_key = :idempotency_key")
 		args["idempotency_key"] = *filters.IdempotencyKey
 	}
+	if filters.After != nil {
+		conditions = append(conditions,
+			"(model_revisions.created_at, model_revisions.id) > (:after_created_at, :after_id)")
+		args["after_created_at"] = filters.After.CreatedAt
+		args["after_id"] = filters.After.ID
+	}
+	metadataColumn := "model_revisions.metadata"
+	if filters.ExcludeResidueData {
+		metadataColumn = "model_revisions.metadata - 'residue_data' as metadata"
+	}
 	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
 			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
 			         model_revisions.title, model_revisions.thumbnail_image_url,
-			         model_revisions.metadata, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
+			         ` + metadataColumn + `, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
 			         model_revisions.updated_at
 			  from model_revisions
 			  join models on models.id = model_revisions.model_id`

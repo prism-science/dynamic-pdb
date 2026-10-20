@@ -5,7 +5,10 @@ import {
   type Entity,
   type EntryPageData,
   getEntryPageData,
+  getModel,
   listSimilarEntries,
+  type Model,
+  type ResidueData,
   type SimilarEntry,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
@@ -122,10 +125,11 @@ export default async function ScopePage({
     data.entry.thumbnail_image_url,
   );
 
+  const residueData = await loadResidueData(session?.token, entryId, model);
   const entities = polymerEntityViews(
     data.entry.polymer_entities ?? [],
     data.entry.protein_sequences ?? [],
-    model?.residue_data ?? [],
+    residueData,
   );
   const crystallography = crystallographyView(data.entry.crystallography);
   const artifacts = new Map(data.entities.map((entity) => [entity.id, entity]));
@@ -392,6 +396,25 @@ async function loadEntry(
       notFound();
     }
     throw error;
+  }
+}
+
+// Model lists leave out per-residue data, so it comes from the selected
+// model's detail. Like similarity, the page still renders without it.
+async function loadResidueData(
+  token: string | undefined,
+  entryId: string,
+  model: Model | null,
+): Promise<ResidueData[]> {
+  if (model === null) {
+    return [];
+  }
+  try {
+    const detail = await getModel(token, entryId, model.id);
+    return detail.residue_data ?? [];
+  } catch (error) {
+    console.error("get model residue data failed", error);
+    return [];
   }
 }
 

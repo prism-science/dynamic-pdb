@@ -322,6 +322,7 @@ func startBackend(t *testing.T, root string, binaryPath string, s3URL string) ba
 	cmd.Env = append(os.Environ(),
 		"DYNAMIC_PDB_ENV=local",
 		"DYNAMIC_PDB_SERVER_ADDR="+addr,
+		"DYNAMIC_PDB_SERVER_PUBLIC_BASE_URL=http://"+addr,
 		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
 		"DYNAMIC_PDB_CDN_S3_ENDPOINT="+s3URL,
 		"DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID=AKIAEXAMPLE",
@@ -716,10 +717,17 @@ func (r *modelListResponse) UnmarshalJSON(data []byte) error {
 }
 
 type modelResponse struct {
-	ID       string           `json:"id"`
-	Title    *string          `json:"title"`
-	Metadata map[string]any   `json:"metadata"`
-	Metrics  []metricResponse `json:"metrics"`
+	ID          string            `json:"id"`
+	Title       *string           `json:"title"`
+	Metadata    map[string]any    `json:"metadata"`
+	Metrics     []metricResponse  `json:"metrics"`
+	ResidueData *[]map[string]any `json:"residue_data"`
+}
+
+type modelDocumentResponse struct {
+	Data struct {
+		Attributes modelResponse `json:"attributes"`
+	} `json:"data"`
 }
 
 type metricResponse struct {

@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -313,4 +314,99 @@ func Test_should_activate_only_target_model_revision_when_models_activate_revisi
 	require.NotNil(t, activated.RevisionNumber)
 	assert.Equal(t, 2, *activated.RevisionNumber)
 	assert.Equal(t, models.RevisionStatePending, untouched.State)
+}
+
+func Test_should_omit_only_residue_data_when_models_list_called_with_exclude_residue_data(t *testing.T) {
+	// given
+	entryRevision := createDBTestEntryRevision(t, "residue-data-entry", time.Now().UTC())
+	now := time.Now().UTC()
+	modelType := models.StructureModelTypeMulticonformer
+	created, err := testDB.Models.Create(context.Background(), entryRevision.EntryID, models.ModelRevision{
+		ID:      uuid.New(),
+		ModelID: "model-" + uuid.NewString(),
+		State:   models.RevisionStatePending,
+		Title:   ptr("residue data model " + uuid.NewString()),
+		Metadata: models.ModelMetadata{
+			ModelType:   &modelType,
+			Authors:     []string{"Hendrickson, W.A."},
+			ResidueData: []models.ResidueData{{LabelAsymID: "A", LabelSeqID: 52, RSCC: ptr(0.97)}},
+		},
+		CreatedBy: createDBTestUser(t),
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	require.NoError(t, err)
+
+	// when
+	lean, err := testDB.Models.List(context.Background(), db.ModelRevisionFilters{
+		ID:                 &created.ID,
+		ExcludeResidueData: true,
+	})
+	require.NoError(t, err)
+	full, err := testDB.Models.List(context.Background(), db.ModelRevisionFilters{ID: &created.ID})
+	require.NoError(t, err)
+
+	// then
+	require.Len(t, lean, 1)
+	assert.Empty(t, lean[0].Metadata.ResidueData)
+	require.NotNil(t, lean[0].Metadata.ModelType)
+	assert.Equal(t, modelType, *lean[0].Metadata.ModelType)
+	assert.Equal(t, []string{"Hendrickson, W.A."}, lean[0].Metadata.Authors)
+	require.Len(t, full, 1)
+	assert.Equal(t, created.Metadata.ResidueData, full[0].Metadata.ResidueData)
+}
+
+func Test_should_return_every_model_revision_once_in_order_when_models_list_walks_pages_with_after(t *testing.T) {
+	// given
+	ctx := context.Background()
+	entryRevision := createDBTestEntryRevision(t, "keyset-models-entry", time.Now().UTC())
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	createdAts := []time.Time{base, base.Add(time.Second), base.Add(time.Second), base.Add(2 * time.Second), base.Add(3 * time.Second)}
+	for index, createdAt := range createdAts {
+		_ = createDBTestModelRevision(t, entryRevision.EntryID, fmt.Sprintf("keyset model %d", index), createdAt)
+	}
+	all, err := testDB.Models.List(ctx, db.ModelRevisionFilters{EntryID: &entryRevision.EntryID})
+	require.NoError(t, err)
+	require.Len(t, all, len(createdAts))
+
+	// when
+	walked := make([]uuid.UUID, 0, len(all))
+	var after *db.ListPosition
+	for range len(all) {
+		page, err := testDB.Models.List(ctx, db.ModelRevisionFilters{
+			EntryID: &entryRevision.EntryID,
+			Limit:   ptr(2),
+			After:   after,
+		})
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		for _, revision := range page {
+			walked = append(walked, revision.ID)
+		}
+		last := page[len(page)-1]
+		after = &db.ListPosition{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	// then
+	expected := make([]uuid.UUID, 0, len(all))
+	for _, revision := range all {
+		expected = append(expected, revision.ID)
+	}
+	assert.Equal(t, expected, walked)
+}
+
+func Test_should_reject_after_with_offset_when_models_list_called(t *testing.T) {
+	// given
+	filters := db.ModelRevisionFilters{
+		Offset: ptr(1),
+		After:  &db.ListPosition{CreatedAt: time.Now().UTC(), ID: uuid.New()},
+	}
+
+	// when
+	_, err := testDB.Models.List(context.Background(), filters)
+
+	// then
+	require.Error(t, err)
 }

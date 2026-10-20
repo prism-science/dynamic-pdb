@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,8 +23,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Addr      string          `mapstructure:"addr"`
-	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	Addr string `mapstructure:"addr"`
+	// PublicBaseURL is the API's external base URL, including any path prefix the
+	// ingress strips (for example https://dynamicpdb.com/api). Pagination links start with it.
+	PublicBaseURL string          `mapstructure:"public_base_url"`
+	RateLimit     RateLimitConfig `mapstructure:"rate_limit"`
 }
 
 // RateLimitConfig caps how many requests one client IP may send per window on each server instance.
@@ -56,6 +60,7 @@ func ReadFromFile(filename string) (Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return Config{}, fmt.Errorf("config: unmarshal: %w", err)
 	}
+	cfg.Server.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.Server.PublicBaseURL), "/")
 	if err := validate(cfg); err != nil {
 		return Config{}, fmt.Errorf("config: validate: %w", err)
 	}
@@ -86,6 +91,29 @@ func validate(cfg Config) error {
 	}
 	if cfg.Server.RateLimit.Window <= 0 {
 		return fmt.Errorf("server.rate_limit.window must be positive")
+	}
+	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
+		return fmt.Errorf("server.public_base_url: %w", err)
+	}
+	return nil
+}
+
+func validatePublicBaseURL(value string) error {
+	if value == "" {
+		return fmt.Errorf("is required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("parse: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https, got %q", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("host is required")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("must not have a query or fragment")
 	}
 	return nil
 }

@@ -31,6 +31,9 @@ type Server struct {
 	authorizer   auth.Authorizer
 	database     *db.DB
 	downloads    analytics.Tracker
+	// publicBaseURL is the API's external base (for example https://dynamicpdb.com/api),
+	// used to build absolute links.next URLs.
+	publicBaseURL string
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
@@ -54,15 +57,17 @@ func NewServer(
 	jwt *auth.JWT,
 	database *db.DB,
 	downloads analytics.Tracker,
+	publicBaseURL string,
 ) *Server {
 	return &Server{
-		githubClient: githubClient,
-		fileCDN:      fileCDN,
-		authConfig:   authConfig,
-		jwt:          jwt,
-		authorizer:   auth.NewAuthorizer(database),
-		database:     database,
-		downloads:    downloads,
+		githubClient:  githubClient,
+		fileCDN:       fileCDN,
+		authConfig:    authConfig,
+		jwt:           jwt,
+		authorizer:    auth.NewAuthorizer(database),
+		database:      database,
+		downloads:     downloads,
+		publicBaseURL: publicBaseURL,
 	}
 }
 

@@ -28,6 +28,9 @@ import (
 	"dynamic-pdb/backend/internal/types"
 )
 
+// testPublicBaseURL stands in for the ingress URL, whose /api prefix this server never sees.
+const testPublicBaseURL = "https://dynamicpdb.example/api"
+
 const (
 	testJWTSecret = "test-secret"
 	testJWTIssuer = "dynamic-pdb-test"
@@ -138,7 +141,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
-	server := httpapi.NewServer(githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}))
+	server := httpapi.NewServer(
+		githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
+	)
 
 	router := chi.NewRouter()
 	router.Use(corsMiddleware())

@@ -45,9 +45,9 @@ loadtest-server: build
 	DYNAMIC_PDB_ENV=local DYNAMIC_PDB_DB_NAME=$(LOADTEST_DB) DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS=1000000 ./bin/server
 
 # Runs against a server started with loadtest-server. Override scenarios with
-# ENDPOINTS, OFFSETS, CONCURRENCY, DURATION_SECONDS and P95_BUDGET_MS.
+# ENDPOINTS, OFFSETS (numbers or "cursor"), CURSOR_PAGES, CONCURRENCY, DURATION_SECONDS and P95_BUDGET_MS.
 loadtest:
 	docker run --rm -i --add-host=host.docker.internal:host-gateway \
-		-e BASE_URL -e ENDPOINTS -e OFFSETS -e CONCURRENCY -e PAGE_LIMIT \
+		-e BASE_URL -e ENDPOINTS -e OFFSETS -e CURSOR_PAGES -e CONCURRENCY -e PAGE_LIMIT \
 		-e DURATION_SECONDS -e P95_BUDGET_MS -e REQUEST_TIMEOUT \
 		$(LOADTEST_K6_IMAGE) run --quiet - < loadtest/lists.js

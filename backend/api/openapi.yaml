@@ -490,11 +490,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of entries to skip.
+          description: >
+            Deprecated: use `cursor`. Number of entries to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the entries
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
         - name: query
           in: query
           description: Text to search across entries, models, artifacts, and artifact metadata.
@@ -629,11 +642,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of models to skip.
+          description: >
+            Deprecated: use `cursor`. Number of models to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the models
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Models found.
@@ -724,11 +750,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of models to skip.
+          description: >
+            Deprecated: use `cursor`. Number of models to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the models
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Models found.
@@ -1833,6 +1872,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EntryInfoData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    CollectionLinks:
+      type: object
+      description: Present only when another page exists.
+      required: [next]
+      properties:
+        next:
+          type: string
+          description: Absolute URL of the next page, with the same filters and limit.
+
+    CursorPageMeta:
+      type: object
+      description: Present only when another page exists.
+      required: [next_cursor]
+      properties:
+        next_cursor:
+          type: string
+          description: Pass as `cursor` to get the next page.
 
     EntryInfoData:
       type: object
@@ -1885,6 +1946,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModelData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
 
     ModelDocument:
       type: object
@@ -2661,7 +2726,7 @@ components:
 
     ModelAttributes:
       type: object
-      required: [id, entry_id, created_by, title, metadata, residue_data, created_at, updated_at, metrics]
+      required: [id, entry_id, created_by, title, metadata, created_at, updated_at, metrics]
       properties:
         id:
           type: string
@@ -2680,6 +2745,9 @@ components:
           type: object
           additionalProperties: true
         residue_data:
+          description: >
+            Per-residue data. Returned only by the model detail endpoint
+            (GET /v1/entries/{entry_id}/models/{model_id}); omitted from model lists.
           type: array
           items:
             $ref: "#/components/schemas/ResidueData"

@@ -1,5 +1,6 @@
 server:
   addr: ":8080"
+  public_base_url: https://dynamicpdb.com/api
 auth:
   allowed_orgs:
     - Astera-org
