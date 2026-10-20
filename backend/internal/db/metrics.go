@@ -83,6 +83,35 @@ func (r *MetricsRepository) List(ctx context.Context, filters MetricFilters) ([]
 	return metrics, nil
 }
 
+// ListByModelRevisionIDs returns the metrics of each given model revision in one query.
+// Revisions without metrics are absent from the map; each slice is ordered like List.
+func (r *MetricsRepository) ListByModelRevisionIDs(
+	ctx context.Context,
+	modelRevisionIDs []uuid.UUID,
+) (map[uuid.UUID][]models.Metric, error) {
+	metricsByRevision := make(map[uuid.UUID][]models.Metric, len(modelRevisionIDs))
+	if len(modelRevisionIDs) == 0 {
+		return metricsByRevision, nil
+	}
+
+	query := `select model_revision_metrics.model_revision_id,
+			         metrics.id, metrics.key, metrics.value, metrics.created_at
+			  from metrics
+			  join model_revision_metrics on model_revision_metrics.metric_id = metrics.id
+			  where model_revision_metrics.model_revision_id = any($1)
+			  order by model_revision_metrics.model_revision_id, metrics.created_at asc, metrics.id asc`
+
+	rows := make([]modelRevisionMetricRow, 0)
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, query, pq.Array(modelRevisionIDs)); err != nil {
+		return nil, fmt.Errorf("list metrics by model revision ids: %w", err)
+	}
+
+	for _, row := range rows {
+		metricsByRevision[row.ModelRevisionID] = append(metricsByRevision[row.ModelRevisionID], *metricFromRow(&row.metricRow))
+	}
+	return metricsByRevision, nil
+}
+
 func (r *MetricsRepository) AttachToModelRevision(
 	ctx context.Context,
 	modelRevisionID uuid.UUID,
@@ -179,4 +208,9 @@ type metricRow struct {
 	Key       string    `db:"key"`
 	Value     float64   `db:"value"`
 	CreatedAt time.Time `db:"created_at"`
+}
+
+type modelRevisionMetricRow struct {
+	ModelRevisionID uuid.UUID `db:"model_revision_id"`
+	metricRow
 }

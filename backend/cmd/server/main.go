@@ -28,6 +28,10 @@ import (
 	"dynamic-pdb/lib/sifts"
 )
 
+// readRequestTimeout bounds GET and HEAD requests. It is longer than the database
+// statement_timeout so a single slow query fails on its own before the whole request does.
+const readRequestTimeout = 15 * time.Second
+
 func main() {
 	os.Exit(run())
 }
@@ -74,9 +78,12 @@ func run() int {
 	srv := httpapi.NewServer(githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics))
 
 	router := chi.NewRouter()
-	router.Use(middleware.Logger)
+	router.Use(middleware.RequestID)
+	router.Use(httpapi.ReadRequestTimeoutMiddleware(readRequestTimeout))
+	router.Use(httpapi.AccessLogMiddleware(slog.Default()))
+	router.Use(httpapi.RecoverMiddleware(slog.Default()))
 	router.Use(corsMiddleware(env))
-	router.Use(httpapi.GlobalRateLimitMiddleware(env))
+	router.Use(httpapi.GlobalRateLimitMiddleware(env, cfg.Server.RateLimit.Requests, cfg.Server.RateLimit.Window))
 	router.Use(httpapi.MediaTypeMiddleware())
 	router.Use(httpapi.RequestBodyLimitMiddleware(httpapi.MaxRequestBodyBytes))
 	httpapi.HandlerWithOptions(srv, httpapi.ChiServerOptions{

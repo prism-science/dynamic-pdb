@@ -1239,13 +1239,18 @@ func (s *Server) modelAttributesFromRevisions(
 	ctx context.Context,
 	revisions []domainmodels.ModelRevision,
 ) ([]ModelAttributes, error) {
+	revisionIDs := make([]uuid.UUID, 0, len(revisions))
+	for _, revision := range revisions {
+		revisionIDs = append(revisionIDs, revision.ID)
+	}
+	metricsByRevision, err := s.database.Metrics.ListByModelRevisionIDs(ctx, revisionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list model metrics: %w", err)
+	}
+
 	items := make([]ModelAttributes, 0, len(revisions))
 	for _, revision := range revisions {
-		metrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &revision.ID})
-		if err != nil {
-			return nil, fmt.Errorf("list model metrics: %w", err)
-		}
-		item, err := modelAttributesFromRevision(revision, metrics)
+		item, err := modelAttributesFromRevision(revision, metricsByRevision[revision.ID])
 		if err != nil {
 			return nil, fmt.Errorf("build model response: %w", err)
 		}

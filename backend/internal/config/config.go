@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -21,14 +22,28 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Addr string `mapstructure:"addr"`
+	Addr      string          `mapstructure:"addr"`
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 }
+
+// RateLimitConfig caps how many requests one client IP may send per window on each server instance.
+type RateLimitConfig struct {
+	Requests int           `mapstructure:"requests"`
+	Window   time.Duration `mapstructure:"window"`
+}
+
+const (
+	defaultRateLimitRequests = 100
+	defaultRateLimitWindow   = 10 * time.Second
+)
 
 func ReadFromFile(filename string) (Config, error) {
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
 	v.SetEnvPrefix("DYNAMIC_PDB")
 	v.SetEnvKeyReplacer(strings.NewReplacer("::", "_"))
 	v.AutomaticEnv()
+	v.SetDefault("server::rate_limit::requests", defaultRateLimitRequests)
+	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
@@ -65,6 +80,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.Auth.JWT.TTL <= 0 {
 		return fmt.Errorf("auth.jwt.ttl must be positive")
+	}
+	if cfg.Server.RateLimit.Requests <= 0 {
+		return fmt.Errorf("server.rate_limit.requests must be positive")
+	}
+	if cfg.Server.RateLimit.Window <= 0 {
+		return fmt.Errorf("server.rate_limit.window must be positive")
 	}
 	return nil
 }

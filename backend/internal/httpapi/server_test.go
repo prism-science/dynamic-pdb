@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ import (
 func Test_should_ignore_forwarded_header_when_environment_is_local(t *testing.T) {
 	// given
 	var clientIP string
-	handler := GlobalRateLimitMiddleware("local")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := GlobalRateLimitMiddleware("local", 100, 10*time.Second)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		clientIP = middleware.GetClientIP(r.Context())
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -36,7 +37,7 @@ func Test_should_ignore_forwarded_header_when_environment_is_local(t *testing.T)
 func Test_should_use_client_added_by_outer_proxy_when_environment_is_production(t *testing.T) {
 	// given
 	var clientIP string
-	handler := GlobalRateLimitMiddleware("production")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := GlobalRateLimitMiddleware("production", 100, 10*time.Second)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		clientIP = middleware.GetClientIP(r.Context())
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -53,7 +54,7 @@ func Test_should_use_client_added_by_outer_proxy_when_environment_is_production(
 func Test_should_use_client_added_by_outer_proxy_when_environment_is_dev(t *testing.T) {
 	// given
 	var clientIP string
-	handler := GlobalRateLimitMiddleware("dev")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := GlobalRateLimitMiddleware("dev", 100, 10*time.Second)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		clientIP = middleware.GetClientIP(r.Context())
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -67,12 +68,12 @@ func Test_should_use_client_added_by_outer_proxy_when_environment_is_dev(t *test
 	assert.Equal(t, "198.51.100.1", clientIP)
 }
 
-func Test_should_reject_request_when_global_ip_limit_was_exceeded(t *testing.T) {
+func Test_should_reject_request_when_configured_ip_limit_was_exceeded(t *testing.T) {
 	// given
-	handler := GlobalRateLimitMiddleware("local")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := GlobalRateLimitMiddleware("local", 3, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	for range 100 {
+	for range 3 {
 		request := httptest.NewRequest(http.MethodGet, "/", nil)
 		request.RemoteAddr = "192.0.2.1:1234"
 		recorder := httptest.NewRecorder()

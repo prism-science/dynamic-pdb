@@ -440,15 +440,6 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "state = any(:states::text[])")
 		args["states"] = pq.StringArray(states)
 	}
-	if filters.EntryState != nil {
-		conditions = append(conditions, `exists (
-			select 1
-			from entries e
-			where e.id = entry_revisions.entry_id
-			  and e.state = :entry_state
-		)`)
-		args["entry_state"] = string(*filters.EntryState)
-	}
 	if filters.CreatedBy != nil {
 		conditions = append(conditions, "created_by = :created_by")
 		args["created_by"] = *filters.CreatedBy

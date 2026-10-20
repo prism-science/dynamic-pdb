@@ -125,6 +125,47 @@ func Test_should_override_s3_bucket_from_env_var(t *testing.T) {
 	assert.Equal(t, "env-bucket", cfg.CDN.S3.Bucket)
 }
 
+func Test_should_default_rate_limit_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 100, cfg.Server.RateLimit.Requests)
+	assert.Equal(t, 10*time.Second, cfg.Server.RateLimit.Window)
+}
+
+func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS", "5000")
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_WINDOW", "1m")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 5000, cfg.Server.RateLimit.Requests)
+	assert.Equal(t, time.Minute, cfg.Server.RateLimit.Window)
+}
+
+func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS", "0")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "server.rate_limit.requests must be positive")
+}
+
 func Test_should_reject_config_when_auth_secrets_are_missing(t *testing.T) {
 	// given
 	t.Chdir(writeConfig(t, "test", `

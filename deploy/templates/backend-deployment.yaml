@@ -87,5 +87,7 @@ spec:
               path: /readyz
               port: http
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}

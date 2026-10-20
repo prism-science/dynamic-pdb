@@ -80,6 +80,70 @@ func Test_should_create_and_list_metrics_for_model_revision_when_metrics_reposit
 	assert.InDelta(t, 0.234, got[0].Value, 0.0001)
 }
 
+func Test_should_group_metrics_by_model_revision_when_listing_by_model_revision_ids(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "batch metric entry revision", now)
+	firstRevision := createDBTestModelRevision(t, entryRevision.EntryID, "first batch metric model revision", now)
+	secondRevision := createDBTestModelRevision(t, entryRevision.EntryID, "second batch metric model revision", now)
+	revisionWithoutMetrics := createDBTestModelRevision(t, entryRevision.EntryID, "metricless model revision", now)
+	laterFirstMetric := createDBTestMetric(t, firstRevision.ID, models.MetricKeyRWork, 0.2, now.Add(time.Minute))
+	earlierFirstMetric := createDBTestMetric(t, firstRevision.ID, models.MetricKeyRFree, 0.25, now)
+	secondMetric := createDBTestMetric(t, secondRevision.ID, models.MetricKeyClashscore, 3.5, now)
+
+	// when
+	got, err := testDB.Metrics.ListByModelRevisionIDs(ctx, []uuid.UUID{
+		firstRevision.ID,
+		secondRevision.ID,
+		revisionWithoutMetrics.ID,
+	})
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Len(t, got[firstRevision.ID], 2)
+	assert.Equal(t, earlierFirstMetric.ID, got[firstRevision.ID][0].ID)
+	assert.Equal(t, laterFirstMetric.ID, got[firstRevision.ID][1].ID)
+	require.Len(t, got[secondRevision.ID], 1)
+	assert.Equal(t, secondMetric.ID, got[secondRevision.ID][0].ID)
+	assert.Equal(t, models.MetricKeyClashscore, got[secondRevision.ID][0].Key)
+	assert.InDelta(t, 3.5, got[secondRevision.ID][0].Value, 0.0001)
+	assert.NotContains(t, got, revisionWithoutMetrics.ID)
+}
+
+func Test_should_return_empty_map_when_listing_metrics_for_no_model_revisions(t *testing.T) {
+	// given
+	ctx := context.Background()
+
+	// when
+	got, err := testDB.Metrics.ListByModelRevisionIDs(ctx, nil)
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func createDBTestMetric(
+	t *testing.T,
+	modelRevisionID uuid.UUID,
+	key models.MetricKey,
+	value float64,
+	createdAt time.Time,
+) *models.Metric {
+	t.Helper()
+
+	metric, err := testDB.Metrics.Create(context.Background(), models.Metric{
+		ID:        uuid.New(),
+		Key:       key,
+		Value:     value,
+		CreatedAt: createdAt,
+	})
+	require.NoError(t, err)
+	require.NoError(t, testDB.Metrics.AttachToModelRevision(context.Background(), modelRevisionID, metric.ID))
+	return metric
+}
+
 func Test_should_create_and_list_runs_for_model_revision_when_runs_repository_called(t *testing.T) {
 	// given
 	ctx := context.Background()

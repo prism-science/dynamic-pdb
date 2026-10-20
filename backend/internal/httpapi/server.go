@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -32,13 +33,13 @@ type Server struct {
 	downloads    analytics.Tracker
 }
 
-func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
+func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
 	resolveClientIP := middleware.ClientIPFromRemoteAddr
 	if env == "production" || env == "dev" {
 		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
 	}
 
-	limitRequests := httprate.LimitBy(100, 10*time.Second, func(r *http.Request) (string, error) {
+	limitRequests := httprate.LimitBy(requests, window, func(r *http.Request) (string, error) {
 		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
 	})
 	return func(next http.Handler) http.Handler {
@@ -212,8 +213,14 @@ func (s *Server) Livez(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, ProbeDocument{Meta: ProbeMeta{Status: "ok"}})
 }
 
+// readinessPingTimeout stays below the readiness probe's timeoutSeconds in the Helm chart,
+// so a slow database is reported by this handler instead of by a kubelet timeout.
+const readinessPingTimeout = time.Second
+
 func (s *Server) Readyz(w http.ResponseWriter, r *http.Request) {
-	if err := s.database.Ping(r.Context()); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
+	defer cancel()
+	if err := s.database.Ping(ctx); err != nil {
 		slog.Warn("readyz: db ping failed", "err", err)
 		writeJSON(w, http.StatusServiceUnavailable, ProbeDocument{Meta: ProbeMeta{Status: "not ready"}})
 		return

@@ -22,6 +22,7 @@ db:
   max_idle_connections: 10
   max_connection_idle_time: 5m
   max_connection_lifetime: 30m
+  statement_timeout: 10s
 cdn:
   s3:
     endpoint: ""
