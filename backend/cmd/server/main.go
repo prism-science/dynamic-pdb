@@ -37,6 +37,9 @@ func main() {
 }
 
 func run() int {
+	logger := slog.New(httpapi.NewRequestIDLogHandler(slog.NewTextHandler(os.Stderr, nil)))
+	slog.SetDefault(logger)
+
 	env := os.Getenv("DYNAMIC_PDB_ENV")
 	if env == "" {
 		env = "local"
@@ -82,8 +85,8 @@ func run() int {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(httpapi.ReadRequestTimeoutMiddleware(readRequestTimeout))
-	router.Use(httpapi.AccessLogMiddleware(slog.Default()))
-	router.Use(httpapi.RecoverMiddleware(slog.Default()))
+	router.Use(httpapi.AccessLogMiddleware(logger))
+	router.Use(httpapi.RecoverMiddleware(logger))
 	router.Use(corsMiddleware(env))
 	router.Use(httpapi.GlobalRateLimitMiddleware(env, cfg.Server.RateLimit.Requests, cfg.Server.RateLimit.Window))
 	router.Use(httpapi.MediaTypeMiddleware())
@@ -103,7 +106,7 @@ func run() int {
 		database,
 		rcsb.NewClient(rcsb.WithCacheEntries(0)),
 		sifts.NewClient(),
-		slog.Default(),
+		logger,
 	)
 	if err != nil {
 		slog.Error("data sync job init failed", "err", err)

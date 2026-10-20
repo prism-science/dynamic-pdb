@@ -15,6 +15,13 @@ linters:
     - misspell     # commonly misspelled English words in comments/strings
     - unconvert    # unnecessary type conversions
     - bodyclose    # checks that HTTP response bodies are closed
+    - sloglint     # log/slog style; scoped to the HTTP API below
+
+  settings:
+    sloglint:
+      # Handler logs must pass the request context so RequestIDLogHandler can add the
+      # request id that ties them to the access log line.
+      context: all
 
   exclusions:
     generated: lax
@@ -29,6 +36,10 @@ linters:
         linters:
           - gosec
           - errcheck
+      # Only request handlers have a request context to log with.
+      - path-except: backend/internal/httpapi/
+        linters:
+          - sloglint
 
 formatters:
   enable:

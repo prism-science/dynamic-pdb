@@ -3,6 +3,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
+import {
+  backendReadTimeoutMs,
+  backendWriteTimeoutMs,
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "./timeout";
 import { formatEntryLabel } from "@/lib/entry-label";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
@@ -436,6 +442,21 @@ export class ApiRequestError extends Error {
     this.name = "ApiRequestError";
     this.status = status;
   }
+}
+
+/** A backend that never answered is a gateway timeout to our callers. */
+function backendRequestError(error: unknown): ApiRequestError {
+  if (error instanceof FetchTimeoutError) {
+    return new ApiRequestError(
+      `Backend request timed out after ${error.timeoutMs / 1000} s`,
+      504,
+    );
+  }
+  return new ApiRequestError(
+    error instanceof Error
+      ? `Backend request failed: ${error.message}`
+      : "Backend request failed",
+  );
 }
 
 /** One page of a cursor-paged backend list. nextCursor is null on the last page. */
@@ -1067,22 +1088,22 @@ async function sendJSON<T>(
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method,
-      cache: "no-store",
-      headers: {
-        Accept: jsonApiMediaType,
-        "Content-Type": jsonApiMediaType,
-        Authorization: `Bearer ${token}`,
+    response = await fetchWithTimeout(
+      `${baseUrl}${path}`,
+      {
+        method,
+        cache: "no-store",
+        headers: {
+          Accept: jsonApiMediaType,
+          "Content-Type": jsonApiMediaType,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
       },
-      body: JSON.stringify(input),
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
+      backendWriteTimeoutMs,
     );
+  } catch (error) {
+    throw backendRequestError(error);
   }
   if (!response.ok) {
     throw new ApiRequestError(
@@ -1810,16 +1831,13 @@ async function fetchBackend<T>(path: string, token?: string): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      cache: "no-store",
-      headers,
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
+    response = await fetchWithTimeout(
+      `${baseUrl}${path}`,
+      { cache: "no-store", headers },
+      backendReadTimeoutMs,
     );
+  } catch (error) {
+    throw backendRequestError(error);
   }
 
   if (!response.ok) {

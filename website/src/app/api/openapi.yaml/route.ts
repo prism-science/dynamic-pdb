@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getApiBaseUrl } from "@/lib/api/baseUrl";
+import {
+  backendReadTimeoutMs,
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "@/lib/api/timeout";
 
 export const runtime = "nodejs";
 
@@ -19,9 +24,21 @@ export async function GET() {
     }
   }
 
-  const response = await fetch(`${getApiBaseUrl()}/openapi.yaml`, {
-    headers: { Accept: "application/yaml" },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${getApiBaseUrl()}/openapi.yaml`,
+      { headers: { Accept: "application/yaml" } },
+      backendReadTimeoutMs,
+    );
+  } catch (error) {
+    if (error instanceof FetchTimeoutError) {
+      return new Response("OpenAPI description is unavailable.", {
+        status: 504,
+      });
+    }
+    throw error;
+  }
   if (!response.ok) {
     return new Response("OpenAPI description is unavailable.", {
       status: response.status,

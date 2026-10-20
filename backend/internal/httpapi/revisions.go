@@ -27,7 +27,7 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 		return
 	}
 	result, err := s.createEntryRevisionGraph(r.Context(), entryID, payload, user.ID)
-	if s.writeMutationError(w, err, "create entry revision") {
+	if s.writeMutationError(r.Context(), w, err, "create entry revision") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateEntryRevisionDocument{
@@ -193,7 +193,7 @@ func (s *Server) UpdateEntryRevisionState(
 		return
 	}
 	if err != nil {
-		slog.Error("get entry revision for decision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry revision for decision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update entry revision")
 		return
 	}
@@ -228,7 +228,7 @@ func (s *Server) UpdateEntryRevisionState(
 		}
 		return nil
 	})
-	if s.writeMutationError(w, err, "update entry revision") {
+	if s.writeMutationError(r.Context(), w, err, "update entry revision") {
 		return
 	}
 	s.writeEntryRevision(w, r, entryID, revisionID, nil)
@@ -554,7 +554,7 @@ func (s *Server) UpdateModelRevisionState(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision for decision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision for decision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update model revision")
 		return
 	}
@@ -595,7 +595,7 @@ func (s *Server) UpdateModelRevisionState(
 		}
 		return nil
 	})
-	if s.writeMutationError(w, err, "update model revision") {
+	if s.writeMutationError(r.Context(), w, err, "update model revision") {
 		return
 	}
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, nil)
@@ -684,7 +684,7 @@ func (s *Server) SubmitUserModelRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision for submit failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision for submit failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to submit model revision")
 		return
 	}
@@ -697,7 +697,7 @@ func (s *Server) SubmitUserModelRevision(
 		revisionID,
 		[]domainmodels.RevisionState{domainmodels.RevisionStatePending, domainmodels.RevisionStateRejected},
 		domainmodels.RevisionStateInReview,
-	); s.writeMutationError(w, err, "submit model revision") {
+	); s.writeMutationError(r.Context(), w, err, "submit model revision") {
 		return
 	}
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, &userID)
@@ -747,7 +747,7 @@ func (s *Server) requireReviewer(w http.ResponseWriter, r *http.Request) bool {
 
 	allowed, err := s.authorizer.HasRole(r.Context(), user.ID, domainmodels.RoleKeyReviewer)
 	if err != nil {
-		slog.Error("reviewer authorization failed", "err", err, "user_id", user.ID)
+		slog.ErrorContext(r.Context(), "reviewer authorization failed", "err", err, "user_id", user.ID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
 		return false
 	}
@@ -766,7 +766,7 @@ func (s *Server) requirePermission(
 ) bool {
 	allowed, err := s.authorizer.Can(r.Context(), userID, permission)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(r.Context(),
 			"permission authorization failed",
 			"err", err,
 			"user_id", userID,
@@ -823,14 +823,14 @@ func (s *Server) listEntryRevisionGroups(
 		After:     page.afterRevisionGroup(),
 	})
 	if err != nil {
-		slog.Error("list revision groups failed", "err", err)
+		slog.ErrorContext(r.Context(), "list revision groups failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
 		return
 	}
 	groups, hasNextPage := trimToPage(groups, page)
 	items, err := s.entryRevisionGroupItems(r.Context(), state, createdBy, groups)
 	if err != nil {
-		slog.Error("build revision groups failed", "err", err)
+		slog.ErrorContext(r.Context(), "build revision groups failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
 		return
 	}
@@ -840,7 +840,7 @@ func (s *Server) listEntryRevisionGroups(
 		return listCursor{Kind: listCursorKindRevisionGroups, CreatedAt: last.LatestCreatedAt, EntryID: last.EntryID}
 	})
 	if err != nil {
-		slog.Error("build revision group list links failed", "err", err)
+		slog.ErrorContext(r.Context(), "build revision group list links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
 		return
 	}
@@ -909,7 +909,7 @@ func (s *Server) entryRevisionGroupItems(
 		displayRevision, hasActiveRevision := activeRevisionByEntryID[group.EntryID]
 		if !hasActiveRevision {
 			if len(groupEntryRevisions) == 0 {
-				slog.Warn("skip revision group without an entry revision", "entry_id", group.EntryID)
+				slog.WarnContext(ctx, "skip revision group without an entry revision", "entry_id", group.EntryID)
 				continue
 			}
 			// Entries.List orders newest first, so this is the newest matching revision.
@@ -962,7 +962,7 @@ func (s *Server) listEntryRevisionSummaries(
 	filters.After = page.after()
 	revisions, err := s.database.Entries.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list entry revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry revisions failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entry revisions")
 		return
 	}
@@ -980,7 +980,7 @@ func (s *Server) listEntryRevisionSummaries(
 		return listCursor{Kind: listCursorKindEntryRevisions, CreatedAt: last.CreatedAt, ID: last.ID}
 	})
 	if err != nil {
-		slog.Error("build entry revision list links failed", "err", err)
+		slog.ErrorContext(r.Context(), "build entry revision list links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entry revisions")
 		return
 	}
@@ -1000,7 +1000,7 @@ func (s *Server) listModelRevisionSummaries(
 	filters.ExcludeResidueData = true
 	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list model revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model revisions failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model revisions")
 		return
 	}
@@ -1018,7 +1018,7 @@ func (s *Server) listModelRevisionSummaries(
 		return listCursor{Kind: listCursorKindModelRevisions, CreatedAt: last.CreatedAt, ID: last.ID}
 	})
 	if err != nil {
-		slog.Error("build model revision list links failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model revision list links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model revisions")
 		return
 	}
@@ -1039,13 +1039,13 @@ func (s *Server) writeEntryRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get entry revision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry revision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry revision")
 		return
 	}
 	attributes, err := s.entryRevisionAttributesFromModel(r.Context(), *revision)
 	if err != nil {
-		slog.Error("build entry revision response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build entry revision response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry revision")
 		return
 	}
@@ -1073,13 +1073,13 @@ func (s *Server) writeModelRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
 		return
 	}
 	attributes, err := s.modelRevisionAttributesFromModel(r.Context(), *revision)
 	if err != nil {
-		slog.Error("build model revision response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model revision response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
 		return
 	}

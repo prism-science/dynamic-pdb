@@ -53,7 +53,7 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 		return
 	}
 	if err != nil {
-		slog.Error("list entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
 		return
 	}
@@ -63,7 +63,7 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 	for _, revision := range revisions {
 		item, err := entryInfoAttributesFromRevision(revision)
 		if err != nil {
-			slog.Error("build entry info response failed", "err", err)
+			slog.ErrorContext(r.Context(), "build entry info response failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
 			return
 		}
@@ -82,7 +82,7 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 			ProteinSequenceSearch: proteinSequenceSearch,
 		})
 		if err != nil {
-			slog.Error("build entry list links failed", "err", err)
+			slog.ErrorContext(r.Context(), "build entry list links failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
 			return
 		}
@@ -151,7 +151,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.createInitialEntryRevision(r.Context(), req, user.ID)
-	if s.writeMutationError(w, err, "create entry") {
+	if s.writeMutationError(r.Context(), w, err, "create entry") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateEntryRevisionDocument{
@@ -338,7 +338,7 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 	}
 
 	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID)
-	if s.writeMutationError(w, err, "create model") {
+	if s.writeMutationError(r.Context(), w, err, "create model") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
@@ -521,7 +521,7 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 	}
 
 	result, err := s.createModelRevisionGraph(r.Context(), entryID, modelID, payload, user.ID)
-	if s.writeMutationError(w, err, "create model revision") {
+	if s.writeMutationError(r.Context(), w, err, "create model revision") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
@@ -794,13 +794,13 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		return
 	}
 	if err != nil {
-		slog.Error("get entry failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
 	sequences, err := s.database.ProteinSequences.List(r.Context(), db.ProteinSequenceFilters{EntryRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list entry protein sequences failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry protein sequences failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
@@ -808,13 +808,13 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		EntryRevisionID: &revision.ID,
 	})
 	if err != nil {
-		slog.Error("list entry polymer entities failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry polymer entities failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
 	properties, err := entryPropertiesFromModel(revision.Metadata)
 	if err != nil {
-		slog.Error("build entry response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build entry response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
@@ -895,7 +895,7 @@ func (s *Server) ListSimilarEntries(
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
 	} else if err != nil {
-		slog.Error("get entry for similar entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for similar entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
@@ -906,7 +906,7 @@ func (s *Server) ListSimilarEntries(
 		After:   page.afterSimilarEntry(),
 	})
 	if err != nil {
-		slog.Error("list similar entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list similar entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
@@ -915,7 +915,7 @@ func (s *Server) ListSimilarEntries(
 	for _, entry := range entries {
 		info, err := entryInfoAttributesFromRevision(entry.Entry)
 		if err != nil {
-			slog.Error("build similar entry response failed", "err", err)
+			slog.ErrorContext(r.Context(), "build similar entry response failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 			return
 		}
@@ -941,7 +941,7 @@ func (s *Server) ListSimilarEntries(
 		return listCursor{Kind: listCursorKindSimilarEntries, Score: &last.Score, EntryID: last.Entry.EntryID}
 	})
 	if err != nil {
-		slog.Error("build similar entry list links failed", "err", err)
+		slog.ErrorContext(r.Context(), "build similar entry list links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
@@ -975,7 +975,7 @@ func (s *Server) ListModelsAcrossEntries(
 
 	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list models across entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list models across entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
@@ -992,7 +992,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID stri
 		writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes([]ModelAttributes{}))
 		return
 	} else if err != nil {
-		slog.Error("get entry for models failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for models failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
@@ -1008,7 +1008,7 @@ func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID stri
 		ExcludeResidueData: true,
 	})
 	if err != nil {
-		slog.Error("list models failed", "err", err)
+		slog.ErrorContext(r.Context(), "list models failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
@@ -1026,7 +1026,7 @@ func (s *Server) writeModelListPage(
 	revisions, hasNextPage := trimToPage(revisions, page)
 	response, err := s.modelAttributesFromRevisions(r.Context(), revisions)
 	if err != nil {
-		slog.Error("build model list response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model list response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
@@ -1039,7 +1039,7 @@ func (s *Server) writeModelListPage(
 			ID:        last.ID,
 		})
 		if err != nil {
-			slog.Error("build model list links failed", "err", err)
+			slog.ErrorContext(r.Context(), "build model list links failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 			return
 		}
@@ -1054,19 +1054,19 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		return
 	}
 	if err != nil {
-		slog.Error("get model failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
 	metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list model metrics failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model metrics failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
 	model, err := modelAttributesFromRevision(*revision, metrics)
 	if err != nil {
-		slog.Error("build model response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
@@ -1092,20 +1092,20 @@ func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID s
 		return
 	}
 	if err != nil {
-		slog.Error("get entry for artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
 	filters.EntryRevisionID = &revision.ID
 	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list entry artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
 	data, links, meta, err := s.artifactListPage(r, artifacts, page)
 	if err != nil {
-		slog.Error("build artifact response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
@@ -1129,32 +1129,32 @@ func (s *Server) ListModelArtifacts(
 		return
 	}
 	if err != nil {
-		slog.Error("get model for artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model for artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	filters.ModelRevisionID = &revision.ID
 	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list model artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	runs, err := s.database.Runs.List(r.Context(), db.RunFilters{ModelRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list model runs failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model runs failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	links, err := s.database.Runs.ListArtifactLinks(r.Context(), revision.ID)
 	if err != nil {
-		slog.Error("list model run artifact links failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model run artifact links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	artifactData, pageLinks, pageMeta, err := s.artifactListPage(r, artifacts, page)
 	if err != nil {
-		slog.Error("build artifact response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
@@ -1883,7 +1883,7 @@ func isUniqueConstraint(err error, constraint string) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
 }
 
-func (s *Server) writeMutationError(w http.ResponseWriter, err error, action string) bool {
+func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
 	switch {
 	case err == nil:
 		return false
@@ -1895,7 +1895,7 @@ func (s *Server) writeMutationError(w http.ResponseWriter, err error, action str
 		isUniqueConstraint(err, "entry_revisions_active_pdb_ref_idx"):
 		writeError(w, http.StatusConflict, "CONFLICT", "revision conflicts with the current active state")
 	default:
-		slog.Error(action+" failed", "err", err)
+		slog.ErrorContext(ctx, action+" failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)
 	}
 	return true
