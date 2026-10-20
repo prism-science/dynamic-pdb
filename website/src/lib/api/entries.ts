@@ -326,8 +326,10 @@ type ModelArtifactListResponse = {
 type ModelArtifactCollectionDocument = {
   data: JSONAPIData<Artifact>[];
   meta: {
+    /** Runs and relations cover the whole model revision and repeat on every page. */
     runs: Run[];
     relations: RunArtifact[];
+    next_cursor?: string;
   };
 };
 
@@ -1109,21 +1111,25 @@ export async function getEntryPageData(
   entryId: string,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, modelsDocument, entryArtifactsDocument] = await Promise.all([
+  const [entry, modelPages, entryArtifactPages] = await Promise.all([
     getEntry(token, entryId),
-    fetchBackend<JSONAPIDataCollectionDocument<Model>>(
+    fetchAllPages<JSONAPIDataCollectionDocument<Model>>(
       `/v1/entries/${encodedEntryId}/models`,
       token,
     ),
-    fetchBackend<JSONAPIDataCollectionDocument<Artifact>>(
+    fetchAllPages<JSONAPIDataCollectionDocument<Artifact>>(
       `/v1/entries/${encodedEntryId}/artifacts`,
       token,
     ),
   ]);
-  const models = attributesFromCollection(modelsDocument);
-  const entryArtifacts = attributesFromCollection(entryArtifactsDocument);
-  const modelGraphs = await Promise.all(
-    models.map((model) => fetchModelGraph(token, entry.id, model)),
+  const models = modelPages.flatMap((page) => attributesFromCollection(page));
+  const entryArtifacts = entryArtifactPages.flatMap((page) =>
+    attributesFromCollection(page),
+  );
+  const modelGraphs = await mapWithConcurrency(
+    models,
+    MODEL_GRAPH_FETCH_CONCURRENCY,
+    (model) => fetchModelGraph(token, entry.id, model),
   );
 
   return {
@@ -1200,13 +1206,16 @@ function nextCursorFromCollection<T>(
   return typeof nextCursor === "string" && nextCursor !== "" ? nextCursor : null;
 }
 
-function modelArtifactListFromDocument(
-  document: ModelArtifactCollectionDocument,
+// The backend repeats a model's runs and relations on every page, so they are
+// read from the first page only.
+function modelArtifactListFromPages(
+  pages: ModelArtifactCollectionDocument[],
 ): ModelArtifactListResponse {
+  const [firstPage] = pages;
   return {
-    items: attributesFromCollection(document),
-    runs: document.meta.runs,
-    relations: document.meta.relations,
+    items: pages.flatMap((page) => attributesFromCollection(page)),
+    runs: firstPage?.meta.runs ?? [],
+    relations: firstPage?.meta.relations ?? [],
   };
 }
 
@@ -1268,13 +1277,13 @@ async function fetchModelGraph(
   entryId: string,
   model: Model,
 ): Promise<EntryGraph> {
-  const document = await fetchBackend<ModelArtifactCollectionDocument>(
+  const pages = await fetchAllPages<ModelArtifactCollectionDocument>(
     `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
       model.id,
     )}/artifacts`,
     token,
   );
-  return modelGraphFromBackend(entryId, model, modelArtifactListFromDocument(document));
+  return modelGraphFromBackend(entryId, model, modelArtifactListFromPages(pages));
 }
 
 function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest {
@@ -1732,6 +1741,63 @@ function stableUUID(value: string): string {
     12,
     16,
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** The backend's largest page; reads of a whole collection use it to keep
+ *  round trips few. */
+const FULL_COLLECTION_PAGE_LIMIT = 100;
+/** Bounds a whole-collection read whose backend keeps handing out cursors:
+ *  10,000 rows. */
+const MAX_FULL_COLLECTION_PAGES = 100;
+/** How many models' file lists an entry page fetches at once. Unbounded, a
+ *  large entry would send one request per model in the same instant. */
+const MODEL_GRAPH_FETCH_CONCURRENCY = 6;
+
+/** Fetches every page of the cursor-paged collection at `path` (which carries
+ *  no query string), following meta.next_cursor, and returns the pages in
+ *  order. */
+async function fetchAllPages<D extends JSONAPIDataCollectionDocument<unknown>>(
+  path: string,
+  token: string | undefined,
+): Promise<D[]> {
+  const pages: D[] = [];
+  let cursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < MAX_FULL_COLLECTION_PAGES; pageNumber += 1) {
+    const params = new URLSearchParams({ limit: String(FULL_COLLECTION_PAGE_LIMIT) });
+    if (cursor !== null) {
+      params.set("cursor", cursor);
+    }
+    const page: D = await fetchBackend<D>(`${path}?${params.toString()}`, token);
+    pages.push(page);
+    cursor = nextCursorFromCollection(page);
+    if (cursor === null) {
+      return pages;
+    }
+  }
+  throw new ApiRequestError(
+    `${path} has more than ${MAX_FULL_COLLECTION_PAGES} pages`,
+  );
+}
+
+/** Maps items with at most `limit` calls in flight, keeping results in item
+ *  order. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await map(items[index]);
+    }
+  };
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
 }
 
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {

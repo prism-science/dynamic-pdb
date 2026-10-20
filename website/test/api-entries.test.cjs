@@ -10,6 +10,7 @@ const {
   decideEntryReview,
   findReviewItem,
   getEntry,
+  getEntryPageData,
   getEntryReview,
   getModel,
   getModelPageData,
@@ -834,6 +835,181 @@ function reviewGroup(entryId) {
     entry_revisions: [revisionSummary(`${entryId}-revision`, "2026-01-01T01:00:00Z")],
     model_revisions: [],
   };
+}
+
+test("should load every page of an entry's models and files when the entry page is built", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const queriesByPath = new Map();
+    const relations = [
+      { run_id: "program-1", artifact_id: "model-file-1", direction: "output", position: null },
+    ];
+    global.fetch = async (url) => {
+      const requested = new URL(String(url));
+      const path = requested.pathname;
+      queriesByPath.set(path, [...(queriesByPath.get(path) ?? []), requested.search]);
+      const cursor = requested.searchParams.get("cursor");
+      if (path === "/v1/entries/entry-1") {
+        return jsonResponse(entryDocument(pagingEntry()));
+      }
+      if (path === "/v1/entries/entry-1/models") {
+        return jsonResponse(cursor === null
+          ? withNextCursor(collectionDocument("models", [pagingModel("model-1")]), "after-model-1")
+          : collectionDocument("models", [pagingModel("model-2")]));
+      }
+      if (path === "/v1/entries/entry-1/artifacts") {
+        return jsonResponse(cursor === null
+          ? withNextCursor(collectionDocument("artifacts", [artifact("entry-file-1", "a.fasta", "L0", "fasta")]), "after-entry-file-1")
+          : collectionDocument("artifacts", [artifact("entry-file-2", "b.fasta", "L0", "fasta")]));
+      }
+      if (path === "/v1/entries/entry-1/models/model-1/artifacts") {
+        return jsonResponse(cursor === null
+          ? withNextCursor(
+            modelArtifactDocument([artifact("model-file-1", "model.cif", "L2", "mmcif")], [run("program-1")], relations),
+            "after-model-file-1",
+          )
+          : modelArtifactDocument([artifact("model-file-2", "model.log", "L2", "log")], [run("program-1")], relations));
+      }
+      if (path === "/v1/entries/entry-1/models/model-2/artifacts") {
+        return jsonResponse(modelArtifactDocument([], [], []));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+    const data = await getEntryPageData("token-123", "entry-1");
+
+    assert.deepEqual(data.models.map((model) => model.id), ["model-1", "model-2"]);
+    const entityIds = data.entities.map((entity) => entity.id);
+    for (const id of ["entry-file-1", "entry-file-2", "model-file-1", "model-file-2"]) {
+      assert.ok(entityIds.includes(id), `${id} is on the page`);
+    }
+    assert.equal(
+      entityIds.filter((id) => id === "program-1").length,
+      1,
+      "runs repeated on every page of a model's files appear once",
+    );
+    assert.deepEqual(queriesByPath.get("/v1/entries/entry-1/models"), [
+      "?limit=100",
+      "?limit=100&cursor=after-model-1",
+    ]);
+    assert.deepEqual(queriesByPath.get("/v1/entries/entry-1/artifacts"), [
+      "?limit=100",
+      "?limit=100&cursor=after-entry-file-1",
+    ]);
+    assert.deepEqual(queriesByPath.get("/v1/entries/entry-1/models/model-1/artifacts"), [
+      "?limit=100",
+      "?limit=100&cursor=after-model-file-1",
+    ]);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should stop with an error when a collection keeps handing out cursors", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    let modelPageRequests = 0;
+    global.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/entries/entry-1") {
+        return jsonResponse(entryDocument(pagingEntry()));
+      }
+      if (path === "/v1/entries/entry-1/models") {
+        modelPageRequests += 1;
+        return jsonResponse(withNextCursor(collectionDocument("models", []), "same-cursor-again"));
+      }
+      if (path === "/v1/entries/entry-1/artifacts") {
+        return jsonResponse(collectionDocument("artifacts", []));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+    await assert.rejects(getEntryPageData("token-123", "entry-1"), ApiRequestError);
+    assert.equal(modelPageRequests, 100);
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should fetch at most six models' files at once when the entry page is built", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const modelIds = Array.from({ length: 20 }, (_, index) => `model-${index + 1}`);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    global.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/entries/entry-1") {
+        return jsonResponse(entryDocument(pagingEntry()));
+      }
+      if (path === "/v1/entries/entry-1/models") {
+        return jsonResponse(collectionDocument("models", modelIds.map(pagingModel)));
+      }
+      if (path === "/v1/entries/entry-1/artifacts") {
+        return jsonResponse(collectionDocument("artifacts", []));
+      }
+      const modelFiles = path.match(/^\/v1\/entries\/entry-1\/models\/([^/]+)\/artifacts$/);
+      if (modelFiles) {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return jsonResponse(modelArtifactDocument(
+          [artifact(`${modelFiles[1]}-file`, "model.cif", "L2", "mmcif")],
+          [],
+          [],
+        ));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+    const data = await getEntryPageData("token-123", "entry-1");
+
+    assert.equal(maxInFlight, 6);
+    assert.deepEqual(
+      data.entities.map((entity) => entity.id),
+      modelIds.map((id) => `${id}-file`),
+      "every model's files arrive, in model order",
+    );
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+function pagingEntry() {
+  return {
+    id: "entry-1",
+    title: "Entry",
+    thumbnail_image_url: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function pagingModel(id) {
+  return {
+    id,
+    entry_id: "entry-1",
+    title: id,
+    thumbnail_image_url: null,
+    primary_artifact_id: null,
+    metrics: [],
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function withNextCursor(document, nextCursor) {
+  return { ...document, meta: { ...document.meta, next_cursor: nextCursor } };
 }
 
 function artifact(id, name, level, format) {
