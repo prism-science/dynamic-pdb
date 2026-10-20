@@ -41,7 +41,7 @@ Each model includes its identifier, metadata, and reported metrics. Per-residue 
 ```bash
 curl -fsS \
   -H 'Accept: application/vnd.api+json' \
-  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models/dpdb_ube2dzua_m_002/artifacts?levels=L2&limit=100&offset=0'
+  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models/dpdb_ube2dzua_m_002/artifacts?levels=L2&limit=100'
 ```
 
 The API calls file records **artifacts**. Each record can include its name, format, checksum, size, and file location in `attributes.uri`.
@@ -64,9 +64,9 @@ Bulk download is not currently implemented. Scripts can enumerate records throug
 
 List endpoints return at most 100 records per request; set `limit=100` to get the most per page.
 
-Entry and model lists (`/v1/entries`, `/v1/models` and `/v1/entries/{entry_id}/models`) are paged by cursor. When more records exist, the response includes `links.next`, the full URL of the next page with the same filters. Request it, and repeat until a response has no `links`. To build the URL yourself, pass the response's `meta.next_cursor` as the `cursor` parameter. The `offset` parameter still works on these lists but is deprecated: deep offsets are slower, and records can be skipped or repeated while the data changes.
+Every list is paged by cursor: entries, models, file lists, similar entries and revisions. When more records exist, the response includes `links.next`, the full URL of the next page with the same filters. Request it, and repeat until a response has no `links`. To build the URL yourself, pass the response's `meta.next_cursor` as the `cursor` parameter. The `offset` parameter still works but is deprecated: deep offsets are slower, and records can be skipped or repeated while the data changes.
 
-Other lists, such as file lists, page with `limit` and `offset`: increase `offset` by `limit` until an empty `data` array is returned. Retrieve entry-level and model-level files separately.
+Retrieve entry-level and model-level files separately. A model's file list also returns the model's runs in `meta` on every page.
 
 The [OpenAPI specification](/api/openapi.yaml) is a machine-readable description of the API, suitable for scripts and LLM agents.
 

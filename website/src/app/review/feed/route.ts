@@ -7,15 +7,16 @@ import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
 const maxLimit = 100;
 
-/** Pages the review queue for the inbox's left column. The queue is reviewer-only,
- *  so this checks the session rather than proxying it blind. */
+/** Pages the review queue for the inbox's left column by the backend's opaque
+ *  `cursor`. The queue is reviewer-only, so this checks the session rather than
+ *  proxying it blind. */
 export async function GET(request: Request) {
   const session = await getAuthSession();
   if (!session) {
-    return NextResponse.json({ items: [] }, { status: 401 });
+    return NextResponse.json({ items: [], nextCursor: null }, { status: 401 });
   }
   if (!hasReviewAccess(session.permissions)) {
-    return NextResponse.json({ items: [] }, { status: 403 });
+    return NextResponse.json({ items: [], nextCursor: null }, { status: 403 });
   }
 
   const url = new URL(request.url);
@@ -24,15 +25,15 @@ export async function GET(request: Request) {
     REVIEW_PAGE_SIZE,
     maxLimit,
   );
-  const offset = positiveInteger(url.searchParams.get("offset"), 0);
+  const cursor = url.searchParams.get("cursor") || null;
 
   try {
-    const page = await listReviews(session.token, { limit, offset });
+    const page = await listReviews(session.token, { limit, cursor });
     return NextResponse.json(page);
   } catch (error) {
     if (error instanceof ApiRequestError) {
       return NextResponse.json(
-        { items: [], hasMore: false },
+        { items: [], nextCursor: null },
         { status: error.status ?? 502 },
       );
     }

@@ -181,3 +181,53 @@ func Test_should_create_and_list_runs_for_model_revision_when_runs_repository_ca
 	assert.Equal(t, softwareName, *got[0].SoftwareName)
 	assert.Equal(t, "test run", got[0].Metadata["note"])
 }
+
+func Test_should_return_every_artifact_once_in_order_when_artifacts_list_walks_pages_with_after(t *testing.T) {
+	// given
+	ctx := context.Background()
+	createdBy := createDBTestUser(t)
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	for _, offset := range []time.Duration{0, time.Second, time.Second, 2 * time.Second, 3 * time.Second} {
+		createDBTestArtifact(t, createdBy, "keyset artifact", base.Add(offset))
+	}
+	all, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{CreatedBy: &createdBy})
+	require.NoError(t, err)
+	require.Len(t, all, 5)
+
+	// when
+	walked := make([]uuid.UUID, 0, len(all))
+	var after *db.ListPosition
+	for range len(all) {
+		page, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{CreatedBy: &createdBy, Limit: ptr(2), After: after})
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		for _, artifact := range page {
+			walked = append(walked, artifact.ID)
+		}
+		last := page[len(page)-1]
+		after = &db.ListPosition{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	// then
+	expected := make([]uuid.UUID, 0, len(all))
+	for _, artifact := range all {
+		expected = append(expected, artifact.ID)
+	}
+	assert.Equal(t, expected, walked)
+}
+
+func Test_should_reject_after_with_offset_when_artifacts_list_called(t *testing.T) {
+	// given
+	filters := db.ArtifactFilters{
+		Offset: ptr(1),
+		After:  &db.ListPosition{CreatedAt: time.Now().UTC(), ID: uuid.New()},
+	}
+
+	// when
+	_, err := testDB.Artifacts.List(context.Background(), filters)
+
+	// then
+	require.Error(t, err)
+}

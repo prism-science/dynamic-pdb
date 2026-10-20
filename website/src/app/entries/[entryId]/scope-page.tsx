@@ -6,6 +6,7 @@ import {
   type EntryPageData,
   getEntryPageData,
   getModel,
+  type ListPage,
   listSimilarEntries,
   type Model,
   type ResidueData,
@@ -208,7 +209,7 @@ export default async function ScopePage({
   // One tab for everything about the sequence: the residues themselves, and
   // the entries that share them. Present as soon as either exists.
   const hasSequences = entities.some((entity) => entity.sequence);
-  if (hasSequences || similarEntries.length > 0) {
+  if (hasSequences || similarEntries.items.length > 0) {
     tabs.push({ id: "sequence", label: "Sequence" });
   }
   // Always offered: every entry has a history, even if all we can say about it
@@ -348,7 +349,8 @@ export default async function ScopePage({
               <SimilarProteins
                 entryId={data.entry.id}
                 sequences={data.entry.protein_sequences ?? []}
-                items={similarEntries}
+                items={similarEntries.items}
+                nextCursor={similarEntries.nextCursor}
               />
             </section>
           ) : null}
@@ -423,13 +425,13 @@ async function loadResidueData(
 async function loadSimilarEntries(
   token: string | undefined,
   entryId: string,
-): Promise<SimilarEntry[]> {
+): Promise<ListPage<SimilarEntry>> {
   try {
     return await listSimilarEntries(token, entryId, {
       limit: SIMILAR_ENTRIES_FETCH_LIMIT,
     });
   } catch (error) {
     console.error("list similar entries failed", error);
-    return [];
+    return { items: [], nextCursor: null };
   }
 }

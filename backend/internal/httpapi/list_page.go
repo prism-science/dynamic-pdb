@@ -52,6 +52,20 @@ func (p listPage) after() *db.ListPosition {
 	return p.Cursor.position()
 }
 
+func (p listPage) afterRevisionGroup() *db.RevisionGroupPosition {
+	if p.Cursor == nil {
+		return nil
+	}
+	return p.Cursor.revisionGroupPosition()
+}
+
+func (p listPage) afterSimilarEntry() *db.SimilarEntryPosition {
+	if p.Cursor == nil {
+		return nil
+	}
+	return p.Cursor.similarEntryPosition()
+}
+
 // trimToPage drops the extra row requested by fetchLimit and reports whether it was there.
 func trimToPage[T any](rows []T, page listPage) ([]T, bool) {
 	if len(rows) > page.Limit {
@@ -74,6 +88,21 @@ func (s *Server) nextPageLinks(r *http.Request, next listCursor) (*CollectionLin
 	query.Set("cursor", encoded)
 	nextURL := s.publicBaseURL + r.URL.EscapedPath() + "?" + query.Encode()
 	return &CollectionLinks{Next: nextURL}, &CursorPageMeta{NextCursor: encoded}, nil
+}
+
+// nextPageLinksAfter builds the next page's links from the last row of a page, or
+// returns nil links when trimToPage found no row after it.
+func nextPageLinksAfter[T any](
+	s *Server,
+	r *http.Request,
+	rows []T,
+	hasNextPage bool,
+	cursorAfter func(last T) listCursor,
+) (*CollectionLinks, *CursorPageMeta, error) {
+	if !hasNextPage || len(rows) == 0 {
+		return nil, nil, nil
+	}
+	return s.nextPageLinks(r, cursorAfter(rows[len(rows)-1]))
 }
 
 // writeListParamsError rejects a list request. Cursor problems get their own message

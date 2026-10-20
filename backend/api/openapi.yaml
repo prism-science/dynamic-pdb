@@ -605,11 +605,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of similar entries to skip.
+          description: >
+            Deprecated: use `cursor`. Number of similar entries to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the similar entries
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Similar entries found.
@@ -617,6 +630,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/SimilarEntryCollectionDocument"
+        "400":
+          description: Invalid cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Entry not found.
           content:
@@ -851,11 +870,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of artifacts to skip.
+          description: >
+            Deprecated: use `cursor`. Number of artifacts to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the artifacts
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Artifacts found.
@@ -864,7 +896,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ArtifactCollectionDocument"
         "400":
-          description: Invalid filters.
+          description: Invalid filters or cursor.
           content:
             application/vnd.api+json:
               schema:
@@ -911,11 +943,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
-          description: Number of artifacts to skip.
+          description: >
+            Deprecated: use `cursor`. Number of artifacts to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the artifacts
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Model artifacts found.
@@ -924,7 +969,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ModelArtifactCollectionDocument"
         "400":
-          description: Invalid filters.
+          description: Invalid filters or cursor.
           content:
             application/vnd.api+json:
               schema:
@@ -945,6 +990,7 @@ paths:
         Reviewer-only revision collection grouped by entry. An entry is returned
         when either an entry revision or one of its model revisions has the
         requested state. Each item contains only revisions matching that state.
+        Entries are ordered by their newest matching revision first.
       security:
         - bearerAuth: []
       parameters:
@@ -963,10 +1009,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of entries to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the entries
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Entries with matching revisions found.
@@ -975,7 +1035,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/EntryRevisionGroupCollectionDocument"
         "400":
-          description: Missing or invalid state filter.
+          description: Missing or invalid state filter, or invalid cursor.
           content:
             application/vnd.api+json:
               schema:
@@ -1016,10 +1076,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of revisions to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the revisions
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Entry revisions found.
@@ -1027,6 +1101,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionSummaryCollectionDocument"
+        "400":
+          description: Invalid cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1224,10 +1304,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of revisions to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the revisions
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Model revisions found.
@@ -1235,6 +1329,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevisionSummaryCollectionDocument"
+        "400":
+          description: Invalid cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1421,7 +1521,8 @@ paths:
       description: >
         Lists entries for which the path user created an entry revision or
         model revision in the requested state. Each item contains only matching
-        revisions created by that user. The authenticated user ID must equal
+        revisions created by that user. Entries are ordered by their newest
+        matching revision first. The authenticated user ID must equal
         `user_id`.
       security:
         - bearerAuth: []
@@ -1447,10 +1548,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of entries to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the entries
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Entries with matching revisions found.
@@ -1459,7 +1574,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/EntryRevisionGroupCollectionDocument"
         "400":
-          description: Missing or invalid state filter.
+          description: Missing or invalid state filter, or invalid cursor.
           content:
             application/vnd.api+json:
               schema:
@@ -1508,10 +1623,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of revisions to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the revisions
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Entry revisions found.
@@ -1519,6 +1648,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/EntryRevisionSummaryCollectionDocument"
+        "400":
+          description: Invalid cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1628,10 +1763,24 @@ paths:
             maximum: 100
         - name: offset
           in: query
+          description: >
+            Deprecated: use `cursor`. Number of revisions to skip. Deep offsets get slower
+            and can skip or repeat rows while data changes.
           required: false
+          deprecated: true
           schema:
             type: integer
             minimum: 0
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the revisions
+            that follow it. Follow `links.next` to page without building URLs.
+            Cannot be combined with `offset`.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
       responses:
         "200":
           description: Model revisions found.
@@ -1639,6 +1788,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ModelRevisionSummaryCollectionDocument"
+        "400":
+          description: Invalid cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1914,6 +2069,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SimilarEntryData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
         meta:
           $ref: "#/components/schemas/SimilarEntryCollectionMeta"
 
@@ -1937,6 +2094,9 @@ components:
         offset:
           type: integer
           minimum: 0
+        next_cursor:
+          type: string
+          description: Present only when another page exists. Pass as `cursor` to get the next page.
 
     ModelCollectionDocument:
       type: object
@@ -1977,6 +2137,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ArtifactData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
 
     ArtifactData:
       type: object
@@ -1998,13 +2162,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ArtifactData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
         meta:
           $ref: "#/components/schemas/ModelArtifactCollectionMeta"
 
     ModelArtifactCollectionMeta:
       type: object
+      description: Runs and relations cover the whole model revision and repeat on every page.
       required: [runs, relations]
       properties:
+        next_cursor:
+          type: string
+          description: Present only when another page exists. Pass as `cursor` to get the next page.
         runs:
           type: array
           items:
@@ -2060,6 +2230,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EntryRevisionGroupData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
 
     EntryRevisionGroupData:
       type: object
@@ -2080,6 +2254,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EntryRevisionSummaryData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
 
     EntryRevisionSummaryData:
       type: object
@@ -2101,6 +2279,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModelRevisionSummaryData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
 
     ModelRevisionSummaryData:
       type: object

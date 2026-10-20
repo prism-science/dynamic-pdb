@@ -13,8 +13,9 @@ type SimilarFeedRouteParams = {
 
 /**
  * Feed for the "All similar" dialog, one page of similar entries at a time —
- * the same shape as the entries feed. Like that feed it queries without a
- * token: the similarity listing is public registry data.
+ * the same shape as the entries feed, paged by the backend's opaque `cursor`.
+ * Like that feed it queries without a token: the similarity listing is public
+ * registry data.
  */
 export async function GET(
   request: Request,
@@ -27,17 +28,20 @@ export async function GET(
     defaultLimit,
     maxLimit,
   );
-  const offset = positiveInteger(url.searchParams.get("offset"), 0);
+  const cursor = url.searchParams.get("cursor") || null;
 
   try {
-    const items = await listSimilarEntries(undefined, entryId, {
+    const page = await listSimilarEntries(undefined, entryId, {
       limit,
-      offset,
+      cursor,
     });
-    return NextResponse.json({ items });
+    return NextResponse.json(page);
   } catch (error) {
     if (error instanceof ApiRequestError) {
-      return NextResponse.json({ items: [] }, { status: error.status ?? 502 });
+      return NextResponse.json(
+        { items: [], nextCursor: null },
+        { status: error.status ?? 502 },
+      );
     }
     throw error;
   }

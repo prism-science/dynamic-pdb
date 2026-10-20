@@ -26,8 +26,10 @@ type ModelsRepository struct {
 }
 
 type ModelRevisionFilters struct {
-	ID             *uuid.UUID
-	EntryID        *string
+	ID      *uuid.UUID
+	EntryID *string
+	// EntryIDs matches revisions of models in any of these entries. An empty slice is no filter.
+	EntryIDs       []string
 	ModelID        *string
 	State          *models.RevisionState
 	States         []models.RevisionState
@@ -442,6 +444,10 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	if filters.EntryID != nil {
 		conditions = append(conditions, "models.entry_id = :entry_id")
 		args["entry_id"] = *filters.EntryID
+	}
+	if len(filters.EntryIDs) > 0 {
+		conditions = append(conditions, "models.entry_id = any(cast(:entry_ids as text[]))")
+		args["entry_ids"] = pq.StringArray(filters.EntryIDs)
 	}
 	if filters.ModelID != nil {
 		conditions = append(conditions, "model_revisions.model_id = :model_id")

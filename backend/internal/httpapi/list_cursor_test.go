@@ -43,7 +43,7 @@ func Test_should_reject_list_cursor_when_value_is_invalid(t *testing.T) {
 		"not base64":             "%%%",
 		"not json":               base64.RawURLEncoding.EncodeToString([]byte("not json")),
 		"unknown field":          rawCursor(`{"k":"entries","t":"2026-10-20T00:00:00Z","i":"` + uuid.NewString() + `","x":1}`),
-		"unknown kind":           rawCursor(`{"k":"artifacts","t":"2026-10-20T00:00:00Z","i":"` + uuid.NewString() + `"}`),
+		"unknown kind":           rawCursor(`{"k":"widgets","t":"2026-10-20T00:00:00Z","i":"` + uuid.NewString() + `"}`),
 		"missing id":             rawCursor(`{"k":"entries","t":"2026-10-20T00:00:00Z"}`),
 		"missing created_at":     rawCursor(`{"k":"entries","i":"` + uuid.NewString() + `"}`),
 		"issued by another list": validModelsCursor,
@@ -53,6 +53,85 @@ func Test_should_reject_list_cursor_when_value_is_invalid(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// given / when
 			_, err := decodeListCursor(value, listCursorKindEntries)
+
+			// then
+			require.ErrorIs(t, err, errInvalidListCursor)
+		})
+	}
+}
+
+func Test_should_round_trip_entry_position_when_revision_group_cursor_is_encoded_and_decoded(t *testing.T) {
+	// given
+	cursor := listCursor{
+		Kind:      listCursorKindRevisionGroups,
+		CreatedAt: time.Date(2026, 10, 20, 12, 30, 45, 123456000, time.UTC),
+		EntryID:   "DPDB-0001",
+	}
+
+	// when
+	encoded, err := encodeListCursor(cursor)
+	require.NoError(t, err)
+	decoded, err := decodeListCursor(encoded, listCursorKindRevisionGroups)
+
+	// then
+	require.NoError(t, err)
+	position := decoded.revisionGroupPosition()
+	assert.True(t, cursor.CreatedAt.Equal(position.LatestCreatedAt))
+	assert.Equal(t, "DPDB-0001", position.EntryID)
+}
+
+func Test_should_round_trip_exact_score_when_similar_entry_cursor_is_encoded_and_decoded(t *testing.T) {
+	// given
+	score := 0.1 + 0.2
+	cursor := listCursor{Kind: listCursorKindSimilarEntries, Score: &score, EntryID: "DPDB-0002"}
+
+	// when
+	encoded, err := encodeListCursor(cursor)
+	require.NoError(t, err)
+	decoded, err := decodeListCursor(encoded, listCursorKindSimilarEntries)
+
+	// then
+	require.NoError(t, err)
+	position := decoded.similarEntryPosition()
+	assert.Equal(t, score, position.Score, "the next page compares scores for equality, so they must not round")
+	assert.Equal(t, "DPDB-0002", position.EntryID)
+}
+
+func Test_should_reject_list_cursor_when_position_does_not_match_kind(t *testing.T) {
+	id := uuid.NewString()
+	cases := map[string]struct {
+		kind  listCursorKind
+		value string
+	}{
+		"row cursor with entry id": {
+			kind:  listCursorKindArtifacts,
+			value: rawCursor(`{"k":"artifacts","t":"2026-10-20T00:00:00Z","i":"` + id + `","e":"DPDB-1"}`),
+		},
+		"row cursor with score": {
+			kind:  listCursorKindEntryRevisions,
+			value: rawCursor(`{"k":"entry_revisions","t":"2026-10-20T00:00:00Z","i":"` + id + `","c":1.5}`),
+		},
+		"revision group cursor without entry id": {
+			kind:  listCursorKindRevisionGroups,
+			value: rawCursor(`{"k":"revision_groups","t":"2026-10-20T00:00:00Z"}`),
+		},
+		"revision group cursor with row id": {
+			kind:  listCursorKindRevisionGroups,
+			value: rawCursor(`{"k":"revision_groups","t":"2026-10-20T00:00:00Z","e":"DPDB-1","i":"` + id + `"}`),
+		},
+		"similar entry cursor without score": {
+			kind:  listCursorKindSimilarEntries,
+			value: rawCursor(`{"k":"similar_entries","e":"DPDB-1"}`),
+		},
+		"similar entry cursor with created_at": {
+			kind:  listCursorKindSimilarEntries,
+			value: rawCursor(`{"k":"similar_entries","c":0.5,"e":"DPDB-1","t":"2026-10-20T00:00:00Z"}`),
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given / when
+			_, err := decodeListCursor(tc.value, tc.kind)
 
 			// then
 			require.ErrorIs(t, err, errInvalidListCursor)

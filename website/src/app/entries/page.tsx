@@ -57,7 +57,7 @@ export default async function MyEntriesPage({ searchParams }: Props) {
       <ReviewQueue
         key={tab.key}
         initialItems={queue.items}
-        initialHasMore={queue.hasMore}
+        initialNextCursor={queue.nextCursor}
         selectedEntryId={selected?.entry_id ?? null}
         headingSlot={<Tabs current={tab} />}
         feedPath={`/entries/feed?state=${encodeURIComponent(tab.state)}`}
@@ -114,7 +114,7 @@ async function loadQueue(
       limit: REVIEW_PAGE_SIZE,
     });
   } catch (error) {
-    if (error instanceof ApiRequestError) return { items: [], hasMore: false };
+    if (error instanceof ApiRequestError) return { items: [], nextCursor: null };
     throw error;
   }
 }

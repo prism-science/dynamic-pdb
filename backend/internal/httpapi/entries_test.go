@@ -147,7 +147,7 @@ func Test_should_bound_levels_when_list_artifacts_has_too_many_values(t *testing
 	}
 
 	// when
-	got, err := artifactFiltersFromParams(ListArtifactsParams{Levels: &levels})
+	got, _, err := artifactFiltersFromParams(ListArtifactsParams{Levels: &levels})
 
 	// then
 	require.NoError(t, err)
@@ -159,11 +159,11 @@ func Test_should_cap_limit_when_revision_pagination_limit_exceeds_maximum(t *tes
 	limit := 5000
 
 	// when
-	err := validatePagination(&limit, nil)
+	page, err := listPageFromParams(&limit, nil, nil, listCursorKindEntryRevisions)
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, maxListLimit, *limitOrDefault(&limit))
+	assert.Equal(t, maxListLimit, page.Limit)
 }
 
 func Test_should_apply_default_limit_when_list_models_across_entries_limit_is_missing(t *testing.T) {
@@ -190,23 +190,21 @@ func Test_should_reject_negative_offset_when_list_models_across_entries_offset_i
 func Test_should_apply_default_limit_when_list_artifacts_limit_is_missing(t *testing.T) {
 	// given
 	// when
-	got, err := artifactFiltersFromParams(ListArtifactsParams{})
+	_, page, err := artifactFiltersFromParams(ListArtifactsParams{})
 
 	// then
 	require.NoError(t, err)
-	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, page.Limit)
 }
 
 func Test_should_apply_default_limit_when_list_model_artifacts_limit_is_missing(t *testing.T) {
 	// given
 	// when
-	got, err := modelArtifactFiltersFromParams(ListModelArtifactsParams{})
+	_, page, err := modelArtifactFiltersFromParams(ListModelArtifactsParams{})
 
 	// then
 	require.NoError(t, err)
-	require.NotNil(t, got.Limit)
-	assert.Equal(t, defaultListLimit, *got.Limit)
+	assert.Equal(t, defaultListLimit, page.Limit)
 }
 
 func Test_should_reject_state_field_when_entry_revision_is_created(t *testing.T) {

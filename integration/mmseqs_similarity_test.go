@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,8 +36,14 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	defer s3.Close()
 	backend := startBackend(t, root, backendBinaryPath, s3.URL())
 
-	sourceEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-source", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWY")
-	similarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar", "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWF")
+	// The integration database outlives a run, so each run's sequences are random and only
+	// similar to each other, which keeps earlier runs out of the source's similar entries.
+	sourceSequence := randomProteinSequence(40)
+	similarSequence := withResidueReplaced(sourceSequence, len(sourceSequence)-1)
+	secondSimilarSequence := withResidueReplaced(sourceSequence, len(sourceSequence)-2)
+	sourceEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-source", sourceSequence)
+	similarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar", similarSequence)
+	secondSimilarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar-2", secondSimilarSequence)
 	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
 
 	// when
@@ -52,12 +59,73 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	match := similarEntry.Matches[0]
 	assert.Equal(t, "mmseqs2", match.Tool)
 	assert.NotZero(t, match.Score)
-	assert.Equal(t, "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWF", match.SimilarSequence.Sequence)
+	assert.Equal(t, similarSequence, match.SimilarSequence.Sequence)
 	assert.NotEmpty(t, match.Metadata["qaln"])
 	assert.NotEmpty(t, match.Metadata["taln"])
 	assert.NotEmpty(t, match.Metadata["fident"])
 	assert.NotEmpty(t, match.Metadata["qcov"])
 	assert.NotEmpty(t, match.Metadata["tcov"])
+
+	walkedIDs := walkSimilarEntryIDsByLinks(t, backend.URL+"/v1/entries/"+sourceEntryID+"/similar-entries?limit=1", auth.AccessToken)
+	assert.Equal(t, similarEntryIDs(similarEntries.Items), walkedIDs, "one entry per page walks the same list in the same order")
+	assert.Contains(t, walkedIDs, similarEntryID)
+	assert.Contains(t, walkedIDs, secondSimilarEntryID)
+}
+
+func randomProteinSequence(length int) string {
+	const aminoAcids = "ACDEFGHIKLMNPQRSTVWY"
+	var builder strings.Builder
+	for range length {
+		builder.WriteByte(aminoAcids[rand.IntN(len(aminoAcids))])
+	}
+	return builder.String()
+}
+
+// withResidueReplaced returns sequence with the residue at index swapped for a different one.
+func withResidueReplaced(sequence string, index int) string {
+	replacement := byte('W')
+	if sequence[index] == replacement {
+		replacement = 'Y'
+	}
+	return sequence[:index] + string(replacement) + sequence[index+1:]
+}
+
+// walkSimilarEntryIDsByLinks follows links.next from firstURL and returns the similar
+// entry IDs of every page in order.
+func walkSimilarEntryIDsByLinks(t *testing.T, firstURL string, token string) []string {
+	t.Helper()
+	const maxPages = 100
+	ids := make([]string, 0)
+	nextURL := firstURL
+	for range maxPages {
+		page := getJSON[similarEntryCursorPageResponse](t, nextURL, token)
+		for _, item := range page.Data {
+			ids = append(ids, item.Attributes.Entry.ID)
+		}
+		if page.Links == nil {
+			return ids
+		}
+		nextURL = page.Links.Next
+	}
+	require.FailNow(t, "similar entries did not reach their last page", "after %d pages", maxPages)
+	return nil
+}
+
+type similarEntryCursorPageResponse struct {
+	Data []struct {
+		Attributes similarEntryResponse `json:"attributes"`
+	} `json:"data"`
+	Links *struct {
+		Next string `json:"next"`
+	} `json:"links"`
+}
+
+func similarEntryIDs(entries []similarEntryResponse) []string {
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		ids = append(ids, entry.Entry.ID)
+	}
+	return ids
 }
 
 func buildMMseqsJobImage(t *testing.T, root string) string {

@@ -13,7 +13,7 @@ import styles from "./review-inbox.module.css";
  *  column is the thing that scrolls. */
 export default function ReviewQueue({
   initialItems,
-  initialHasMore,
+  initialNextCursor,
   selectedEntryId,
   heading,
   headingSlot,
@@ -22,7 +22,8 @@ export default function ReviewQueue({
   emptyLabel = "Nothing is waiting for your review.",
 }: {
   initialItems: ReviewQueueItem[];
-  initialHasMore: boolean;
+  /** Cursor of the page after initialItems; null when there is none. */
+  initialNextCursor: string | null;
   selectedEntryId: string | null;
   /** Column heading. Omitted when headingSlot carries the tabs instead. */
   heading?: string;
@@ -35,8 +36,9 @@ export default function ReviewQueue({
   emptyLabel?: string;
 }) {
   const [items, setItems] = useState(initialItems);
-  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [cursor, setCursor] = useState(initialNextCursor);
   const [loading, setLoading] = useState(false);
+  const hasMore = cursor !== null;
   const columnRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -52,11 +54,11 @@ export default function ReviewQueue({
     }
     appliedSignature.current = signature;
     setItems(initialItems);
-    setHasMore(initialHasMore);
-  }, [signature, initialItems, initialHasMore]);
+    setCursor(initialNextCursor);
+  }, [signature, initialItems, initialNextCursor]);
 
   const loadMore = useCallback(async () => {
-    if (loading || !hasMore) {
+    if (loading || cursor === null) {
       return;
     }
     setLoading(true);
@@ -64,13 +66,13 @@ export default function ReviewQueue({
       const separator = feedPath.includes("?") ? "&" : "?";
       const params = new URLSearchParams({
         limit: String(REVIEW_PAGE_SIZE),
-        offset: String(items.length),
+        cursor,
       });
       const response = await fetch(`${feedPath}${separator}${params.toString()}`, {
         cache: "no-store",
       });
       if (!response.ok) {
-        setHasMore(false);
+        setCursor(null);
         return;
       }
       const page = (await response.json()) as ReviewQueuePage;
@@ -83,11 +85,11 @@ export default function ReviewQueue({
           ...page.items.filter((item) => !seen.has(item.entry_id)),
         ];
       });
-      setHasMore(page.hasMore);
+      setCursor(page.nextCursor);
     } finally {
       setLoading(false);
     }
-  }, [feedPath, hasMore, items.length, loading]);
+  }, [cursor, feedPath, loading]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;

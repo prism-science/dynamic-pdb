@@ -19,6 +19,9 @@ const REQUEST_TIMEOUT = __ENV.REQUEST_TIMEOUT || '30s';
 const ENDPOINT_PATHS = {
   entries: '/v1/entries',
   models: '/v1/models',
+  // An English word spelled only with amino-acid letters. The seed has no search index rows,
+  // so the text search finds nothing and every request also runs the protein-sequence scan.
+  sequence_search: '/v1/entries?query=CHANNELS',
 };
 
 const scenarioNames = [];
@@ -64,7 +67,8 @@ export const options = {
 let walk = { endpoint: null, cursor: null, pages: 0 };
 
 export function listPage() {
-  const firstPageURL = `${BASE_URL}${ENDPOINT_PATHS[__ENV.ENDPOINT]}?limit=${PAGE_LIMIT}`;
+  const path = ENDPOINT_PATHS[__ENV.ENDPOINT];
+  const firstPageURL = `${BASE_URL}${path}${path.includes('?') ? '&' : '?'}limit=${PAGE_LIMIT}`;
   if (__ENV.OFFSET !== CURSOR_OFFSET) {
     getPage(`${firstPageURL}&offset=${__ENV.OFFSET}`);
     return;

@@ -12,40 +12,40 @@ import { SUBMISSION_STATES } from "../submissionTabs";
 const maxLimit = 100;
 
 /** Pages the signed-in author's own submissions for the left column of
- *  /entries. Scoped to the caller: the user-scoped backend routes refuse
- *  anything else anyway. */
+ *  /entries by the backend's opaque `cursor`. Scoped to the caller: the
+ *  user-scoped backend routes refuse anything else anyway. */
 export async function GET(request: Request) {
   const session = await getAuthSession();
   if (!session) {
-    return NextResponse.json({ items: [], hasMore: false }, { status: 401 });
+    return NextResponse.json({ items: [], nextCursor: null }, { status: 401 });
   }
   const userId = userIdFromToken(session.token);
   if (!userId) {
-    return NextResponse.json({ items: [], hasMore: false }, { status: 401 });
+    return NextResponse.json({ items: [], nextCursor: null }, { status: 401 });
   }
 
   const url = new URL(request.url);
   const state = url.searchParams.get("state");
   if (!isSubmissionState(state)) {
-    return NextResponse.json({ items: [], hasMore: false }, { status: 400 });
+    return NextResponse.json({ items: [], nextCursor: null }, { status: 400 });
   }
   const limit = boundedPositiveInteger(
     url.searchParams.get("limit"),
     REVIEW_PAGE_SIZE,
     maxLimit,
   );
-  const offset = positiveInteger(url.searchParams.get("offset"), 0);
+  const cursor = url.searchParams.get("cursor") || null;
 
   try {
     const page = await listUserSubmissions(session.token, userId, state, {
       limit,
-      offset,
+      cursor,
     });
     return NextResponse.json(page);
   } catch (error) {
     if (error instanceof ApiRequestError) {
       return NextResponse.json(
-        { items: [], hasMore: false },
+        { items: [], nextCursor: null },
         { status: error.status ?? 502 },
       );
     }

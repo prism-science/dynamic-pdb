@@ -8,6 +8,7 @@ const {
   createEntry,
   createModel,
   decideEntryReview,
+  findReviewItem,
   getEntry,
   getEntryReview,
   getModel,
@@ -607,11 +608,11 @@ test("should group the review queue by entry and pair each revision with the one
 
     assert.equal(
       paths[0],
-      `/v1/entries/revisions?state=in_review&limit=${REVIEW_PAGE_SIZE}&offset=0`,
+      `/v1/entries/revisions?state=in_review&limit=${REVIEW_PAGE_SIZE}`,
     );
     // One row per entry, never one per revision.
     assert.equal(page.items.length, 1);
-    assert.equal(page.hasMore, false);
+    assert.equal(page.nextCursor, null);
     assert.equal(page.items[0].title, "PDB 7B3H | entry-1");
     // The row is stamped with the earliest thing waiting under it.
     assert.equal(page.items[0].submitted_at, "2026-01-01T01:00:00Z");
@@ -791,6 +792,49 @@ test("should build model page entities from model artifacts and runs", async () 
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
   }
 });
+
+test("should walk the review queue by cursor until the requested entry turns up", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    const queries = [];
+    global.fetch = async (url) => {
+      const requested = new URL(String(url));
+      queries.push(requested.search);
+      const onSecondPage = requested.searchParams.get("cursor") === "after-entry-1";
+      const document = collectionDocument("entry_revision_groups", [
+        reviewGroup(onSecondPage ? "entry-2" : "entry-1"),
+      ]);
+      if (!onSecondPage) {
+        document.meta = { next_cursor: "after-entry-1" };
+      }
+      return jsonResponse(document);
+    };
+
+    const found = await findReviewItem("token-123", "entry-2");
+    const missing = await findReviewItem("token-123", "entry-3");
+
+    assert.equal(found.entry_id, "entry-2");
+    assert.equal(missing, null);
+    assert.deepEqual(queries.slice(0, 2), [
+      `?state=in_review&limit=${REVIEW_PAGE_SIZE}`,
+      `?state=in_review&limit=${REVIEW_PAGE_SIZE}&cursor=after-entry-1`,
+    ]);
+    assert.equal(queries.length, 4, "a missing entry stops at the page without a next cursor");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+function reviewGroup(entryId) {
+  return {
+    entry: { id: entryId, title: entryId },
+    entry_revisions: [revisionSummary(`${entryId}-revision`, "2026-01-01T01:00:00Z")],
+    model_revisions: [],
+  };
+}
 
 function artifact(id, name, level, format) {
   return {

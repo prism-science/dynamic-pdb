@@ -513,14 +513,18 @@ export async function listModels(
 export async function listSimilarEntries(
   token: string | undefined,
   entryId: string,
-  opts?: { limit?: number | null; offset?: number | null },
-): Promise<SimilarEntry[]> {
+  opts?: {
+    limit?: number | null;
+    /** meta.next_cursor of the previous page; omit for the first page. */
+    cursor?: string | null;
+  },
+): Promise<ListPage<SimilarEntry>> {
   const params = new URLSearchParams();
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
   }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
@@ -528,7 +532,10 @@ export async function listSimilarEntries(
     `/v1/entries/${encodeURIComponent(entryId)}/similar-entries${suffix}`,
     token,
   );
-  return attributesFromCollection(document);
+  return {
+    items: attributesFromCollection(document),
+    nextCursor: nextCursorFromCollection(document),
+  };
 }
 
 export type CreateEntityInput = {
@@ -663,11 +670,15 @@ export type ReviewQueueItem = {
   model_revisions: ModelRevisionSummary[];
 };
 
-export type ReviewQueuePage = {
-  items: ReviewQueueItem[];
-  /** A full page came back, so there is probably another. The endpoint returns
-   *  no total, so this is the only signal there is. */
-  hasMore: boolean;
+/** One page of the review queue or of an author's submissions; nextCursor is
+ *  null on the last page. */
+export type ReviewQueuePage = ListPage<ReviewQueueItem>;
+
+/** Pages a queue list: `cursor` is the previous page's nextCursor, omitted for
+ *  the first page. */
+export type ReviewQueuePageOptions = {
+  limit?: number;
+  cursor?: string | null;
 };
 
 
@@ -728,16 +739,14 @@ export async function submitModelRevision(
 
 export async function listReviews(
   token: string,
-  opts?: { limit?: number; offset?: number },
+  opts?: ReviewQueuePageOptions,
 ): Promise<ReviewQueuePage> {
-  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
-  const offset = opts?.offset ?? 0;
-  const groups = await listInReviewGroups(token, limit, offset);
-  // The backend orders groups by their newest revision first and paginates in
-  // that order, so the rows are left exactly as they arrive: re-sorting here
-  // would tear page boundaries apart.
-  const items = groups.map(queueItemFromGroup);
-  return { items, hasMore: items.length === limit };
+  const params = queuePageParams("in_review", opts);
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
+    `/v1/entries/revisions?${params.toString()}`,
+    token,
+  );
+  return queuePageFromDocument(document);
 }
 
 export async function getEntryReview(
@@ -753,19 +762,9 @@ export async function findReviewItem(
   token: string,
   entryId: string,
 ): Promise<ReviewQueueItem | null> {
-  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
-    const page = await listReviews(token, {
-      limit: REVIEW_PAGE_SIZE,
-      offset,
-    });
-    const found = page.items.find((item) => item.entry_id === entryId);
-    if (found) {
-      return found;
-    }
-    if (!page.hasMore) {
-      return null;
-    }
-  }
+  return findQueueItem(entryId, (cursor) =>
+    listReviews(token, { limit: REVIEW_PAGE_SIZE, cursor }),
+  );
 }
 
 type RevisionReaders = {
@@ -900,21 +899,14 @@ export async function listUserSubmissions(
   token: string,
   userId: string,
   state: RevisionState,
-  opts?: { limit?: number; offset?: number },
+  opts?: ReviewQueuePageOptions,
 ): Promise<ReviewQueuePage> {
-  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
-  const offset = opts?.offset ?? 0;
-  const params = new URLSearchParams({
-    state,
-    limit: String(limit),
-    offset: String(offset),
-  });
+  const params = queuePageParams(state, opts);
   const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
     `/v1/users/${encodeURIComponent(userId)}/entries/revisions?${params.toString()}`,
     token,
   );
-  const items = attributesFromCollection(document).map(queueItemFromGroup);
-  return { items, hasMore: items.length === limit };
+  return queuePageFromDocument(document);
 }
 
 export async function getUserSubmission(
@@ -931,36 +923,52 @@ export async function findUserSubmissionItem(
   state: RevisionState,
   entryId: string,
 ): Promise<ReviewQueueItem | null> {
-  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
-    const page = await listUserSubmissions(token, userId, state, {
-      limit: REVIEW_PAGE_SIZE,
-      offset,
-    });
-    const found = page.items.find((candidate) => candidate.entry_id === entryId);
+  return findQueueItem(entryId, (cursor) =>
+    listUserSubmissions(token, userId, state, { limit: REVIEW_PAGE_SIZE, cursor }),
+  );
+}
+
+function queuePageParams(
+  state: RevisionState,
+  opts: ReviewQueuePageOptions | undefined,
+): URLSearchParams {
+  const params = new URLSearchParams({
+    state,
+    limit: String(opts?.limit ?? REVIEW_PAGE_SIZE),
+  });
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
+  }
+  return params;
+}
+
+// The backend orders groups by their newest revision first and pages in that
+// order, so the rows are left exactly as they arrive: re-sorting here would
+// tear page boundaries apart.
+function queuePageFromDocument(
+  document: JSONAPIDataCollectionDocument<EntryRevisionGroup>,
+): ReviewQueuePage {
+  return {
+    items: attributesFromCollection(document).map(queueItemFromGroup),
+    nextCursor: nextCursorFromCollection(document),
+  };
+}
+
+/** Walks a queue's pages in order until the entry's row or the last page turns up. */
+async function findQueueItem(
+  entryId: string,
+  listPage: (cursor: string | null) => Promise<ReviewQueuePage>,
+): Promise<ReviewQueueItem | null> {
+  let cursor: string | null = null;
+  do {
+    const page: ReviewQueuePage = await listPage(cursor);
+    const found = page.items.find((item) => item.entry_id === entryId);
     if (found) {
       return found;
     }
-    if (!page.hasMore) {
-      return null;
-    }
-  }
-}
-
-async function listInReviewGroups(
-  token: string,
-  limit: number,
-  offset: number,
-): Promise<EntryRevisionGroup[]> {
-  const params = new URLSearchParams({
-    state: "in_review",
-    limit: String(limit),
-    offset: String(offset),
-  });
-  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
-    `/v1/entries/revisions?${params.toString()}`,
-    token,
-  );
-  return attributesFromCollection(document);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return null;
 }
 
 function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {

@@ -1,5 +1,6 @@
--- Seeds synthetic active entries, models and metrics for load testing.
--- Variables (psql -v): entries, models_per_entry, residues_per_model.
+-- Seeds synthetic active entries, models, metrics and protein sequences for load testing.
+-- Variables (psql -v): entries, models_per_entry, residues_per_model,
+-- sequences_per_entry, sequence_length.
 
 \if :{?entries}
 \else
@@ -12,6 +13,14 @@
 \if :{?residues_per_model}
 \else
 \set residues_per_model 200
+\endif
+\if :{?sequences_per_entry}
+\else
+\set sequences_per_entry 2
+\endif
+\if :{?sequence_length}
+\else
+\set sequence_length 300
 \endif
 \set user_id '00000000-0000-4000-8000-00000000107e'
 
@@ -123,10 +132,44 @@ insert into model_revision_metrics(model_revision_id, metric_id)
 select model_revision_id, id
 from seeded_metrics;
 
+-- One FASTA artifact per entry revision holding random sequences, so the protein-sequence
+-- search fallback (`sequence like '%...%'`) scans a realistic amount of residues.
+create temporary table seeded_fasta_artifacts on commit drop as
+select gen_random_uuid() as id,
+       entry_revisions.id as entry_revision_id,
+       entry_revisions.created_at
+from entry_revisions
+where entry_revisions.created_by = :'user_id';
+
+insert into artifacts(id, name, level, type, format, uri, metadata, created_by, created_at)
+select id, 'sequences.fasta', 'L0', 'other', 'fasta', format('s3://loadtest/%s.fasta', id), '{}'::jsonb,
+       :'user_id', created_at
+from seeded_fasta_artifacts;
+
+insert into entry_revision_artifacts(entry_revision_id, artifact_id)
+select entry_revision_id, id
+from seeded_fasta_artifacts;
+
+insert into protein_sequences(id, entry_revision_id, source_artifact_id, record_index, header, sequence,
+                              processing_state, created_at)
+select gen_random_uuid(),
+       seeded_fasta_artifacts.entry_revision_id,
+       seeded_fasta_artifacts.id,
+       record_index,
+       format('chain %s', record_index),
+       -- Correlated with the outer row so every sequence is drawn separately.
+       (select string_agg(substr('ACDEFGHIKLMNPQRSTVWY', 1 + floor(random() * 20)::int, 1), '')
+        from generate_series(1, :sequence_length + 0 * record_index)),
+       'processed',
+       seeded_fasta_artifacts.created_at
+from seeded_fasta_artifacts
+cross join generate_series(0, :sequences_per_entry - 1) as record_index;
+
 commit;
 
 analyze;
 
 select (select count(*) from entries) as entries,
        (select count(*) from models) as models,
-       (select count(*) from metrics) as metrics;
+       (select count(*) from metrics) as metrics,
+       (select count(*) from protein_sequences) as protein_sequences;
