@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,8 +14,6 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
 )
-
-const defaultRevisionGroupListLimit = 50
 
 func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID string) {
 	payload, err := decodeCreateEntryRevisionPayload(r)
@@ -30,7 +27,7 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 		return
 	}
 	result, err := s.createEntryRevisionGraph(r.Context(), entryID, payload, user.ID)
-	if s.writeMutationError(w, err, "create entry revision") {
+	if s.writeMutationError(r.Context(), w, err, "create entry revision") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateEntryRevisionDocument{
@@ -121,11 +118,12 @@ func (s *Server) ListEntryRevisionGroups(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindRevisionGroups)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
-	s.listEntryRevisionGroups(w, r, state, nil, limitOrDefault(params.Limit), params.Offset)
+	s.listEntryRevisionGroups(w, r, state, nil, page)
 }
 
 func (s *Server) ListEntryRevisionsForEntry(
@@ -137,15 +135,12 @@ func (s *Server) ListEntryRevisionsForEntry(
 	if !s.requireReviewer(w, r) {
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindEntryRevisions)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
-	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{
-		EntryID: &entryID,
-		Limit:   limitOrDefault(params.Limit),
-		Offset:  params.Offset,
-	})
+	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{EntryID: &entryID}, page)
 }
 
 func (s *Server) GetEntryRevision(
@@ -198,7 +193,7 @@ func (s *Server) UpdateEntryRevisionState(
 		return
 	}
 	if err != nil {
-		slog.Error("get entry revision for decision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry revision for decision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update entry revision")
 		return
 	}
@@ -233,7 +228,7 @@ func (s *Server) UpdateEntryRevisionState(
 		}
 		return nil
 	})
-	if s.writeMutationError(w, err, "update entry revision") {
+	if s.writeMutationError(r.Context(), w, err, "update entry revision") {
 		return
 	}
 	s.writeEntryRevision(w, r, entryID, revisionID, nil)
@@ -502,16 +497,12 @@ func (s *Server) ListModelRevisionsForModel(
 	if !s.requireReviewer(w, r) {
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindModelRevisions)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
-	s.listModelRevisionSummaries(w, r, db.ModelRevisionFilters{
-		EntryID: &entryID,
-		ModelID: &modelID,
-		Limit:   limitOrDefault(params.Limit),
-		Offset:  params.Offset,
-	})
+	s.listModelRevisionSummaries(w, r, db.ModelRevisionFilters{EntryID: &entryID, ModelID: &modelID}, page)
 }
 
 func (s *Server) GetModelRevision(
@@ -563,7 +554,7 @@ func (s *Server) UpdateModelRevisionState(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision for decision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision for decision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to update model revision")
 		return
 	}
@@ -604,7 +595,7 @@ func (s *Server) UpdateModelRevisionState(
 		}
 		return nil
 	})
-	if s.writeMutationError(w, err, "update model revision") {
+	if s.writeMutationError(r.Context(), w, err, "update model revision") {
 		return
 	}
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, nil)
@@ -624,11 +615,12 @@ func (s *Server) ListUserEntryRevisionGroups(
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindRevisionGroups)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
-	s.listEntryRevisionGroups(w, r, state, &userID, limitOrDefault(params.Limit), params.Offset)
+	s.listEntryRevisionGroups(w, r, state, &userID, page)
 }
 
 func (s *Server) ListUserEntryRevisionsForEntry(
@@ -641,16 +633,12 @@ func (s *Server) ListUserEntryRevisionsForEntry(
 	if !s.requirePathUser(w, r, userID) {
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindEntryRevisions)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
-	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{
-		EntryID:   &entryID,
-		CreatedBy: &userID,
-		Limit:     limitOrDefault(params.Limit),
-		Offset:    params.Offset,
-	})
+	s.listEntryRevisionSummaries(w, r, db.EntryRevisionFilters{EntryID: &entryID, CreatedBy: &userID}, page)
 }
 
 func (s *Server) GetUserEntryRevision(
@@ -696,7 +684,7 @@ func (s *Server) SubmitUserModelRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision for submit failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision for submit failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to submit model revision")
 		return
 	}
@@ -709,7 +697,7 @@ func (s *Server) SubmitUserModelRevision(
 		revisionID,
 		[]domainmodels.RevisionState{domainmodels.RevisionStatePending, domainmodels.RevisionStateRejected},
 		domainmodels.RevisionStateInReview,
-	); s.writeMutationError(w, err, "submit model revision") {
+	); s.writeMutationError(r.Context(), w, err, "submit model revision") {
 		return
 	}
 	s.writeModelRevision(w, r, entryID, modelID, revisionID, &userID)
@@ -725,17 +713,16 @@ func (s *Server) ListUserModelRevisionsForModel(
 	if !s.requirePathUser(w, r, userID) {
 		return
 	}
-	if err := validatePagination(params.Limit, params.Offset); err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindModelRevisions)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
 		return
 	}
 	s.listModelRevisionSummaries(w, r, db.ModelRevisionFilters{
 		EntryID:   &entryID,
 		ModelID:   &modelID,
 		CreatedBy: &userID,
-		Limit:     limitOrDefault(params.Limit),
-		Offset:    params.Offset,
-	})
+	}, page)
 }
 
 func (s *Server) GetUserModelRevision(
@@ -760,7 +747,7 @@ func (s *Server) requireReviewer(w http.ResponseWriter, r *http.Request) bool {
 
 	allowed, err := s.authorizer.HasRole(r.Context(), user.ID, domainmodels.RoleKeyReviewer)
 	if err != nil {
-		slog.Error("reviewer authorization failed", "err", err, "user_id", user.ID)
+		slog.ErrorContext(r.Context(), "reviewer authorization failed", "err", err, "user_id", user.ID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
 		return false
 	}
@@ -779,7 +766,7 @@ func (s *Server) requirePermission(
 ) bool {
 	allowed, err := s.authorizer.Can(r.Context(), userID, permission)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(r.Context(),
 			"permission authorization failed",
 			"err", err,
 			"user_id", userID,
@@ -821,153 +808,182 @@ func validateRevisionState(state domainmodels.RevisionState) error {
 	}
 }
 
-type entryRevisionGroup struct {
-	entryID        string
-	entryRevisions []domainmodels.EntryRevision
-	modelRevisions []domainmodels.ModelRevision
-	latestCreated  int64
-}
-
 func (s *Server) listEntryRevisionGroups(
 	w http.ResponseWriter,
 	r *http.Request,
 	state domainmodels.RevisionState,
 	createdBy *uuid.UUID,
-	limit, offset *int,
+	page listPage,
 ) {
-	entryRevisions, err := s.database.Entries.List(r.Context(), db.EntryRevisionFilters{
-		State:     &state,
+	groups, err := s.database.Entries.ListRevisionGroups(r.Context(), db.RevisionGroupFilters{
+		State:     state,
 		CreatedBy: createdBy,
+		Limit:     page.fetchLimit(),
+		Offset:    page.Offset,
+		After:     page.afterRevisionGroup(),
 	})
 	if err != nil {
-		slog.Error("list grouped entry revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "list revision groups failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
 		return
 	}
-	modelRevisions, err := s.database.Models.List(r.Context(), db.ModelRevisionFilters{
-		State:     &state,
-		CreatedBy: createdBy,
-	})
+	groups, hasNextPage := trimToPage(groups, page)
+	items, err := s.entryRevisionGroupItems(r.Context(), state, createdBy, groups)
 	if err != nil {
-		slog.Error("list grouped model revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "build revision groups failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
 		return
 	}
-
-	groupsByEntryID := make(map[string]*entryRevisionGroup)
-	for _, revision := range entryRevisions {
-		group := groupsByEntryID[revision.EntryID]
-		if group == nil {
-			group = &entryRevisionGroup{entryID: revision.EntryID}
-			groupsByEntryID[revision.EntryID] = group
-		}
-		group.entryRevisions = append(group.entryRevisions, revision)
-		group.latestCreated = max(group.latestCreated, revision.CreatedAt.UnixNano())
-	}
-	for _, revision := range modelRevisions {
-		group := groupsByEntryID[revision.EntryID]
-		if group == nil {
-			group = &entryRevisionGroup{entryID: revision.EntryID}
-			groupsByEntryID[revision.EntryID] = group
-		}
-		group.modelRevisions = append(group.modelRevisions, revision)
-		group.latestCreated = max(group.latestCreated, revision.CreatedAt.UnixNano())
-	}
-	groups := make([]*entryRevisionGroup, 0, len(groupsByEntryID))
-	for _, group := range groupsByEntryID {
-		groups = append(groups, group)
-	}
-	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].latestCreated != groups[j].latestCreated {
-			return groups[i].latestCreated > groups[j].latestCreated
-		}
-		return groups[i].entryID < groups[j].entryID
+	// The cursor follows the last group of the SQL page even when that group was skipped
+	// for having no matching revisions, so the next page still starts right after it.
+	links, meta, err := nextPageLinksAfter(s, r, groups, hasNextPage, func(last db.RevisionGroup) listCursor {
+		return listCursor{Kind: listCursorKindRevisionGroups, CreatedAt: last.LatestCreatedAt, EntryID: last.EntryID}
 	})
-	start := 0
-	if offset != nil {
-		start = min(*offset, len(groups))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build revision group list links failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
+		return
 	}
-	pageLimit := defaultRevisionGroupListLimit
-	if limit != nil {
-		pageLimit = *limit
-	}
-	end := min(start+pageLimit, len(groups))
-	groups = groups[start:end]
-
-	activeState := domainmodels.RevisionStateActive
-	items := make([]EntryRevisionGroupData, 0, len(groups))
-	for _, group := range groups {
-		displayRevision, err := s.database.Entries.Get(r.Context(), db.EntryRevisionFilters{
-			EntryID: &group.entryID,
-			State:   &activeState,
-		})
-		if errors.Is(err, db.ErrEntryRevisionNotFound) && len(group.entryRevisions) > 0 {
-			displayRevision = &group.entryRevisions[0]
-			for index := range group.entryRevisions {
-				if group.entryRevisions[index].CreatedAt.After(displayRevision.CreatedAt) {
-					displayRevision = &group.entryRevisions[index]
-				}
-			}
-			err = nil
-		}
-		if errors.Is(err, db.ErrEntryRevisionNotFound) {
-			slog.Warn("skip revision group without an entry revision", "entry_id", group.entryID)
-			continue
-		}
-		if err != nil {
-			slog.Error("get entry for revision group failed", "entry_id", group.entryID, "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
-			return
-		}
-		entry, err := entryInfoAttributesFromRevision(*displayRevision)
-		if err != nil {
-			slog.Error("build revision group entry info failed", "entry_id", group.entryID, "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list grouped revisions")
-			return
-		}
-		entrySummaries := make([]EntryRevisionSummaryAttributes, 0, len(group.entryRevisions))
-		for _, revision := range group.entryRevisions {
-			entrySummaries = append(entrySummaries, entryRevisionSummaryAttributesFromModel(revision))
-		}
-		modelSummaries := make([]ModelRevisionSummaryAttributes, 0, len(group.modelRevisions))
-		for _, revision := range group.modelRevisions {
-			modelSummaries = append(modelSummaries, modelRevisionSummaryAttributesFromModel(revision))
-		}
-		item := EntryRevisionGroupAttributes{
-			Entry:          entry,
-			EntryRevisions: entrySummaries,
-			ModelRevisions: modelSummaries,
-		}
-		items = append(items, EntryRevisionGroupData{
-			Type:       jsonAPITypeEntryRevisionGroups,
-			Id:         item.Entry.Id,
-			Attributes: item,
-		})
-	}
-	writeJSON(w, http.StatusOK, EntryRevisionGroupCollectionDocument{Data: items})
+	writeJSON(w, http.StatusOK, EntryRevisionGroupCollectionDocument{Data: items, Links: links, Meta: meta})
 }
 
-func validatePagination(limit, offset *int) error {
-	if limit != nil && *limit < 0 {
-		return invalidRequest("limit must be non-negative")
+// entryRevisionGroupItems builds the page's groups in order. It loads the matching
+// entry revisions, matching model revisions and active entry revisions of all the
+// page's entries with one query each.
+func (s *Server) entryRevisionGroupItems(
+	ctx context.Context,
+	state domainmodels.RevisionState,
+	createdBy *uuid.UUID,
+	groups []db.RevisionGroup,
+) ([]EntryRevisionGroupData, error) {
+	// An empty EntryIDs filter matches every entry, so an empty page stops here.
+	if len(groups) == 0 {
+		return []EntryRevisionGroupData{}, nil
 	}
-	if offset != nil && *offset < 0 {
-		return invalidRequest("offset must be non-negative")
+	entryIDs := make([]string, 0, len(groups))
+	for _, group := range groups {
+		entryIDs = append(entryIDs, group.EntryID)
 	}
-	return nil
+
+	entryRevisions, err := s.database.Entries.List(ctx, db.EntryRevisionFilters{
+		EntryIDs:  entryIDs,
+		State:     &state,
+		CreatedBy: createdBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list grouped entry revisions: %w", err)
+	}
+	modelRevisions, err := s.database.Models.List(ctx, db.ModelRevisionFilters{
+		EntryIDs:  entryIDs,
+		State:     &state,
+		CreatedBy: createdBy,
+		// Summaries never return metadata, so the large per-residue data is not worth loading.
+		ExcludeResidueData: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list grouped model revisions: %w", err)
+	}
+	activeState := domainmodels.RevisionStateActive
+	activeRevisions, err := s.database.Entries.List(ctx, db.EntryRevisionFilters{
+		EntryIDs: entryIDs,
+		State:    &activeState,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list active entry revisions of groups: %w", err)
+	}
+	return revisionGroupItemsFromRevisions(ctx, groups, entryRevisions, modelRevisions, activeRevisions)
+}
+
+// revisionGroupItemsFromRevisions builds the page's groups in order from the revisions
+// loaded for them. The groups and the revisions come from separate queries, so a review
+// decision in between can leave a group with no matching revisions; such a group is
+// skipped, which only makes the page shorter.
+func revisionGroupItemsFromRevisions(
+	ctx context.Context,
+	groups []db.RevisionGroup,
+	entryRevisions []domainmodels.EntryRevision,
+	modelRevisions []domainmodels.ModelRevision,
+	activeRevisions []domainmodels.EntryRevision,
+) ([]EntryRevisionGroupData, error) {
+	entryRevisionsByEntryID := revisionsByEntryID(entryRevisions, func(revision domainmodels.EntryRevision) string {
+		return revision.EntryID
+	})
+	modelRevisionsByEntryID := revisionsByEntryID(modelRevisions, func(revision domainmodels.ModelRevision) string {
+		return revision.EntryID
+	})
+	activeRevisionByEntryID := make(map[string]domainmodels.EntryRevision, len(activeRevisions))
+	for _, revision := range activeRevisions {
+		activeRevisionByEntryID[revision.EntryID] = revision
+	}
+
+	items := make([]EntryRevisionGroupData, 0, len(groups))
+	for _, group := range groups {
+		groupEntryRevisions := entryRevisionsByEntryID[group.EntryID]
+		groupModelRevisions := modelRevisionsByEntryID[group.EntryID]
+		if len(groupEntryRevisions) == 0 && len(groupModelRevisions) == 0 {
+			slog.WarnContext(ctx, "skip revision group without matching revisions", "entry_id", group.EntryID)
+			continue
+		}
+		displayRevision, hasActiveRevision := activeRevisionByEntryID[group.EntryID]
+		if !hasActiveRevision {
+			if len(groupEntryRevisions) == 0 {
+				slog.WarnContext(ctx, "skip revision group without an entry revision", "entry_id", group.EntryID)
+				continue
+			}
+			// Entries.List orders newest first, so this is the newest matching revision.
+			displayRevision = groupEntryRevisions[0]
+		}
+		entry, err := entryInfoAttributesFromRevision(displayRevision)
+		if err != nil {
+			return nil, fmt.Errorf("build entry info of revision group %s: %w", group.EntryID, err)
+		}
+		entrySummaries := make([]EntryRevisionSummaryAttributes, 0, len(groupEntryRevisions))
+		for _, revision := range groupEntryRevisions {
+			entrySummaries = append(entrySummaries, entryRevisionSummaryAttributesFromModel(revision))
+		}
+		modelSummaries := make([]ModelRevisionSummaryAttributes, 0, len(groupModelRevisions))
+		for _, revision := range groupModelRevisions {
+			modelSummaries = append(modelSummaries, modelRevisionSummaryAttributesFromModel(revision))
+		}
+		items = append(items, EntryRevisionGroupData{
+			Type: jsonAPITypeEntryRevisionGroups,
+			Id:   entry.Id,
+			Attributes: EntryRevisionGroupAttributes{
+				Entry:          entry,
+				EntryRevisions: entrySummaries,
+				ModelRevisions: modelSummaries,
+			},
+		})
+	}
+	return items, nil
+}
+
+// revisionsByEntryID groups revisions by entry, keeping their order within each entry.
+func revisionsByEntryID[T any](revisions []T, entryID func(T) string) map[string][]T {
+	grouped := make(map[string][]T)
+	for _, revision := range revisions {
+		key := entryID(revision)
+		grouped[key] = append(grouped[key], revision)
+	}
+	return grouped
 }
 
 func (s *Server) listEntryRevisionSummaries(
 	w http.ResponseWriter,
 	r *http.Request,
 	filters db.EntryRevisionFilters,
+	page listPage,
 ) {
+	filters.Limit = page.fetchLimit()
+	filters.Offset = page.Offset
+	filters.After = page.after()
 	revisions, err := s.database.Entries.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list entry revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry revisions failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entry revisions")
 		return
 	}
+	revisions, hasNextPage := trimToPage(revisions, page)
 	items := make([]EntryRevisionSummaryData, 0, len(revisions))
 	for _, revision := range revisions {
 		summary := entryRevisionSummaryAttributesFromModel(revision)
@@ -977,20 +993,35 @@ func (s *Server) listEntryRevisionSummaries(
 			Attributes: summary,
 		})
 	}
-	writeJSON(w, http.StatusOK, EntryRevisionSummaryCollectionDocument{Data: items})
+	links, meta, err := nextPageLinksAfter(s, r, revisions, hasNextPage, func(last domainmodels.EntryRevision) listCursor {
+		return listCursor{Kind: listCursorKindEntryRevisions, CreatedAt: last.CreatedAt, ID: last.ID}
+	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build entry revision list links failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entry revisions")
+		return
+	}
+	writeJSON(w, http.StatusOK, EntryRevisionSummaryCollectionDocument{Data: items, Links: links, Meta: meta})
 }
 
 func (s *Server) listModelRevisionSummaries(
 	w http.ResponseWriter,
 	r *http.Request,
 	filters db.ModelRevisionFilters,
+	page listPage,
 ) {
+	filters.Limit = page.fetchLimit()
+	filters.Offset = page.Offset
+	filters.After = page.after()
+	// Summaries never return metadata, so the large per-residue data is not worth loading.
+	filters.ExcludeResidueData = true
 	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list model revisions failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model revisions failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model revisions")
 		return
 	}
+	revisions, hasNextPage := trimToPage(revisions, page)
 	items := make([]ModelRevisionSummaryData, 0, len(revisions))
 	for _, revision := range revisions {
 		summary := modelRevisionSummaryAttributesFromModel(revision)
@@ -1000,7 +1031,15 @@ func (s *Server) listModelRevisionSummaries(
 			Attributes: summary,
 		})
 	}
-	writeJSON(w, http.StatusOK, ModelRevisionSummaryCollectionDocument{Data: items})
+	links, meta, err := nextPageLinksAfter(s, r, revisions, hasNextPage, func(last domainmodels.ModelRevision) listCursor {
+		return listCursor{Kind: listCursorKindModelRevisions, CreatedAt: last.CreatedAt, ID: last.ID}
+	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build model revision list links failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model revisions")
+		return
+	}
+	writeJSON(w, http.StatusOK, ModelRevisionSummaryCollectionDocument{Data: items, Links: links, Meta: meta})
 }
 
 func (s *Server) writeEntryRevision(
@@ -1017,13 +1056,13 @@ func (s *Server) writeEntryRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get entry revision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry revision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry revision")
 		return
 	}
 	attributes, err := s.entryRevisionAttributesFromModel(r.Context(), *revision)
 	if err != nil {
-		slog.Error("build entry revision response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build entry revision response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry revision")
 		return
 	}
@@ -1051,13 +1090,13 @@ func (s *Server) writeModelRevision(
 		return
 	}
 	if err != nil {
-		slog.Error("get model revision failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model revision failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
 		return
 	}
 	attributes, err := s.modelRevisionAttributesFromModel(r.Context(), *revision)
 	if err != nil {
-		slog.Error("build model revision response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model revision response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
 		return
 	}

@@ -3,6 +3,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
+import {
+  backendReadTimeoutMs,
+  backendWriteTimeoutMs,
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "./timeout";
 import { formatEntryLabel } from "@/lib/entry-label";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 
@@ -57,7 +63,8 @@ export type Model = {
   title: string | null;
   thumbnail_image_url: string | null;
   metadata?: JSONRecord;
-  residue_data: ResidueData[];
+  /** Present on model detail responses (getModel) only; model lists omit it. */
+  residue_data?: ResidueData[];
   primary_artifact_id?: string | null;
   metrics?: Metric[];
   published_at?: string | null;
@@ -325,8 +332,10 @@ type ModelArtifactListResponse = {
 type ModelArtifactCollectionDocument = {
   data: JSONAPIData<Artifact>[];
   meta: {
+    /** Runs and relations cover the whole model revision and repeat on every page. */
     runs: Run[];
     relations: RunArtifact[];
+    next_cursor?: string;
   };
 };
 
@@ -435,15 +444,46 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** A backend that never answered is a gateway timeout to our callers. */
+function backendRequestError(error: unknown): ApiRequestError {
+  if (error instanceof FetchTimeoutError) {
+    return new ApiRequestError(
+      `Backend request timed out after ${error.timeoutMs / 1000} s`,
+      504,
+    );
+  }
+  return new ApiRequestError(
+    error instanceof Error
+      ? `Backend request failed: ${error.message}`
+      : "Backend request failed",
+  );
+}
+
+/** One page of a cursor-paged backend list. nextCursor is null on the last page. */
+export type ListPage<T> = {
+  items: T[];
+  nextCursor: string | null;
+};
+
+export type ListEntriesOptions = {
+  query?: string | null;
+  pdbIds?: string[] | null;
+  limit?: number | null;
+  /** meta.next_cursor of the previous page; omit for the first page. */
+  cursor?: string | null;
+};
+
 export async function listEntries(
   token?: string,
-  opts?: {
-    query?: string | null;
-    pdbIds?: string[] | null;
-    limit?: number | null;
-    offset?: number | null;
-  },
+  opts?: ListEntriesOptions,
 ): Promise<Entry[]> {
+  return (await listEntriesPage(token, opts)).items;
+}
+
+export async function listEntriesPage(
+  token?: string,
+  opts?: ListEntriesOptions,
+): Promise<ListPage<Entry>> {
   const params = new URLSearchParams();
   const query = opts?.query?.trim();
   if (query) {
@@ -452,8 +492,8 @@ export async function listEntries(
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
   }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
   }
   for (const pdbId of opts?.pdbIds ?? []) {
     const trimmed = pdbId.trim();
@@ -466,22 +506,21 @@ export async function listEntries(
     `/v1/entries${suffix}`,
     token,
   );
-  return attributesFromCollection(document);
+  return {
+    items: attributesFromCollection(document),
+    nextCursor: nextCursorFromCollection(document),
+  };
 }
 
 export async function listModels(
   token?: string,
   opts?: {
     limit?: number | null;
-    offset?: number | null;
   },
 ): Promise<Model[]> {
   const params = new URLSearchParams();
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
-  }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   const document = await fetchBackend<JSONAPIDataCollectionDocument<Model>>(
@@ -497,14 +536,18 @@ export async function listModels(
 export async function listSimilarEntries(
   token: string | undefined,
   entryId: string,
-  opts?: { limit?: number | null; offset?: number | null },
-): Promise<SimilarEntry[]> {
+  opts?: {
+    limit?: number | null;
+    /** meta.next_cursor of the previous page; omit for the first page. */
+    cursor?: string | null;
+  },
+): Promise<ListPage<SimilarEntry>> {
   const params = new URLSearchParams();
   if (opts?.limit != null) {
     params.set("limit", String(opts.limit));
   }
-  if (opts?.offset != null) {
-    params.set("offset", String(opts.offset));
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
   }
 
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
@@ -512,7 +555,10 @@ export async function listSimilarEntries(
     `/v1/entries/${encodeURIComponent(entryId)}/similar-entries${suffix}`,
     token,
   );
-  return attributesFromCollection(document);
+  return {
+    items: attributesFromCollection(document),
+    nextCursor: nextCursorFromCollection(document),
+  };
 }
 
 export type CreateEntityInput = {
@@ -647,11 +693,15 @@ export type ReviewQueueItem = {
   model_revisions: ModelRevisionSummary[];
 };
 
-export type ReviewQueuePage = {
-  items: ReviewQueueItem[];
-  /** A full page came back, so there is probably another. The endpoint returns
-   *  no total, so this is the only signal there is. */
-  hasMore: boolean;
+/** One page of the review queue or of an author's submissions; nextCursor is
+ *  null on the last page. */
+export type ReviewQueuePage = ListPage<ReviewQueueItem>;
+
+/** Pages a queue list: `cursor` is the previous page's nextCursor, omitted for
+ *  the first page. */
+export type ReviewQueuePageOptions = {
+  limit?: number;
+  cursor?: string | null;
 };
 
 
@@ -712,16 +762,14 @@ export async function submitModelRevision(
 
 export async function listReviews(
   token: string,
-  opts?: { limit?: number; offset?: number },
+  opts?: ReviewQueuePageOptions,
 ): Promise<ReviewQueuePage> {
-  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
-  const offset = opts?.offset ?? 0;
-  const groups = await listInReviewGroups(token, limit, offset);
-  // The backend orders groups by their newest revision first and paginates in
-  // that order, so the rows are left exactly as they arrive: re-sorting here
-  // would tear page boundaries apart.
-  const items = groups.map(queueItemFromGroup);
-  return { items, hasMore: items.length === limit };
+  const params = queuePageParams("in_review", opts);
+  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
+    `/v1/entries/revisions?${params.toString()}`,
+    token,
+  );
+  return queuePageFromDocument(document);
 }
 
 export async function getEntryReview(
@@ -737,19 +785,9 @@ export async function findReviewItem(
   token: string,
   entryId: string,
 ): Promise<ReviewQueueItem | null> {
-  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
-    const page = await listReviews(token, {
-      limit: REVIEW_PAGE_SIZE,
-      offset,
-    });
-    const found = page.items.find((item) => item.entry_id === entryId);
-    if (found) {
-      return found;
-    }
-    if (!page.hasMore) {
-      return null;
-    }
-  }
+  return findQueueItem(entryId, (cursor) =>
+    listReviews(token, { limit: REVIEW_PAGE_SIZE, cursor }),
+  );
 }
 
 type RevisionReaders = {
@@ -884,21 +922,14 @@ export async function listUserSubmissions(
   token: string,
   userId: string,
   state: RevisionState,
-  opts?: { limit?: number; offset?: number },
+  opts?: ReviewQueuePageOptions,
 ): Promise<ReviewQueuePage> {
-  const limit = opts?.limit ?? REVIEW_PAGE_SIZE;
-  const offset = opts?.offset ?? 0;
-  const params = new URLSearchParams({
-    state,
-    limit: String(limit),
-    offset: String(offset),
-  });
+  const params = queuePageParams(state, opts);
   const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
     `/v1/users/${encodeURIComponent(userId)}/entries/revisions?${params.toString()}`,
     token,
   );
-  const items = attributesFromCollection(document).map(queueItemFromGroup);
-  return { items, hasMore: items.length === limit };
+  return queuePageFromDocument(document);
 }
 
 export async function getUserSubmission(
@@ -915,36 +946,52 @@ export async function findUserSubmissionItem(
   state: RevisionState,
   entryId: string,
 ): Promise<ReviewQueueItem | null> {
-  for (let offset = 0; ; offset += REVIEW_PAGE_SIZE) {
-    const page = await listUserSubmissions(token, userId, state, {
-      limit: REVIEW_PAGE_SIZE,
-      offset,
-    });
-    const found = page.items.find((candidate) => candidate.entry_id === entryId);
+  return findQueueItem(entryId, (cursor) =>
+    listUserSubmissions(token, userId, state, { limit: REVIEW_PAGE_SIZE, cursor }),
+  );
+}
+
+function queuePageParams(
+  state: RevisionState,
+  opts: ReviewQueuePageOptions | undefined,
+): URLSearchParams {
+  const params = new URLSearchParams({
+    state,
+    limit: String(opts?.limit ?? REVIEW_PAGE_SIZE),
+  });
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
+  }
+  return params;
+}
+
+// The backend orders groups by their newest revision first and pages in that
+// order, so the rows are left exactly as they arrive: re-sorting here would
+// tear page boundaries apart.
+function queuePageFromDocument(
+  document: JSONAPIDataCollectionDocument<EntryRevisionGroup>,
+): ReviewQueuePage {
+  return {
+    items: attributesFromCollection(document).map(queueItemFromGroup),
+    nextCursor: nextCursorFromCollection(document),
+  };
+}
+
+/** Walks a queue's pages in order until the entry's row or the last page turns up. */
+async function findQueueItem(
+  entryId: string,
+  listPage: (cursor: string | null) => Promise<ReviewQueuePage>,
+): Promise<ReviewQueueItem | null> {
+  let cursor: string | null = null;
+  do {
+    const page: ReviewQueuePage = await listPage(cursor);
+    const found = page.items.find((item) => item.entry_id === entryId);
     if (found) {
       return found;
     }
-    if (!page.hasMore) {
-      return null;
-    }
-  }
-}
-
-async function listInReviewGroups(
-  token: string,
-  limit: number,
-  offset: number,
-): Promise<EntryRevisionGroup[]> {
-  const params = new URLSearchParams({
-    state: "in_review",
-    limit: String(limit),
-    offset: String(offset),
-  });
-  const document = await fetchBackend<JSONAPIDataCollectionDocument<EntryRevisionGroup>>(
-    `/v1/entries/revisions?${params.toString()}`,
-    token,
-  );
-  return attributesFromCollection(document);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return null;
 }
 
 function queueItemFromGroup(group: EntryRevisionGroup): ReviewQueueItem {
@@ -1041,22 +1088,22 @@ async function sendJSON<T>(
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method,
-      cache: "no-store",
-      headers: {
-        Accept: jsonApiMediaType,
-        "Content-Type": jsonApiMediaType,
-        Authorization: `Bearer ${token}`,
+    response = await fetchWithTimeout(
+      `${baseUrl}${path}`,
+      {
+        method,
+        cache: "no-store",
+        headers: {
+          Accept: jsonApiMediaType,
+          "Content-Type": jsonApiMediaType,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(input),
       },
-      body: JSON.stringify(input),
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
+      backendWriteTimeoutMs,
     );
+  } catch (error) {
+    throw backendRequestError(error);
   }
   if (!response.ok) {
     throw new ApiRequestError(
@@ -1085,21 +1132,25 @@ export async function getEntryPageData(
   entryId: string,
 ): Promise<EntryPageData> {
   const encodedEntryId = encodeURIComponent(entryId);
-  const [entry, modelsDocument, entryArtifactsDocument] = await Promise.all([
+  const [entry, modelPages, entryArtifactPages] = await Promise.all([
     getEntry(token, entryId),
-    fetchBackend<JSONAPIDataCollectionDocument<Model>>(
+    fetchAllPages<JSONAPIDataCollectionDocument<Model>>(
       `/v1/entries/${encodedEntryId}/models`,
       token,
     ),
-    fetchBackend<JSONAPIDataCollectionDocument<Artifact>>(
+    fetchAllPages<JSONAPIDataCollectionDocument<Artifact>>(
       `/v1/entries/${encodedEntryId}/artifacts`,
       token,
     ),
   ]);
-  const models = attributesFromCollection(modelsDocument);
-  const entryArtifacts = attributesFromCollection(entryArtifactsDocument);
-  const modelGraphs = await Promise.all(
-    models.map((model) => fetchModelGraph(token, entry.id, model)),
+  const models = modelPages.flatMap((page) => attributesFromCollection(page));
+  const entryArtifacts = entryArtifactPages.flatMap((page) =>
+    attributesFromCollection(page),
+  );
+  const modelGraphs = await mapWithConcurrency(
+    models,
+    MODEL_GRAPH_FETCH_CONCURRENCY,
+    (model) => fetchModelGraph(token, entry.id, model),
   );
 
   return {
@@ -1115,21 +1166,27 @@ export async function getEntryPageData(
   };
 }
 
+export async function getModel(
+  token: string | undefined,
+  entryId: string,
+  modelId: string,
+): Promise<Model> {
+  const document = await fetchBackend<JSONAPIDataDocument<Model>>(
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(modelId)}`,
+    token,
+  );
+  return attributesFromDocument(document);
+}
+
 export async function getModelPageData(
   token: string | undefined,
   entryId: string,
   modelId: string,
 ): Promise<ModelPageData> {
-  const encodedEntryId = encodeURIComponent(entryId);
-  const encodedModelId = encodeURIComponent(modelId);
-  const [entry, modelDocument] = await Promise.all([
+  const [entry, model] = await Promise.all([
     getEntry(token, entryId),
-    fetchBackend<JSONAPIDataDocument<Model>>(
-      `/v1/entries/${encodedEntryId}/models/${encodedModelId}`,
-      token,
-    ),
+    getModel(token, entryId, modelId),
   ]);
-  const model = attributesFromDocument(modelDocument);
   const graph = await fetchModelGraph(token, entry.id, model);
 
   return {
@@ -1163,13 +1220,23 @@ function attributesFromCollection<T>(
   return document.data.map((item) => item.attributes);
 }
 
-function modelArtifactListFromDocument(
-  document: ModelArtifactCollectionDocument,
+function nextCursorFromCollection<T>(
+  document: JSONAPIDataCollectionDocument<T>,
+): string | null {
+  const nextCursor = document.meta?.next_cursor;
+  return typeof nextCursor === "string" && nextCursor !== "" ? nextCursor : null;
+}
+
+// The backend repeats a model's runs and relations on every page, so they are
+// read from the first page only.
+function modelArtifactListFromPages(
+  pages: ModelArtifactCollectionDocument[],
 ): ModelArtifactListResponse {
+  const [firstPage] = pages;
   return {
-    items: attributesFromCollection(document),
-    runs: document.meta.runs,
-    relations: document.meta.relations,
+    items: pages.flatMap((page) => attributesFromCollection(page)),
+    runs: firstPage?.meta.runs ?? [],
+    relations: firstPage?.meta.relations ?? [],
   };
 }
 
@@ -1231,13 +1298,13 @@ async function fetchModelGraph(
   entryId: string,
   model: Model,
 ): Promise<EntryGraph> {
-  const document = await fetchBackend<ModelArtifactCollectionDocument>(
+  const pages = await fetchAllPages<ModelArtifactCollectionDocument>(
     `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
       model.id,
     )}/artifacts`,
     token,
   );
-  return modelGraphFromBackend(entryId, model, modelArtifactListFromDocument(document));
+  return modelGraphFromBackend(entryId, model, modelArtifactListFromPages(pages));
 }
 
 function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest {
@@ -1697,6 +1764,63 @@ function stableUUID(value: string): string {
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** The backend's largest page; reads of a whole collection use it to keep
+ *  round trips few. */
+const FULL_COLLECTION_PAGE_LIMIT = 100;
+/** Bounds a whole-collection read whose backend keeps handing out cursors:
+ *  10,000 rows. */
+const MAX_FULL_COLLECTION_PAGES = 100;
+/** How many models' file lists an entry page fetches at once. Unbounded, a
+ *  large entry would send one request per model in the same instant. */
+const MODEL_GRAPH_FETCH_CONCURRENCY = 6;
+
+/** Fetches every page of the cursor-paged collection at `path` (which carries
+ *  no query string), following meta.next_cursor, and returns the pages in
+ *  order. */
+async function fetchAllPages<D extends JSONAPIDataCollectionDocument<unknown>>(
+  path: string,
+  token: string | undefined,
+): Promise<D[]> {
+  const pages: D[] = [];
+  let cursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < MAX_FULL_COLLECTION_PAGES; pageNumber += 1) {
+    const params = new URLSearchParams({ limit: String(FULL_COLLECTION_PAGE_LIMIT) });
+    if (cursor !== null) {
+      params.set("cursor", cursor);
+    }
+    const page: D = await fetchBackend<D>(`${path}?${params.toString()}`, token);
+    pages.push(page);
+    cursor = nextCursorFromCollection(page);
+    if (cursor === null) {
+      return pages;
+    }
+  }
+  throw new ApiRequestError(
+    `${path} has more than ${MAX_FULL_COLLECTION_PAGES} pages`,
+  );
+}
+
+/** Maps items with at most `limit` calls in flight, keeping results in item
+ *  order. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await map(items[index]);
+    }
+  };
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
+
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {
   const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
 
@@ -1707,16 +1831,13 @@ async function fetchBackend<T>(path: string, token?: string): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      cache: "no-store",
-      headers,
-    });
-  } catch (error) {
-    throw new ApiRequestError(
-      error instanceof Error
-        ? `Backend request failed: ${error.message}`
-        : "Backend request failed",
+    response = await fetchWithTimeout(
+      `${baseUrl}${path}`,
+      { cache: "no-store", headers },
+      backendReadTimeoutMs,
     );
+  } catch (error) {
+    throw backendRequestError(error);
   }
 
   if (!response.ok) {

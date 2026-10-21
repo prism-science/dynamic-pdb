@@ -9,6 +9,12 @@
 // The file half is a stopgap. Once CloudFront sends CORS for this origin, hand
 // the viewer an empty `fileProxy` and delete /dpdb-file.
 
+import {
+  backendReadTimeoutMs,
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "@/lib/api/timeout";
+
 // The backend counts /api/v1/files requests as downloads for analytics. It
 // skips this user agent: these are viewer loads, already counted as such.
 export const proxyUserAgent = "dynamic-pdb-website-proxy";
@@ -16,12 +22,22 @@ export const proxyUserAgent = "dynamic-pdb-website-proxy";
 export async function proxyUpstream(url: string): Promise<Response> {
   let upstream: Response;
   try {
-    upstream = await fetch(url, {
-      redirect: "follow",
-      cache: "no-store",
-      headers: { "user-agent": proxyUserAgent },
-    });
-  } catch {
+    upstream = await fetchWithTimeout(
+      url,
+      {
+        redirect: "follow",
+        cache: "no-store",
+        headers: { "user-agent": proxyUserAgent },
+      },
+      backendReadTimeoutMs,
+    );
+  } catch (error) {
+    if (error instanceof FetchTimeoutError) {
+      return new Response("upstream timed out", {
+        status: 504,
+        headers: { "cache-control": "no-store" },
+      });
+    }
     // DNS failure, refused connection, a dropped transfer: an unhandled throw
     // here answers the browser with a 500 and a stack trace, which tells the
     // reader nothing and the logs no more than this does.

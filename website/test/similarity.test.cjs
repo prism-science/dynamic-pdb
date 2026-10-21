@@ -29,20 +29,25 @@ test("should list similar entries with pagination and authorization", async () =
     global.fetch = async (url, init) => {
       requestedURL = String(url);
       requestedHeaders = init.headers;
-      return jsonResponse(collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.9, matches: [] }]));
+      const document = collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.9, matches: [] }]);
+      document.meta = { next_cursor: "after-e2" };
+      return jsonResponse(document);
     };
 
-    const items = await listSimilarEntries("token-123", "entry-1", {
+    const page = await listSimilarEntries("token-123", "entry-1", {
       limit: 100,
-      offset: 5,
+      cursor: "after-e1",
     });
 
     assert.equal(
       requestedURL,
-      "https://backend.example/v1/entries/entry-1/similar-entries?limit=100&offset=5",
+      "https://backend.example/v1/entries/entry-1/similar-entries?limit=100&cursor=after-e1",
     );
     assert.equal(requestedHeaders.Authorization, "Bearer token-123");
-    assert.deepEqual(items, [{ entry: { id: "e2" }, score: 0.9, matches: [] }]);
+    assert.deepEqual(page, {
+      items: [{ entry: { id: "e2" }, score: 0.9, matches: [] }],
+      nextCursor: "after-e2",
+    });
   } finally {
     global.fetch = previousFetch;
     process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;

@@ -452,7 +452,7 @@ func Test_should_redirect_to_stored_http_location_when_artifact_is_available(t *
 	recorder := httptest.NewRecorder()
 
 	// when
-	server.redirectToArtifact(recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
+	server.redirectToArtifact(context.Background(), recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
 
 	// then
 	require.Equal(t, http.StatusFound, recorder.Code)
@@ -467,7 +467,7 @@ func Test_should_return_bad_gateway_when_artifact_location_is_not_http(t *testin
 	recorder := httptest.NewRecorder()
 
 	// when
-	server.redirectToArtifact(recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
+	server.redirectToArtifact(context.Background(), recorder, domainmodels.Artifact{ID: uuid.New(), URI: &uri})
 
 	// then
 	require.Equal(t, http.StatusBadGateway, recorder.Code)

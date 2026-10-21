@@ -314,7 +314,7 @@ export default async function Home() {
 async function loadLatestDepositions(): Promise<LatestDeposition[]> {
   const session = await getAuthSession();
   try {
-    const models = await listModels(session?.token, { limit: 5, offset: 0 });
+    const models = await listModels(session?.token, { limit: 5 });
     const entries = await Promise.all(
       models.map((model) => getEntry(session?.token, model.entry_id)),
     );

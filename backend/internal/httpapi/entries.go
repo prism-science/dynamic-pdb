@@ -37,9 +37,9 @@ const (
 )
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params ListEntriesParams) {
-	filters, err := entryFiltersFromParams(params)
+	filters, page, err := entryFiltersFromParams(params)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid entry filters")
+		writeListParamsError(w, err, "invalid entry filters")
 		return
 	}
 	activeState := domainmodels.RevisionStateActive
@@ -47,40 +47,95 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 	filters.State = &activeState
 	filters.EntryState = &activeEntryState
 
-	revisions, err := s.database.Entries.List(r.Context(), filters)
+	revisions, proteinSequenceSearch, err := s.listEntryRevisionsForSearch(r.Context(), filters, page)
+	if errors.Is(err, errInvalidListCursor) {
+		writeListParamsError(w, err, "invalid entry filters")
+		return
+	}
 	if err != nil {
-		slog.Error("list entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
 		return
 	}
-	if len(revisions) == 0 {
-		if proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query); ok {
-			filters.Query = ""
-			filters.ProteinSequence = proteinSequence
-			revisions, err = s.database.Entries.List(r.Context(), filters)
-			if err != nil {
-				slog.Error("list entries by protein sequence failed", "err", err)
-				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list entries")
-				return
-			}
-		}
-	}
+	revisions, hasNextPage := trimToPage(revisions, page)
 
-	items := make([]EntryInfoData, 0, len(revisions))
+	document := EntryCollectionDocument{Data: make([]EntryInfoData, 0, len(revisions))}
 	for _, revision := range revisions {
 		item, err := entryInfoAttributesFromRevision(revision)
 		if err != nil {
-			slog.Error("build entry info response failed", "err", err)
+			slog.ErrorContext(r.Context(), "build entry info response failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
 			return
 		}
-		items = append(items, EntryInfoData{
+		document.Data = append(document.Data, EntryInfoData{
 			Type:       jsonAPITypeEntries,
 			Id:         item.Id,
 			Attributes: item,
 		})
 	}
-	writeJSON(w, http.StatusOK, EntryCollectionDocument{Data: items})
+	if hasNextPage && len(revisions) > 0 {
+		last := revisions[len(revisions)-1]
+		document.Links, document.Meta, err = s.nextPageLinks(r, listCursor{
+			Kind:                  listCursorKindEntries,
+			CreatedAt:             last.CreatedAt,
+			ID:                    last.ID,
+			ProteinSequenceSearch: proteinSequenceSearch,
+		})
+		if err != nil {
+			slog.ErrorContext(r.Context(), "build entry list links failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, document)
+}
+
+// listEntryRevisionsForSearch lists entry revisions for filters. A text query that matches
+// nothing and looks like a protein sequence is retried as a sequence match. It reports
+// whether the rows come from that sequence match, so the next page's cursor continues it.
+func (s *Server) listEntryRevisionsForSearch(
+	ctx context.Context,
+	filters db.EntryRevisionFilters,
+	page listPage,
+) ([]domainmodels.EntryRevision, bool, error) {
+	if page.Cursor != nil && page.Cursor.ProteinSequenceSearch {
+		proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query)
+		if !ok {
+			return nil, false, fmt.Errorf("%w: protein sequence cursor needs a protein sequence query", errInvalidListCursor)
+		}
+		revisions, err := s.listEntryRevisionsByProteinSequence(ctx, filters, proteinSequence)
+		return revisions, true, err
+	}
+
+	revisions, err := s.database.Entries.List(ctx, filters)
+	if err != nil {
+		return nil, false, fmt.Errorf("list entry revisions: %w", err)
+	}
+	// Under a cursor, an empty page is the end of the text matches, not a reason to switch
+	// to sequence matches. Deprecated offset requests keep their old fallback at any depth.
+	if len(revisions) > 0 || page.Cursor != nil {
+		return revisions, false, nil
+	}
+	proteinSequence, ok := proteinSequenceFromSearchQuery(filters.Query)
+	if !ok {
+		return revisions, false, nil
+	}
+	revisions, err = s.listEntryRevisionsByProteinSequence(ctx, filters, proteinSequence)
+	return revisions, true, err
+}
+
+func (s *Server) listEntryRevisionsByProteinSequence(
+	ctx context.Context,
+	filters db.EntryRevisionFilters,
+	proteinSequence string,
+) ([]domainmodels.EntryRevision, error) {
+	filters.Query = ""
+	filters.ProteinSequence = proteinSequence
+	revisions, err := s.database.Entries.List(ctx, filters)
+	if err != nil {
+		return nil, fmt.Errorf("list entry revisions by protein sequence: %w", err)
+	}
+	return revisions, nil
 }
 
 func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +151,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.createInitialEntryRevision(r.Context(), req, user.ID)
-	if s.writeMutationError(w, err, "create entry") {
+	if s.writeMutationError(r.Context(), w, err, "create entry") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateEntryRevisionDocument{
@@ -283,7 +338,7 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 	}
 
 	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID)
-	if s.writeMutationError(w, err, "create model") {
+	if s.writeMutationError(r.Context(), w, err, "create model") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
@@ -466,7 +521,7 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 	}
 
 	result, err := s.createModelRevisionGraph(r.Context(), entryID, modelID, payload, user.ID)
-	if s.writeMutationError(w, err, "create model revision") {
+	if s.writeMutationError(r.Context(), w, err, "create model revision") {
 		return
 	}
 	writeJSON(w, http.StatusCreated, CreateModelRevisionDocument{
@@ -739,13 +794,13 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		return
 	}
 	if err != nil {
-		slog.Error("get entry failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
 	sequences, err := s.database.ProteinSequences.List(r.Context(), db.ProteinSequenceFilters{EntryRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list entry protein sequences failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry protein sequences failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
@@ -753,13 +808,13 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		EntryRevisionID: &revision.ID,
 	})
 	if err != nil {
-		slog.Error("list entry polymer entities failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry polymer entities failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
 	properties, err := entryPropertiesFromModel(revision.Metadata)
 	if err != nil {
-		slog.Error("build entry response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build entry response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
@@ -831,30 +886,36 @@ func (s *Server) ListSimilarEntries(
 		writeError(w, http.StatusBadRequest, "INVALID_OFFSET", "offset must be non-negative")
 		return
 	}
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindSimilarEntries)
+	if err != nil {
+		writeListParamsError(w, err, "invalid pagination")
+		return
+	}
 	if _, err := s.activeEntryRevision(r.Context(), entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry not found")
 		return
 	} else if err != nil {
-		slog.Error("get entry for similar entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for similar entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
-	limit := limitOrDefault(params.Limit)
 	entries, err := s.database.ProteinSequenceSimilarities.ListSimilarEntries(r.Context(), db.SimilarEntryFilters{
 		EntryID: entryID,
-		Limit:   limit,
-		Offset:  params.Offset,
+		Limit:   page.fetchLimit(),
+		Offset:  page.Offset,
+		After:   page.afterSimilarEntry(),
 	})
 	if err != nil {
-		slog.Error("list similar entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list similar entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 		return
 	}
+	entries, hasNextPage := trimToPage(entries, page)
 	data := make([]SimilarEntryData, 0, len(entries))
 	for _, entry := range entries {
 		info, err := entryInfoAttributesFromRevision(entry.Entry)
 		if err != nil {
-			slog.Error("build similar entry response failed", "err", err)
+			slog.ErrorContext(r.Context(), "build similar entry response failed", "err", err)
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
 			return
 		}
@@ -876,13 +937,22 @@ func (s *Server) ListSimilarEntries(
 			Attributes: item,
 		})
 	}
-	writeJSON(w, http.StatusOK, SimilarEntryCollectionDocument{
-		Data: data,
-		Meta: &SimilarEntryCollectionMeta{
-			Limit:  limit,
-			Offset: params.Offset,
-		},
+	links, pageMeta, err := nextPageLinksAfter(s, r, entries, hasNextPage, func(last domainmodels.SimilarEntry) listCursor {
+		return listCursor{Kind: listCursorKindSimilarEntries, Score: &last.Score, EntryID: last.Entry.EntryID}
 	})
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build similar entry list links failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list similar entries")
+		return
+	}
+	meta := &SimilarEntryCollectionMeta{
+		Limit:  &page.Limit,
+		Offset: page.Offset,
+	}
+	if pageMeta != nil {
+		meta.NextCursor = &pageMeta.NextCursor
+	}
+	writeJSON(w, http.StatusOK, SimilarEntryCollectionDocument{Data: data, Links: links, Meta: meta})
 }
 
 func (s *Server) ListModelsAcrossEntries(
@@ -890,9 +960,9 @@ func (s *Server) ListModelsAcrossEntries(
 	r *http.Request,
 	params ListModelsAcrossEntriesParams,
 ) {
-	filters, err := modelFiltersFromParams(params)
+	filters, page, err := modelFiltersFromParams(params)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
+		writeListParamsError(w, err, "invalid model filters")
 		return
 	}
 	activeState := domainmodels.RevisionStateActive
@@ -901,57 +971,80 @@ func (s *Server) ListModelsAcrossEntries(
 	filters.State = &activeState
 	filters.EntryState = &activeEntryState
 	filters.ModelState = &activeModelState
+	filters.ExcludeResidueData = true
 
 	revisions, err := s.database.Models.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list models across entries failed", "err", err)
+		slog.ErrorContext(r.Context(), "list models across entries failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	response, err := s.modelAttributesFromRevisions(r.Context(), revisions)
-	if err != nil {
-		slog.Error("build model list response failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
-		return
-	}
-	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
+	s.writeModelListPage(w, r, revisions, page)
 }
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID string, params ListModelsParams) {
-	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid model filters")
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindModels)
+	if err != nil {
+		writeListParamsError(w, err, "invalid model filters")
 		return
 	}
 	if _, err := s.activeEntryRevision(r.Context(), entryID); errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes([]ModelAttributes{}))
 		return
 	} else if err != nil {
-		slog.Error("get entry for models failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for models failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
 	activeState := domainmodels.RevisionStateActive
 	activeModelState := domainmodels.ModelStateActive
-	limit := limitOrDefault(params.Limit)
 	revisions, err := s.database.Models.List(r.Context(), db.ModelRevisionFilters{
-		EntryID:    &entryID,
-		State:      &activeState,
-		ModelState: &activeModelState,
-		Limit:      limit,
-		Offset:     params.Offset,
+		EntryID:            &entryID,
+		State:              &activeState,
+		ModelState:         &activeModelState,
+		Limit:              page.fetchLimit(),
+		Offset:             page.Offset,
+		After:              page.after(),
+		ExcludeResidueData: true,
 	})
 	if err != nil {
-		slog.Error("list models failed", "err", err)
+		slog.ErrorContext(r.Context(), "list models failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
+	s.writeModelListPage(w, r, revisions, page)
+}
+
+// writeModelListPage writes one page of a model list. revisions holds the extra row
+// requested by page.fetchLimit, if it exists.
+func (s *Server) writeModelListPage(
+	w http.ResponseWriter,
+	r *http.Request,
+	revisions []domainmodels.ModelRevision,
+	page listPage,
+) {
+	revisions, hasNextPage := trimToPage(revisions, page)
 	response, err := s.modelAttributesFromRevisions(r.Context(), revisions)
 	if err != nil {
-		slog.Error("build model list response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model list response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
 		return
 	}
-	writeJSON(w, http.StatusOK, modelCollectionDocumentFromAttributes(response))
+	document := modelCollectionDocumentFromAttributes(response)
+	if hasNextPage && len(revisions) > 0 {
+		last := revisions[len(revisions)-1]
+		document.Links, document.Meta, err = s.nextPageLinks(r, listCursor{
+			Kind:      listCursorKindModels,
+			CreatedAt: last.CreatedAt,
+			ID:        last.ID,
+		})
+		if err != nil {
+			slog.ErrorContext(r.Context(), "build model list links failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, document)
 }
 
 func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, modelID string) {
@@ -961,22 +1054,23 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		return
 	}
 	if err != nil {
-		slog.Error("get model failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
 	metrics, err := s.database.Metrics.List(r.Context(), db.MetricFilters{ModelRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list model metrics failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model metrics failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
 	model, err := modelAttributesFromRevision(*revision, metrics)
 	if err != nil {
-		slog.Error("build model response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build model response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
+	model.ResidueData = ptr(residueDataFromModels(revision.Metadata.ResidueData))
 	writeJSON(w, http.StatusOK, ModelDocument{
 		Data: ModelData{
 			Type:       jsonAPITypeModels,
@@ -987,43 +1081,35 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 }
 
 func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID string, params ListArtifactsParams) {
+	filters, page, err := artifactFiltersFromParams(params)
+	if err != nil {
+		writeListParamsError(w, err, "invalid artifact filters")
+		return
+	}
 	revision, err := s.activeEntryRevision(r.Context(), entryID)
 	if errors.Is(err, db.ErrEntryRevisionNotFound) {
 		writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: []ArtifactData{}})
 		return
 	}
 	if err != nil {
-		slog.Error("get entry for artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "get entry for artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
-		return
-	}
-	filters, err := artifactFiltersFromParams(params)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid artifact filters")
 		return
 	}
 	filters.EntryRevisionID = &revision.ID
 	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list entry artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "list entry artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
-	items, err := artifactAttributesFromModels(artifacts)
+	data, links, meta, err := s.artifactListPage(r, artifacts, page)
 	if err != nil {
-		slog.Error("build artifact response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list artifacts")
 		return
 	}
-	data := make([]ArtifactData, 0, len(items))
-	for _, item := range items {
-		data = append(data, ArtifactData{
-			Type:       jsonAPITypeArtifacts,
-			Id:         item.Id,
-			Attributes: item,
-		})
-	}
-	writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: data})
+	writeJSON(w, http.StatusOK, ArtifactCollectionDocument{Data: data, Links: links, Meta: meta})
 }
 
 func (s *Server) ListModelArtifacts(
@@ -1032,43 +1118,43 @@ func (s *Server) ListModelArtifacts(
 	entryID, modelID string,
 	params ListModelArtifactsParams,
 ) {
+	filters, page, err := modelArtifactFiltersFromParams(params)
+	if err != nil {
+		writeListParamsError(w, err, "invalid artifact filters")
+		return
+	}
 	revision, err := s.activeModelRevision(r.Context(), entryID, modelID)
 	if errors.Is(err, db.ErrModelRevisionNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "model not found")
 		return
 	}
 	if err != nil {
-		slog.Error("get model for artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "get model for artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
-		return
-	}
-	filters, err := modelArtifactFiltersFromParams(params)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid artifact filters")
 		return
 	}
 	filters.ModelRevisionID = &revision.ID
 	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
 	if err != nil {
-		slog.Error("list model artifacts failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model artifacts failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	runs, err := s.database.Runs.List(r.Context(), db.RunFilters{ModelRevisionID: &revision.ID})
 	if err != nil {
-		slog.Error("list model runs failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model runs failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
 	links, err := s.database.Runs.ListArtifactLinks(r.Context(), revision.ID)
 	if err != nil {
-		slog.Error("list model run artifact links failed", "err", err)
+		slog.ErrorContext(r.Context(), "list model run artifact links failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
-	artifactItems, err := artifactAttributesFromModels(artifacts)
+	artifactData, pageLinks, pageMeta, err := s.artifactListPage(r, artifacts, page)
 	if err != nil {
-		slog.Error("build artifact response failed", "err", err)
+		slog.ErrorContext(r.Context(), "build artifact response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list model artifacts")
 		return
 	}
@@ -1080,21 +1166,47 @@ func (s *Server) ListModelArtifacts(
 	for _, link := range links {
 		relationItems = append(relationItems, runArtifactFromLink(link))
 	}
-	artifactData := make([]ArtifactData, 0, len(artifactItems))
-	for _, item := range artifactItems {
-		artifactData = append(artifactData, ArtifactData{
+	meta := ModelArtifactCollectionMeta{
+		Runs:      runItems,
+		Relations: relationItems,
+	}
+	if pageMeta != nil {
+		meta.NextCursor = &pageMeta.NextCursor
+	}
+	writeJSON(w, http.StatusOK, ModelArtifactCollectionDocument{
+		Data:  artifactData,
+		Links: pageLinks,
+		Meta:  meta,
+	})
+}
+
+// artifactListPage trims artifacts to the page and builds their response items, plus
+// the next page's links when another page exists.
+func (s *Server) artifactListPage(
+	r *http.Request,
+	artifacts []domainmodels.Artifact,
+	page listPage,
+) ([]ArtifactData, *CollectionLinks, *CursorPageMeta, error) {
+	artifacts, hasNextPage := trimToPage(artifacts, page)
+	items, err := artifactAttributesFromModels(artifacts)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build artifact attributes: %w", err)
+	}
+	data := make([]ArtifactData, 0, len(items))
+	for _, item := range items {
+		data = append(data, ArtifactData{
 			Type:       jsonAPITypeArtifacts,
 			Id:         item.Id,
 			Attributes: item,
 		})
 	}
-	writeJSON(w, http.StatusOK, ModelArtifactCollectionDocument{
-		Data: artifactData,
-		Meta: ModelArtifactCollectionMeta{
-			Runs:      runItems,
-			Relations: relationItems,
-		},
+	links, meta, err := nextPageLinksAfter(s, r, artifacts, hasNextPage, func(last domainmodels.Artifact) listCursor {
+		return listCursor{Kind: listCursorKindArtifacts, CreatedAt: last.CreatedAt, ID: last.ID}
 	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("build artifact list links: %w", err)
+	}
+	return data, links, meta, nil
 }
 
 func (s *Server) createArtifact(
@@ -1239,13 +1351,18 @@ func (s *Server) modelAttributesFromRevisions(
 	ctx context.Context,
 	revisions []domainmodels.ModelRevision,
 ) ([]ModelAttributes, error) {
+	revisionIDs := make([]uuid.UUID, 0, len(revisions))
+	for _, revision := range revisions {
+		revisionIDs = append(revisionIDs, revision.ID)
+	}
+	metricsByRevision, err := s.database.Metrics.ListByModelRevisionIDs(ctx, revisionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list model metrics: %w", err)
+	}
+
 	items := make([]ModelAttributes, 0, len(revisions))
 	for _, revision := range revisions {
-		metrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &revision.ID})
-		if err != nil {
-			return nil, fmt.Errorf("list model metrics: %w", err)
-		}
-		item, err := modelAttributesFromRevision(revision, metrics)
+		item, err := modelAttributesFromRevision(revision, metricsByRevision[revision.ID])
 		if err != nil {
 			return nil, fmt.Errorf("build model response: %w", err)
 		}
@@ -1274,8 +1391,7 @@ func modelAttributesFromRevision(revision domainmodels.ModelRevision, metrics []
 	return ModelAttributes{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
 		Title: revision.Title, ThumbnailImageUrl: revision.ThumbnailImageURL,
 		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
-		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics),
-		ResidueData: residueDataFromModels(revision.Metadata.ResidueData)}, nil
+		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics)}, nil
 }
 
 func artifactAttributesFromModels(artifacts []domainmodels.Artifact) ([]ArtifactAttributes, error) {
@@ -1478,32 +1594,28 @@ func mapFromNil(value map[string]any) map[string]interface{} {
 	return value
 }
 
-func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, error) {
-	if params.Limit != nil && *params.Limit < 0 {
-		return db.EntryRevisionFilters{}, errors.New("limit must be non-negative")
+func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, listPage, error) {
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindEntries)
+	if err != nil {
+		return db.EntryRevisionFilters{}, listPage{}, fmt.Errorf("entry list page: %w", err)
 	}
-	if params.Offset != nil && *params.Offset < 0 {
-		return db.EntryRevisionFilters{}, errors.New("offset must be non-negative")
-	}
-	filters := db.EntryRevisionFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
+	filters := db.EntryRevisionFilters{Limit: page.fetchLimit(), Offset: page.Offset, After: page.after()}
 	if params.Query != nil {
 		filters.Query = boundedString(strings.TrimSpace(*params.Query), maxEntrySearchQueryLength)
 	}
 	if params.PdbId != nil {
 		filters.PDBIDs = boundedSearchFilterValues(*params.PdbId)
 	}
-	return filters, nil
+	return filters, page, nil
 }
 
-func modelFiltersFromParams(params ListModelsAcrossEntriesParams) (db.ModelRevisionFilters, error) {
-	if params.Limit != nil && *params.Limit < 0 {
-		return db.ModelRevisionFilters{}, errors.New("limit must be non-negative")
+func modelFiltersFromParams(params ListModelsAcrossEntriesParams) (db.ModelRevisionFilters, listPage, error) {
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindModels)
+	if err != nil {
+		return db.ModelRevisionFilters{}, listPage{}, fmt.Errorf("model list page: %w", err)
 	}
-	if params.Offset != nil && *params.Offset < 0 {
-		return db.ModelRevisionFilters{}, errors.New("offset must be non-negative")
-	}
-	filters := db.ModelRevisionFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
-	return filters, nil
+	filters := db.ModelRevisionFilters{Limit: page.fetchLimit(), Offset: page.Offset, After: page.after()}
+	return filters, page, nil
 }
 
 func proteinSequenceFromSearchQuery(value string) (string, bool) {
@@ -1519,26 +1631,28 @@ func proteinSequenceFromSearchQuery(value string) (string, bool) {
 	return normalized, true
 }
 
-func artifactFiltersFromParams(params ListArtifactsParams) (db.ArtifactFilters, error) {
-	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
-		return db.ArtifactFilters{}, errors.New("invalid pagination")
+func artifactFiltersFromParams(params ListArtifactsParams) (db.ArtifactFilters, listPage, error) {
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindArtifacts)
+	if err != nil {
+		return db.ArtifactFilters{}, listPage{}, fmt.Errorf("artifact list page: %w", err)
 	}
-	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
-	if params.Levels != nil {
-		filters.Levels = boundedArtifactLevels(*params.Levels)
-	}
-	return filters, nil
+	return artifactPageFilters(page, params.Levels), page, nil
 }
 
-func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.ArtifactFilters, error) {
-	if params.Limit != nil && *params.Limit < 0 || params.Offset != nil && *params.Offset < 0 {
-		return db.ArtifactFilters{}, errors.New("invalid pagination")
+func modelArtifactFiltersFromParams(params ListModelArtifactsParams) (db.ArtifactFilters, listPage, error) {
+	page, err := listPageFromParams(params.Limit, params.Offset, params.Cursor, listCursorKindArtifacts)
+	if err != nil {
+		return db.ArtifactFilters{}, listPage{}, fmt.Errorf("model artifact list page: %w", err)
 	}
-	filters := db.ArtifactFilters{Limit: limitOrDefault(params.Limit), Offset: params.Offset}
-	if params.Levels != nil {
-		filters.Levels = boundedArtifactLevels(*params.Levels)
+	return artifactPageFilters(page, params.Levels), page, nil
+}
+
+func artifactPageFilters(page listPage, levels *[]ArtifactLevel) db.ArtifactFilters {
+	filters := db.ArtifactFilters{Limit: page.fetchLimit(), Offset: page.Offset, After: page.after()}
+	if levels != nil {
+		filters.Levels = boundedArtifactLevels(*levels)
 	}
-	return filters, nil
+	return filters
 }
 
 func (s *Server) activeEntryRevision(ctx context.Context, entryID string) (*domainmodels.EntryRevision, error) {
@@ -1769,7 +1883,7 @@ func isUniqueConstraint(err error, constraint string) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
 }
 
-func (s *Server) writeMutationError(w http.ResponseWriter, err error, action string) bool {
+func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
 	switch {
 	case err == nil:
 		return false
@@ -1781,7 +1895,7 @@ func (s *Server) writeMutationError(w http.ResponseWriter, err error, action str
 		isUniqueConstraint(err, "entry_revisions_active_pdb_ref_idx"):
 		writeError(w, http.StatusConflict, "CONFLICT", "revision conflicts with the current active state")
 	default:
-		slog.Error(action+" failed", "err", err)
+		slog.ErrorContext(ctx, action+" failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)
 	}
 	return true

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { ApiRequestError, listEntries } from "@/lib/api/entries";
+import { ApiRequestError, listEntriesPage } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 
 const defaultLimit = 50;
@@ -18,6 +18,9 @@ const maxLimit = 100;
  *
  * Public, like the page: an absent or stale session just means the request goes
  * to the backend unauthenticated.
+ *
+ * Pages by the backend's opaque `cursor`; the response's `nextCursor` is null on
+ * the last page.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -26,19 +29,19 @@ export async function GET(request: Request) {
     positiveInteger(url.searchParams.get("limit"), defaultLimit),
     maxLimit,
   );
-  const offset = nonNegativeInteger(url.searchParams.get("offset"), 0);
+  const cursor = url.searchParams.get("cursor") || undefined;
 
   const session = await getAuthSession();
 
   try {
-    const items = await listEntries(session?.token, { query, limit, offset });
-    return NextResponse.json({ items });
+    const page = await listEntriesPage(session?.token, { query, limit, cursor });
+    return NextResponse.json({ items: page.items, nextCursor: page.nextCursor });
   } catch (error) {
-    // An empty page reads as the end of the list, which is the right thing for
-    // the scroller to do with an error it cannot act on.
+    // An empty last page reads as the end of the list, which is the right thing
+    // for the scroller to do with an error it cannot act on.
     if (error instanceof ApiRequestError) {
       return NextResponse.json(
-        { items: [] },
+        { items: [], nextCursor: null },
         { status: error.status ?? 502 },
       );
     }
@@ -52,12 +55,4 @@ function positiveInteger(value: string | null, fallback: number) {
   }
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function nonNegativeInteger(value: string | null, fallback: number) {
-  if (value == null) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }

@@ -20,6 +20,7 @@ function formatDate(value: string): string | null {
 
 export default function EntriesBrowser({
   entries,
+  nextCursor = null,
   canCreate = false,
   query = "",
   infiniteScroll = true,
@@ -27,6 +28,8 @@ export default function EntriesBrowser({
   emptyLabel,
 }: {
   entries: Entry[];
+  /** Cursor of the page after `entries`; null when they are the whole list. */
+  nextCursor?: string | null;
   canCreate?: boolean;
   query?: string;
   infiniteScroll?: boolean;
@@ -99,7 +102,7 @@ export default function EntriesBrowser({
       )}
 
       {infiniteScroll ? (
-        <EntriesInfiniteScroll query={query} initialOffset={entries.length} />
+        <EntriesInfiniteScroll query={query} initialCursor={nextCursor} />
       ) : null}
     </div>
   );

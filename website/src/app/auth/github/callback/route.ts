@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
+import { backendWriteTimeoutMs, fetchWithTimeout } from "@/lib/api/timeout";
 import {
   clearOAuthStateCookie,
   getPublicOrigin,
@@ -101,18 +102,22 @@ async function exchangeBackendToken(
 
   let response: Response;
   try {
-    response = await fetch(`${getApiBaseUrl()}/v1/auth/github/code/exchange`, {
-      method: "POST",
-      headers: {
-        Accept: jsonApiMediaType,
-        "Content-Type": jsonApiMediaType,
+    response = await fetchWithTimeout(
+      `${getApiBaseUrl()}/v1/auth/github/code/exchange`,
+      {
+        method: "POST",
+        headers: {
+          Accept: jsonApiMediaType,
+          "Content-Type": jsonApiMediaType,
+        },
+        body: JSON.stringify({
+          code,
+          redirect_uri: callbackUrl.toString(),
+        }),
+        cache: "no-store",
       },
-      body: JSON.stringify({
-        code,
-        redirect_uri: callbackUrl.toString(),
-      }),
-      cache: "no-store",
-    });
+      backendWriteTimeoutMs,
+    );
   } catch {
     return {
       ok: false,

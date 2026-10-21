@@ -3,6 +3,11 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
+import {
+  backendWriteTimeoutMs,
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "@/lib/api/timeout";
 import { getAuthSession } from "@/lib/auth/session";
 
 export async function proxyUploadControlRequest(
@@ -37,7 +42,7 @@ export async function proxyUploadControlRequest(
 
   let response: Response;
   try {
-    response = await fetch(
+    response = await fetchWithTimeout(
       `${getApiBaseUrl().replace(/\/+$/, "")}${backendPath}`,
       {
         method: request.method,
@@ -45,8 +50,15 @@ export async function proxyUploadControlRequest(
         headers,
         body,
       },
+      backendWriteTimeoutMs,
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof FetchTimeoutError) {
+      return NextResponse.json(
+        { error: "Backend upload endpoint timed out." },
+        { status: 504 },
+      );
+    }
     return NextResponse.json(
       { error: "Could not reach backend upload endpoint." },
       { status: 502 },

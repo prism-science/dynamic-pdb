@@ -1,5 +1,7 @@
 package db
 
+import "time"
+
 type Config struct {
 	Host                  string `mapstructure:"host"`
 	Name                  string `mapstructure:"name"`
@@ -11,4 +13,7 @@ type Config struct {
 	MaxConnectionLifetime string `mapstructure:"max_connection_lifetime"`
 	MaxOpenConnections    int    `mapstructure:"max_open_connections"`
 	MaxIdleConnections    int    `mapstructure:"max_idle_connections"`
+	// StatementTimeout makes PostgreSQL cancel any statement running longer than this.
+	// Zero leaves the database default in place.
+	StatementTimeout time.Duration `mapstructure:"statement_timeout"`
 }

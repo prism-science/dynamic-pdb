@@ -5,7 +5,11 @@ import {
   type Entity,
   type EntryPageData,
   getEntryPageData,
+  getModel,
+  type ListPage,
   listSimilarEntries,
+  type Model,
+  type ResidueData,
   type SimilarEntry,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
@@ -122,10 +126,11 @@ export default async function ScopePage({
     data.entry.thumbnail_image_url,
   );
 
+  const residueData = await loadResidueData(session?.token, entryId, model);
   const entities = polymerEntityViews(
     data.entry.polymer_entities ?? [],
     data.entry.protein_sequences ?? [],
-    model?.residue_data ?? [],
+    residueData,
   );
   const crystallography = crystallographyView(data.entry.crystallography);
   const artifacts = new Map(data.entities.map((entity) => [entity.id, entity]));
@@ -204,7 +209,7 @@ export default async function ScopePage({
   // One tab for everything about the sequence: the residues themselves, and
   // the entries that share them. Present as soon as either exists.
   const hasSequences = entities.some((entity) => entity.sequence);
-  if (hasSequences || similarEntries.length > 0) {
+  if (hasSequences || similarEntries.items.length > 0) {
     tabs.push({ id: "sequence", label: "Sequence" });
   }
   // Always offered: every entry has a history, even if all we can say about it
@@ -344,7 +349,8 @@ export default async function ScopePage({
               <SimilarProteins
                 entryId={data.entry.id}
                 sequences={data.entry.protein_sequences ?? []}
-                items={similarEntries}
+                items={similarEntries.items}
+                nextCursor={similarEntries.nextCursor}
               />
             </section>
           ) : null}
@@ -395,18 +401,37 @@ async function loadEntry(
   }
 }
 
+// Model lists leave out per-residue data, so it comes from the selected
+// model's detail. Like similarity, the page still renders without it.
+async function loadResidueData(
+  token: string | undefined,
+  entryId: string,
+  model: Model | null,
+): Promise<ResidueData[]> {
+  if (model === null) {
+    return [];
+  }
+  try {
+    const detail = await getModel(token, entryId, model.id);
+    return detail.residue_data ?? [];
+  } catch (error) {
+    console.error("get model residue data failed", error);
+    return [];
+  }
+}
+
 // Similarity is a bonus block on the page: if listing it fails the record still
 // renders, just without the tab.
 async function loadSimilarEntries(
   token: string | undefined,
   entryId: string,
-): Promise<SimilarEntry[]> {
+): Promise<ListPage<SimilarEntry>> {
   try {
     return await listSimilarEntries(token, entryId, {
       limit: SIMILAR_ENTRIES_FETCH_LIMIT,
     });
   } catch (error) {
     console.error("list similar entries failed", error);
-    return [];
+    return { items: [], nextCursor: null };
   }
 }

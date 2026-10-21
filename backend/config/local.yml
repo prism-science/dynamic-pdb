@@ -1,5 +1,6 @@
 server:
   addr: ":8080"
+  public_base_url: http://localhost:8080
 auth:
   allowed_orgs:
     - Astera-org
@@ -22,6 +23,7 @@ db:
   max_idle_connections: 10
   max_connection_idle_time: 5m
   max_connection_lifetime: 30m
+  statement_timeout: 10s
 cdn:
   s3:
     endpoint: ""

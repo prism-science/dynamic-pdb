@@ -5,7 +5,7 @@ const test = require("node:test");
 
 const { GET } = require("../src/app/entries/[entryId]/similar/route.ts");
 
-test("should page the similar feed with bounded limit and offset", async () => {
+test("should page the similar feed by cursor with a bounded limit", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {
@@ -16,21 +16,27 @@ test("should page the similar feed with bounded limit and offset", async () => {
       return {
         ok: true,
         status: 200,
-        json: async () => collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.5, matches: [] }]),
+        json: async () => ({
+          ...collectionDocument("similar_entries", [{ entry: { id: "e2" }, score: 0.5, matches: [] }]),
+          meta: { next_cursor: "after-e2" },
+        }),
       };
     };
 
     const response = await GET(
-      new Request("http://localhost/entries/entry-1/similar?limit=500&offset=50"),
+      new Request("http://localhost/entries/entry-1/similar?limit=500&cursor=after-e1"),
       { params: Promise.resolve({ entryId: "entry-1" }) },
     );
 
     assert.equal(
       requestedURL,
-      "https://backend.example/v1/entries/entry-1/similar-entries?limit=100&offset=50",
+      "https://backend.example/v1/entries/entry-1/similar-entries?limit=100&cursor=after-e1",
     );
     const body = await response.json();
-    assert.deepEqual(body.items, [{ entry: { id: "e2" }, score: 0.5, matches: [] }]);
+    assert.deepEqual(body, {
+      items: [{ entry: { id: "e2" }, score: 0.5, matches: [] }],
+      nextCursor: "after-e2",
+    });
   } finally {
     global.fetch = previousFetch;
     process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;
@@ -60,8 +66,7 @@ test("should answer with an empty page when the backend fails", async () => {
     );
 
     assert.equal(response.status, 404);
-    const body = await response.json();
-    assert.deepEqual(body.items, []);
+    assert.deepEqual(await response.json(), { items: [], nextCursor: null });
   } finally {
     global.fetch = previousFetch;
     process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;

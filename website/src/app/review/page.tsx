@@ -52,7 +52,7 @@ export default async function ReviewInbox({ searchParams }: Props) {
     <main className={styles.page} aria-label="Review inbox">
       <ReviewQueue
         initialItems={queue.items}
-        initialHasMore={queue.hasMore}
+        initialNextCursor={queue.nextCursor}
         selectedEntryId={selected?.entry_id ?? null}
         heading="To review"
         feedPath="/review/feed"
@@ -86,7 +86,7 @@ async function loadQueue(token: string): Promise<ReviewQueuePage> {
   try {
     return await listReviews(token, { limit: REVIEW_PAGE_SIZE });
   } catch (error) {
-    if (error instanceof ApiRequestError) return { items: [], hasMore: false };
+    if (error instanceof ApiRequestError) return { items: [], nextCursor: null };
     throw error;
   }
 }

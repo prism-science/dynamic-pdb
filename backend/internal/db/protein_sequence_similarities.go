@@ -36,6 +36,9 @@ type SimilarEntryFilters struct {
 	EntryID string
 	Limit   *int
 	Offset  *int
+	// After continues the list (ordered by score desc, entry_id asc) past this position.
+	// It cannot be combined with Offset.
+	After *SimilarEntryPosition
 }
 
 func NewProteinSequenceSimilaritiesRepository(
@@ -527,6 +530,9 @@ func similarEntryListQuery(filters SimilarEntryFilters) (string, map[string]any,
 	if filters.Offset != nil && *filters.Offset < 0 {
 		return "", nil, errors.New("offset must be non-negative")
 	}
+	if filters.After != nil && filters.Offset != nil {
+		return "", nil, errors.New("after and offset cannot be combined")
+	}
 
 	args := map[string]any{
 		"entry_id":     filters.EntryID,
@@ -550,7 +556,16 @@ func similarEntryListQuery(filters SimilarEntryFilters) (string, map[string]any,
 			      on similar_entry_revisions.id = similar_sequences.entry_revision_id
 			    where similar_entry_revisions.state = :active_state
 			      and similar_entry_revisions.entry_id <> :entry_id
-			    group by similar_entry_revisions.entry_id
+			    group by similar_entry_revisions.entry_id`
+	if filters.After != nil {
+		query += `
+			    having max(protein_sequence_similarities.score) < :after_score
+			        or (max(protein_sequence_similarities.score) = :after_score
+			            and similar_entry_revisions.entry_id > :after_entry_id)`
+		args["after_score"] = filters.After.Score
+		args["after_entry_id"] = filters.After.EntryID
+	}
+	query += `
 			    order by score desc, similar_entry_revisions.entry_id asc`
 	if filters.Limit != nil {
 		query += "\nlimit :limit"

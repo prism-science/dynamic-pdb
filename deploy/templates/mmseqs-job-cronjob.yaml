@@ -57,6 +57,9 @@ spec:
                     secretKeyRef:
                       name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: password
+                # The batch job's bulk writes must not be cut off by the API's statement timeout.
+                - name: DYNAMIC_PDB_DB_STATEMENT_TIMEOUT
+                  value: "0"
                 - name: DYNAMIC_PDB_MMSEQS_CACHE_DIR
                   value: {{ .Values.mmseqsJob.cache.mountPath | quote }}
               volumeMounts:

@@ -16,7 +16,6 @@ import {
   formatPercent,
   identityGrade,
   matchedSpan,
-  SIMILAR_ENTRIES_FETCH_LIMIT,
   sortedByScore,
   spanLabel,
 } from "@/lib/similarity";
@@ -29,6 +28,7 @@ const pageSize = 50;
 
 type SimilarPage = {
   items: SimilarEntry[];
+  nextCursor: string | null;
 };
 
 /**
@@ -45,38 +45,40 @@ export default function SimilarProteins({
   entryId,
   sequences,
   items: initialItems,
+  nextCursor: initialNextCursor,
 }: {
   entryId: string;
   /** The entry's own sequences: matches reference them by id, and both the
    *  matched-region bar and the alignment view need their lengths. */
   sequences: ProteinSequence[];
   items: SimilarEntry[];
+  /** Cursor of the page after items; null when there is none. */
+  nextCursor: string | null;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [items, setItems] = useState(initialItems);
-  const [hasMore, setHasMore] = useState(
-    initialItems.length >= SIMILAR_ENTRIES_FETCH_LIMIT,
-  );
+  const [cursor, setCursor] = useState(initialNextCursor);
+  const hasMore = cursor !== null;
   const [loading, setLoading] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const loadMore = useCallback(async () => {
-    if (loading || !hasMore) {
+    if (loading || cursor === null) {
       return;
     }
     setLoading(true);
     try {
       const params = new URLSearchParams({
         limit: String(pageSize),
-        offset: String(items.length),
+        cursor,
       });
       const response = await fetch(
         `/entries/${encodeURIComponent(entryId)}/similar?${params.toString()}`,
         { cache: "no-store" },
       );
       if (!response.ok) {
-        setHasMore(false);
+        setCursor(null);
         return;
       }
       const page = (await response.json()) as SimilarPage;
@@ -87,11 +89,11 @@ export default function SimilarProteins({
           ...page.items.filter((item) => !seen.has(item.entry.id)),
         ];
       });
-      setHasMore(page.items.length === pageSize);
+      setCursor(page.nextCursor);
     } finally {
       setLoading(false);
     }
-  }, [entryId, hasMore, items.length, loading]);
+  }, [cursor, entryId, loading]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;

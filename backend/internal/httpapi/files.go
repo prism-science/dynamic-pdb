@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -67,7 +68,7 @@ func (s *Server) CreateFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid file upload path")
 		return
 	case err != nil:
-		slog.Error("create file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "artifact_id", artifactID)
+		slog.ErrorContext(r.Context(), "create file upload failed", "err", err, "entry_id", entryID, "model_id", modelID, "artifact_id", artifactID)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to presign file upload")
 		return
 	}
@@ -127,7 +128,7 @@ func (s *Server) CompleteFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.fileCDN.CompleteUpload(r.Context(), req.Key, req.UploadId, parts); err != nil {
-		slog.Error("complete file upload failed", "err", err, "key", req.Key)
+		slog.ErrorContext(r.Context(), "complete file upload failed", "err", err, "key", req.Key)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to complete file upload")
 		return
 	}
@@ -153,7 +154,7 @@ func (s *Server) AbortFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.fileCDN.AbortUpload(r.Context(), req.Key, req.UploadId); err != nil {
-		slog.Error("abort file upload failed", "err", err, "key", req.Key)
+		slog.ErrorContext(r.Context(), "abort file upload failed", "err", err, "key", req.Key)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to abort file upload")
 		return
 	}
@@ -202,7 +203,7 @@ func (s *Server) writeEntryFile(
 		return
 	}
 	if err != nil {
-		slog.Error("get entry for file failed", "entry_id", entryID, "err", err)
+		slog.ErrorContext(r.Context(), "get entry for file failed", "entry_id", entryID, "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve file")
 		return
 	}
@@ -211,15 +212,15 @@ func (s *Server) writeEntryFile(
 		Types:           []domainmodels.ArtifactType{domainmodels.ArtifactTypeFASTA},
 	})
 	if err != nil {
-		slog.Error("list entry artifacts for file failed", "entry_id", entryID, "err", err)
+		slog.ErrorContext(r.Context(), "list entry artifacts for file failed", "entry_id", entryID, "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve file")
 		return
 	}
 	artifact, err := selectFileArtifact(artifacts, []string{"fasta"})
-	if s.writeFileSelectionError(w, err) {
+	if s.writeFileSelectionError(r.Context(), w, err) {
 		return
 	}
-	if s.redirectToArtifact(w, *artifact) {
+	if s.redirectToArtifact(r.Context(), w, *artifact) {
 		s.trackDownload(r, analytics.Download{EntryID: entryID, Filename: entryID + ".fasta"})
 	}
 }
@@ -235,7 +236,7 @@ func (s *Server) writeModelFile(
 		return
 	}
 	if err != nil {
-		slog.Error("get model for file failed", "entry_id", entryID, "model_id", modelID, "err", err)
+		slog.ErrorContext(r.Context(), "get model for file failed", "entry_id", entryID, "model_id", modelID, "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve file")
 		return
 	}
@@ -259,7 +260,7 @@ func (s *Server) writeModelFile(
 
 	artifacts, err := s.database.Artifacts.List(r.Context(), filters)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(r.Context(),
 			"list model artifacts for file failed",
 			"entry_id", entryID,
 			"model_id", modelID,
@@ -270,10 +271,10 @@ func (s *Server) writeModelFile(
 		return
 	}
 	artifact, err := selectFileArtifact(artifacts, formats)
-	if s.writeFileSelectionError(w, err) {
+	if s.writeFileSelectionError(r.Context(), w, err) {
 		return
 	}
-	if s.redirectToArtifact(w, *artifact) {
+	if s.redirectToArtifact(r.Context(), w, *artifact) {
 		s.trackDownload(r, analytics.Download{EntryID: entryID, ModelID: modelID, Filename: filename})
 	}
 }
@@ -306,7 +307,7 @@ func selectFileArtifact(
 	return &artifact, nil
 }
 
-func (s *Server) writeFileSelectionError(w http.ResponseWriter, err error) bool {
+func (s *Server) writeFileSelectionError(ctx context.Context, w http.ResponseWriter, err error) bool {
 	switch {
 	case errors.Is(err, errFileNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "file not found")
@@ -315,7 +316,7 @@ func (s *Server) writeFileSelectionError(w http.ResponseWriter, err error) bool 
 		writeError(w, http.StatusConflict, "CONFLICT", "file is ambiguous")
 		return true
 	case err != nil:
-		slog.Error("select artifact for file failed", "err", err)
+		slog.ErrorContext(ctx, "select artifact for file failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to resolve file")
 		return true
 	default:
@@ -323,12 +324,12 @@ func (s *Server) writeFileSelectionError(w http.ResponseWriter, err error) bool 
 	}
 }
 
-func (s *Server) redirectToArtifact(w http.ResponseWriter, artifact domainmodels.Artifact) bool {
+func (s *Server) redirectToArtifact(ctx context.Context, w http.ResponseWriter, artifact domainmodels.Artifact) bool {
 	parsedLocation, err := url.Parse(strings.TrimSpace(*artifact.URI))
 	if err != nil ||
 		(parsedLocation.Scheme != "http" && parsedLocation.Scheme != "https") ||
 		parsedLocation.Host == "" {
-		slog.Warn("resolved artifact location is invalid", "artifact_id", artifact.ID)
+		slog.WarnContext(ctx, "resolved artifact location is invalid", "artifact_id", artifact.ID)
 		writeError(w, http.StatusBadGateway, "BAD_GATEWAY", "artifact location could not be resolved")
 		return false
 	}

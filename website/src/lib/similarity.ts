@@ -258,9 +258,8 @@ export function formatPercent(fraction: number | null): string {
 
 /**
  * How many similar entries the entry page fetches up front. The rail and the
- * dialog's first screen work off this fetch; a full response means there may
- * be more, and the dialog keeps loading pages from the similar feed while
- * scrolling.
+ * dialog's first screen work off this fetch; when the response carries a next
+ * cursor, the dialog keeps loading pages from the similar feed while scrolling.
  */
 export const SIMILAR_ENTRIES_FETCH_LIMIT = 100;
 

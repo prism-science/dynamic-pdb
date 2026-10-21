@@ -21,6 +21,7 @@ type Entry = {
 
 type EntriesPage = {
   items: Entry[];
+  nextCursor: string | null;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -31,33 +32,33 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 
 export default function EntriesInfiniteScroll({
   query,
-  initialOffset,
+  initialCursor,
 }: {
   query: string;
-  initialOffset: number;
+  /** Cursor of the page after the server-rendered one; null when there is none. */
+  initialCursor: string | null;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [offset, setOffset] = useState(initialOffset);
-  const [hasMore, setHasMore] = useState(initialOffset === pageSize);
+  const [cursor, setCursor] = useState(initialCursor);
   const [loading, setLoading] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const hasMore = cursor !== null;
 
   useEffect(() => {
     setEntries([]);
-    setOffset(initialOffset);
-    setHasMore(initialOffset === pageSize);
+    setCursor(initialCursor);
     setLoading(false);
-  }, [initialOffset, query]);
+  }, [initialCursor, query]);
 
   const loadMore = useCallback(async () => {
-    if (loading || !hasMore) {
+    if (loading || cursor === null) {
       return;
     }
     setLoading(true);
     try {
       const params = new URLSearchParams({
         limit: String(pageSize),
-        offset: String(offset),
+        cursor,
       });
       if (query.trim()) {
         params.set("query", query.trim());
@@ -69,17 +70,16 @@ export default function EntriesInfiniteScroll({
         cache: "no-store",
       });
       if (!response.ok) {
-        setHasMore(false);
+        setCursor(null);
         return;
       }
       const page = (await response.json()) as EntriesPage;
       setEntries((current) => [...current, ...page.items]);
-      setOffset((current) => current + page.items.length);
-      setHasMore(page.items.length === pageSize);
+      setCursor(page.nextCursor);
     } finally {
       setLoading(false);
     }
-  }, [hasMore, loading, offset, query]);
+  }, [cursor, loading, query]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;

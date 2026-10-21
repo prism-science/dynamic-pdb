@@ -80,6 +80,70 @@ func Test_should_create_and_list_metrics_for_model_revision_when_metrics_reposit
 	assert.InDelta(t, 0.234, got[0].Value, 0.0001)
 }
 
+func Test_should_group_metrics_by_model_revision_when_listing_by_model_revision_ids(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "batch metric entry revision", now)
+	firstRevision := createDBTestModelRevision(t, entryRevision.EntryID, "first batch metric model revision", now)
+	secondRevision := createDBTestModelRevision(t, entryRevision.EntryID, "second batch metric model revision", now)
+	revisionWithoutMetrics := createDBTestModelRevision(t, entryRevision.EntryID, "metricless model revision", now)
+	laterFirstMetric := createDBTestMetric(t, firstRevision.ID, models.MetricKeyRWork, 0.2, now.Add(time.Minute))
+	earlierFirstMetric := createDBTestMetric(t, firstRevision.ID, models.MetricKeyRFree, 0.25, now)
+	secondMetric := createDBTestMetric(t, secondRevision.ID, models.MetricKeyClashscore, 3.5, now)
+
+	// when
+	got, err := testDB.Metrics.ListByModelRevisionIDs(ctx, []uuid.UUID{
+		firstRevision.ID,
+		secondRevision.ID,
+		revisionWithoutMetrics.ID,
+	})
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Len(t, got[firstRevision.ID], 2)
+	assert.Equal(t, earlierFirstMetric.ID, got[firstRevision.ID][0].ID)
+	assert.Equal(t, laterFirstMetric.ID, got[firstRevision.ID][1].ID)
+	require.Len(t, got[secondRevision.ID], 1)
+	assert.Equal(t, secondMetric.ID, got[secondRevision.ID][0].ID)
+	assert.Equal(t, models.MetricKeyClashscore, got[secondRevision.ID][0].Key)
+	assert.InDelta(t, 3.5, got[secondRevision.ID][0].Value, 0.0001)
+	assert.NotContains(t, got, revisionWithoutMetrics.ID)
+}
+
+func Test_should_return_empty_map_when_listing_metrics_for_no_model_revisions(t *testing.T) {
+	// given
+	ctx := context.Background()
+
+	// when
+	got, err := testDB.Metrics.ListByModelRevisionIDs(ctx, nil)
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func createDBTestMetric(
+	t *testing.T,
+	modelRevisionID uuid.UUID,
+	key models.MetricKey,
+	value float64,
+	createdAt time.Time,
+) *models.Metric {
+	t.Helper()
+
+	metric, err := testDB.Metrics.Create(context.Background(), models.Metric{
+		ID:        uuid.New(),
+		Key:       key,
+		Value:     value,
+		CreatedAt: createdAt,
+	})
+	require.NoError(t, err)
+	require.NoError(t, testDB.Metrics.AttachToModelRevision(context.Background(), modelRevisionID, metric.ID))
+	return metric
+}
+
 func Test_should_create_and_list_runs_for_model_revision_when_runs_repository_called(t *testing.T) {
 	// given
 	ctx := context.Background()
@@ -116,4 +180,54 @@ func Test_should_create_and_list_runs_for_model_revision_when_runs_repository_ca
 	require.NotNil(t, got[0].SoftwareName)
 	assert.Equal(t, softwareName, *got[0].SoftwareName)
 	assert.Equal(t, "test run", got[0].Metadata["note"])
+}
+
+func Test_should_return_every_artifact_once_in_order_when_artifacts_list_walks_pages_with_after(t *testing.T) {
+	// given
+	ctx := context.Background()
+	createdBy := createDBTestUser(t)
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	for _, offset := range []time.Duration{0, time.Second, time.Second, 2 * time.Second, 3 * time.Second} {
+		createDBTestArtifact(t, createdBy, "keyset artifact", base.Add(offset))
+	}
+	all, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{CreatedBy: &createdBy})
+	require.NoError(t, err)
+	require.Len(t, all, 5)
+
+	// when
+	walked := make([]uuid.UUID, 0, len(all))
+	var after *db.ListPosition
+	for range len(all) {
+		page, err := testDB.Artifacts.List(ctx, db.ArtifactFilters{CreatedBy: &createdBy, Limit: ptr(2), After: after})
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		for _, artifact := range page {
+			walked = append(walked, artifact.ID)
+		}
+		last := page[len(page)-1]
+		after = &db.ListPosition{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	// then
+	expected := make([]uuid.UUID, 0, len(all))
+	for _, artifact := range all {
+		expected = append(expected, artifact.ID)
+	}
+	assert.Equal(t, expected, walked)
+}
+
+func Test_should_reject_after_with_offset_when_artifacts_list_called(t *testing.T) {
+	// given
+	filters := db.ArtifactFilters{
+		Offset: ptr(1),
+		After:  &db.ListPosition{CreatedAt: time.Now().UTC(), ID: uuid.New()},
+	}
+
+	// when
+	_, err := testDB.Artifacts.List(context.Background(), filters)
+
+	// then
+	require.Error(t, err)
 }

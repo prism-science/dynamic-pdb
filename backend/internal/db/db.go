@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,7 +27,10 @@ type DB struct {
 	PolymerEntities             *PolymerEntitiesRepository
 	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
 
-	sqlx      *sqlx.DB
+	sqlx *sqlx.DB
+	// probe is a separate single-connection pool for Ping, so health checks never queue
+	// behind requests that have exhausted the main pool.
+	probe     *sql.DB
 	txManager *TxManager
 }
 
@@ -55,13 +59,22 @@ func NewDB(cfg Config) (*DB, error) {
 		}
 		sqlxDB.SetConnMaxIdleTime(idleTime)
 	}
+	var lifetime time.Duration
 	if cfg.MaxConnectionLifetime != "" {
-		lifetime, err := time.ParseDuration(cfg.MaxConnectionLifetime)
+		lifetime, err = time.ParseDuration(cfg.MaxConnectionLifetime)
 		if err != nil {
 			return nil, fmt.Errorf("db: invalid max_connection_lifetime: %w", err)
 		}
 		sqlxDB.SetConnMaxLifetime(lifetime)
 	}
+
+	probe, err := sql.Open("postgres", dsnFrom(cfg))
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("db: open probe pool: %w", err), sqlxDB.Close())
+	}
+	probe.SetMaxOpenConns(1)
+	probe.SetMaxIdleConns(1)
+	probe.SetConnMaxLifetime(lifetime)
 
 	txManager := NewTxManager(sqlxDB)
 	queriers := DefaultQuerierProvider
@@ -80,19 +93,26 @@ func NewDB(cfg Config) (*DB, error) {
 		PolymerEntities:             NewPolymerEntitiesRepository(sqlxDB, queriers),
 		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
+		probe:                       probe,
 		txManager:                   txManager,
 	}, nil
 }
 
 func (d *DB) Close() error {
+	var errs []error
 	if err := d.sqlx.Close(); err != nil {
-		return fmt.Errorf("db: close: %w", err)
+		errs = append(errs, fmt.Errorf("db: close: %w", err))
 	}
-	return nil
+	if err := d.probe.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("db: close probe pool: %w", err))
+	}
+	return errors.Join(errs...)
 }
 
+// Ping checks that the database is reachable. It uses the dedicated probe connection,
+// so it reports database health rather than how busy the main pool is.
 func (d *DB) Ping(ctx context.Context) error {
-	if err := d.sqlx.PingContext(ctx); err != nil {
+	if err := d.probe.PingContext(ctx); err != nil {
 		return fmt.Errorf("db: ping: %w", err)
 	}
 	return nil
@@ -163,6 +183,9 @@ func dsnFrom(cfg Config) string {
 	}
 	if cfg.ConnectionParams != "" {
 		parts = append(parts, cfg.ConnectionParams)
+	}
+	if cfg.StatementTimeout > 0 {
+		parts = append(parts, fmt.Sprintf("statement_timeout=%d", cfg.StatementTimeout.Milliseconds()))
 	}
 	return strings.Join(parts, " ")
 }

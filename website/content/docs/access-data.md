@@ -31,17 +31,17 @@ Use the returned `data[].id` for subsequent requests. The entry ID in The Dynami
 ```bash
 curl -fsS \
   -H 'Accept: application/vnd.api+json' \
-  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models?limit=100&offset=0'
+  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models?limit=100'
 ```
 
-Each model includes its identifier, metadata, and reported metrics.
+Each model includes its identifier, metadata, and reported metrics. Per-residue data (`residue_data`) is returned only when you request a single model, at `/v1/entries/{entry_id}/models/{model_id}`.
 
 ### 3. Find a model's coordinate file
 
 ```bash
 curl -fsS \
   -H 'Accept: application/vnd.api+json' \
-  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models/dpdb_ube2dzua_m_002/artifacts?levels=L2&limit=100&offset=0'
+  'https://dynamicpdb.com/api/v1/entries/dpdb_ube2dzua/models/dpdb_ube2dzua_m_002/artifacts?levels=L2&limit=100'
 ```
 
 The API calls file records **artifacts**. Each record can include its name, format, checksum, size, and file location in `attributes.uri`.
@@ -62,7 +62,11 @@ Use an output extension that matches the file format.
 
 Bulk download is not currently implemented. Scripts can enumerate records through the API and download available files individually.
 
-List endpoints support `limit` and `offset`, with a maximum of 100 records per request. To retrieve additional pages, use `limit=100` and increase `offset` to `100`, `200`, and so on until an empty `data` array is returned. Retrieve entry-level and model-level files separately.
+List endpoints return at most 100 records per request; set `limit=100` to get the most per page.
+
+Every list is paged by cursor: entries, models, file lists, similar entries and revisions. When more records exist, the response includes `links.next`, the full URL of the next page with the same filters. Request it, and repeat until a response has no `links`. To build the URL yourself, pass the response's `meta.next_cursor` as the `cursor` parameter. The `offset` parameter still works but is deprecated: deep offsets are slower, and records can be skipped or repeated while the data changes.
+
+Retrieve entry-level and model-level files separately. A model's file list also returns the model's runs in `meta` on every page.
 
 The [OpenAPI specification](/api/openapi.yaml) is a machine-readable description of the API, suitable for scripts and LLM agents.
 

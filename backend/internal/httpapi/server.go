@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -30,15 +31,18 @@ type Server struct {
 	authorizer   auth.Authorizer
 	database     *db.DB
 	downloads    analytics.Tracker
+	// publicBaseURL is the API's external base (for example https://dynamicpdb.com/api),
+	// used to build absolute links.next URLs.
+	publicBaseURL string
 }
 
-func GlobalRateLimitMiddleware(env string) func(http.Handler) http.Handler {
+func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
 	resolveClientIP := middleware.ClientIPFromRemoteAddr
 	if env == "production" || env == "dev" {
 		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
 	}
 
-	limitRequests := httprate.LimitBy(100, 10*time.Second, func(r *http.Request) (string, error) {
+	limitRequests := httprate.LimitBy(requests, window, func(r *http.Request) (string, error) {
 		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
 	})
 	return func(next http.Handler) http.Handler {
@@ -53,15 +57,17 @@ func NewServer(
 	jwt *auth.JWT,
 	database *db.DB,
 	downloads analytics.Tracker,
+	publicBaseURL string,
 ) *Server {
 	return &Server{
-		githubClient: githubClient,
-		fileCDN:      fileCDN,
-		authConfig:   authConfig,
-		jwt:          jwt,
-		authorizer:   auth.NewAuthorizer(database),
-		database:     database,
-		downloads:    downloads,
+		githubClient:  githubClient,
+		fileCDN:       fileCDN,
+		authConfig:    authConfig,
+		jwt:           jwt,
+		authorizer:    auth.NewAuthorizer(database),
+		database:      database,
+		downloads:     downloads,
+		publicBaseURL: publicBaseURL,
 	}
 }
 
@@ -94,15 +100,15 @@ func (s *Server) ExchangeGithubCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_REDIRECT_URI", "github redirect uri does not match the configured callback")
 		return
 	case errors.Is(err, github.ErrOAuthNotConfigured):
-		slog.Error("github oauth is not configured")
+		slog.ErrorContext(r.Context(), "github oauth is not configured")
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "github oauth is not configured")
 		return
 	case errors.Is(err, github.ErrIncorrectClientCredentials):
-		slog.Error("github oauth client credentials are invalid")
+		slog.ErrorContext(r.Context(), "github oauth client credentials are invalid")
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "github oauth client credentials are invalid")
 		return
 	case err != nil:
-		slog.Error("github code exchange failed", "err", err)
+		slog.ErrorContext(r.Context(), "github code exchange failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to exchange github authorization code")
 		return
 	}
@@ -117,14 +123,14 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err != nil {
-		slog.Error("github get user failed", "err", err)
+		slog.ErrorContext(r.Context(), "github get user failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to verify github user")
 		return
 	}
 
 	orgs, err := s.githubClient.ListOrgs(r.Context(), accessToken)
 	if err != nil {
-		slog.Error("github list orgs failed", "err", err)
+		slog.ErrorContext(r.Context(), "github list orgs failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list github orgs")
 		return
 	}
@@ -148,7 +154,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		UpdatedAt:   now,
 	})
 	if err != nil {
-		slog.Error("persist user failed", "err", err)
+		slog.ErrorContext(r.Context(), "persist user failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to persist user")
 		return
 	}
@@ -157,7 +163,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		UserID: &persisted.ID,
 	})
 	if err != nil {
-		slog.Error("load user permissions failed", "err", err)
+		slog.ErrorContext(r.Context(), "load user permissions failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load user permissions")
 		return
 	}
@@ -168,7 +174,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 
 	token, expiresAt, err := s.jwt.Issue(persisted.ID)
 	if err != nil {
-		slog.Error("issue jwt failed", "err", err)
+		slog.ErrorContext(r.Context(), "issue jwt failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to issue token")
 		return
 	}
@@ -212,9 +218,15 @@ func (s *Server) Livez(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, ProbeDocument{Meta: ProbeMeta{Status: "ok"}})
 }
 
+// readinessPingTimeout stays below the readiness probe's timeoutSeconds in the Helm chart,
+// so a slow database is reported by this handler instead of by a kubelet timeout.
+const readinessPingTimeout = time.Second
+
 func (s *Server) Readyz(w http.ResponseWriter, r *http.Request) {
-	if err := s.database.Ping(r.Context()); err != nil {
-		slog.Warn("readyz: db ping failed", "err", err)
+	ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
+	defer cancel()
+	if err := s.database.Ping(ctx); err != nil {
+		slog.WarnContext(r.Context(), "readyz: db ping failed", "err", err)
 		writeJSON(w, http.StatusServiceUnavailable, ProbeDocument{Meta: ProbeMeta{Status: "not ready"}})
 		return
 	}
@@ -242,6 +254,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", JSONAPIMediaType)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
+		//nolint:sloglint // No request here; the access log line for this request carries its id and context_error.
 		slog.Error("write json response failed", "err", err)
 	}
 }

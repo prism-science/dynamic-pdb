@@ -30,6 +30,9 @@ type ArtifactFilters struct {
 	Formats         []string
 	Limit           *int
 	Offset          *int
+	// After continues the list (ordered by created_at asc, id asc) past this position.
+	// It cannot be combined with Offset.
+	After *ListPosition
 }
 
 func NewArtifactsRepository(database *sqlx.DB, queriers *QuerierProvider) *ArtifactsRepository {
@@ -202,6 +205,9 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 	if filters.Offset != nil && *filters.Offset < 0 {
 		return "", nil, errors.New("offset must be non-negative")
 	}
+	if filters.After != nil && filters.Offset != nil {
+		return "", nil, errors.New("after and offset cannot be combined")
+	}
 
 	args := map[string]any{}
 	conditions := make([]string, 0)
@@ -237,6 +243,11 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 	if len(filters.Formats) > 0 {
 		conditions = append(conditions, "artifacts.format = any(cast(:formats as text[]))")
 		args["formats"] = pq.Array(filters.Formats)
+	}
+	if filters.After != nil {
+		conditions = append(conditions, "(artifacts.created_at, artifacts.id) > (:after_created_at, :after_id)")
+		args["after_created_at"] = filters.After.CreatedAt
+		args["after_id"] = filters.After.ID
 	}
 
 	if len(conditions) > 0 {

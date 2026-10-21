@@ -13,6 +13,8 @@ import (
 )
 
 const sampleYAML = `
+server:
+  public_base_url: https://api.example.com/api/
 auth:
   allowed_orgs:
     - org-a
@@ -77,6 +79,7 @@ func Test_should_read_config_from_yaml_file(t *testing.T) {
 	assert.Equal(t, "file-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "dynamic-pdb-test", cfg.Auth.JWT.Issuer)
 	assert.Equal(t, 24*time.Hour, cfg.Auth.JWT.TTL)
+	assert.Equal(t, "https://api.example.com/api", cfg.Server.PublicBaseURL, "trailing slash is trimmed")
 	assert.Equal(t, "dynamic_pdb_local", cfg.DB.Name)
 	assert.Equal(t, "http://localhost:9000", cfg.CDN.S3.Endpoint)
 	assert.Equal(t, "us-west-2", cfg.CDN.S3.Region)
@@ -123,6 +126,77 @@ func Test_should_override_s3_bucket_from_env_var(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, "env-bucket", cfg.CDN.S3.Bucket)
+}
+
+func Test_should_default_rate_limit_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 100, cfg.Server.RateLimit.Requests)
+	assert.Equal(t, 10*time.Second, cfg.Server.RateLimit.Window)
+}
+
+func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS", "5000")
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_WINDOW", "1m")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 5000, cfg.Server.RateLimit.Requests)
+	assert.Equal(t, time.Minute, cfg.Server.RateLimit.Window)
+}
+
+func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS", "0")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "server.rate_limit.requests must be positive")
+}
+
+func Test_should_override_public_base_url_from_env_var(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_PUBLIC_BASE_URL", "https://dev.example.com/api")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "https://dev.example.com/api", cfg.Server.PublicBaseURL)
+}
+
+func Test_should_reject_config_when_public_base_url_is_not_absolute_http_url(t *testing.T) {
+	for _, value := range []string{" ", "/api", "ftp://example.com/api", "https://example.com/api?x=1"} {
+		t.Run(value, func(t *testing.T) {
+			// given
+			t.Chdir(writeSampleConfig(t))
+			t.Setenv("DYNAMIC_PDB_SERVER_PUBLIC_BASE_URL", value)
+
+			// when
+			_, err := config.ReadFromFile("test")
+
+			// then
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "server.public_base_url")
+		})
+	}
 }
 
 func Test_should_reject_config_when_auth_secrets_are_missing(t *testing.T) {
@@ -175,6 +249,8 @@ auth:
 func Test_should_accept_auth_secrets_from_env_vars(t *testing.T) {
 	// given
 	t.Chdir(writeConfig(t, "test", `
+server:
+  public_base_url: https://api.example.com/api/
 auth:
   allowed_orgs:
     - org-a
@@ -201,6 +277,8 @@ auth:
 func Test_should_read_local_config_profile(t *testing.T) {
 	// given
 	t.Chdir(writeConfig(t, "local", `
+server:
+  public_base_url: https://api.example.com/api/
 auth:
   allowed_orgs:
     - Astera-org
@@ -270,6 +348,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	require.NoError(t, err)
 	assert.Equal(t, "env-github-secret", cfg.Auth.GitHub.ClientSecret)
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
+	assert.Equal(t, "https://dynamicpdb.com/api", cfg.Server.PublicBaseURL)
 	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
 	assert.Equal(t, "dynamic-pdb-data", cfg.CDN.S3.Bucket)
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
@@ -290,6 +369,7 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	require.NoError(t, err)
 	assert.Equal(t, "env-github-secret", cfg.Auth.GitHub.ClientSecret)
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
+	assert.Equal(t, "https://dev.dynamicpdb.com/api", cfg.Server.PublicBaseURL)
 	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
 	assert.Equal(t, "dev-dynamic-pdb-data", cfg.CDN.S3.Bucket)
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
