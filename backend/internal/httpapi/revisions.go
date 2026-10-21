@@ -835,7 +835,7 @@ func (s *Server) listEntryRevisionGroups(
 		return
 	}
 	// The cursor follows the last group of the SQL page even when that group was skipped
-	// for having no entry revision, so the next page still starts right after it.
+	// for having no matching revisions, so the next page still starts right after it.
 	links, meta, err := nextPageLinksAfter(s, r, groups, hasNextPage, func(last db.RevisionGroup) listCursor {
 		return listCursor{Kind: listCursorKindRevisionGroups, CreatedAt: last.LatestCreatedAt, EntryID: last.EntryID}
 	})
@@ -856,10 +856,9 @@ func (s *Server) entryRevisionGroupItems(
 	createdBy *uuid.UUID,
 	groups []db.RevisionGroup,
 ) ([]EntryRevisionGroupData, error) {
-	items := make([]EntryRevisionGroupData, 0, len(groups))
 	// An empty EntryIDs filter matches every entry, so an empty page stops here.
 	if len(groups) == 0 {
-		return items, nil
+		return []EntryRevisionGroupData{}, nil
 	}
 	entryIDs := make([]string, 0, len(groups))
 	for _, group := range groups {
@@ -892,7 +891,20 @@ func (s *Server) entryRevisionGroupItems(
 	if err != nil {
 		return nil, fmt.Errorf("list active entry revisions of groups: %w", err)
 	}
+	return revisionGroupItemsFromRevisions(ctx, groups, entryRevisions, modelRevisions, activeRevisions)
+}
 
+// revisionGroupItemsFromRevisions builds the page's groups in order from the revisions
+// loaded for them. The groups and the revisions come from separate queries, so a review
+// decision in between can leave a group with no matching revisions; such a group is
+// skipped, which only makes the page shorter.
+func revisionGroupItemsFromRevisions(
+	ctx context.Context,
+	groups []db.RevisionGroup,
+	entryRevisions []domainmodels.EntryRevision,
+	modelRevisions []domainmodels.ModelRevision,
+	activeRevisions []domainmodels.EntryRevision,
+) ([]EntryRevisionGroupData, error) {
 	entryRevisionsByEntryID := revisionsByEntryID(entryRevisions, func(revision domainmodels.EntryRevision) string {
 		return revision.EntryID
 	})
@@ -904,8 +916,14 @@ func (s *Server) entryRevisionGroupItems(
 		activeRevisionByEntryID[revision.EntryID] = revision
 	}
 
+	items := make([]EntryRevisionGroupData, 0, len(groups))
 	for _, group := range groups {
 		groupEntryRevisions := entryRevisionsByEntryID[group.EntryID]
+		groupModelRevisions := modelRevisionsByEntryID[group.EntryID]
+		if len(groupEntryRevisions) == 0 && len(groupModelRevisions) == 0 {
+			slog.WarnContext(ctx, "skip revision group without matching revisions", "entry_id", group.EntryID)
+			continue
+		}
 		displayRevision, hasActiveRevision := activeRevisionByEntryID[group.EntryID]
 		if !hasActiveRevision {
 			if len(groupEntryRevisions) == 0 {
@@ -923,7 +941,6 @@ func (s *Server) entryRevisionGroupItems(
 		for _, revision := range groupEntryRevisions {
 			entrySummaries = append(entrySummaries, entryRevisionSummaryAttributesFromModel(revision))
 		}
-		groupModelRevisions := modelRevisionsByEntryID[group.EntryID]
 		modelSummaries := make([]ModelRevisionSummaryAttributes, 0, len(groupModelRevisions))
 		for _, revision := range groupModelRevisions {
 			modelSummaries = append(modelSummaries, modelRevisionSummaryAttributesFromModel(revision))
