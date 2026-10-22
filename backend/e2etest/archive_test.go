@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,7 +35,9 @@ func serveArchiveFixture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(contents)
+	if _, err := w.Write(contents); err != nil {
+		slog.Error("write archive fixture response", "error", err)
+	}
 }
 
 type ArchiveSuite struct {

@@ -147,7 +147,7 @@ func warningPointers(warnings []ArchiveWarning) []string {
 	return pointers
 }
 
-func Test_should_report_archive_warnings_alongside_validation_warnings(t *testing.T) {
+func Test_should_report_archive_warnings_when_lookup_result_has_warnings(t *testing.T) {
 	// given
 	lookup := &fakeArchiveLookup{result: archive.Result{
 		Entry: archive.EntryMapping{Annotations: archive.Annotations{
@@ -184,7 +184,7 @@ func Test_should_reject_malformed_pdb_id_when_looking_up_archive(t *testing.T) {
 	}
 }
 
-func Test_should_map_lookup_failures_to_status_codes(t *testing.T) {
+func Test_should_map_status_code_when_lookup_fails(t *testing.T) {
 	cases := []struct {
 		name           string
 		err            error

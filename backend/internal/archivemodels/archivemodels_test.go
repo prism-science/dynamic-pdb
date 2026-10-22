@@ -10,7 +10,7 @@ import (
 	"dynamic-pdb/lib/archive"
 )
 
-func Test_should_use_metric_keys_from_the_metric_vocabulary(t *testing.T) {
+func Test_should_accept_archive_metric_keys_when_validated_as_model_metric_keys(t *testing.T) {
 	// given
 	archiveKeys := []string{
 		archive.MetricKeyRFree,
@@ -28,7 +28,7 @@ func Test_should_use_metric_keys_from_the_metric_vocabulary(t *testing.T) {
 	}
 }
 
-func Test_should_use_uniprot_sources_from_the_source_vocabulary(t *testing.T) {
+func Test_should_accept_archive_sources_when_validated_as_model_sources(t *testing.T) {
 	// given
 	sources := []archive.UniProtSource{
 		archive.UniProtSourceSIFTS,
@@ -45,13 +45,18 @@ func Test_should_use_uniprot_sources_from_the_source_vocabulary(t *testing.T) {
 	}
 }
 
-func Test_should_use_structure_methods_from_the_method_vocabulary(t *testing.T) {
+func Test_should_match_model_methods_when_archive_methods_are_compared(t *testing.T) {
 	// given
-	assert.Equal(t, string(models.StructureMethodXRayCrystallography), archive.MethodXRayCrystallography)
-	assert.Equal(t, string(models.StructureMethodCryoEM), archive.MethodCryoEM)
+	archiveMethods := []string{archive.MethodXRayCrystallography, archive.MethodCryoEM}
+
+	// when
+	modelMethods := []string{string(models.StructureMethodXRayCrystallography), string(models.StructureMethodCryoEM)}
+
+	// then
+	assert.Equal(t, modelMethods, archiveMethods)
 }
 
-func Test_should_leave_alignment_mappings_out_unless_requested(t *testing.T) {
+func Test_should_leave_alignment_mappings_out_when_not_requested(t *testing.T) {
 	// given
 	mapping := archive.PolymerEntityMapping{
 		UniProtMappings: []archive.UniProtMapping{{Accession: "P1", Source: archive.UniProtSourceStructRef}},

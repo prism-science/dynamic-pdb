@@ -45,7 +45,7 @@ func Test_should_map_release_and_revision_fields_when_entry_is_released(t *testi
 	assert.Equal(t, "pdbx_database_PDB_obs_spr", mapping.Provenance["supersedes"])
 }
 
-func Test_should_record_provenance_for_every_mapped_entry_field(t *testing.T) {
+func Test_should_record_provenance_for_every_field_when_entry_is_mapped(t *testing.T) {
 	// given
 	details := readFixture[rcsb.EntryDetails](t, "entry_6LU7.json")
 
@@ -158,7 +158,7 @@ func Test_should_report_conflict_when_refinements_disagree(t *testing.T) {
 	assert.Equal(t, "refine[0].ls_R_factor_R_free", mapping.Provenance["metrics.r_free"])
 }
 
-func Test_should_map_model_fields_with_provenance(t *testing.T) {
+func Test_should_map_model_fields_with_provenance_when_model_is_mapped(t *testing.T) {
 	// given
 	details := readFixture[rcsb.EntryDetails](t, "entry_4HHB.json")
 
@@ -240,7 +240,7 @@ func Test_should_warn_when_reference_provenance_is_not_supported(t *testing.T) {
 	})
 }
 
-func Test_should_parse_author_sequence_mapping_with_insertion_code(t *testing.T) {
+func Test_should_parse_insertion_code_when_author_sequence_mapping_has_one(t *testing.T) {
 	// given
 	mapping := []string{"?", "-2", "52A"}
 
@@ -258,7 +258,7 @@ func Test_should_parse_author_sequence_mapping_with_insertion_code(t *testing.T)
 	assert.Equal(t, "A", *insertionCode)
 }
 
-func Test_should_map_polymer_sequence_to_component_ids(t *testing.T) {
+func Test_should_map_component_ids_when_polymer_sequence_has_modified_residue(t *testing.T) {
 	// given
 	polymer := rcsb.PolymerData{Sequence: "A(SEP)L", Type: "polypeptide(L)"}
 
