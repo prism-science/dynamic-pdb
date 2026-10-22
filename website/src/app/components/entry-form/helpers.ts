@@ -164,6 +164,10 @@ export function buildCreateModelInput(
   };
 }
 
+export function hasEntryMethod(method: string): boolean {
+  return method.trim().length > 0;
+}
+
 export function modelValidationMessage(modelDraft: ModelDraft): string | null {
   const modelEntityCount = modelDraft.files.filter(isModelFile).length;
   if (modelEntityCount === 0) {

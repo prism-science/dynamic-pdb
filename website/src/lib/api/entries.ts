@@ -589,6 +589,7 @@ export type CreateModelInput = {
 
 export type CreateEntryInput = EntryProperties & {
   title: string;
+  method: string;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
