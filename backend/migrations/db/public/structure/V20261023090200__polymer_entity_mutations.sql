@@ -12,19 +12,30 @@
 -- flagged 'mutations_unsupported_type' in schema_migration_review with the original value.
 -- The token rule here (split on , or ;, trim whitespace, plain substitution pattern) is the
 -- same as models.ParseMutations in the Go code, so the data sync derives identical values.
+--
+-- One transaction over every polymer entity whose mutations is a string or array: it holds
+-- row locks on those rows until it commits, so run it off-peak.
 
+-- The whitespace class is exactly what Go's strings.TrimSpace (unicode.IsSpace) trims:
+-- U+0009-U+000D, space, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F,
+-- U+3000. btrim only trims the characters it is given, so it would miss NBSP and friends.
 CREATE TEMPORARY TABLE polymer_entity_mutation_tokens AS
 SELECT
     polymer_entities.id AS polymer_entity_id,
     polymer_entities.metadata ->> 'mutations' AS raw,
-    coalesce(jsonb_agg(btrim(tokens.token, E' \t\r\n\f\v') ORDER BY tokens.position)
-             FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') ~ '^[A-Z][1-9][0-9]*[A-Z]$'), '[]'::jsonb) AS accepted,
-    count(*) FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') <> '') AS token_count,
-    count(*) FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') <> ''
-                       AND btrim(tokens.token, E' \t\r\n\f\v') !~ '^[A-Z][1-9][0-9]*[A-Z]$') AS rejected_count
+    coalesce(jsonb_agg(tokens.trimmed ORDER BY tokens.position)
+             FILTER (WHERE tokens.trimmed ~ '^[A-Z][1-9][0-9]*[A-Z]$'), '[]'::jsonb) AS accepted,
+    count(*) FILTER (WHERE tokens.trimmed <> '') AS token_count,
+    count(*) FILTER (WHERE tokens.trimmed <> '' AND tokens.trimmed !~ '^[A-Z][1-9][0-9]*[A-Z]$') AS rejected_count
 FROM polymer_entities
-CROSS JOIN LATERAL regexp_split_to_table(polymer_entities.metadata ->> 'mutations', '[,;]')
-     WITH ORDINALITY AS tokens(token, position)
+CROSS JOIN LATERAL (
+    SELECT regexp_replace(split.token,
+                          '^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$',
+                          '', 'g') AS trimmed,
+           split.position
+    FROM regexp_split_to_table(polymer_entities.metadata ->> 'mutations', '[,;]')
+         WITH ORDINALITY AS split(token, position)
+) tokens
 WHERE jsonb_typeof(polymer_entities.metadata -> 'mutations') = 'string'
 GROUP BY polymer_entities.id;
 

@@ -1,8 +1,9 @@
-# Schema inventory (read-only)
+# Schema inventory
 
 `schema_inventory.sql` is one `SELECT` that lists every record breaking a rule added by the
 C1 schema migrations. It never writes and is not part of Flyway (it lives outside `db/`).
 `internal/db/schema_migrations_test.go` runs it in a read-only transaction against fixture data.
+`requarantine_duplicate_metric_keys.sql` is the one script here that writes; see the recovery steps below.
 
 ```sh
 # repair list: one row per violating record
@@ -30,6 +31,34 @@ Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run
 `run_artifacts_position_chk`, `entry_revisions_composition_lists_chk`) once its violations are repaired:
 `ALTER TABLE <table> VALIDATE CONSTRAINT <name>;` (names are listed by
 `select conname from pg_constraint where contype = 'c' and not convalidated`).
+Ligand/cofactor lists are checked in jsonpath `strict` mode (`strict $.ligands[*] ? (@.type() != "string")`)
+behind a `jsonb_typeof(...) = 'array'` guard: lax mode would unwrap an inner array, so `[["x"]]` would pass as
+all strings. Every element of a merged list must be a JSON string.
+
+## Recovering a failed `V20261023090500` (unique index on revision + metric key)
+
+The index build fails when two links of one model revision still share a metric key, for example a duplicate
+attached after the backfill (the trigger gives every new link its real key, so rerunning the backfill
+`V20261023090400` finds no NULL keys and changes nothing). The build is not transactional: it can leave an
+INVALID index and Flyway records the migration as failed (the same happens after an interrupted
+`090400`, `090500` or `090600`). Recover with:
+
+```sh
+# 1. drop the leftover index (no-op when the build never created one)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'DROP INDEX CONCURRENTLY IF EXISTS model_revision_metrics_revision_key_idx'
+# 2. quarantine the remaining duplicates; idempotent, safe at any time, prints the links it re-keyed
+#    (zero rows: nothing was left). Nothing is deleted; review rows are written.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/inventory/requarantine_duplicate_metric_keys.sql
+# 3. remove the failed row from the Flyway history, then migrate again
+flyway repair
+flyway migrate
+```
+
+The script is the supported way to find and quarantine duplicates before or after the index exists; the
+unique index itself then rejects a new duplicate with a unique violation (the application sees a failed
+write, as with any constraint). A trigger that quarantines a would-be duplicate silently was rejected: it
+would make the "one metric per key" rule unenforceable, and two concurrent inserts do not see each other.
+
 Quarantined duplicate metric rows carry `metric_key = '<key>#duplicate#<metric_id>'` (still unique, so the
 unique index accepts them) and the revision is listed in `schema_migration_review` as
 `duplicate_metric_key:<key>`. The data sync and revision creation copy the quarantine verbatim, so a model

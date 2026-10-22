@@ -15,7 +15,9 @@
 -- Entries without a PDB ID: the models' lists are merged (union, order preserved, deduped)
 -- onto the active revision and the entry is flagged for review.
 --
--- Only lists whose elements are all JSON strings are merged. A value that is not an array
+-- Only lists whose elements are all JSON strings are merged. The check is a strict-mode
+-- jsonpath: in lax mode (the default) the path unwraps inner arrays, so [["x"]] would look
+-- like all strings. The CASE keeps the strict path from running on a value that is not an array. A value that is not an array
 -- (e.g. "ligands": "ATP") or has a non-string element (1, {"a":1}, ["x"], true, null) is
 -- never converted: if any active model of an entry holds such a value for a kind, that kind
 -- stays unset on the entry revision and the entry is flagged
@@ -30,12 +32,14 @@ SELECT
     models.created_at AS model_created_at,
     CASE WHEN jsonb_typeof(model_revisions.metadata -> 'ligands') <> 'null'
          THEN model_revisions.metadata -> 'ligands' END AS ligands,
-    coalesce(jsonb_typeof(model_revisions.metadata -> 'ligands') = 'array'
-             AND NOT jsonb_path_exists(model_revisions.metadata, '$.ligands[*] ? (@.type() != "string")'), false) AS ligands_mergeable,
+    CASE WHEN jsonb_typeof(model_revisions.metadata -> 'ligands') = 'array'
+         THEN NOT jsonb_path_exists(model_revisions.metadata, 'strict $.ligands[*] ? (@.type() != "string")')
+         ELSE false END AS ligands_mergeable,
     CASE WHEN jsonb_typeof(model_revisions.metadata -> 'cofactors') <> 'null'
          THEN model_revisions.metadata -> 'cofactors' END AS cofactors,
-    coalesce(jsonb_typeof(model_revisions.metadata -> 'cofactors') = 'array'
-             AND NOT jsonb_path_exists(model_revisions.metadata, '$.cofactors[*] ? (@.type() != "string")'), false) AS cofactors_mergeable
+    CASE WHEN jsonb_typeof(model_revisions.metadata -> 'cofactors') = 'array'
+         THEN NOT jsonb_path_exists(model_revisions.metadata, 'strict $.cofactors[*] ? (@.type() != "string")')
+         ELSE false END AS cofactors_mergeable
 FROM model_revisions
 JOIN models ON models.id = model_revisions.model_id
 WHERE model_revisions.state = 'active'

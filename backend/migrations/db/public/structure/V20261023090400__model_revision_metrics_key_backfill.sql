@@ -2,13 +2,16 @@
 -- single transaction holds row locks or rewrites the table for long. It takes no table-level
 -- lock beyond ROW EXCLUSIVE, so reads and writes continue. Runs outside a transaction
 -- (executeInTransaction=false) because it commits between batches; it is idempotent and safe
--- to rerun after an interruption (only rows with a NULL metric_key are touched).
+-- to rerun after an interruption (only rows with a NULL metric_key are touched). After an
+-- interruption Flyway has the migration recorded as failed: run `flyway repair`, then migrate.
 --
 -- A link that shares (model_revision_id, metrics.key) with another link of the same revision
 -- is quarantined: its metric_key becomes '<key>#duplicate#<metric_id>', which is unique, so
 -- the unique index (next migrations) accepts it, nothing is deleted or chosen, and the
 -- group is written to schema_migration_review for repair. Repair SQL is in
--- backend/migrations/inventory/README.md.
+-- backend/migrations/inventory/README.md. Duplicates attached after this migration (they get
+-- their real key from the trigger) are quarantined by
+-- backend/migrations/inventory/requarantine_duplicate_metric_keys.sql, not by rerunning this.
 DO $migration$
 DECLARE
     batch_size CONSTANT integer := 5000;

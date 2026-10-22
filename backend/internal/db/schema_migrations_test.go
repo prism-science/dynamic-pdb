@@ -43,6 +43,13 @@ type migratedFixture struct {
 
 func newMigratedFixture(t *testing.T) *migratedFixture {
 	t.Helper()
+	return newMigratedFixtureWithExtraSeed(t, "")
+}
+
+// newMigratedFixtureWithExtraSeed seeds extraSeedSQL right after the shared old-shape fixture,
+// before the C1 migrations run.
+func newMigratedFixtureWithExtraSeed(t *testing.T, extraSeedSQL string) *migratedFixture {
+	t.Helper()
 
 	schemaName := "migration_test_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
 	adminDB, err := sqlx.Connect("postgres", dbTestDSN("sslmode=disable"))
@@ -69,6 +76,10 @@ func newMigratedFixture(t *testing.T) *migratedFixture {
 		if !seeded && strings.HasPrefix(filepath.Base(path), firstSchemaCleanupMigration) {
 			_, err := database.Exec(string(oldShapeFixture))
 			require.NoError(t, err, "seed old-shape fixture")
+			if extraSeedSQL != "" {
+				_, err = database.Exec(extraSeedSQL)
+				require.NoError(t, err, "seed extra fixture")
+			}
 			seeded = true
 		}
 		migrationSQL, err := os.ReadFile(path)
@@ -726,4 +737,291 @@ func metricSoftwareStatus(t *testing.T, rows []inventoryRow) string {
 	}
 	require.Fail(t, "metric_missing_software row missing")
 	return ""
+}
+
+type listShape struct {
+	name      string
+	jsonValue string
+	mergeable bool
+	merged    []any
+}
+
+var compositionListShapes = []listShape{
+	{"empty", `[]`, true, []any{}},
+	{"strings", `["a","b"]`, true, []any{"a", "b"}},
+	{"repeated_strings", `["a","a"]`, true, []any{"a"}},
+	{"lone_nested_array", `[["x"]]`, false, nil},
+	{"lone_empty_nested_array", `[[]]`, false, nil},
+	{"object", `[{"a":1}]`, false, nil},
+	{"number", `[1]`, false, nil},
+	{"null", `[null]`, false, nil},
+	{"boolean", `[true]`, false, nil},
+	{"nested_array_and_string", `[["x"],"y"]`, false, nil},
+	{"string_and_nested_array", `["y",["x"]]`, false, nil},
+	{"mixed", `["a",1,null]`, false, nil},
+}
+
+func shapeEntryID(kind string, index int) string {
+	return fmt.Sprintf("shape_%s_%02d", kind, index)
+}
+
+// shapeSeedSQL creates one entry (no PDB id, one active model revision, one active entry
+// revision) per list shape and kind, with the shape in the model revision's list.
+func shapeSeedSQL() string {
+	var seed strings.Builder
+	for index, shape := range compositionListShapes {
+		for _, kind := range []string{"ligands", "cofactors"} {
+			entryID := shapeEntryID(kind, index)
+			fmt.Fprintf(&seed, `insert into entries(id, created_by) values ('%[1]s', '%[2]s');
+insert into entry_revisions(id, entry_id, state, title, metadata, created_by)
+values (gen_random_uuid(), '%[1]s', 'active', 'shape', '{}', '%[2]s');
+insert into models(id, entry_id, created_by, created_at) values ('m_%[1]s', '%[1]s', '%[2]s', '2026-01-01');
+insert into model_revisions(id, model_id, state, title, metadata, created_by)
+values (gen_random_uuid(), 'm_%[1]s', 'active', 'm', '{"%[3]s":%[4]s}', '%[2]s');
+`, entryID, fixtureUser, kind, shape.jsonValue)
+		}
+	}
+	return seed.String()
+}
+
+func Test_should_merge_only_all_string_lists_when_list_shapes_migrated(t *testing.T) {
+	// given
+	fixture := newMigratedFixtureWithExtraSeed(t, shapeSeedSQL())
+
+	for index, shape := range compositionListShapes {
+		for _, kind := range []string{"ligands", "cofactors"} {
+			entryID := shapeEntryID(kind, index)
+
+			// when
+			entryMetadata := fixture.jsonbAt(t,
+				`select metadata from entry_revisions where entry_id = $1 and state = 'active'`, entryID)
+
+			// then
+			if shape.mergeable {
+				assert.Equal(t, shape.merged, entryMetadata[kind], "%s %s is merged", kind, shape.name)
+				assert.Zero(t, fixture.reviewIssueCount(t, entryID, "ligands_cofactors_not_merged"), "%s %s", kind, shape.name)
+				continue
+			}
+			assert.NotContains(t, entryMetadata, kind, "%s %s is not converted", kind, shape.name)
+			review := fixture.reviewDetails(t, "entry", entryID, "ligands_cofactors_not_merged")
+			assert.Equal(t, true, review[kind+"_not_merged"], "%s %s", kind, shape.name)
+			originals := review["model_lists"].([]any)[0].(map[string]any)[kind]
+			var want any
+			require.NoError(t, json.Unmarshal([]byte(shape.jsonValue), &want))
+			assert.Equal(t, want, originals, "%s %s keeps the original value", kind, shape.name)
+		}
+	}
+}
+
+func (fixture *migratedFixture) reviewIssueCount(t *testing.T, objectID, issue string) int {
+	t.Helper()
+	var count int
+	require.NoError(t, fixture.database.Get(&count,
+		`select count(*) from schema_migration_review where object_id = $1 and issue = $2`, objectID, issue))
+	return count
+}
+
+func Test_should_reject_only_non_string_lists_when_composition_check_runs_on_list_shapes(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+
+	for _, shape := range compositionListShapes {
+		for _, kind := range []string{"ligands", "cofactors"} {
+			// when
+			_, err := fixture.database.Exec(fmt.Sprintf(
+				`insert into entry_revisions(id, entry_id, state, title, metadata, created_by)
+				 values (gen_random_uuid(), 'e_plain', 'archived', 'shape', '{"%s":%s}', $1)`, kind, shape.jsonValue), fixtureUser)
+
+			// then
+			if shape.mergeable {
+				assert.NoError(t, err, "%s %s", kind, shape.name)
+			} else {
+				assert.ErrorContains(t, err, "entry_revisions_composition_lists_chk", "%s %s", kind, shape.name)
+			}
+		}
+	}
+}
+
+func Test_should_report_non_string_lists_when_inventory_runs_on_list_shapes(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	_, err := fixture.database.Exec(`alter table entry_revisions drop constraint entry_revisions_composition_lists_chk`)
+	require.NoError(t, err)
+	for index, shape := range compositionListShapes {
+		_, err := fixture.database.Exec(fmt.Sprintf(`
+			insert into entries(id, created_by) values ('shape_%02[1]d', '%[3]s');
+			insert into entry_revisions(id, entry_id, state, title, metadata, created_by)
+			values (gen_random_uuid(), 'shape_%02[1]d', 'archived', 'shape', '{"ligands":%[2]s,"cofactors":%[2]s}', '%[3]s');
+			insert into models(id, entry_id, created_by) values ('shape_model_%02[1]d', 'shape_%02[1]d', '%[3]s');
+			insert into model_revisions(id, model_id, state, title, metadata, created_by)
+			values (gen_random_uuid(), 'shape_model_%02[1]d', 'archived', 'm', '{"ligands":%[2]s,"cofactors":%[2]s}', '%[3]s')`,
+			index, shape.jsonValue, fixtureUser))
+		require.NoError(t, err, shape.name)
+	}
+	inventorySQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "schema_inventory.sql"))
+	require.NoError(t, err)
+
+	// when
+	var rows []inventoryRow
+	require.NoError(t, fixture.database.Select(&rows, string(inventorySQL)))
+
+	// then
+	reportedEntries := map[string]map[string]bool{}
+	for _, row := range rows {
+		if reportedEntries[row.CheckName] == nil {
+			reportedEntries[row.CheckName] = map[string]bool{}
+		}
+		var details struct {
+			EntryID string `json:"entry_id"`
+			ModelID string `json:"model_id"`
+		}
+		require.NoError(t, json.Unmarshal(row.Details, &details))
+		reportedEntries[row.CheckName][details.EntryID+details.ModelID] = true
+	}
+	for index, shape := range compositionListShapes {
+		entryKey := fmt.Sprintf("shape_%02d", index)
+		modelKey := fmt.Sprintf("shape_model_%02d", index)
+		assert.Equal(t, !shape.mergeable, reportedEntries["entry_revision_malformed_composition_lists"][entryKey], "entry revision %s", shape.name)
+		assert.Equal(t, !shape.mergeable, reportedEntries["model_revision_composition_lists_unmergeable"][modelKey], "model revision %s", shape.name)
+	}
+}
+
+func Test_should_flag_nested_array_mutations_when_inventory_runs(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	_, err := fixture.database.Exec(fmt.Sprintf(`
+		insert into protein_sequences(id, entry_revision_id, source_artifact_id, record_index, header, sequence)
+		values ('%[1]s01', '%[2]s01', '%[3]s', 99, 'h', 'A');
+		insert into polymer_entities(id, protein_sequence_id, metadata)
+		values ('%[4]s99', '%[1]s01', '{"mutations":[["C54T"]]}')`,
+		"00000000-0000-0000-0000-0000000000", fixtureRevisionBase, fixtureArtifact, fixtureEntityBase))
+	require.NoError(t, err)
+	inventorySQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "schema_inventory.sql"))
+	require.NoError(t, err)
+
+	// when
+	var rows []inventoryRow
+	require.NoError(t, fixture.database.Select(&rows, string(inventorySQL)))
+
+	// then
+	var flagged []string
+	for _, row := range rows {
+		if row.CheckName == "polymer_entity_mutations_array_not_strings" {
+			flagged = append(flagged, row.ObjectID.String)
+		}
+	}
+	assert.Contains(t, flagged, fixtureEntityBase+"99")
+}
+
+func Test_should_trim_unicode_whitespace_like_go_when_mutation_strings_migrated(t *testing.T) {
+	// given
+	rawMutations := []string{
+		"C54T ",
+		" K7R , \u0085C97A　",
+		"C54T, ",
+		" ",
+		"C54T\u200b",
+	}
+	var seed strings.Builder
+	fmt.Fprintf(&seed, `insert into protein_sequences(id, entry_revision_id, source_artifact_id, record_index, header, sequence)
+		select ('00000000-0000-0000-0000-00000000c1' || lpad(n::text, 2, '0'))::uuid, '%s01', '%s', 100 + n, 'h', 'A'
+		from generate_series(1, %d) n;
+		`, fixtureRevisionBase, fixtureArtifact, len(rawMutations))
+	for index, raw := range rawMutations {
+		metadata, err := json.Marshal(map[string]string{"mutations": raw})
+		require.NoError(t, err)
+		fmt.Fprintf(&seed, `insert into polymer_entities(id, protein_sequence_id, metadata)
+			values ('00000000-0000-0000-0000-00000000d1%02d', '00000000-0000-0000-0000-00000000c1%02d', '%s');
+			`, index+1, index+1, strings.ReplaceAll(string(metadata), "'", "''"))
+	}
+
+	// when
+	fixture := newMigratedFixtureWithExtraSeed(t, seed.String())
+
+	// then
+	for index, raw := range rawMutations {
+		wantMutations, wantStatus := models.ParseMutations(raw)
+		if wantMutations == nil {
+			wantMutations = []string{}
+		}
+		metadata := fixture.jsonbAt(t, `select metadata from polymer_entities where id = $1`,
+			fmt.Sprintf("00000000-0000-0000-0000-00000000d1%02d", index+1))
+		gotMutations := []string{}
+		for _, mutation := range metadata["mutations"].([]any) {
+			gotMutations = append(gotMutations, mutation.(string))
+		}
+		assert.Equal(t, wantMutations, gotMutations, "%q", raw)
+		assert.Equal(t, string(wantStatus), metadata["mutations_status"], "%q", raw)
+	}
+}
+
+func Test_should_recover_failed_unique_index_when_duplicate_attached_after_backfill(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	indexMigration, err := os.ReadFile(migrationPathWithPrefix(t, "V20261023090500__"))
+	require.NoError(t, err)
+	requarantine, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "requarantine_duplicate_metric_keys.sql"))
+	require.NoError(t, err)
+	_, err = fixture.database.Exec(`drop index model_revision_metrics_revision_key_idx`)
+	require.NoError(t, err)
+	_, err = fixture.database.Exec(`insert into metrics(id, key, value) values
+		('00000000-0000-0000-0000-0000000000a8', 'cc', 1), ('00000000-0000-0000-0000-0000000000a9', 'cc', 2);
+		insert into model_revision_metrics(model_revision_id, metric_id) values
+		('` + fixtureModelRevBase + `05', '00000000-0000-0000-0000-0000000000a8'),
+		('` + fixtureModelRevBase + `05', '00000000-0000-0000-0000-0000000000a9')`)
+	require.NoError(t, err)
+	_, failedBuildErr := fixture.database.Exec(string(indexMigration))
+	require.Error(t, failedBuildErr, "the late duplicate already holds its real key from the trigger")
+	_, err = fixture.database.Exec(`drop index concurrently if exists model_revision_metrics_revision_key_idx`)
+	require.NoError(t, err)
+
+	// when
+	_, requarantineErr := fixture.database.Exec(string(requarantine))
+	_, secondRunErr := fixture.database.Exec(string(requarantine))
+	_, indexErr := fixture.database.Exec(string(indexMigration))
+
+	// then
+	require.NoError(t, requarantineErr)
+	require.NoError(t, secondRunErr, "the script is idempotent")
+	require.NoError(t, indexErr)
+	var keys []string
+	require.NoError(t, fixture.database.Select(&keys,
+		`select metric_key from model_revision_metrics where model_revision_id = $1 order by metric_key`, fixtureModelRevBase+"05"))
+	assert.Equal(t, []string{
+		"cc#duplicate#00000000-0000-0000-0000-0000000000a8",
+		"cc#duplicate#00000000-0000-0000-0000-0000000000a9",
+	}, keys)
+	review := fixture.reviewDetails(t, "model_revision", fixtureModelRevBase+"05", "duplicate_metric_key:cc")
+	assert.Len(t, review["metrics"], 2)
+	assert.Equal(t, 2, linkCountForRevision(t, fixture, fixtureModelRevBase+"05"), "nothing is deleted")
+	var validIndexes int
+	require.NoError(t, fixture.database.Get(&validIndexes,
+		`select count(*) from pg_index where indexrelid = 'model_revision_metrics_revision_key_idx'::regclass and indisvalid`))
+	assert.Equal(t, 1, validIndexes)
+}
+
+func Test_should_leave_clean_data_alone_when_requarantine_script_runs(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	requarantine, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "requarantine_duplicate_metric_keys.sql"))
+	require.NoError(t, err)
+	var keysBefore []string
+	require.NoError(t, fixture.database.Select(&keysBefore, `select metric_key from model_revision_metrics order by model_revision_id, metric_id`))
+
+	// when
+	_, err = fixture.database.Exec(string(requarantine))
+
+	// then
+	require.NoError(t, err)
+	var keysAfter []string
+	require.NoError(t, fixture.database.Select(&keysAfter, `select metric_key from model_revision_metrics order by model_revision_id, metric_id`))
+	assert.Equal(t, keysBefore, keysAfter)
+}
+
+func linkCountForRevision(t *testing.T, fixture *migratedFixture, modelRevisionID string) int {
+	t.Helper()
+	var count int
+	require.NoError(t, fixture.database.Get(&count,
+		`select count(*) from model_revision_metrics where model_revision_id = $1`, modelRevisionID))
+	return count
 }
