@@ -27,3 +27,8 @@ const (
 	RunArtifactDirectionInput  RunArtifactDirection = "input"
 	RunArtifactDirectionOutput RunArtifactDirection = "output"
 )
+
+// RunMetadata is the set of keys run metadata may carry. Open data goes in Extensions.
+type RunMetadata struct {
+	Extensions map[string]any `json:"extensions,omitempty"`
+}

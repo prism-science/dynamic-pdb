@@ -72,6 +72,8 @@ type EntryMetadata struct {
 	Method          *StructureMethod       `json:"method,omitempty"`
 	SpaceGroup      *string                `json:"space_group,omitempty"`
 	Crystallography *EntryCrystallography  `json:"crystallography,omitempty"`
+
+	DepositorPolymerEntities []DepositorPolymerEntity `json:"depositor_polymer_entities,omitempty"`
 }
 
 type EntryCrystallography struct {
@@ -103,7 +105,8 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		pointersEqual(revision.Metadata.Resolution, other.Metadata.Resolution) &&
 		pointersEqual(revision.Metadata.Method, other.Metadata.Method) &&
 		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup) &&
-		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography)
+		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography) &&
+		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities)
 }
 
 func pointersEqual[T comparable](left *T, right *T) bool {

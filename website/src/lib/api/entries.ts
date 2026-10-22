@@ -137,7 +137,7 @@ export type PolymerEntity = {
   description?: string;
   source_organisms: PolymerEntityOrganism[];
   construct?: string;
-  mutations?: string;
+  mutations?: string[];
   uniprot_mappings: PolymerEntityUniProtMapping[];
   created_at: string;
 };

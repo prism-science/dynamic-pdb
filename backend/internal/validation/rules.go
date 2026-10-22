@@ -13,6 +13,10 @@ import (
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// mutationPattern matches a one-letter substitution such as C54T: the original
+// residue, its position, and the new residue.
+var mutationPattern = regexp.MustCompile(`^[A-Z][1-9][0-9]*[A-Z]$`)
+
 func RequiredText(at Pointer, value *string) []FieldError {
 	if value == nil {
 		return []FieldError{required(at)}
@@ -155,7 +159,7 @@ func ModelMetadata(at Pointer, metadata models.ModelMetadata) []FieldError {
 }
 
 func PolymerEntity(at Pointer, metadata models.PolymerEntityMetadata) []FieldError {
-	var fieldErrors []FieldError
+	fieldErrors := mutations(at.Field("mutations"), metadata.Mutations)
 	for index, mapping := range metadata.UniProtMappings {
 		mappingAt := at.Field("uniprot_mappings").Index(index)
 		fieldErrors = append(fieldErrors, RequiredText(mappingAt.Field("accession"), &mapping.Accession)...)
@@ -230,4 +234,66 @@ func sortedKeys[K ~string, V any](values map[K]V) []K {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// NewEntryMethod checks that an entry being created names its experimental method.
+// The method is free text, so nothing beyond presence is checked.
+func NewEntryMethod(at Pointer, metadata models.EntryMetadata) []FieldError {
+	var method *string
+	if metadata.Method != nil {
+		text := string(*metadata.Method)
+		method = &text
+	}
+	return RequiredText(at.Field("method"), method)
+}
+
+// DepositorPolymerEntities checks polymer-entity values a depositor supplies on a
+// create or revision request.
+func DepositorPolymerEntities(at Pointer, entities []models.DepositorPolymerEntity) []FieldError {
+	var fieldErrors []FieldError
+	firstIndexByLabel := make(map[string]int, len(entities))
+	for index, entity := range entities {
+		entityAt := at.Index(index)
+		labelAt := entityAt.Field("label_entity_id")
+		labelErrors := RequiredText(labelAt, &entity.LabelEntityID)
+		fieldErrors = append(fieldErrors, labelErrors...)
+		if len(labelErrors) == 0 {
+			if firstIndex, seen := firstIndexByLabel[entity.LabelEntityID]; seen {
+				fieldErrors = append(fieldErrors, FieldError{
+					Pointer: labelAt,
+					Code:    CodeDuplicate,
+					Detail:  fmt.Sprintf("entity %q is already described at %s", entity.LabelEntityID, at.Index(firstIndex)),
+				})
+			} else {
+				firstIndexByLabel[entity.LabelEntityID] = index
+			}
+		}
+		fieldErrors = append(fieldErrors, mutations(entityAt.Field("mutations"), entity.Mutations)...)
+		for organismIndex, organism := range entity.SourceOrganisms {
+			organismAt := entityAt.Field("source_organisms").Index(organismIndex)
+			fieldErrors = append(fieldErrors, RequiredText(organismAt.Field("scientific_name"), &organism.ScientificName)...)
+			if organism.NCBITaxonomyID != nil && *organism.NCBITaxonomyID <= 0 {
+				fieldErrors = append(fieldErrors, FieldError{
+					Pointer: organismAt.Field("ncbi_taxonomy_id"),
+					Code:    CodeOutOfRange,
+					Detail:  "must be greater than 0",
+				})
+			}
+		}
+	}
+	return fieldErrors
+}
+
+func mutations(at Pointer, values []string) []FieldError {
+	var fieldErrors []FieldError
+	for index, value := range values {
+		if !mutationPattern.MatchString(value) {
+			fieldErrors = append(fieldErrors, FieldError{
+				Pointer: at.Index(index),
+				Code:    CodeInvalidFormat,
+				Detail:  "must be one substitution such as C54T: original residue, position, new residue",
+			})
+		}
+	}
+	return fieldErrors
 }

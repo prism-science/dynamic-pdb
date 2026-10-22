@@ -167,7 +167,7 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	labelEntityID := "1"
 	description := "Spike glycoprotein"
 	construct := "receptor-binding domain"
-	mutations := "D614G,N501Y,E484K"
+	mutations := []string{"D614G", "N501Y", "E484K"}
 	taxonomyID := 2697049
 	uniProtRelease := "2026_03"
 	createdAt := time.Now().UTC()
@@ -182,7 +182,7 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 				NCBITaxonomyID: &taxonomyID,
 			}},
 			Construct: &construct,
-			Mutations: &mutations,
+			Mutations: mutations,
 			UniProtMappings: []models.PolymerEntityUniProtReference{{
 				Accession:      "P0DTC2",
 				Source:         models.UniProtReferenceSourceSIFTS,
@@ -225,7 +225,7 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	s.Equal(labelEntityID, stringValue(entity.LabelEntityId))
 	s.Equal(description, stringValue(entity.Description))
 	s.Equal(construct, stringValue(entity.Construct))
-	s.Equal(mutations, stringValue(entity.Mutations))
+	s.Equal(mutations, entity.Mutations)
 	s.Equal([]httpapi.PolymerEntityOrganism{{
 		ScientificName: "Severe acute respiratory syndrome coronavirus 2",
 		NcbiTaxonomyId: &taxonomyID,
@@ -586,16 +586,23 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 
 	// then
 	oldShapeErrors := decodeErrorResponseForTest(s.T(), oldShapeResponse, http.StatusUnprocessableEntity)
-	s.Require().Len(oldShapeErrors, 1)
+	s.Require().Len(oldShapeErrors, 2)
 	s.Equal("REQUIRED", stringValue(oldShapeErrors[0].Code))
 	s.Require().NotNil(oldShapeErrors[0].Source)
 	s.Equal("/entry/title", oldShapeErrors[0].Source.Pointer)
+	s.Require().NotNil(oldShapeErrors[1].Source)
+	s.Equal("/entry/method", oldShapeErrors[1].Source.Pointer)
 	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
 }
 
 func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionAttributes {
 	t.Helper()
+	if entry, ok := request["entry"].(map[string]any); ok {
+		if _, hasMethod := entry["method"]; !hasMethod {
+			entry["method"] = "X-ray crystallography"
+		}
+	}
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := postJSONWithToken(t, "/v1/entries", request, token)
 	document := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](t, response, http.StatusCreated)
@@ -922,7 +929,7 @@ func runByID(runs []httpapi.Run, id uuid.UUID) *httpapi.Run {
 
 func metricByKey(metrics []httpapi.Metric, key string) *httpapi.Metric {
 	for index := range metrics {
-		if metrics[index].Key == key {
+		if string(metrics[index].Key) == key {
 			return &metrics[index]
 		}
 	}

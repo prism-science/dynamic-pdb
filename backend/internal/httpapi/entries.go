@@ -188,6 +188,10 @@ func (s *Server) createInitialEntryRevision(
 	if err != nil {
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("decode initial entry metadata: %w", err)
 	}
+	if metadata.Method != nil && strings.TrimSpace(string(*metadata.Method)) == "" {
+		metadata.Method = nil
+	}
+	metadata.DepositorPolymerEntities = depositorPolymerEntitiesFromRequest(req.Entry.PolymerEntities)
 	now := time.Now().UTC()
 	attributes := CreateEntryRevisionAttributes{
 		EntryId:      entryID,
@@ -326,6 +330,18 @@ func applyEntryRevisionChange(
 	}
 	if _, present := fields["crystallography"]; present {
 		revision.Metadata.Crystallography = metadata.Crystallography
+	}
+	if raw, present := fields["change_summary"]; present {
+		revision.ChangeSummary = nil
+		if !isJSONNull(raw) {
+			revision.ChangeSummary = trimmedStringPtr(change.ChangeSummary)
+		}
+	}
+	if raw, present := fields["polymer_entities"]; present {
+		if isJSONNull(raw) {
+			return invalidRequest("entry polymer_entities cannot be null")
+		}
+		revision.Metadata.DepositorPolymerEntities = depositorPolymerEntitiesFromRequest(change.PolymerEntities)
 	}
 	return nil
 }
@@ -629,6 +645,12 @@ func (s *Server) createModelRevisionGraph(
 				revision.ThumbnailImageURL = nil
 			} else {
 				revision.ThumbnailImageURL = trimmedStringPtr(data.ThumbnailImageUrl)
+			}
+		}
+		if raw, present := payload.ModelFields["change_summary"]; present {
+			revision.ChangeSummary = nil
+			if !isJSONNull(raw) {
+				revision.ChangeSummary = trimmedStringPtr(data.ChangeSummary)
 			}
 		}
 		if raw, present := payload.ModelFields["primary_artifact_id"]; present {
@@ -1274,7 +1296,7 @@ func (s *Server) createMetric(ctx context.Context, req CreateMetricRequest, now 
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("metric id is required")
 	}
-	key := metricKeyFromRequest(req.Key)
+	key := metricKeyFromRequest(string(req.Key))
 	if key == "" {
 		return nil, invalidRequest("metric key is required")
 	}
@@ -1518,7 +1540,7 @@ func validateArtifactRequests(requests *[]CreateArtifactRequest, scope artifactA
 func metricsFromModels(metrics []domainmodels.Metric) []Metric {
 	items := make([]Metric, 0, len(metrics))
 	for _, metric := range metrics {
-		items = append(items, Metric{Id: metric.ID, Key: string(metric.Key), Value: metric.Value, CreatedAt: metric.CreatedAt})
+		items = append(items, Metric{Id: metric.ID, Key: MetricKey(metric.Key), Value: metric.Value, CreatedAt: metric.CreatedAt})
 	}
 	return items
 }
@@ -1887,11 +1909,13 @@ func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPaylo
 var entryRevisionFields = map[string]struct{}{
 	"title": {}, "thumbnail_image_url": {}, "external_refs": {}, "details": {},
 	"resolution": {}, "method": {}, "space_group": {}, "crystallography": {},
+	"change_summary": {}, "polymer_entities": {},
 }
 
 var modelRevisionFields = map[string]struct{}{
 	"title": {}, "thumbnail_image_url": {}, "metadata": {},
 	"idempotency_key": {}, "primary_artifact_id": {}, "artifacts": {}, "runs": {}, "metrics": {},
+	"change_summary": {},
 }
 
 func validateRevisionFields(fields map[string]json.RawMessage, allowed map[string]struct{}) error {
