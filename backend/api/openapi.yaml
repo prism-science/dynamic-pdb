@@ -3115,7 +3115,7 @@ components:
           type: string
         source:
           type: string
-          enum: [sifts, struct_ref]
+          enum: [sifts, struct_ref, alignment]
         unp_release:
           type: string
 

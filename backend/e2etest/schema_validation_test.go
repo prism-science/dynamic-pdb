@@ -149,7 +149,7 @@ func (s *SchemaValidationSuite) Test_should_return_every_field_error_and_write_n
 	s.Empty(decodeEntryRevisionGroupsForTest(s.T(), revisionsResponse))
 }
 
-func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_is_log_only() {
+func (s *SchemaValidationSuite) Test_should_accept_out_of_range_fraction_when_mode_is_log_only() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-owner", 8406)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
@@ -161,8 +161,8 @@ func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_
 	response := jsonRequestToServerWithToken(
 		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
 		map[string]any{"model": map[string]any{
-			"title":   "model accepted in log-only mode",
-			"metrics": []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
+			"title":    "model accepted in log-only mode",
+			"metadata": map[string]any{"altloc_fraction": 1.5},
 		}},
 		ownerToken,
 	)

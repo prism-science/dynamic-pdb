@@ -104,8 +104,9 @@ export type PolymerEntityOrganism = {
 };
 
 /** Where the accession came from: the wwPDB/EBI mapping, or the depositor's
- *  own struct_ref record. Only SIFTS mappings carry a UniProt release. */
-export type PolymerEntityUniProtSource = "sifts" | "struct_ref";
+ *  own struct_ref record, or a sequence alignment. SIFTS and alignment mappings
+ *  carry a UniProt release. */
+export type PolymerEntityUniProtSource = "sifts" | "struct_ref" | "alignment";
 
 export type PolymerEntityUniProtMapping = {
   accession: string;

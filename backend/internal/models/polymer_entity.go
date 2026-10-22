@@ -22,6 +22,8 @@ type PolymerEntityMetadata struct {
 	SourceOrganisms []PolymerEntityOrganism         `json:"source_organisms,omitempty"`
 	Construct       *string                         `json:"construct,omitempty"`
 	Mutations       []string                        `json:"mutations,omitempty"`
+	MutationsRaw    *string                         `json:"mutations_raw,omitempty"`
+	MutationsStatus *string                         `json:"mutations_status,omitempty"`
 	UniProtMappings []PolymerEntityUniProtReference `json:"uniprot_mappings,omitempty"`
 }
 
