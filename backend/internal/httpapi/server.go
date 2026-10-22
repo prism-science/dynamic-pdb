@@ -21,6 +21,7 @@ import (
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 type Server struct {
@@ -33,7 +34,8 @@ type Server struct {
 	downloads    analytics.Tracker
 	// publicBaseURL is the API's external base (for example https://dynamicpdb.com/api),
 	// used to build absolute links.next URLs.
-	publicBaseURL string
+	publicBaseURL  string
+	validationMode validation.Mode
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
@@ -58,16 +60,18 @@ func NewServer(
 	database *db.DB,
 	downloads analytics.Tracker,
 	publicBaseURL string,
+	validationMode validation.Mode,
 ) *Server {
 	return &Server{
-		githubClient:  githubClient,
-		fileCDN:       fileCDN,
-		authConfig:    authConfig,
-		jwt:           jwt,
-		authorizer:    auth.NewAuthorizer(database),
-		database:      database,
-		downloads:     downloads,
-		publicBaseURL: publicBaseURL,
+		githubClient:   githubClient,
+		fileCDN:        fileCDN,
+		authConfig:     authConfig,
+		jwt:            jwt,
+		authorizer:     auth.NewAuthorizer(database),
+		database:       database,
+		downloads:      downloads,
+		publicBaseURL:  publicBaseURL,
+		validationMode: validationMode,
 	}
 }
 

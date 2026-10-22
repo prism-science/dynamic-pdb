@@ -33,7 +33,7 @@ func (s *ListPaginationSuite) Test_should_return_each_matching_entry_once_when_f
 	createdNewestFirst := make([]string, 0, 5)
 	for index := range 5 {
 		entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-			"entry": map[string]any{"title": fmt.Sprintf("%s entry %d", searchToken, index)},
+			"entry": map[string]any{"title": fmt.Sprintf("%s entry %d", searchToken, index), "method": testEntryMethod},
 		})
 		createdNewestFirst = append([]string{entry.EntryId}, createdNewestFirst...)
 	}
@@ -61,7 +61,8 @@ func (s *ListPaginationSuite) Test_should_keep_matching_protein_sequences_when_p
 	for index := range 3 {
 		entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 			"entry": map[string]any{
-				"title": fmt.Sprintf("sequence cursor entry %d", index),
+				"method": testEntryMethod,
+				"title":  fmt.Sprintf("sequence cursor entry %d", index),
 				"artifacts": []map[string]any{
 					artifactRequest(uuid.New(), "entry FASTA", "L0", "fasta", "s3://entry/sequence.fasta", map[string]any{
 						"records": []map[string]any{{"header": "entry", "sequence": "MK" + sequence + "GG"}},
@@ -84,7 +85,7 @@ func (s *ListPaginationSuite) Test_should_return_each_entry_model_once_in_order_
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "cursor-models-owner", 8303)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "cursor models entry"},
+		"entry": map[string]any{"title": "cursor models entry", "method": testEntryMethod},
 	})
 	createdOldestFirst := make([]string, 0, 5)
 	for index := range 5 {
@@ -119,7 +120,7 @@ func (s *ListPaginationSuite) Test_should_continue_offset_request_with_next_curs
 	searchToken := "cursoroffset" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	for index := range 3 {
 		createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-			"entry": map[string]any{"title": fmt.Sprintf("%s entry %d", searchToken, index)},
+			"entry": map[string]any{"title": fmt.Sprintf("%s entry %d", searchToken, index), "method": testEntryMethod},
 		})
 	}
 
@@ -162,6 +163,7 @@ func (s *ListPaginationSuite) Test_should_return_each_entry_artifact_once_when_f
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "cursor-artifacts-owner", 8305)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
+			"method":    testEntryMethod,
 			"title":     "cursor artifacts entry",
 			"artifacts": artifactRequestsForTest(3, "L0", "txt"),
 		},
@@ -189,7 +191,7 @@ func (s *ListPaginationSuite) Test_should_return_each_model_artifact_once_with_r
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "cursor-model-artifacts-owner", 8306)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "cursor model artifacts entry"},
+		"entry": map[string]any{"title": "cursor model artifacts entry", "method": testEntryMethod},
 	})
 	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
 		"model": map[string]any{
@@ -233,7 +235,7 @@ func (s *ListPaginationSuite) Test_should_return_each_revision_group_once_newest
 	createdNewestFirst := make([]string, 0, 3)
 	for index := range 3 {
 		entry := createEntryForTest(s.T(), authorToken, map[string]any{
-			"entry": map[string]any{"title": fmt.Sprintf("cursor group entry %d", index)},
+			"entry": map[string]any{"title": fmt.Sprintf("cursor group entry %d", index), "method": testEntryMethod},
 		})
 		createdNewestFirst = append([]string{entry.EntryId}, createdNewestFirst...)
 	}
@@ -259,7 +261,7 @@ func (s *ListPaginationSuite) Test_should_return_each_entry_revision_once_newest
 	authorToken := issueEntryTokenForGitHubIDForTest(s.T(), "cursor-entry-revisions-author", 8308)
 	authorID := tokenUserIDForTest(s.T(), authorToken)
 	entry := createAndActivateEntryForTest(s.T(), authorToken, map[string]any{
-		"entry": map[string]any{"title": "cursor entry revisions"},
+		"entry": map[string]any{"title": "cursor entry revisions", "method": testEntryMethod},
 	})
 	createdNewestFirst := []uuid.UUID{entry.RevisionId}
 	for index := range 2 {
@@ -292,7 +294,7 @@ func (s *ListPaginationSuite) Test_should_return_each_model_revision_once_oldest
 	// given
 	authorToken := issueEntryTokenForGitHubIDForTest(s.T(), "cursor-model-revisions-author", 8309)
 	entry := createAndActivateEntryForTest(s.T(), authorToken, map[string]any{
-		"entry": map[string]any{"title": "cursor model revisions entry"},
+		"entry": map[string]any{"title": "cursor model revisions entry", "method": testEntryMethod},
 	})
 	model := createAndActivateModelForTest(s.T(), authorToken, entry.EntryId, map[string]any{
 		"model": map[string]any{"title": "cursor model revisions model"},
@@ -331,7 +333,7 @@ func (s *ListPaginationSuite) Test_should_reject_cursor_from_another_list_on_rev
 	entry := createAndActivateEntryForTest(
 		s.T(),
 		issueEntryTokenForGitHubIDForTest(s.T(), "cursor-reject-owner", 8310),
-		map[string]any{"entry": map[string]any{"title": "cursor reject entry"}},
+		map[string]any{"entry": map[string]any{"title": "cursor reject entry", "method": testEntryMethod}},
 	)
 	cases := map[string]string{
 		"revision groups":      "/v1/entries/revisions?state=in_review&cursor=" + modelsCursor,

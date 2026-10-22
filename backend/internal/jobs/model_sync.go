@@ -13,27 +13,31 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 )
 
 type modelSyncStrategy struct {
-	database   *db.DB
-	rcsbClient *rcsb.RemoteClient
-	logger     *slog.Logger
-	now        func() time.Time
+	database       *db.DB
+	rcsbClient     *rcsb.RemoteClient
+	logger         *slog.Logger
+	validationMode validation.Mode
+	now            func() time.Time
 }
 
 func newModelSyncStrategy(
 	database *db.DB,
 	rcsbClient *rcsb.RemoteClient,
 	logger *slog.Logger,
+	validationMode validation.Mode,
 	now func() time.Time,
 ) *modelSyncStrategy {
 	return &modelSyncStrategy{
-		database:   database,
-		rcsbClient: rcsbClient,
-		logger:     logger,
-		now:        now,
+		database:       database,
+		rcsbClient:     rcsbClient,
+		logger:         logger,
+		validationMode: validationMode,
+		now:            now,
 	}
 }
 
@@ -87,6 +91,19 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 	)
 	if !modelRevisionChanged && !metricsChanged {
 		return nil
+	}
+	for index := range desiredMetrics {
+		desiredMetrics[index].ID = uuid.New()
+	}
+	if err := s.validationMode.Apply(
+		ctx,
+		s.logger,
+		validateModelUpdate(desiredMetrics),
+		"entry_id", entryID,
+		"model_id", modelID,
+		"pdb_id", pdbID,
+	); err != nil {
+		return fmt.Errorf("validate model update: %w", err)
 	}
 
 	if err := s.saveModelUpdate(
@@ -288,7 +305,6 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 		}
 	}
 	for _, desiredMetric := range desiredMetrics {
-		desiredMetric.ID = uuid.New()
 		desiredMetric.CreatedAt = createdAt
 		createdMetric, err := s.database.Metrics.Create(ctx, desiredMetric)
 		if err != nil {
@@ -425,4 +441,12 @@ func isRCSBModelMetric(key models.MetricKey) bool {
 	default:
 		return false
 	}
+}
+
+func validateModelUpdate(desiredMetrics []models.Metric) []validation.FieldError {
+	metrics := make([]validation.Metric, 0, len(desiredMetrics))
+	for _, metric := range desiredMetrics {
+		metrics = append(metrics, validation.Metric{ID: metric.ID, Key: metric.Key, Value: new(metric.Value)})
+	}
+	return validation.ValidateModelRevisionChange(validation.ModelChange{Metrics: validation.Present(&metrics)})
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dynamic-pdb/backend/internal/config"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 const sampleYAML = `
@@ -167,6 +168,44 @@ func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testi
 	// then
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "server.rate_limit.requests must be positive")
+}
+
+func Test_should_enforce_validation_when_config_does_not_set_mode(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
+}
+
+func Test_should_override_validation_mode_from_env_var(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "log_only")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+}
+
+func Test_should_reject_config_when_validation_mode_is_unknown(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "warn")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "validation.mode: unknown validation mode: warn")
 }
 
 func Test_should_override_public_base_url_from_env_var(t *testing.T) {

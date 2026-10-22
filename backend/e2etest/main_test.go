@@ -26,6 +26,7 @@ import (
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 // testPublicBaseURL stands in for the ingress URL, whose /api prefix this server never sees.
@@ -142,7 +143,14 @@ func TestMain(m *testing.M) {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
 	server := httpapi.NewServer(
-		githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
+		githubClient,
+		fileCDN,
+		authConfig,
+		jwt,
+		testDatabase,
+		analytics.New(analytics.Config{}),
+		testPublicBaseURL,
+		validation.ModeEnforce,
 	)
 
 	router := chi.NewRouter()

@@ -17,6 +17,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 var (
@@ -147,6 +148,14 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	input, err := createEntryValidationInput(req)
+	if s.writeMutationError(r.Context(), w, err, "create entry") {
+		return
+	}
+	if s.writeMutationError(r.Context(), w, s.checkSchema(r, validation.ValidateCreateEntry(input)), "create entry") {
 		return
 	}
 
@@ -337,6 +346,14 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 		return
 	}
 
+	input, err := modelValidationInput(request.Model)
+	if s.writeMutationError(r.Context(), w, err, "create model") {
+		return
+	}
+	if s.writeMutationError(r.Context(), w, s.checkSchema(r, validation.ValidateCreateModel(input)), "create model") {
+		return
+	}
+
 	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID)
 	if s.writeMutationError(r.Context(), w, err, "create model") {
 		return
@@ -517,6 +534,16 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+
+	input, err := modelChangeValidationInput(payload)
+	if s.writeMutationError(r.Context(), w, err, "create model revision") {
+		return
+	}
+	if s.writeMutationError(
+		r.Context(), w, s.checkSchema(r, validation.ValidateModelRevisionChange(input)), "create model revision",
+	) {
 		return
 	}
 
@@ -1247,12 +1274,15 @@ func (s *Server) createMetric(ctx context.Context, req CreateMetricRequest, now 
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("metric id is required")
 	}
-	key := strings.TrimSpace(req.Key)
+	key := strings.TrimSpace(string(req.Key))
 	if key == "" {
 		return nil, invalidRequest("metric key is required")
 	}
+	if req.Value == nil {
+		return nil, invalidRequest("metric %s value is required", key)
+	}
 	metric, err := s.database.Metrics.Create(ctx, domainmodels.Metric{
-		ID: req.Id, Key: domainmodels.MetricKey(key), Value: req.Value, CreatedAt: now,
+		ID: req.Id, Key: domainmodels.MetricKey(key), Value: *req.Value, CreatedAt: now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create metric: %w", err)
@@ -1423,20 +1453,16 @@ const (
 	artifactAttachmentScopeModel artifactAttachmentScope = "model"
 )
 
-func artifactTypeFromRequest(requested *ArtifactType) (domainmodels.ArtifactType, error) {
-	if requested == nil {
+func artifactTypeFromRequest(requested ArtifactType) (domainmodels.ArtifactType, error) {
+	if requested == "" {
+		// Only reachable in log_only validation mode, which keeps the pre-v0.2.0 default.
 		return domainmodels.ArtifactTypeOther, nil
 	}
-	typeValue := domainmodels.ArtifactType(*requested)
-	switch typeValue {
-	case domainmodels.ArtifactTypeModel,
-		domainmodels.ArtifactTypeStructureFactors,
-		domainmodels.ArtifactTypeFASTA,
-		domainmodels.ArtifactTypeOther:
-		return typeValue, nil
-	default:
-		return "", invalidRequest("unsupported artifact type %q", *requested)
+	artifactType := domainmodels.ArtifactType(requested)
+	if err := artifactType.Validate(); err != nil {
+		return "", invalidRequest("unsupported artifact type %q", requested)
 	}
+	return artifactType, nil
 }
 
 func validateArtifactRequests(requests *[]CreateArtifactRequest, scope artifactAttachmentScope) error {
@@ -1884,11 +1910,14 @@ func isUniqueConstraint(err error, constraint string) bool {
 }
 
 func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
+	var validationErr *validation.Error
 	switch {
 	case err == nil:
 		return false
 	case errors.Is(err, db.ErrEntryRevisionNotFound), errors.Is(err, db.ErrModelRevisionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry or model not found")
+	case errors.As(err, &validationErr):
+		writeValidationErrors(w, validationErr.FieldErrors)
 	case errors.Is(err, errInvalidRequest):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	case errors.Is(err, errConflict), errors.Is(err, db.ErrEntryRevisionConflict), errors.Is(err, db.ErrModelRevisionConflict),

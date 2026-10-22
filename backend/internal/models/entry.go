@@ -133,3 +133,12 @@ const (
 	EntryStateActive  EntryState = "active"
 	EntryStateDeleted EntryState = "deleted"
 )
+
+func (state EntryState) Validate() error {
+	switch state {
+	case EntryStateNew, EntryStateActive, EntryStateDeleted:
+		return nil
+	default:
+		return fmt.Errorf("unknown entry state: %s", state)
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID string) {
@@ -24,6 +25,12 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+	if s.writeMutationError(
+		r.Context(), w, s.checkSchema(r, validation.ValidateEntryRevisionChange(entryChangeValidationInput(payload))),
+		"create entry revision",
+	) {
 		return
 	}
 	result, err := s.createEntryRevisionGraph(r.Context(), entryID, payload, user.ID)
@@ -796,16 +803,10 @@ func (s *Server) requirePathUser(w http.ResponseWriter, r *http.Request, userID 
 }
 
 func validateRevisionState(state domainmodels.RevisionState) error {
-	switch state {
-	case domainmodels.RevisionStatePending,
-		domainmodels.RevisionStateInReview,
-		domainmodels.RevisionStateActive,
-		domainmodels.RevisionStateRejected,
-		domainmodels.RevisionStateArchived:
-		return nil
-	default:
+	if err := state.Validate(); err != nil {
 		return invalidRequest("invalid revision state")
 	}
+	return nil
 }
 
 func (s *Server) listEntryRevisionGroups(

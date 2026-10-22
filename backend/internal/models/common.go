@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 type RevisionState string
 
 const (
@@ -9,3 +11,16 @@ const (
 	RevisionStateRejected RevisionState = "rejected"
 	RevisionStateArchived RevisionState = "archived"
 )
+
+func (state RevisionState) Validate() error {
+	switch state {
+	case RevisionStatePending,
+		RevisionStateInReview,
+		RevisionStateActive,
+		RevisionStateRejected,
+		RevisionStateArchived:
+		return nil
+	default:
+		return fmt.Errorf("unknown revision state: %s", state)
+	}
+}

@@ -9,16 +9,18 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
 
 type entrySyncStrategy struct {
-	database    *db.DB
-	rcsbClient  *rcsb.RemoteClient
-	siftsClient *sifts.RemoteClient
-	logger      *slog.Logger
-	now         func() time.Time
+	database       *db.DB
+	rcsbClient     *rcsb.RemoteClient
+	siftsClient    *sifts.RemoteClient
+	logger         *slog.Logger
+	validationMode validation.Mode
+	now            func() time.Time
 }
 
 func newEntrySyncStrategy(
@@ -26,14 +28,16 @@ func newEntrySyncStrategy(
 	rcsbClient *rcsb.RemoteClient,
 	siftsClient *sifts.RemoteClient,
 	logger *slog.Logger,
+	validationMode validation.Mode,
 	now func() time.Time,
 ) *entrySyncStrategy {
 	return &entrySyncStrategy{
-		database:    database,
-		rcsbClient:  rcsbClient,
-		siftsClient: siftsClient,
-		logger:      logger,
-		now:         now,
+		database:       database,
+		rcsbClient:     rcsbClient,
+		siftsClient:    siftsClient,
+		logger:         logger,
+		validationMode: validationMode,
+		now:            now,
 	}
 }
 
@@ -89,6 +93,15 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 	if !entryRevisionChanged && !polymerEntitiesChanged {
 		return nil
 	}
+	if err := s.validationMode.Apply(
+		ctx,
+		s.logger,
+		validateEntryUpdate(desiredRevision, desiredPolymerEntities),
+		"entry_id", entryID,
+		"pdb_id", pdbID,
+	); err != nil {
+		return fmt.Errorf("validate entry update: %w", err)
+	}
 
 	if err := s.saveEntryUpdate(
 		ctx,
@@ -100,4 +113,29 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 		return fmt.Errorf("save entry update: %w", err)
 	}
 	return nil
+}
+
+// validateEntryUpdate checks the RCSB values the sync writes; the sync always overwrites every one of them.
+func validateEntryUpdate(
+	desiredRevision models.EntryRevision,
+	desiredPolymerEntities []models.PolymerEntity,
+) []validation.FieldError {
+	var method *string
+	if desiredRevision.Metadata.Method != nil {
+		method = new(string(*desiredRevision.Metadata.Method))
+	}
+	fieldErrors := validation.ValidateEntryRevisionChange(validation.EntryChange{
+		Title:      validation.Present(desiredRevision.Title),
+		Method:     validation.Present(method),
+		Resolution: validation.Present(desiredRevision.Metadata.Resolution),
+	})
+	for entityIndex, entity := range desiredPolymerEntities {
+		for mappingIndex, mapping := range entity.Metadata.UniProtMappings {
+			fieldErrors = append(fieldErrors, validation.ValidateUniProtMapping(
+				fmt.Sprintf("/polymer_entities/%d/uniprot_mappings/%d", entityIndex, mappingIndex),
+				mapping,
+			)...)
+		}
+	}
+	return fieldErrors
 }

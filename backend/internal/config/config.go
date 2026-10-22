@@ -12,14 +12,22 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 type Config struct {
-	Server    ServerConfig     `mapstructure:"server"`
-	Auth      auth.Config      `mapstructure:"auth"`
-	DB        db.Config        `mapstructure:"db"`
-	CDN       cdn.Config       `mapstructure:"cdn"`
-	Analytics analytics.Config `mapstructure:"analytics"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Auth       auth.Config      `mapstructure:"auth"`
+	DB         db.Config        `mapstructure:"db"`
+	CDN        cdn.Config       `mapstructure:"cdn"`
+	Analytics  analytics.Config `mapstructure:"analytics"`
+	Validation ValidationConfig `mapstructure:"validation"`
+}
+
+// ValidationConfig controls schema validation of writes. Mode log_only logs violations instead of
+// rejecting them and exists only for rolling the schema out.
+type ValidationConfig struct {
+	Mode validation.Mode `mapstructure:"mode"`
 }
 
 type ServerConfig struct {
@@ -48,6 +56,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.AutomaticEnv()
 	v.SetDefault("server::rate_limit::requests", defaultRateLimitRequests)
 	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
+	v.SetDefault("validation::mode", string(validation.ModeEnforce))
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
@@ -94,6 +103,9 @@ func validate(cfg Config) error {
 	}
 	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
 		return fmt.Errorf("server.public_base_url: %w", err)
+	}
+	if err := cfg.Validation.Mode.Validate(); err != nil {
+		return fmt.Errorf("validation.mode: %w", err)
 	}
 	return nil
 }

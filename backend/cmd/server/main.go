@@ -79,7 +79,14 @@ func run() int {
 		return 1
 	}
 	srv := httpapi.NewServer(
-		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
+		githubClient,
+		fileCDN,
+		cfg.Auth,
+		jwt,
+		database,
+		analytics.New(cfg.Analytics),
+		cfg.Server.PublicBaseURL,
+		cfg.Validation.Mode,
 	)
 
 	router := chi.NewRouter()
@@ -107,6 +114,7 @@ func run() int {
 		rcsb.NewClient(rcsb.WithCacheEntries(0)),
 		sifts.NewClient(),
 		logger,
+		cfg.Validation.Mode,
 	)
 	if err != nil {
 		slog.Error("data sync job init failed", "err", err)

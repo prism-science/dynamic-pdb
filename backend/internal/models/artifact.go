@@ -25,6 +25,15 @@ const (
 	ArtifactLevelL3 ArtifactLevel = "L3"
 )
 
+func (level ArtifactLevel) Validate() error {
+	switch level {
+	case ArtifactLevelL0, ArtifactLevelL1, ArtifactLevelL2, ArtifactLevelL3:
+		return nil
+	default:
+		return fmt.Errorf("unknown artifact level: %s", level)
+	}
+}
+
 type ArtifactType string
 
 const (
@@ -33,6 +42,15 @@ const (
 	ArtifactTypeFASTA            ArtifactType = "fasta"
 	ArtifactTypeOther            ArtifactType = "other"
 )
+
+func (artifactType ArtifactType) Validate() error {
+	switch artifactType {
+	case ArtifactTypeModel, ArtifactTypeStructureFactors, ArtifactTypeFASTA, ArtifactTypeOther:
+		return nil
+	default:
+		return fmt.Errorf("unknown artifact type: %s", artifactType)
+	}
+}
 
 type Artifact struct {
 	ID        uuid.UUID
