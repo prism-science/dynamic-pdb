@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -168,6 +169,8 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	description := "Spike glycoprotein"
 	construct := "receptor-binding domain"
 	mutations := []string{"D614G", "N501Y", "E484K"}
+	mutationsRaw := "D614G, N501Y, E484K, ENGINEERED MUTATION"
+	mutationsStatus := models.MutationsStatusNeedsReview
 	taxonomyID := 2697049
 	uniProtRelease := "2026_03"
 	createdAt := time.Now().UTC()
@@ -181,8 +184,10 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 				ScientificName: "Severe acute respiratory syndrome coronavirus 2",
 				NCBITaxonomyID: &taxonomyID,
 			}},
-			Construct: &construct,
-			Mutations: mutations,
+			Construct:       &construct,
+			Mutations:       mutations,
+			MutationsRaw:    &mutationsRaw,
+			MutationsStatus: &mutationsStatus,
 			UniProtMappings: []models.PolymerEntityUniProtReference{{
 				Accession:      "P0DTC2",
 				Source:         models.UniProtReferenceSourceSIFTS,
@@ -226,6 +231,9 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	s.Equal(description, stringValue(entity.Description))
 	s.Equal(construct, stringValue(entity.Construct))
 	s.Equal(mutations, entity.Mutations)
+	s.Equal(mutationsRaw, stringValue(entity.MutationsRaw), "text that is not a substitution is not hidden")
+	s.Require().NotNil(entity.MutationsStatus)
+	s.Equal(httpapi.PolymerEntityMutationsStatusNeedsReview, *entity.MutationsStatus)
 	s.Equal([]httpapi.PolymerEntityOrganism{{
 		ScientificName: "Severe acute respiratory syndrome coronavirus 2",
 		NcbiTaxonomyId: &taxonomyID,
@@ -744,6 +752,8 @@ func getModelRevisionForTest(t *testing.T, path, token string) httpapi.ModelRevi
 type entryForTest struct {
 	CreatedBy        uuid.UUID
 	Title            string
+	Ligands          *[]string
+	Cofactors        *[]string
 	ProteinSequences []httpapi.ProteinSequence
 }
 
@@ -755,6 +765,8 @@ func getEntryForTest(t *testing.T, entryID string) entryForTest {
 	return entryForTest{
 		CreatedBy:        document.Data.Relationships.CreatedBy.Data.Id,
 		Title:            stringValue(document.Data.Attributes.Title),
+		Ligands:          document.Data.Attributes.Ligands,
+		Cofactors:        document.Data.Attributes.Cofactors,
 		ProteinSequences: proteinSequencesFromEntryDocumentForTest(document),
 	}
 }
@@ -979,4 +991,85 @@ func assertErrorResponse(t *testing.T, response *http.Response, code, message st
 	require.NotNil(t, body.Errors[0].Detail)
 	require.Equal(t, code, *body.Errors[0].Code)
 	require.Contains(t, strings.ToLower(*body.Errors[0].Detail), strings.ToLower(message))
+}
+
+func (s *EntriesSuite) Test_should_keep_entry_ligands_and_cofactors_when_new_entry_revision_changes_only_title() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-composition-owner", 8121)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title": "entry with composition", "ligands": []string{"ZN", "ATP"}, "cofactors": []string{},
+		},
+	})
+
+	// when
+	next := createEntryRevisionForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"entry": map[string]any{"title": "retitled entry"},
+	})
+	activateEntryRevisionForTest(s.T(), next)
+	published := getEntryForTest(s.T(), entry.EntryId)
+
+	// then
+	s.Equal("retitled entry", published.Title)
+	s.Require().NotNil(published.Ligands)
+	s.Equal([]string{"ZN", "ATP"}, *published.Ligands)
+	s.Require().NotNil(published.Cofactors)
+	s.Empty(*published.Cofactors, "[] stays known-empty rather than becoming unknown")
+}
+
+func (s *EntriesSuite) Test_should_change_entry_ligands_only_when_request_names_them() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-composition-change-owner", 8122)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry with composition", "ligands": []string{"ZN"}, "cofactors": []string{"MG"}},
+	})
+
+	// when
+	next := createEntryRevisionForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"entry": map[string]any{"ligands": []string{"HEM"}},
+	})
+	activateEntryRevisionForTest(s.T(), next)
+	published := getEntryForTest(s.T(), entry.EntryId)
+
+	// then
+	s.Require().NotNil(published.Ligands)
+	s.Equal([]string{"HEM"}, *published.Ligands)
+	s.Require().NotNil(published.Cofactors)
+	s.Equal([]string{"MG"}, *published.Cofactors)
+}
+
+func (s *EntriesSuite) Test_should_create_model_revision_when_active_revision_has_quarantined_duplicate_metrics() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "quarantined-metrics-owner", 8123)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry with quarantined metrics"},
+	})
+	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title":   "model with a metric",
+			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free", "value": 0.21}},
+		},
+	})
+	duplicateMetricID := uuid.New()
+	rawDatabase, err := sqlx.Connect("postgres",
+		"host=localhost port=35432 dbname=dynamic_pdb_local user=postgres password=password sslmode=disable")
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { s.NoError(rawDatabase.Close()) })
+	_, err = rawDatabase.Exec(`insert into metrics(id, key, value) values ($1, 'r_free', 0.3)`, duplicateMetricID)
+	s.Require().NoError(err)
+	// the state the schema migration leaves a duplicate in
+	_, err = rawDatabase.Exec(`insert into model_revision_metrics(model_revision_id, metric_id, metric_key)
+		values ($1, $2, $3)`, model.RevisionId, duplicateMetricID, "r_free#duplicate#"+duplicateMetricID.String())
+	s.Require().NoError(err)
+
+	// when
+	renamed := createAndActivateModelRevisionForTest(s.T(), ownerToken, entry.EntryId, model.ModelId, map[string]any{
+		"model": map[string]any{"title": "renamed model"},
+	})
+	published := getModelForTest(s.T(), entry.EntryId, model.ModelId)
+
+	// then
+	s.NotEqual(model.RevisionId, renamed.RevisionId)
+	s.Equal("renamed model", stringValue(published.Title))
+	s.Len(published.Metrics, 2, "both quarantined metrics are copied, none dropped")
 }

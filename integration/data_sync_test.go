@@ -210,7 +210,7 @@ func Test_should_update_model_when_data_sync_job_is_scheduled(t *testing.T) {
 	assertMetric(t, model.Metrics, "ramachandran_outliers", 0.13)
 	assertMetric(t, model.Metrics, "molprobity_score", 1.42)
 	assertMetric(t, model.Metrics, "rscc", 0.91)
-	assertMetric(t, model.Metrics, "cc", 12)
+	assertMetric(t, model.Metrics, "custom_score", 12)
 	assertArtifactNames(t, artifacts.Items, []string{fixture.ArtifactName})
 	require.Len(t, artifacts.Runs, 1)
 	assert.Equal(t, "existing refinement", artifacts.Runs[0].Name)
@@ -389,7 +389,7 @@ func seedScheduledDataSyncModel(
 	rFreeMetricID := uuid.New()
 	molProbityMetricID := uuid.New()
 	rsccMetricID := uuid.New()
-	ccMetricID := uuid.New()
+	customMetricID := uuid.New()
 	artifactName := strings.ToLower(pdbID) + ".cif"
 	now := time.Now().UTC()
 	modelMetadata := fmt.Sprintf(
@@ -488,11 +488,11 @@ func seedScheduledDataSyncModel(
 		 values ($1, 'r_free', 0.5, $5),
 		        ($2, 'molprobity_score', 1.42, $5),
 		        ($3, 'rscc', 0.91, $5),
-		        ($4, 'cc', 12, $5)`,
+		        ($4, 'custom_score', 12, $5)`,
 		rFreeMetricID,
 		molProbityMetricID,
 		rsccMetricID,
-		ccMetricID,
+		customMetricID,
 		now,
 	)
 	require.NoError(t, err)
@@ -504,7 +504,7 @@ func seedScheduledDataSyncModel(
 		rFreeMetricID,
 		molProbityMetricID,
 		rsccMetricID,
-		ccMetricID,
+		customMetricID,
 	)
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(

@@ -6,17 +6,22 @@
 -- mutations_status: 'parsed'       every token is a plain substitution
 --                   'needs_review' at least one token is not; only the plain ones are listed
 --                   'none'         the text is empty
--- Entities without a mutations key (unknown) are left alone. Only rows whose mutations
--- value is a string or an array are rewritten (row locks on those rows only).
+-- Entities without a mutations key (unknown) or with a JSON null are left alone. Only rows
+-- whose mutations value is a string or an array are rewritten (row locks on those rows
+-- only). Any other value (number, boolean, object) is not converted and not dropped: it is
+-- flagged 'mutations_unsupported_type' in schema_migration_review with the original value.
+-- The token rule here (split on , or ;, trim whitespace, plain substitution pattern) is the
+-- same as models.ParseMutations in the Go code, so the data sync derives identical values.
 
 CREATE TEMPORARY TABLE polymer_entity_mutation_tokens AS
 SELECT
     polymer_entities.id AS polymer_entity_id,
     polymer_entities.metadata ->> 'mutations' AS raw,
-    coalesce(jsonb_agg(btrim(tokens.token) ORDER BY tokens.position)
-             FILTER (WHERE btrim(tokens.token) ~ '^[A-Z][1-9][0-9]*[A-Z]$'), '[]'::jsonb) AS accepted,
-    count(*) FILTER (WHERE btrim(tokens.token) <> '') AS token_count,
-    count(*) FILTER (WHERE btrim(tokens.token) <> '' AND btrim(tokens.token) !~ '^[A-Z][1-9][0-9]*[A-Z]$') AS rejected_count
+    coalesce(jsonb_agg(btrim(tokens.token, E' \t\r\n\f\v') ORDER BY tokens.position)
+             FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') ~ '^[A-Z][1-9][0-9]*[A-Z]$'), '[]'::jsonb) AS accepted,
+    count(*) FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') <> '') AS token_count,
+    count(*) FILTER (WHERE btrim(tokens.token, E' \t\r\n\f\v') <> ''
+                       AND btrim(tokens.token, E' \t\r\n\f\v') !~ '^[A-Z][1-9][0-9]*[A-Z]$') AS rejected_count
 FROM polymer_entities
 CROSS JOIN LATERAL regexp_split_to_table(polymer_entities.metadata ->> 'mutations', '[,;]')
      WITH ORDINALITY AS tokens(token, position)
@@ -43,6 +48,14 @@ FROM polymer_entity_mutation_tokens
 WHERE polymer_entities.id = polymer_entity_mutation_tokens.polymer_entity_id;
 
 DROP TABLE polymer_entity_mutation_tokens;
+
+INSERT INTO schema_migration_review (object_type, object_id, issue, details)
+SELECT 'polymer_entity', polymer_entities.id::text, 'mutations_unsupported_type',
+       jsonb_build_object('mutations', polymer_entities.metadata -> 'mutations',
+                          'json_type', jsonb_typeof(polymer_entities.metadata -> 'mutations'))
+FROM polymer_entities
+WHERE jsonb_typeof(polymer_entities.metadata -> 'mutations') IN ('number', 'boolean', 'object')
+ON CONFLICT (object_type, object_id, issue) DO NOTHING;
 
 -- Entities that already hold a list: classify only, nothing to split.
 INSERT INTO schema_migration_review (object_type, object_id, issue, details)

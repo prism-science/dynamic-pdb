@@ -72,6 +72,10 @@ type EntryMetadata struct {
 	Method          *StructureMethod       `json:"method,omitempty"`
 	SpaceGroup      *string                `json:"space_group,omitempty"`
 	Crystallography *EntryCrystallography  `json:"crystallography,omitempty"`
+	// Ligands and Cofactors describe the sample composition. Omitted (nil) means unknown,
+	// an empty list means known to be absent.
+	Ligands   *[]string `json:"ligands,omitempty"`
+	Cofactors *[]string `json:"cofactors,omitempty"`
 
 	DepositorPolymerEntities []DepositorPolymerEntity `json:"depositor_polymer_entities,omitempty"`
 }
@@ -106,6 +110,8 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		pointersEqual(revision.Metadata.Method, other.Metadata.Method) &&
 		pointersEqual(revision.Metadata.SpaceGroup, other.Metadata.SpaceGroup) &&
 		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography) &&
+		reflect.DeepEqual(revision.Metadata.Ligands, other.Metadata.Ligands) &&
+		reflect.DeepEqual(revision.Metadata.Cofactors, other.Metadata.Cofactors) &&
 		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities)
 }
 

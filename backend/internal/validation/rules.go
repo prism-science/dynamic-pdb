@@ -13,10 +13,6 @@ import (
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// mutationPattern matches a one-letter substitution such as C54T: the original
-// residue, its position, and the new residue.
-var mutationPattern = regexp.MustCompile(`^[A-Z][1-9][0-9]*[A-Z]$`)
-
 func RequiredText(at Pointer, value *string) []FieldError {
 	if value == nil {
 		return []FieldError{required(at)}
@@ -160,6 +156,9 @@ func ModelMetadata(at Pointer, metadata models.ModelMetadata) []FieldError {
 
 func PolymerEntity(at Pointer, metadata models.PolymerEntityMetadata) []FieldError {
 	var fieldErrors []FieldError
+	if metadata.MutationsStatus != nil {
+		fieldErrors = append(fieldErrors, requiredVocabularyValue(at.Field("mutations_status"), *metadata.MutationsStatus)...)
+	}
 	for index, mapping := range metadata.UniProtMappings {
 		mappingAt := at.Field("uniprot_mappings").Index(index)
 		fieldErrors = append(fieldErrors, RequiredText(mappingAt.Field("accession"), &mapping.Accession)...)
@@ -287,7 +286,7 @@ func DepositorPolymerEntities(at Pointer, entities []models.DepositorPolymerEnti
 func mutations(at Pointer, values []string) []FieldError {
 	var fieldErrors []FieldError
 	for index, value := range values {
-		if !mutationPattern.MatchString(value) {
+		if !models.IsMutationSubstitution(value) {
 			fieldErrors = append(fieldErrors, FieldError{
 				Pointer: at.Index(index),
 				Code:    CodeInvalidFormat,

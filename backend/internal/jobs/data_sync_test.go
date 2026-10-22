@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -590,4 +591,80 @@ func Test_should_use_depositor_organism_only_when_rcsb_extraction_finds_none(t *
 	assert.Equal(t, []models.PolymerEntityOrganism{depositorOrganism}, merged[0].Metadata.SourceOrganisms)
 	assert.Equal(t, []models.PolymerEntityOrganism{rcsbOrganism}, merged[1].Metadata.SourceOrganisms)
 	assert.Len(t, merged, 2)
+}
+
+func Test_should_not_detect_polymer_entity_change_when_stored_metadata_was_structured_by_migration(t *testing.T) {
+	// given
+	sequenceID := uuid.New()
+	cases := map[string]struct {
+		stored   string
+		mutation string
+	}{
+		"parsed string":       {`{"label_entity_id":"1","mutations":["C54T","C97A"],"mutations_raw":"C54T, C97A","mutations_status":"parsed"}`, "C54T, C97A"},
+		"needs review":        {`{"label_entity_id":"1","mutations":[],"mutations_raw":"ENGINEERED MUTATION","mutations_status":"needs_review"}`, "ENGINEERED MUTATION"},
+		"mixed":               {`{"label_entity_id":"1","mutations":["C54T","K7R"],"mutations_raw":"C54T;DELETION,A(-3)G, K7R","mutations_status":"needs_review"}`, "C54T;DELETION,A(-3)G, K7R"},
+		"list without raw":    {`{"label_entity_id":"1","mutations":["C54T","C97A"],"mutations_status":"parsed"}`, "C54T, C97A"},
+		"no mutations at all": {`{"label_entity_id":"1"}`, ""},
+	}
+
+	for name, testCase := range cases {
+		var stored models.PolymerEntityMetadata
+		require.NoError(t, json.Unmarshal([]byte(testCase.stored), &stored), name)
+		desired := polymerEntityMetadataFromRCSB(rcsb.PolymerEntityDetails{
+			Entity:      rcsb.PolymerEntityData{Mutation: testCase.mutation},
+			Identifiers: rcsb.PolymerEntityContainerIdentifiers{EntityID: "1"},
+		}, "fallback", nil)
+
+		// when
+		same := polymerEntitiesHaveSameData(
+			[]models.PolymerEntity{{ProteinSequenceID: sequenceID, Metadata: stored}},
+			[]polymerEntitySnapshot{{ProteinSequenceID: sequenceID, Metadata: desired}},
+		)
+
+		// then
+		assert.True(t, same, name)
+	}
+}
+
+func Test_should_detect_polymer_entity_change_when_rcsb_mutation_text_changed(t *testing.T) {
+	// given
+	sequenceID := uuid.New()
+	var stored models.PolymerEntityMetadata
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"label_entity_id":"1","mutations":[],"mutations_raw":"ENGINEERED MUTATION","mutations_status":"needs_review"}`),
+		&stored))
+	desired := polymerEntityMetadataFromRCSB(rcsb.PolymerEntityDetails{
+		Entity:      rcsb.PolymerEntityData{Mutation: "DELETION"},
+		Identifiers: rcsb.PolymerEntityContainerIdentifiers{EntityID: "1"},
+	}, "fallback", nil)
+
+	// when
+	same := polymerEntitiesHaveSameData(
+		[]models.PolymerEntity{{ProteinSequenceID: sequenceID, Metadata: stored}},
+		[]polymerEntitySnapshot{{ProteinSequenceID: sequenceID, Metadata: desired}},
+	)
+
+	// then
+	assert.False(t, same)
+}
+
+func Test_should_keep_entry_ligands_and_cofactors_when_rcsb_details_applied(t *testing.T) {
+	// given
+	ligands := []string{"ZN", "ATP"}
+	cofactors := []string{}
+	current := models.EntryRevision{
+		Title:    new("old title"),
+		Metadata: models.EntryMetadata{Ligands: &ligands, Cofactors: &cofactors},
+	}
+	updated := current
+	details := rcsb.EntryDetails{Info: rcsb.EntryInfo{CombinedResolution: []float64{1.5}}}
+
+	// when
+	applyRCSBEntryDetails(&updated, details)
+	entryChanged, _ := compareEntryUpdate(current, updated, nil, nil)
+
+	// then
+	assert.True(t, entryChanged, "resolution changed")
+	assert.Equal(t, &ligands, updated.Metadata.Ligands)
+	assert.Equal(t, &cofactors, updated.Metadata.Cofactors)
 }

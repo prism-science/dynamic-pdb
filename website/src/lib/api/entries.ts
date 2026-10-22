@@ -139,6 +139,11 @@ export type PolymerEntity = {
   source_organisms: PolymerEntityOrganism[];
   construct?: string;
   mutations?: string[];
+  /** The source's mutation text as written. */
+  mutations_raw?: string;
+  /** needs_review: some token of mutations_raw is not a plain substitution
+   *  and is only in mutations_raw. */
+  mutations_status?: "parsed" | "needs_review" | "none";
   uniprot_mappings: PolymerEntityUniProtMapping[];
   created_at: string;
 };

@@ -539,11 +539,21 @@ func polymerEntitiesHaveSameData(
 	})
 	for index := range desired {
 		if stored[index].ProteinSequenceID != desired[index].ProteinSequenceID ||
-			!reflect.DeepEqual(stored[index].Metadata, desired[index].Metadata) {
+			!reflect.DeepEqual(stored[index].Metadata, comparableToStored(stored[index].Metadata, desired[index].Metadata)) {
 			return false
 		}
 	}
 	return true
+}
+
+// comparableToStored drops from the desired metadata what a stored entity cannot hold:
+// entities whose mutations were already a list when the schema migration structured them
+// have no original text, and that text must not look like a change.
+func comparableToStored(stored models.PolymerEntityMetadata, desired models.PolymerEntityMetadata) models.PolymerEntityMetadata {
+	if stored.MutationsRaw == nil {
+		desired.MutationsRaw = nil
+	}
+	return desired
 }
 
 func stringValue(value *string) string {

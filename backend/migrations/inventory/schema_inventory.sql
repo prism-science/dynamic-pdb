@@ -130,5 +130,54 @@ FROM (
             || !(@.source like_regex "^(sifts|struct_ref|alignment)$")
             || ((@.source == "sifts" || @.source == "alignment")
                 && (!exists(@.unp_release) || @.unp_release.type() != "string" || @.unp_release == "")))')
+
+    UNION ALL
+    -- Original model lists the ligands/cofactors migration could not merge onto an entry.
+    SELECT 'model_revision_composition_lists_unmergeable', 'model_revision', model_revisions.id::text,
+           jsonb_build_object('model_id', model_revisions.model_id,
+                              'state', model_revisions.state,
+                              'ligands', model_revisions.metadata -> 'ligands',
+                              'cofactors', model_revisions.metadata -> 'cofactors')
+    FROM model_revisions
+    WHERE (jsonb_typeof(model_revisions.metadata -> 'ligands') NOT IN ('null', 'array')
+           OR jsonb_path_exists(model_revisions.metadata, '$.ligands[*] ? (@.type() != "string")')
+           OR jsonb_typeof(model_revisions.metadata -> 'cofactors') NOT IN ('null', 'array')
+           OR jsonb_path_exists(model_revisions.metadata, '$.cofactors[*] ? (@.type() != "string")'))
+
+    UNION ALL
+    -- Rows the entry_revisions_composition_lists_chk constraint would reject on UPDATE.
+    SELECT 'entry_revision_malformed_composition_lists', 'entry_revision', entry_revisions.id::text,
+           jsonb_build_object('entry_id', entry_revisions.entry_id,
+                              'ligands', entry_revisions.metadata -> 'ligands',
+                              'cofactors', entry_revisions.metadata -> 'cofactors')
+    FROM entry_revisions
+    WHERE (entry_revisions.metadata ? 'ligands'
+           AND (jsonb_typeof(entry_revisions.metadata -> 'ligands') <> 'array'
+                OR jsonb_path_exists(entry_revisions.metadata, '$.ligands[*] ? (@.type() != "string")')))
+       OR (entry_revisions.metadata ? 'cofactors'
+           AND (jsonb_typeof(entry_revisions.metadata -> 'cofactors') <> 'array'
+                OR jsonb_path_exists(entry_revisions.metadata, '$.cofactors[*] ? (@.type() != "string")')))
+
+    UNION ALL
+    -- Rows the run_artifacts_direction_chk constraint would reject on UPDATE.
+    SELECT 'run_artifact_invalid_direction', 'run', run_artifacts.run_id::text,
+           jsonb_build_object('artifact_id', run_artifacts.artifact_id, 'direction', run_artifacts.direction)
+    FROM run_artifacts
+    WHERE run_artifacts.direction NOT IN ('input', 'output')
+
+    UNION ALL
+    -- mutations is neither a string nor an array: not converted by the migration.
+    SELECT 'polymer_entity_mutations_unsupported_type', 'polymer_entity', polymer_entities.id::text,
+           jsonb_build_object('mutations', polymer_entities.metadata -> 'mutations')
+    FROM polymer_entities
+    WHERE jsonb_typeof(polymer_entities.metadata -> 'mutations') IN ('number', 'boolean', 'object')
+
+    UNION ALL
+    -- mutations array with non-string elements: the Go decoder cannot read it.
+    SELECT 'polymer_entity_mutations_array_not_strings', 'polymer_entity', polymer_entities.id::text,
+           jsonb_build_object('mutations', polymer_entities.metadata -> 'mutations')
+    FROM polymer_entities
+    WHERE jsonb_path_exists(polymer_entities.metadata, '$.mutations[*] ? (@.type() != "string")')
+      AND jsonb_typeof(polymer_entities.metadata -> 'mutations') = 'array'
 ) AS findings
 ORDER BY findings.check_name, findings.object_id;
