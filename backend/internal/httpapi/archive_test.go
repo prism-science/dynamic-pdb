@@ -190,7 +190,8 @@ func Test_should_map_status_code_when_lookup_fails(t *testing.T) {
 		err            error
 		expectedStatus int
 	}{
-		{"should_return_not_found_when_rcsb_has_no_entry", fmt.Errorf("get entry: %w", rcsb.ErrNotFound), http.StatusNotFound},
+		{"should_return_not_found_when_rcsb_has_no_entry", fmt.Errorf("get entry: %w", archive.ErrEntryNotFound), http.StatusNotFound},
+		{"should_return_bad_gateway_when_rcsb_has_no_listed_polymer_entity", fmt.Errorf("get polymer entity: %w", rcsb.ErrNotFound), http.StatusBadGateway},
 		{"should_return_bad_gateway_when_rcsb_times_out", fmt.Errorf("get entry: %w", context.DeadlineExceeded), http.StatusBadGateway},
 		{"should_return_bad_gateway_when_rcsb_fails", errors.New("unexpected HTTP status 500"), http.StatusBadGateway},
 	}

@@ -201,18 +201,27 @@ func (mapping *EntryMapping) mapObsoleteRecords(records []rcsb.EntryObsoleteReco
 	mapping.from("supersedes", "pdbx_database_PDB_obs_spr")
 	mapping.from("superseded_by", "pdbx_database_PDB_obs_spr")
 	for _, record := range records {
-		replaced := strings.ToUpper(strings.TrimSpace(record.ReplacePDBID))
 		switch strings.ToUpper(strings.TrimSpace(record.ID)) {
 		case obsoleteRecordSuperseded:
-			mapping.Supersedes = appendUnique(mapping.Supersedes, replaced)
+			for _, replaced := range pdbIDList(record.ReplacePDBID) {
+				mapping.Supersedes = appendUnique(mapping.Supersedes, replaced)
+			}
 		case obsoleteRecordObsoleted:
-			mapping.SupersededBy = appendUnique(mapping.SupersededBy, replaced)
+			for _, replacement := range pdbIDList(record.PDBID) {
+				mapping.SupersededBy = appendUnique(mapping.SupersededBy, replacement)
+			}
 		default:
 			mapping.warn("supersedes", "unknown obsolete record kind %q", record.ID)
 		}
 	}
 	sort.Strings(mapping.Supersedes)
 	sort.Strings(mapping.SupersededBy)
+}
+
+// pdbIDList splits a pdbx_database_PDB_obs_spr ID field, which can list several
+// space-separated PDB IDs such as "2HHB 3HHB 4HHB".
+func pdbIDList(value string) []string {
+	return strings.Fields(strings.ToUpper(value))
 }
 
 func appendUnique(values []string, value string) []string {

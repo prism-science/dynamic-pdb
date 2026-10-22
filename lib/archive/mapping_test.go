@@ -64,10 +64,11 @@ func Test_should_record_provenance_for_every_field_when_entry_is_mapped(t *testi
 
 func Test_should_report_obsolete_entry_when_obsolete_record_names_replacement(t *testing.T) {
 	// given
+	// The record of the obsoleted entry 1HHB, as its archived mmCIF file reports it.
 	details := rcsb.EntryDetails{
 		AccessionInfo: rcsb.EntryAccessionInfo{StatusCode: "OBS"},
 		ObsoleteRecords: []rcsb.EntryObsoleteRecord{
-			{ID: "OBSLTE", PDBID: "1ABC", ReplacePDBID: "7XYZ", Date: "2020-01-02T00:00:00.000+00:00"},
+			{ID: "OBSLTE", PDBID: "2HHB 3HHB 4HHB", ReplacePDBID: "1HHB", Date: "1984-07-18T00:00:00.000+00:00"},
 		},
 	}
 
@@ -75,9 +76,26 @@ func Test_should_report_obsolete_entry_when_obsolete_record_names_replacement(t 
 	mapping := MapEntry(details)
 
 	// then
-	assert.Equal(t, []string{"7XYZ"}, mapping.SupersededBy)
+	assert.Equal(t, []string{"2HHB", "3HHB", "4HHB"}, mapping.SupersededBy)
 	assert.Empty(t, mapping.Supersedes)
 	assert.Contains(t, mapping.Warnings, Warning{Field: "status_code", Detail: `RCSB status is "OBS", not released`})
+}
+
+func Test_should_list_every_superseded_entry_when_supersede_record_names_several(t *testing.T) {
+	// given
+	// The record of the live RCSB entry 4V9D.
+	details := rcsb.EntryDetails{
+		ObsoleteRecords: []rcsb.EntryObsoleteRecord{
+			{ID: "SPRSDE", PDBID: "4V9D", ReplacePDBID: "4GD1 4GD2 3R8S 3R8T", Date: "2014-12-10T00:00:00.000+00:00"},
+		},
+	}
+
+	// when
+	mapping := MapEntry(details)
+
+	// then
+	assert.Equal(t, []string{"3R8S", "3R8T", "4GD1", "4GD2"}, mapping.Supersedes)
+	assert.Empty(t, mapping.SupersededBy)
 }
 
 func Test_should_warn_when_obsolete_record_kind_is_unknown(t *testing.T) {

@@ -40,9 +40,10 @@ type EntryRevisionGroup struct {
 	RevisionOrdinal int    `json:"revision_ordinal"`
 }
 
-// EntryObsoleteRecord is one pdbx_database_PDB_obs_spr row. ID is OBSLTE when
-// PDBID was obsoleted in favour of ReplacePDBID, and SPRSDE when PDBID supersedes
-// ReplacePDBID.
+// EntryObsoleteRecord is one pdbx_database_PDB_obs_spr row. PDBID holds the newer
+// entries and ReplacePDBID the older ones, and either can list several
+// space-separated PDB IDs. ID is OBSLTE in an obsoleted entry and SPRSDE in the
+// entry that replaces it.
 type EntryObsoleteRecord struct {
 	ID           string `json:"id"`
 	PDBID        string `json:"pdb_id"`

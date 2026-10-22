@@ -14,7 +14,6 @@ import (
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/archive"
-	"dynamic-pdb/lib/rcsb"
 )
 
 const archiveLookupTimeout = 10 * time.Second
@@ -53,7 +52,7 @@ func (s *Server) GetArchivePdb(w http.ResponseWriter, r *http.Request, pdbID str
 	defer cancel()
 	result, err := s.archive.Get(ctx, strings.ToUpper(pdbID))
 	switch {
-	case errors.Is(err, rcsb.ErrNotFound):
+	case errors.Is(err, archive.ErrEntryNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "RCSB has no entry with this PDB ID")
 		return
 	case err != nil:

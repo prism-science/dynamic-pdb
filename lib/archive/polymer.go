@@ -98,6 +98,21 @@ func HasSIFTSMapping(details rcsb.PolymerEntityDetails) bool {
 	return false
 }
 
+// dependsOnUniProtRelease reports whether any UniProt mapping of the entity is tied
+// to a UniProt release: a SIFTS reference identifier or a UniProt sequence alignment.
+func dependsOnUniProtRelease(details rcsb.PolymerEntityDetails) bool {
+	if HasSIFTSMapping(details) {
+		return true
+	}
+	for _, alignment := range details.Alignments {
+		if strings.EqualFold(strings.TrimSpace(alignment.ReferenceDatabaseName), rcsbDatabaseUniProt) &&
+			strings.TrimSpace(alignment.ReferenceDatabaseAccession) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // NormalizeUniProtRelease turns a SIFTS release such as 2026.03 into 2026_03.
 func NormalizeUniProtRelease(release *string) *string {
 	if release == nil {

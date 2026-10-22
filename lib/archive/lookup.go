@@ -2,11 +2,17 @@ package archive
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"dynamic-pdb/lib/rcsb"
 )
+
+// ErrEntryNotFound reports that RCSB has no entry with the requested PDB ID. A
+// polymer entity that RCSB lists but cannot serve is a different, upstream failure.
+var ErrEntryNotFound = errors.New("RCSB has no entry with this PDB ID")
 
 type EntryDetailsSource interface {
 	GetEntryDetails(ctx context.Context, pdbID string) (rcsb.EntryDetails, error)
@@ -41,6 +47,9 @@ func NewLookup(details EntryDetailsSource, releases UniProtReleaseSource) *Looku
 func (lookup *Lookup) Get(ctx context.Context, pdbID string) (Result, error) {
 	pdbID = strings.ToUpper(strings.TrimSpace(pdbID))
 	details, err := lookup.details.GetEntryDetails(ctx, pdbID)
+	if errors.Is(err, rcsb.ErrNotFound) {
+		return Result{}, fmt.Errorf("get RCSB entry %s: %w", pdbID, ErrEntryNotFound)
+	}
 	if err != nil {
 		return Result{}, fmt.Errorf("get RCSB entry %s: %w", pdbID, err)
 	}
@@ -50,27 +59,50 @@ func (lookup *Lookup) Get(ctx context.Context, pdbID string) (Result, error) {
 		Entry: MapEntry(details),
 		Model: MapModel(details),
 	}
-	var uniProtRelease *string
-	uniProtReleaseLoaded := false
-	for _, entityID := range normalizedUniqueIDs(details.Identifiers.PolymerEntityIDs) {
+	entityIDs := normalizedUniqueIDs(details.Identifiers.PolymerEntityIDs)
+	entities := make([]rcsb.PolymerEntityDetails, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
 		entity, err := lookup.details.GetPolymerEntityDetails(ctx, pdbID, entityID)
 		if err != nil {
 			return Result{}, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 		}
-		if !uniProtReleaseLoaded && HasSIFTSMapping(entity) {
-			uniProtReleaseLoaded = true
-			release, err := lookup.releases.GetUniProtRelease(ctx, pdbID)
-			if err != nil {
-				result.Warnings = append(result.Warnings, Warning{
-					Field:  "uniprot_release",
-					Detail: fmt.Sprintf("get UniProt release for %s: %s", pdbID, err),
-				})
-			}
-			uniProtRelease = NormalizeUniProtRelease(release)
-		}
-		result.PolymerEntities = append(result.PolymerEntities, MapPolymerEntity(entity, entityID, uniProtRelease))
+		entities = append(entities, entity)
+	}
+
+	uniProtRelease, releaseWarnings := lookup.uniProtRelease(ctx, pdbID, entities)
+	result.Warnings = append(result.Warnings, releaseWarnings...)
+	for index, entity := range entities {
+		result.PolymerEntities = append(result.PolymerEntities, MapPolymerEntity(entity, entityIDs[index], uniProtRelease))
 	}
 	return result, nil
+}
+
+// uniProtRelease asks SIFTS for the entry's UniProt release once, before any entity
+// is mapped, so every entity gets the same release whatever order RCSB lists them in.
+// SIFTS is asked only when some entity's UniProt mapping depends on the release.
+func (lookup *Lookup) uniProtRelease(
+	ctx context.Context,
+	pdbID string,
+	entities []rcsb.PolymerEntityDetails,
+) (*string, []Warning) {
+	if !slices.ContainsFunc(entities, dependsOnUniProtRelease) {
+		return nil, nil
+	}
+	release, err := lookup.releases.GetUniProtRelease(ctx, pdbID)
+	if err != nil {
+		return nil, []Warning{{
+			Field:  "uniprot_release",
+			Detail: fmt.Sprintf("get UniProt release for %s: %s", pdbID, err),
+		}}
+	}
+	normalizedRelease := NormalizeUniProtRelease(release)
+	if normalizedRelease == nil {
+		return nil, []Warning{{
+			Field:  "uniprot_release",
+			Detail: fmt.Sprintf("SIFTS reports no UniProt release for %s", pdbID),
+		}}
+	}
+	return normalizedRelease, nil
 }
 
 func normalizedUniqueIDs(values []string) []string {
