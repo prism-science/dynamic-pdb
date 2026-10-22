@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -325,6 +326,35 @@ func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {
 	assert.Equal(t, 1, requests["/download/5AMF.cif"])
 	assert.Equal(t, 1, requests["/images/structures/am/5amf/5amf_assembly-1.jpeg"])
 	assert.Equal(t, 1, requests["/fasta/entry/5AMF"])
+}
+
+func Test_should_refetch_rcsb_response_when_cache_entry_expired(t *testing.T) {
+	// given
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		writeText(t, w, `{"struct": {"title": "entry"}}`)
+	}))
+	defer server.Close()
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	client := NewClient(
+		WithBaseURLs(server.URL, server.URL, server.URL, server.URL),
+		WithCacheTTL(time.Minute),
+		withClock(func() time.Time { return now }),
+	)
+
+	// when
+	_, firstErr := client.GetEntry(context.Background(), "5amf")
+	now = now.Add(30 * time.Second)
+	_, freshErr := client.GetEntry(context.Background(), "5amf")
+	now = now.Add(31 * time.Second)
+	_, expiredErr := client.GetEntry(context.Background(), "5amf")
+
+	// then
+	require.NoError(t, firstErr)
+	require.NoError(t, freshErr)
+	require.NoError(t, expiredErr)
+	assert.Equal(t, 2, requests)
 }
 
 func Test_should_allow_disabling_rcsb_response_cache(t *testing.T) {

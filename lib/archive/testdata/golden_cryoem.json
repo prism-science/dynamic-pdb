@@ -1,0 +1,71 @@
+{
+  "entry": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ParentRevisionID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "EntryState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": "Structure of the SARS-CoV-2 spike glycoprotein (closed state)",
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "resolution": 2.8,
+      "method": "CryoEM"
+    },
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "model": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ModelID": "",
+    "ParentRevisionID": null,
+    "PrimaryArtifactID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "ModelState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": null,
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "authors": [
+        "Walls, A.C.",
+        "Park, Y.J.",
+        "Tortorici, M.A.",
+        "Wall, A.",
+        "Seattle Structural Genomics Center for Infectious Disease (SSGCID)",
+        "McGuire, A.T.",
+        "Veesler, D."
+      ],
+      "atom_count": 23694,
+      "modeled_residues": 2916,
+      "unique_protein_chains": 3,
+      "unmodeled_fraction": 0.24121779859484777,
+      "ligands": [
+        "NAG"
+      ]
+    },
+    "IdempotencyKey": null,
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "metrics": [
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "clashscore",
+      "Value": 0.81,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "ramachandran_outliers",
+      "Value": 0,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

@@ -20,6 +20,34 @@ type EntryDetails struct {
 	Publication        EntryPublication          `json:"pubmed"`
 	Refinements        []EntryRefinement         `json:"refine"`
 	ValidationGeometry []EntryValidationGeometry `json:"pdbx_vrpt_summary_geometry"`
+	AccessionInfo      EntryAccessionInfo        `json:"rcsb_accession_info"`
+	RevisionGroups     []EntryRevisionGroup      `json:"pdbx_audit_revision_group"`
+	ObsoleteRecords    []EntryObsoleteRecord     `json:"pdbx_database_PDB_obs_spr"`
+}
+
+// EntryAccessionInfo is the release and version block of an RCSB entry. Dates
+// are kept as the RFC 3339 strings RCSB returns.
+type EntryAccessionInfo struct {
+	StatusCode         string `json:"status_code"`
+	InitialReleaseDate string `json:"initial_release_date"`
+	RevisionDate       string `json:"revision_date"`
+	MajorRevision      *int   `json:"major_revision"`
+	MinorRevision      *int   `json:"minor_revision"`
+}
+
+type EntryRevisionGroup struct {
+	Group           string `json:"group"`
+	RevisionOrdinal int    `json:"revision_ordinal"`
+}
+
+// EntryObsoleteRecord is one pdbx_database_PDB_obs_spr row. ID is OBSLTE when
+// PDBID was obsoleted in favour of ReplacePDBID, and SPRSDE when PDBID supersedes
+// ReplacePDBID.
+type EntryObsoleteRecord struct {
+	ID           string `json:"id"`
+	PDBID        string `json:"pdb_id"`
+	ReplacePDBID string `json:"replace_pdb_id"`
+	Date         string `json:"date"`
 }
 
 type EntryStructure struct {

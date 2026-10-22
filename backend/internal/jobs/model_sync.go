@@ -11,9 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/internal/archivemodels"
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
+	"dynamic-pdb/lib/archive"
 	"dynamic-pdb/lib/rcsb"
 )
 
@@ -310,90 +312,6 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	return nil
 }
 
-func applyRCSBModelDetails(revision *models.ModelRevision, details rcsb.EntryDetails) {
-	var authors []string
-	for _, sourceAuthor := range details.Authors {
-		authors = appendUniqueModelMetadataValue(authors, sourceAuthor.Name)
-	}
-
-	var affiliations []string
-	for _, sourceAffiliation := range details.Publication.Affiliations {
-		affiliations = appendUniqueModelMetadataValue(affiliations, sourceAffiliation)
-	}
-
-	var ligands []string
-	for _, sourceLigand := range details.Info.NonpolymerBoundComponents {
-		for _, value := range strings.FieldsFunc(sourceLigand, func(character rune) bool {
-			return character == ',' || character == ';'
-		}) {
-			ligand := strings.ToUpper(strings.TrimSpace(value))
-			if ligand == "HOH" || ligand == "DOD" || ligand == "WAT" || ligand == "H2O" {
-				continue
-			}
-			ligands = appendUniqueModelMetadataValue(ligands, ligand)
-		}
-	}
-
-	revision.Metadata.Authors = authors
-	revision.Metadata.Details = optionalString(details.Structure.ModelDetails)
-	revision.Metadata.Affiliation = optionalString(strings.Join(affiliations, "; "))
-	revision.Metadata.AtomCount = details.Info.DepositedAtomCount
-	revision.Metadata.ModeledResidues = details.Info.DepositedModeledPolymerMonomerCount
-	revision.Metadata.UniqueProteinChains = details.Info.DepositedPolymerEntityInstanceCount
-	revision.Metadata.UnmodeledFraction = modelUnmodeledFraction(details.Info)
-	revision.Metadata.Ligands = ligands
-}
-
-func modelUnmodeledFraction(info rcsb.EntryInfo) *float64 {
-	if info.DepositedPolymerMonomerCount == nil || *info.DepositedPolymerMonomerCount <= 0 ||
-		info.DepositedUnmodeledPolymerMonomerCount == nil {
-		return nil
-	}
-	fraction := float64(*info.DepositedUnmodeledPolymerMonomerCount) /
-		float64(*info.DepositedPolymerMonomerCount)
-	return &fraction
-}
-
-func appendUniqueModelMetadataValue(values []string, value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return values
-	}
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
-func modelMetricsFromRCSB(details rcsb.EntryDetails) []models.Metric {
-	metrics := make([]models.Metric, 0, 4)
-	if len(details.Refinements) > 0 {
-		appendModelMetric(&metrics, models.MetricKeyRFree, details.Refinements[0].RFree)
-		appendModelMetric(&metrics, models.MetricKeyRWork, details.Refinements[0].RWork)
-	}
-	if len(details.ValidationGeometry) > 0 {
-		appendModelMetric(&metrics, models.MetricKeyClashscore, details.ValidationGeometry[0].Clashscore)
-		appendModelMetric(
-			&metrics,
-			models.MetricKeyRamachandranOutliers,
-			details.ValidationGeometry[0].RamachandranOutliersPercent,
-		)
-	}
-	sort.Slice(metrics, func(first int, second int) bool {
-		return metrics[first].Key < metrics[second].Key
-	})
-	return metrics
-}
-
-func appendModelMetric(metrics *[]models.Metric, key models.MetricKey, value *float64) {
-	if value == nil {
-		return
-	}
-	*metrics = append(*metrics, models.Metric{Key: key, Value: *value})
-}
-
 func modelMetricsHaveSameData(current []models.Metric, desired []models.Metric) bool {
 	current = rcsbModelMetrics(current)
 	desired = rcsbModelMetrics(desired)
@@ -441,4 +359,20 @@ func isRCSBModelMetric(key models.MetricKey) bool {
 func modelUpdateErrors(revision models.ModelRevision, metrics []models.Metric) []validation.FieldError {
 	fieldErrors := validation.ModelMetadata(validation.Root.Field("metadata"), revision.Metadata)
 	return append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
+}
+
+func applyRCSBModelDetails(revision *models.ModelRevision, details rcsb.EntryDetails) {
+	metadata := archivemodels.ModelMetadata(archive.MapModel(details))
+	revision.Metadata.Authors = metadata.Authors
+	revision.Metadata.Details = metadata.Details
+	revision.Metadata.Affiliation = metadata.Affiliation
+	revision.Metadata.AtomCount = metadata.AtomCount
+	revision.Metadata.ModeledResidues = metadata.ModeledResidues
+	revision.Metadata.UniqueProteinChains = metadata.UniqueProteinChains
+	revision.Metadata.UnmodeledFraction = metadata.UnmodeledFraction
+	revision.Metadata.Ligands = metadata.Ligands
+}
+
+func modelMetricsFromRCSB(details rcsb.EntryDetails) []models.Metric {
+	return archivemodels.Metrics(archive.MapModel(details))
 }

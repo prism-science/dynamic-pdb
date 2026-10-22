@@ -27,6 +27,9 @@ import (
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
 	"dynamic-pdb/backend/internal/validation"
+	"dynamic-pdb/lib/archive"
+	"dynamic-pdb/lib/rcsb"
+	"dynamic-pdb/lib/sifts"
 )
 
 // testPublicBaseURL stands in for the ingress URL, whose /api prefix this server never sees.
@@ -144,11 +147,16 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
+	rcsbStub := httptest.NewServer(http.HandlerFunc(serveArchiveFixture))
+	archiveLookup := archive.NewLookup(
+		rcsb.NewClient(rcsb.WithBaseURLs(rcsbStub.URL, rcsbStub.URL, rcsbStub.URL, rcsbStub.URL)),
+		sifts.NewClient(sifts.WithBaseURL(rcsbStub.URL)),
+	)
 	newTestRouter := func(validationMode validation.Mode) http.Handler {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
 			validationMode,
-		)
+		).WithArchiveLookup(archiveLookup)
 		router := chi.NewRouter()
 		router.Use(corsMiddleware())
 		router.Use(httpapi.MediaTypeMiddleware())
@@ -169,6 +177,7 @@ func TestMain(m *testing.M) {
 	testServer.Close()
 	logOnlyTestServer.Close()
 	s3Stub.Close()
+	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {
 		log.Printf("e2etest: close database: %v", err)
 	}
