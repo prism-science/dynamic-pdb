@@ -1339,12 +1339,33 @@ function createRunRequest(
   };
 }
 
+const metricKeys: Record<MetricKey, true> = {
+  r_work: true,
+  r_free: true,
+  cc: true,
+  rscc: true,
+  clashscore: true,
+  ramachandran_outliers: true,
+  side_chain_outliers: true,
+  molprobity_score: true,
+  wilson_b: true,
+  rmsf: true,
+};
+
+function isMetricKey(key: string): key is MetricKey {
+  return Object.hasOwn(metricKeys, key);
+}
+
 function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] {
-  return Object.entries(entity.payload).flatMap(([key, value]) =>
-    typeof value === "number" && Number.isFinite(value)
-      ? [{ id: stableUUID(`${entity.id}:${key}`), key: key as MetricKey, value }]
-      : [],
-  );
+  return Object.entries(entity.payload).flatMap(([key, value]) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return [];
+    }
+    if (!isMetricKey(key)) {
+      throw new Error(`unknown metric key: ${key}`);
+    }
+    return [{ id: stableUUID(`${entity.id}:${key}`), key, value }];
+  });
 }
 
 /** A model revision as the same entity graph the published model page walks, so
