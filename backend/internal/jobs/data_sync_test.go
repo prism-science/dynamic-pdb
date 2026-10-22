@@ -410,7 +410,7 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 	assert.Equal(t, optionalString("1"), metadata.LabelEntityID)
 	assert.Equal(t, optionalString("Spike glycoprotein"), metadata.Description)
 	assert.Equal(t, optionalString("receptor-binding domain"), metadata.Construct)
-	assert.Equal(t, optionalString("N501Y"), metadata.Mutations)
+	assert.Equal(t, []string{"N501Y"}, metadata.Mutations)
 	assert.Equal(t, []models.PolymerEntityOrganism{
 		{ScientificName: "Escherichia coli", NCBITaxonomyID: &eColiTaxonomyID},
 		{ScientificName: "Homo sapiens", NCBITaxonomyID: &humanTaxonomyID},
@@ -542,4 +542,52 @@ func Test_should_detect_polymer_entity_metadata_change(t *testing.T) {
 
 	// then
 	assert.False(t, same)
+}
+
+func Test_should_prefer_depositor_construct_and_mutations_when_rcsb_extraction_has_values(t *testing.T) {
+	// given
+	extracted := []models.PolymerEntity{{Metadata: models.PolymerEntityMetadata{
+		LabelEntityID: optionalString("1"),
+		Construct:     optionalString("rcsb fragment"),
+		Mutations:     []string{"A1B"},
+	}}}
+	depositor := []models.DepositorPolymerEntity{{
+		LabelEntityID: "1",
+		Construct:     optionalString("depositor construct"),
+		Mutations:     []string{"C54T", "C97A"},
+	}}
+
+	// when
+	merged := applyDepositorPolymerEntities(extracted, depositor)
+
+	// then
+	assert.Equal(t, optionalString("depositor construct"), merged[0].Metadata.Construct)
+	assert.Equal(t, []string{"C54T", "C97A"}, merged[0].Metadata.Mutations)
+	assert.Equal(t, optionalString("rcsb fragment"), extracted[0].Metadata.Construct)
+}
+
+func Test_should_use_depositor_organism_only_when_rcsb_extraction_finds_none(t *testing.T) {
+	// given
+	rcsbOrganism := models.PolymerEntityOrganism{ScientificName: "Homo sapiens", NCBITaxonomyID: new(9606)}
+	extracted := []models.PolymerEntity{
+		{Metadata: models.PolymerEntityMetadata{LabelEntityID: optionalString("1")}},
+		{Metadata: models.PolymerEntityMetadata{
+			LabelEntityID:   optionalString("2"),
+			SourceOrganisms: []models.PolymerEntityOrganism{rcsbOrganism},
+		}},
+	}
+	depositorOrganism := models.PolymerEntityOrganism{ScientificName: "Escherichia virus T4"}
+	depositor := []models.DepositorPolymerEntity{
+		{LabelEntityID: "1", SourceOrganisms: []models.PolymerEntityOrganism{depositorOrganism}},
+		{LabelEntityID: "2", SourceOrganisms: []models.PolymerEntityOrganism{depositorOrganism}},
+		{LabelEntityID: "9", Construct: optionalString("matches no entity")},
+	}
+
+	// when
+	merged := applyDepositorPolymerEntities(extracted, depositor)
+
+	// then
+	assert.Equal(t, []models.PolymerEntityOrganism{depositorOrganism}, merged[0].Metadata.SourceOrganisms)
+	assert.Equal(t, []models.PolymerEntityOrganism{rcsbOrganism}, merged[1].Metadata.SourceOrganisms)
+	assert.Len(t, merged, 2)
 }

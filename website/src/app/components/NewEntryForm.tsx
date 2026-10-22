@@ -26,6 +26,7 @@ import type {
 } from "./entry-form/types";
 import {
   assignCanonicalArtifactTypes,
+  hasEntryMethod,
   parseFile,
   parseUrlFile,
   sanitizeNumeric,
@@ -240,6 +241,7 @@ export default function NewEntryForm() {
 
   const canSubmit =
     title.trim().length > 0 &&
+    hasEntryMethod(metadata.method) &&
     !hasPendingUploads &&
     !hasFailedUploads &&
     !submitting;
@@ -265,7 +267,7 @@ export default function NewEntryForm() {
         resolution: metadata.resolution.trim()
           ? Number.parseFloat(metadata.resolution)
           : undefined,
-        method: metadata.method.trim() || undefined,
+        method: metadata.method.trim(),
         space_group: metadata.spaceGroup.trim() || undefined,
         title: title.trim(),
         thumbnail_image_url: thumbUrl,
@@ -397,9 +399,11 @@ export default function NewEntryForm() {
             />
           </label>
           <label className={styles.metricField}>
-            <span>Method</span>
-            <select
-              className={styles.select}
+            <span>Method *</span>
+            <input
+              className={styles.input}
+              list="entry-method-options"
+              required
               value={metadata.method}
               onChange={(event) =>
                 setMetadata((current) => ({
@@ -407,14 +411,14 @@ export default function NewEntryForm() {
                   method: event.target.value,
                 }))
               }
-            >
-              <option value="">—</option>
+              placeholder="e.g. X-ray crystallography"
+              autoComplete="off"
+            />
+            <datalist id="entry-method-options">
               {METHODS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
+                <option key={value} value={value} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label className={styles.metricField}>
             <span>Space group</span>

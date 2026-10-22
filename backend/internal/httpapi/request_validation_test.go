@@ -18,7 +18,7 @@ import (
 func Test_should_point_to_nested_metric_when_entry_model_operation_metric_is_invalid(t *testing.T) {
 	// given
 	request := CreateEntryRequest{
-		Entry: CreateEntryData{Title: "Lysozyme"},
+		Entry: CreateEntryData{Title: "Lysozyme", Method: "X-ray crystallography"},
 		ModelOperations: &[]AddModelOperation{
 			{Op: AddModelOperationOpAdd, Data: AddModelData{Title: "first"}},
 			{Op: AddModelOperationOpAdd, Data: AddModelData{
@@ -126,6 +126,7 @@ func Test_should_require_artifact_type_when_request_omits_it(t *testing.T) {
 	request := CreateEntryRequest{
 		Entry: CreateEntryData{
 			Title:     "Lysozyme",
+			Method:    "X-ray crystallography",
 			Artifacts: &[]CreateArtifactRequest{{Id: uuid.New(), Name: "sequence.fasta", Level: "L0"}},
 		},
 	}

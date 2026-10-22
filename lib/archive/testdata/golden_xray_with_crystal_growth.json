@@ -60,7 +60,9 @@
       "atom_count": 2500,
       "modeled_residues": 312,
       "unique_protein_chains": 2,
-      "unmodeled_fraction": 0
+      "unmodeled_fraction": 0,
+      "ligands": null,
+      "cofactors": null
     },
     "IdempotencyKey": null,
     "CreatedBy": "00000000-0000-0000-0000-000000000000",

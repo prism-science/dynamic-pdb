@@ -429,3 +429,154 @@ func codesOf(fieldErrors []FieldError) []Code {
 	}
 	return codes
 }
+
+type objectKeysShape struct {
+	Name       string                      `json:"name"`
+	Tags       []string                    `json:"tags"`
+	Nested     *objectKeysNested           `json:"nested"`
+	Items      []objectKeysNested          `json:"items"`
+	Extensions map[string]any              `json:"extensions"`
+	Lookup     map[string]objectKeysNested `json:"lookup"`
+	Skipped    string                      `json:"-"`
+}
+
+type objectKeysNested struct {
+	Value int `json:"value"`
+}
+
+func Test_should_report_unknown_field_when_object_has_key_outside_shape(t *testing.T) {
+	// given
+	raw := map[string]any{
+		"name":   "ok",
+		"colour": "blue",
+		"nested": map[string]any{"value": 1, "extra": true},
+		"items":  []any{map[string]any{"value": 1}, map[string]any{"other": 2}},
+	}
+
+	// when
+	fieldErrors := ObjectKeys(Root.Field("metadata"), raw, objectKeysShape{})
+
+	// then
+	assert.Equal(t, []Pointer{
+		"/metadata/colour",
+		"/metadata/items/1/other",
+		"/metadata/nested/extra",
+	}, pointersOf(fieldErrors))
+	for _, fieldError := range fieldErrors {
+		assert.Equal(t, CodeUnknownField, fieldError.Code)
+	}
+}
+
+func Test_should_accept_any_key_when_it_sits_under_an_open_object(t *testing.T) {
+	// given
+	raw := map[string]any{
+		"extensions": map[string]any{"anything": map[string]any{"deep": 1}},
+		"lookup":     map[string]any{"free-key": map[string]any{"value": 2}},
+	}
+
+	// when
+	fieldErrors := ObjectKeys(Root, raw, objectKeysShape{})
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_reject_reserved_key_when_it_starts_with_double_underscore_at_any_depth(t *testing.T) {
+	// given
+	raw := map[string]any{
+		"__internal": 1,
+		"extensions": map[string]any{"ok": 1, "__hidden": map[string]any{"__deeper": 2}},
+		"name":       "kept",
+		"_single":    1,
+	}
+
+	// when
+	fieldErrors := ObjectKeys(Root.Field("metadata"), raw, objectKeysShape{})
+
+	// then
+	assert.Equal(t, []FieldError{
+		{Pointer: "/metadata/__internal", Code: CodeReservedKey, Detail: `keys starting with "__" are reserved`},
+		{Pointer: "/metadata/_single", Code: CodeUnknownField, Detail: `is not a field of this object; put open data under "extensions"`},
+		{Pointer: "/metadata/extensions/__hidden", Code: CodeReservedKey, Detail: `keys starting with "__" are reserved`},
+	}, fieldErrors)
+}
+
+func Test_should_report_mutation_when_it_is_not_a_substitution(t *testing.T) {
+	// given
+	entities := []models.DepositorPolymerEntity{{
+		LabelEntityID: "1",
+		Mutations:     []string{"C54T", "c97a", "54T", "C54T, C97A"},
+	}}
+
+	// when
+	fieldErrors := DepositorPolymerEntities(Root.Field("entity"), entities)
+
+	// then
+	assert.Equal(t, []Pointer{"/entity/0/mutations/1", "/entity/0/mutations/2", "/entity/0/mutations/3"}, pointersOf(fieldErrors))
+	assert.Equal(t, CodeInvalidFormat, fieldErrors[0].Code)
+}
+
+func Test_should_accept_depositor_polymer_entities_when_fields_follow_schema(t *testing.T) {
+	// given
+	construct := "residues 1-164"
+	entities := []models.DepositorPolymerEntity{{
+		LabelEntityID:   "1",
+		Construct:       &construct,
+		Mutations:       []string{"C54T", "C97A"},
+		SourceOrganisms: []models.PolymerEntityOrganism{{ScientificName: "Escherichia virus T4", NCBITaxonomyID: new(10665)}},
+	}}
+
+	// when
+	fieldErrors := DepositorPolymerEntities(Root.Field("polymer_entities"), entities)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_report_every_depositor_polymer_entity_error_when_several_fields_are_wrong(t *testing.T) {
+	// given
+	entities := []models.DepositorPolymerEntity{
+		{LabelEntityID: "1", Mutations: []string{"nope"}},
+		{LabelEntityID: "1", SourceOrganisms: []models.PolymerEntityOrganism{{ScientificName: " ", NCBITaxonomyID: new(0)}}},
+		{LabelEntityID: ""},
+	}
+
+	// when
+	fieldErrors := DepositorPolymerEntities(Root.Field("polymer_entities"), entities)
+
+	// then
+	assert.Equal(t, []Pointer{
+		"/polymer_entities/0/mutations/0",
+		"/polymer_entities/1/label_entity_id",
+		"/polymer_entities/1/source_organisms/0/scientific_name",
+		"/polymer_entities/1/source_organisms/0/ncbi_taxonomy_id",
+		"/polymer_entities/2/label_entity_id",
+	}, pointersOf(fieldErrors))
+}
+
+func Test_should_require_method_when_new_entry_metadata_has_none(t *testing.T) {
+	// given
+	blank := models.StructureMethod("  ")
+	method := models.StructureMethod("Neutron diffraction")
+
+	// when
+	missingErrors := NewEntryMethod(Root.Field("entry"), models.EntryMetadata{})
+	blankErrors := NewEntryMethod(Root.Field("entry"), models.EntryMetadata{Method: &blank})
+	freeTextErrors := NewEntryMethod(Root.Field("entry"), models.EntryMetadata{Method: &method})
+
+	// then
+	assert.Equal(t, []Pointer{"/entry/method"}, pointersOf(missingErrors))
+	assert.Equal(t, []Pointer{"/entry/method"}, pointersOf(blankErrors))
+	assert.Empty(t, freeTextErrors)
+}
+
+func Test_should_not_check_mutation_format_when_polymer_entity_comes_from_rcsb(t *testing.T) {
+	// given
+	metadata := models.PolymerEntityMetadata{Mutations: []string{"ENGINEERED MUTATION", "DELETION", "A(-3)G"}}
+
+	// when
+	fieldErrors := PolymerEntity(Root.Field("entity"), metadata)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}

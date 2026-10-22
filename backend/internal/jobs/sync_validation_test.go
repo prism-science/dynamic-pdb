@@ -30,6 +30,20 @@ func Test_should_accept_entry_update_when_rcsb_values_follow_schema(t *testing.T
 	assert.Empty(t, fieldErrors)
 }
 
+func Test_should_accept_entry_update_when_rcsb_mutation_text_is_free_form(t *testing.T) {
+	// given
+	revision := models.EntryRevision{Title: new("T4 lysozyme")}
+	polymerEntities := []models.PolymerEntity{{Metadata: models.PolymerEntityMetadata{
+		Mutations: []string{"ENGINEERED MUTATION", "DELETION", "A(-3)G"},
+	}}}
+
+	// when
+	fieldErrors := entryUpdateErrors(revision, polymerEntities)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
 func Test_should_report_entry_update_errors_when_rcsb_values_break_schema(t *testing.T) {
 	// given
 	revision := models.EntryRevision{Metadata: models.EntryMetadata{Resolution: new(-1.0)}}

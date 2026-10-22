@@ -33,6 +33,8 @@ const (
 	CodeInvalidFormat Code = "INVALID_FORMAT"
 	CodeOutOfRange    Code = "OUT_OF_RANGE"
 	CodeDuplicate     Code = "DUPLICATE"
+	CodeUnknownField  Code = "UNKNOWN_FIELD"
+	CodeReservedKey   Code = "RESERVED_KEY"
 )
 
 type FieldError struct {

@@ -493,6 +493,35 @@ func normalizeProteinSequence(sequence string) string {
 	return strings.ToUpper(strings.Join(strings.Fields(sequence), ""))
 }
 
+// applyDepositorPolymerEntities overlays what depositors supplied onto the entities
+// extracted from RCSB, matching on label_entity_id. A depositor's construct and
+// mutations replace extracted ones; their organisms fill in only where extraction
+// found none.
+func applyDepositorPolymerEntities(
+	extracted []models.PolymerEntity,
+	depositor []models.DepositorPolymerEntity,
+) []models.PolymerEntity {
+	merged := append([]models.PolymerEntity(nil), extracted...)
+	for index := range merged {
+		label := stringValue(merged[index].Metadata.LabelEntityID)
+		for _, supplied := range depositor {
+			if supplied.LabelEntityID != label {
+				continue
+			}
+			if supplied.Construct != nil {
+				merged[index].Metadata.Construct = supplied.Construct
+			}
+			if len(supplied.Mutations) > 0 {
+				merged[index].Metadata.Mutations = supplied.Mutations
+			}
+			if len(merged[index].Metadata.SourceOrganisms) == 0 {
+				merged[index].Metadata.SourceOrganisms = supplied.SourceOrganisms
+			}
+		}
+	}
+	return merged
+}
+
 func polymerEntitiesHaveSameData(
 	stored []models.PolymerEntity,
 	desired []models.PolymerEntity,

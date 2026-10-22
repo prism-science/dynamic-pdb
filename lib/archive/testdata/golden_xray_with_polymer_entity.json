@@ -55,7 +55,8 @@
       "unmodeled_fraction": 0,
       "ligands": [
         "HEM"
-      ]
+      ],
+      "cofactors": null
     },
     "IdempotencyKey": null,
     "CreatedBy": "00000000-0000-0000-0000-000000000000",

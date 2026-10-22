@@ -136,8 +136,8 @@ test("should split mutations into substitutions only when the field is a plain l
 test("should carry the raw mutation text alongside the parsed substitutions", () => {
   // given
   const entities = [
-    entity({ label_entity_id: "1", mutations: " K986P, V987P " }),
-    entity({ label_entity_id: "2", mutations: "engineered disulfide" }),
+    entity({ label_entity_id: "1", mutations: ["K986P", " V987P "] }),
+    entity({ label_entity_id: "2", mutations: ["engineered disulfide"] }),
   ];
 
   // when

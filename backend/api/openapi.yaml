@@ -2715,7 +2715,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EntryProperties"
         - type: object
-          required: [title]
+          required: [title, method]
           properties:
             title:
               type: string
@@ -2727,6 +2727,8 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CreateArtifactRequest"
+            polymer_entities:
+              $ref: "#/components/schemas/DepositorPolymerEntities"
 
     Entry:
       allOf:
@@ -2970,7 +2972,10 @@ components:
             construct:
               type: string
             mutations:
-              type: string
+              type: array
+              description: Substitution strings such as C54T, one per element.
+              items:
+                type: string
             uniprot_mappings:
               type: array
               items:
@@ -3030,7 +3035,7 @@ components:
 
     PolymerEntity:
       type: object
-      required: [id, source_organisms, uniprot_mappings, created_at]
+      required: [id, source_organisms, mutations, uniprot_mappings, created_at]
       properties:
         id:
           type: string
@@ -3046,8 +3051,10 @@ components:
         construct:
           type: string
         mutations:
-          type: string
-          description: Mutation description from RCSB. Multiple mutations may be stored in one string.
+          type: array
+          description: Substitution strings such as C54T, one per element.
+          items:
+            type: string
         uniprot_mappings:
           type: array
           items:
@@ -3232,8 +3239,7 @@ components:
           type: string
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ModelMetadata"
         residue_data:
           description: >
             Per-residue data. Returned only by the model detail endpoint
@@ -3262,6 +3268,193 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Metric"
+
+    ModelPurpose:
+      type: string
+      enum: [Model Building, Refinement, Reference]
+      x-enum-varnames: [ModelPurposeModelBuilding, ModelPurposeRefinement, ModelPurposeReference]
+
+    StructureModelType:
+      type: string
+      enum: [Single Conformer, Multiconformer, Ensemble, Deposited]
+      x-enum-varnames:
+        [
+          StructureModelTypeSingleConformer,
+          StructureModelTypeMulticonformer,
+          StructureModelTypeEnsemble,
+          StructureModelTypeDeposited,
+        ]
+
+    MetricKey:
+      type: string
+      enum:
+        - r_work
+        - r_free
+        - cc
+        - rscc
+        - clashscore
+        - ramachandran_outliers
+        - side_chain_outliers
+        - molprobity_score
+        - wilson_b
+        - rmsf
+      x-enum-varnames:
+        [
+          MetricKeyRWork,
+          MetricKeyRFree,
+          MetricKeyCC,
+          MetricKeyRSCC,
+          MetricKeyClashscore,
+          MetricKeyRamachandranOutliers,
+          MetricKeySideChainOutliers,
+          MetricKeyMolProbityScore,
+          MetricKeyWilsonB,
+          MetricKeyRMSF,
+        ]
+
+    ModelMetadata:
+      type: object
+      description: >
+        Model metadata. Keys outside this list get 422 when validation mode is enforce;
+        open data goes in extensions. Keys starting with "__" are reserved. The list
+        fields distinguish unknown (null or omitted) from known empty ([]).
+      additionalProperties: false
+      x-go-type: map[string]interface{}
+      properties:
+        external_refs:
+          type: object
+          additionalProperties:
+            type: string
+        details:
+          type: string
+        authors:
+          type: array
+          nullable: true
+          items:
+            type: string
+        affiliation:
+          type: string
+        purpose:
+          $ref: "#/components/schemas/ModelPurpose"
+        model_type:
+          $ref: "#/components/schemas/StructureModelType"
+        atom_count:
+          type: integer
+          minimum: 0
+        modeled_residues:
+          type: integer
+          minimum: 0
+        unique_protein_chains:
+          type: integer
+          minimum: 0
+        altloc_fraction:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        unmodeled_fraction:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        ligands:
+          type: array
+          nullable: true
+          items:
+            type: string
+        cofactors:
+          type: array
+          nullable: true
+          items:
+            type: string
+        residue_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResidueData"
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+
+    ArtifactMetadata:
+      type: object
+      description: >
+        Artifact metadata. Keys outside this list get 422 when validation mode is enforce;
+        open data goes in extensions. Keys starting with "__" are reserved.
+      additionalProperties: false
+      x-go-type: map[string]interface{}
+      properties:
+        records:
+          type: array
+          description: FASTA records.
+          items:
+            type: object
+            required: [header, sequence]
+            additionalProperties: false
+            properties:
+              header:
+                type: string
+              sequence:
+                type: string
+        _dynamic_pdb_source:
+          type: object
+          description: External experiment the file came from.
+          required: [provider]
+          additionalProperties: false
+          properties:
+            provider:
+              type: string
+            experiment_id:
+              type: string
+            path:
+              type: string
+            sha256:
+              type: string
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+
+    RunMetadata:
+      type: object
+      description: >
+        Run metadata. The only key is extensions; other keys get 422 when validation
+        mode is enforce. Keys starting with "__" are reserved.
+      additionalProperties: false
+      x-go-type: map[string]interface{}
+      properties:
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+
+    Extensions:
+      type: object
+      description: Open data. Any key is accepted except keys starting with "__".
+      additionalProperties: true
+
+    DepositorPolymerEntities:
+      type: array
+      description: >
+        Polymer-entity values the depositor supplies, matched to extracted entities by
+        label_entity_id. Construct and mutations take precedence over extracted values;
+        source_organisms is used only when extraction finds none.
+      items:
+        $ref: "#/components/schemas/DepositorPolymerEntity"
+
+    DepositorPolymerEntity:
+      type: object
+      required: [label_entity_id]
+      additionalProperties: false
+      properties:
+        label_entity_id:
+          type: string
+          minLength: 1
+        construct:
+          type: string
+        mutations:
+          type: array
+          items:
+            type: string
+            pattern: "^[A-Z][1-9][0-9]*[A-Z]$"
+        source_organisms:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolymerEntityOrganism"
 
     ArtifactLevel:
       type: string
@@ -3308,8 +3501,7 @@ components:
           format: int64
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ArtifactMetadata"
 
     ArtifactAttributes:
       type: object
@@ -3338,8 +3530,7 @@ components:
           format: int64
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ArtifactMetadata"
         created_by:
           type: string
           format: uuid
@@ -3370,8 +3561,7 @@ components:
           type: object
           additionalProperties: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/RunMetadata"
         started_at:
           type: string
           format: date-time
@@ -3407,8 +3597,7 @@ components:
           type: object
           additionalProperties: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/RunMetadata"
         started_at:
           type: string
           format: date-time
@@ -3464,8 +3653,7 @@ components:
           type: string
           format: uuid
         key:
-          type: string
-          minLength: 1
+          $ref: "#/components/schemas/MetricKey"
         value:
           type: number
           format: double
@@ -3479,7 +3667,7 @@ components:
           type: string
           format: uuid
         key:
-          type: string
+          $ref: "#/components/schemas/MetricKey"
         value:
           type: number
           format: double
@@ -3541,6 +3729,11 @@ components:
             thumbnail_image_url:
               type: string
               nullable: true
+            change_summary:
+              type: string
+              nullable: true
+            polymer_entities:
+              $ref: "#/components/schemas/DepositorPolymerEntities"
 
     CreateModelRequest:
       type: object
@@ -3573,8 +3766,7 @@ components:
           type: string
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ModelMetadata"
         primary_artifact_id:
           type: string
           format: uuid
@@ -3606,8 +3798,7 @@ components:
           type: string
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ModelMetadata"
         primary_artifact_id:
           type: string
           format: uuid
@@ -3642,12 +3833,14 @@ components:
         thumbnail_image_url:
           type: string
           nullable: true
+        change_summary:
+          type: string
+          nullable: true
         idempotency_key:
           type: string
           nullable: true
         metadata:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ModelMetadata"
         primary_artifact_id:
           type: string
           format: uuid
@@ -3872,8 +4065,7 @@ components:
               format: uuid
               nullable: true
             metadata:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/ModelMetadata"
             residue_data:
               type: array
               items:

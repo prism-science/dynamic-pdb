@@ -83,6 +83,10 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 	if err != nil {
 		return fmt.Errorf("build entry update: %w", err)
 	}
+	desiredPolymerEntities = applyDepositorPolymerEntities(
+		desiredPolymerEntities,
+		currentRevision.Metadata.DepositorPolymerEntities,
+	)
 
 	entryRevisionChanged, polymerEntitiesChanged := compareEntryUpdate(
 		*currentRevision,

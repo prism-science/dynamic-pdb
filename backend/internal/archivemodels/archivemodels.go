@@ -84,12 +84,16 @@ func PolymerEntityMetadata(mapping archive.PolymerEntityMapping, includeAlignmen
 	if includeAlignments {
 		uniProtMappings = uniProtReferences(uniProtMappings, mapping.AlignmentMappings)
 	}
+	var mutations []string
+	if mapping.Mutations != nil {
+		mutations = models.SplitMutations(*mapping.Mutations)
+	}
 	return models.PolymerEntityMetadata{
 		LabelEntityID:   mapping.LabelEntityID,
 		Description:     mapping.Description,
 		SourceOrganisms: sourceOrganisms,
 		Construct:       mapping.Construct,
-		Mutations:       mapping.Mutations,
+		Mutations:       mutations,
 		UniProtMappings: uniProtMappings,
 	}
 }

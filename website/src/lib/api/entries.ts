@@ -137,7 +137,7 @@ export type PolymerEntity = {
   description?: string;
   source_organisms: PolymerEntityOrganism[];
   construct?: string;
-  mutations?: string;
+  mutations?: string[];
   uniprot_mappings: PolymerEntityUniProtMapping[];
   created_at: string;
 };
@@ -589,6 +589,7 @@ export type CreateModelInput = {
 
 export type CreateEntryInput = EntryProperties & {
   title: string;
+  method: string;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];

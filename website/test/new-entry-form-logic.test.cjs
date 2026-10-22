@@ -14,6 +14,7 @@ const {
   extFileToParsed,
   modelValidationMessage,
   fileEntityType,
+  hasEntryMethod,
   fileFromDraft,
   fileNameFromUrl,
   fileToDraft,
@@ -545,4 +546,18 @@ test("purpose and model type travel with the model request", () => {
     purpose: "Refinement",
     model_type: "Multiconformer",
   });
+});
+
+test("should_block_submit_when_method_is_blank_and_allow_free_text_when_typed", () => {
+  // given
+  const blankMethods = ["", "   "];
+  const typedMethods = ["CryoEM", "Neutron diffraction"];
+
+  // when / then
+  for (const method of blankMethods) {
+    assert.equal(hasEntryMethod(method), false);
+  }
+  for (const method of typedMethods) {
+    assert.equal(hasEntryMethod(method), true);
+  }
 });
