@@ -503,13 +503,16 @@ func Test_should_reject_reserved_key_when_it_starts_with_double_underscore_at_an
 
 func Test_should_report_mutation_when_it_is_not_a_substitution(t *testing.T) {
 	// given
-	metadata := models.PolymerEntityMetadata{Mutations: []string{"C54T", "c97a", "54T", "C54T, C97A"}}
+	entities := []models.DepositorPolymerEntity{{
+		LabelEntityID: "1",
+		Mutations:     []string{"C54T", "c97a", "54T", "C54T, C97A"},
+	}}
 
 	// when
-	fieldErrors := PolymerEntity(Root.Field("entity"), metadata)
+	fieldErrors := DepositorPolymerEntities(Root.Field("entity"), entities)
 
 	// then
-	assert.Equal(t, []Pointer{"/entity/mutations/1", "/entity/mutations/2", "/entity/mutations/3"}, pointersOf(fieldErrors))
+	assert.Equal(t, []Pointer{"/entity/0/mutations/1", "/entity/0/mutations/2", "/entity/0/mutations/3"}, pointersOf(fieldErrors))
 	assert.Equal(t, CodeInvalidFormat, fieldErrors[0].Code)
 }
 
@@ -565,4 +568,15 @@ func Test_should_require_method_when_new_entry_metadata_has_none(t *testing.T) {
 	assert.Equal(t, []Pointer{"/entry/method"}, pointersOf(missingErrors))
 	assert.Equal(t, []Pointer{"/entry/method"}, pointersOf(blankErrors))
 	assert.Empty(t, freeTextErrors)
+}
+
+func Test_should_not_check_mutation_format_when_polymer_entity_comes_from_rcsb(t *testing.T) {
+	// given
+	metadata := models.PolymerEntityMetadata{Mutations: []string{"ENGINEERED MUTATION", "DELETION", "A(-3)G"}}
+
+	// when
+	fieldErrors := PolymerEntity(Root.Field("entity"), metadata)
+
+	// then
+	assert.Empty(t, fieldErrors)
 }

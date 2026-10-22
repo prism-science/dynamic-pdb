@@ -159,7 +159,7 @@ func ModelMetadata(at Pointer, metadata models.ModelMetadata) []FieldError {
 }
 
 func PolymerEntity(at Pointer, metadata models.PolymerEntityMetadata) []FieldError {
-	fieldErrors := mutations(at.Field("mutations"), metadata.Mutations)
+	var fieldErrors []FieldError
 	for index, mapping := range metadata.UniProtMappings {
 		mappingAt := at.Field("uniprot_mappings").Index(index)
 		fieldErrors = append(fieldErrors, RequiredText(mappingAt.Field("accession"), &mapping.Accession)...)
