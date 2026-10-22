@@ -47,6 +47,8 @@ var (
 	logOnlyTestServer *httptest.Server
 	// limitedExtractionServer allows one extraction at a time and three per user per minute.
 	limitedExtractionServer *httptest.Server
+	// timeoutExtractionServer allows one extraction at a time and gives the parser no time at all.
+	timeoutExtractionServer *httptest.Server
 	testDatabase            *db.DB
 	githubClient            *MockGitHubClient
 	s3Stub                  *e2es3.StubServer
@@ -154,13 +156,16 @@ func TestMain(m *testing.M) {
 		rcsb.NewClient(rcsb.WithBaseURLs(rcsbStub.URL, rcsbStub.URL, rcsbStub.URL, rcsbStub.URL)),
 		sifts.NewClient(sifts.WithBaseURL(rcsbStub.URL)),
 	)
-	newTestRouter := func(validationMode validation.Mode, limitExtraction bool) http.Handler {
+	newTestRouter := func(validationMode validation.Mode, limitExtraction bool, extractionTimeout time.Duration) http.Handler {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
 			validationMode,
 		).WithArchiveLookup(archiveLookup)
 		if limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
+		}
+		if extractionTimeout > 0 {
+			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(extractionTimeout)
 		}
 		router := chi.NewRouter()
 		router.Use(corsMiddleware())
@@ -174,15 +179,17 @@ func TestMain(m *testing.M) {
 		})
 		return router
 	}
-	testServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, false))
-	logOnlyTestServer = httptest.NewServer(newTestRouter(validation.ModeLogOnly, false))
-	limitedExtractionServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, true))
+	testServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, false, 0))
+	logOnlyTestServer = httptest.NewServer(newTestRouter(validation.ModeLogOnly, false, 0))
+	limitedExtractionServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, true, 0))
+	timeoutExtractionServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, false, time.Nanosecond))
 
 	code := m.Run()
 
 	testServer.Close()
 	logOnlyTestServer.Close()
 	limitedExtractionServer.Close()
+	timeoutExtractionServer.Close()
 	s3Stub.Close()
 	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {

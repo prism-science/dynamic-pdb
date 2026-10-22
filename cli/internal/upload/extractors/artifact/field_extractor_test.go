@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -392,4 +393,28 @@ func Test_should_log_draft_warning_once_when_several_artifacts_are_read(t *testi
 		})
 	}
 	assert.Equal(t, 1, draftLines)
+}
+
+func Test_should_finish_quickly_when_a_four_mebibyte_artifact_is_one_line_of_quoted_tokens(t *testing.T) {
+	for name, unit := range map[string]string{"single quotes": "'a' ", "double quotes": "\"a\" "} {
+		t.Run(name, func(t *testing.T) {
+			// given
+			text := "data_X\nloop_\n_entity.id\n" + strings.Repeat(unit, structureReadLimit/len(unit))
+			extractor := NewFieldExtractor(map[string]extractors.Artifact{
+				"coordinates": {Filename: "model.cif", Contents: []byte(text)},
+			})
+
+			// when
+			start := time.Now()
+			_, _, err := extractor.Extract(context.Background(), "5AMF",
+				manifest.Source{Artifact: "coordinates"},
+				manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "ligands"}},
+			)
+			elapsed := time.Since(start)
+
+			// then
+			require.NoError(t, err)
+			assert.Less(t, elapsed, 2*time.Second)
+		})
+	}
 }

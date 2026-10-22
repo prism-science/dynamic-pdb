@@ -249,6 +249,13 @@ paths:
         buffers are kept and flagged `needs_review`, and every response carries a
         warning saying so.
 
+        Parsing has a time budget of 5 seconds per request. If it runs out, the
+        response is still 200: the values found so far come back with the warning
+        `parser limit: time budget exceeded: the rest of the file was not read`,
+        and the values that need the whole file (atom count, modeled residues,
+        protein chains, altloc fraction) are left out, as for a truncated read.
+        The extraction slot is released either way.
+
         Allowed for the user who created the artifact and for reviewers. Each
         user may make 10 extraction requests per minute and each server instance
         runs at most 2 extractions at once; past those limits the response is

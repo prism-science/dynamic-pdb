@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -56,16 +57,24 @@ func MMCIFFieldsTruncated(text string) (map[string]any, error) {
 
 // MMCIFExtraction reads an mmCIF text in one pass. Set truncated when text is
 // only the head of a larger file.
+// The read stops after TimeBudget, see ExtractText.
 func MMCIFExtraction(text string, truncated bool) (Extraction, error) {
+	ctx, cancel := withTimeBudget(context.Background())
+	defer cancel()
+	return MMCIFExtractionContext(ctx, text, truncated)
+}
+
+// MMCIFExtractionContext is MMCIFExtraction bounded by ctx only.
+func MMCIFExtractionContext(ctx context.Context, text string, truncated bool) (Extraction, error) {
 	reference, err := DefaultReference()
 	if err != nil {
 		return Extraction{}, fmt.Errorf("load reference list: %w", err)
 	}
-	return mmcifExtraction(text, truncated, reference)
+	return mmcifExtraction(ctx, text, truncated, reference)
 }
 
-func mmcifExtraction(text string, truncated bool, reference *Reference) (Extraction, error) {
-	document, result, err := ExtractTextWithReference(text, truncated, reference)
+func mmcifExtraction(ctx context.Context, text string, truncated bool, reference *Reference) (Extraction, error) {
+	document, result, err := extractText(ctx, text, truncated, reference)
 	if err != nil {
 		return Extraction{}, fmt.Errorf("extract mmCIF fields: %w", err)
 	}
@@ -155,8 +164,10 @@ func addPositiveInt(fields map[string]any, key string, value int) {
 	}
 }
 
+var fieldKeySeparators = strings.NewReplacer("(", " ", ")", " ", ":", " ")
+
 func normalizedFieldKey(key string) string {
 	key = strings.ToLower(strings.TrimSpace(key))
-	key = strings.NewReplacer("(", " ", ")", " ", ":", " ").Replace(key)
+	key = fieldKeySeparators.Replace(key)
 	return strings.Join(strings.Fields(key), " ")
 }

@@ -23,6 +23,11 @@ import (
 // garbage collector never ran, inside a 512 MiB pod. The limits exist because the
 // cost per request still scales with a user-supplied file, not because two
 // requests are expected to be a problem.
+//
+// Time is bounded the same way: reading is linear in the input (a 4 MiB hostile
+// file parses in well under a second, see lib/cif/hostile_time_test.go), and the
+// parse stops after extractionTimeout (cif.TimeBudget, 5 s), so a slot is never
+// held longer than that plus the ranged GET.
 const (
 	defaultExtractionMaxInFlight = 2
 	// defaultExtractionUserRequests per defaultExtractionUserWindow, per user and
@@ -81,5 +86,14 @@ func retryAfterSeconds(wait time.Duration) string {
 // WithExtractionLimits replaces the default limits of the extract endpoint.
 func (s *Server) WithExtractionLimits(maxInFlight int, userRequests int, userWindow time.Duration) *Server {
 	s.extractionLimits = newExtractionLimits(maxInFlight, userRequests, userWindow)
+	return s
+}
+
+// WithExtractionTimeout replaces the time one extraction may spend parsing the
+// file it read (default cif.TimeBudget). When it runs out the response is still
+// 200, with the values found so far and a `parser limit: time budget exceeded`
+// warning, and the slot is released.
+func (s *Server) WithExtractionTimeout(timeout time.Duration) *Server {
+	s.extractionTimeout = timeout
 	return s
 }

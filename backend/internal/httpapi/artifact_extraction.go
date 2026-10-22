@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,7 +78,13 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 		return
 	}
 
-	attributes, err := buildArtifactExtraction(head.Data, head.TotalSize, source)
+	timeout := s.extractionTimeout
+	if timeout <= 0 {
+		timeout = cif.TimeBudget
+	}
+	parseContext, cancelParse := context.WithTimeout(r.Context(), timeout)
+	attributes, err := buildArtifactExtraction(parseContext, head.Data, head.TotalSize, source)
+	cancelParse()
 	if err != nil {
 		slog.ErrorContext(r.Context(), "extract artifact values failed", "err", err, "artifact_id", id)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to extract values")
@@ -161,10 +168,11 @@ type atomValues struct {
 
 // buildArtifactExtraction parses the head of an mmCIF file and returns the
 // extracted values. Values that cannot be extracted or break the schema rules
-// become warnings.
-func buildArtifactExtraction(data []byte, totalSize int64, source string) (ArtifactExtractionAttributes, error) {
+// become warnings, and so does running out of time: when ctx is done the parse
+// stops and the warnings include `parser limit: time budget exceeded ...`.
+func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, source string) (ArtifactExtractionAttributes, error) {
 	truncated := totalSize > int64(len(data))
-	_, result, err := cif.ExtractText(bytesAsString(data), truncated)
+	_, result, err := cif.ExtractTextContext(ctx, bytesAsString(data), truncated)
 	if err != nil {
 		return ArtifactExtractionAttributes{}, fmt.Errorf("extract mmCIF values: %w", err)
 	}

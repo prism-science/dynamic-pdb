@@ -51,6 +51,7 @@ warning, and the parse still succeeds:
 | distinct compounds per list | 2,000 | real entries have well under 200 |
 | REMARK fields (PDB) | 5,000 | |
 | one line in the streaming scalar scan | 8 MiB | a longer line is an error, not a buffer |
+| time for one extraction (`cif.TimeBudget`) | 5 s | a 4 MiB head parses in under 0.2 s even when hostile; the budget only stops a slow machine or an input nobody anticipated |
 
 If `_atom_site` runs past a cap, atom counts, residue counts and altloc fraction
 are left out with a warning (as for a cut-off read) instead of being wrong. A
@@ -63,6 +64,28 @@ reachable after parsing and about 100 MiB allocated in total per request. Before
 the caps, a file of `a a a ...` under `_struct_conn.id` kept about 930 MiB live.
 The CLI reads the same 4 MiB head through the same functions, so the same bounds
 apply there.
+
+### Time bounds for hostile files
+
+Reading is linear in the input. The tokenizer reads a quoted value forward from its
+opening quote and stops at the closing quote (a quote followed by whitespace or the
+end of the line), so a line holding many quoted tokens is read once, not once per
+token. `lib/cif/hostile_time_test.go` runs about 40 hostile shapes (one line of
+`'a' ` or `"a" ` tokens, quotes that never close, quotes inside unquoted tokens,
+prime-like names, `;` blocks, very long lines, CRLF, many tiny tokens, many
+`data_`, `loop_` and tag lines, mixes) through every entry point and requires a 4 MiB
+file to finish inside 2 s and to cost less than 8x the time of the same file cut to 1 MiB.
+
+Beyond that, every extraction has a **time budget** of `cif.TimeBudget` (5 s).
+`ExtractText`, `MMCIFExtraction` and `PDBExtraction` check the clock every 1,024
+tokenizer steps or lines (`...Context` variants take the caller's context instead,
+which also covers a client that disconnects). When the budget runs out, reading
+stops as at the end of a cut-off file: the result carries the warning `parser limit:
+time budget exceeded: the rest of the file was not read` and atom counts, residue
+counts and altloc fraction are left out; what was read before that is returned.
+`ScalarValueFromReaderContext` returns an error wrapping the context's error. The
+non-context `ScalarValueFromReader` has no fixed budget, because it scans a whole
+file of any size in linear time; the CLI passes its context.
 
 `cif.ScalarValue` / `cif.ScalarValueFromReader` look up one non-looped item (for
 example `_refine.ls_R_factor_R_free`) by scanning the stream through a fixed
@@ -165,6 +188,10 @@ mutations before the coordinates, so those are read in full. If the coordinates
 run past the limit, atom counts, residue counts and altloc fraction are left out
 with a warning. The object must sit in the artifact's own upload folder, and the
 caller must be the artifact's creator or a reviewer.
+
+### Time budget
+
+Parsing stops after 5 s (`Server.WithExtractionTimeout`, default `cif.TimeBudget`) or when the client disconnects. A timeout is reported like a truncated read, not as an error: the response is `200` with the values found so far and the warning `parser limit: time budget exceeded: the rest of the file was not read` (counts that need every atom are left out). The slot is released when the handler returns, so a slot is held for at most the ranged GET plus 5 s.
 
 ### Concurrency and rate limits
 

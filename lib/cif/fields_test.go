@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ func Test_should_build_field_map_from_pdb_contents(t *testing.T) {
 		"HETATM    9  S   SO4 B 103      16.104  13.207   9.447  1.00 20.00           S\n"
 
 	// when
-	extraction, err := pdbExtraction(text, false, approvedReference(t))
+	extraction, err := pdbExtraction(context.Background(), text, false, approvedReference(t))
 	fields := extraction.Fields
 
 	// then
@@ -145,8 +146,8 @@ func Test_should_keep_heme_and_metal_in_cofactors_not_ligands_when_building_fiel
 	reference := approvedReference(t)
 
 	// when
-	hemeExtraction, hemeErr := mmcifExtraction(heme, false, reference)
-	calciumExtraction, calciumErr := mmcifExtraction(calcium, false, reference)
+	hemeExtraction, hemeErr := mmcifExtraction(context.Background(), heme, false, reference)
+	calciumExtraction, calciumErr := mmcifExtraction(context.Background(), calcium, false, reference)
 	hemeFields, calciumFields := hemeExtraction.Fields, calciumExtraction.Fields
 
 	// then

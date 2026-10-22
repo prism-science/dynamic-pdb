@@ -318,3 +318,30 @@ func (s *ArtifactExtractSuite) Test_should_return_503_with_retry_after_when_ever
 	s.Equal(http.StatusOK, again.StatusCode, "the slot is free again once the first request finished")
 	s.Require().NoError(again.Body.Close())
 }
+
+func (s *ArtifactExtractSuite) Test_should_answer_200_with_time_budget_warning_and_free_the_slot_when_parsing_runs_out_of_time() {
+	// given
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "extract-timeout-owner", 8114)
+	artifact := s.storeArtifact(s.userIDFromToken(token), "6OIM.cif", "mmcif")
+	path := "/v1/artifacts/" + artifact.ID.String() + "/extract"
+	var documents []httpapi.ArtifactExtractionDocument
+
+	// when
+	for range 3 {
+		//nolint:bodyclose // decodeJSONResponse closes the response body.
+		response := jsonRequestToServerWithToken(s.T(), timeoutExtractionServer.URL, http.MethodPost, path, nil, token)
+		documents = append(documents, decodeJSONResponse[httpapi.ArtifactExtractionDocument](s.T(), response, http.StatusOK))
+	}
+
+	// then
+	for _, document := range documents {
+		var details []string
+		for _, warning := range document.Data.Attributes.Warnings {
+			details = append(details, warning.Detail)
+		}
+		s.Contains(details, "parser limit: time budget exceeded: the rest of the file was not read")
+		for _, value := range document.Data.Attributes.Values {
+			s.NotEqual("atom_count", value.Name, "counts from a partial read are never reported")
+		}
+	}
+}

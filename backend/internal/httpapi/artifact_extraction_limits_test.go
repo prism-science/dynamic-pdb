@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -111,7 +112,7 @@ func Test_should_stay_under_allocation_budget_when_extracting_a_four_mebibyte_he
 	// when
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	attributes, err := buildArtifactExtraction(data, int64(len(data))+1024, testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data))+1024, testArtifactSource)
 	runtime.ReadMemStats(&after)
 
 	// then
@@ -159,7 +160,7 @@ func Test_should_stay_under_memory_budget_when_extracting_hostile_files(t *testi
 			// when
 			runtime.GC()
 			runtime.ReadMemStats(&before)
-			attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+			attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
 			require.NoError(t, err)
 			encoded, err := json.Marshal(attributes)
 			require.NoError(t, err)
@@ -184,8 +185,44 @@ func Benchmark_extract_artifact_head(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		if _, err := buildArtifactExtraction(data, int64(len(data))+1024, testArtifactSource); err != nil {
+		if _, err := buildArtifactExtraction(context.Background(), data, int64(len(data))+1024, testArtifactSource); err != nil {
 			b.Fatal(err)
 		}
 	}
+}
+
+func Test_should_finish_quickly_when_extracting_a_four_mebibyte_line_of_quoted_tokens(t *testing.T) {
+	for name, unit := range map[string]string{"single quotes": "'a' ", "double quotes": "\"a\" "} {
+		t.Run(name, func(t *testing.T) {
+			// given
+			data := []byte("data_X\nloop_\n_entity.id\n" + strings.Repeat(unit, artifactExtractionReadLimit/len(unit)))
+
+			// when
+			start := time.Now()
+			attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+			elapsed := time.Since(start)
+
+			// then
+			require.NoError(t, err)
+			assert.Less(t, elapsed, 2*time.Second)
+			assert.NotContains(t, warningDetails(attributes), "parser limit: time budget exceeded: the rest of the file was not read")
+		})
+	}
+}
+
+func Test_should_warn_and_still_answer_when_the_extraction_runs_out_of_time(t *testing.T) {
+	// given
+	data := syntheticArtifactMMCIF(artifactExtractionReadLimit)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+
+	// when
+	attributes, err := buildArtifactExtraction(ctx, data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	assert.Contains(t, warningDetails(attributes), "parser limit: time budget exceeded: the rest of the file was not read")
+	_, hasAtomCount := extractedValueByName(attributes.Values, "atom_count")
+	assert.False(t, hasAtomCount, "counts from a partial read are never reported")
 }

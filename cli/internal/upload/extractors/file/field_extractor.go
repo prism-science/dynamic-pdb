@@ -31,7 +31,7 @@ func NewFieldExtractor(dataRoot string) FieldExtractor {
 }
 
 func (e FieldExtractor) Extract(
-	_ context.Context,
+	ctx context.Context,
 	pdbID string,
 	source manifest.Source,
 	extract manifest.Extract,
@@ -39,7 +39,7 @@ func (e FieldExtractor) Extract(
 	for _, fileSource := range source.Files {
 		for _, fileSource := range pdbIDFileSources(fileSource, pdbID) {
 			if streamsStructure(extract) {
-				value, found, exists, err := e.streamStructureField(fileSource, extract)
+				value, found, exists, err := e.streamStructureField(ctx, fileSource, extract)
 				if err != nil {
 					return nil, false, err
 				}
@@ -71,14 +71,14 @@ func streamsStructure(extract manifest.Extract) bool {
 
 // streamStructureField reads one value without loading the file. exists is
 // false when the source file is not there.
-func (e FieldExtractor) streamStructureField(source string, extract manifest.Extract) (value any, found bool, exists bool, err error) {
+func (e FieldExtractor) streamStructureField(ctx context.Context, source string, extract manifest.Extract) (value any, found bool, exists bool, err error) {
 	exists, err = e.readLocal(source, func(reader io.Reader) error {
 		var readErr error
 		switch {
 		case extract.PDB != nil:
 			value, found, readErr = scanPDBField(reader, extract.PDB.Field)
 		case extract.MMCIF != nil:
-			value, found, readErr = scanMMCIFField(reader, extract.MMCIF.Field)
+			value, found, readErr = scanMMCIFField(ctx, reader, extract.MMCIF.Field)
 		default:
 			return fmt.Errorf("extract has neither a PDB nor an mmCIF rule")
 		}
@@ -279,8 +279,8 @@ func scanPDBField(source io.Reader, field string) (any, bool, error) {
 	return nil, false, nil
 }
 
-func scanMMCIFField(source io.Reader, field string) (any, bool, error) {
-	raw, ok, err := cif.ScalarValueFromReader(source, strings.TrimSpace(field))
+func scanMMCIFField(ctx context.Context, source io.Reader, field string) (any, bool, error) {
+	raw, ok, err := cif.ScalarValueFromReaderContext(ctx, source, strings.TrimSpace(field))
 	if err != nil {
 		return nil, false, fmt.Errorf("scan mmCIF field %s: %w", field, err)
 	}

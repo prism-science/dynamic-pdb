@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func Test_should_tag_every_value_with_file_source_when_extracting_mmcif(t *testi
 	data := readCIFFixture(t, "6OIM.cif")
 
 	// when
-	attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
 
 	// then
 	require.NoError(t, err)
@@ -70,7 +71,7 @@ func Test_should_flag_value_for_review_when_metal_has_no_metalc_row(t *testing.T
 	data := []byte("data_X\nloop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 ZN\n")
 
 	// when
-	attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
 
 	// then
 	require.NoError(t, err)
@@ -86,7 +87,7 @@ func Test_should_warn_instead_of_fail_when_head_is_truncated_inside_coordinates(
 	head := full[:len(full)-len(full)/4]
 
 	// when
-	attributes, err := buildArtifactExtraction(head, int64(len(full)), testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), head, int64(len(full)), testArtifactSource)
 
 	// then
 	require.NoError(t, err)
@@ -104,7 +105,7 @@ func Test_should_warn_when_file_has_no_coordinates(t *testing.T) {
 	data := []byte("data_X\n_struct.title test\n")
 
 	// when
-	attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
 
 	// then
 	require.NoError(t, err)
@@ -118,7 +119,7 @@ func Test_should_keep_sulfate_flagged_for_review_and_warn_when_reference_lists_a
 	data := []byte("data_X\nloop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 SO4\n3 HOH\n")
 
 	// when
-	attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
 
 	// then
 	require.NoError(t, err)

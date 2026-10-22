@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -34,17 +35,35 @@ var extractionTables = map[string]struct{}{
 // grow with the file's content (see limits.go). Result.Connections is empty;
 // use Parse and Extract when the connections themselves are needed. The returned document holds the scalar items and
 // the small tables only. Set truncated for the head of a larger file.
+//
+// The read stops after TimeBudget, or when ctx is done if that comes first; the
+// result then carries the warning "parser limit: time budget exceeded ..." and
+// the atom counts are left out, as for a cut-off read.
 func ExtractText(text string, truncated bool) (*Document, Result, error) {
+	ctx, cancel := withTimeBudget(context.Background())
+	defer cancel()
+	return ExtractTextContext(ctx, text, truncated)
+}
+
+// ExtractTextContext is ExtractText bounded by ctx only: the caller sets the
+// deadline.
+func ExtractTextContext(ctx context.Context, text string, truncated bool) (*Document, Result, error) {
 	reference, err := DefaultReference()
 	if err != nil {
 		return nil, Result{}, fmt.Errorf("load reference list: %w", err)
 	}
-	return ExtractTextWithReference(text, truncated, reference)
+	return extractText(ctx, text, truncated, reference)
 }
 
 // ExtractTextWithReference is ExtractText with an explicit reference list.
 func ExtractTextWithReference(text string, truncated bool, reference *Reference) (*Document, Result, error) {
-	document := parse(text, truncated, parseOptions{streamAtomSite: true, streamStructConn: true, onlyTables: extractionTables})
+	ctx, cancel := withTimeBudget(context.Background())
+	defer cancel()
+	return extractText(ctx, text, truncated, reference)
+}
+
+func extractText(ctx context.Context, text string, truncated bool, reference *Reference) (*Document, Result, error) {
+	document := parse(ctx, text, truncated, parseOptions{streamAtomSite: true, streamStructConn: true, onlyTables: extractionTables})
 	result, err := ExtractWithReference(document, reference)
 	if err != nil {
 		return nil, Result{}, fmt.Errorf("extract mmCIF values: %w", err)
@@ -387,6 +406,7 @@ func (r *atomSiteReader) add(row []string) {
 
 const (
 	atomSiteCutOffWarning = "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+	atomSiteTimedOut      = "the time budget ended before the atom_site coordinates were fully read: atom counts, residue counts and altloc fraction not extracted"
 	atomSiteNotReached    = "the read limit ended before any atom_site coordinates: atom counts, residue counts and altloc fraction not extracted"
 )
 
@@ -418,6 +438,9 @@ func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance
 func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
 	table := document.Table("_atom_site")
 	if table == nil {
+		if document.timedOut {
+			return nil, map[compoundInstance]int{}, atomSiteTimedOut
+		}
 		if document.truncated {
 			return nil, map[compoundInstance]int{}, atomSiteNotReached
 		}
@@ -430,7 +453,7 @@ func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, str
 			reader.add(row)
 		}
 	}
-	return reader.result(table.Complete)
+	return reader.result(table.Complete && !document.timedOut)
 }
 
 const minAltlocOccupancy = 0.1

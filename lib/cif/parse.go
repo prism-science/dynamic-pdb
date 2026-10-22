@@ -3,6 +3,7 @@
 package cif
 
 import (
+	"context"
 	"strings"
 )
 
@@ -16,7 +17,9 @@ type Document struct {
 	// metalLinks is set when the _struct_conn rows were streamed, not stored.
 	metalLinks *metalLinkReader
 	truncated  bool
-	notes      limitNotes
+	// timedOut is set when the time budget ended the read before the input did.
+	timedOut bool
+	notes    limitNotes
 }
 
 // Table is one category: a loop, or the items of a category written as pairs.
@@ -35,13 +38,13 @@ type token struct {
 
 // Parse reads a complete mmCIF text.
 func Parse(text string) *Document {
-	return parse(text, false, parseOptions{})
+	return parse(context.Background(), text, false, parseOptions{})
 }
 
 // ParseTruncated reads the head of a larger file. The final token is dropped
 // when it may be cut off, and loops still open at the end are marked incomplete.
 func ParseTruncated(text string) *Document {
-	return parse(text, true, parseOptions{})
+	return parse(context.Background(), text, true, parseOptions{})
 }
 
 // parseOptions lets extraction read a file in one pass without keeping every
@@ -58,8 +61,8 @@ type parseOptions struct {
 	onlyTables map[string]struct{}
 }
 
-func parse(text string, truncated bool, options parseOptions) *Document {
-	reader := &tokenReader{tokens: newTokenizer(text, truncated)}
+func parse(ctx context.Context, text string, truncated bool, options parseOptions) *Document {
+	reader := &tokenReader{tokens: newTokenizer(ctx, text, truncated)}
 	document := &Document{
 		scalars:   map[string]string{},
 		tables:    map[string]*Table{},
@@ -77,7 +80,7 @@ func parse(text string, truncated bool, options parseOptions) *Document {
 		case current.quoted:
 		case isDataHeader(current.text):
 			if seenDataHeader {
-				return document.finish(pairColumns)
+				return document.finish(pairColumns, reader)
 			}
 			seenDataHeader = true
 		case strings.EqualFold(current.text, "loop_"):
@@ -95,7 +98,7 @@ func parse(text string, truncated bool, options parseOptions) *Document {
 			document.addScalar(current.text, value.text, pairColumns)
 		}
 	}
-	return document.finish(pairColumns)
+	return document.finish(pairColumns, reader)
 }
 
 // tokenReader adds one token of pushback to the tokenizer.
@@ -118,7 +121,11 @@ func (r *tokenReader) unread(held token) {
 	r.hasHeld = true
 }
 
-func (d *Document) finish(pairColumns map[string]*Table) *Document {
+func (d *Document) finish(pairColumns map[string]*Table, reader *tokenReader) *Document {
+	if reader.tokens.check.err != nil {
+		d.timedOut = true
+		d.notes.add(timeBudgetNote)
+	}
 	for category, table := range pairColumns {
 		if _, exists := d.tables[category]; !exists {
 			table.Rows = [][]string{rowFromPairs(table)}
@@ -330,15 +337,26 @@ type tokenizer struct {
 	position          int
 	truncated         bool
 	endsWithSeparator bool
+	check             timeCheck
 }
 
-func newTokenizer(text string, truncated bool) *tokenizer {
-	return &tokenizer{text: strings.ReplaceAll(text, "\r\n", "\n"), truncated: truncated}
+func newTokenizer(ctx context.Context, text string, truncated bool) *tokenizer {
+	return &tokenizer{
+		text:      strings.ReplaceAll(text, "\r\n", "\n"),
+		truncated: truncated,
+		check:     timeCheck{ctx: ctx},
+	}
 }
 
+// next returns the next token. When the time budget runs out it behaves like the
+// end of the input and check.err says why.
 func (t *tokenizer) next() (token, bool) {
 	text := t.text
 	for t.position < len(text) {
+		if t.check.expired() {
+			t.position = len(text)
+			return token{}, false
+		}
 		position := t.position
 		character := text[position]
 		switch {
@@ -395,23 +413,20 @@ func (t *tokenizer) next() (token, bool) {
 
 // quotedExtent finds a quoted value on one line. The closing quote is the first
 // matching quote followed by whitespace or the end of the line; an unterminated
-// value takes the rest of the line. The value is text[start+1:valueEnd].
+// value takes the rest of the line. The value is text[start+1:valueEnd]. It
+// reads forward from the opening quote once and stops at the closing quote, so a
+// token costs its own length and a line of many quoted tokens is read once.
 func quotedExtent[T ~string | ~[]byte](text T, start int) (valueEnd int, next int, closed bool) {
 	quote := text[start]
-	lineEnd := len(text)
-	for index := start; index < len(text); index++ {
-		if text[index] == '\n' {
-			lineEnd = index
-			break
+	for index := start + 1; index < len(text); index++ {
+		switch text[index] {
+		case '\n':
+			return index, index, false
+		case quote:
+			if index+1 == len(text) || text[index+1] == ' ' || text[index+1] == '\t' || text[index+1] == '\n' {
+				return index, index + 1, true
+			}
 		}
 	}
-	for index := start + 1; index < lineEnd; index++ {
-		if text[index] != quote {
-			continue
-		}
-		if index+1 == lineEnd || text[index+1] == ' ' || text[index+1] == '\t' {
-			return index, index + 1, true
-		}
-	}
-	return lineEnd, lineEnd, false
+	return len(text), len(text), false
 }

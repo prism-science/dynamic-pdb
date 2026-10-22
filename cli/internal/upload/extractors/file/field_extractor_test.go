@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -251,4 +252,26 @@ func Test_should_fail_loudly_when_pdb_field_is_not_one_the_extractor_reads(t *te
 	require.Error(t, err)
 	assert.False(t, ok)
 	assert.Contains(t, err.Error(), "unknown PDB field")
+}
+
+func Test_should_finish_quickly_when_a_mmcif_file_is_one_line_of_quoted_tokens(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	text := "data_X\nloop_\n_entity.id\n" + strings.Repeat("'a' ", 1<<20) + "\n_refine.ls_R_factor_R_free 0.243\n"
+	writeTestFile(t, dataRoot, "models/5amf_model.cif", []byte(text))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	start := time.Now()
+	value, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.cif"}},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+	elapsed := time.Since(start)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 0.243, value)
+	assert.Less(t, elapsed, 2*time.Second)
 }

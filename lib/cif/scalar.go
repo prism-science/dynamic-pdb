@@ -3,6 +3,7 @@ package cif
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,10 +24,21 @@ func ScalarValue(text string, tag string) (string, bool) {
 // use does not depend on the size of the stream: lines are read through a fixed
 // buffer, loops are skipped without storing their rows, and only the wanted
 // value is kept. Missing, "." and "?" report false.
+//
+// The scan reads the whole stream (the last occurrence of a tag wins), so its
+// time is linear in the stream and has no fixed budget: the stream may be a
+// large file, not a 4 MiB head. Use ScalarValueFromReaderContext to bound it.
 func ScalarValueFromReader(source io.Reader, tag string) (string, bool, error) {
+	return ScalarValueFromReaderContext(context.Background(), source, tag)
+}
+
+// ScalarValueFromReaderContext is ScalarValueFromReader that stops with an error
+// wrapping the context's error once ctx is done.
+func ScalarValueFromReaderContext(ctx context.Context, source io.Reader, tag string) (string, bool, error) {
 	scanner := &scalarScanner{
 		reader: bufio.NewReaderSize(source, 64*1024),
 		wanted: []byte(tag),
+		check:  timeCheck{ctx: ctx},
 	}
 	if err := scanner.run(); err != nil {
 		return "", false, fmt.Errorf("scan mmCIF for %s: %w", tag, err)
@@ -46,6 +58,7 @@ const (
 type scalarScanner struct {
 	reader *bufio.Reader
 	wanted []byte
+	check  timeCheck
 	// longLine holds lines that do not fit the read buffer.
 	longLine []byte
 
@@ -64,6 +77,9 @@ func (s *scalarScanner) run() error {
 	var block []byte
 	capture := false
 	for !s.finished {
+		if s.check.expired() {
+			return fmt.Errorf("time budget exceeded: %w", s.check.err)
+		}
 		line, err := s.readLine()
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("read line: %w", err)
@@ -97,6 +113,9 @@ func (s *scalarScanner) run() error {
 		default:
 			s.scanLine(line)
 		}
+		if s.check.err != nil {
+			return fmt.Errorf("time budget exceeded: %w", s.check.err)
+		}
 		if atEnd {
 			if inTextBlock && !s.finished {
 				s.handle(block, true)
@@ -129,7 +148,7 @@ func (s *scalarScanner) readLine() ([]byte, error) {
 // tokens the way the document tokenizer does and feeds them to the state machine.
 func (s *scalarScanner) scanLine(line []byte) {
 	position := 0
-	for position < len(line) && !s.finished {
+	for position < len(line) && !s.finished && !s.check.expired() {
 		character := line[position]
 		switch character {
 		case ' ', '\t':

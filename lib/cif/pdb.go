@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,15 +23,23 @@ func PDBFields(text string) (map[string]any, error) {
 // file: a line cut off at the end is dropped, and when the coordinates were not
 // seen to end (no ENDMDL, CONECT, MASTER or END record) the counts that need all
 // of them are omitted.
+// The read stops after TimeBudget, see ExtractText.
 func PDBExtraction(text string, truncated bool) (Extraction, error) {
+	ctx, cancel := withTimeBudget(context.Background())
+	defer cancel()
+	return PDBExtractionContext(ctx, text, truncated)
+}
+
+// PDBExtractionContext is PDBExtraction bounded by ctx only.
+func PDBExtractionContext(ctx context.Context, text string, truncated bool) (Extraction, error) {
 	reference, err := DefaultReference()
 	if err != nil {
 		return Extraction{}, fmt.Errorf("load reference list: %w", err)
 	}
-	return pdbExtraction(text, truncated, reference)
+	return pdbExtraction(ctx, text, truncated, reference)
 }
 
-func pdbExtraction(text string, truncated bool, reference *Reference) (Extraction, error) {
+func pdbExtraction(ctx context.Context, text string, truncated bool, reference *Reference) (Extraction, error) {
 	if truncated {
 		text = text[:strings.LastIndexByte(text, '\n')+1]
 	}
@@ -44,7 +53,12 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 	modelStarted := false
 	firstModelDone := false
 	coordinatesEnded := false
+	check := timeCheck{ctx: ctx}
 	for rest := text; rest != ""; {
+		if check.expired() {
+			notes.add(timeBudgetNote)
+			break
+		}
 		var line string
 		line, rest, _ = strings.Cut(rest, "\n")
 		record := recordName(line)
@@ -107,7 +121,7 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 			return parseOccupancy(slice(line, 54, 60))
 		})
 	}
-	coordinatesRead := !truncated || coordinatesEnded
+	coordinatesRead := (!truncated || coordinatesEnded) && check.err == nil
 	instances := tally.instanceCounts(coordinatesRead)
 	switch {
 	case tally.overflow != "":
