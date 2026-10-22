@@ -38,6 +38,8 @@ type Server struct {
 	// validationMode decides whether create requests that break schema rules are
 	// rejected or only logged.
 	validationMode validation.Mode
+	// archive serves GET /v1/archive/pdb/{pdb_id}; see WithArchiveLookup.
+	archive ArchiveLookup
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
