@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,4 +110,68 @@ func Test_should_find_field_by_normalized_key_when_exact_key_is_missing(t *testi
 	// then
 	require.True(t, ok)
 	assert.Equal(t, "0.243", value)
+}
+
+func Test_should_report_empty_cofactors_when_coordinates_were_read_and_hold_none(t *testing.T) {
+	// given
+	text := readFixture(t, "1AKE.cif")
+
+	// when
+	fields, err := MMCIFFields(text)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{}, fields["cofactors"])
+}
+
+func Test_should_omit_cofactors_when_coordinates_are_unknown(t *testing.T) {
+	// given
+	text := "data_X\n_entry.id X\n"
+
+	// when
+	fields, err := MMCIFFields(text)
+
+	// then
+	require.NoError(t, err)
+	assert.NotContains(t, fields, "cofactors")
+}
+
+func Test_should_keep_heme_and_metal_in_cofactors_not_ligands_when_building_field_map(t *testing.T) {
+	// given
+	heme := readFixture(t, "4HHB.cif")
+	calcium := readFixture(t, "3CLN.cif")
+
+	// when
+	hemeFields, hemeErr := MMCIFFields(heme)
+	calciumFields, calciumErr := MMCIFFields(calcium)
+
+	// then
+	require.NoError(t, hemeErr)
+	require.NoError(t, calciumErr)
+	assert.Equal(t, []string{"HEM"}, hemeFields["cofactors"])
+	assert.NotContains(t, hemeFields, "ligands")
+	assert.Equal(t, []string{"CA"}, calciumFields["cofactors"])
+	assert.NotContains(t, calciumFields, "ligands")
+}
+
+func Test_should_omit_atom_counts_when_cut_falls_exactly_on_a_row_boundary(t *testing.T) {
+	// given
+	text := readFixture(t, "3CLN.cif")
+	start := strings.Index(text, "\nHETATM 1127")
+	require.Positive(t, start)
+	rowEnd := start + 1 + strings.Index(text[start+1:], "\n") + 1
+	head := text[:rowEnd]
+	require.True(t, strings.HasSuffix(head, "\n"))
+
+	// when
+	parsedAsWhole, wholeErr := MMCIFFields(head)
+	parsedAsTruncated, truncatedErr := MMCIFFieldsTruncated(head)
+
+	// then
+	require.NoError(t, wholeErr)
+	require.NoError(t, truncatedErr)
+	assert.Contains(t, parsedAsWhole, "atom_count")
+	assert.NotContains(t, parsedAsTruncated, "atom_count")
+	assert.NotContains(t, parsedAsTruncated, "modeled_residues")
+	assert.NotContains(t, parsedAsTruncated, "altloc_fraction")
 }

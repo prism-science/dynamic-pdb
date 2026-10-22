@@ -18,7 +18,8 @@ func PDBFields(text string) (map[string]any, error) {
 	residues := map[residueKey]struct{}{}
 	chains := map[string]struct{}{}
 	positions := map[residueKey]map[string]float64{}
-	compoundIDs := map[string]struct{}{}
+	instances := map[compoundInstance]int{}
+	atomNames := map[compoundInstance]map[string]struct{}{}
 	atomCount := 0
 	for _, line := range strings.Split(text, "\n") {
 		record := recordName(line)
@@ -31,7 +32,17 @@ func PDBFields(text string) (map[string]any, error) {
 		}
 		compound := upperSlice(line, 17, 20)
 		if record == "HETATM" && compound != "" {
-			compoundIDs[compound] = struct{}{}
+			instance := compoundInstance{
+				compoundID: compound,
+				asymID:     slice(line, 21, 22),
+				authSeqID:  slice(line, 22, 26),
+				insCode:    slice(line, 26, 27),
+			}
+			if atomNames[instance] == nil {
+				atomNames[instance] = map[string]struct{}{}
+			}
+			atomNames[instance][slice(line, 12, 16)] = struct{}{}
+			instances[instance] = len(atomNames[instance])
 		}
 		if record == "HETATM" && isWater(compound) {
 			continue
@@ -66,11 +77,11 @@ func PDBFields(text string) (map[string]any, error) {
 	if len(residues) > 0 {
 		addField(fields, "altloc_fraction", float64(countAltlocResidues(positions))/float64(len(residues)))
 	}
-	ligands, cofactors, err := classifyCompounds(compoundIDs, nil, reference)
+	ligands, cofactors, err := classifyCompounds(instances, nil, reference)
 	if err != nil {
 		return nil, fmt.Errorf("classify PDB compounds: %w", err)
 	}
-	addCompoundFields(fields, ligands, cofactors)
+	addCompoundFields(fields, ligands, cofactors, atomCount > 0)
 	return fields, nil
 }
 

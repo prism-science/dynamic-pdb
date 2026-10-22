@@ -30,7 +30,7 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	result.Mutations = readMutations(document, result.SequenceDifferences)
 	result.Program = mmcifProgram(document)
 
-	atoms, compoundIDs, warning := readAtomSite(document)
+	atoms, instances, warning := readAtomSite(document)
 	result.Atoms = atoms
 	if warning != "" {
 		result.Warnings = append(result.Warnings, warning)
@@ -38,12 +38,12 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	if table := document.Table("_pdbx_entity_nonpoly"); table != nil {
 		for _, row := range table.Rows {
 			if id := strings.ToUpper(table.Value(row, "comp_id")); id != "" {
-				compoundIDs[id] = struct{}{}
+				instances[compoundInstance{compoundID: id}] = 0
 			}
 		}
 	}
 
-	ligands, cofactors, err := classifyCompounds(compoundIDs, result.Connections, reference)
+	ligands, cofactors, err := classifyCompounds(instances, result.Connections, reference)
 	if err != nil {
 		return Result{}, fmt.Errorf("classify compounds: %w", err)
 	}
@@ -52,71 +52,166 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	return result, nil
 }
 
+// compoundInstance is one placed copy of a non-polymer compound. Instances read
+// from _pdbx_entity_nonpoly alone have no location and carry only the compound
+// ID. The maps of instances hold the number of distinct atoms placed for the
+// instance, 0 when unknown.
+type compoundInstance struct {
+	compoundID string
+	asymID     string
+	authSeqID  string
+	insCode    string
+}
+
+func (instance compoundInstance) located() bool {
+	return instance.asymID != ""
+}
+
+func partnerInstance(partner Partner) compoundInstance {
+	return compoundInstance{
+		compoundID: strings.ToUpper(partner.LabelCompID),
+		asymID:     partner.LabelAsymID,
+		authSeqID:  partner.AuthSeqID,
+		insCode:    partner.InsCode,
+	}
+}
+
 // classifyCompounds applies the single ligand rule. Solvents, buffers and
-// cryoprotectants are dropped; nothing else is. A metal ion is a cofactor when a
-// metalc connection joins it to a protein residue or ligand; if the file has no
-// metalc rows at all its metals stay as cofactors flagged for review.
+// cryoprotectants are dropped; nothing else is. The metal rule is per instance:
+// a metal instance is a cofactor when a metalc connection joins that instance to
+// a protein residue or ligand. If the file has no metalc rows at all, its metals
+// are cofactors flagged for review. A metal instance without a link in a file
+// that has metalc rows becomes a ligand flagged for review, so it is never
+// dropped and never placed unflagged.
 func classifyCompounds(
-	compoundIDs map[string]struct{},
+	instances map[compoundInstance]int,
 	connections []Connection,
 	reference *Reference,
 ) ([]Compound, []Compound, error) {
 	hasMetalcRows := false
-	linkedMetals := map[string]bool{}
+	linkedInstances := map[compoundInstance]bool{}
+	linkedCompounds := map[string]bool{}
 	for _, connection := range connections {
 		if !strings.EqualFold(connection.ConnTypeID, connTypeMetalCoordination) {
 			continue
 		}
 		hasMetalcRows = true
-		first := strings.ToUpper(connection.Partner1.LabelCompID)
-		second := strings.ToUpper(connection.Partner2.LabelCompID)
-		if reference.kind(first) == kindMetalIon && !reference.isSolvent(second) && second != "" {
-			linkedMetals[first] = true
+		first := partnerInstance(connection.Partner1)
+		second := partnerInstance(connection.Partner2)
+		if reference.kind(first.compoundID) == kindMetalIon && second.compoundID != "" && !reference.isSolvent(second.compoundID) {
+			linkedInstances[first] = true
+			linkedCompounds[first.compoundID] = true
 		}
-		if reference.kind(second) == kindMetalIon && !reference.isSolvent(first) && first != "" {
-			linkedMetals[second] = true
+		if reference.kind(second.compoundID) == kindMetalIon && first.compoundID != "" && !reference.isSolvent(first.compoundID) {
+			linkedInstances[second] = true
+			linkedCompounds[second.compoundID] = true
 		}
 	}
 
-	ids := make([]string, 0, len(compoundIDs))
-	for id := range compoundIDs {
-		ids = append(ids, id)
+	// A compound seen only in _pdbx_entity_nonpoly is skipped when atom_site
+	// already placed instances of it.
+	placed := map[string]bool{}
+	for instance := range instances {
+		if instance.located() {
+			placed[instance.compoundID] = true
+		}
 	}
-	sort.Strings(ids)
+	ordered := make([]compoundInstance, 0, len(instances))
+	for instance := range instances {
+		if !instance.located() && placed[instance.compoundID] {
+			continue
+		}
+		ordered = append(ordered, instance)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		left, right := ordered[i], ordered[j]
+		if left.compoundID != right.compoundID {
+			return left.compoundID < right.compoundID
+		}
+		if left.asymID != right.asymID {
+			return left.asymID < right.asymID
+		}
+		if left.authSeqID != right.authSeqID {
+			return left.authSeqID < right.authSeqID
+		}
+		return left.insCode < right.insCode
+	})
 
-	ligands := []Compound{}
-	cofactors := []Compound{}
-	for _, id := range ids {
+	ligands := compoundList{}
+	cofactors := compoundList{}
+	for _, instance := range ordered {
+		id := instance.compoundID
 		kind := reference.kind(id)
 		switch kind {
 		case kindSolvent:
 			continue
 		case kindCofactor:
-			cofactors = append(cofactors, Compound{ID: id})
+			cofactors.add(Compound{ID: id})
 		case kindLigand:
-			ligands = append(ligands, Compound{ID: id})
+			if instances[instance] == 1 {
+				ligands.add(Compound{
+					ID:           id,
+					NeedsReview:  true,
+					ReviewReason: "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion",
+				})
+				continue
+			}
+			ligands.add(Compound{ID: id})
 		case kindMetalIon:
+			linked := linkedInstances[instance]
+			if !instance.located() {
+				linked = linkedCompounds[id]
+			}
 			switch {
-			case linkedMetals[id]:
-				cofactors = append(cofactors, Compound{ID: id})
+			case linked:
+				cofactors.add(Compound{ID: id})
 			case !hasMetalcRows:
-				cofactors = append(cofactors, Compound{
+				cofactors.add(Compound{
 					ID:           id,
 					NeedsReview:  true,
 					ReviewReason: "metal ion kept for review: the file has no metalc connection rows",
 				})
 			default:
-				ligands = append(ligands, Compound{
+				ligands.add(Compound{
 					ID:           id,
 					NeedsReview:  true,
-					ReviewReason: "metal ion has no metalc connection to a protein residue or ligand",
+					ReviewReason: "metal ion instance has no metalc connection to a protein residue or ligand",
 				})
 			}
 		default:
 			return nil, nil, fmt.Errorf("unknown compound kind %d for %s", kind, id)
 		}
 	}
-	return ligands, cofactors, nil
+	return ligands.compounds(), cofactors.compounds(), nil
+}
+
+// compoundList keeps one entry per compound ID; a flagged entry wins over an
+// unflagged one so a review flag on any instance is never lost.
+type compoundList struct {
+	entries []Compound
+	index   map[string]int
+}
+
+func (list *compoundList) add(compound Compound) {
+	if list.index == nil {
+		list.index = map[string]int{}
+	}
+	position, seen := list.index[compound.ID]
+	if !seen {
+		list.index[compound.ID] = len(list.entries)
+		list.entries = append(list.entries, compound)
+		return
+	}
+	if compound.NeedsReview && !list.entries[position].NeedsReview {
+		list.entries[position] = compound
+	}
+}
+
+func (list *compoundList) compounds() []Compound {
+	if list.entries == nil {
+		return []Compound{}
+	}
+	return list.entries
 }
 
 type residueKey struct {
@@ -125,11 +220,12 @@ type residueKey struct {
 	insCode string
 }
 
-func readAtomSite(document *Document) (*AtomStats, map[string]struct{}, string) {
-	compoundIDs := map[string]struct{}{}
+func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
+	instances := map[compoundInstance]int{}
+	atomNames := map[compoundInstance]map[string]struct{}{}
 	table := document.Table("_atom_site")
 	if table == nil {
-		return nil, compoundIDs, ""
+		return nil, instances, ""
 	}
 	incomplete := !table.Complete
 	stats := AtomStats{}
@@ -151,7 +247,17 @@ func readAtomSite(document *Document) (*AtomStats, map[string]struct{}, string) 
 		}
 		compound := strings.ToUpper(table.Value(row, "label_comp_id"))
 		if group == "HETATM" && compound != "" {
-			compoundIDs[compound] = struct{}{}
+			instance := compoundInstance{
+				compoundID: compound,
+				asymID:     table.Value(row, "label_asym_id"),
+				authSeqID:  table.Value(row, "auth_seq_id"),
+				insCode:    table.Value(row, "pdbx_pdb_ins_code"),
+			}
+			if atomNames[instance] == nil {
+				atomNames[instance] = map[string]struct{}{}
+			}
+			atomNames[instance][table.Value(row, "label_atom_id")] = struct{}{}
+			instances[instance] = len(atomNames[instance])
 		}
 		if group == "HETATM" && isWater(compound) {
 			continue
@@ -187,7 +293,7 @@ func readAtomSite(document *Document) (*AtomStats, map[string]struct{}, string) 
 		}
 	}
 	if incomplete {
-		return nil, compoundIDs, "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+		return nil, instances, "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
 	}
 	stats.ModeledResidues = len(residues)
 	stats.ProteinChains = len(chains)
@@ -196,9 +302,9 @@ func readAtomSite(document *Document) (*AtomStats, map[string]struct{}, string) 
 		stats.AltlocFraction = float64(altlocResidues) / float64(stats.ModeledResidues)
 	}
 	if stats.AtomCount == 0 {
-		return nil, compoundIDs, ""
+		return nil, instances, ""
 	}
-	return &stats, compoundIDs, ""
+	return &stats, instances, ""
 }
 
 const minAltlocOccupancy = 0.1

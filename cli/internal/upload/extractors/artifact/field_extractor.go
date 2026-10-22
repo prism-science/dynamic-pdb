@@ -41,7 +41,7 @@ func (e FieldExtractor) Extract(
 	if !ok {
 		return nil, false, nil
 	}
-	text, format, ok, err := artifactText(artifact)
+	text, truncated, format, ok, err := artifactText(artifact)
 	if err != nil || !ok {
 		return nil, false, err
 	}
@@ -55,52 +55,55 @@ func (e FieldExtractor) Extract(
 		if extract.MMCIF == nil {
 			return nil, false, nil
 		}
-		return extractMMCIF(text, extract.MMCIF.Field)
+		return extractMMCIF(text, truncated, extract.MMCIF.Field)
 	default:
 		return nil, false, nil
 	}
 }
 
-func artifactText(artifact extractors.Artifact) (string, string, bool, error) {
+// artifactText returns at most structureReadLimit bytes of the structure file
+// and whether the file was longer than that.
+func artifactText(artifact extractors.Artifact) (string, bool, string, bool, error) {
 	format := structureFormat(artifact)
 	if format == "" {
-		return "", "", false, nil
+		return "", false, "", false, nil
 	}
 	if len(artifact.Contents) > 0 {
 		limit := min(len(artifact.Contents), structureReadLimit)
-		return string(artifact.Contents[:limit]), format, true, nil
+		return string(artifact.Contents[:limit]), len(artifact.Contents) > structureReadLimit, format, true, nil
 	}
 	path := strings.TrimSpace(artifact.LocalPath)
 	if path == "" {
 		// TODO: support extracting fields from remote-only artifacts that have a URI but no downloaded contents.
-		return "", "", false, nil
+		return "", false, "", false, nil
 	}
-	text, err := localText(path)
+	text, truncated, err := localText(path)
 	if err != nil {
-		return "", "", false, err
+		return "", false, "", false, err
 	}
-	return text, format, true, nil
+	return text, truncated, format, true, nil
 }
 
-func localText(path string) (string, error) {
+func localText(path string) (string, bool, error) {
 	if archivePath, entryName, ok := splitZipSource(path); ok {
 		contents, err := readZipEntry(archivePath, entryName)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		limit := min(len(contents), structureReadLimit)
-		return string(contents[:limit]), nil
+		return string(contents[:limit]), len(contents) > structureReadLimit, nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("open artifact for field extraction: %w", err)
+		return "", false, fmt.Errorf("open artifact for field extraction: %w", err)
 	}
-	contents, readErr := io.ReadAll(io.LimitReader(file, structureReadLimit))
+	contents, readErr := io.ReadAll(io.LimitReader(file, structureReadLimit+1))
 	closeErr := file.Close()
 	if err := errors.Join(readErr, closeErr); err != nil {
-		return "", fmt.Errorf("read artifact for field extraction: %w", err)
+		return "", false, fmt.Errorf("read artifact for field extraction: %w", err)
 	}
-	return string(contents), nil
+	limit := min(len(contents), structureReadLimit)
+	return string(contents[:limit]), len(contents) > structureReadLimit, nil
 }
 
 func structureFormat(artifact extractors.Artifact) string {
@@ -152,7 +155,7 @@ func readZipEntry(archivePath string, entryName string) ([]byte, error) {
 				return nil, fmt.Errorf("open zip entry for field extraction: %w", err)
 			}
 		}
-		contents, readErr := io.ReadAll(io.LimitReader(entryReader, structureReadLimit))
+		contents, readErr := io.ReadAll(io.LimitReader(entryReader, structureReadLimit+1))
 		closeEntryErr := entryReader.Close()
 		closeArchiveErr := reader.Close()
 		if err := errors.Join(readErr, closeEntryErr, closeArchiveErr); err != nil {
@@ -175,8 +178,12 @@ func extractPDB(text string, field string) (any, bool, error) {
 	return value, ok, nil
 }
 
-func extractMMCIF(text string, field string) (any, bool, error) {
-	fields, err := cif.MMCIFFields(text)
+func extractMMCIF(text string, truncated bool, field string) (any, bool, error) {
+	parseFields := cif.MMCIFFields
+	if truncated {
+		parseFields = cif.MMCIFFieldsTruncated
+	}
+	fields, err := parseFields(text)
 	if err != nil {
 		return nil, false, fmt.Errorf("read mmCIF fields: %w", err)
 	}

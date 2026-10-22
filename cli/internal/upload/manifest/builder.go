@@ -449,6 +449,7 @@ func coordinateModelMetadata(extensions map[string]struct{}) ModelMetadata {
 		"modeled_residues":      coordinateField("modeled_residues", extensions),
 		"unique_protein_chains": coordinateField("unique_protein_chains", extensions),
 		"ligands":               coordinateField("ligands", extensions),
+		"cofactors":             coordinateField("cofactors", extensions),
 	}
 }
 

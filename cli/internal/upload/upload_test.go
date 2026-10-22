@@ -78,6 +78,8 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Equal(t, 2, models[1].Metadata["modeled_residues"])
 	assert.Equal(t, 1, models[1].Metadata["unique_protein_chains"])
 	assert.Equal(t, []string{"ATP"}, models[1].Metadata["ligands"])
+	assert.NotContains(t, models[1].Metadata, "cofactors")
+	assert.NotContains(t, models[0].Metadata, "cofactors")
 	assert.Len(t, models[1].Artifacts, 3)
 	assert.Equal(t, "model", models[1].Artifacts[0].Type)
 	assert.Equal(t, "other", models[1].Artifacts[1].Type)
@@ -1180,6 +1182,7 @@ func localModel(title string, coordinateSource string, logSource string, mtzSour
 			"modeled_residues":      pdbArtifactExtraction("modeled_residues"),
 			"unique_protein_chains": pdbArtifactExtraction("unique_protein_chains"),
 			"ligands":               pdbArtifactExtraction("ligands"),
+			"cofactors":             pdbArtifactExtraction("cofactors"),
 		},
 		Artifacts: artifacts,
 		Metrics:   pdbRefinementMetrics(),
@@ -1316,4 +1319,43 @@ func readState(t *testing.T, path string) State {
 	state, err := readUploadState(path)
 	require.NoError(t, err)
 	return state
+}
+
+func Test_should_upload_cofactors_from_mmcif_when_manifest_is_generated_from_data_folder(t *testing.T) {
+	cases := []struct {
+		name      string
+		fixture   string
+		cofactors []string
+	}{
+		{name: "heme", fixture: "4HHB.cif", cofactors: []string{"HEM"}},
+		{name: "catalytic metal", fixture: "3CLN.cif", cofactors: []string{"CA"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// given
+			fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", testCase.fixture))
+			require.NoError(t, err)
+			dataRoot := t.TempDir()
+			writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+			manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+			_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+			require.NoError(t, err)
+			dynamicPDBClient := &fakeDynamicPDBClient{}
+
+			// when
+			_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+			// then
+			require.NoError(t, err)
+			var uploaded map[string]any
+			for _, model := range modelRequests(dynamicPDBClient.models) {
+				if _, hasAtoms := model.Metadata["atom_count"]; hasAtoms && model.Metadata["cofactors"] != nil {
+					uploaded = model.Metadata
+				}
+			}
+			require.NotNil(t, uploaded, "no uploaded model carried cofactors")
+			assert.Equal(t, testCase.cofactors, uploaded["cofactors"])
+			assert.NotContains(t, uploaded, "ligands")
+		})
+	}
 }

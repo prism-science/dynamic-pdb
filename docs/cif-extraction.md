@@ -27,11 +27,11 @@ first data block is read.
 Every non-polymer compound (`_pdbx_entity_nonpoly` and `HETATM` rows) is sorted once:
 
 1. **Solvent, buffer, cryoprotectant** (water, glycerol, sulfate, ...): dropped. Nothing else is ever dropped.
-2. **Metal ion**: kept as a *cofactor* when a `_struct_conn` row with `conn_type_id = metalc` joins it to a protein residue or a ligand (coordination to water does not count).
+2. **Metal ion**, decided **per instance** (one placed copy, identified by chain and residue number): an instance is kept as a *cofactor* when a `_struct_conn` row with `conn_type_id = metalc` joins that instance to a protein residue or a ligand (coordination to water does not count).
    - If the file has **no `metalc` rows at all**, its metals are kept as cofactors flagged **needs review**.
-   - If the file has `metalc` rows but none involves this metal, it stays a *ligand* flagged **needs review**.
+   - If the file has `metalc` rows but none involves a given metal instance, that instance is listed as a *ligand* flagged **needs review**. It is never dropped and never listed unflagged. A compound with a linked and an unlinked instance therefore appears in both lists, the unlinked one flagged.
 3. **Listed cofactor** (heme, NAD, FAD, ...): kept as a cofactor.
-4. Anything else: a ligand.
+4. Anything else: a ligand. A single-atom instance of an unlisted compound (a metal missing from `metal_ions`, such as Pd or Ru) is a ligand flagged **needs review**.
 
 There is no separate metals list; kept metals are in `cofactors`.
 
@@ -46,12 +46,20 @@ accession, nonstandard residue, no entity) are never guessed: they are listed as
 `unmapped` and the entity is flagged **needs review**, as is an entity whose
 mutation text has no matching rows.
 
-## Reference list (needs researcher approval)
+## Reference lists (need researcher approval)
 
-`lib/cif/cofactors.json` holds the CCD IDs for cofactors, metal ions and solvents,
-with a `version`. **The list is a draft. Researchers must approve it once**: review
-the three lists, then set `"approved": true` and bump `version`. Every extraction
-reports the `reference_version` it used, so values can be re-derived after a change.
+Two versioned data sets, each with its own `version` and `approved` flag:
+
+- `lib/cif/cofactors.json`: CCD IDs for cofactors and metal ions.
+- `lib/cif/solvents.json` (`solvent-buffer-cryoprotectant-list`): CCD IDs dropped as water, solvents, buffers, cryoprotectants and crystallization salts.
+
+Both are drafts. **Researchers must approve them once**: review the lists, then set `"approved": true` and bump `version`. Every extraction reports a `reference_version` naming both file versions (`cofactors:<v>+solvents:<v>`), so values can be re-derived after a change.
+
+**Researchers must confirm the solvent list in particular.** It is a science decision, not an engineering one. It classes citrate (CIT), sulfate (SO4), phosphate (PO4), chloride, bromide and iodide as solvents, and the parser drops them. Those compounds are often real ligands, so a wrong entry silently removes a ligand from the record. Engineers do not change this list without researcher sign-off.
+
+## CLI upload
+
+The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the first 4 MiB of the file; when the file is longer, the truncation-aware parser is used, so atom counts, residue counts and altloc fraction are left out instead of being undercounted. As with `ligands`, an empty list is not uploaded: a missing `cofactors` field means none were found (or the coordinates were cut off), while `POST /v1/artifacts/{id}/extract` reports `[]` when the coordinates were read in full and held none.
 
 ## Extract endpoint limits
 

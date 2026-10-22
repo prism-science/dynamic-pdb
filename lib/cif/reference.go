@@ -11,6 +11,9 @@ import (
 //go:embed cofactors.json
 var referenceJSON []byte
 
+//go:embed solvents.json
+var solventsJSON []byte
+
 type compoundKind int
 
 const (
@@ -21,9 +24,14 @@ const (
 )
 
 // Reference sorts chemical component IDs into solvents, metal ions, cofactors
-// and ligands. The data lives in cofactors.json and is versioned.
+// and ligands. Cofactors and metal ions live in cofactors.json, solvents in
+// solvents.json; each file is versioned and carries its own approval flag.
 type Reference struct {
-	Version   string
+	// Version combines both file versions so a stored value names every list it used.
+	Version         string
+	CofactorVersion string
+	SolventVersion  string
+	// Approved is true only when researchers approved both lists.
 	Approved  bool
 	cofactors map[string]string
 	metals    map[string]struct{}
@@ -39,11 +47,18 @@ type referenceFile struct {
 		Name string `json:"name"`
 	} `json:"cofactors"`
 	MetalIons []string `json:"metal_ions"`
-	Solvents  []string `json:"solvents"`
+}
+
+type solventFile struct {
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Approved    bool     `json:"approved"`
+	Description string   `json:"description"`
+	Solvents    []string `json:"solvents"`
 }
 
 var loadDefaultReference = sync.OnceValues(func() (*Reference, error) {
-	return parseReference(referenceJSON)
+	return parseReference(referenceJSON, solventsJSON)
 })
 
 // DefaultReference returns the reference list embedded in this package.
@@ -55,7 +70,7 @@ func DefaultReference() (*Reference, error) {
 	return reference, nil
 }
 
-func parseReference(data []byte) (*Reference, error) {
+func parseReference(data []byte, solventData []byte) (*Reference, error) {
 	var file referenceFile
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("decode cofactor reference: %w", err)
@@ -63,12 +78,21 @@ func parseReference(data []byte) (*Reference, error) {
 	if strings.TrimSpace(file.Version) == "" {
 		return nil, fmt.Errorf("cofactor reference has no version")
 	}
+	var solventList solventFile
+	if err := json.Unmarshal(solventData, &solventList); err != nil {
+		return nil, fmt.Errorf("decode solvent list: %w", err)
+	}
+	if strings.TrimSpace(solventList.Version) == "" {
+		return nil, fmt.Errorf("solvent list has no version")
+	}
 	reference := &Reference{
-		Version:   file.Version,
-		Approved:  file.Approved,
-		cofactors: map[string]string{},
-		metals:    map[string]struct{}{},
-		solvents:  map[string]struct{}{},
+		Version:         "cofactors:" + file.Version + "+solvents:" + solventList.Version,
+		CofactorVersion: file.Version,
+		SolventVersion:  solventList.Version,
+		Approved:        file.Approved && solventList.Approved,
+		cofactors:       map[string]string{},
+		metals:          map[string]struct{}{},
+		solvents:        map[string]struct{}{},
 	}
 	for _, cofactor := range file.Cofactors {
 		reference.cofactors[strings.ToUpper(cofactor.ID)] = cofactor.Name
@@ -76,7 +100,7 @@ func parseReference(data []byte) (*Reference, error) {
 	for _, id := range file.MetalIons {
 		reference.metals[strings.ToUpper(id)] = struct{}{}
 	}
-	for _, id := range file.Solvents {
+	for _, id := range solventList.Solvents {
 		reference.solvents[strings.ToUpper(id)] = struct{}{}
 	}
 	return reference, nil

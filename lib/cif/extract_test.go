@@ -3,6 +3,7 @@ package cif
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -281,4 +282,89 @@ func Test_should_report_reference_version_when_extracting(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.ReferenceVersion)
+}
+
+func withoutMetalcRowsOfAsym(text string, asymID string) string {
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(line, "metalc") && slices.Contains(strings.Fields(line), asymID) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+func Test_should_flag_unlinked_metal_instance_when_same_compound_has_linked_instances(t *testing.T) {
+	// given
+	text := withoutMetalcRowsOfAsym(readFixture(t, "3CLN.cif"), "E")
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{"CA"}, idsOf(result.Cofactors))
+	assert.False(t, result.Cofactors[0].NeedsReview)
+	require.Len(t, result.Ligands, 1)
+	assert.Equal(t, "CA", result.Ligands[0].ID)
+	assert.True(t, result.Ligands[0].NeedsReview)
+	assert.NotEmpty(t, result.Ligands[0].ReviewReason)
+}
+
+func Test_should_flag_metal_missing_from_reference_when_file_has_metalc_rows_for_other_metals(t *testing.T) {
+	// given
+	text := "data_X\n" +
+		"loop_\n_struct_conn.id\n_struct_conn.conn_type_id\n" +
+		"_struct_conn.ptnr1_label_asym_id\n_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr1_auth_seq_id\n" +
+		"_struct_conn.ptnr2_label_asym_id\n_struct_conn.ptnr2_label_comp_id\n_struct_conn.ptnr2_auth_seq_id\n" +
+		"metalc1 metalc A ASP 20 B CA 149\n" +
+		"loop_\n_atom_site.group_PDB\n_atom_site.type_symbol\n_atom_site.label_comp_id\n" +
+		"_atom_site.label_asym_id\n_atom_site.auth_seq_id\n" +
+		"HETATM CA CA B 149\nHETATM PD PD Z 300\n"
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{"CA"}, idsOf(result.Cofactors))
+	require.NotEmpty(t, result.Ligands)
+	for _, ligand := range result.Ligands {
+		assert.True(t, ligand.NeedsReview, ligand.ID)
+	}
+}
+
+func Test_should_keep_metal_instances_in_cofactors_when_every_instance_has_metalc_link(t *testing.T) {
+	// given
+	text := readFixture(t, "3CLN.cif")
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{"CA"}, idsOf(result.Cofactors))
+	assert.Empty(t, result.Ligands)
+}
+
+func Test_should_flag_metal_instance_unlinked_when_its_only_metalc_partner_is_water(t *testing.T) {
+	// given
+	text := withoutMetalcRowsOfAsym(readFixture(t, "3CLN.cif"), "E")
+	var waterOnly []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "metalc") && strings.Contains(line, " HOH ") {
+			continue
+		}
+		waterOnly = append(waterOnly, line)
+	}
+
+	// when
+	result, err := Extract(Parse(strings.Join(waterOnly, "\n")))
+
+	// then
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Ligands)
+	assert.True(t, result.Ligands[0].NeedsReview)
 }

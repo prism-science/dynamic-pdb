@@ -9,7 +9,16 @@ import (
 // reads: every scalar item under its tag and a normalized key, the refinement
 // program, and the derived counts, ligands and cofactors.
 func MMCIFFields(text string) (map[string]any, error) {
-	document := Parse(text)
+	return mmcifFields(Parse(text))
+}
+
+// MMCIFFieldsTruncated is MMCIFFields for the head of a larger file: the cut-off
+// tail is not trusted, so counts that need the whole atom_site loop are omitted.
+func MMCIFFieldsTruncated(text string) (map[string]any, error) {
+	return mmcifFields(ParseTruncated(text))
+}
+
+func mmcifFields(document *Document) (map[string]any, error) {
 	result, err := Extract(document)
 	if err != nil {
 		return nil, fmt.Errorf("extract mmCIF values: %w", err)
@@ -28,7 +37,7 @@ func MMCIFFields(text string) (map[string]any, error) {
 			addField(fields, "altloc_fraction", result.Atoms.AltlocFraction)
 		}
 	}
-	addCompoundFields(fields, result.Ligands, result.Cofactors)
+	addCompoundFields(fields, result.Ligands, result.Cofactors, result.Atoms != nil)
 	return fields, nil
 }
 
@@ -50,11 +59,13 @@ func ScalarValue(text string, tag string) (string, bool) {
 	return Parse(text).Scalar(tag)
 }
 
-func addCompoundFields(fields map[string]any, ligands []Compound, cofactors []Compound) {
+// addCompoundFields leaves a field out when it is unknown. Cofactors are an
+// empty list, not omitted, when the coordinates were read in full and held none.
+func addCompoundFields(fields map[string]any, ligands []Compound, cofactors []Compound, coordinatesRead bool) {
 	if len(ligands) > 0 {
 		addField(fields, "ligands", compoundIDList(ligands))
 	}
-	if len(cofactors) > 0 {
+	if len(cofactors) > 0 || coordinatesRead {
 		addField(fields, "cofactors", compoundIDList(cofactors))
 	}
 }

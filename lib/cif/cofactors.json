@@ -1,7 +1,7 @@
 {
   "version": "2026.10.0-draft",
   "approved": false,
-  "description": "Draft reference list of chemical component dictionary (CCD) IDs used to sort mmCIF compounds into cofactors, metal ions, solvents and ligands. Not approved by researchers yet; see docs/cif-extraction.md.",
+  "description": "Draft reference list of chemical component dictionary (CCD) IDs used to sort mmCIF compounds into cofactors, metal ions and ligands. Solvents live in solvents.json. Not approved by researchers yet; see docs/cif-extraction.md.",
   "cofactors": [
     {"id": "HEM", "name": "protoporphyrin IX containing Fe (heme B)"},
     {"id": "HEC", "name": "heme C"},
@@ -43,11 +43,5 @@
     "AG", "AL", "AU", "AU3", "BA", "CA", "CD", "CO", "3CO", "CR", "CS", "CU", "CU1", "CU3",
     "EU", "EU3", "FE", "FE2", "GA", "GD", "GD3", "HG", "K", "LA", "LI", "MG", "MN", "MN3",
     "MO", "NA", "NI", "3NI", "PB", "PT", "RB", "SR", "TB", "TL", "V", "W", "YB", "ZN"
-  ],
-  "solvents": [
-    "HOH", "DOD", "WAT", "H2O",
-    "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
-    "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
-    "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD"
   ]
 }
