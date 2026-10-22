@@ -448,6 +448,21 @@ func Test_should_use_manifest_artifact_format_when_set(t *testing.T) {
 	assert.Equal(t, "input", direction)
 }
 
+func Test_should_lowercase_artifact_format_when_manifest_or_extractor_uses_uppercase(t *testing.T) {
+	// given
+	fromManifest := manifest.Artifact{ID: "model", Format: " MMCIF "}
+	fromExtractor := manifest.Artifact{ID: "model"}
+	payload := extractorapi.Artifact{Format: "PDB"}
+
+	// when
+	manifestFormat := artifactFormat(fromManifest, payload)
+	extractorFormat := artifactFormat(fromExtractor, payload)
+
+	// then
+	assert.Equal(t, "mmcif", manifestFormat)
+	assert.Equal(t, "pdb", extractorFormat)
+}
+
 func Test_should_upload_entries_in_parallel_when_concurrency_is_greater_than_one(t *testing.T) {
 	// given
 	dataRoot := t.TempDir()

@@ -35,3 +35,6 @@ cdn:
     upload_url_ttl: 15m
   cloudfront:
     base_url: ""
+validation:
+  # Reject requests that break Dynamic PDB Schema v0.2.0 (HTTP 422).
+  mode: enforce

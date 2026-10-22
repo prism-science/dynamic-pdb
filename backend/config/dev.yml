@@ -35,3 +35,6 @@ cdn:
     upload_url_ttl: 15m
   cloudfront:
     base_url: https://dev-files.dynamicpdb.com
+validation:
+  # Log schema violations without rejecting requests until clients are updated.
+  mode: log_only

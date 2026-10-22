@@ -17,6 +17,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 var (
@@ -147,6 +148,10 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+	schemaErr := s.checkSchema(r, createEntryRequestErrors(req))
+	if s.writeMutationError(r.Context(), w, schemaErr, "create entry") {
 		return
 	}
 
@@ -336,6 +341,10 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
+	schemaErr := s.checkSchema(r, createModelRequestErrors(validation.Root.Field("model"), request.Model))
+	if s.writeMutationError(r.Context(), w, schemaErr, "create model") {
+		return
+	}
 
 	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID)
 	if s.writeMutationError(r.Context(), w, err, "create model") {
@@ -517,6 +526,10 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+	schemaErr := s.checkSchema(r, modelRevisionChangeErrors(payload))
+	if s.writeMutationError(r.Context(), w, schemaErr, "create model revision") {
 		return
 	}
 
@@ -1218,41 +1231,58 @@ func (s *Server) createArtifact(
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("artifact id is required")
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	artifact := artifactFromRequest(req)
+	if artifact.Name == "" {
 		return nil, invalidRequest("artifact name is required")
 	}
+	// In log-only mode a request without a type still reaches here and is stored as other.
+	artifactType, err := artifactTypeFromRequest(req.Type)
+	if err != nil {
+		return nil, fmt.Errorf("validate artifact %s: %w", req.Id, err)
+	}
+	artifact.Type = artifactType
+	artifact.CreatedBy = createdBy
+	artifact.CreatedAt = now
+	created, err := s.database.Artifacts.Create(ctx, artifact)
+	if err != nil {
+		return nil, fmt.Errorf("create artifact: %w", err)
+	}
+	return created, nil
+}
+
+// artifactFromRequest maps an artifact request without checking it, so schema checks
+// and createArtifact see the same values. A missing type stays empty so the schema
+// check can report it; createArtifact applies the default.
+func artifactFromRequest(req CreateArtifactRequest) domainmodels.Artifact {
 	metadata := map[string]any{}
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
-	artifactType, err := artifactTypeFromRequest(req.Type)
-	if err != nil {
-		return nil, err
+	var artifactType domainmodels.ArtifactType
+	if req.Type != nil {
+		artifactType = domainmodels.ArtifactType(*req.Type)
 	}
-	artifact, err := s.database.Artifacts.Create(ctx, domainmodels.Artifact{
-		ID: req.Id, Name: name, Level: domainmodels.ArtifactLevel(req.Level),
+	return domainmodels.Artifact{
+		ID: req.Id, Name: strings.TrimSpace(req.Name), Level: domainmodels.ArtifactLevel(req.Level),
 		Type: artifactType,
 		URI:  trimmedStringPtr(req.Uri), SHA256: trimmedStringPtr(req.Sha256),
 		Format: trimmedStringPtr(req.Format), SizeBytes: req.SizeBytes, Metadata: metadata,
-		CreatedBy: createdBy, CreatedAt: now,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create artifact: %w", err)
 	}
-	return artifact, nil
 }
 
 func (s *Server) createMetric(ctx context.Context, req CreateMetricRequest, now time.Time) (*domainmodels.Metric, error) {
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("metric id is required")
 	}
-	key := strings.TrimSpace(req.Key)
+	key := metricKeyFromRequest(req.Key)
 	if key == "" {
 		return nil, invalidRequest("metric key is required")
 	}
+	if req.Value == nil {
+		return nil, invalidRequest("metric value is required")
+	}
 	metric, err := s.database.Metrics.Create(ctx, domainmodels.Metric{
-		ID: req.Id, Key: domainmodels.MetricKey(key), Value: req.Value, CreatedAt: now,
+		ID: req.Id, Key: key, Value: *req.Value, CreatedAt: now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create metric: %w", err)
@@ -1269,10 +1299,27 @@ func (s *Server) createRun(
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("run id is required")
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
+	run := runFromRequest(req)
+	if run.Name == "" {
 		return nil, invalidRequest("run name is required")
 	}
+	run.CreatedBy = createdBy
+	run.CreatedAt = now
+	run.UpdatedAt = now
+	created, err := s.database.Runs.Create(ctx, run)
+	if err != nil {
+		return nil, fmt.Errorf("create run: %w", err)
+	}
+	return created, nil
+}
+
+func metricKeyFromRequest(key string) domainmodels.MetricKey {
+	return domainmodels.MetricKey(strings.TrimSpace(key))
+}
+
+// runFromRequest maps a run request without checking it, so schema checks and
+// createRun see the same values.
+func runFromRequest(req CreateRunRequest) domainmodels.Run {
 	parameters := map[string]any{}
 	if req.Parameters != nil {
 		parameters = *req.Parameters
@@ -1281,16 +1328,11 @@ func (s *Server) createRun(
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
-	run, err := s.database.Runs.Create(ctx, domainmodels.Run{
-		ID: req.Id, Name: name, SoftwareName: trimmedStringPtr(req.SoftwareName),
+	return domainmodels.Run{
+		ID: req.Id, Name: strings.TrimSpace(req.Name), SoftwareName: trimmedStringPtr(req.SoftwareName),
 		SoftwareVersion: trimmedStringPtr(req.SoftwareVersion), Command: trimmedStringPtr(req.Command),
 		Parameters: parameters, Metadata: metadata, StartedAt: req.StartedAt, FinishedAt: req.FinishedAt,
-		CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create run: %w", err)
 	}
-	return run, nil
 }
 
 func (s *Server) attachArtifactToRun(ctx context.Context, runID uuid.UUID, req CreateRunArtifactRequest) error {
@@ -1428,15 +1470,10 @@ func artifactTypeFromRequest(requested *ArtifactType) (domainmodels.ArtifactType
 		return domainmodels.ArtifactTypeOther, nil
 	}
 	typeValue := domainmodels.ArtifactType(*requested)
-	switch typeValue {
-	case domainmodels.ArtifactTypeModel,
-		domainmodels.ArtifactTypeStructureFactors,
-		domainmodels.ArtifactTypeFASTA,
-		domainmodels.ArtifactTypeOther:
-		return typeValue, nil
-	default:
+	if err := typeValue.Validate(); err != nil {
 		return "", invalidRequest("unsupported artifact type %q", *requested)
 	}
+	return typeValue, nil
 }
 
 func validateArtifactRequests(requests *[]CreateArtifactRequest, scope artifactAttachmentScope) error {
@@ -1884,11 +1921,14 @@ func isUniqueConstraint(err error, constraint string) bool {
 }
 
 func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
+	var validationError *validation.Error
 	switch {
 	case err == nil:
 		return false
 	case errors.Is(err, db.ErrEntryRevisionNotFound), errors.Is(err, db.ErrModelRevisionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "entry or model not found")
+	case errors.As(err, &validationError):
+		writeFieldErrors(w, validationError.Fields)
 	case errors.Is(err, errInvalidRequest):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	case errors.Is(err, errConflict), errors.Is(err, db.ErrEntryRevisionConflict), errors.Is(err, db.ErrModelRevisionConflict),

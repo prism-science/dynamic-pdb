@@ -206,6 +206,7 @@ func createProteinEntry(t *testing.T, backendURL string, token string, title str
 					"id":     artifactID,
 					"name":   title + ".fasta",
 					"level":  "L0",
+					"type":   "other",
 					"format": "fasta",
 					"uri":    "s3://dynamic-pdb/" + artifactID + ".fasta",
 					"metadata": map[string]any{

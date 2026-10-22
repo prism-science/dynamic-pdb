@@ -9,16 +9,18 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
 
 type entrySyncStrategy struct {
-	database    *db.DB
-	rcsbClient  *rcsb.RemoteClient
-	siftsClient *sifts.RemoteClient
-	logger      *slog.Logger
-	now         func() time.Time
+	database       *db.DB
+	rcsbClient     *rcsb.RemoteClient
+	siftsClient    *sifts.RemoteClient
+	logger         *slog.Logger
+	now            func() time.Time
+	validationMode validation.Mode
 }
 
 func newEntrySyncStrategy(
@@ -27,13 +29,15 @@ func newEntrySyncStrategy(
 	siftsClient *sifts.RemoteClient,
 	logger *slog.Logger,
 	now func() time.Time,
+	validationMode validation.Mode,
 ) *entrySyncStrategy {
 	return &entrySyncStrategy{
-		database:    database,
-		rcsbClient:  rcsbClient,
-		siftsClient: siftsClient,
-		logger:      logger,
-		now:         now,
+		database:       database,
+		rcsbClient:     rcsbClient,
+		siftsClient:    siftsClient,
+		logger:         logger,
+		now:            now,
+		validationMode: validationMode,
 	}
 }
 
@@ -89,6 +93,11 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 	if !entryRevisionChanged && !polymerEntitiesChanged {
 		return nil
 	}
+	if err := s.validationMode.Check(
+		ctx, s.logger, "data sync entry "+entryID, entryUpdateErrors(desiredRevision, desiredPolymerEntities),
+	); err != nil {
+		return fmt.Errorf("validate entry update: %w", err)
+	}
 
 	if err := s.saveEntryUpdate(
 		ctx,
@@ -100,4 +109,16 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 		return fmt.Errorf("save entry update: %w", err)
 	}
 	return nil
+}
+
+// entryUpdateErrors checks the values the sync takes from RCSB with the rules that
+// apply to API submissions. Pointers address the entry revision and its polymer entities.
+func entryUpdateErrors(revision models.EntryRevision, polymerEntities []models.PolymerEntity) []validation.FieldError {
+	fieldErrors := validation.RequiredText(validation.Root.Field("title"), revision.Title)
+	fieldErrors = append(fieldErrors, validation.EntryMetadata(validation.Root, revision.Metadata)...)
+	for index, polymerEntity := range polymerEntities {
+		at := validation.Root.Field("polymer_entities").Index(index)
+		fieldErrors = append(fieldErrors, validation.PolymerEntity(at, polymerEntity.Metadata)...)
+	}
+	return fieldErrors
 }

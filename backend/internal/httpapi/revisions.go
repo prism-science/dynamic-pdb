@@ -26,6 +26,10 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
+	schemaErr := s.checkSchema(r, entryRevisionChangeErrors(payload))
+	if s.writeMutationError(r.Context(), w, schemaErr, "create entry revision") {
+		return
+	}
 	result, err := s.createEntryRevisionGraph(r.Context(), entryID, payload, user.ID)
 	if s.writeMutationError(r.Context(), w, err, "create entry revision") {
 		return
