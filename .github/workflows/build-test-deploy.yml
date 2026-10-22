@@ -58,6 +58,7 @@ jobs:
             website:
               - ".github/workflows/build-test-deploy.yml"
               - "website/**"
+              - "backend/api/openapi.yaml"
 
   backend:
     name: Backend
@@ -181,6 +182,12 @@ jobs:
       - name: Install dependencies
         working-directory: website
         run: npm ci
+
+      - name: Check generated API types are current
+        working-directory: website
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/lib/api/schema.gen.ts
 
       - name: Typecheck
         working-directory: website

@@ -11,135 +11,53 @@ import {
 } from "./timeout";
 import { formatEntryLabel } from "@/lib/entry-label";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
+import type { components } from "./schema.gen";
+
+type Schemas = components["schemas"];
 
 type JSONRecord = Record<string, unknown>;
 
-export type EntryCrystalGrowth = {
-  ph?: number;
-  temperature_kelvin?: number;
-};
+export type EntryCrystalGrowth = Schemas["EntryCrystalGrowth"];
+export type EntryDiffraction = Schemas["EntryDiffraction"];
+export type EntryCrystal = Schemas["EntryCrystal"];
+export type EntryCrystallography = Schemas["EntryCrystallography"];
+export type EntryProperties = Schemas["EntryProperties"];
 
-export type EntryDiffraction = {
-  id: string;
-  temperature_kelvin?: number;
-};
-
-export type EntryCrystal = {
-  id: string;
-  growth?: EntryCrystalGrowth;
-  diffractions?: EntryDiffraction[];
-};
-
-export type EntryCrystallography = {
-  crystals?: EntryCrystal[];
-};
-
-export type EntryProperties = {
-  external_refs?: Record<string, string>;
-  details?: string;
-  resolution?: number;
-  method?: string;
-  space_group?: string;
-  crystallography?: EntryCrystallography;
-};
-
-export type Entry = EntryProperties & {
-  id: string;
-  created_by: string;
-  title: string | null;
-  thumbnail_image_url: string | null;
+export type Entry = Schemas["EntryInfoAttributes"] & {
   idempotency_key?: string | null;
   protein_sequences?: ProteinSequence[];
   polymer_entities?: PolymerEntity[];
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
-export type Model = {
-  id: string;
-  entry_id: string;
-  created_by: string;
-  title: string | null;
-  thumbnail_image_url: string | null;
+export type Model = Omit<Schemas["ModelAttributes"], "metadata" | "metrics" | "idempotency_key"> & {
   metadata?: JSONRecord;
-  /** Present on model detail responses (getModel) only; model lists omit it. */
-  residue_data?: ResidueData[];
-  primary_artifact_id?: string | null;
   metrics?: Metric[];
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 export type EntityType = "data" | "metrics" | "model" | "program";
-export type EntityLevel = "L0" | "L1" | "L2" | "L3";
-export type ArtifactType =
-  | "model"
-  | "structure_factors"
-  | "fasta"
-  | "other";
+export type EntityLevel = Schemas["ArtifactLevel"];
+export type ArtifactType = Schemas["ArtifactType"];
 
-export type FastaRecordMetadata = {
-  header: string;
-  sequence: string;
-};
+export type FastaRecordMetadata = NonNullable<Schemas["ArtifactMetadata"]["records"]>[number];
 
 export type FastaMetadata = {
   records: FastaRecordMetadata[];
 };
 
-export type ProteinSequence = {
-  id: string;
-  source_artifact_id: string;
-  record_index: number;
-  header: string;
-  sequence: string;
-  created_at: string;
-};
-
-export type PolymerEntityOrganism = {
-  scientific_name: string;
-  ncbi_taxonomy_id?: number;
-};
+export type ProteinSequence = Schemas["ProteinSequence"];
+export type PolymerEntityOrganism = Schemas["PolymerEntityOrganism"];
+export type PolymerEntityUniProtMapping = Schemas["PolymerEntityUniProtMapping"];
 
 /** Where the accession came from: the wwPDB/EBI mapping, or the depositor's
  *  own struct_ref record. Only SIFTS mappings carry a UniProt release. */
-export type PolymerEntityUniProtSource = "sifts" | "struct_ref";
+export type PolymerEntityUniProtSource = PolymerEntityUniProtMapping["source"];
 
-export type PolymerEntityUniProtMapping = {
-  accession: string;
-  source: PolymerEntityUniProtSource;
-  unp_release?: string;
-};
-
-export type ResidueData = {
-  label_asym_id: string;
-  label_seq_id: number;
-  label_comp_id?: string;
-  auth_asym_id?: string;
-  auth_seq_id?: number;
-  pdbx_pdb_ins_code?: string;
-  label_alt_id?: string;
-  uniprot_position?: string;
-  rscc?: number;
-  b_iso?: number;
-  occupancy?: number;
-  conformer_count?: number;
-  rmsf?: number;
-};
+export type ResidueData = Schemas["ResidueData"];
 
 /** One distinct polymer chain of the deposited structure, as RCSB defines it:
  *  chains with the same sequence share an entity. */
-export type PolymerEntity = {
-  id: string;
-  label_entity_id?: string;
-  description?: string;
-  source_organisms: PolymerEntityOrganism[];
-  construct?: string;
+export type PolymerEntity = Omit<Schemas["PolymerEntity"], "mutations"> & {
   mutations?: string[];
-  uniprot_mappings: PolymerEntityUniProtMapping[];
-  created_at: string;
 };
 
 type EntryDocument = {
@@ -154,50 +72,15 @@ type EntryData = {
   relationships: EntryRelationships;
 };
 
-type EntryAttributes = EntryProperties & {
-  title: string | null;
-  thumbnail_image_url: string | null;
+type EntryAttributes = Omit<Schemas["EntryAttributes"], "polymer_entities"> & {
   polymer_entities?: PolymerEntity[];
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
-type EntryRelationships = {
-  created_by: {
-    data: { type: "users"; id: string };
-  };
-  protein_sequences: {
-    data: { type: "protein_sequences"; id: string }[];
-  };
-};
+type EntryRelationships = Schemas["EntryRelationships"];
 
-type EntryProteinSequenceData = {
-  type: "protein_sequences";
-  id: string;
-  attributes: {
-    record_index: number;
-    header: string;
-    sequence: string;
-    created_at: string;
-  };
-  relationships: {
-    source_artifact: {
-      data: { type: "artifacts"; id: string };
-    };
-  };
-};
+type EntryProteinSequenceData = Schemas["EntryProteinSequenceData"];
 
-export type SimilarEntryMatch = {
-  source_sequence_id: string;
-  similar_sequence: ProteinSequence;
-  score: number;
-  tool: string;
-  /** Tool-specific alignment facts (fident, qcov, evalue, positions, aligned
-   *  strings, ...). Free-form by design; lib/similarity.ts is the reader. */
-  metadata: JSONRecord;
-  created_at: string;
-};
+export type SimilarEntryMatch = Schemas["ProteinSequenceSimilarityMatch"];
 
 export type SimilarEntry = {
   entry: Entry;
@@ -224,13 +107,11 @@ export type ModelPayload = {
   metadata?: JSONRecord;
 };
 
-export type MetricsPayload = {
-  r_free?: number;
-  r_work?: number;
-  clashscore?: number;
-  molprobity_score?: number;
-  rscc?: number;
-};
+export type ModelPurpose = Schemas["ModelPurpose"];
+export type StructureModelType = Schemas["StructureModelType"];
+export type MetricKey = Schemas["MetricKey"];
+
+export type MetricsPayload = Partial<Record<MetricKey, number>>;
 
 export type ProgramPayload = {
   name: string;
@@ -282,46 +163,24 @@ type JSONAPIDataCollectionDocument<T> = {
   meta?: JSONRecord;
 };
 
-export type Artifact = {
-  id: string;
-  name: string;
-  level: EntityLevel;
-  type: ArtifactType;
-  uri: string | null;
-  sha256: string | null;
-  format: string | null;
-  size_bytes: number | null;
-  metadata: JSONRecord;
-  created_by: string;
-  created_at: string;
-};
+export type Artifact = Omit<Schemas["ArtifactAttributes"], "metadata"> &
+  Required<
+    Pick<Schemas["ArtifactAttributes"], "uri" | "sha256" | "format" | "size_bytes">
+  > & {
+    metadata: JSONRecord;
+  };
 
-export type Metric = {
-  id: string;
-  key: string;
-  value: number;
-  created_at: string;
-};
+export type Metric = Schemas["Metric"];
 
-type Run = {
-  id: string;
-  name: string;
-  software_name: string | null;
-  software_version: string | null;
-  command: string | null;
-  parameters: JSONRecord;
-  metadata: JSONRecord;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-};
+type Run = Omit<
+  Schemas["Run"],
+  "metadata" | "software_name" | "software_version" | "command"
+> &
+  Required<Pick<Schemas["Run"], "software_name" | "software_version" | "command">> & {
+    metadata: JSONRecord;
+  };
 
-type RunArtifact = {
-  run_id: string;
-  artifact_id: string;
-  direction: "input" | "output";
-  position: number | null;
-};
+type RunArtifact = Schemas["RunArtifact"];
 
 type ModelArtifactListResponse = {
   items: Artifact[];
@@ -339,58 +198,34 @@ type ModelArtifactCollectionDocument = {
   };
 };
 
-type CreateArtifactRequest = {
-  id: string;
-  name: string;
-  level: EntityLevel;
-  type: ArtifactType;
-  uri: string | null;
-  sha256: string | null;
-  format: string | null;
-  size_bytes: number | null;
+type CreateArtifactRequest = Omit<Schemas["CreateArtifactRequest"], "metadata"> & {
   metadata: JSONRecord;
 };
 
-type CreateMetricRequest = {
-  id: string;
-  key: string;
-  value: number;
-};
+type CreateMetricRequest = Schemas["CreateMetricRequest"];
 
-type CreateRunArtifactRequest = {
-  artifact_id: string;
-  direction: "input" | "output";
-  position: number | null;
-};
+type CreateRunArtifactRequest = Schemas["CreateRunArtifactRequest"];
 
-type CreateRunRequest = {
-  id: string;
-  name: string;
-  software_name: string | null;
-  software_version: string | null;
-  command: string | null;
-  parameters: JSONRecord;
+type CreateRunRequest = Omit<
+  Schemas["CreateRunRequest"],
+  "metadata" | "artifacts"
+> & {
   metadata: JSONRecord;
-  started_at: string | null;
-  finished_at: string | null;
   artifacts: CreateRunArtifactRequest[];
 };
 
-type BackendCreateModelData = {
-  title: string;
-  thumbnail_image_url?: string | null;
-  idempotency_key?: string | null;
+type BackendCreateModelData = Omit<
+  Schemas["CreateModelData"],
+  "metadata" | "artifacts" | "runs" | "metrics"
+> & {
   metadata: JSONRecord;
-  primary_artifact_id: string | null;
   artifacts: CreateArtifactRequest[];
   runs: CreateRunRequest[];
   metrics: CreateMetricRequest[];
 };
 
 type BackendCreateEntryRequest = {
-  entry: EntryProperties & {
-    title: string;
-    thumbnail_image_url?: string | null;
+  entry: Omit<Schemas["CreateEntryData"], "artifacts"> & {
     artifacts: CreateArtifactRequest[];
   };
   model_operations: {
@@ -399,26 +234,9 @@ type BackendCreateEntryRequest = {
   }[];
 };
 
-export type CreateEntryRevisionResult = {
-  entry_id: string;
-  revision_id: string;
-  base_revision_id?: string | null;
-  state: "in_review";
-  model_results: {
-    op: "add";
-    model_id: string;
-    model_revision_id: string;
-  }[];
-};
+export type CreateEntryRevisionResult = Schemas["CreateEntryRevisionAttributes"];
 
-export type CreateModelRevisionResult = {
-  entry_id: string;
-  model_id: string;
-  revision_id: string;
-  base_revision_id?: string | null;
-  idempotency_key?: string | null;
-  state: RevisionState;
-};
+export type CreateModelRevisionResult = Schemas["CreateModelRevisionAttributes"];
 
 export type EntryPageData = {
   entry: Entry;
@@ -434,14 +252,56 @@ export type ModelPageData = {
   relations: EntityRelation[];
 };
 
+export type ApiErrorObject = Schemas["ErrorObject"];
+
 export class ApiRequestError extends Error {
   readonly status: number | null;
+  readonly errors: ApiErrorObject[];
 
-  constructor(message: string, status: number | null = null) {
+  constructor(
+    message: string,
+    status: number | null = null,
+    errors: ApiErrorObject[] = [],
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.errors = errors;
   }
+}
+
+/** Reads the JSON:API error document the backend sends with a failed
+ *  response; a body that is not one yields a message with the status only. */
+async function responseError(response: Response): Promise<ApiRequestError> {
+  const errors = await readErrorObjects(response);
+  const described = errors
+    .map((error) => {
+      const text = error.detail ?? error.title ?? error.code;
+      if (!text) return null;
+      return error.source ? `${text} (${error.source.pointer})` : text;
+    })
+    .filter((text): text is string => text !== null);
+  const message = `Backend responded with ${response.status}`;
+  return new ApiRequestError(
+    described.length > 0 ? `${message}: ${described.join("; ")}` : message,
+    response.status,
+    errors,
+  );
+}
+
+async function readErrorObjects(response: Response): Promise<ApiErrorObject[]> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return [];
+  }
+  const errors = objectRecord(body).errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.filter(
+    (entry): entry is ApiErrorObject =>
+      typeof entry === "object" && entry !== null && !Array.isArray(entry),
+  );
 }
 
 /** A backend that never answered is a gateway timeout to our callers. */
@@ -626,42 +486,11 @@ export async function createEntry(
 
 // --- Review workflow -------------------------------------------------------
 
-export type RevisionState =
-  | "pending"
-  | "in_review"
-  | "active"
-  | "rejected"
-  | "archived";
+export type RevisionState = Schemas["RevisionState"];
 
-export type EntryRevisionSummary = {
-  id: string;
-  entry_id: string;
-  parent_revision_id?: string | null;
-  revision_number?: number | null;
-  state: RevisionState;
-  entry_state: "new" | "active" | "deleted";
-  created_by: string;
-  title: string | null;
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
-};
+export type EntryRevisionSummary = Schemas["EntryRevisionSummaryAttributes"];
 
-export type ModelRevisionSummary = {
-  id: string;
-  entry_id: string;
-  model_id: string;
-  idempotency_key?: string | null;
-  parent_revision_id?: string | null;
-  revision_number?: number | null;
-  state: RevisionState;
-  model_state: "new" | "active" | "deleted";
-  created_by: string;
-  title: string | null;
-  published_at?: string | null;
-  created_at: string;
-  updated_at: string;
-};
+export type ModelRevisionSummary = Schemas["ModelRevisionSummaryAttributes"];
 
 export type EntryRevisionGroup = {
   entry: Entry;
@@ -1107,10 +936,7 @@ async function sendJSON<T>(
     throw backendRequestError(error);
   }
   if (!response.ok) {
-    throw new ApiRequestError(
-      `Backend responded with ${response.status}`,
-      response.status,
-    );
+    throw await responseError(response);
   }
   return (await response.json()) as T;
 }
@@ -1516,7 +1342,7 @@ function createRunRequest(
 function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] {
   return Object.entries(entity.payload).flatMap(([key, value]) =>
     typeof value === "number" && Number.isFinite(value)
-      ? [{ id: stableUUID(`${entity.id}:${key}`), key, value }]
+      ? [{ id: stableUUID(`${entity.id}:${key}`), key: key as MetricKey, value }]
       : [],
   );
 }
@@ -1674,7 +1500,7 @@ function entityFromMetrics(entryId: string, model: Model): Entity | null {
   const payload: MetricsPayload = {};
   for (const metric of metrics) {
     if (typeof metric.value === "number" && Number.isFinite(metric.value)) {
-      payload[metric.key as keyof MetricsPayload] = metric.value;
+      payload[metric.key] = metric.value;
     }
   }
   if (Object.keys(payload).length === 0) {
@@ -1912,10 +1738,7 @@ async function fetchBackend<T>(path: string, token?: string): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      `Backend responded with ${response.status}`,
-      response.status,
-    );
+    throw await responseError(response);
   }
 
   return (await response.json()) as T;
