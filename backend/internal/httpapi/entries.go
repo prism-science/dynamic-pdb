@@ -1612,13 +1612,18 @@ func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerE
 			})
 		}
 
+		mutations := entity.Metadata.Mutations
+		if mutations == nil {
+			mutations = []string{}
+		}
+
 		items = append(items, PolymerEntity{
 			Id:              entity.ID,
 			LabelEntityId:   entity.Metadata.LabelEntityID,
 			Description:     entity.Metadata.Description,
 			SourceOrganisms: sourceOrganisms,
 			Construct:       entity.Metadata.Construct,
-			Mutations:       entity.Metadata.Mutations,
+			Mutations:       mutations,
 			UniprotMappings: uniProtMappings,
 			CreatedAt:       entity.CreatedAt,
 		})
