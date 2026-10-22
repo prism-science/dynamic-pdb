@@ -435,6 +435,162 @@ test("should post create entry using the new backend graph shape", async () => {
   }
 });
 
+test("should send only declared artifact metadata keys when files carry parsed and ext metadata", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    // given
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    let request = null;
+    global.fetch = async (url, init) => {
+      request = { body: JSON.parse(init.body) };
+      return jsonResponse(
+        resourceDocument("entry_revision_results", {
+          entry_id: "entry-1",
+          revision_id: "entry-revision-1",
+          state: "in_review",
+          model_results: [],
+        }),
+        { status: 201 },
+      );
+    };
+    const extSource = {
+      provider: "ext",
+      experiment_id: "experiment-1",
+      path: "data/refine.mtz",
+      sha256: "abc123",
+    };
+
+    // when
+    await createEntry("token-123", {
+      title: "Entry",
+      method: "X-ray crystallography",
+      models: [
+        {
+          title: "Model",
+          entities: [
+            {
+              id: "model-artifact",
+              type: "model",
+              level: "L2",
+              name: "model.cif",
+              payload: {
+                file_url: "s3://dynamic-pdb/model.cif",
+                metadata: {
+                  atom_count: 2400,
+                  modeled_residues: 300,
+                  unique_protein_chains: 1,
+                  altloc_fraction: 0.1,
+                  ligands: ["ATP"],
+                  method: "X-RAY DIFFRACTION",
+                  resolution: 1.8,
+                  space_group: "P 21 21 21",
+                  header_note: "from the file header",
+                },
+              },
+            },
+            {
+              id: "ext-artifact",
+              type: "data",
+              level: "L2",
+              name: "refine.mtz",
+              payload: {
+                file_url: "https://ext.example/refine.mtz",
+                metadata: {
+                  _dynamic_pdb_source: extSource,
+                  resolution: 1.9,
+                  beamline: "ALS 8.3.1",
+                  __internal: true,
+                  detector: { model: "Pilatus", __serial: "X1" },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    // then
+    const data = request.body.model_operations[0].data;
+    const [modelArtifact, extArtifact] = data.artifacts;
+    assert.deepEqual(modelArtifact.metadata, {
+      extensions: { header_note: "from the file header" },
+    });
+    assert.deepEqual(extArtifact.metadata, {
+      _dynamic_pdb_source: extSource,
+      extensions: {
+        ext_metadata: {
+          resolution: 1.9,
+          beamline: "ALS 8.3.1",
+          detector: { model: "Pilatus" },
+        },
+      },
+    });
+    assert.deepEqual(data.metadata, {
+      atom_count: 2400,
+      modeled_residues: 300,
+      unique_protein_chains: 1,
+      altloc_fraction: 0.1,
+      ligands: ["ATP"],
+    });
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should keep existing artifact extensions when undeclared metadata keys move into them", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    // given
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    let request = null;
+    global.fetch = async (url, init) => {
+      request = { body: JSON.parse(init.body) };
+      return jsonResponse(
+        resourceDocument("entry_revision_results", {
+          entry_id: "entry-1",
+          revision_id: "entry-revision-1",
+          state: "in_review",
+          model_results: [],
+        }),
+        { status: 201 },
+      );
+    };
+
+    // when
+    await createEntry("token-123", {
+      title: "Entry",
+      method: "X-ray crystallography",
+      entities: [
+        {
+          id: "notes",
+          type: "data",
+          level: "L0",
+          name: "notes.txt",
+          payload: {
+            file_url: "s3://dynamic-pdb/notes.txt",
+            metadata: {
+              extensions: { label: "kept" },
+              label: "moved",
+              source: "bench",
+            },
+          },
+        },
+      ],
+    });
+
+    // then
+    assert.deepEqual(request.body.entry.artifacts[0].metadata, {
+      extensions: { label: "kept", source: "bench" },
+    });
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
 test("should create and submit model revisions through user routes", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
