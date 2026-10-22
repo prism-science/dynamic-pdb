@@ -3,6 +3,7 @@ package upload
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1326,8 +1327,9 @@ func Test_should_upload_cofactors_from_mmcif_when_manifest_is_generated_from_dat
 		name      string
 		fixture   string
 		cofactors []string
+		ligands   []string
 	}{
-		{name: "heme", fixture: "4HHB.cif", cofactors: []string{"HEM"}},
+		{name: "heme", fixture: "4HHB.cif", cofactors: []string{"HEM"}, ligands: []string{"PO4"}},
 		{name: "catalytic metal", fixture: "3CLN.cif", cofactors: []string{"CA"}},
 	}
 	for _, testCase := range cases {
@@ -1355,7 +1357,47 @@ func Test_should_upload_cofactors_from_mmcif_when_manifest_is_generated_from_dat
 			}
 			require.NotNil(t, uploaded, "no uploaded model carried cofactors")
 			assert.Equal(t, testCase.cofactors, uploaded["cofactors"])
-			assert.NotContains(t, uploaded, "ligands")
+			if testCase.ligands == nil {
+				assert.NotContains(t, uploaded, "ligands")
+			} else {
+				assert.Equal(t, testCase.ligands, uploaded["ligands"])
+			}
 		})
 	}
+}
+
+func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_review(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb",
+		"ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n"+
+			"HETATM    2 ZN    ZN B 101      16.104  13.207   9.447  1.00 20.00          ZN\n"+
+			"HETATM    3  S   SO4 B 102      16.104  13.207   9.447  1.00 20.00           S\n")
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err := manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	var uploaded map[string]any
+	for _, model := range modelRequests(dynamicPDBClient.models) {
+		if model.Metadata["cofactors"] != nil {
+			uploaded = model.Metadata
+		}
+	}
+	require.NotNil(t, uploaded, "no uploaded model carried cofactors")
+	assert.Equal(t, []string{"ZN"}, uploaded["cofactors"])
+	assert.Equal(t, []string{"SO4"}, uploaded["ligands"])
+	extensions, ok := uploaded["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	reviewJSON, err := json.Marshal(extensions["compound_review"])
+	require.NoError(t, err)
+	assert.JSONEq(t, `[
+		{"list": "ligands", "id": "SO4", "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"},
+		{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
+	]`, string(reviewJSON))
 }

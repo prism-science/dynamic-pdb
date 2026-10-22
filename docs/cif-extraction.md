@@ -9,7 +9,7 @@ browser can without the cofactor list.
 
 | Value | Rule |
 | --- | --- |
-| `atom_count` | Heavy atoms of the first model; hydrogens, deuterium and water are not counted. |
+| `atom_count` | Heavy atoms of the first model (for PDB files, up to the first `ENDMDL` or second `MODEL`); hydrogens, deuterium and water are not counted. |
 | `modeled_residues` | Distinct residues (chain, number, insertion code) of `ATOM` records. |
 | `unique_protein_chains` | Distinct chains of `ATOM` records. |
 | `altloc_fraction` | Residues with at least two alternate positions that each have occupancy >= 0.1, divided by modeled residues. Residues are counted, not atoms. |
@@ -22,11 +22,34 @@ and double-quoted values (a quote closes only when followed by whitespace, so
 `"GUANOSINE-5'-DIPHOSPHATE"` and `'a b'c d'` read correctly) and comments. Only the
 first data block is read.
 
+## How a file is read (memory)
+
+`cif.ExtractText` reads a file in one pass: tokens are produced one at a time,
+the `_atom_site` loop is reduced to counts as it streams past (its rows are
+never stored) and the rows of categories the rules do not use are skipped. A
+4 MiB head allocates about 4 MB this way. `cif.Parse` still builds the full
+document, for code that needs every table.
+
+`cif.ScalarValue` / `cif.ScalarValueFromReader` look up one non-looped item (for
+example `_refine.ls_R_factor_R_free`) by scanning the stream through a fixed
+buffer: they never build a document, so the cost does not grow with the file.
+
+## PDB-format files
+
+Only the first model is counted: records after the first `ENDMDL`, or after a
+second `MODEL` record, are ignored. Compounds are also read from `HET` records,
+which come before the coordinates. When only the head of a file is read, a
+partial last line is dropped, and unless an `ENDMDL`, `CONECT`, `MASTER` or `END`
+record shows that the coordinates ended, `atom_count`, `modeled_residues`,
+`unique_protein_chains` and `altloc_fraction` are left out (with a warning),
+exactly as for mmCIF. PDB files have no `metalc` rows, so every metal is a
+cofactor flagged for review.
+
 ## The ligand rule
 
 Every non-polymer compound (`_pdbx_entity_nonpoly` and `HETATM` rows) is sorted once:
 
-1. **Solvent, buffer, cryoprotectant** (water, glycerol, sulfate, ...): dropped. Nothing else is ever dropped.
+1. **Water** (`HOH`, `DOD`, `WAT`, `H2O`): always dropped. **Other solvents, buffers and cryoprotectants** (glycerol, sulfate, ...): dropped only once both reference lists are approved (see below). Until then they are kept as ligands flagged **needs review**. Nothing else is ever dropped.
 2. **Metal ion**, decided **per instance** (one placed copy, identified by chain and residue number): an instance is kept as a *cofactor* when a `_struct_conn` row with `conn_type_id = metalc` joins that instance to a protein residue or a ligand (coordination to water does not count).
    - If the file has **no `metalc` rows at all**, its metals are kept as cofactors flagged **needs review**.
    - If the file has `metalc` rows but none involves a given metal instance, that instance is listed as a *ligand* flagged **needs review**. It is never dropped and never listed unflagged. A compound with a linked and an unlinked instance therefore appears in both lists, the unlinked one flagged.
@@ -55,11 +78,31 @@ Two versioned data sets, each with its own `version` and `approved` flag:
 
 Both are drafts. **Researchers must approve them once**: review the lists, then set `"approved": true` and bump `version`. Every extraction reports a `reference_version` naming both file versions (`cofactors:<v>+solvents:<v>`), so values can be re-derived after a change.
 
-**Researchers must confirm the solvent list in particular.** It is a science decision, not an engineering one. It classes citrate (CIT), sulfate (SO4), phosphate (PO4), chloride, bromide and iodide as solvents, and the parser drops them. Those compounds are often real ligands, so a wrong entry silently removes a ligand from the record. Engineers do not change this list without researcher sign-off.
+**What the code does while the lists are drafts.** `Reference.Approved` is true only when *both* files say `"approved": true`. When it is false:
+
+- only water is dropped; every other compound on the draft solvent list (sulfate, phosphate, citrate, chloride, glycerol, ...) is kept in `ligands` and flagged `needs_review` with the reason "compound is on the draft solvent list ...";
+- every extraction carries the warning `cif.DraftWarning` ("reference lists are draft and not yet approved by researchers ..."): the extract endpoint returns it in `warnings`, the CLI logs it once per structure file;
+- the cofactor and metal list is applied as before (it only decides what goes into the new `cofactors` field).
+
+Once both flags are true the full lists apply and the warning disappears. The website preview parser follows the same gate through `REFERENCE_LISTS_APPROVED` in `website/src/lib/parse/structure.ts`; flip it in the same change that flips the JSON flags. Tests use injectable reference data (`parseReference`), so approving the lists does not need test edits beyond the expectations that follow the JSON files.
+
+**Researchers must confirm the solvent list in particular.** It is a science decision, not an engineering one. It classes citrate (CIT), sulfate (SO4), phosphate (PO4), chloride, bromide and iodide as solvents. Those compounds are often real ligands, so a wrong entry silently removes a ligand from the record. Engineers do not change this list without researcher sign-off.
 
 ## CLI upload
 
-The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the first 4 MiB of the file; when the file is longer, the truncation-aware parser is used, so atom counts, residue counts and altloc fraction are left out instead of being undercounted. As with `ligands`, an empty list is not uploaded: a missing `cofactors` field means none were found (or the coordinates were cut off), while `POST /v1/artifacts/{id}/extract` reports `[]` when the coordinates were read in full and held none.
+The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the first 4 MiB of the file and parses it **once per artifact**: the parsed fields are cached on the uploader, so the ten or so manifest fields of one artifact cost one parse. When the file is longer, the truncation-aware parser is used, so atom counts, residue counts and altloc fraction are left out instead of being undercounted (for PDB files too). As with `ligands`, an empty list is not uploaded: a missing `cofactors` field means none were found (or the coordinates were cut off), while `POST /v1/artifacts/{id}/extract` reports `[]` when the coordinates were read in full and held none.
+
+Scalar fields read from a data-folder file (for example R-free from `models/5amf_model.cif`) are streamed with `cif.ScalarValueFromReader`; the file is never loaded whole.
+
+**Review flags.** A compound the parser flags (a metal in a PDB-format file, a compound on the draft solvent list, a metal with no `metalc` link) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
+
+```json
+"extensions": {"compound_review": [
+  {"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
+]}
+```
+
+`ligands` and `cofactors` stay plain lists of IDs, so the declared fields do not change. The CLI also logs a warning per flagged compound while it reads the file (`compound needs review`). The manifest key is `extensions.compound_review`; any manifest model-metadata key starting with `extensions.` is uploaded under `extensions`.
 
 ## Extract endpoint limits
 
@@ -69,3 +112,18 @@ mutations before the coordinates, so those are read in full. If the coordinates
 run past the limit, atom counts, residue counts and altloc fraction are left out
 with a warning. The object must sit in the artifact's own upload folder, and the
 caller must be the artifact's creator or a reviewer.
+
+### Concurrency and rate limits
+
+A request holds up to 4 MiB of file plus about 4 MB of parser state (measured:
+about 5 MB allocated per request), so a pod needs far less than its 512 MiB
+for the endpoint, but the cost scales with a user-supplied file and is still
+bounded explicitly. Both limits are per server instance and in memory, like the
+global per-IP limit (`GlobalRateLimitMiddleware`, `httprate`):
+
+- **At most 2 extractions at once** per instance. A third concurrent request gets `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. The slot is taken after authorization and validation (so 401/403/404/422 never use one) and released as soon as the response is built, before it is written to the client.
+- **10 extraction requests per minute per user** per instance (`httprate` keyed by user ID). Past that: `429 TOO_MANY_REQUESTS` with `Retry-After` (seconds). The count includes requests that end in 403/404/422.
+
+With N pods the effective per-user budget is up to 10 x N per minute, because the counter is not shared. Change the defaults with `Server.WithExtractionLimits`; they are constants in `backend/internal/httpapi/artifact_extraction_limits.go`.
+
+The endpoint warns (`warnings`) while the reference lists are drafts; see above.

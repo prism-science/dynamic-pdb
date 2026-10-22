@@ -7,27 +7,79 @@ import (
 )
 
 // PDBFields reads a legacy PDB file into the same field map MMCIFFields builds.
-// PDB files carry no metalc connection rows here, so metal ions are always
-// flagged for review.
+// See PDBExtraction.
 func PDBFields(text string) (map[string]any, error) {
+	extraction, err := PDBExtraction(text, false)
+	if err != nil {
+		return nil, err
+	}
+	return extraction.Fields, nil
+}
+
+// PDBExtraction reads a legacy PDB file. PDB files carry no metalc connection
+// rows here, so metal ions are always flagged for review. Only the first model
+// is counted, as for mmCIF. Set truncated when text is only the head of a larger
+// file: a line cut off at the end is dropped, and when the coordinates were not
+// seen to end (no ENDMDL, CONECT, MASTER or END record) the counts that need all
+// of them are omitted.
+func PDBExtraction(text string, truncated bool) (Extraction, error) {
 	reference, err := DefaultReference()
 	if err != nil {
-		return nil, fmt.Errorf("load reference list: %w", err)
+		return Extraction{}, fmt.Errorf("load reference list: %w", err)
+	}
+	return pdbExtraction(text, truncated, reference)
+}
+
+func pdbExtraction(text string, truncated bool, reference *Reference) (Extraction, error) {
+	if truncated {
+		text = text[:strings.LastIndexByte(text, '\n')+1]
 	}
 	fields := map[string]any{}
+	warnings := []string{}
+	if !reference.Approved {
+		warnings = append(warnings, DraftWarning)
+	}
 	residues := map[residueKey]struct{}{}
 	chains := map[string]struct{}{}
 	positions := map[residueKey]map[string]float64{}
 	instances := map[compoundInstance]int{}
 	atomNames := map[compoundInstance]map[string]struct{}{}
 	atomCount := 0
-	for _, line := range strings.Split(text, "\n") {
+	modelStarted := false
+	firstModelDone := false
+	coordinatesEnded := false
+	for rest := text; rest != ""; {
+		var line string
+		line, rest, _ = strings.Cut(rest, "\n")
 		record := recordName(line)
-		if record == "REMARK" {
+		switch record {
+		case "REMARK":
 			addPDBRemarkFields(fields, line)
 			continue
+		case "HET":
+			if instance, count := hetInstance(line); instance.compoundID != "" {
+				instances[instance] = count
+			}
+			continue
+		case "MODEL":
+			if modelStarted {
+				firstModelDone = true
+			}
+			modelStarted = true
+			continue
+		case "ENDMDL":
+			firstModelDone = true
+			coordinatesEnded = true
+			continue
+		case "CONECT", "MASTER", "END":
+			coordinatesEnded = true
+			continue
+		case "ATOM", "HETATM":
+		default:
+			// Every other record (TER, SEQRES, CRYST1, ...) carries nothing we read.
+			continue
 		}
-		if record != "ATOM" && record != "HETATM" {
+		if firstModelDone {
 			continue
 		}
 		compound := upperSlice(line, 17, 20)
@@ -71,18 +123,39 @@ func PDBFields(text string) (map[string]any, error) {
 			positions[residue][altID] = max(positions[residue][altID], occupancy)
 		}
 	}
-	addPositiveInt(fields, "atom_count", atomCount)
-	addPositiveInt(fields, "modeled_residues", len(residues))
-	addPositiveInt(fields, "unique_protein_chains", len(chains))
-	if len(residues) > 0 {
-		addField(fields, "altloc_fraction", float64(countAltlocResidues(positions))/float64(len(residues)))
+	coordinatesRead := !truncated || coordinatesEnded
+	if coordinatesRead {
+		addPositiveInt(fields, "atom_count", atomCount)
+		addPositiveInt(fields, "modeled_residues", len(residues))
+		addPositiveInt(fields, "unique_protein_chains", len(chains))
+		if len(residues) > 0 {
+			addField(fields, "altloc_fraction", float64(countAltlocResidues(positions))/float64(len(residues)))
+		}
+	} else {
+		warnings = append(warnings, "PDB coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted")
 	}
 	ligands, cofactors, err := classifyCompounds(instances, nil, reference)
 	if err != nil {
-		return nil, fmt.Errorf("classify PDB compounds: %w", err)
+		return Extraction{}, fmt.Errorf("classify PDB compounds: %w", err)
 	}
-	addCompoundFields(fields, ligands, cofactors, atomCount > 0)
-	return fields, nil
+	review := addCompoundFields(fields, ligands, cofactors, coordinatesRead && atomCount > 0)
+	return Extraction{Fields: fields, Warnings: warnings, Review: review}, nil
+}
+
+// hetInstance reads a HET record: compound, chain, number and insertion code,
+// then the number of atoms (0 when the count is missing).
+func hetInstance(line string) (compoundInstance, int) {
+	instance := compoundInstance{
+		compoundID: upperSlice(line, 7, 10),
+		asymID:     slice(line, 12, 13),
+		authSeqID:  slice(line, 13, 17),
+		insCode:    slice(line, 17, 18),
+	}
+	count, err := strconv.Atoi(slice(line, 20, 25))
+	if err != nil {
+		return instance, 0
+	}
+	return instance, count
 }
 
 func addPDBRemarkFields(fields map[string]any, line string) {

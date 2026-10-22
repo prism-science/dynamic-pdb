@@ -17,6 +17,40 @@ func Extract(document *Document) (Result, error) {
 	return ExtractWithReference(document, reference)
 }
 
+// extractionTables are the categories Extract reads besides _atom_site.
+var extractionTables = map[string]struct{}{
+	"_struct_conn":         {},
+	"_struct_ref_seq_dif":  {},
+	"_pdbx_entity_nonpoly": {},
+	"_entity":              {},
+	"_struct_ref":          {},
+	"_struct_ref_seq":      {},
+	"_software":            {},
+}
+
+// ExtractText parses text and extracts its values in a single pass. The
+// coordinate loop is reduced to counts while it is read and the rows of
+// categories Extract does not use are skipped, so memory stays far below
+// Parse followed by Extract. The returned document holds the scalar items and
+// the small tables only. Set truncated for the head of a larger file.
+func ExtractText(text string, truncated bool) (*Document, Result, error) {
+	reference, err := DefaultReference()
+	if err != nil {
+		return nil, Result{}, fmt.Errorf("load reference list: %w", err)
+	}
+	return ExtractTextWithReference(text, truncated, reference)
+}
+
+// ExtractTextWithReference is ExtractText with an explicit reference list.
+func ExtractTextWithReference(text string, truncated bool, reference *Reference) (*Document, Result, error) {
+	document := parse(text, truncated, parseOptions{streamAtomSite: true, onlyTables: extractionTables})
+	result, err := ExtractWithReference(document, reference)
+	if err != nil {
+		return nil, Result{}, fmt.Errorf("extract mmCIF values: %w", err)
+	}
+	return document, result, nil
+}
+
 // ExtractWithReference is Extract with an explicit reference list.
 func ExtractWithReference(document *Document, reference *Reference) (Result, error) {
 	result := Result{
@@ -24,6 +58,9 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 		Cofactors:        []Compound{},
 		ReferenceVersion: reference.Version,
 		Warnings:         []string{},
+	}
+	if !reference.Approved {
+		result.Warnings = append(result.Warnings, DraftWarning)
 	}
 	result.Connections = readConnections(document)
 	result.SequenceDifferences = readSequenceDifferences(document)
@@ -34,6 +71,7 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	result.Atoms = atoms
 	if warning != "" {
 		result.Warnings = append(result.Warnings, warning)
+		result.AtomsCutOff = true
 	}
 	if table := document.Table("_pdbx_entity_nonpoly"); table != nil {
 		for _, row := range table.Rows {
@@ -76,13 +114,15 @@ func partnerInstance(partner Partner) compoundInstance {
 	}
 }
 
-// classifyCompounds applies the single ligand rule. Solvents, buffers and
-// cryoprotectants are dropped; nothing else is. The metal rule is per instance:
-// a metal instance is a cofactor when a metalc connection joins that instance to
-// a protein residue or ligand. If the file has no metalc rows at all, its metals
-// are cofactors flagged for review. A metal instance without a link in a file
-// that has metalc rows becomes a ligand flagged for review, so it is never
-// dropped and never placed unflagged.
+// classifyCompounds applies the single ligand rule. Water is always dropped;
+// other solvents, buffers and cryoprotectants are dropped only once the
+// reference lists are approved, and are kept and flagged until then. Nothing
+// else is dropped. The metal rule is per instance: a metal instance is a
+// cofactor when a metalc connection joins that instance to a protein residue or
+// ligand. If the file has no metalc rows at all, its metals are cofactors
+// flagged for review. A metal instance without a link in a file that has metalc
+// rows becomes a ligand flagged for review, so it is never dropped and never
+// placed unflagged.
 func classifyCompounds(
 	instances map[compoundInstance]int,
 	connections []Connection,
@@ -145,6 +185,8 @@ func classifyCompounds(
 		switch kind {
 		case kindSolvent:
 			continue
+		case kindDraftSolvent:
+			ligands.add(Compound{ID: id, NeedsReview: true, ReviewReason: draftSolventReason})
 		case kindCofactor:
 			cofactors.add(Compound{ID: id})
 		case kindLigand:
@@ -220,91 +262,160 @@ type residueKey struct {
 	insCode string
 }
 
-func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
-	instances := map[compoundInstance]int{}
-	atomNames := map[compoundInstance]map[string]struct{}{}
-	table := document.Table("_atom_site")
-	if table == nil {
-		return nil, instances, ""
+// atomSiteReader reduces _atom_site rows to counts as they arrive, so a large
+// coordinate loop never has to be held in memory.
+type atomSiteReader struct {
+	columns   atomSiteColumns
+	stats     AtomStats
+	residues  map[residueKey]struct{}
+	chains    map[string]struct{}
+	positions map[residueKey]map[string]float64
+	instances map[compoundInstance]int
+	atomNames map[compoundInstance]map[string]struct{}
+	// started is set after the first row; firstModel is that row's model number.
+	started    bool
+	firstModel string
+}
+
+// atomSiteColumns holds the index of each column the reader uses, -1 when the
+// loop does not have it.
+type atomSiteColumns struct {
+	model, group, compound, asymID, authSeqID, insCode, atomID, element int
+	authAsymID, labelSeqID, altID, occupancy                            int
+}
+
+func newAtomSiteReader(columns []string) *atomSiteReader {
+	index := func(name string) int {
+		for position, candidate := range columns {
+			if candidate == name {
+				return position
+			}
+		}
+		return -1
 	}
-	incomplete := !table.Complete
-	stats := AtomStats{}
-	residues := map[residueKey]struct{}{}
-	chains := map[string]struct{}{}
-	positions := map[residueKey]map[string]float64{}
-	firstModel := ""
-	for _, row := range table.Rows {
-		model := table.Value(row, "pdbx_pdb_model_num")
-		if firstModel == "" {
-			firstModel = model
-		}
-		if model != firstModel {
-			continue
-		}
-		group := strings.ToUpper(table.Value(row, "group_pdb"))
-		if group == "" {
-			group = "ATOM"
-		}
-		compound := strings.ToUpper(table.Value(row, "label_comp_id"))
-		if group == "HETATM" && compound != "" {
-			instance := compoundInstance{
-				compoundID: compound,
-				asymID:     table.Value(row, "label_asym_id"),
-				authSeqID:  table.Value(row, "auth_seq_id"),
-				insCode:    table.Value(row, "pdbx_pdb_ins_code"),
-			}
-			if atomNames[instance] == nil {
-				atomNames[instance] = map[string]struct{}{}
-			}
-			atomNames[instance][table.Value(row, "label_atom_id")] = struct{}{}
-			instances[instance] = len(atomNames[instance])
-		}
-		if group == "HETATM" && isWater(compound) {
-			continue
-		}
-		if element := strings.ToUpper(table.Value(row, "type_symbol")); element == "H" || element == "D" {
-			continue
-		}
-		stats.AtomCount++
-		if group == "HETATM" {
-			continue
-		}
-		chain := firstNonEmpty(table.Value(row, "auth_asym_id"), table.Value(row, "label_asym_id"))
-		residue := residueKey{
-			chain:   chain,
-			seq:     firstNonEmpty(table.Value(row, "auth_seq_id"), table.Value(row, "label_seq_id")),
-			insCode: table.Value(row, "pdbx_pdb_ins_code"),
-		}
-		residues[residue] = struct{}{}
-		if chain != "" {
-			chains[chain] = struct{}{}
-		}
-		if altID := table.Value(row, "label_alt_id"); altID != "" {
-			occupancy := 1.0
-			if raw := table.Value(row, "occupancy"); raw != "" {
-				if parsed, err := strconv.ParseFloat(raw, 64); err == nil {
-					occupancy = parsed
-				}
-			}
-			if positions[residue] == nil {
-				positions[residue] = map[string]float64{}
-			}
-			positions[residue][altID] = max(positions[residue][altID], occupancy)
-		}
+	return &atomSiteReader{
+		columns: atomSiteColumns{
+			model:      index("pdbx_pdb_model_num"),
+			group:      index("group_pdb"),
+			compound:   index("label_comp_id"),
+			asymID:     index("label_asym_id"),
+			authSeqID:  index("auth_seq_id"),
+			insCode:    index("pdbx_pdb_ins_code"),
+			atomID:     index("label_atom_id"),
+			element:    index("type_symbol"),
+			authAsymID: index("auth_asym_id"),
+			labelSeqID: index("label_seq_id"),
+			altID:      index("label_alt_id"),
+			occupancy:  index("occupancy"),
+		},
+		residues:  map[residueKey]struct{}{},
+		chains:    map[string]struct{}{},
+		positions: map[residueKey]map[string]float64{},
+		instances: map[compoundInstance]int{},
+		atomNames: map[compoundInstance]map[string]struct{}{},
 	}
-	if incomplete {
-		return nil, instances, "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+}
+
+func cell(row []string, index int) string {
+	if index < 0 || index >= len(row) {
+		return ""
 	}
-	stats.ModeledResidues = len(residues)
-	stats.ProteinChains = len(chains)
-	altlocResidues := countAltlocResidues(positions)
+	return cleanValue(row[index])
+}
+
+func (r *atomSiteReader) add(row []string) {
+	columns := r.columns
+	model := cell(row, columns.model)
+	if !r.started {
+		r.started = true
+		r.firstModel = model
+	}
+	if model != r.firstModel {
+		return
+	}
+	group := strings.ToUpper(cell(row, columns.group))
+	if group == "" {
+		group = "ATOM"
+	}
+	compound := strings.ToUpper(cell(row, columns.compound))
+	if group == "HETATM" && compound != "" {
+		instance := compoundInstance{
+			compoundID: compound,
+			asymID:     cell(row, columns.asymID),
+			authSeqID:  cell(row, columns.authSeqID),
+			insCode:    cell(row, columns.insCode),
+		}
+		if r.atomNames[instance] == nil {
+			r.atomNames[instance] = map[string]struct{}{}
+		}
+		r.atomNames[instance][cell(row, columns.atomID)] = struct{}{}
+		r.instances[instance] = len(r.atomNames[instance])
+	}
+	if group == "HETATM" && isWater(compound) {
+		return
+	}
+	if element := strings.ToUpper(cell(row, columns.element)); element == "H" || element == "D" {
+		return
+	}
+	r.stats.AtomCount++
+	if group == "HETATM" {
+		return
+	}
+	chain := firstNonEmpty(cell(row, columns.authAsymID), cell(row, columns.asymID))
+	residue := residueKey{
+		chain:   chain,
+		seq:     firstNonEmpty(cell(row, columns.authSeqID), cell(row, columns.labelSeqID)),
+		insCode: cell(row, columns.insCode),
+	}
+	r.residues[residue] = struct{}{}
+	if chain != "" {
+		r.chains[chain] = struct{}{}
+	}
+	if altID := cell(row, columns.altID); altID != "" {
+		occupancy := 1.0
+		if raw := cell(row, columns.occupancy); raw != "" {
+			if parsed, err := strconv.ParseFloat(raw, 64); err == nil {
+				occupancy = parsed
+			}
+		}
+		if r.positions[residue] == nil {
+			r.positions[residue] = map[string]float64{}
+		}
+		r.positions[residue][altID] = max(r.positions[residue][altID], occupancy)
+	}
+}
+
+// result returns the statistics, or nil statistics with a warning when the loop
+// was cut off.
+func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance]int, string) {
+	if !complete {
+		return nil, r.instances, "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+	}
+	stats := r.stats
+	stats.ModeledResidues = len(r.residues)
+	stats.ProteinChains = len(r.chains)
 	if stats.ModeledResidues > 0 {
-		stats.AltlocFraction = float64(altlocResidues) / float64(stats.ModeledResidues)
+		stats.AltlocFraction = float64(countAltlocResidues(r.positions)) / float64(stats.ModeledResidues)
 	}
 	if stats.AtomCount == 0 {
-		return nil, instances, ""
+		return nil, r.instances, ""
 	}
-	return &stats, instances, ""
+	return &stats, r.instances, ""
+}
+
+func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
+	table := document.Table("_atom_site")
+	if table == nil {
+		return nil, map[compoundInstance]int{}, ""
+	}
+	reader := document.atomSite
+	if reader == nil {
+		reader = newAtomSiteReader(table.Columns)
+		for _, row := range table.Rows {
+			reader.add(row)
+		}
+	}
+	return reader.result(table.Complete)
 }
 
 const minAltlocOccupancy = 0.1

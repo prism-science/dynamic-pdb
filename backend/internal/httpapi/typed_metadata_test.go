@@ -41,6 +41,26 @@ func Test_should_accept_model_metadata_extensions_when_keys_are_not_reserved(t *
 	assert.Empty(t, fieldErrors)
 }
 
+func Test_should_accept_compound_review_when_cli_uploads_it_under_model_extensions(t *testing.T) {
+	// given
+	data := CreateModelData{
+		Title: "model",
+		Metadata: &map[string]interface{}{
+			"cofactors": []string{"ZN"},
+			"ligands":   []string{"SO4"},
+			"extensions": map[string]any{"compound_review": []any{
+				map[string]any{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"},
+			}},
+		},
+	}
+
+	// when
+	fieldErrors := createModelRequestErrors(validation.Root.Field("model"), data)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
 func Test_should_reject_reserved_keys_when_model_artifact_and_run_metadata_use_double_underscore(t *testing.T) {
 	// given
 	data := CreateModelData{

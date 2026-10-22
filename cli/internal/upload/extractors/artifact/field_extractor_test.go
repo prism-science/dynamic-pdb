@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,12 +64,14 @@ func Test_should_keep_heme_in_cofactors_not_ligands_when_extracting_from_mmcif(t
 
 	// when
 	cofactors, cofactorsFound := extractMMCIFField(t, contents, "cofactors")
-	_, ligandsFound := extractMMCIFField(t, contents, "ligands")
+	ligands, ligandsFound := extractMMCIFField(t, contents, "ligands")
 
 	// then
 	require.True(t, cofactorsFound)
 	assert.Equal(t, []string{"HEM"}, cofactors)
-	assert.False(t, ligandsFound)
+	if ligandsFound {
+		assert.NotContains(t, ligands, "HEM")
+	}
 }
 
 func Test_should_keep_catalytic_metal_in_cofactors_when_extracting_from_mmcif(t *testing.T) {
@@ -124,4 +128,150 @@ func Test_should_omit_atom_counts_when_read_limit_cuts_exactly_on_a_row_boundary
 	assert.False(t, atomCountFound)
 	assert.False(t, residuesFound)
 	assert.False(t, altlocFound)
+}
+
+func extractorFor(artifact extractors.Artifact, cache *FieldCache) FieldExtractor {
+	return NewCachedFieldExtractor(map[string]extractors.Artifact{"coordinates": artifact}, cache)
+}
+
+func extractField(t *testing.T, extractor FieldExtractor, field string) (any, bool) {
+	t.Helper()
+	value, ok, err := extractor.Extract(context.Background(), "4HHB",
+		manifest.Source{Artifact: "coordinates"},
+		manifest.Extract{
+			MMCIF: &manifest.ExtractRule{Field: field},
+			PDB:   &manifest.ExtractRule{Field: field},
+		},
+	)
+	require.NoError(t, err)
+	return value, ok
+}
+
+func Test_should_parse_artifact_once_when_many_fields_are_read(t *testing.T) {
+	// given
+	path := filepath.Join(t.TempDir(), "model.cif")
+	require.NoError(t, os.WriteFile(path, readLibraryFixture(t, "4HHB.cif"), 0o600))
+	cache := NewFieldCache()
+	extractor := extractorFor(extractors.Artifact{Filename: "model.cif", LocalPath: path}, cache)
+	fields := []string{"atom_count", "modeled_residues", "unique_protein_chains", "altloc_fraction", "ligands", "cofactors", "program.name", "program.version", "compound_review", "_refine.ls_d_res_high"}
+
+	// when
+	for _, field := range fields {
+		extractField(t, extractor, field)
+	}
+	require.NoError(t, os.Remove(path))
+	count, found := extractField(t, extractor, "atom_count")
+
+	// then
+	require.True(t, found, "the file was deleted: every field must come from the first parse")
+	assert.Equal(t, 420, count)
+}
+
+func Test_should_not_confuse_artifacts_when_two_files_share_a_name_and_length(t *testing.T) {
+	// given
+	cache := NewFieldCache()
+	first := []byte("_refine.ls_R_factor_R_free 0.111\n")
+	second := []byte("_refine.ls_R_factor_R_free 0.222\n")
+	require.Equal(t, len(first), len(second))
+
+	// when
+	firstValue, _ := extractField(t, extractorFor(extractors.Artifact{Filename: "model.cif", Contents: first}, cache), "_refine.ls_R_factor_R_free")
+	secondValue, _ := extractField(t, extractorFor(extractors.Artifact{Filename: "model.cif", Contents: second}, cache), "_refine.ls_R_factor_R_free")
+
+	// then
+	assert.Equal(t, "0.111", firstValue)
+	assert.Equal(t, "0.222", secondValue)
+}
+
+func Test_should_share_one_parse_when_fields_are_read_concurrently(t *testing.T) {
+	// given
+	cache := NewFieldCache()
+	artifact := extractors.Artifact{Filename: "model.cif", Contents: readLibraryFixture(t, "4HHB.cif")}
+	var group sync.WaitGroup
+	results := make([]any, 16)
+
+	// when
+	for index := range results {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			results[index], _ = extractField(t, extractorFor(artifact, cache), "atom_count")
+		}()
+	}
+	group.Wait()
+
+	// then
+	for _, result := range results {
+		assert.Equal(t, 420, result)
+	}
+	assert.Len(t, cache.entries, 1)
+}
+
+func Test_should_expose_review_flags_when_pdb_metal_has_no_connection_rows(t *testing.T) {
+	// given
+	contents := []byte("ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n" +
+		"HETATM    2 ZN    ZN B 101      16.104  13.207   9.447  1.00 20.00          ZN\n")
+	extractor := extractorFor(extractors.Artifact{Filename: "model.pdb", Contents: contents}, NewFieldCache())
+
+	// when
+	cofactors, cofactorsFound := extractField(t, extractor, "cofactors")
+	review, reviewFound := extractField(t, extractor, "compound_review")
+
+	// then
+	require.True(t, cofactorsFound)
+	assert.Equal(t, []string{"ZN"}, cofactors)
+	require.True(t, reviewFound)
+	assert.Equal(t, []cif.ReviewItem{{
+		List:   cif.ListCofactors,
+		ID:     "ZN",
+		Reason: "metal ion kept for review: the file has no metalc connection rows",
+	}}, review)
+}
+
+func Test_should_keep_sulfate_and_flag_it_when_reference_lists_are_draft(t *testing.T) {
+	// given
+	contents := []byte("data_X\nloop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 SO4\n3 HOH\n")
+	extractor := extractorFor(extractors.Artifact{Filename: "model.cif", Contents: contents}, NewFieldCache())
+
+	// when
+	ligands, ligandsFound := extractField(t, extractor, "ligands")
+	review, _ := extractField(t, extractor, "compound_review")
+
+	// then
+	require.True(t, ligandsFound)
+	assert.Equal(t, []string{"SO4"}, ligands)
+	require.Len(t, review, 1)
+}
+
+func Test_should_omit_pdb_counts_when_artifact_is_longer_than_read_limit(t *testing.T) {
+	// given
+	line := "ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n"
+	contents := []byte(strings.Repeat(line, structureReadLimit/len(line)+10) + "END\n")
+	extractor := extractorFor(extractors.Artifact{Filename: "model.pdb", Contents: contents}, NewFieldCache())
+
+	// when
+	_, atomCountFound := extractField(t, extractor, "atom_count")
+
+	// then
+	assert.False(t, atomCountFound)
+}
+
+func Test_should_not_allocate_per_field_when_fields_come_from_cache(t *testing.T) {
+	// given
+	contents := readLibraryFixture(t, "4HHB.cif")
+	extractor := extractorFor(extractors.Artifact{Filename: "model.cif", Contents: contents}, NewFieldCache())
+	fields := []string{"atom_count", "modeled_residues", "unique_protein_chains", "altloc_fraction", "ligands", "cofactors", "program.name", "program.version", "compound_review", "_refine.ls_d_res_high"}
+	var before, after runtime.MemStats
+
+	// when
+	extractField(t, extractor, "atom_count")
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	for _, field := range fields {
+		extractField(t, extractor, field)
+	}
+	runtime.ReadMemStats(&after)
+
+	// then
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(64<<10), "ten cached field reads must not parse again")
 }

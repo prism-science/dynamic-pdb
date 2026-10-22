@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"unsafe"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -29,6 +31,10 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
+	if s.extractionLimits.userLimited(w, r, user.ID.String()) {
+		writeError(w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "too many extraction requests: wait before extracting again")
+		return
+	}
 	artifacts, err := s.database.Artifacts.List(r.Context(), db.ArtifactFilters{ID: &id})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "load artifact for extraction failed", "err", err, "artifact_id", id)
@@ -48,6 +54,14 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 		writeError(w, http.StatusUnprocessableEntity, "UNPROCESSABLE_ENTITY", problem)
 		return
 	}
+
+	release, acquired := s.extractionLimits.tryAcquire()
+	if !acquired {
+		w.Header().Set("Retry-After", retryAfterSeconds(extractionBusyRetryAfter))
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "the server is extracting other files: retry shortly")
+		return
+	}
+	defer release()
 
 	head, err := s.fileCDN.ReadArtifactHead(r.Context(), artifact.ID.String(), *artifact.URI, artifactExtractionReadLimit)
 	switch {
@@ -69,13 +83,26 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to extract values")
 		return
 	}
-	writeJSON(w, http.StatusOK, ArtifactExtractionDocument{
+	body, err := json.Marshal(ArtifactExtractionDocument{
 		Data: ArtifactExtractionData{
 			Type:       artifactExtractionDataType,
 			Id:         id,
 			Attributes: attributes,
 		},
 	})
+	// The response is a separate copy of the values: release the slot now so a
+	// slow client holds neither the slot nor the file buffer.
+	release()
+	if err != nil {
+		slog.ErrorContext(r.Context(), "encode artifact extraction failed", "err", err, "artifact_id", id)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to encode values")
+		return
+	}
+	w.Header().Set("Content-Type", JSONAPIMediaType)
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(append(body, '\n')); err != nil {
+		slog.ErrorContext(r.Context(), "write artifact extraction failed", "err", err, "artifact_id", id)
+	}
 }
 
 // canExtractArtifact allows the artifact's creator and reviewers.
@@ -137,13 +164,7 @@ type atomValues struct {
 // become warnings.
 func buildArtifactExtraction(data []byte, totalSize int64, source string) (ArtifactExtractionAttributes, error) {
 	truncated := totalSize > int64(len(data))
-	var document *cif.Document
-	if truncated {
-		document = cif.ParseTruncated(string(data))
-	} else {
-		document = cif.Parse(string(data))
-	}
-	result, err := cif.Extract(document)
+	_, result, err := cif.ExtractText(bytesAsString(data), truncated)
 	if err != nil {
 		return ArtifactExtractionAttributes{}, fmt.Errorf("extract mmCIF values: %w", err)
 	}
@@ -168,7 +189,7 @@ func buildArtifactExtraction(data []byte, totalSize int64, source string) (Artif
 			ExtractedValue{Name: "unique_protein_chains", Value: atoms.proteinChains, Source: source},
 			ExtractedValue{Name: "altloc_fraction", Value: atoms.altlocFraction, Source: source},
 		)
-	} else if len(result.Warnings) == 0 {
+	} else if !result.AtomsCutOff {
 		warnings = append(warnings, ExtractionWarning{Detail: "no atom_site records found: atom counts, residue counts and altloc fraction not extracted"})
 	}
 
@@ -203,6 +224,13 @@ func buildArtifactExtraction(data []byte, totalSize int64, source string) (Artif
 		Values:           values,
 		Warnings:         warnings,
 	}, nil
+}
+
+// bytesAsString views data as a string without copying the 4 MiB head. The
+// caller must not change data while the string, or any string derived from it,
+// is in use; buildArtifactExtraction only reads it.
+func bytesAsString(data []byte) string {
+	return unsafe.String(unsafe.SliceData(data), len(data))
 }
 
 func compoundsValue(name string, compounds []cif.Compound, source string) ExtractedValue {

@@ -38,7 +38,7 @@ func Test_should_keep_heme_as_cofactor_and_drop_buffer_when_file_has_several_ent
 	text := readFixture(t, "4HHB.cif")
 
 	// when
-	result, err := Extract(Parse(text))
+	result, err := ExtractWithReference(Parse(text), approvedReference(t))
 
 	// then
 	require.NoError(t, err)

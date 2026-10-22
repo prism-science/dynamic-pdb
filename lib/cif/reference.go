@@ -21,6 +21,9 @@ const (
 	kindCofactor
 	kindMetalIon
 	kindSolvent
+	// kindDraftSolvent is a compound on the solvent list while that list is not
+	// approved: it is kept as a ligand and flagged, never dropped.
+	kindDraftSolvent
 )
 
 // Reference sorts chemical component IDs into solvents, metal ions, cofactors
@@ -106,10 +109,27 @@ func parseReference(data []byte, solventData []byte) (*Reference, error) {
 	return reference, nil
 }
 
+// DraftWarning is reported with every extraction made while the reference lists
+// are not approved.
+const DraftWarning = "reference lists are draft and not yet approved by researchers: only water is dropped from ligands; " +
+	"buffers, salts and cryoprotectants on the draft solvent list are kept as ligands and flagged for review"
+
+// draftSolventReason explains the flag on a compound kept only because the
+// solvent list is a draft.
+const draftSolventReason = "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+
+// kind sorts a compound. Water is always dropped. Other solvents are dropped
+// only once both reference lists are approved; until then they are kept.
 func (r *Reference) kind(compoundID string) compoundKind {
 	id := strings.ToUpper(compoundID)
-	if _, ok := r.solvents[id]; ok {
+	if isWater(id) {
 		return kindSolvent
+	}
+	if _, ok := r.solvents[id]; ok {
+		if r.Approved {
+			return kindSolvent
+		}
+		return kindDraftSolvent
 	}
 	if _, ok := r.metals[id]; ok {
 		return kindMetalIon

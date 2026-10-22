@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -303,12 +304,27 @@ func (b *RemoteBucket) ReadObjectHead(ctx context.Context, key string, limit int
 		}
 		return ObjectHead{}, fmt.Errorf("s3: read object head %q: %w", key, err)
 	}
-	data, readErr := io.ReadAll(io.LimitReader(output.Body, limit))
+	data, readErr := readAtMost(output.Body, limit, aws.ToInt64(output.ContentLength))
 	closeErr := output.Body.Close()
 	if err := errors.Join(readErr, closeErr); err != nil {
 		return ObjectHead{}, fmt.Errorf("s3: read object body %q: %w", key, err)
 	}
 	return ObjectHead{Data: data, TotalSize: objectTotalSize(aws.ToString(output.ContentRange), int64(len(data)))}, nil
+}
+
+// readAtMost reads at most limit bytes into a buffer sized from the response's
+// Content-Length (0 when unknown), so a 4 MiB read is one allocation and not the
+// doubling growth of io.ReadAll.
+func readAtMost(body io.Reader, limit int64, contentLength int64) ([]byte, error) {
+	capacity := limit
+	if contentLength > 0 && contentLength < limit {
+		capacity = contentLength
+	}
+	buffer := bytes.NewBuffer(make([]byte, 0, capacity+bytes.MinRead))
+	if _, err := buffer.ReadFrom(io.LimitReader(body, limit)); err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	return buffer.Bytes(), nil
 }
 
 // objectTotalSize reads the size after the slash of a Content-Range header such

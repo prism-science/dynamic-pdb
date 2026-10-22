@@ -5,23 +5,69 @@ import (
 	"strings"
 )
 
+// FieldCompoundReview is the field that lists the compounds the parser flagged
+// for review, with the list each one was placed in and why.
+const FieldCompoundReview = "compound_review"
+
+// Extraction is one structure file flattened for the upload manifest.
+type Extraction struct {
+	// Fields holds every scalar item under its tag and a normalized key, the
+	// refinement program, the derived counts, ligands, cofactors and, when any
+	// compound needs review, FieldCompoundReview.
+	Fields map[string]any
+	// Warnings explain what was left out or relies on draft data.
+	Warnings []string
+	// Review lists the flagged compounds, the same data as FieldCompoundReview.
+	Review []ReviewItem
+}
+
+// ReviewItem is one compound flagged for review.
+type ReviewItem struct {
+	List   string `json:"list"`
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+// Names of the compound lists a ReviewItem refers to.
+const (
+	ListLigands   = "ligands"
+	ListCofactors = "cofactors"
+)
+
 // MMCIFFields flattens an mmCIF file into the field map the upload manifest
-// reads: every scalar item under its tag and a normalized key, the refinement
-// program, and the derived counts, ligands and cofactors.
+// reads. See MMCIFExtraction.
 func MMCIFFields(text string) (map[string]any, error) {
-	return mmcifFields(Parse(text))
+	extraction, err := MMCIFExtraction(text, false)
+	if err != nil {
+		return nil, err
+	}
+	return extraction.Fields, nil
 }
 
 // MMCIFFieldsTruncated is MMCIFFields for the head of a larger file: the cut-off
 // tail is not trusted, so counts that need the whole atom_site loop are omitted.
 func MMCIFFieldsTruncated(text string) (map[string]any, error) {
-	return mmcifFields(ParseTruncated(text))
+	extraction, err := MMCIFExtraction(text, true)
+	if err != nil {
+		return nil, err
+	}
+	return extraction.Fields, nil
 }
 
-func mmcifFields(document *Document) (map[string]any, error) {
-	result, err := Extract(document)
+// MMCIFExtraction reads an mmCIF text in one pass. Set truncated when text is
+// only the head of a larger file.
+func MMCIFExtraction(text string, truncated bool) (Extraction, error) {
+	reference, err := DefaultReference()
 	if err != nil {
-		return nil, fmt.Errorf("extract mmCIF values: %w", err)
+		return Extraction{}, fmt.Errorf("load reference list: %w", err)
+	}
+	return mmcifExtraction(text, truncated, reference)
+}
+
+func mmcifExtraction(text string, truncated bool, reference *Reference) (Extraction, error) {
+	document, result, err := ExtractTextWithReference(text, truncated, reference)
+	if err != nil {
+		return Extraction{}, fmt.Errorf("extract mmCIF fields: %w", err)
 	}
 	fields := map[string]any{}
 	for tag, value := range document.Scalars() {
@@ -37,8 +83,8 @@ func mmcifFields(document *Document) (map[string]any, error) {
 			addField(fields, "altloc_fraction", result.Atoms.AltlocFraction)
 		}
 	}
-	addCompoundFields(fields, result.Ligands, result.Cofactors, result.Atoms != nil)
-	return fields, nil
+	review := addCompoundFields(fields, result.Ligands, result.Cofactors, result.Atoms != nil)
+	return Extraction{Fields: fields, Warnings: result.Warnings, Review: review}, nil
 }
 
 // FieldValue looks a field up by its exact key, then by its normalized key.
@@ -54,20 +100,31 @@ func FieldValue(fields map[string]any, field string) (any, bool) {
 	return value, ok
 }
 
-// ScalarValue returns one mmCIF item without extracting anything else.
-func ScalarValue(text string, tag string) (string, bool) {
-	return Parse(text).Scalar(tag)
-}
-
 // addCompoundFields leaves a field out when it is unknown. Cofactors are an
 // empty list, not omitted, when the coordinates were read in full and held none.
-func addCompoundFields(fields map[string]any, ligands []Compound, cofactors []Compound, coordinatesRead bool) {
+// It returns the compounds flagged for review.
+func addCompoundFields(fields map[string]any, ligands []Compound, cofactors []Compound, coordinatesRead bool) []ReviewItem {
 	if len(ligands) > 0 {
-		addField(fields, "ligands", compoundIDList(ligands))
+		addField(fields, ListLigands, compoundIDList(ligands))
 	}
 	if len(cofactors) > 0 || coordinatesRead {
-		addField(fields, "cofactors", compoundIDList(cofactors))
+		addField(fields, ListCofactors, compoundIDList(cofactors))
 	}
+	review := append(reviewItems(ListLigands, ligands), reviewItems(ListCofactors, cofactors)...)
+	if len(review) > 0 {
+		fields[FieldCompoundReview] = review
+	}
+	return review
+}
+
+func reviewItems(list string, compounds []Compound) []ReviewItem {
+	var items []ReviewItem
+	for _, compound := range compounds {
+		if compound.NeedsReview {
+			items = append(items, ReviewItem{List: list, ID: compound.ID, Reason: compound.ReviewReason})
+		}
+	}
+	return items
 }
 
 func compoundIDList(compounds []Compound) []string {

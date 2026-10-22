@@ -3,7 +3,10 @@ package cif
 // Result holds what the parser derives from one structure file.
 type Result struct {
 	// Atoms is nil when the atom coordinates are missing or were cut off.
-	Atoms               *AtomStats           `json:"atoms,omitempty"`
+	Atoms *AtomStats `json:"atoms,omitempty"`
+	// AtomsCutOff is true when Atoms is nil because the read limit ended inside
+	// the coordinate loop, as opposed to a file without coordinates.
+	AtomsCutOff         bool                 `json:"atoms_cut_off,omitempty"`
 	Ligands             []Compound           `json:"ligands"`
 	Cofactors           []Compound           `json:"cofactors"`
 	Mutations           []MutationSet        `json:"mutations"`

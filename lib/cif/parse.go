@@ -11,6 +11,8 @@ type Document struct {
 	scalarTags []string
 	scalars    map[string]string
 	tables     map[string]*Table
+	// atomSite is set when the _atom_site rows were streamed, not stored.
+	atomSite *atomSiteReader
 }
 
 // Table is one category: a loop, or the items of a category written as pairs.
@@ -29,49 +31,77 @@ type token struct {
 
 // Parse reads a complete mmCIF text.
 func Parse(text string) *Document {
-	return parse(text, false)
+	return parse(text, false, parseOptions{})
 }
 
 // ParseTruncated reads the head of a larger file. The final token is dropped
 // when it may be cut off, and loops still open at the end are marked incomplete.
 func ParseTruncated(text string) *Document {
-	return parse(text, true)
+	return parse(text, true, parseOptions{})
 }
 
-func parse(text string, truncated bool) *Document {
-	tokens, endsWithSeparator := tokenize(text, truncated)
+// parseOptions lets extraction read a file in one pass without keeping every
+// row. Parse and ParseTruncated keep all tables.
+type parseOptions struct {
+	// streamAtomSite feeds _atom_site rows to an accumulator instead of
+	// storing them; the table keeps its columns and completeness only.
+	streamAtomSite bool
+	// onlyTables, when set, lists the categories whose rows are kept; the
+	// rows of every other loop are skipped.
+	onlyTables map[string]struct{}
+}
+
+func parse(text string, truncated bool, options parseOptions) *Document {
+	reader := &tokenReader{tokens: newTokenizer(text, truncated)}
 	document := &Document{
 		scalars: map[string]string{},
 		tables:  map[string]*Table{},
 	}
 	pairColumns := map[string]*Table{}
 	seenDataHeader := false
-	for index := 0; index < len(tokens); {
-		current := tokens[index]
+	for {
+		current, ok := reader.next()
+		if !ok {
+			break
+		}
 		switch {
 		case current.quoted:
-			index++
 		case isDataHeader(current.text):
 			if seenDataHeader {
 				return document.finish(pairColumns)
 			}
 			seenDataHeader = true
-			index++
 		case strings.EqualFold(current.text, "loop_"):
-			index = document.readLoop(tokens, index+1, truncated && !endsWithSeparator)
+			document.readLoop(reader, truncated, options)
 		case strings.HasPrefix(current.text, "_"):
-			if index+1 >= len(tokens) {
-				index++
+			value, ok := reader.next()
+			if !ok {
 				continue
 			}
-			value := tokens[index+1].text
-			document.addScalar(current.text, value, pairColumns)
-			index += 2
-		default:
-			index++
+			document.addScalar(current.text, value.text, pairColumns)
 		}
 	}
 	return document.finish(pairColumns)
+}
+
+// tokenReader adds one token of pushback to the tokenizer.
+type tokenReader struct {
+	tokens  *tokenizer
+	pending token
+	hasHeld bool
+}
+
+func (r *tokenReader) next() (token, bool) {
+	if r.hasHeld {
+		r.hasHeld = false
+		return r.pending, true
+	}
+	return r.tokens.next()
+}
+
+func (r *tokenReader) unread(held token) {
+	r.pending = held
+	r.hasHeld = true
 }
 
 func (d *Document) finish(pairColumns map[string]*Table) *Document {
@@ -113,12 +143,19 @@ func (d *Document) addScalar(tag string, value string, pairColumns map[string]*T
 	table.Rows[0] = append(table.Rows[0], value)
 }
 
-func (d *Document) readLoop(tokens []token, start int, openAtEnd bool) int {
-	index := start
+func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOptions) {
 	var category string
 	var columns []string
-	for index < len(tokens) && !tokens[index].quoted && strings.HasPrefix(tokens[index].text, "_") {
-		tag := strings.ToLower(tokens[index].text)
+	for {
+		current, ok := reader.next()
+		if !ok {
+			break
+		}
+		if current.quoted || !strings.HasPrefix(current.text, "_") {
+			reader.unread(current)
+			break
+		}
+		tag := strings.ToLower(current.text)
 		tagCategory, column, ok := strings.Cut(tag, ".")
 		if !ok {
 			tagCategory, column = tag, ""
@@ -127,26 +164,61 @@ func (d *Document) readLoop(tokens []token, start int, openAtEnd bool) int {
 			category = tagCategory
 		}
 		columns = append(columns, column)
-		index++
 	}
 	if len(columns) == 0 {
-		return index
+		return
 	}
 	width := len(columns)
-	table := &Table{Columns: columns}
-	var values []string
-	for index < len(tokens) && !isLoopTerminator(tokens[index]) {
-		values = append(values, tokens[index].text)
-		index++
+	_, exists := d.tables[category]
+	var sink *atomSiteReader
+	keepRows := !exists
+	if keepRows && options.onlyTables != nil {
+		_, keepRows = options.onlyTables[category]
 	}
+	if !exists && options.streamAtomSite && category == "_atom_site" {
+		sink = newAtomSiteReader(columns)
+		d.atomSite = sink
+		keepRows = false
+	}
+	var values []string
+	var row []string
+	if sink != nil {
+		row = make([]string, 0, width)
+	}
+	count := 0
+	endedByTerminator := false
+	for {
+		current, ok := reader.next()
+		if !ok {
+			break
+		}
+		if isLoopTerminator(current) {
+			reader.unread(current)
+			endedByTerminator = true
+			break
+		}
+		count++
+		switch {
+		case sink != nil:
+			row = append(row, current.text)
+			if len(row) == width {
+				sink.add(row)
+				row = row[:0]
+			}
+		case keepRows:
+			values = append(values, current.text)
+		}
+	}
+	if exists || (!keepRows && sink == nil) {
+		return
+	}
+	table := &Table{Columns: columns}
 	for offset := 0; offset+width <= len(values); offset += width {
 		table.Rows = append(table.Rows, values[offset:offset+width])
 	}
-	table.Complete = (!openAtEnd || index < len(tokens)) && len(values)%width == 0
-	if _, exists := d.tables[category]; !exists {
-		d.tables[category] = table
-	}
-	return index
+	openAtEnd := truncated && !reader.tokens.endsWithSeparator
+	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0
+	d.tables[category] = table
 }
 
 func isLoopTerminator(candidate token) bool {
@@ -206,81 +278,97 @@ func cleanValue(value string) string {
 	return value
 }
 
-// tokenize splits text into tokens. endsWithSeparator reports that a line
-// starting with "#" followed the last token: archive files put one after every
-// category, so a loop that is followed by one has ended even if the text stops there.
-func tokenize(text string, truncated bool) (tokens []token, endsWithSeparator bool) {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	position := 0
-	for position < len(text) {
+// tokenizer splits text into tokens one at a time. endsWithSeparator reports
+// that a line starting with "#" followed the last token: archive files put one
+// after every category, so a loop that is followed by one has ended even if the
+// text stops there. It is final once next has returned false.
+type tokenizer struct {
+	text              string
+	position          int
+	truncated         bool
+	endsWithSeparator bool
+}
+
+func newTokenizer(text string, truncated bool) *tokenizer {
+	return &tokenizer{text: strings.ReplaceAll(text, "\r\n", "\n"), truncated: truncated}
+}
+
+func (t *tokenizer) next() (token, bool) {
+	text := t.text
+	for t.position < len(text) {
+		position := t.position
 		character := text[position]
 		switch {
 		case character == ' ' || character == '\t' || character == '\n':
-			position++
+			t.position++
 		case character == '#':
 			if position == 0 || text[position-1] == '\n' {
-				endsWithSeparator = true
+				t.endsWithSeparator = true
 			}
 			end := strings.IndexByte(text[position:], '\n')
 			if end < 0 {
-				return tokens, endsWithSeparator
+				t.position = len(text)
+				return token{}, false
 			}
-			position += end
+			t.position += end
 		case character == ';' && (position == 0 || text[position-1] == '\n'):
 			end := strings.Index(text[position+1:], "\n;")
 			if end < 0 {
-				if truncated {
-					return tokens, endsWithSeparator
+				t.position = len(text)
+				if t.truncated {
+					return token{}, false
 				}
-				tokens = append(tokens, token{text: text[position+1:], quoted: true})
-				endsWithSeparator = false
-				return tokens, endsWithSeparator
+				t.endsWithSeparator = false
+				return token{text: text[position+1:], quoted: true}, true
 			}
-			tokens = append(tokens, token{text: text[position+1 : position+1+end], quoted: true})
-			endsWithSeparator = false
-			position += end + 3
+			t.endsWithSeparator = false
+			t.position = position + end + 3
+			return token{text: text[position+1 : position+1+end], quoted: true}, true
 		case character == '\'' || character == '"':
-			value, next, closed := readQuoted(text, position)
-			if !closed && truncated && next >= len(text) {
-				return tokens, endsWithSeparator
+			valueEnd, next, closed := quotedExtent(text, position)
+			if !closed && t.truncated && next >= len(text) {
+				t.position = len(text)
+				return token{}, false
 			}
-			tokens = append(tokens, token{text: value, quoted: true})
-			endsWithSeparator = false
-			position = next
+			t.endsWithSeparator = false
+			t.position = next
+			return token{text: text[position+1 : valueEnd], quoted: true}, true
 		default:
 			end := position
 			for end < len(text) && text[end] != ' ' && text[end] != '\t' && text[end] != '\n' {
 				end++
 			}
-			if truncated && end >= len(text) {
-				return tokens, endsWithSeparator
+			if t.truncated && end >= len(text) {
+				t.position = len(text)
+				return token{}, false
 			}
-			tokens = append(tokens, token{text: text[position:end]})
-			endsWithSeparator = false
-			position = end
+			t.endsWithSeparator = false
+			t.position = end
+			return token{text: text[position:end]}, true
 		}
 	}
-	return tokens, endsWithSeparator
+	return token{}, false
 }
 
-// readQuoted reads a quoted value on one line. The closing quote is the first
+// quotedExtent finds a quoted value on one line. The closing quote is the first
 // matching quote followed by whitespace or the end of the line; an unterminated
-// value takes the rest of the line.
-func readQuoted(text string, start int) (value string, next int, closed bool) {
+// value takes the rest of the line. The value is text[start+1:valueEnd].
+func quotedExtent[T ~string | ~[]byte](text T, start int) (valueEnd int, next int, closed bool) {
 	quote := text[start]
-	lineEnd := strings.IndexByte(text[start:], '\n')
-	if lineEnd < 0 {
-		lineEnd = len(text)
-	} else {
-		lineEnd += start
+	lineEnd := len(text)
+	for index := start; index < len(text); index++ {
+		if text[index] == '\n' {
+			lineEnd = index
+			break
+		}
 	}
 	for index := start + 1; index < lineEnd; index++ {
 		if text[index] != quote {
 			continue
 		}
 		if index+1 == lineEnd || text[index+1] == ' ' || text[index+1] == '\t' {
-			return text[start+1 : index], index + 1, true
+			return index, index + 1, true
 		}
 	}
-	return text[start+1 : lineEnd], lineEnd, false
+	return lineEnd, lineEnd, false
 }

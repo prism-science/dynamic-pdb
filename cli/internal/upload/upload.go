@@ -56,6 +56,9 @@ type Uploader struct {
 	progress         Progress
 	concurrency      int
 	partConcurrency  int
+	// structureFields holds each structure artifact's parsed fields, so a
+	// file is read once however many manifest fields come from it.
+	structureFields *artifactextractor.FieldCache
 }
 
 func New(
@@ -75,6 +78,7 @@ func New(
 		progress:         progress,
 		concurrency:      normalizeConcurrency(concurrency),
 		partConcurrency:  normalizedPartConcurrency,
+		structureFields:  artifactextractor.NewFieldCache(),
 	}
 }
 
@@ -528,7 +532,7 @@ func (u *Uploader) uploadModel(
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
-	program, err := modelProgram(ctx, pdbID, artifactPayloads)
+	program, err := u.modelProgram(ctx, pdbID, artifactPayloads)
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
@@ -1155,6 +1159,7 @@ func (u *Uploader) modelMetadata(
 	artifacts map[string]extractorapi.Artifact,
 ) (map[string]any, error) {
 	result := make(map[string]any)
+	extensions := map[string]any{}
 	for key, field := range metadata {
 		value, ok, err := u.fieldValue(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil {
@@ -1163,10 +1168,22 @@ func (u *Uploader) modelMetadata(
 		if !ok {
 			continue
 		}
+		if name, nested := strings.CutPrefix(key, modelExtensionKeyPrefix); nested {
+			extensions[name] = value
+			continue
+		}
 		result[key] = toCanonicalModelMetadataValue(key, value)
+	}
+	if len(extensions) > 0 {
+		result["extensions"] = extensions
 	}
 	return result, nil
 }
+
+// modelExtensionKeyPrefix marks a manifest model metadata key whose value is
+// uploaded under the model's open "extensions" object, for data the model
+// schema has no declared field for.
+const modelExtensionKeyPrefix = "extensions."
 
 func toCanonicalModelMetadataValue(key string, value any) any {
 	switch key {
@@ -1325,7 +1342,7 @@ func (u *Uploader) fieldExtractionValue(
 	case !rcsbSourceIsEmpty(source.RCSB):
 		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, source, field.Extract)
 	case strings.TrimSpace(source.Artifact) != "":
-		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, source, field.Extract)
+		return artifactextractor.NewCachedFieldExtractor(artifacts, u.structureFields).Extract(ctx, pdbID, source, field.Extract)
 	default:
 		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, source, field.Extract)
 	}
@@ -1524,8 +1541,8 @@ type modelProgramInfo struct {
 	Version string
 }
 
-func modelProgram(ctx context.Context, pdbID string, artifacts map[string]extractorapi.Artifact) (*modelProgramInfo, error) {
-	extractor := artifactextractor.NewFieldExtractor(artifacts)
+func (u *Uploader) modelProgram(ctx context.Context, pdbID string, artifacts map[string]extractorapi.Artifact) (*modelProgramInfo, error) {
+	extractor := artifactextractor.NewCachedFieldExtractor(artifacts, u.structureFields)
 	name, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: "coordinates"}, structureExtract("program.name"))
 	if err != nil {
 		return nil, fmt.Errorf("extract model program name: %w", err)

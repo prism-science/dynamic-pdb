@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"net/http"
@@ -286,4 +287,41 @@ func Test_should_return_empty_head_when_range_is_not_satisfiable(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.Empty(t, head.Data)
+}
+
+func Test_should_read_body_in_one_buffer_when_content_length_is_known(t *testing.T) {
+	// given
+	body := bytes.Repeat([]byte("x"), 1000)
+
+	// when
+	data, err := readAtMost(bytes.NewReader(body), 4096, int64(len(body)))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, body, data)
+	assert.LessOrEqual(t, cap(data), len(body)+bytes.MinRead)
+}
+
+func Test_should_stop_at_limit_when_body_is_longer_than_limit(t *testing.T) {
+	// given
+	body := bytes.Repeat([]byte("x"), 5000)
+
+	// when
+	data, err := readAtMost(bytes.NewReader(body), 4096, 0)
+
+	// then
+	require.NoError(t, err)
+	assert.Len(t, data, 4096)
+}
+
+func Test_should_read_whole_body_when_content_length_understates_it(t *testing.T) {
+	// given
+	body := bytes.Repeat([]byte("x"), 3000)
+
+	// when
+	data, err := readAtMost(bytes.NewReader(body), 4096, 10)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, body, data)
 }

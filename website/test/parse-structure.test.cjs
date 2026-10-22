@@ -416,21 +416,22 @@ const MMCIF_WITH_CALCIUM = (metalcRows) =>
     "#",
   ].join("\n");
 
-test("a metal with a metalc row is kept as a cofactor and nothing is dropped but solvent", () => {
+test("a metal with a metalc row is kept as a cofactor and nothing is dropped but water", () => {
   const facts = parseStructureFacts(MMCIF_WITH_CALCIUM(true), "mmcif");
 
   assert.deepEqual(facts.metadata.cofactors, ["CA"]);
-  // The zinc has no metalc row in a file that has some: kept, flagged.
-  assert.deepEqual(facts.metadata.ligands, ["ZN"]);
-  assert.deepEqual(facts.needsReview, { ligands: ["ZN"], cofactors: [] });
+  // The zinc has no metalc row in a file that has some: kept, flagged. The
+  // sulfate is on the draft solvent list, which is not approved: kept, flagged.
+  assert.deepEqual(facts.metadata.ligands, ["SO4", "ZN"]);
+  assert.deepEqual(facts.needsReview, { ligands: ["SO4", "ZN"], cofactors: [] });
 });
 
 test("metals are kept and flagged when the file has no metalc rows", () => {
   const facts = parseStructureFacts(MMCIF_WITH_CALCIUM(false), "mmcif");
 
   assert.deepEqual(facts.metadata.cofactors, ["CA", "ZN"]);
-  assert.equal(facts.metadata.ligands, undefined);
-  assert.deepEqual(facts.needsReview, { ligands: [], cofactors: ["CA", "ZN"] });
+  assert.deepEqual(facts.metadata.ligands, ["SO4"]);
+  assert.deepEqual(facts.needsReview, { ligands: ["SO4"], cofactors: ["CA", "ZN"] });
 });
 
 test("pdb files keep catalytic metals and flag them for review", () => {
@@ -444,6 +445,20 @@ test("pdb files keep catalytic metals and flag them for review", () => {
   const facts = parseStructureFacts(text, "pdb");
 
   assert.deepEqual(facts.metadata.cofactors, ["ZN"]);
-  assert.equal(facts.metadata.ligands, undefined);
-  assert.deepEqual(facts.needsReview.cofactors, ["ZN"]);
+  assert.deepEqual(facts.metadata.ligands, ["SO4"]);
+  assert.deepEqual(facts.needsReview, { ligands: ["SO4"], cofactors: ["ZN"] });
+});
+
+test("water is dropped and counts keep draft-list solvents while the lists are not approved", () => {
+  const text = [
+    atomLine({ serial: 1, resSeq: 1, chain: "A" }),
+    atomLine({ record: "HETATM", serial: 2, name: " S  ", resName: "SO4", chain: "A", resSeq: 302, element: "S" }),
+    atomLine({ record: "HETATM", serial: 3, name: " O  ", resName: "HOH", chain: "A", resSeq: 401, element: "O" }),
+    "END",
+  ].join("\n");
+
+  const facts = parseStructureFacts(text, "pdb");
+
+  assert.deepEqual(facts.metadata.ligands, ["SO4"]);
+  assert.equal(facts.metadata.atom_count, 2);
 });

@@ -50,16 +50,33 @@ export type StructureFacts = {
 
 export type StructureFormat = "pdb" | "mmcif";
 
-// Solvent, cryoprotectants and buffer components. Every crystal has them and
-// nobody means them when they say "the ligand", so they stay out of the list
-// while genuine hetero-compounds stay in. Mirrors the `solvents` list of
-// lib/cif/cofactors.json, which the backend parser uses.
-const SOLVENT_COMPOUNDS = new Set([
-  "HOH", "DOD", "WAT", "H2O",
+// Water is always dropped: every crystal has it and nobody means it when they
+// say "the ligand".
+const WATER_COMPOUNDS = new Set(["HOH", "DOD", "WAT", "H2O"]);
+
+// Draft list of other solvents, cryoprotectants and buffer components; mirrors
+// the `solvents` list of lib/cif/solvents.json. Researchers have not approved it
+// (several entries, such as citrate, sulfate and phosphate, are often real
+// ligands), so until REFERENCE_LISTS_APPROVED is true these compounds are kept
+// and flagged for review instead of dropped. Set it to true only together with
+// `"approved": true` in both lib/cif/*.json files.
+const DRAFT_SOLVENT_COMPOUNDS = new Set([
   "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
   "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
   "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD",
 ]);
+const REFERENCE_LISTS_APPROVED = false;
+
+function isDroppedCompound(compound: string): boolean {
+  return (
+    WATER_COMPOUNDS.has(compound) ||
+    (REFERENCE_LISTS_APPROVED && DRAFT_SOLVENT_COMPOUNDS.has(compound))
+  );
+}
+
+function isDraftSolvent(compound: string): boolean {
+  return !REFERENCE_LISTS_APPROVED && DRAFT_SOLVENT_COMPOUNDS.has(compound);
+}
 
 // Single-atom metal ions. Catalytic and structural metals are real findings,
 // so they are kept; mirrors `metal_ions` of lib/cif/cofactors.json.
@@ -112,7 +129,7 @@ function parsePdb(text: string): StructureFacts {
 
     if (record === "ATOM  " || record === "HETATM") {
       const compound = line.slice(17, 20).trim().toUpperCase();
-      if (record === "HETATM" && SOLVENT_COMPOUNDS.has(compound)) {
+      if (record === "HETATM" && WATER_COMPOUNDS.has(compound)) {
         continue;
       }
       // Hydrogens are not modelled at this resolution and are excluded from
@@ -132,7 +149,7 @@ function parsePdb(text: string): StructureFacts {
         if (chain) {
           chains.add(chain);
         }
-      } else {
+      } else if (!isDroppedCompound(compound)) {
         ligands.add(compound);
       }
       continue;
@@ -333,7 +350,7 @@ function parseMmcif(text: string): StructureFacts {
       const group = loopValue(atomSite, row, "group_pdb") ?? "ATOM";
       const compound = (loopValue(atomSite, row, "label_comp_id") ?? "").toUpperCase();
       const element = (loopValue(atomSite, row, "type_symbol") ?? "").toUpperCase();
-      if (group === "HETATM" && SOLVENT_COMPOUNDS.has(compound)) {
+      if (group === "HETATM" && WATER_COMPOUNDS.has(compound)) {
         continue;
       }
       if (element === "H" || element === "D") {
@@ -345,7 +362,9 @@ function parseMmcif(text: string): StructureFacts {
         loopValue(atomSite, row, "label_asym_id") ??
         "";
       if (group === "HETATM") {
-        ligands.add(compound);
+        if (!isDroppedCompound(compound)) {
+          ligands.add(compound);
+        }
       } else {
         const seq =
           loopValue(atomSite, row, "auth_seq_id") ??
@@ -460,7 +479,8 @@ const NO_METALC_ROWS: MetalcLinks = { hasRows: false, linked: new Set() };
  * The same rule as the backend parser: a metal ion is kept as a cofactor when a
  * metalc row links it to the protein or a ligand; in a file with no metalc rows
  * its metals are kept and flagged for review; in a file that has them, a metal
- * nothing is linked to stays a ligand, flagged. Only solvents are dropped.
+ * nothing is linked to stays a ligand, flagged. Only water is dropped while the
+ * solvent list is a draft; other listed solvents are kept and flagged.
  */
 function sortCompounds(
   facts: StructureFacts,
@@ -472,6 +492,9 @@ function sortCompounds(
   for (const compound of [...compounds].sort()) {
     if (!METAL_IONS.has(compound)) {
       ligands.push(compound);
+      if (isDraftSolvent(compound)) {
+        facts.needsReview.ligands.push(compound);
+      }
     } else if (metalcLinks.linked.has(compound)) {
       cofactors.push(compound);
     } else if (!metalcLinks.hasRows) {
@@ -504,10 +527,10 @@ function readMetalcLinks(text: string): MetalcLinks {
     const first = (loopValue(connections, row, "ptnr1_label_comp_id") ?? "").toUpperCase();
     const second = (loopValue(connections, row, "ptnr2_label_comp_id") ?? "").toUpperCase();
     if (first && second) {
-      if (METAL_IONS.has(first) && !SOLVENT_COMPOUNDS.has(second)) {
+      if (METAL_IONS.has(first) && !isDroppedCompound(second)) {
         links.linked.add(first);
       }
-      if (METAL_IONS.has(second) && !SOLVENT_COMPOUNDS.has(first)) {
+      if (METAL_IONS.has(second) && !isDroppedCompound(first)) {
         links.linked.add(second);
       }
     }

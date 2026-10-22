@@ -1,11 +1,15 @@
 package file
 
 import (
+	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -34,6 +38,16 @@ func (e FieldExtractor) Extract(
 ) (any, bool, error) {
 	for _, fileSource := range source.Files {
 		for _, fileSource := range pdbIDFileSources(fileSource, pdbID) {
+			if streamsStructure(extract) {
+				value, found, exists, err := e.streamStructureField(fileSource, extract)
+				if err != nil {
+					return nil, false, err
+				}
+				if !exists {
+					continue
+				}
+				return value, found, nil
+			}
 			contents, ok, err := e.localContents(fileSource)
 			if err != nil {
 				return nil, false, err
@@ -45,6 +59,87 @@ func (e FieldExtractor) Extract(
 		}
 	}
 	return nil, false, nil
+}
+
+// streamsStructure reports whether the field is a single value of a PDB or mmCIF
+// file. Those files can be tens of megabytes, so they are scanned as a stream
+// and never held in memory.
+func streamsStructure(extract manifest.Extract) bool {
+	return extract.JSON == nil && extract.CSV == nil && extract.TSV == nil &&
+		(extract.PDB != nil || extract.MMCIF != nil)
+}
+
+// streamStructureField reads one value without loading the file. exists is
+// false when the source file is not there.
+func (e FieldExtractor) streamStructureField(source string, extract manifest.Extract) (value any, found bool, exists bool, err error) {
+	exists, err = e.readLocal(source, func(reader io.Reader) error {
+		var readErr error
+		switch {
+		case extract.PDB != nil:
+			value, found, readErr = scanPDBField(reader, extract.PDB.Field)
+		case extract.MMCIF != nil:
+			value, found, readErr = scanMMCIFField(reader, extract.MMCIF.Field)
+		default:
+			return fmt.Errorf("extract has neither a PDB nor an mmCIF rule")
+		}
+		return readErr
+	})
+	if err != nil {
+		return nil, false, exists, err
+	}
+	return value, found, exists, nil
+}
+
+// readLocal opens a local file, or an entry of a local zip archive, and passes it
+// to read as a stream. It reports false when the file does not exist.
+func (e FieldExtractor) readLocal(source string, read func(io.Reader) error) (bool, error) {
+	if archiveSource, entryName, ok := splitZipSource(source); ok {
+		return readLocalZipEntry(resolvePath(e.dataRoot, archiveSource), entryName, source, read)
+	}
+	file, err := os.Open(resolvePath(e.dataRoot, source))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("open field source %s: %w", source, err)
+	}
+	readErr := read(file)
+	closeErr := file.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return true, fmt.Errorf("read field source %s: %w", source, err)
+	}
+	return true, nil
+}
+
+func readLocalZipEntry(archivePath string, entryName string, source string, read func(io.Reader) error) (bool, error) {
+	archive, err := zip.OpenReader(archivePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("open zip source %s: %w", source, err)
+	}
+	for _, entry := range archive.File {
+		if zipEntryName(entry.Name) != entryName || entry.FileInfo().IsDir() {
+			continue
+		}
+		entryReader, openErr := entry.Open()
+		if openErr != nil {
+			closeErr := archive.Close()
+			return true, fmt.Errorf("open zip source %s: %w", source, errors.Join(openErr, closeErr))
+		}
+		readErr := read(entryReader)
+		closeEntryErr := entryReader.Close()
+		closeArchiveErr := archive.Close()
+		if err := errors.Join(readErr, closeEntryErr, closeArchiveErr); err != nil {
+			return true, fmt.Errorf("read zip source %s: %w", source, err)
+		}
+		return true, nil
+	}
+	if err := archive.Close(); err != nil {
+		return false, fmt.Errorf("close zip source %s: %w", source, err)
+	}
+	return false, nil
 }
 
 func (e FieldExtractor) localContents(source string) ([]byte, bool, error) {
@@ -70,10 +165,6 @@ func extractFromContents(contents []byte, pdbID string, extract manifest.Extract
 		return extractDelimited(contents, *extract.CSV, ',', pdbID, "CSV")
 	case extract.TSV != nil:
 		return extractDelimited(contents, *extract.TSV, '\t', pdbID, "TSV")
-	case extract.PDB != nil:
-		return extractPDB(string(contents), extract.PDB.Field)
-	case extract.MMCIF != nil:
-		return extractMMCIF(string(contents), extract.MMCIF.Field)
 	default:
 		return nil, false, nil
 	}
@@ -148,9 +239,15 @@ var (
 	pdbRFreePattern = regexp.MustCompile(`(?i)^\s*FREE R VALUE\s*:\s*([0-9.]+)`)
 )
 
-func extractPDB(text string, field string) (any, bool, error) {
+// maxPDBLineBytes bounds one line of a PDB file; the format has 80 columns.
+const maxPDBLineBytes = 1 << 20
+
+func scanPDBField(source io.Reader, field string) (any, bool, error) {
 	field = strings.TrimSpace(field)
-	for _, line := range strings.Split(text, "\n") {
+	scanner := bufio.NewScanner(source)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxPDBLineBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if !strings.HasPrefix(line, "REMARK") {
 			continue
 		}
@@ -169,16 +266,22 @@ func extractPDB(text string, field string) (any, bool, error) {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, false, fmt.Errorf("scan PDB field %s: %w", field, err)
+	}
 	return nil, false, nil
 }
 
-func extractMMCIF(text string, field string) (any, bool, error) {
-	raw, ok := cif.ScalarValue(text, strings.TrimSpace(field))
+func scanMMCIFField(source io.Reader, field string) (any, bool, error) {
+	raw, ok, err := cif.ScalarValueFromReader(source, strings.TrimSpace(field))
+	if err != nil {
+		return nil, false, fmt.Errorf("scan mmCIF field %s: %w", field, err)
+	}
 	if !ok {
 		return nil, false, nil
 	}
-	value, err := strconv.ParseFloat(raw, 64)
-	if err == nil {
+	value, parseErr := strconv.ParseFloat(raw, 64)
+	if parseErr == nil {
 		return value, true, nil
 	}
 	return raw, true, nil

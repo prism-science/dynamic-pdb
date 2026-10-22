@@ -244,7 +244,15 @@ paths:
         parser is unsure about, such as metal ions in a file without `metalc`
         rows, are returned with `needs_review: true`.
 
-        Allowed for the user who created the artifact and for reviewers.
+        While the reference lists in `lib/cif` are drafts (not approved by
+        researchers), only water is dropped from `ligands`; other solvents and
+        buffers are kept and flagged `needs_review`, and every response carries a
+        warning saying so.
+
+        Allowed for the user who created the artifact and for reviewers. Each
+        user may make 10 extraction requests per minute and each server instance
+        runs at most 2 extractions at once; past those limits the response is
+        429 or 503 with a `Retry-After` header.
       security:
         - bearerAuth: []
       parameters:
@@ -286,8 +294,30 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "429":
+          description: The user made too many extraction requests in the last minute. `Retry-After` gives seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before extracting again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "502":
           description: The object could not be read from storage.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Every extraction slot of this server instance is busy. `Retry-After` gives seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before extracting again.
+              schema:
+                type: integer
           content:
             application/vnd.api+json:
               schema:

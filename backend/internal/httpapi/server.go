@@ -40,6 +40,8 @@ type Server struct {
 	validationMode validation.Mode
 	// archive serves GET /v1/archive/pdb/{pdb_id}; see WithArchiveLookup.
 	archive ArchiveLookup
+	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
+	extractionLimits *extractionLimits
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
@@ -76,6 +78,9 @@ func NewServer(
 		downloads:      downloads,
 		publicBaseURL:  publicBaseURL,
 		validationMode: validationMode,
+		extractionLimits: newExtractionLimits(
+			defaultExtractionMaxInFlight, defaultExtractionUserRequests, defaultExtractionUserWindow,
+		),
 	}
 }
 

@@ -79,7 +79,8 @@ func (s *ArtifactExtractSuite) Test_should_return_values_tagged_with_file_source
 	s.EqualValues(134, names["atom_count"].Value)
 	s.Contains(names, "mutations")
 	s.Contains(names, "cofactors")
-	s.Empty(attributes.Warnings)
+	s.Len(attributes.Warnings, 1)
+	s.Contains(attributes.Warnings[0].Detail, "reference lists are draft")
 }
 
 func (s *ArtifactExtractSuite) Test_should_return_403_when_user_is_neither_creator_nor_reviewer() {
@@ -212,4 +213,74 @@ func (s *ArtifactExtractSuite) createArtifactWithURI(template models.Artifact, i
 	})
 	s.Require().NoError(err)
 	return *created
+}
+
+func (s *ArtifactExtractSuite) Test_should_return_429_with_retry_after_when_user_exceeds_extraction_rate() {
+	// given
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "extract-rate-owner", 8110)
+	artifact := s.storeArtifact(s.userIDFromToken(token), "6OIM.cif", "mmcif")
+	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "extract-rate-other", 8111)
+	otherArtifact := s.storeArtifact(s.userIDFromToken(otherToken), "6OIM.cif", "mmcif")
+	path := "/v1/artifacts/" + artifact.ID.String() + "/extract"
+	statuses := []int{}
+
+	// when
+	for range 4 {
+		response := jsonRequestToServerWithToken(s.T(), limitedExtractionServer.URL, http.MethodPost, path, nil, token)
+		statuses = append(statuses, response.StatusCode)
+		if response.StatusCode == http.StatusTooManyRequests {
+			s.NotEmpty(response.Header.Get("Retry-After"))
+		}
+		s.Require().NoError(response.Body.Close())
+	}
+	otherResponse := jsonRequestToServerWithToken(s.T(), limitedExtractionServer.URL, http.MethodPost,
+		"/v1/artifacts/"+otherArtifact.ID.String()+"/extract", nil, otherToken)
+	defer otherResponse.Body.Close()
+
+	// then
+	s.Equal([]int{http.StatusOK, http.StatusOK, http.StatusOK, http.StatusTooManyRequests}, statuses)
+	s.Equal(http.StatusOK, otherResponse.StatusCode, "another user keeps their own budget")
+}
+
+func (s *ArtifactExtractSuite) Test_should_return_503_with_retry_after_when_every_extraction_slot_is_busy() {
+	// given
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "extract-busy-owner", 8112)
+	first := s.storeArtifact(s.userIDFromToken(token), "6OIM.cif", "mmcif")
+	secondToken := issueEntryTokenForGitHubIDForTest(s.T(), "extract-busy-other", 8113)
+	second := s.storeArtifact(s.userIDFromToken(secondToken), "3CLN.cif", "mmcif")
+	started, release := s3Stub.HoldObjectReads()
+	defer release()
+	firstDone := make(chan int, 1)
+	go func() {
+		response := jsonRequestToServerWithToken(s.T(), limitedExtractionServer.URL, http.MethodPost,
+			"/v1/artifacts/"+first.ID.String()+"/extract", nil, token)
+		firstDone <- response.StatusCode
+		_ = response.Body.Close()
+	}()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		s.FailNow("the first extraction never reached storage")
+	}
+
+	// when
+	busy := jsonRequestToServerWithToken(s.T(), limitedExtractionServer.URL, http.MethodPost,
+		"/v1/artifacts/"+second.ID.String()+"/extract", nil, secondToken)
+	defer busy.Body.Close()
+	release()
+
+	// then
+	s.Equal(http.StatusServiceUnavailable, busy.StatusCode)
+	s.Equal("5", busy.Header.Get("Retry-After"))
+	select {
+	case status := <-firstDone:
+		s.Equal(http.StatusOK, status, "the extraction holding the slot still completes")
+	case <-time.After(10 * time.Second):
+		s.FailNow("the first extraction never finished")
+	}
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	again := jsonRequestToServerWithToken(s.T(), limitedExtractionServer.URL, http.MethodPost,
+		"/v1/artifacts/"+second.ID.String()+"/extract", nil, secondToken)
+	s.Equal(http.StatusOK, again.StatusCode, "the slot is free again once the first request finished")
+	s.Require().NoError(again.Body.Close())
 }

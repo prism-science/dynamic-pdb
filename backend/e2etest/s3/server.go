@@ -25,6 +25,11 @@ type StubServer struct {
 
 	createWithoutUploadID bool
 	abortStatus           int
+
+	// readGate, when set, holds every object GET until it is closed;
+	// readsStarted gets one value per GET that is waiting at the gate.
+	readGate     chan struct{}
+	readsStarted chan struct{}
 }
 
 type Requests struct {
@@ -65,6 +70,21 @@ func (s *StubServer) Reset() {
 	s.abortUploadID = ""
 	s.createWithoutUploadID = false
 	s.abortStatus = http.StatusNoContent
+	s.readGate = nil
+	s.readsStarted = nil
+}
+
+// HoldObjectReads makes object GETs wait until release is called. started
+// receives one value for each GET that is waiting.
+func (s *StubServer) HoldObjectReads() (started <-chan struct{}, release func()) {
+	gate := make(chan struct{})
+	waiting := make(chan struct{}, 16)
+	s.mu.Lock()
+	s.readGate = gate
+	s.readsStarted = waiting
+	s.mu.Unlock()
+	var once sync.Once
+	return waiting, func() { once.Do(func() { close(gate) }) }
 }
 
 // PutObject stores an object that ranged GETs on urlPath (for example
@@ -123,7 +143,16 @@ func (s *StubServer) handle(w http.ResponseWriter, r *http.Request) {
 func (s *StubServer) handleGetObject(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	data, ok := s.objects[r.URL.Path]
+	gate, waiting := s.readGate, s.readsStarted
 	s.mu.Unlock()
+	if gate != nil {
+		waiting <- struct{}{}
+		select {
+		case <-gate:
+		case <-r.Context().Done():
+			return
+		}
+	}
 	if !ok {
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusNotFound)

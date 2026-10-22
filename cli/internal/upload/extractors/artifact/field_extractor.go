@@ -5,10 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 
 	"dynamic-pdb/cli/internal/upload/extractors"
 	"dynamic-pdb/cli/internal/upload/manifest"
@@ -17,14 +21,31 @@ import (
 
 const structureReadLimit = 4 * 1024 * 1024
 
+// maxCachedArtifacts bounds the parsed structures a cache keeps; when it is
+// full the cache is emptied, so memory stays bounded across a long upload.
+const maxCachedArtifacts = 32
+
+// FieldExtractor reads manifest fields out of structure artifacts. Every field
+// of an artifact is served from one parse of that artifact, kept in the cache.
 type FieldExtractor struct {
 	artifacts map[string]extractors.Artifact
+	cache     *FieldCache
 }
 
 var _ extractors.FieldExtractor = FieldExtractor{}
 
+// NewFieldExtractor reads from artifacts with a cache private to this extractor.
 func NewFieldExtractor(artifacts map[string]extractors.Artifact) FieldExtractor {
-	return FieldExtractor{artifacts: artifacts}
+	return NewCachedFieldExtractor(artifacts, NewFieldCache())
+}
+
+// NewCachedFieldExtractor shares cache with every other extractor given it, so
+// an artifact is parsed once however many extractors read it.
+func NewCachedFieldExtractor(artifacts map[string]extractors.Artifact, cache *FieldCache) FieldExtractor {
+	if cache == nil {
+		cache = NewFieldCache()
+	}
+	return FieldExtractor{artifacts: artifacts, cache: cache}
 }
 
 func (e FieldExtractor) Extract(
@@ -41,23 +62,123 @@ func (e FieldExtractor) Extract(
 	if !ok {
 		return nil, false, nil
 	}
-	text, truncated, format, ok, err := artifactText(artifact)
+	format := structureFormat(artifact)
+	var rule *manifest.ExtractRule
+	switch format {
+	case formatPDB:
+		rule = extract.PDB
+	case formatMMCIF:
+		rule = extract.MMCIF
+	default:
+		return nil, false, nil
+	}
+	if rule == nil {
+		return nil, false, nil
+	}
+	extraction, ok, err := e.cache.extraction(artifact, format)
 	if err != nil || !ok {
 		return nil, false, err
 	}
+	value, found := cif.FieldValue(extraction.Fields, rule.Field)
+	return value, found, nil
+}
+
+const (
+	formatPDB   = "pdb"
+	formatMMCIF = "mmcif"
+)
+
+// FieldCache keeps the structure fields read from each artifact. It is safe for
+// concurrent use; concurrent readers of one artifact share a single parse.
+type FieldCache struct {
+	mutex   sync.Mutex
+	entries map[string]*cacheEntry
+	seed    maphash.Seed
+}
+
+type cacheEntry struct {
+	once       sync.Once
+	extraction cif.Extraction
+	ok         bool
+	err        error
+}
+
+func NewFieldCache() *FieldCache {
+	return &FieldCache{entries: map[string]*cacheEntry{}, seed: maphash.MakeSeed()}
+}
+
+func (c *FieldCache) entry(artifact extractors.Artifact, format string) *cacheEntry {
+	key := c.key(artifact, format)
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if existing, ok := c.entries[key]; ok {
+		return existing
+	}
+	if len(c.entries) >= maxCachedArtifacts {
+		c.entries = map[string]*cacheEntry{}
+	}
+	created := &cacheEntry{}
+	c.entries[key] = created
+	return created
+}
+
+// key identifies an artifact by what it is and a hash of any in-memory
+// contents, so two artifacts that share a file name are never confused.
+func (c *FieldCache) key(artifact extractors.Artifact, format string) string {
+	return strings.Join([]string{
+		format,
+		artifact.Filename,
+		artifact.LocalPath,
+		artifact.URI,
+		artifact.SHA256,
+		strconv.FormatInt(artifact.Size, 10),
+		strconv.Itoa(len(artifact.Contents)),
+		strconv.FormatUint(maphash.Bytes(c.seed, artifact.Contents[:min(len(artifact.Contents), structureReadLimit)]), 16),
+	}, "\x00")
+}
+
+func (c *FieldCache) extraction(artifact extractors.Artifact, format string) (cif.Extraction, bool, error) {
+	entry := c.entry(artifact, format)
+	entry.once.Do(func() {
+		entry.extraction, entry.ok, entry.err = readStructure(artifact, format)
+	})
+	return entry.extraction, entry.ok, entry.err
+}
+
+// readStructure parses an artifact once and logs what a user must know about
+// the result: draft reference lists, cut-off coordinates and compounds that
+// need review.
+func readStructure(artifact extractors.Artifact, format string) (cif.Extraction, bool, error) {
+	text, truncated, _, ok, err := artifactText(artifact)
+	if err != nil || !ok {
+		return cif.Extraction{}, false, err
+	}
+	var extraction cif.Extraction
 	switch format {
-	case "pdb":
-		if extract.PDB == nil {
-			return nil, false, nil
-		}
-		return extractPDB(text, extract.PDB.Field)
-	case "mmcif":
-		if extract.MMCIF == nil {
-			return nil, false, nil
-		}
-		return extractMMCIF(text, truncated, extract.MMCIF.Field)
+	case formatPDB:
+		extraction, err = cif.PDBExtraction(text, truncated)
+	case formatMMCIF:
+		extraction, err = cif.MMCIFExtraction(text, truncated)
 	default:
-		return nil, false, nil
+		return cif.Extraction{}, false, fmt.Errorf("unsupported structure format %q", format)
+	}
+	if err != nil {
+		return cif.Extraction{}, false, fmt.Errorf("read %s fields: %w", format, err)
+	}
+	logExtraction(artifact, extraction)
+	return extraction, true, nil
+}
+
+func logExtraction(artifact extractors.Artifact, extraction cif.Extraction) {
+	name := artifact.Filename
+	if name == "" {
+		name = artifact.LocalPath
+	}
+	for _, warning := range extraction.Warnings {
+		slog.Warn("structure extraction warning", "artifact", name, "warning", warning)
+	}
+	for _, item := range extraction.Review {
+		slog.Warn("compound needs review", "artifact", name, "compound", item.ID, "list", item.List, "reason", item.Reason)
 	}
 }
 
@@ -116,12 +237,12 @@ func structureFormat(artifact extractors.Artifact) string {
 	}
 	switch strings.ToLower(filepath.Ext(source)) {
 	case ".pdb", ".ent":
-		return "pdb"
+		return formatPDB
 	case ".cif", ".mmcif":
-		return "mmcif"
+		return formatMMCIF
 	default:
 		if strings.EqualFold(artifact.Format, "cif") {
-			return "mmcif"
+			return formatMMCIF
 		}
 		return strings.ToLower(strings.TrimSpace(artifact.Format))
 	}
@@ -167,26 +288,4 @@ func readZipEntry(archivePath string, entryName string) ([]byte, error) {
 		return nil, fmt.Errorf("close zip artifact for field extraction: %w", err)
 	}
 	return nil, fmt.Errorf("zip entry %s not found", entryName)
-}
-
-func extractPDB(text string, field string) (any, bool, error) {
-	fields, err := cif.PDBFields(text)
-	if err != nil {
-		return nil, false, fmt.Errorf("read PDB fields: %w", err)
-	}
-	value, ok := cif.FieldValue(fields, field)
-	return value, ok, nil
-}
-
-func extractMMCIF(text string, truncated bool, field string) (any, bool, error) {
-	parseFields := cif.MMCIFFields
-	if truncated {
-		parseFields = cif.MMCIFFieldsTruncated
-	}
-	fields, err := parseFields(text)
-	if err != nil {
-		return nil, false, fmt.Errorf("read mmCIF fields: %w", err)
-	}
-	value, ok := cif.FieldValue(fields, field)
-	return value, ok, nil
 }

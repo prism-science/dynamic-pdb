@@ -450,6 +450,9 @@ func coordinateModelMetadata(extensions map[string]struct{}) ModelMetadata {
 		"unique_protein_chains": coordinateField("unique_protein_chains", extensions),
 		"ligands":               coordinateField("ligands", extensions),
 		"cofactors":             coordinateField("cofactors", extensions),
+		// Compounds the parser flagged for review travel in the model's
+		// "extensions" object: the model schema has no field for them.
+		"extensions.compound_review": coordinateField("compound_review", extensions),
 	}
 }
 
