@@ -3018,7 +3018,7 @@ components:
         type:
           allOf:
             - $ref: "#/components/schemas/ArtifactType"
-          default: other
+          description: Required by Dynamic PDB Schema v0.2.0. A request without it gets 422 when validation mode is enforce; in log_only mode the artifact is stored as other.
         uri:
           type: string
           nullable: true
@@ -3028,6 +3028,7 @@ components:
         format:
           type: string
           nullable: true
+          description: File encoding, lowercase, from an open vocabulary (for example mmcif, mtz, fasta). Uppercase letters get 422 when validation mode is enforce.
         size_bytes:
           type: integer
           format: int64

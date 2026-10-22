@@ -195,6 +195,115 @@ func (s *SchemaValidationSuite) Test_should_reject_missing_metric_value_with_400
 	assertErrorResponse(s.T(), response, "BAD_REQUEST", "metric value is required")
 }
 
+func (s *SchemaValidationSuite) Test_should_reject_artifact_and_write_nothing_when_type_missing() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-artifact-type-owner", 8408)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	artifact := artifactRequest(uuid.New(), "sequence.fasta", "L0", "fasta", "s3://entry/sequence.fasta", nil)
+	delete(artifact, "type")
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"entry": map[string]any{"title": "entry with untyped artifact", "artifacts": []map[string]any{artifact}},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("REQUIRED", stringValue(errors[0].Code))
+	s.Require().NotNil(errors[0].Source)
+	s.Equal("/entry/artifacts/0/type", errors[0].Source.Pointer)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	revisionsResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", ownerID), ownerToken,
+	)
+	s.Empty(decodeEntryRevisionGroupsForTest(s.T(), revisionsResponse))
+}
+
+func (s *SchemaValidationSuite) Test_should_reject_artifact_when_format_not_lowercase() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-artifact-format-owner", 8409)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "artifact format entry"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
+		"model": map[string]any{
+			"title": "model with uppercase format",
+			"artifacts": []map[string]any{
+				artifactRequest(uuid.New(), "model.cif", "L2", "MMCIF", "s3://model/model.cif", nil),
+			},
+		},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("INVALID_FORMAT", stringValue(errors[0].Code))
+	s.Require().NotNil(errors[0].Source)
+	s.Equal("/model/artifacts/0/format", errors[0].Source.Pointer)
+	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
+}
+
+func (s *SchemaValidationSuite) Test_should_store_type_other_when_artifact_type_missing_and_mode_is_log_only() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-artifact-owner", 8410)
+	artifactID := uuid.New()
+	artifact := artifactRequest(artifactID, "sequence.fasta", "L0", "fasta", "s3://entry/sequence.fasta", nil)
+	delete(artifact, "type")
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries",
+		map[string]any{"entry": map[string]any{
+			"title":     "log-only untyped artifact entry",
+			"artifacts": []map[string]any{artifact},
+		}},
+		ownerToken,
+	)
+
+	// then
+	created := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](s.T(), response, http.StatusCreated)
+	activateEntryRevisionForTest(s.T(), created.Data.Attributes)
+	page := getJSONPageForTest[httpapi.ArtifactCollectionDocument](
+		s.T(), "/v1/entries/"+created.Data.Attributes.EntryId+"/artifacts", "",
+	)
+	stored := artifactByID(artifactsFromData(page.Data), artifactID)
+	s.Require().NotNil(stored)
+	s.Equal(httpapi.ArtifactTypeOther, stored.Type)
+}
+
+func (s *SchemaValidationSuite) Test_should_report_every_model_metadata_error_when_one_field_has_wrong_type() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-metadata-type-owner", 8411)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "metadata type entry"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
+		"model": map[string]any{
+			"title":    "model with mistyped metadata",
+			"metadata": map[string]any{"atom_count": "many", "purpose": "Docking"},
+		},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	pointers := make([]string, 0, len(errors))
+	for _, item := range errors {
+		s.Require().NotNil(item.Source)
+		pointers = append(pointers, item.Source.Pointer)
+	}
+	s.Equal([]string{"/model/metadata/atom_count", "/model/metadata/purpose"}, pointers)
+	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
+}
+
 func decodeErrorResponseForTest(t *testing.T, response *http.Response, expectedStatus int) []httpapi.ErrorObject {
 	t.Helper()
 	defer func() {

@@ -1712,12 +1712,13 @@ func artifactName(artifact manifest.Artifact, payload extractorapi.Artifact) (st
 	return "", fmt.Errorf("artifact %s has no name and resolved source has no filename", artifact.ID)
 }
 
+// artifactFormat returns the artifact's format in lowercase, as the schema requires.
 func artifactFormat(artifact manifest.Artifact, payload extractorapi.Artifact) string {
 	format := strings.TrimSpace(artifact.Format)
-	if format != "" {
-		return format
+	if format == "" {
+		format = payload.Format
 	}
-	return payload.Format
+	return strings.ToLower(format)
 }
 
 func stringPtr(value string) *string {

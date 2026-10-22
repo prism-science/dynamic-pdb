@@ -83,6 +83,7 @@ func Test_should_report_every_error_at_once_when_create_model_request_has_severa
 		"/model/metadata/altloc_fraction",
 		"/model/artifacts/0/id",
 		"/model/artifacts/0/level",
+		"/model/artifacts/0/type",
 		"/model/metrics/1/key",
 		"/model/runs/0/artifacts/0/artifact_id",
 		"/model/runs/0/artifacts/0/direction",
@@ -101,8 +102,43 @@ func Test_should_report_metadata_error_when_model_metadata_has_wrong_type(t *tes
 
 	// then
 	require.Len(t, fieldErrors, 1)
-	assert.Equal(t, validation.Pointer("/model/metadata"), fieldErrors[0].Pointer)
+	assert.Equal(t, validation.Pointer("/model/metadata/atom_count"), fieldErrors[0].Pointer)
 	assert.Equal(t, validation.CodeInvalidValue, fieldErrors[0].Code)
+}
+
+func Test_should_report_other_metadata_errors_when_one_metadata_field_has_wrong_type(t *testing.T) {
+	// given
+	data := CreateModelData{
+		Title:    "model",
+		Metadata: &map[string]interface{}{"atom_count": "many", "purpose": "Docking"},
+	}
+
+	// when
+	fieldErrors := createModelRequestErrors(validation.Root.Field("model"), data)
+
+	// then
+	assert.Equal(t, []validation.Pointer{"/model/metadata/atom_count", "/model/metadata/purpose"}, pointersOf(fieldErrors))
+	assert.Equal(t, []validation.Code{validation.CodeInvalidValue, validation.CodeInvalidValue}, codesOf(fieldErrors))
+}
+
+func Test_should_require_artifact_type_when_request_omits_it(t *testing.T) {
+	// given
+	request := CreateEntryRequest{
+		Entry: CreateEntryData{
+			Title:     "Lysozyme",
+			Artifacts: &[]CreateArtifactRequest{{Id: uuid.New(), Name: "sequence.fasta", Level: "L0"}},
+		},
+	}
+
+	// when
+	fieldErrors := createEntryRequestErrors(request)
+
+	// then
+	assert.Equal(t, []validation.FieldError{{
+		Pointer: "/entry/artifacts/0/type",
+		Code:    validation.CodeRequired,
+		Detail:  "is required",
+	}}, fieldErrors)
 }
 
 func Test_should_validate_only_present_fields_when_model_revision_change_is_checked(t *testing.T) {
@@ -193,4 +229,12 @@ func pointersOf(fieldErrors []validation.FieldError) []validation.Pointer {
 		pointers = append(pointers, fieldError.Pointer)
 	}
 	return pointers
+}
+
+func codesOf(fieldErrors []validation.FieldError) []validation.Code {
+	codes := make([]validation.Code, 0, len(fieldErrors))
+	for _, fieldError := range fieldErrors {
+		codes = append(codes, fieldError.Code)
+	}
+	return codes
 }

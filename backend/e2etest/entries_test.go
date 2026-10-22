@@ -952,7 +952,7 @@ func artifactRequest(
 	metadata map[string]any,
 ) map[string]any {
 	request := map[string]any{
-		"id": id, "name": name, "level": level, "format": format, "uri": uri,
+		"id": id, "name": name, "level": level, "type": "other", "format": format, "uri": uri,
 	}
 	if metadata != nil {
 		request["metadata"] = metadata

@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 
@@ -111,15 +113,36 @@ func modelMetadataErrors(at validation.Pointer, metadata *map[string]interface{}
 	if metadata == nil {
 		return nil
 	}
+	decoded, fieldErrors := decodeModelMetadataFields(at, *metadata)
+	return append(fieldErrors, validation.ModelMetadata(at, decoded)...)
+}
+
+// decodeModelMetadataFields decodes each metadata field on its own. A field of the
+// wrong JSON type is reported at its own pointer and left out of the result, so the
+// schema rules still check every other field.
+func decodeModelMetadataFields(
+	at validation.Pointer,
+	metadata map[string]interface{},
+) (domainmodels.ModelMetadata, []validation.FieldError) {
 	var decoded domainmodels.ModelMetadata
-	if err := decodeMetadataRequest(*metadata, &decoded); err != nil {
-		return []validation.FieldError{{
-			Pointer: at,
-			Code:    validation.CodeInvalidValue,
-			Detail:  "does not match the model metadata fields: " + err.Error(),
-		}}
+	var fieldErrors []validation.FieldError
+	for _, key := range slices.Sorted(maps.Keys(metadata)) {
+		field := map[string]interface{}{key: metadata[key]}
+		// Decoding into a scratch value first keeps a failing field out of decoded.
+		var scratch domainmodels.ModelMetadata
+		err := decodeMetadataRequest(field, &scratch)
+		if err == nil {
+			err = decodeMetadataRequest(field, &decoded)
+		}
+		if err != nil {
+			fieldErrors = append(fieldErrors, validation.FieldError{
+				Pointer: at.Field(key),
+				Code:    validation.CodeInvalidValue,
+				Detail:  "does not match the model metadata field: " + err.Error(),
+			})
+		}
 	}
-	return validation.ModelMetadata(at, decoded)
+	return decoded, fieldErrors
 }
 
 func artifactRequestErrors(at validation.Pointer, requests *[]CreateArtifactRequest) []validation.FieldError {

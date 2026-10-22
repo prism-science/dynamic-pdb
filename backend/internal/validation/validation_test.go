@@ -58,6 +58,7 @@ func Test_should_report_every_artifact_error_when_several_fields_are_invalid(t *
 		Level:     "L9",
 		Type:      "assembly",
 		SHA256:    new("ABC"),
+		Format:    new("MMCIF"),
 		SizeBytes: new(int64(-1)),
 	}
 
@@ -70,10 +71,52 @@ func Test_should_report_every_artifact_error_when_several_fields_are_invalid(t *
 		"/artifacts/1/level",
 		"/artifacts/1/type",
 		"/artifacts/1/sha256",
+		"/artifacts/1/format",
 		"/artifacts/1/size_bytes",
 	}, pointersOf(fieldErrors))
-	assert.Equal(t, []Code{CodeRequired, CodeInvalidValue, CodeInvalidValue, CodeInvalidFormat, CodeOutOfRange},
-		codesOf(fieldErrors))
+	assert.Equal(t, []Code{
+		CodeRequired, CodeInvalidValue, CodeInvalidValue, CodeInvalidFormat, CodeInvalidFormat, CodeOutOfRange,
+	}, codesOf(fieldErrors))
+}
+
+func Test_should_report_required_type_when_artifact_type_is_empty(t *testing.T) {
+	// given
+	artifact := validArtifact()
+	artifact.Type = ""
+
+	// when
+	fieldErrors := Artifact(Root, artifact)
+
+	// then
+	assert.Equal(t, []FieldError{{Pointer: "/type", Code: CodeRequired, Detail: "is required"}}, fieldErrors)
+}
+
+func Test_should_reject_format_when_it_has_uppercase_letters(t *testing.T) {
+	// given
+	artifact := validArtifact()
+	artifact.Format = new("MMCIF")
+
+	// when
+	fieldErrors := Artifact(Root, artifact)
+
+	// then
+	assert.Equal(t, []FieldError{{Pointer: "/format", Code: CodeInvalidFormat, Detail: "must be lowercase"}}, fieldErrors)
+}
+
+func Test_should_accept_format_when_lowercase_even_if_not_a_listed_example(t *testing.T) {
+	// given
+	listed := validArtifact()
+	listed.Format = new("mmcif")
+	unlisted := validArtifact()
+	unlisted.Format = new("pdbqt_v2")
+
+	// when
+	listedErrors := Artifact(Root, listed)
+	unlistedErrors := Artifact(Root, unlisted)
+
+	// then
+	assert.Empty(t, listedErrors)
+	assert.Empty(t, unlistedErrors)
 }
 
 func Test_should_reject_sha256_when_hex_is_uppercase(t *testing.T) {

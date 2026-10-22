@@ -46,12 +46,20 @@ func Artifact(at Pointer, artifact models.Artifact) []FieldError {
 	var fieldErrors []FieldError
 	fieldErrors = append(fieldErrors, RequiredText(at.Field("name"), &artifact.Name)...)
 	fieldErrors = append(fieldErrors, requiredVocabularyValue(at.Field("level"), artifact.Level)...)
-	fieldErrors = append(fieldErrors, vocabularyValue(at.Field("type"), artifact.Type)...)
+	fieldErrors = append(fieldErrors, requiredVocabularyValue(at.Field("type"), artifact.Type)...)
 	if artifact.SHA256 != nil && !sha256Pattern.MatchString(*artifact.SHA256) {
 		fieldErrors = append(fieldErrors, FieldError{
 			Pointer: at.Field("sha256"),
 			Code:    CodeInvalidFormat,
 			Detail:  "must be 64 lowercase hexadecimal characters",
+		})
+	}
+	// Format is an open vocabulary, so only its case is checked.
+	if artifact.Format != nil && *artifact.Format != strings.ToLower(*artifact.Format) {
+		fieldErrors = append(fieldErrors, FieldError{
+			Pointer: at.Field("format"),
+			Code:    CodeInvalidFormat,
+			Detail:  "must be lowercase",
 		})
 	}
 	if artifact.SizeBytes != nil && *artifact.SizeBytes < 0 {

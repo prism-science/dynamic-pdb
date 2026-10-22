@@ -1235,9 +1235,12 @@ func (s *Server) createArtifact(
 	if artifact.Name == "" {
 		return nil, invalidRequest("artifact name is required")
 	}
-	if _, err := artifactTypeFromRequest(req.Type); err != nil {
-		return nil, err
+	// In log-only mode a request without a type still reaches here and is stored as other.
+	artifactType, err := artifactTypeFromRequest(req.Type)
+	if err != nil {
+		return nil, fmt.Errorf("validate artifact %s: %w", req.Id, err)
 	}
+	artifact.Type = artifactType
 	artifact.CreatedBy = createdBy
 	artifact.CreatedAt = now
 	created, err := s.database.Artifacts.Create(ctx, artifact)
@@ -1248,13 +1251,14 @@ func (s *Server) createArtifact(
 }
 
 // artifactFromRequest maps an artifact request without checking it, so schema checks
-// and createArtifact see the same values.
+// and createArtifact see the same values. A missing type stays empty so the schema
+// check can report it; createArtifact applies the default.
 func artifactFromRequest(req CreateArtifactRequest) domainmodels.Artifact {
 	metadata := map[string]any{}
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
-	artifactType := domainmodels.ArtifactTypeOther
+	var artifactType domainmodels.ArtifactType
 	if req.Type != nil {
 		artifactType = domainmodels.ArtifactType(*req.Type)
 	}
