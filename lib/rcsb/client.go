@@ -59,8 +59,15 @@ type RemoteClient struct {
 	filesBaseURL string
 	wwwBaseURL   string
 	cdnBaseURL   string
-	cache        *lru.Cache[string, []byte]
+	cache        *lru.Cache[string, cachedResponse]
+	cacheTTL     time.Duration
+	now          func() time.Time
 	cacheMutex   sync.Mutex
+}
+
+type cachedResponse struct {
+	contents  []byte
+	expiresAt time.Time
 }
 
 type Option func(*RemoteClient)
@@ -86,6 +93,20 @@ func WithCacheEntries(entries int) Option {
 	}
 }
 
+// WithCacheTTL makes cached responses expire after ttl. Without it, responses stay
+// cached until evicted.
+func WithCacheTTL(ttl time.Duration) Option {
+	return func(client *RemoteClient) {
+		client.cacheTTL = ttl
+	}
+}
+
+func withClock(now func() time.Time) Option {
+	return func(client *RemoteClient) {
+		client.now = now
+	}
+}
+
 func NewClient(options ...Option) *RemoteClient {
 	client := &RemoteClient{
 		httpClient:   &http.Client{Timeout: defaultHTTPTimeout},
@@ -94,6 +115,7 @@ func NewClient(options ...Option) *RemoteClient {
 		wwwBaseURL:   cleanBaseURL(os.Getenv(wwwBaseURLEnv), defaultWWWBaseURL),
 		cdnBaseURL:   cleanBaseURL(os.Getenv(cdnBaseURLEnv), defaultCDNBaseURL),
 		cache:        newResponseCache(defaultResponseCacheEntries),
+		now:          time.Now,
 	}
 	for _, option := range options {
 		option(client)
@@ -313,11 +335,11 @@ func cleanBaseURL(value string, fallback string) string {
 	return strings.TrimRight(value, "/")
 }
 
-func newResponseCache(entries int) *lru.Cache[string, []byte] {
+func newResponseCache(entries int) *lru.Cache[string, cachedResponse] {
 	if entries <= 0 {
 		return nil
 	}
-	cache, err := lru.New[string, []byte](entries)
+	cache, err := lru.New[string, cachedResponse](entries)
 	if err != nil {
 		panic(fmt.Sprintf("create RCSB response cache: %v", err))
 	}
@@ -327,11 +349,15 @@ func newResponseCache(entries int) *lru.Cache[string, []byte] {
 func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 	if c.cache != nil {
 		c.cacheMutex.Lock()
-		if contents, ok := c.cache.Get(url); ok {
-			c.cacheMutex.Unlock()
-			return bytes.Clone(contents), nil
+		cached, ok := c.cache.Get(url)
+		if ok && c.cacheTTL > 0 && !c.now().Before(cached.expiresAt) {
+			c.cache.Remove(url)
+			ok = false
 		}
 		c.cacheMutex.Unlock()
+		if ok {
+			return bytes.Clone(cached.contents), nil
+		}
 	}
 	var lastErr error
 	for attempt := 1; attempt <= getAttempts; attempt++ {
@@ -339,7 +365,10 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 		if err == nil {
 			if c.cache != nil {
 				c.cacheMutex.Lock()
-				c.cache.Add(url, bytes.Clone(contents))
+				c.cache.Add(url, cachedResponse{
+					contents:  bytes.Clone(contents),
+					expiresAt: c.now().Add(c.cacheTTL),
+				})
 				c.cacheMutex.Unlock()
 			}
 			return contents, nil

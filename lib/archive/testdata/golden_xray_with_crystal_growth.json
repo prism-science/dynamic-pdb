@@ -1,0 +1,98 @@
+{
+  "entry": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ParentRevisionID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "EntryState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": "The crystal structure of COVID-19 main protease in complex with an inhibitor N3",
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "resolution": 2.16,
+      "method": "X-ray crystallography",
+      "space_group": "C 1 2 1",
+      "crystallography": {
+        "crystals": [
+          {
+            "id": "1",
+            "growth": {
+              "ph": 6,
+              "temperature_kelvin": 293
+            },
+            "diffractions": [
+              {
+                "id": "1",
+                "temperature_kelvin": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "model": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ModelID": "",
+    "ParentRevisionID": null,
+    "PrimaryArtifactID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "ModelState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": null,
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "authors": [
+        "Liu, X.",
+        "Zhang, B.",
+        "Jin, Z.",
+        "Yang, H.",
+        "Rao, Z."
+      ],
+      "atom_count": 2500,
+      "modeled_residues": 312,
+      "unique_protein_chains": 2,
+      "unmodeled_fraction": 0,
+      "ligands": null,
+      "cofactors": null
+    },
+    "IdempotencyKey": null,
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "metrics": [
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "clashscore",
+      "Value": 5.03,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "r_free",
+      "Value": 0.235,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "r_work",
+      "Value": 0.202,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "ramachandran_outliers",
+      "Value": 0,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

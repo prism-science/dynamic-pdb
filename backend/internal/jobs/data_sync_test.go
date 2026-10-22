@@ -329,7 +329,8 @@ func Test_should_group_rcsb_crystallography_by_crystal(t *testing.T) {
 	}
 
 	// when
-	crystallography := crystallographyFromRCSB(details)
+	var revision models.EntryRevision
+	applyRCSBEntryDetails(&revision, details)
 
 	// then
 	assert.Equal(t, &models.EntryCrystallography{Crystals: []models.EntryCrystal{
@@ -345,7 +346,7 @@ func Test_should_group_rcsb_crystallography_by_crystal(t *testing.T) {
 			ID:     "2",
 			Growth: &models.EntryCrystalGrowth{TemperatureKelvin: new(293.0)},
 		},
-	}}, crystallography)
+	}}, revision.Metadata.Crystallography)
 }
 
 func Test_should_detect_entry_update_when_crystallography_changed(t *testing.T) {
@@ -482,38 +483,6 @@ func Test_should_map_rcsb_instance_metrics_to_residue_data(t *testing.T) {
 			RSCC: new(0.95), BIso: new(20.1), Occupancy: new(1.0),
 		},
 	}, residues)
-}
-
-func Test_should_parse_author_sequence_mapping_with_insertion_code(t *testing.T) {
-	// given
-	mapping := []string{"?", "-2", "52A"}
-
-	// when
-	missingPosition, missingInsertionCode := authSequencePosition(mapping, 1)
-	negativePosition, negativeInsertionCode := authSequencePosition(mapping, 2)
-	insertedPosition, insertionCode := authSequencePosition(mapping, 3)
-
-	// then
-	assert.Nil(t, missingPosition)
-	assert.Nil(t, missingInsertionCode)
-	assert.Equal(t, -2, *negativePosition)
-	assert.Nil(t, negativeInsertionCode)
-	assert.Equal(t, 52, *insertedPosition)
-	assert.Equal(t, "A", *insertionCode)
-}
-
-func Test_should_map_polymer_sequence_to_component_ids(t *testing.T) {
-	// given
-	polymer := rcsb.PolymerData{
-		Sequence: "A(SEP)L",
-		Type:     "polypeptide(L)",
-	}
-
-	// when
-	components := polymerComponentIDs(polymer)
-
-	// then
-	assert.Equal(t, map[int]string{1: "ALA", 2: "SEP", 3: "LEU"}, components)
 }
 
 func Test_should_match_polymer_entity_to_rcsb_fasta_record(t *testing.T) {

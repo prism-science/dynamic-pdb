@@ -1,0 +1,103 @@
+{
+  "entry": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ParentRevisionID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "EntryState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": "THE CRYSTAL STRUCTURE OF HUMAN DEOXYHAEMOGLOBIN AT 1.74 ANGSTROMS RESOLUTION",
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "resolution": 1.74,
+      "method": "X-ray crystallography",
+      "space_group": "P 1 21 1",
+      "crystallography": {
+        "crystals": [
+          {
+            "id": "1",
+            "diffractions": [
+              {
+                "id": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "model": {
+    "ID": "00000000-0000-0000-0000-000000000000",
+    "EntryID": "",
+    "ModelID": "",
+    "ParentRevisionID": null,
+    "PrimaryArtifactID": null,
+    "RevisionNumber": null,
+    "State": "",
+    "ModelState": "",
+    "ChangeSummary": null,
+    "PublishedAt": null,
+    "Title": null,
+    "ThumbnailImageURL": null,
+    "Metadata": {
+      "authors": [
+        "Fermi, G.",
+        "Perutz, M.F."
+      ],
+      "atom_count": 4779,
+      "modeled_residues": 574,
+      "unique_protein_chains": 4,
+      "unmodeled_fraction": 0,
+      "ligands": [
+        "HEM"
+      ],
+      "cofactors": null
+    },
+    "IdempotencyKey": null,
+    "CreatedBy": "00000000-0000-0000-0000-000000000000",
+    "CreatedAt": "0001-01-01T00:00:00Z",
+    "UpdatedAt": "0001-01-01T00:00:00Z"
+  },
+  "metrics": [
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "clashscore",
+      "Value": 142.32,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "r_work",
+      "Value": 0.135,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "ID": "00000000-0000-0000-0000-000000000000",
+      "Key": "ramachandran_outliers",
+      "Value": 1.24,
+      "CreatedAt": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "polymer_entity": {
+    "label_entity_id": "1",
+    "description": "Hemoglobin subunit alpha",
+    "source_organisms": [
+      {
+        "scientific_name": "Homo sapiens",
+        "ncbi_taxonomy_id": 9606
+      }
+    ],
+    "uniprot_mappings": [
+      {
+        "accession": "P69905",
+        "source": "sifts",
+        "unp_release": "2026_03"
+      }
+    ]
+  }
+}

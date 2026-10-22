@@ -36,6 +36,8 @@ tags:
     description: Your own revisions and the state review left them in.
   - name: Authentication
     description: Exchanging a GitHub authorization for a backend JWT.
+  - name: Archive
+    description: Looking up what the PDB archive says about an entry before it is imported.
   - name: Health
     x-scalar-ignore: true
     description: Liveness and readiness probes.
@@ -156,6 +158,62 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Access denied.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/archive/pdb/{pdb_id}:
+    get:
+      tags: [Archive]
+      operationId: getArchivePdb
+      summary: Look up a PDB entry in the archive
+      description: |
+        Reads a PDB entry from RCSB and returns the values Dynamic PDB would
+        store for the entry, its model, and its polymer entities, each with the
+        RCSB field it was read from. Nothing is stored.
+
+        The proposed values are checked with the same schema rules as writes.
+        Violations, conflicting RCSB records, and values that were dropped come
+        back as `warnings` — the lookup does not fail because of them.
+        Responses are cached for a few minutes and RCSB is given 10 seconds.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pdb_id
+          in: path
+          description: Four-character PDB ID, for example `4HHB`. Case is ignored.
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9][A-Za-z0-9]{3}$"
+      responses:
+        "200":
+          description: Proposed values for the PDB entry.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ArchivePdbDocument"
+        "400":
+          description: The PDB ID is malformed.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: RCSB has no such entry.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: RCSB failed or did not answer in time.
           content:
             application/vnd.api+json:
               schema:
@@ -2703,6 +2761,225 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ProteinSequence"
+
+    ArchivePdbDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ArchivePdbData"
+
+    ArchivePdbData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+          enum: [archive_pdb_lookups]
+        id:
+          type: string
+          description: Upper-case PDB ID.
+        attributes:
+          $ref: "#/components/schemas/ArchivePdbAttributes"
+
+    ArchivePdbAttributes:
+      type: object
+      required: [entry, model, polymer_entities, warnings]
+      properties:
+        entry:
+          $ref: "#/components/schemas/ArchiveEntryProposal"
+        model:
+          $ref: "#/components/schemas/ArchiveModelProposal"
+        polymer_entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArchivePolymerEntityProposal"
+        warnings:
+          type: array
+          description: Problems with the lookup as a whole, such as an unknown UniProt release.
+          items:
+            $ref: "#/components/schemas/ArchiveWarning"
+
+    ArchiveReport:
+      type: object
+      required: [provenance, conflicts, warnings]
+      properties:
+        provenance:
+          type: object
+          description: Maps each proposed field to the RCSB path it is read from.
+          additionalProperties:
+            type: string
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArchiveConflict"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArchiveWarning"
+
+    ArchiveConflict:
+      type: object
+      required: [field, chosen, others]
+      properties:
+        field:
+          type: string
+        chosen:
+          type: string
+          description: The value that is proposed.
+        others:
+          type: array
+          description: Other values RCSB reports for the field.
+          items:
+            type: string
+
+    ArchiveWarning:
+      type: object
+      required: [source, detail]
+      properties:
+        source:
+          type: string
+          enum: [archive, validation]
+          description: >
+            `archive` for a problem found while reading RCSB, `validation` for a
+            proposed value that breaks the schema rules.
+        field:
+          type: string
+          description: Proposed field the warning is about, for `archive` warnings.
+        pointer:
+          type: string
+          description: JSON pointer into the proposal, for `validation` warnings.
+        code:
+          type: string
+          description: Validation code, for `validation` warnings.
+        detail:
+          type: string
+
+    ArchiveRevisionGroup:
+      type: object
+      required: [group, revision_ordinal]
+      properties:
+        group:
+          type: string
+        revision_ordinal:
+          type: integer
+
+    ArchiveEntryProposal:
+      allOf:
+        - $ref: "#/components/schemas/EntryProperties"
+        - $ref: "#/components/schemas/ArchiveReport"
+        - type: object
+          required: [revision_groups, supersedes, superseded_by]
+          properties:
+            title:
+              type: string
+              nullable: true
+            status_code:
+              type: string
+              description: RCSB status, for example `REL`.
+            initial_release_date:
+              type: string
+              format: date-time
+            latest_revision_date:
+              type: string
+              format: date-time
+            latest_version:
+              type: string
+              description: Latest RCSB major and minor version, for example `4.3`.
+            revision_groups:
+              type: array
+              items:
+                $ref: "#/components/schemas/ArchiveRevisionGroup"
+            supersedes:
+              type: array
+              description: PDB IDs this entry replaced.
+              items:
+                type: string
+            superseded_by:
+              type: array
+              description: PDB IDs that replaced this entry when it was made obsolete.
+              items:
+                type: string
+
+    ArchiveMetric:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+        value:
+          type: number
+          format: double
+
+    ArchiveModelProposal:
+      allOf:
+        - $ref: "#/components/schemas/ArchiveReport"
+        - type: object
+          required: [authors, ligands, metrics]
+          properties:
+            details:
+              type: string
+            authors:
+              type: array
+              items:
+                type: string
+            affiliation:
+              type: string
+            atom_count:
+              type: integer
+            modeled_residues:
+              type: integer
+            unique_protein_chains:
+              type: integer
+            unmodeled_fraction:
+              type: number
+              format: double
+            ligands:
+              type: array
+              items:
+                type: string
+            metrics:
+              type: array
+              items:
+                $ref: "#/components/schemas/ArchiveMetric"
+
+    ArchiveUniProtMapping:
+      type: object
+      required: [accession, source]
+      properties:
+        accession:
+          type: string
+        source:
+          type: string
+          description: One of `sifts`, `struct_ref`, or `alignment`.
+        unp_release:
+          type: string
+
+    ArchivePolymerEntityProposal:
+      allOf:
+        - $ref: "#/components/schemas/ArchiveReport"
+        - type: object
+          required: [source_organisms, uniprot_mappings]
+          properties:
+            label_entity_id:
+              type: string
+            description:
+              type: string
+            source_organisms:
+              type: array
+              items:
+                $ref: "#/components/schemas/PolymerEntityOrganism"
+            construct:
+              type: string
+            mutations:
+              type: array
+              description: Substitution strings such as C54T, one per element.
+              items:
+                type: string
+            uniprot_mappings:
+              type: array
+              items:
+                $ref: "#/components/schemas/ArchiveUniProtMapping"
 
     EntryDocument:
       type: object

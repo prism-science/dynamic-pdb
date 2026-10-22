@@ -24,6 +24,7 @@ import (
 	"dynamic-pdb/backend/internal/jobs"
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
+	"dynamic-pdb/lib/archive"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
@@ -31,6 +32,13 @@ import (
 // readRequestTimeout bounds GET and HEAD requests. It is longer than the database
 // statement_timeout so a single slow query fails on its own before the whole request does.
 const readRequestTimeout = 15 * time.Second
+
+// The archive lookup endpoint keeps recent RCSB responses so repeated lookups of the
+// same entry do not hit RCSB again.
+const (
+	archiveCacheEntries = 256
+	archiveCacheTTL     = 10 * time.Minute
+)
 
 func main() {
 	os.Exit(run())
@@ -82,7 +90,10 @@ func run() int {
 	srv := httpapi.NewServer(
 		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
 		cfg.Validation.Mode,
-	)
+	).WithArchiveLookup(archive.NewLookup(
+		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
+		sifts.NewClient(),
+	))
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
