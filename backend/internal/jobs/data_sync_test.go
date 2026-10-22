@@ -10,6 +10,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
@@ -21,7 +22,7 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	siftsClient := sifts.NewClient()
 
 	// when
-	job, err := NewDataSyncJob(database, rcsbClient, siftsClient, nil)
+	job, err := NewDataSyncJob(database, rcsbClient, siftsClient, nil, validation.ModeLogOnly)
 
 	// then
 	require.NoError(t, err)
@@ -42,7 +43,7 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil)
+	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)
@@ -52,7 +53,7 @@ func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil)
+	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)
@@ -62,7 +63,7 @@ func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_sifts_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil)
+	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)

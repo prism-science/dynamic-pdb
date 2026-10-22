@@ -38,4 +38,5 @@ type UniProtReferenceSource string
 const (
 	UniProtReferenceSourceSIFTS     UniProtReferenceSource = "sifts"
 	UniProtReferenceSourceStructRef UniProtReferenceSource = "struct_ref"
+	UniProtReferenceSourceAlignment UniProtReferenceSource = "alignment"
 )

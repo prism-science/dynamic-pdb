@@ -21,6 +21,7 @@ import (
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 type Server struct {
@@ -34,6 +35,9 @@ type Server struct {
 	// publicBaseURL is the API's external base (for example https://dynamicpdb.com/api),
 	// used to build absolute links.next URLs.
 	publicBaseURL string
+	// validationMode decides whether create requests that break schema rules are
+	// rejected or only logged.
+	validationMode validation.Mode
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
@@ -58,16 +62,18 @@ func NewServer(
 	database *db.DB,
 	downloads analytics.Tracker,
 	publicBaseURL string,
+	validationMode validation.Mode,
 ) *Server {
 	return &Server{
-		githubClient:  githubClient,
-		fileCDN:       fileCDN,
-		authConfig:    authConfig,
-		jwt:           jwt,
-		authorizer:    auth.NewAuthorizer(database),
-		database:      database,
-		downloads:     downloads,
-		publicBaseURL: publicBaseURL,
+		githubClient:   githubClient,
+		fileCDN:        fileCDN,
+		authConfig:     authConfig,
+		jwt:            jwt,
+		authorizer:     auth.NewAuthorizer(database),
+		database:       database,
+		downloads:      downloads,
+		publicBaseURL:  publicBaseURL,
+		validationMode: validationMode,
 	}
 }
 
@@ -243,6 +249,21 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 			},
 		},
 	})
+}
+
+// writeFieldErrors writes every schema violation of a request as one 422 response.
+func writeFieldErrors(w http.ResponseWriter, fieldErrors []validation.FieldError) {
+	status := strconv.Itoa(http.StatusUnprocessableEntity)
+	errorObjects := make([]ErrorObject, 0, len(fieldErrors))
+	for _, fieldError := range fieldErrors {
+		errorObjects = append(errorObjects, ErrorObject{
+			Status: status,
+			Code:   ptr(string(fieldError.Code)),
+			Detail: ptr(fieldError.Detail),
+			Source: &ErrorSource{Pointer: string(fieldError.Pointer)},
+		})
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, Error{Errors: errorObjects})
 }
 
 // RouteErrorHandler writes parameter binding errors from the generated router.

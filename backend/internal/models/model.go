@@ -88,6 +88,7 @@ type ModelPurpose string
 const (
 	ModelPurposeModelBuilding ModelPurpose = "Model Building"
 	ModelPurposeRefinement    ModelPurpose = "Refinement"
+	ModelPurposeReference     ModelPurpose = "Reference"
 )
 
 type StructureModelType string
@@ -96,6 +97,7 @@ const (
 	StructureModelTypeMulticonformer  StructureModelType = "Multiconformer"
 	StructureModelTypeEnsemble        StructureModelType = "Ensemble"
 	StructureModelTypeSingleConformer StructureModelType = "Single Conformer"
+	StructureModelTypeDeposited       StructureModelType = "Deposited"
 )
 
 type MetricKey string
@@ -107,6 +109,10 @@ const (
 	MetricKeyClashscore           MetricKey = "clashscore"
 	MetricKeyMolProbityScore      MetricKey = "molprobity_score"
 	MetricKeyRSCC                 MetricKey = "rscc"
+	MetricKeyCC                   MetricKey = "cc"
+	MetricKeySideChainOutliers    MetricKey = "side_chain_outliers"
+	MetricKeyWilsonB              MetricKey = "wilson_b"
+	MetricKeyRMSF                 MetricKey = "rmsf"
 )
 
 type Metric struct {

@@ -16,6 +16,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
@@ -51,6 +52,7 @@ func NewDataSyncJob(
 	rcsbClient *rcsb.RemoteClient,
 	siftsClient *sifts.RemoteClient,
 	logger *slog.Logger,
+	validationMode validation.Mode,
 ) (*DataSyncJob, error) {
 	if database == nil {
 		return nil, errors.New("database is nil")
@@ -61,6 +63,9 @@ func NewDataSyncJob(
 	if siftsClient == nil {
 		return nil, errors.New("SIFTS client is nil")
 	}
+	if err := validationMode.Validate(); err != nil {
+		return nil, fmt.Errorf("validation mode: %w", err)
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -70,8 +75,8 @@ func NewDataSyncJob(
 		database: database,
 		logger:   logger,
 		strategies: []dataSyncStrategy{
-			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now),
-			newModelSyncStrategy(database, rcsbClient, logger, now),
+			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now, validationMode),
+			newModelSyncStrategy(database, rcsbClient, logger, now, validationMode),
 		},
 		now:             now,
 		nextScheduledAt: nextDataSyncScheduledAt,

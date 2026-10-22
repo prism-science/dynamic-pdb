@@ -568,6 +568,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -724,6 +730,12 @@ paths:
                 $ref: "#/components/schemas/CreateModelRevisionDocument"
         "400":
           description: Invalid model data.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1159,6 +1171,12 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -1388,6 +1406,12 @@ paths:
                 $ref: "#/components/schemas/CreateModelRevisionDocument"
         "400":
           description: Invalid model change.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1952,6 +1976,16 @@ components:
           type: string
         detail:
           type: string
+        source:
+          $ref: "#/components/schemas/ErrorSource"
+
+    ErrorSource:
+      type: object
+      required: [pointer]
+      properties:
+        pointer:
+          type: string
+          description: RFC 6901 JSON pointer to the request field the error is about, for example /model/metrics/0/key.
 
     ProbeMeta:
       type: object
@@ -3160,6 +3194,7 @@ components:
         value:
           type: number
           format: double
+          x-go-type: "*float64"
 
     Metric:
       type: object

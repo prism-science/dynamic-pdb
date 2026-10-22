@@ -578,15 +578,18 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "invalid-create-owner", 8107)
 
 	// when
-	//nolint:bodyclose // assertErrorResponse closes the response body.
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	oldShapeResponse := postJSONWithToken(s.T(), "/v1/entries", map[string]any{"name": "old shape"}, ownerToken)
 	unauthenticatedResponse := postJSON(s.T(), "/v1/entries", map[string]any{
 		"entry": map[string]any{"title": "no token"},
 	})
 
 	// then
-	s.Equal(http.StatusBadRequest, oldShapeResponse.StatusCode)
-	assertErrorResponse(s.T(), oldShapeResponse, "BAD_REQUEST", "entry title is required")
+	oldShapeErrors := decodeErrorResponseForTest(s.T(), oldShapeResponse, http.StatusUnprocessableEntity)
+	s.Require().Len(oldShapeErrors, 1)
+	s.Equal("REQUIRED", stringValue(oldShapeErrors[0].Code))
+	s.Require().NotNil(oldShapeErrors[0].Source)
+	s.Equal("/entry/title", oldShapeErrors[0].Source.Pointer)
 	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
 }

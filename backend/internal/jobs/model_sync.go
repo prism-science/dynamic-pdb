@@ -13,14 +13,16 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/rcsb"
 )
 
 type modelSyncStrategy struct {
-	database   *db.DB
-	rcsbClient *rcsb.RemoteClient
-	logger     *slog.Logger
-	now        func() time.Time
+	database       *db.DB
+	rcsbClient     *rcsb.RemoteClient
+	logger         *slog.Logger
+	now            func() time.Time
+	validationMode validation.Mode
 }
 
 func newModelSyncStrategy(
@@ -28,12 +30,14 @@ func newModelSyncStrategy(
 	rcsbClient *rcsb.RemoteClient,
 	logger *slog.Logger,
 	now func() time.Time,
+	validationMode validation.Mode,
 ) *modelSyncStrategy {
 	return &modelSyncStrategy{
-		database:   database,
-		rcsbClient: rcsbClient,
-		logger:     logger,
-		now:        now,
+		database:       database,
+		rcsbClient:     rcsbClient,
+		logger:         logger,
+		now:            now,
+		validationMode: validationMode,
 	}
 }
 
@@ -87,6 +91,11 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 	)
 	if !modelRevisionChanged && !metricsChanged {
 		return nil
+	}
+	if err := s.validationMode.Check(
+		ctx, s.logger, "data sync model "+modelID, modelUpdateErrors(desiredRevision, desiredMetrics),
+	); err != nil {
+		return fmt.Errorf("validate model update: %w", err)
 	}
 
 	if err := s.saveModelUpdate(
@@ -425,4 +434,11 @@ func isRCSBModelMetric(key models.MetricKey) bool {
 	default:
 		return false
 	}
+}
+
+// modelUpdateErrors checks the values the sync takes from RCSB with the rules that
+// apply to API submissions. Pointers address the model revision.
+func modelUpdateErrors(revision models.ModelRevision, metrics []models.Metric) []validation.FieldError {
+	fieldErrors := validation.ModelMetadata(validation.Root.Field("metadata"), revision.Metadata)
+	return append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
 }
