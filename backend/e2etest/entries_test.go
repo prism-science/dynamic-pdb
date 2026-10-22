@@ -35,15 +35,13 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	entryArtifactID := uuid.New()
 	modelArtifactID := uuid.New()
-	structureFactorsArtifactID := uuid.New()
 	metricID := uuid.New()
 	runID := uuid.New()
 
 	// when
 	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"method": testEntryMethod,
-			"title":  "independent entry",
+			"title": "independent entry",
 			"artifacts": []map[string]any{
 				artifactRequest(entryArtifactID, "entry FASTA", "L0", "fasta", "s3://entry/sequence.fasta", map[string]any{
 					"records": []map[string]any{{"header": "entry", "sequence": "MACDEFGHIK"}},
@@ -61,13 +59,12 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 				},
 				"artifacts": []map[string]any{
 					artifactRequest(modelArtifactID, "model coordinates", "L2", "cif", "s3://model/model.cif", nil),
-					artifactRequest(structureFactorsArtifactID, "structure factors", "L1", "mtz", "s3://model/data.mtz", nil),
 				},
 				"metrics": []map[string]any{{"id": metricID, "key": "r_free", "value": 0.21}},
 				"runs": []map[string]any{{
 					"id": runID, "name": "refinement",
 					"artifacts": []map[string]any{
-						{"artifact_id": structureFactorsArtifactID, "direction": "input"},
+						{"artifact_id": entryArtifactID, "direction": "input"},
 						{"artifact_id": modelArtifactID, "direction": "output"},
 					},
 				}},
@@ -128,7 +125,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 	artifacts := decodeModelArtifactCollectionForTest(s.T(), artifactsResponse)
 	s.Require().NotNil(artifactByID(artifacts.Items, modelArtifactID))
 	s.Require().NotNil(runByID(artifacts.Runs, runID))
-	s.True(runArtifactLinkExists(artifacts.Relations, runID, structureFactorsArtifactID, httpapi.Input))
+	s.True(runArtifactLinkExists(artifacts.Relations, runID, entryArtifactID, httpapi.Input))
 	s.True(runArtifactLinkExists(artifacts.Relations, runID, modelArtifactID, httpapi.Output))
 }
 
@@ -139,7 +136,6 @@ func (s *EntriesSuite) Test_should_embed_polymer_entities_in_entry_response() {
 	entryArtifactID := uuid.New()
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"method":  testEntryMethod,
 			"title":   "entry with polymer entity",
 			"details": "Additional structure details",
 			"crystallography": map[string]any{
@@ -265,7 +261,6 @@ func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {
 	structureFactorsArtifact["type"] = "structure_factors"
 	entry := createEntryForTest(s.T(), ownerToken, map[string]any{
 		"entry": map[string]any{
-			"method":    testEntryMethod,
 			"title":     "files entry",
 			"artifacts": []map[string]any{entryArtifact},
 		},
@@ -325,7 +320,7 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "idempotent-model-owner", 8112)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "idempotent model entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "idempotent model entry"},
 	})
 	entryID := entry.EntryId
 	idempotencyKey := uuid.NewString()
@@ -351,7 +346,7 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "protein-model-owner", 8102)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "protein model entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "protein model entry"},
 	})
 	entryID := entry.EntryId
 	initialArtifactID := uuid.New()
@@ -413,7 +408,7 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	contributorToken := issueEntryTokenForGitHubIDForTest(s.T(), "shared-entry-contributor", 8111)
 	contributorID := tokenUserIDForTest(s.T(), contributorToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "shared entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "shared entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
@@ -456,7 +451,7 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "separate-lifecycle-owner", 8103)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "original entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "original entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
@@ -498,7 +493,7 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 	otherToken := issueEntryTokenForGitHubIDForTest(s.T(), "revision-group-other", 8105)
 	otherID := tokenUserIDForTest(s.T(), otherToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "revision group entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "revision group entry"},
 	})
 	entryID := entry.EntryId
 	entryRevision := createEntryRevisionForTest(s.T(), ownerToken, entryID, map[string]any{
@@ -547,7 +542,7 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "model-rejection-owner", 8106)
 	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "model rejection entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "model rejection entry"},
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
@@ -583,36 +578,20 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "invalid-create-owner", 8107)
 
 	// when
-	//nolint:bodyclose // assertErrorResponse closes the response body.
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	oldShapeResponse := postJSONWithToken(s.T(), "/v1/entries", map[string]any{"name": "old shape"}, ownerToken)
 	unauthenticatedResponse := postJSON(s.T(), "/v1/entries", map[string]any{
 		"entry": map[string]any{"title": "no token"},
 	})
 
 	// then
-	s.Equal(http.StatusUnprocessableEntity, oldShapeResponse.StatusCode)
-	s.Equal([]string{"/entry/title", "/entry/method"}, errorPointersForTest(s.T(), oldShapeResponse))
+	oldShapeErrors := decodeErrorResponseForTest(s.T(), oldShapeResponse, http.StatusUnprocessableEntity)
+	s.Require().Len(oldShapeErrors, 1)
+	s.Equal("REQUIRED", stringValue(oldShapeErrors[0].Code))
+	s.Require().NotNil(oldShapeErrors[0].Source)
+	s.Equal("/entry/title", oldShapeErrors[0].Source.Pointer)
 	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
-}
-
-const testEntryMethod = "X-ray crystallography"
-
-func errorPointersForTest(t *testing.T, response *http.Response) []string {
-	t.Helper()
-	defer func() {
-		require.NoError(t, response.Body.Close())
-	}()
-	var body httpapi.Error
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
-	pointers := make([]string, 0, len(body.Errors))
-	for _, errorObject := range body.Errors {
-		require.Equal(t, "422", errorObject.Status)
-		require.NotNil(t, errorObject.Source)
-		require.NotNil(t, errorObject.Source.Pointer)
-		pointers = append(pointers, *errorObject.Source.Pointer)
-	}
-	return pointers
 }
 
 func createEntryForTest(t *testing.T, token string, request map[string]any) httpapi.CreateEntryRevisionAttributes {
@@ -973,7 +952,7 @@ func artifactRequest(
 	metadata map[string]any,
 ) map[string]any {
 	request := map[string]any{
-		"id": id, "name": name, "level": level, "type": "other", "format": format, "uri": uri,
+		"id": id, "name": name, "level": level, "format": format, "uri": uri,
 	}
 	if metadata != nil {
 		request["metadata"] = metadata

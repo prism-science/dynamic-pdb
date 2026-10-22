@@ -27,12 +27,17 @@ func patchJSONWithToken(t *testing.T, path string, body any, token string) *http
 
 func jsonRequestWithToken(t *testing.T, method, path string, body any, token string) *http.Response {
 	t.Helper()
+	return jsonRequestToServerWithToken(t, testServer.URL, method, path, body, token)
+}
+
+func jsonRequestToServerWithToken(t *testing.T, baseURL, method, path string, body any, token string) *http.Response {
+	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
 
-	req, err := http.NewRequest(method, testServer.URL+path, &buf)
+	req, err := http.NewRequest(method, baseURL+path, &buf)
 	require.NoError(t, err)
 	req.Header.Set("Accept", httpapi.JSONAPIMediaType)
 	req.Header.Set("Content-Type", httpapi.JSONAPIMediaType)

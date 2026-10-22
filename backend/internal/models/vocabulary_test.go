@@ -7,160 +7,114 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type vocabularyCase struct {
-	name     string
-	valid    []func() error
-	unknown  func() error
-	expected string
-}
-
-func vocabularyCases() []vocabularyCase {
-	return []vocabularyCase{
-		{
-			name: "model purpose",
-			valid: []func() error{
-				ModelPurposeModelBuilding.Validate, ModelPurposeRefinement.Validate, ModelPurposeReference.Validate,
-			},
-			unknown:  ModelPurpose("Validation").Validate,
-			expected: "unknown model purpose: Validation",
-		},
-		{
-			name: "model type",
-			valid: []func() error{
-				StructureModelTypeSingleConformer.Validate, StructureModelTypeMulticonformer.Validate,
-				StructureModelTypeEnsemble.Validate, StructureModelTypeDeposited.Validate,
-			},
-			unknown:  StructureModelType("Predicted").Validate,
-			expected: "unknown model type: Predicted",
-		},
-		{
-			name:     "model source",
-			valid:    []func() error{ModelSourcePDB.Validate, ModelSourceEXT.Validate},
-			unknown:  ModelSource("emdb").Validate,
-			expected: "unknown model source: emdb",
-		},
-		{
-			name: "metric key",
-			valid: []func() error{
-				MetricKeyRWork.Validate, MetricKeyRFree.Validate, MetricKeyCC.Validate, MetricKeyRSCC.Validate,
-				MetricKeyClashscore.Validate, MetricKeyRamachandranOutliers.Validate,
-				MetricKeySideChainOutliers.Validate, MetricKeyMolProbityScore.Validate,
-				MetricKeyWilsonB.Validate, MetricKeyRMSF.Validate,
-			},
-			unknown:  MetricKey("r_factor").Validate,
-			expected: "unknown metric key: r_factor",
-		},
-		{
-			name: "artifact level",
-			valid: []func() error{
-				ArtifactLevelL0.Validate, ArtifactLevelL1.Validate, ArtifactLevelL2.Validate, ArtifactLevelL3.Validate,
-			},
-			unknown:  ArtifactLevel("L4").Validate,
-			expected: "unknown artifact level: L4",
-		},
-		{
-			name: "artifact type",
-			valid: []func() error{
-				ArtifactTypeModel.Validate, ArtifactTypeStructureFactors.Validate,
-				ArtifactTypeFASTA.Validate, ArtifactTypeOther.Validate,
-			},
-			unknown:  ArtifactType("assembly").Validate,
-			expected: "unknown artifact type: assembly",
-		},
-		{
-			name:     "run artifact direction",
-			valid:    []func() error{RunArtifactDirectionInput.Validate, RunArtifactDirectionOutput.Validate},
-			unknown:  RunArtifactDirection("inout").Validate,
-			expected: "unknown run artifact direction: inout",
-		},
-		{
-			name: "revision state",
-			valid: []func() error{
-				RevisionStatePending.Validate, RevisionStateInReview.Validate, RevisionStateActive.Validate,
-				RevisionStateRejected.Validate, RevisionStateArchived.Validate,
-			},
-			unknown:  RevisionState("draft").Validate,
-			expected: "unknown revision state: draft",
-		},
-		{
-			name:     "entry state",
-			valid:    []func() error{EntryStateNew.Validate, EntryStateActive.Validate, EntryStateDeleted.Validate},
-			unknown:  EntryState("archived").Validate,
-			expected: "unknown entry state: archived",
-		},
-		{
-			name:     "model state",
-			valid:    []func() error{ModelStateNew.Validate, ModelStateActive.Validate, ModelStateDeleted.Validate},
-			unknown:  ModelState("archived").Validate,
-			expected: "unknown model state: archived",
-		},
-		{
-			name: "UniProt mapping source",
-			valid: []func() error{
-				UniProtReferenceSourceSIFTS.Validate, UniProtReferenceSourceStructRef.Validate,
-				UniProtReferenceSourceAlignment.Validate,
-			},
-			unknown:  UniProtReferenceSource("rcsb").Validate,
-			expected: "unknown UniProt mapping source: rcsb",
-		},
+func Test_should_accept_every_schema_value_when_vocabularies_are_validated(t *testing.T) {
+	// given
+	validators := map[string][]interface{ Validate() error }{
+		"model purpose":      valuesOf(ModelPurposes),
+		"model type":         valuesOf(StructureModelTypes),
+		"metric key":         valuesOf(MetricKeys),
+		"artifact level":     valuesOf(ArtifactLevels),
+		"artifact type":      valuesOf(ArtifactTypes),
+		"run direction":      valuesOf(RunArtifactDirections),
+		"UniProt source":     valuesOf(UniProtReferenceSources),
+		"model external ref": valuesOf(ModelSources),
+		"entry external ref": valuesOf(EntrySources),
 	}
-}
 
-func Test_should_accept_every_schema_value_when_vocabulary_validated(t *testing.T) {
-	for _, vocabulary := range vocabularyCases() {
-		t.Run(vocabulary.name, func(t *testing.T) {
-			// given
-			validators := vocabulary.valid
+	for name, values := range validators {
+		t.Run(name, func(t *testing.T) {
+			require.NotEmpty(t, values)
+			for _, value := range values {
+				// when
+				err := value.Validate()
 
-			// when
-			var errs []error
-			for _, validate := range validators {
-				errs = append(errs, validate())
-			}
-
-			// then
-			for _, err := range errs {
-				assert.NoError(t, err)
+				// then
+				assert.NoError(t, err, "%v", value)
 			}
 		})
 	}
 }
 
-func Test_should_reject_value_when_not_in_vocabulary(t *testing.T) {
-	for _, vocabulary := range vocabularyCases() {
-		t.Run(vocabulary.name, func(t *testing.T) {
-			// given
-			validate := vocabulary.unknown
+func Test_should_list_schema_v0_2_0_values_when_vocabularies_are_read(t *testing.T) {
+	// given
+	// when
+	// then
+	assert.ElementsMatch(t, []ModelPurpose{"Model Building", "Refinement", "Reference"}, ModelPurposes)
+	assert.ElementsMatch(t,
+		[]StructureModelType{"Single Conformer", "Multiconformer", "Ensemble", "Deposited"},
+		StructureModelTypes,
+	)
+	assert.ElementsMatch(t, []MetricKey{
+		"r_work", "r_free", "cc", "rscc", "clashscore", "ramachandran_outliers",
+		"side_chain_outliers", "molprobity_score", "wilson_b", "rmsf",
+	}, MetricKeys)
+	assert.ElementsMatch(t, []ArtifactLevel{"L0", "L1", "L2", "L3"}, ArtifactLevels)
+	assert.ElementsMatch(t, []ArtifactType{"model", "structure_factors", "fasta", "other"}, ArtifactTypes)
+	assert.ElementsMatch(t, []RunArtifactDirection{"input", "output"}, RunArtifactDirections)
+	assert.ElementsMatch(t,
+		[]UniProtReferenceSource{"sifts", "struct_ref", "alignment"},
+		UniProtReferenceSources,
+	)
+	assert.ElementsMatch(t, []ModelSource{"pdb", "ext"}, ModelSources)
+	assert.ElementsMatch(t, []EntrySource{"pdb"}, EntrySources)
+}
 
+func Test_should_name_allowed_values_when_vocabulary_value_is_unknown(t *testing.T) {
+	// given
+	purpose := ModelPurpose("Docking")
+
+	// when
+	err := purpose.Validate()
+
+	// then
+	require.Error(t, err)
+	assert.Equal(t,
+		`model purpose "Docking" is not one of "Model Building", "Refinement", "Reference"`,
+		err.Error(),
+	)
+}
+
+func Test_should_reject_unknown_value_when_any_vocabulary_is_validated(t *testing.T) {
+	// given
+	unknownValues := map[string]interface{ Validate() error }{
+		"model purpose":      ModelPurpose("Docking"),
+		"model type":         StructureModelType("Trajectory"),
+		"metric key":         MetricKey("resolution"),
+		"artifact level":     ArtifactLevel("L4"),
+		"artifact type":      ArtifactType("assembly"),
+		"run direction":      RunArtifactDirection("both"),
+		"UniProt source":     UniProtReferenceSource("uniprot"),
+		"model external ref": ModelSource("emdb"),
+		"entry external ref": EntrySource("emdb"),
+	}
+
+	for name, value := range unknownValues {
+		t.Run(name, func(t *testing.T) {
 			// when
-			err := validate()
+			err := value.Validate()
 
 			// then
-			require.EqualError(t, err, vocabulary.expected)
+			assert.Error(t, err)
 		})
 	}
 }
 
-func Test_should_require_uniprot_release_when_source_is_sifts_or_alignment(t *testing.T) {
-	tests := []struct {
-		source   UniProtReferenceSource
-		required bool
-	}{
-		{UniProtReferenceSourceSIFTS, true},
-		{UniProtReferenceSourceAlignment, true},
-		{UniProtReferenceSourceStructRef, false},
-	}
-	for _, test := range tests {
-		t.Run(string(test.source), func(t *testing.T) {
-			// given
-			source := test.source
+func Test_should_reject_empty_value_when_metric_key_is_validated(t *testing.T) {
+	// given
+	key := MetricKey("")
 
-			// when
-			required, err := source.RequiresRelease()
+	// when
+	err := key.Validate()
 
-			// then
-			require.NoError(t, err)
-			assert.Equal(t, test.required, required)
-		})
+	// then
+	assert.EqualError(t, err, `metric key "" is not one of "r_work", "r_free", "cc", "rscc", "clashscore", `+
+		`"ramachandran_outliers", "side_chain_outliers", "molprobity_score", "wilson_b", "rmsf"`)
+}
+
+func valuesOf[T interface{ Validate() error }](values []T) []interface{ Validate() error } {
+	result := make([]interface{ Validate() error }, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
 	}
+	return result
 }

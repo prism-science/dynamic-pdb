@@ -200,14 +200,12 @@ func createProteinEntry(t *testing.T, backendURL string, token string, title str
 	artifactID := uuid.NewString()
 	body := map[string]any{
 		"entry": map[string]any{
-			"title":  title,
-			"method": "X-ray crystallography",
+			"title": title,
 			"artifacts": []map[string]any{
 				{
 					"id":     artifactID,
 					"name":   title + ".fasta",
 					"level":  "L0",
-					"type":   "fasta",
 					"format": "fasta",
 					"uri":    "s3://dynamic-pdb/" + artifactID + ".fasta",
 					"metadata": map[string]any{

@@ -142,6 +142,44 @@ func Test_should_default_rate_limit_when_config_does_not_set_it(t *testing.T) {
 	assert.Equal(t, 10*time.Second, cfg.Server.RateLimit.Window)
 }
 
+func Test_should_default_validation_mode_to_log_only_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+}
+
+func Test_should_override_validation_mode_from_env_var(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "enforce")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
+}
+
+func Test_should_reject_config_when_validation_mode_is_unknown(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "warn")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "validation.mode: unknown validation mode: warn")
+}
+
 func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
 	// given
 	t.Chdir(writeSampleConfig(t))
@@ -168,44 +206,6 @@ func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testi
 	// then
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "server.rate_limit.requests must be positive")
-}
-
-func Test_should_enforce_validation_when_config_does_not_set_mode(t *testing.T) {
-	// given
-	t.Chdir(writeSampleConfig(t))
-
-	// when
-	cfg, err := config.ReadFromFile("test")
-
-	// then
-	require.NoError(t, err)
-	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
-}
-
-func Test_should_override_validation_mode_from_env_var(t *testing.T) {
-	// given
-	t.Chdir(writeSampleConfig(t))
-	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "log_only")
-
-	// when
-	cfg, err := config.ReadFromFile("test")
-
-	// then
-	require.NoError(t, err)
-	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
-}
-
-func Test_should_reject_config_when_validation_mode_is_unknown(t *testing.T) {
-	// given
-	t.Chdir(writeSampleConfig(t))
-	t.Setenv("DYNAMIC_PDB_VALIDATION_MODE", "warn")
-
-	// when
-	_, err := config.ReadFromFile("test")
-
-	// then
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "validation.mode: unknown validation mode: warn")
 }
 
 func Test_should_override_public_base_url_from_env_var(t *testing.T) {
@@ -393,6 +393,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
 }
 
 func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *testing.T) {
@@ -414,4 +415,17 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+}
+
+func Test_should_enforce_schema_validation_when_repository_local_config_is_read(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+
+	// when
+	cfg, err := config.ReadFromFile("local")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
 }

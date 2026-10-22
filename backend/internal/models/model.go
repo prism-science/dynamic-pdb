@@ -50,15 +50,6 @@ const (
 	ModelSourceEXT ModelSource = "ext"
 )
 
-func (source ModelSource) Validate() error {
-	switch source {
-	case ModelSourcePDB, ModelSourceEXT:
-		return nil
-	default:
-		return fmt.Errorf("unknown model source: %s", source)
-	}
-}
-
 type ModelMetadata struct {
 	ExternalRefs        map[ModelSource]string `json:"external_refs,omitempty"`
 	Details             *string                `json:"details,omitempty"`
@@ -100,15 +91,6 @@ const (
 	ModelPurposeReference     ModelPurpose = "Reference"
 )
 
-func (purpose ModelPurpose) Validate() error {
-	switch purpose {
-	case ModelPurposeModelBuilding, ModelPurposeRefinement, ModelPurposeReference:
-		return nil
-	default:
-		return fmt.Errorf("unknown model purpose: %s", purpose)
-	}
-}
-
 type StructureModelType string
 
 const (
@@ -118,50 +100,20 @@ const (
 	StructureModelTypeDeposited       StructureModelType = "Deposited"
 )
 
-func (modelType StructureModelType) Validate() error {
-	switch modelType {
-	case StructureModelTypeSingleConformer,
-		StructureModelTypeMulticonformer,
-		StructureModelTypeEnsemble,
-		StructureModelTypeDeposited:
-		return nil
-	default:
-		return fmt.Errorf("unknown model type: %s", modelType)
-	}
-}
-
 type MetricKey string
 
 const (
-	MetricKeyRWork                MetricKey = "r_work"
 	MetricKeyRFree                MetricKey = "r_free"
-	MetricKeyCC                   MetricKey = "cc"
-	MetricKeyRSCC                 MetricKey = "rscc"
-	MetricKeyClashscore           MetricKey = "clashscore"
+	MetricKeyRWork                MetricKey = "r_work"
 	MetricKeyRamachandranOutliers MetricKey = "ramachandran_outliers"
-	MetricKeySideChainOutliers    MetricKey = "side_chain_outliers"
+	MetricKeyClashscore           MetricKey = "clashscore"
 	MetricKeyMolProbityScore      MetricKey = "molprobity_score"
+	MetricKeyRSCC                 MetricKey = "rscc"
+	MetricKeyCC                   MetricKey = "cc"
+	MetricKeySideChainOutliers    MetricKey = "side_chain_outliers"
 	MetricKeyWilsonB              MetricKey = "wilson_b"
 	MetricKeyRMSF                 MetricKey = "rmsf"
 )
-
-func (key MetricKey) Validate() error {
-	switch key {
-	case MetricKeyRWork,
-		MetricKeyRFree,
-		MetricKeyCC,
-		MetricKeyRSCC,
-		MetricKeyClashscore,
-		MetricKeyRamachandranOutliers,
-		MetricKeySideChainOutliers,
-		MetricKeyMolProbityScore,
-		MetricKeyWilsonB,
-		MetricKeyRMSF:
-		return nil
-	default:
-		return fmt.Errorf("unknown metric key: %s", key)
-	}
-}
 
 type Metric struct {
 	ID        uuid.UUID
@@ -177,12 +129,3 @@ const (
 	ModelStateActive  ModelState = "active"
 	ModelStateDeleted ModelState = "deleted"
 )
-
-func (state ModelState) Validate() error {
-	switch state {
-	case ModelStateNew, ModelStateActive, ModelStateDeleted:
-		return nil
-	default:
-		return fmt.Errorf("unknown model state: %s", state)
-	}
-}

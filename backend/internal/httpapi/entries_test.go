@@ -1,10 +1,7 @@
 package httpapi
 
 import (
-	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -13,13 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	domainmodels "dynamic-pdb/backend/internal/models"
-	"dynamic-pdb/backend/internal/validation"
 )
 
 func Test_should_default_artifact_type_to_other_when_type_is_missing(t *testing.T) {
 	// given
 	// when
-	artifactType, err := artifactTypeFromRequest("")
+	artifactType, err := artifactTypeFromRequest(nil)
 
 	// then
 	require.NoError(t, err)
@@ -28,9 +24,10 @@ func Test_should_default_artifact_type_to_other_when_type_is_missing(t *testing.
 
 func Test_should_reject_duplicate_structure_factors_when_model_artifacts_are_validated(t *testing.T) {
 	// given
+	artifactType := ArtifactTypeStructureFactors
 	requests := []CreateArtifactRequest{
-		{Id: uuid.New(), Type: ArtifactTypeStructureFactors},
-		{Id: uuid.New(), Type: ArtifactTypeStructureFactors},
+		{Id: uuid.New(), Type: &artifactType},
+		{Id: uuid.New(), Type: &artifactType},
 	}
 
 	// when
@@ -45,7 +42,7 @@ func Test_should_reject_assembly_artifact_type(t *testing.T) {
 	artifactType := ArtifactType("assembly")
 
 	// when
-	_, err := artifactTypeFromRequest(artifactType)
+	_, err := artifactTypeFromRequest(&artifactType)
 
 	// then
 	require.ErrorIs(t, err, errInvalidRequest)
@@ -53,7 +50,8 @@ func Test_should_reject_assembly_artifact_type(t *testing.T) {
 
 func Test_should_reject_model_artifact_type_when_entry_artifacts_are_validated(t *testing.T) {
 	// given
-	requests := []CreateArtifactRequest{{Id: uuid.New(), Type: ArtifactTypeModel}}
+	artifactType := ArtifactTypeModel
+	requests := []CreateArtifactRequest{{Id: uuid.New(), Type: &artifactType}}
 
 	// when
 	err := validateArtifactRequests(&requests, artifactAttachmentScopeEntry)
@@ -64,9 +62,10 @@ func Test_should_reject_model_artifact_type_when_entry_artifacts_are_validated(t
 
 func Test_should_reject_fasta_type_when_artifact_format_is_not_fasta(t *testing.T) {
 	// given
+	artifactType := ArtifactTypeFASTA
 	format := "cif"
 	requests := []CreateArtifactRequest{
-		{Id: uuid.New(), Type: ArtifactTypeFASTA, Format: &format},
+		{Id: uuid.New(), Type: &artifactType, Format: &format},
 	}
 
 	// when
@@ -74,173 +73,6 @@ func Test_should_reject_fasta_type_when_artifact_format_is_not_fasta(t *testing.
 
 	// then
 	require.ErrorIs(t, err, errInvalidRequest)
-}
-
-// schemaTestServer has no database, so a handler that got past validation would panic on its first query.
-func schemaTestServer() *Server {
-	return &Server{validationMode: validation.ModeEnforce}
-}
-
-func schemaTestRequest(t *testing.T, method, path string, body any) *http.Request {
-	t.Helper()
-	encoded, err := json.Marshal(body)
-	require.NoError(t, err)
-	request := httptest.NewRequest(method, path, bytes.NewReader(encoded))
-	return request.WithContext(WithUser(request.Context(), &domainmodels.User{ID: uuid.New()}))
-}
-
-func schemaTestModel() map[string]any {
-	artifactID := uuid.NewString()
-	return map[string]any{
-		"title": "model",
-		"metadata": map[string]any{
-			"external_refs": map[string]any{"pdb": "1ABC"},
-			"purpose":       "Refinement",
-			"model_type":    "Single Conformer",
-		},
-		"artifacts": []map[string]any{{
-			"id": artifactID, "name": "model.cif", "level": "L1", "type": "model", "format": "cif",
-			"sha256": strings.Repeat("a", 64), "size_bytes": 12,
-		}},
-		"runs": []map[string]any{{
-			"id": uuid.NewString(), "name": "refine",
-			"artifacts": []map[string]any{{"artifact_id": artifactID, "direction": "output"}},
-		}},
-		"metrics": []map[string]any{
-			{"id": uuid.NewString(), "key": "r_free", "value": 0.21},
-			{"id": uuid.NewString(), "key": "r_work", "value": 0.18},
-		},
-	}
-}
-
-func decodeErrorDocument(t *testing.T, recorder *httptest.ResponseRecorder) Error {
-	t.Helper()
-	var document Error
-	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&document))
-	return document
-}
-
-func errorPointers(document Error) []string {
-	pointers := make([]string, 0, len(document.Errors))
-	for _, errorObject := range document.Errors {
-		pointer := ""
-		if errorObject.Source != nil && errorObject.Source.Pointer != nil {
-			pointer = *errorObject.Source.Pointer
-		}
-		pointers = append(pointers, pointer)
-	}
-	return pointers
-}
-
-func Test_should_reject_metric_when_key_not_in_schema(t *testing.T) {
-	// given
-	model := schemaTestModel()
-	model["metrics"].([]map[string]any)[1]["key"] = "r_factor"
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries/dpdb_test/models", map[string]any{"model": model})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateModel(recorder, request, "dpdb_test")
-
-	// then
-	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
-	document := decodeErrorDocument(t, recorder)
-	require.Len(t, document.Errors, 1)
-	assert.Equal(t, "422", document.Errors[0].Status)
-	assert.Equal(t, string(validation.CodeNotInSchema), *document.Errors[0].Code)
-	assert.Equal(t, []string{"/model/metrics/1/key"}, errorPointers(document))
-}
-
-func Test_should_reject_metric_when_value_missing(t *testing.T) {
-	// given
-	model := schemaTestModel()
-	delete(model["metrics"].([]map[string]any)[0], "value")
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries/dpdb_test/models", map[string]any{"model": model})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateModel(recorder, request, "dpdb_test")
-
-	// then
-	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
-	document := decodeErrorDocument(t, recorder)
-	assert.Equal(t, []string{"/model/metrics/0/value"}, errorPointers(document))
-	assert.Equal(t, string(validation.CodeRequired), *document.Errors[0].Code)
-}
-
-func Test_should_return_every_violation_with_pointer_when_create_entry_is_invalid(t *testing.T) {
-	// given
-	model := schemaTestModel()
-	model["metadata"].(map[string]any)["purpose"] = "Validation"
-	model["artifacts"].([]map[string]any)[0]["format"] = "CIF"
-	model["artifacts"].([]map[string]any)[0]["metadata"] = map[string]any{"__registry": true}
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries", map[string]any{
-		"entry":            map[string]any{"title": "entry", "resolution": -1.5},
-		"model_operations": []map[string]any{{"op": "add", "data": model}},
-	})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateEntry(recorder, request)
-
-	// then
-	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
-	assert.Equal(t, []string{
-		"/entry/method",
-		"/entry/resolution",
-		"/model_operations/0/data/metadata/purpose",
-		"/model_operations/0/data/artifacts/0/format",
-		"/model_operations/0/data/artifacts/0/metadata/__registry",
-	}, errorPointers(decodeErrorDocument(t, recorder)))
-}
-
-func Test_should_reject_entry_revision_when_method_is_cleared(t *testing.T) {
-	// given
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries/dpdb_test/revisions", map[string]any{
-		"entry": map[string]any{"method": nil},
-	})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateEntryRevision(recorder, request, "dpdb_test")
-
-	// then
-	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
-	assert.Equal(t, []string{"/entry/method"}, errorPointers(decodeErrorDocument(t, recorder)))
-}
-
-func Test_should_reject_model_revision_when_metric_key_is_duplicated(t *testing.T) {
-	// given
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries/dpdb_test/models/dpdb_test_m_001/revisions", map[string]any{
-		"model": map[string]any{"metrics": []map[string]any{
-			{"id": uuid.NewString(), "key": "rmsf", "value": 0.4},
-			{"id": uuid.NewString(), "key": "rmsf", "value": 0.5},
-		}},
-	})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateModelRevision(recorder, request, "dpdb_test", "dpdb_test_m_001")
-
-	// then
-	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
-	document := decodeErrorDocument(t, recorder)
-	assert.Equal(t, []string{"/model/metrics/1/key"}, errorPointers(document))
-	assert.Equal(t, string(validation.CodeDuplicate), *document.Errors[0].Code)
-}
-
-func Test_should_keep_bad_request_when_model_metadata_cannot_be_decoded(t *testing.T) {
-	// given
-	model := schemaTestModel()
-	model["metadata"] = map[string]any{"purpose": 5}
-	request := schemaTestRequest(t, http.MethodPost, "/v1/entries/dpdb_test/models", map[string]any{"model": model})
-	recorder := httptest.NewRecorder()
-
-	// when
-	schemaTestServer().CreateModel(recorder, request, "dpdb_test")
-
-	// then
-	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 }
 
 func Test_should_apply_default_limit_when_list_entries_limit_is_missing(t *testing.T) {

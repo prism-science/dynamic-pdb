@@ -19,8 +19,8 @@ type entrySyncStrategy struct {
 	rcsbClient     *rcsb.RemoteClient
 	siftsClient    *sifts.RemoteClient
 	logger         *slog.Logger
-	validationMode validation.Mode
 	now            func() time.Time
+	validationMode validation.Mode
 }
 
 func newEntrySyncStrategy(
@@ -28,16 +28,16 @@ func newEntrySyncStrategy(
 	rcsbClient *rcsb.RemoteClient,
 	siftsClient *sifts.RemoteClient,
 	logger *slog.Logger,
-	validationMode validation.Mode,
 	now func() time.Time,
+	validationMode validation.Mode,
 ) *entrySyncStrategy {
 	return &entrySyncStrategy{
 		database:       database,
 		rcsbClient:     rcsbClient,
 		siftsClient:    siftsClient,
 		logger:         logger,
-		validationMode: validationMode,
 		now:            now,
+		validationMode: validationMode,
 	}
 }
 
@@ -93,12 +93,8 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 	if !entryRevisionChanged && !polymerEntitiesChanged {
 		return nil
 	}
-	if err := s.validationMode.Apply(
-		ctx,
-		s.logger,
-		validateEntryUpdate(desiredRevision, desiredPolymerEntities),
-		"entry_id", entryID,
-		"pdb_id", pdbID,
+	if err := s.validationMode.Check(
+		ctx, s.logger, "data sync entry "+entryID, entryUpdateErrors(desiredRevision, desiredPolymerEntities),
 	); err != nil {
 		return fmt.Errorf("validate entry update: %w", err)
 	}
@@ -115,27 +111,14 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 	return nil
 }
 
-// validateEntryUpdate checks the RCSB values the sync writes; the sync always overwrites every one of them.
-func validateEntryUpdate(
-	desiredRevision models.EntryRevision,
-	desiredPolymerEntities []models.PolymerEntity,
-) []validation.FieldError {
-	var method *string
-	if desiredRevision.Metadata.Method != nil {
-		method = new(string(*desiredRevision.Metadata.Method))
-	}
-	fieldErrors := validation.ValidateEntryRevisionChange(validation.EntryChange{
-		Title:      validation.Present(desiredRevision.Title),
-		Method:     validation.Present(method),
-		Resolution: validation.Present(desiredRevision.Metadata.Resolution),
-	})
-	for entityIndex, entity := range desiredPolymerEntities {
-		for mappingIndex, mapping := range entity.Metadata.UniProtMappings {
-			fieldErrors = append(fieldErrors, validation.ValidateUniProtMapping(
-				fmt.Sprintf("/polymer_entities/%d/uniprot_mappings/%d", entityIndex, mappingIndex),
-				mapping,
-			)...)
-		}
+// entryUpdateErrors checks the values the sync takes from RCSB with the rules that
+// apply to API submissions. Pointers address the entry revision and its polymer entities.
+func entryUpdateErrors(revision models.EntryRevision, polymerEntities []models.PolymerEntity) []validation.FieldError {
+	fieldErrors := validation.RequiredText(validation.Root.Field("title"), revision.Title)
+	fieldErrors = append(fieldErrors, validation.EntryMetadata(validation.Root, revision.Metadata)...)
+	for index, polymerEntity := range polymerEntities {
+		at := validation.Root.Field("polymer_entities").Index(index)
+		fieldErrors = append(fieldErrors, validation.PolymerEntity(at, polymerEntity.Metadata)...)
 	}
 	return fieldErrors
 }

@@ -1,14 +1,12 @@
 package e2etest
 
 import (
-	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -23,198 +21,187 @@ func TestSchemaValidation(t *testing.T) {
 	suite.Run(t, new(SchemaValidationSuite))
 }
 
-var schemaMetricValues = map[string]float64{
-	"r_work": 0.18, "r_free": 0.21, "cc": 0.84, "rscc": 0.95, "clashscore": 0,
-	"ramachandran_outliers": 0.2, "side_chain_outliers": 1.1, "molprobity_score": 1.42,
-	"wilson_b": 23.5, "rmsf": 0.6,
-}
-
-func schemaModelRequest(title string, coordinatesID, structureFactorsID uuid.UUID, metrics []map[string]any) map[string]any {
-	return map[string]any{
-		"title": title,
-		"metadata": map[string]any{
-			"external_refs": map[string]any{"pdb": "1ABC", "ext": "lab-42"},
-			"purpose":       "Reference",
-			"model_type":    "Deposited",
-		},
-		"primary_artifact_id": coordinatesID,
-		"artifacts": []map[string]any{
-			{
-				"id": coordinatesID, "name": "model.cif", "level": "L2", "type": "model", "format": "cif",
-				"uri": "s3://model/model.cif", "sha256": strings.Repeat("ab", 32), "size_bytes": 2048,
-				"metadata": map[string]any{"chain_count": float64(2)},
-			},
-			{
-				"id": structureFactorsID, "name": "data.mtz", "level": "L1", "type": "structure_factors",
-				"format": "mtz", "uri": "s3://model/data.mtz", "size_bytes": 0,
-			},
-		},
-		"runs": []map[string]any{{
-			"id": uuid.New(), "name": "refinement",
-			"artifacts": []map[string]any{
-				{"artifact_id": structureFactorsID, "direction": "input"},
-				{"artifact_id": coordinatesID, "direction": "output"},
-			},
-		}},
-		"metrics": metrics,
-	}
-}
-
-func schemaMetricsRequest() []map[string]any {
-	metrics := make([]map[string]any, 0, len(schemaMetricValues))
-	for key, value := range schemaMetricValues {
-		metrics = append(metrics, map[string]any{"id": uuid.New(), "key": key, "value": value})
-	}
-	return metrics
-}
-
-func (s *SchemaValidationSuite) Test_should_round_trip_record_unchanged_when_record_matches_schema() {
+func (s *SchemaValidationSuite) Test_should_reject_metric_when_key_not_in_schema() {
 	// given
-	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-round-trip-owner", 8401)
-	coordinatesID := uuid.New()
-	structureFactorsID := uuid.New()
-	request := map[string]any{
-		"entry": map[string]any{"title": "schema round trip", "method": "SOLUTION NMR", "resolution": 1.85},
-		"model_operations": []map[string]any{{
-			"op":   "add",
-			"data": schemaModelRequest("deposited model", coordinatesID, structureFactorsID, schemaMetricsRequest()),
-		}},
-	}
-
-	// when
-	created := createAndActivateEntryForTest(s.T(), ownerToken, request)
-	s.Require().Len(created.ModelResults, 1)
-	activateModelRevisionForTest(s.T(), httpapi.CreateModelRevisionAttributes{
-		EntryId: created.EntryId, ModelId: created.ModelResults[0].ModelId, RevisionId: created.ModelResults[0].ModelRevisionId,
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-metric-key-owner", 8401)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "metric key entry"},
 	})
 
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
+		"model": map[string]any{
+			"title":   "model with unknown metric",
+			"metrics": []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
+		},
+	}, ownerToken)
+
 	// then
-	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	entryResponse := getWithToken(s.T(), "/v1/entries/"+created.EntryId, "")
-	entry := decodeJSONResponse[httpapi.EntryDocument](s.T(), entryResponse, http.StatusOK).Data.Attributes
-	s.Equal("schema round trip", stringValue(entry.Title))
-	s.Equal("SOLUTION NMR", stringValue(entry.Method))
-	s.Require().NotNil(entry.Resolution)
-	s.InDelta(1.85, *entry.Resolution, 0)
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("422", errors[0].Status)
+	s.Equal("INVALID_VALUE", stringValue(errors[0].Code))
+	s.Require().NotNil(errors[0].Source)
+	s.Equal("/model/metrics/0/key", errors[0].Source.Pointer)
+	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
+}
 
-	model := getModelForTest(s.T(), created.EntryId, created.ModelResults[0].ModelId)
-	s.Equal("Reference", model.Metadata["purpose"])
-	s.Equal("Deposited", model.Metadata["model_type"])
-	s.Equal(map[string]any{"pdb": "1ABC", "ext": "lab-42"}, model.Metadata["external_refs"])
-	storedMetrics := make(map[string]float64, len(model.Metrics))
-	for _, metric := range model.Metrics {
-		storedMetrics[metric.Key] = metric.Value
-	}
-	s.Equal(schemaMetricValues, storedMetrics)
+func (s *SchemaValidationSuite) Test_should_reject_metric_when_value_missing() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-metric-value-owner", 8402)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "metric value entry"},
+	})
 
-	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	artifactsResponse := getWithToken(s.T(), fmt.Sprintf(
-		"/v1/entries/%s/models/%s/artifacts", created.EntryId, created.ModelResults[0].ModelId,
-	), "")
-	artifacts := decodeModelArtifactCollectionForTest(s.T(), artifactsResponse)
-	coordinates := artifactByID(artifacts.Items, coordinatesID)
-	s.Require().NotNil(coordinates)
-	s.Equal("model.cif", coordinates.Name)
-	s.Equal(httpapi.ArtifactLevel("L2"), coordinates.Level)
-	s.Equal(httpapi.ArtifactTypeModel, coordinates.Type)
-	s.Equal("cif", stringValue(coordinates.Format))
-	s.Equal(strings.Repeat("ab", 32), stringValue(coordinates.Sha256))
-	s.Require().NotNil(coordinates.SizeBytes)
-	s.Equal(int64(2048), *coordinates.SizeBytes)
-	s.Equal(map[string]any{"chain_count": float64(2)}, coordinates.Metadata)
-	structureFactors := artifactByID(artifacts.Items, structureFactorsID)
-	s.Require().NotNil(structureFactors)
-	s.Require().NotNil(structureFactors.SizeBytes)
-	s.Equal(int64(0), *structureFactors.SizeBytes)
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
+		"model": map[string]any{
+			"title":   "model with metric missing its value",
+			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free"}},
+		},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("REQUIRED", stringValue(errors[0].Code))
+	s.Equal("/model/metrics/0/value", errors[0].Source.Pointer)
 }
 
 func (s *SchemaValidationSuite) Test_should_accept_model_when_type_deposited_and_purpose_reference() {
 	// given
-	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-deposited-owner", 8402)
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-deposited-owner", 8403)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "deposited reference entry", "method": testEntryMethod},
+		"entry": map[string]any{"title": "deposited model entry", "resolution": 1.8},
 	})
-	model := schemaModelRequest("deposited reference model", uuid.New(), uuid.New(), nil)
+	metrics := make([]map[string]any, 0, 10)
+	for index, key := range []string{
+		"r_work", "r_free", "cc", "rscc", "clashscore", "ramachandran_outliers",
+		"side_chain_outliers", "molprobity_score", "wilson_b", "rmsf",
+	} {
+		metrics = append(metrics, map[string]any{"id": uuid.New(), "key": key, "value": float64(index) / 10})
+	}
 
 	// when
-	created := createModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{"model": model})
+	created := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title": "deposited model",
+			"metadata": map[string]any{
+				"purpose": "Reference", "model_type": "Deposited", "altloc_fraction": 0.25, "atom_count": 2512,
+			},
+			"metrics": metrics,
+		},
+	})
 
 	// then
-	s.Equal(httpapi.RevisionStateInReview, created.State)
+	model := getModelForTest(s.T(), entry.EntryId, created.ModelId)
+	s.Equal("Reference", model.Metadata["purpose"])
+	s.Equal("Deposited", model.Metadata["model_type"])
+	s.InDelta(0.25, model.Metadata["altloc_fraction"], 1e-9)
+	s.InDelta(2512, model.Metadata["atom_count"], 1e-9)
+	s.Require().Len(model.Metrics, 10)
+	wilsonB := metricByKey(model.Metrics, "wilson_b")
+	s.Require().NotNil(wilsonB)
+	s.InDelta(0.8, wilsonB.Value, 1e-9)
 }
 
-func (s *SchemaValidationSuite) Test_should_write_no_rows_when_create_entry_violates_schema() {
+func (s *SchemaValidationSuite) Test_should_return_every_field_error_and_write_nothing_when_entry_request_is_invalid() {
 	// given
-	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-no-rows-owner", 8403)
-	title := "schema no rows " + uuid.NewString()
-	coordinatesID := uuid.New()
-	structureFactorsID := uuid.New()
-	metrics := []map[string]any{
-		{"id": uuid.New(), "key": "r_free", "value": 0.21},
-		{"id": uuid.New(), "key": "r_factor", "value": 0.2},
-		{"id": uuid.New(), "key": "rmsf"},
-	}
-	model := schemaModelRequest(title, coordinatesID, structureFactorsID, metrics)
-	request := map[string]any{
-		"entry":            map[string]any{"title": title, "method": testEntryMethod},
-		"model_operations": []map[string]any{{"op": "add", "data": model}},
-	}
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-no-partial-write-owner", 8404)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
 
 	// when
-	//nolint:bodyclose // errorPointersForTest closes the response body.
-	response := postJSONWithToken(s.T(), "/v1/entries", request, ownerToken)
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"entry": map[string]any{"title": "entry that must not be saved", "resolution": -2},
+		"model_operations": []map[string]any{{
+			"op": "add",
+			"data": map[string]any{
+				"title":    "model that must not be saved",
+				"metadata": map[string]any{"purpose": "Docking"},
+				"metrics":  []map[string]any{{"id": uuid.New(), "key": "r_free", "value": 0.2}},
+				"runs": []map[string]any{{
+					"id": uuid.New(), "name": "refine",
+					"artifacts": []map[string]any{{"artifact_id": uuid.New(), "direction": "sideways"}},
+				}},
+			},
+		}},
+	}, ownerToken)
 
 	// then
-	s.Require().Equal(http.StatusUnprocessableEntity, response.StatusCode)
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	pointers := make([]string, 0, len(errors))
+	for _, item := range errors {
+		s.Require().NotNil(item.Source)
+		pointers = append(pointers, item.Source.Pointer)
+	}
 	s.Equal([]string{
-		"/model_operations/0/data/metrics/1/key",
-		"/model_operations/0/data/metrics/2/value",
-	}, errorPointersForTest(s.T(), response))
-	s.Equal(map[string]int{
-		"entry_revisions": 0, "model_revisions": 0, "artifacts": 0, "metrics": 0, "runs": 0,
-	}, schemaRowCounts(s.T(), title, []uuid.UUID{coordinatesID, structureFactorsID}, metrics, model))
+		"/entry/resolution",
+		"/model_operations/0/data/metadata/purpose",
+		"/model_operations/0/data/runs/0/artifacts/0/direction",
+	}, pointers)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	revisionsResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", ownerID), ownerToken,
+	)
+	s.Empty(decodeEntryRevisionGroupsForTest(s.T(), revisionsResponse))
 }
 
-func schemaRowCounts(
-	t *testing.T,
-	title string,
-	artifactIDs []uuid.UUID,
-	metrics []map[string]any,
-	model map[string]any,
-) map[string]int {
+func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_is_log_only() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-owner", 8406)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "log-only entry"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
+		map[string]any{"model": map[string]any{
+			"title":   "model accepted in log-only mode",
+			"metrics": []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
+		}},
+		ownerToken,
+	)
+
+	// then
+	created := decodeJSONResponse[httpapi.CreateModelRevisionDocument](s.T(), response, http.StatusCreated)
+	s.NotEqual(uuid.Nil, created.Data.Attributes.RevisionId)
+}
+
+func (s *SchemaValidationSuite) Test_should_reject_missing_metric_value_with_400_when_mode_is_log_only() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-value-owner", 8407)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "log-only missing value entry"},
+	})
+
+	// when
+	//nolint:bodyclose // assertErrorResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
+		map[string]any{"model": map[string]any{
+			"title":   "model with metric missing its value",
+			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free"}},
+		}},
+		ownerToken,
+	)
+
+	// then
+	s.Equal(http.StatusBadRequest, response.StatusCode)
+	assertErrorResponse(s.T(), response, "BAD_REQUEST", "metric value is required")
+}
+
+func decodeErrorResponseForTest(t *testing.T, response *http.Response, expectedStatus int) []httpapi.ErrorObject {
 	t.Helper()
-	connection, err := sql.Open("postgres", "host=localhost port=35432 dbname=dynamic_pdb_local user=postgres password=password sslmode=disable")
-	require.NoError(t, err)
 	defer func() {
-		require.NoError(t, connection.Close())
+		require.NoError(t, response.Body.Close())
 	}()
-	metricIDs := make([]string, 0, len(metrics))
-	for _, metric := range metrics {
-		metricIDs = append(metricIDs, metric["id"].(uuid.UUID).String())
-	}
-	runIDs := make([]string, 0)
-	for _, run := range model["runs"].([]map[string]any) {
-		runIDs = append(runIDs, run["id"].(uuid.UUID).String())
-	}
-	artifactIDStrings := make([]string, 0, len(artifactIDs))
-	for _, artifactID := range artifactIDs {
-		artifactIDStrings = append(artifactIDStrings, artifactID.String())
-	}
-	queries := map[string]struct {
-		query    string
-		argument any
-	}{
-		"entry_revisions": {"select count(*) from entry_revisions where title = $1", title},
-		"model_revisions": {"select count(*) from model_revisions where title = $1", title},
-		"artifacts":       {"select count(*) from artifacts where id::text = any($1)", pq.Array(artifactIDStrings)},
-		"metrics":         {"select count(*) from metrics where id::text = any($1)", pq.Array(metricIDs)},
-		"runs":            {"select count(*) from runs where id::text = any($1)", pq.Array(runIDs)},
-	}
-	counts := make(map[string]int, len(queries))
-	for table, query := range queries {
-		var count int
-		require.NoError(t, connection.QueryRow(query.query, query.argument).Scan(&count))
-		counts[table] = count
-	}
-	return counts
+	require.Equal(t, expectedStatus, response.StatusCode)
+	var body httpapi.Error
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+	return body.Errors
 }

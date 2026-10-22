@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,22 +40,3 @@ const (
 	UniProtReferenceSourceStructRef UniProtReferenceSource = "struct_ref"
 	UniProtReferenceSourceAlignment UniProtReferenceSource = "alignment"
 )
-
-// RequiresRelease reports whether mappings from this source must carry the UniProt release they were made against.
-func (source UniProtReferenceSource) RequiresRelease() (bool, error) {
-	switch source {
-	case UniProtReferenceSourceSIFTS, UniProtReferenceSourceAlignment:
-		return true, nil
-	case UniProtReferenceSourceStructRef:
-		return false, nil
-	default:
-		return false, fmt.Errorf("unknown UniProt mapping source: %s", source)
-	}
-}
-
-func (source UniProtReferenceSource) Validate() error {
-	if _, err := source.RequiresRelease(); err != nil {
-		return err
-	}
-	return nil
-}

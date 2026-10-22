@@ -63,11 +63,11 @@ func NewDataSyncJob(
 	if siftsClient == nil {
 		return nil, errors.New("SIFTS client is nil")
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 	if err := validationMode.Validate(); err != nil {
 		return nil, fmt.Errorf("validation mode: %w", err)
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	now := func() time.Time { return time.Now().UTC() }
@@ -75,8 +75,8 @@ func NewDataSyncJob(
 		database: database,
 		logger:   logger,
 		strategies: []dataSyncStrategy{
-			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, validationMode, now),
-			newModelSyncStrategy(database, rcsbClient, logger, validationMode, now),
+			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now, validationMode),
+			newModelSyncStrategy(database, rcsbClient, logger, now, validationMode),
 		},
 		now:             now,
 		nextScheduledAt: nextDataSyncScheduledAt,
@@ -389,11 +389,7 @@ func (j *entrySyncStrategy) buildPolymerEntities(
 		if err != nil {
 			return nil, fmt.Errorf("get polymer entity %s_%s: %w", pdbID, entityID, err)
 		}
-		needsRelease, err := needsUniProtRelease(details)
-		if err != nil {
-			return nil, fmt.Errorf("map polymer entity %s_%s: %w", pdbID, entityID, err)
-		}
-		if !uniProtReleaseLoaded && needsRelease {
+		if !uniProtReleaseLoaded && hasSIFTSMapping(details) {
 			release, err := j.siftsClient.GetUniProtRelease(ctx, pdbID)
 			if err != nil {
 				return nil, fmt.Errorf("get UniProt release for %s: %w", pdbID, err)
@@ -402,10 +398,7 @@ func (j *entrySyncStrategy) buildPolymerEntities(
 			uniProtReleaseLoaded = true
 		}
 
-		metadata, err := polymerEntityMetadataFromRCSB(details, entityID, uniProtRelease)
-		if err != nil {
-			return nil, fmt.Errorf("map polymer entity %s_%s: %w", pdbID, entityID, err)
-		}
+		metadata := polymerEntityMetadataFromRCSB(details, entityID, uniProtRelease)
 		proteinSequence, err := proteinSequenceForPolymerEntity(
 			pdbID,
 			stringValue(metadata.LabelEntityID),
@@ -733,34 +726,21 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// needsUniProtRelease reports whether any UniProt mapping of the entity comes from a source whose
-// mappings must carry a UniProt release. The release comes from SIFTS for both SIFTS and RCSB alignment mappings.
-func needsUniProtRelease(details rcsb.PolymerEntityDetails) (bool, error) {
+func hasSIFTSMapping(details rcsb.PolymerEntityDetails) bool {
 	for _, reference := range details.Identifiers.ReferenceSequenceIdentifiers {
-		if !strings.EqualFold(strings.TrimSpace(reference.DatabaseName), "UniProt") ||
-			strings.TrimSpace(reference.DatabaseAccession) == "" {
-			continue
-		}
-		source, err := uniProtReferenceSource(reference.ProvenanceSource)
-		if err != nil {
-			return false, fmt.Errorf("map UniProt reference %s: %w", strings.TrimSpace(reference.DatabaseAccession), err)
-		}
-		requiresRelease, err := source.RequiresRelease()
-		if err != nil {
-			return false, fmt.Errorf("map UniProt reference %s: %w", strings.TrimSpace(reference.DatabaseAccession), err)
-		}
-		if requiresRelease {
-			return true, nil
+		if strings.EqualFold(strings.TrimSpace(reference.DatabaseName), "UniProt") &&
+			strings.EqualFold(strings.TrimSpace(reference.ProvenanceSource), "SIFTS") {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func polymerEntityMetadataFromRCSB(
 	details rcsb.PolymerEntityDetails,
 	fallbackEntityID string,
 	uniProtRelease *string,
-) (models.PolymerEntityMetadata, error) {
+) models.PolymerEntityMetadata {
 	entityID := strings.TrimSpace(details.Identifiers.EntityID)
 	if entityID == "" {
 		entityID = strings.TrimSpace(fallbackEntityID)
@@ -793,19 +773,15 @@ func polymerEntityMetadataFromRCSB(
 		if accession == "" {
 			continue
 		}
-		source, err := uniProtReferenceSource(reference.ProvenanceSource)
-		if err != nil {
-			return models.PolymerEntityMetadata{}, fmt.Errorf("map UniProt reference %s: %w", accession, err)
+		source, ok := uniProtReferenceSource(reference.ProvenanceSource)
+		if !ok {
+			continue
 		}
 		mapping := models.PolymerEntityUniProtReference{
 			Accession: accession,
 			Source:    source,
 		}
-		requiresRelease, err := source.RequiresRelease()
-		if err != nil {
-			return models.PolymerEntityMetadata{}, fmt.Errorf("map UniProt reference %s: %w", accession, err)
-		}
-		if requiresRelease {
+		if source == models.UniProtReferenceSourceSIFTS {
 			mapping.UniProtRelease = uniProtRelease
 		}
 		uniProtMappings = append(uniProtMappings, mapping)
@@ -824,20 +800,17 @@ func polymerEntityMetadataFromRCSB(
 		Construct:       optionalString(details.Entity.Fragment),
 		Mutations:       optionalString(details.Entity.Mutation),
 		UniProtMappings: uniProtMappings,
-	}, nil
+	}
 }
 
-// uniProtReferenceSource maps an RCSB reference_sequence_identifiers provenance_source to a mapping source.
-func uniProtReferenceSource(provenanceSource string) (models.UniProtReferenceSource, error) {
-	switch strings.ToUpper(strings.TrimSpace(provenanceSource)) {
-	case "SIFTS":
-		return models.UniProtReferenceSourceSIFTS, nil
-	case "PDB":
-		return models.UniProtReferenceSourceStructRef, nil
-	case "RCSB":
-		return models.UniProtReferenceSourceAlignment, nil
+func uniProtReferenceSource(value string) (models.UniProtReferenceSource, bool) {
+	switch {
+	case strings.EqualFold(strings.TrimSpace(value), "SIFTS"):
+		return models.UniProtReferenceSourceSIFTS, true
+	case strings.EqualFold(strings.TrimSpace(value), "PDB"):
+		return models.UniProtReferenceSourceStructRef, true
 	default:
-		return "", fmt.Errorf("unknown RCSB provenance source: %s", provenanceSource)
+		return "", false
 	}
 }
 

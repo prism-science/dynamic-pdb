@@ -34,7 +34,9 @@ type Server struct {
 	downloads    analytics.Tracker
 	// publicBaseURL is the API's external base (for example https://dynamicpdb.com/api),
 	// used to build absolute links.next URLs.
-	publicBaseURL  string
+	publicBaseURL string
+	// validationMode decides whether create requests that break schema rules are
+	// rejected or only logged.
 	validationMode validation.Mode
 }
 
@@ -247,6 +249,21 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 			},
 		},
 	})
+}
+
+// writeFieldErrors writes every schema violation of a request as one 422 response.
+func writeFieldErrors(w http.ResponseWriter, fieldErrors []validation.FieldError) {
+	status := strconv.Itoa(http.StatusUnprocessableEntity)
+	errorObjects := make([]ErrorObject, 0, len(fieldErrors))
+	for _, fieldError := range fieldErrors {
+		errorObjects = append(errorObjects, ErrorObject{
+			Status: status,
+			Code:   ptr(string(fieldError.Code)),
+			Detail: ptr(fieldError.Detail),
+			Source: &ErrorSource{Pointer: string(fieldError.Pointer)},
+		})
+	}
+	writeJSON(w, http.StatusUnprocessableEntity, Error{Errors: errorObjects})
 }
 
 // RouteErrorHandler writes parameter binding errors from the generated router.

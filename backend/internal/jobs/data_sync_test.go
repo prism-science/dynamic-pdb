@@ -22,7 +22,7 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	siftsClient := sifts.NewClient()
 
 	// when
-	job, err := NewDataSyncJob(database, rcsbClient, siftsClient, nil, validation.ModeEnforce)
+	job, err := NewDataSyncJob(database, rcsbClient, siftsClient, nil, validation.ModeLogOnly)
 
 	// then
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeEnforce)
+	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)
@@ -53,7 +53,7 @@ func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil, validation.ModeEnforce)
+	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)
@@ -63,7 +63,7 @@ func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_sifts_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil, validation.ModeEnforce)
+	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil, validation.ModeLogOnly)
 
 	// then
 	require.Error(t, err)
@@ -392,7 +392,7 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 			ReferenceSequenceIdentifiers: []rcsb.ReferenceSequenceIdentifier{
 				{DatabaseAccession: " P0DTC2 ", DatabaseName: "UniProt", ProvenanceSource: "SIFTS"},
 				{DatabaseAccession: " Q9BYF1 ", DatabaseName: "UniProt", ProvenanceSource: "PDB"},
-				{DatabaseAccession: " P12345 ", DatabaseName: "UniProt", ProvenanceSource: "RCSB"},
+				{DatabaseAccession: "ignored", DatabaseName: "UniProt", ProvenanceSource: "RCSB"},
 				{DatabaseAccession: "ignored", DatabaseName: "GenBank", ProvenanceSource: "PDB"},
 			},
 		},
@@ -403,10 +403,9 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 	}
 
 	// when
-	metadata, err := polymerEntityMetadataFromRCSB(details, "fallback", &release)
+	metadata := polymerEntityMetadataFromRCSB(details, "fallback", &release)
 
 	// then
-	require.NoError(t, err)
 	assert.Equal(t, optionalString("1"), metadata.LabelEntityID)
 	assert.Equal(t, optionalString("Spike glycoprotein"), metadata.Description)
 	assert.Equal(t, optionalString("receptor-binding domain"), metadata.Construct)
@@ -417,106 +416,8 @@ func Test_should_map_supported_rcsb_polymer_entity_fields(t *testing.T) {
 	}, metadata.SourceOrganisms)
 	assert.Equal(t, []models.PolymerEntityUniProtReference{
 		{Accession: "P0DTC2", Source: models.UniProtReferenceSourceSIFTS, UniProtRelease: &release},
-		{Accession: "P12345", Source: models.UniProtReferenceSourceAlignment, UniProtRelease: &release},
 		{Accession: "Q9BYF1", Source: models.UniProtReferenceSourceStructRef},
 	}, metadata.UniProtMappings)
-}
-
-func Test_should_fail_polymer_entity_mapping_when_rcsb_provenance_source_is_unknown(t *testing.T) {
-	// given
-	details := rcsb.PolymerEntityDetails{
-		Identifiers: rcsb.PolymerEntityContainerIdentifiers{
-			EntityID: "1",
-			ReferenceSequenceIdentifiers: []rcsb.ReferenceSequenceIdentifier{
-				{DatabaseAccession: "P0DTC2", DatabaseName: "UniProt", ProvenanceSource: "UNIPROT_BLAST"},
-			},
-		},
-	}
-
-	// when
-	_, err := polymerEntityMetadataFromRCSB(details, "1", nil)
-
-	// then
-	require.ErrorContains(t, err, "unknown RCSB provenance source: UNIPROT_BLAST")
-}
-
-func Test_should_need_uniprot_release_when_entity_has_rcsb_alignment_mapping(t *testing.T) {
-	// given
-	details := rcsb.PolymerEntityDetails{
-		Identifiers: rcsb.PolymerEntityContainerIdentifiers{
-			ReferenceSequenceIdentifiers: []rcsb.ReferenceSequenceIdentifier{
-				{DatabaseAccession: "P0DTC2", DatabaseName: "UniProt", ProvenanceSource: "RCSB"},
-			},
-		},
-	}
-
-	// when
-	needed, err := needsUniProtRelease(details)
-
-	// then
-	require.NoError(t, err)
-	assert.True(t, needed)
-}
-
-func Test_should_reject_entry_update_when_rcsb_data_violates_schema(t *testing.T) {
-	// given
-	desiredRevision := models.EntryRevision{Title: new("Spike")}
-	desiredPolymerEntities := []models.PolymerEntity{{
-		Metadata: models.PolymerEntityMetadata{
-			UniProtMappings: []models.PolymerEntityUniProtReference{
-				{Accession: "P0DTC2", Source: models.UniProtReferenceSourceSIFTS},
-			},
-		},
-	}}
-
-	// when
-	fieldErrors := validateEntryUpdate(desiredRevision, desiredPolymerEntities)
-
-	// then
-	require.Len(t, fieldErrors, 2)
-	assert.Equal(t, "/entry/method", fieldErrors[0].Pointer)
-	assert.Equal(t, "/polymer_entities/0/uniprot_mappings/0/unp_release", fieldErrors[1].Pointer)
-}
-
-func Test_should_accept_entry_update_when_rcsb_data_matches_schema(t *testing.T) {
-	// given
-	method := models.StructureMethodXRayCrystallography
-	desiredRevision := models.EntryRevision{
-		Title:    new("Spike"),
-		Metadata: models.EntryMetadata{Method: &method, Resolution: new(2.1)},
-	}
-
-	// when
-	fieldErrors := validateEntryUpdate(desiredRevision, nil)
-
-	// then
-	assert.Empty(t, fieldErrors)
-}
-
-func Test_should_accept_model_update_when_rcsb_metrics_match_schema(t *testing.T) {
-	// given
-	metrics := modelMetricsFromRCSB(rcsb.EntryDetails{
-		Refinements:        []rcsb.EntryRefinement{{RFree: new(0.21), RWork: new(0.18)}},
-		ValidationGeometry: []rcsb.EntryValidationGeometry{{Clashscore: new(4.8), RamachandranOutliersPercent: new(0.1)}},
-	})
-	for index := range metrics {
-		metrics[index].ID = uuid.New()
-	}
-
-	// when
-	fieldErrors := validateModelUpdate(metrics)
-
-	// then
-	assert.Empty(t, fieldErrors)
-}
-
-func Test_should_reject_data_sync_job_when_validation_mode_unknown(t *testing.T) {
-	// when
-	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), sifts.NewClient(), nil, "warn")
-
-	// then
-	require.ErrorContains(t, err, "unknown validation mode: warn")
-	assert.Nil(t, job)
 }
 
 func Test_should_map_rcsb_instance_metrics_to_residue_data(t *testing.T) {

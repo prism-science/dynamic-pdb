@@ -568,16 +568,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "422":
-          description: >
-            The request violates Dynamic PDB Schema v0.2.0. Every violation is reported as a
-            separate error object whose source.pointer locates the offending request field.
+        "401":
+          description: Missing or invalid bearer token.
           content:
             application/vnd.api+json:
               schema:
@@ -736,16 +734,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "422":
-          description: >
-            The request violates Dynamic PDB Schema v0.2.0. Every violation is reported as a
-            separate error object whose source.pointer locates the offending request field.
+        "401":
+          description: Missing or invalid bearer token.
           content:
             application/vnd.api+json:
               schema:
@@ -1175,16 +1171,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "422":
-          description: >
-            The request violates Dynamic PDB Schema v0.2.0. Every violation is reported as a
-            separate error object whose source.pointer locates the offending request field.
+        "401":
+          description: Missing or invalid bearer token.
           content:
             application/vnd.api+json:
               schema:
@@ -1416,16 +1410,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid bearer token.
+        "422":
+          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
           content:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "422":
-          description: >
-            The request violates Dynamic PDB Schema v0.2.0. Every violation is reported as a
-            separate error object whose source.pointer locates the offending request field.
+        "401":
+          description: Missing or invalid bearer token.
           content:
             application/vnd.api+json:
               schema:
@@ -1989,10 +1981,11 @@ components:
 
     ErrorSource:
       type: object
+      required: [pointer]
       properties:
         pointer:
           type: string
-          description: JSON Pointer (RFC 6901) to the request body field that caused the error.
+          description: RFC 6901 JSON pointer to the request field the error is about, for example /model/metrics/0/key.
 
     ProbeMeta:
       type: object
@@ -2841,10 +2834,9 @@ components:
           type: string
         source:
           type: string
-          enum: [sifts, struct_ref, alignment]
+          enum: [sifts, struct_ref]
         unp_release:
           type: string
-          description: UniProt release the mapping was made against; present for sifts and alignment mappings.
 
     EntryRelationships:
       type: object
@@ -3013,7 +3005,7 @@ components:
 
     CreateArtifactRequest:
       type: object
-      required: [id, name, level, type]
+      required: [id, name, level]
       properties:
         id:
           type: string
@@ -3024,29 +3016,25 @@ components:
         level:
           $ref: "#/components/schemas/ArtifactLevel"
         type:
-          $ref: "#/components/schemas/ArtifactType"
+          allOf:
+            - $ref: "#/components/schemas/ArtifactType"
+          default: other
         uri:
           type: string
           nullable: true
         sha256:
           type: string
           nullable: true
-          pattern: "^[0-9a-f]{64}$"
-          description: Lowercase hex SHA-256 of the file contents.
         format:
           type: string
           nullable: true
-          pattern: "^[^A-Z]*$"
-          description: Lowercase file format, for example cif, pdb, mtz or fasta. The vocabulary is open.
         size_bytes:
           type: integer
           format: int64
           nullable: true
-          minimum: 0
         metadata:
           type: object
           additionalProperties: true
-          description: Free-form metadata. Keys starting with "__" are reserved and rejected.
 
     ArtifactAttributes:
       type: object
@@ -3201,17 +3189,12 @@ components:
           type: string
           format: uuid
         key:
-          $ref: "#/components/schemas/MetricKey"
+          type: string
+          minLength: 1
         value:
           type: number
           format: double
           x-go-type: "*float64"
-
-    MetricKey:
-      type: string
-      description: Metric keys allowed by Dynamic PDB Schema v0.2.0. A model revision has at most one metric per key.
-      enum:
-        [r_work, r_free, cc, rscc, clashscore, ramachandran_outliers, side_chain_outliers, molprobity_score, wilson_b, rmsf]
 
     Metric:
       type: object

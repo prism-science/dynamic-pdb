@@ -16,18 +16,12 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Auth       auth.Config      `mapstructure:"auth"`
-	DB         db.Config        `mapstructure:"db"`
-	CDN        cdn.Config       `mapstructure:"cdn"`
-	Analytics  analytics.Config `mapstructure:"analytics"`
-	Validation ValidationConfig `mapstructure:"validation"`
-}
-
-// ValidationConfig controls schema validation of writes. Mode log_only logs violations instead of
-// rejecting them and exists only for rolling the schema out.
-type ValidationConfig struct {
-	Mode validation.Mode `mapstructure:"mode"`
+	Server     ServerConfig      `mapstructure:"server"`
+	Auth       auth.Config       `mapstructure:"auth"`
+	DB         db.Config         `mapstructure:"db"`
+	CDN        cdn.Config        `mapstructure:"cdn"`
+	Analytics  analytics.Config  `mapstructure:"analytics"`
+	Validation validation.Config `mapstructure:"validation"`
 }
 
 type ServerConfig struct {
@@ -56,7 +50,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.AutomaticEnv()
 	v.SetDefault("server::rate_limit::requests", defaultRateLimitRequests)
 	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
-	v.SetDefault("validation::mode", string(validation.ModeEnforce))
+	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

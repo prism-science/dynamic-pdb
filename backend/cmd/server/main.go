@@ -78,14 +78,9 @@ func run() int {
 		slog.Error("file CDN init failed", "err", err)
 		return 1
 	}
+	slog.Info("schema validation configured", "mode", cfg.Validation.Mode)
 	srv := httpapi.NewServer(
-		githubClient,
-		fileCDN,
-		cfg.Auth,
-		jwt,
-		database,
-		analytics.New(cfg.Analytics),
-		cfg.Server.PublicBaseURL,
+		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
 		cfg.Validation.Mode,
 	)
 

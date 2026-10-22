@@ -39,11 +39,13 @@ const (
 )
 
 var (
-	testServer   *httptest.Server
-	testDatabase *db.DB
-	githubClient *MockGitHubClient
-	s3Stub       *e2es3.StubServer
-	adminToken   string
+	testServer *httptest.Server
+	// logOnlyTestServer shares the database with testServer but only logs schema violations.
+	logOnlyTestServer *httptest.Server
+	testDatabase      *db.DB
+	githubClient      *MockGitHubClient
+	s3Stub            *e2es3.StubServer
+	adminToken        string
 )
 
 type MockGitHubClient struct {
@@ -142,32 +144,30 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
-	server := httpapi.NewServer(
-		githubClient,
-		fileCDN,
-		authConfig,
-		jwt,
-		testDatabase,
-		analytics.New(analytics.Config{}),
-		testPublicBaseURL,
-		validation.ModeEnforce,
-	)
-
-	router := chi.NewRouter()
-	router.Use(corsMiddleware())
-	router.Use(httpapi.MediaTypeMiddleware())
-	httpapi.HandlerWithOptions(server, httpapi.ChiServerOptions{
-		BaseRouter:       router,
-		ErrorHandlerFunc: httpapi.RouteErrorHandler,
-		Middlewares: []httpapi.MiddlewareFunc{
-			httpapi.AuthMiddleware(jwt, testDatabase),
-		},
-	})
-	testServer = httptest.NewServer(router)
+	newTestRouter := func(validationMode validation.Mode) http.Handler {
+		server := httpapi.NewServer(
+			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
+			validationMode,
+		)
+		router := chi.NewRouter()
+		router.Use(corsMiddleware())
+		router.Use(httpapi.MediaTypeMiddleware())
+		httpapi.HandlerWithOptions(server, httpapi.ChiServerOptions{
+			BaseRouter:       router,
+			ErrorHandlerFunc: httpapi.RouteErrorHandler,
+			Middlewares: []httpapi.MiddlewareFunc{
+				httpapi.AuthMiddleware(jwt, testDatabase),
+			},
+		})
+		return router
+	}
+	testServer = httptest.NewServer(newTestRouter(validation.ModeEnforce))
+	logOnlyTestServer = httptest.NewServer(newTestRouter(validation.ModeLogOnly))
 
 	code := m.Run()
 
 	testServer.Close()
+	logOnlyTestServer.Close()
 	s3Stub.Close()
 	if err := testDatabase.Close(); err != nil {
 		log.Printf("e2etest: close database: %v", err)

@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,12 +27,3 @@ const (
 	RunArtifactDirectionInput  RunArtifactDirection = "input"
 	RunArtifactDirectionOutput RunArtifactDirection = "output"
 )
-
-func (direction RunArtifactDirection) Validate() error {
-	switch direction {
-	case RunArtifactDirectionInput, RunArtifactDirectionOutput:
-		return nil
-	default:
-		return fmt.Errorf("unknown run artifact direction: %s", direction)
-	}
-}

@@ -21,23 +21,23 @@ type modelSyncStrategy struct {
 	database       *db.DB
 	rcsbClient     *rcsb.RemoteClient
 	logger         *slog.Logger
-	validationMode validation.Mode
 	now            func() time.Time
+	validationMode validation.Mode
 }
 
 func newModelSyncStrategy(
 	database *db.DB,
 	rcsbClient *rcsb.RemoteClient,
 	logger *slog.Logger,
-	validationMode validation.Mode,
 	now func() time.Time,
+	validationMode validation.Mode,
 ) *modelSyncStrategy {
 	return &modelSyncStrategy{
 		database:       database,
 		rcsbClient:     rcsbClient,
 		logger:         logger,
-		validationMode: validationMode,
 		now:            now,
+		validationMode: validationMode,
 	}
 }
 
@@ -92,16 +92,8 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 	if !modelRevisionChanged && !metricsChanged {
 		return nil
 	}
-	for index := range desiredMetrics {
-		desiredMetrics[index].ID = uuid.New()
-	}
-	if err := s.validationMode.Apply(
-		ctx,
-		s.logger,
-		validateModelUpdate(desiredMetrics),
-		"entry_id", entryID,
-		"model_id", modelID,
-		"pdb_id", pdbID,
+	if err := s.validationMode.Check(
+		ctx, s.logger, "data sync model "+modelID, modelUpdateErrors(desiredRevision, desiredMetrics),
 	); err != nil {
 		return fmt.Errorf("validate model update: %w", err)
 	}
@@ -305,6 +297,7 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 		}
 	}
 	for _, desiredMetric := range desiredMetrics {
+		desiredMetric.ID = uuid.New()
 		desiredMetric.CreatedAt = createdAt
 		createdMetric, err := s.database.Metrics.Create(ctx, desiredMetric)
 		if err != nil {
@@ -443,10 +436,9 @@ func isRCSBModelMetric(key models.MetricKey) bool {
 	}
 }
 
-func validateModelUpdate(desiredMetrics []models.Metric) []validation.FieldError {
-	metrics := make([]validation.Metric, 0, len(desiredMetrics))
-	for _, metric := range desiredMetrics {
-		metrics = append(metrics, validation.Metric{ID: metric.ID, Key: metric.Key, Value: new(metric.Value)})
-	}
-	return validation.ValidateModelRevisionChange(validation.ModelChange{Metrics: validation.Present(&metrics)})
+// modelUpdateErrors checks the values the sync takes from RCSB with the rules that
+// apply to API submissions. Pointers address the model revision.
+func modelUpdateErrors(revision models.ModelRevision, metrics []models.Metric) []validation.FieldError {
+	fieldErrors := validation.ModelMetadata(validation.Root.Field("metadata"), revision.Metadata)
+	return append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
 }
