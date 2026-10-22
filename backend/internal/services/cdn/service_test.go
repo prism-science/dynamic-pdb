@@ -253,6 +253,11 @@ type bucketStub struct {
 	presignedKey  string
 	presignedSize int64
 
+	head      s3.ObjectHead
+	readErr   error
+	readKey   string
+	readLimit int64
+
 	completedParts  []s3.CompletedPart
 	abortedKey      string
 	abortedUploadID string
@@ -279,4 +284,101 @@ func (b *bucketStub) AbortMultipartUpload(_ context.Context, key, uploadID strin
 	return b.abortErr
 }
 
+func (b *bucketStub) ReadObjectHead(_ context.Context, key string, limit int64) (s3.ObjectHead, error) {
+	b.readKey = key
+	b.readLimit = limit
+	return b.head, b.readErr
+}
+
 var _ s3.Bucket = (*bucketStub)(nil)
+
+func artifactReadConfig() Config {
+	return Config{
+		S3: s3.BucketConfig{
+			Endpoint:          "http://localhost:9000",
+			Region:            "us-east-1",
+			Bucket:            "dynamic-pdb",
+			UploadMaxFileSize: 1 << 30,
+		},
+	}
+}
+
+func Test_should_read_head_by_key_when_artifact_uri_is_bucket_url(t *testing.T) {
+	// given
+	bucket := &bucketStub{head: s3.ObjectHead{Data: []byte("data_X"), TotalSize: 100}}
+	service, err := NewService(bucket, artifactReadConfig())
+	require.NoError(t, err)
+
+	// when
+	head, err := service.ReadArtifactHead(
+		context.Background(), "artifact-1",
+		"http://localhost:9000/dynamic-pdb/entry/models/m1/artifacts/artifact-1/model.cif", 4096,
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry/models/m1/artifacts/artifact-1/model.cif", bucket.readKey)
+	assert.Equal(t, int64(4096), bucket.readLimit)
+	assert.Equal(t, []byte("data_X"), head.Data)
+	assert.Equal(t, int64(100), head.TotalSize)
+}
+
+func Test_should_read_head_by_key_when_artifact_uri_is_cloudfront_url(t *testing.T) {
+	// given
+	bucket := &bucketStub{head: s3.ObjectHead{Data: []byte("x"), TotalSize: 1}}
+	config := artifactReadConfig()
+	config.CloudFront.BaseURL = "https://files.dynamicpdb.com"
+	service, err := NewService(bucket, config)
+	require.NoError(t, err)
+
+	// when
+	_, err = service.ReadArtifactHead(
+		context.Background(), "artifact-1",
+		"https://files.dynamicpdb.com/entry/artifacts/artifact-1/model.cif", 10,
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "entry/artifacts/artifact-1/model.cif", bucket.readKey)
+}
+
+func Test_should_reject_object_url_when_it_is_outside_bucket_or_artifact_folder(t *testing.T) {
+	tests := map[string]string{
+		"other host":            "https://evil.example/dynamic-pdb/entry/artifacts/artifact-1/model.cif",
+		"other bucket":          "http://localhost:9000/other/entry/artifacts/artifact-1/model.cif",
+		"other artifact folder": "http://localhost:9000/dynamic-pdb/entry/artifacts/artifact-2/model.cif",
+		"query string":          "http://localhost:9000/dynamic-pdb/entry/artifacts/artifact-1/model.cif?x=1",
+		"not a url":             "entry/artifacts/artifact-1/model.cif",
+	}
+	for name, objectURL := range tests {
+		t.Run(name, func(t *testing.T) {
+			// given
+			bucket := &bucketStub{}
+			service, err := NewService(bucket, artifactReadConfig())
+			require.NoError(t, err)
+
+			// when
+			_, err = service.ReadArtifactHead(context.Background(), "artifact-1", objectURL, 10)
+
+			// then
+			require.ErrorIs(t, err, ErrInvalidObjectURL)
+			assert.Empty(t, bucket.readKey)
+		})
+	}
+}
+
+func Test_should_map_missing_object_when_bucket_reports_not_found(t *testing.T) {
+	// given
+	bucket := &bucketStub{readErr: s3.ErrObjectNotFound}
+	service, err := NewService(bucket, artifactReadConfig())
+	require.NoError(t, err)
+
+	// when
+	_, err = service.ReadArtifactHead(
+		context.Background(), "artifact-1",
+		"http://localhost:9000/dynamic-pdb/entry/artifacts/artifact-1/model.cif", 10,
+	)
+
+	// then
+	require.ErrorIs(t, err, ErrObjectNotFound)
+}

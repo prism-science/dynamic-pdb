@@ -383,3 +383,67 @@ test("a row that already fits is left alone", () => {
   };
   assert.equal(collapseWideRows(lineage), lineage);
 });
+
+// Rows are taken from archive entry 3CLN (calmodulin, four calcium ions).
+const MMCIF_WITH_CALCIUM = (metalcRows) =>
+  [
+    "data_3CLN",
+    "#",
+    ...(metalcRows
+      ? [
+          "loop_",
+          "_struct_conn.id",
+          "_struct_conn.conn_type_id",
+          "_struct_conn.ptnr1_label_comp_id",
+          "_struct_conn.ptnr2_label_comp_id",
+          "metalc1 metalc ASP CA",
+          "metalc2 metalc CA HOH",
+          "#",
+        ]
+      : []),
+    "loop_",
+    "_atom_site.group_PDB",
+    "_atom_site.type_symbol",
+    "_atom_site.label_comp_id",
+    "_atom_site.auth_asym_id",
+    "_atom_site.auth_seq_id",
+    "_atom_site.label_alt_id",
+    "ATOM   N ASP A 20 .",
+    "HETATM CA CA A 149 .",
+    "HETATM ZN ZN A 150 .",
+    "HETATM S SO4 A 151 .",
+    "HETATM O HOH A 501 .",
+    "#",
+  ].join("\n");
+
+test("a metal with a metalc row is kept as a cofactor and nothing is dropped but solvent", () => {
+  const facts = parseStructureFacts(MMCIF_WITH_CALCIUM(true), "mmcif");
+
+  assert.deepEqual(facts.metadata.cofactors, ["CA"]);
+  // The zinc has no metalc row in a file that has some: kept, flagged.
+  assert.deepEqual(facts.metadata.ligands, ["ZN"]);
+  assert.deepEqual(facts.needsReview, { ligands: ["ZN"], cofactors: [] });
+});
+
+test("metals are kept and flagged when the file has no metalc rows", () => {
+  const facts = parseStructureFacts(MMCIF_WITH_CALCIUM(false), "mmcif");
+
+  assert.deepEqual(facts.metadata.cofactors, ["CA", "ZN"]);
+  assert.equal(facts.metadata.ligands, undefined);
+  assert.deepEqual(facts.needsReview, { ligands: [], cofactors: ["CA", "ZN"] });
+});
+
+test("pdb files keep catalytic metals and flag them for review", () => {
+  const text = [
+    atomLine({ serial: 1, resSeq: 1, chain: "A" }),
+    atomLine({ record: "HETATM", serial: 2, name: "ZN  ", resName: " ZN", chain: "A", resSeq: 301, element: "ZN" }),
+    atomLine({ record: "HETATM", serial: 3, name: " S  ", resName: "SO4", chain: "A", resSeq: 302, element: "S" }),
+    "END",
+  ].join("\n");
+
+  const facts = parseStructureFacts(text, "pdb");
+
+  assert.deepEqual(facts.metadata.cofactors, ["ZN"]);
+  assert.equal(facts.metadata.ligands, undefined);
+  assert.deepEqual(facts.needsReview.cofactors, ["ZN"]);
+});

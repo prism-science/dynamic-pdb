@@ -35,6 +35,16 @@ export type StructureFacts = {
     unique_protein_chains?: number;
     altloc_fraction?: number;
     ligands?: string[];
+    /** Metal ions kept as cofactors. The browser has no CCD cofactor list, so
+     *  organic cofactors such as heme stay in `ligands`; the backend sorts
+     *  them when it reads the uploaded file. */
+    cofactors?: string[];
+  };
+  /** Compounds the preview kept but is unsure about; the form shows them for a
+   *  person to confirm. Nothing is dropped on this account. */
+  needsReview: {
+    ligands: string[];
+    cofactors: string[];
   };
 };
 
@@ -42,12 +52,21 @@ export type StructureFormat = "pdb" | "mmcif";
 
 // Solvent, cryoprotectants and buffer components. Every crystal has them and
 // nobody means them when they say "the ligand", so they stay out of the list
-// while genuine hetero-compounds stay in.
-const INCIDENTAL_COMPOUNDS = new Set([
+// while genuine hetero-compounds stay in. Mirrors the `solvents` list of
+// lib/cif/cofactors.json, which the backend parser uses.
+const SOLVENT_COMPOUNDS = new Set([
   "HOH", "DOD", "WAT", "H2O",
-  "SO4", "PO4", "NO3", "CO3", "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "CIT", "TLA",
-  "GOL", "EDO", "PEG", "PG4", "PGE", "1PE", "MPD", "DMS", "IPA", "MOH", "BME",
-  "NA", "K", "MG", "CA", "CL", "BR", "IOD", "ZN", "MN", "FE", "FE2", "NI", "CU", "CD", "CO", "HG", "CS", "RB", "SR", "BA", "LI", "F",
+  "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
+  "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
+  "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD",
+]);
+
+// Single-atom metal ions. Catalytic and structural metals are real findings,
+// so they are kept; mirrors `metal_ions` of lib/cif/cofactors.json.
+const METAL_IONS = new Set([
+  "AG", "AL", "AU", "AU3", "BA", "CA", "CD", "CO", "3CO", "CR", "CS", "CU", "CU1", "CU3",
+  "EU", "EU3", "FE", "FE2", "GA", "GD", "GD3", "HG", "K", "LA", "LI", "MG", "MN", "MN3",
+  "MO", "NA", "NI", "3NI", "PB", "PT", "RB", "SR", "TB", "TL", "V", "W", "YB", "ZN",
 ]);
 
 export function detectStructureFormat(name: string): StructureFormat | null {
@@ -78,6 +97,7 @@ function parsePdb(text: string): StructureFacts {
     pdbId: null,
     metrics: {},
     metadata: {},
+    needsReview: { ligands: [], cofactors: [] },
   };
   const authorLines: string[] = [];
 
@@ -92,7 +112,7 @@ function parsePdb(text: string): StructureFacts {
 
     if (record === "ATOM  " || record === "HETATM") {
       const compound = line.slice(17, 20).trim().toUpperCase();
-      if (record === "HETATM" && INCIDENTAL_COMPOUNDS.has(compound)) {
+      if (record === "HETATM" && SOLVENT_COMPOUNDS.has(compound)) {
         continue;
       }
       // Hydrogens are not modelled at this resolution and are excluded from
@@ -188,6 +208,7 @@ function parsePdb(text: string): StructureFacts {
     chains.size,
     altLocResidues.size,
     ligands,
+    NO_METALC_ROWS,
   );
   return facts;
 }
@@ -263,6 +284,7 @@ function parseMmcif(text: string): StructureFacts {
     pdbId: null,
     metrics: {},
     metadata: {},
+    needsReview: { ligands: [], cofactors: [] },
   };
 
   facts.program = mmcifProgram(text);
@@ -311,7 +333,7 @@ function parseMmcif(text: string): StructureFacts {
       const group = loopValue(atomSite, row, "group_pdb") ?? "ATOM";
       const compound = (loopValue(atomSite, row, "label_comp_id") ?? "").toUpperCase();
       const element = (loopValue(atomSite, row, "type_symbol") ?? "").toUpperCase();
-      if (group === "HETATM" && INCIDENTAL_COMPOUNDS.has(compound)) {
+      if (group === "HETATM" && SOLVENT_COMPOUNDS.has(compound)) {
         continue;
       }
       if (element === "H" || element === "D") {
@@ -347,6 +369,7 @@ function parseMmcif(text: string): StructureFacts {
       chains.size,
       altLocResidues.size,
       ligands,
+      readMetalcLinks(text),
     );
   }
 
@@ -405,7 +428,8 @@ function applyCounts(
   residueCount: number,
   chainCount: number,
   altLocResidueCount: number,
-  ligands: Set<string>,
+  compounds: Set<string>,
+  metalcLinks: MetalcLinks,
 ): void {
   if (atomCount > 0) {
     facts.metadata.atom_count = atomCount;
@@ -419,9 +443,76 @@ function applyCounts(
   if (residueCount > 0) {
     facts.metadata.altloc_fraction = altLocResidueCount / residueCount;
   }
-  if (ligands.size > 0) {
-    facts.metadata.ligands = [...ligands].sort();
+  sortCompounds(facts, compounds, metalcLinks);
+}
+
+/** What the file's `metalc` connection rows say about metal ions. */
+type MetalcLinks = {
+  /** False when the file has no metalc rows at all (every PDB file here). */
+  hasRows: boolean;
+  /** Metal compounds joined by a metalc row to a protein residue or ligand. */
+  linked: Set<string>;
+};
+
+const NO_METALC_ROWS: MetalcLinks = { hasRows: false, linked: new Set() };
+
+/**
+ * The same rule as the backend parser: a metal ion is kept as a cofactor when a
+ * metalc row links it to the protein or a ligand; in a file with no metalc rows
+ * its metals are kept and flagged for review; in a file that has them, a metal
+ * nothing is linked to stays a ligand, flagged. Only solvents are dropped.
+ */
+function sortCompounds(
+  facts: StructureFacts,
+  compounds: Set<string>,
+  metalcLinks: MetalcLinks,
+): void {
+  const ligands: string[] = [];
+  const cofactors: string[] = [];
+  for (const compound of [...compounds].sort()) {
+    if (!METAL_IONS.has(compound)) {
+      ligands.push(compound);
+    } else if (metalcLinks.linked.has(compound)) {
+      cofactors.push(compound);
+    } else if (!metalcLinks.hasRows) {
+      cofactors.push(compound);
+      facts.needsReview.cofactors.push(compound);
+    } else {
+      ligands.push(compound);
+      facts.needsReview.ligands.push(compound);
+    }
   }
+  if (ligands.length > 0) {
+    facts.metadata.ligands = ligands;
+  }
+  if (cofactors.length > 0) {
+    facts.metadata.cofactors = cofactors;
+  }
+}
+
+function readMetalcLinks(text: string): MetalcLinks {
+  const connections = cifLoop(text, "_struct_conn");
+  if (!connections) {
+    return NO_METALC_ROWS;
+  }
+  const links: MetalcLinks = { hasRows: false, linked: new Set() };
+  for (const row of connections.rows) {
+    if ((loopValue(connections, row, "conn_type_id") ?? "").toLowerCase() !== "metalc") {
+      continue;
+    }
+    links.hasRows = true;
+    const first = (loopValue(connections, row, "ptnr1_label_comp_id") ?? "").toUpperCase();
+    const second = (loopValue(connections, row, "ptnr2_label_comp_id") ?? "").toUpperCase();
+    if (first && second) {
+      if (METAL_IONS.has(first) && !SOLVENT_COMPOUNDS.has(second)) {
+        links.linked.add(first);
+      }
+      if (METAL_IONS.has(second) && !SOLVENT_COMPOUNDS.has(first)) {
+        links.linked.add(second);
+      }
+    }
+  }
+  return links;
 }
 
 /**

@@ -1,0 +1,53 @@
+{
+  "version": "2026.10.0-draft",
+  "approved": false,
+  "description": "Draft reference list of chemical component dictionary (CCD) IDs used to sort mmCIF compounds into cofactors, metal ions, solvents and ligands. Not approved by researchers yet; see docs/cif-extraction.md.",
+  "cofactors": [
+    {"id": "HEM", "name": "protoporphyrin IX containing Fe (heme B)"},
+    {"id": "HEC", "name": "heme C"},
+    {"id": "HEA", "name": "heme A"},
+    {"id": "HEB", "name": "heme B (alternative)"},
+    {"id": "SRM", "name": "siroheme"},
+    {"id": "NAD", "name": "nicotinamide adenine dinucleotide"},
+    {"id": "NAI", "name": "NADH"},
+    {"id": "NAP", "name": "NADP+"},
+    {"id": "NDP", "name": "NADPH"},
+    {"id": "FAD", "name": "flavin adenine dinucleotide"},
+    {"id": "FDA", "name": "dihydroflavine adenine dinucleotide"},
+    {"id": "FMN", "name": "flavin mononucleotide"},
+    {"id": "PLP", "name": "pyridoxal 5'-phosphate"},
+    {"id": "PMP", "name": "pyridoxamine 5'-phosphate"},
+    {"id": "SAM", "name": "S-adenosylmethionine"},
+    {"id": "COA", "name": "coenzyme A"},
+    {"id": "PNS", "name": "4'-phosphopantetheine"},
+    {"id": "TPP", "name": "thiamine diphosphate"},
+    {"id": "TDP", "name": "thiamine diphosphate (alternative)"},
+    {"id": "B12", "name": "cobalamin"},
+    {"id": "COB", "name": "cobalamin (co-bound)"},
+    {"id": "BTN", "name": "biotin"},
+    {"id": "LPA", "name": "lipoic acid"},
+    {"id": "PQQ", "name": "pyrroloquinoline quinone"},
+    {"id": "H4B", "name": "tetrahydrobiopterin"},
+    {"id": "THF", "name": "tetrahydrofolic acid"},
+    {"id": "MGD", "name": "molybdopterin guanine dinucleotide"},
+    {"id": "MTE", "name": "molybdopterin"},
+    {"id": "F43", "name": "coenzyme F430"},
+    {"id": "RET", "name": "retinal"},
+    {"id": "CLA", "name": "chlorophyll a"},
+    {"id": "BCL", "name": "bacteriochlorophyll a"},
+    {"id": "SF4", "name": "iron-sulfur cluster Fe4S4"},
+    {"id": "FES", "name": "iron-sulfur cluster Fe2S2"},
+    {"id": "F3S", "name": "iron-sulfur cluster Fe3S4"}
+  ],
+  "metal_ions": [
+    "AG", "AL", "AU", "AU3", "BA", "CA", "CD", "CO", "3CO", "CR", "CS", "CU", "CU1", "CU3",
+    "EU", "EU3", "FE", "FE2", "GA", "GD", "GD3", "HG", "K", "LA", "LI", "MG", "MN", "MN3",
+    "MO", "NA", "NI", "3NI", "PB", "PT", "RB", "SR", "TB", "TL", "V", "W", "YB", "ZN"
+  ],
+  "solvents": [
+    "HOH", "DOD", "WAT", "H2O",
+    "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
+    "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
+    "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD"
+  ]
+}

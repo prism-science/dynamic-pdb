@@ -13,6 +13,7 @@ import (
 
 	"dynamic-pdb/cli/internal/upload/extractors"
 	"dynamic-pdb/cli/internal/upload/manifest"
+	"dynamic-pdb/lib/cif"
 )
 
 type FieldExtractor struct {
@@ -172,7 +173,7 @@ func extractPDB(text string, field string) (any, bool, error) {
 }
 
 func extractMMCIF(text string, field string) (any, bool, error) {
-	raw, ok := cifValue(text, strings.TrimSpace(field))
+	raw, ok := cif.ScalarValue(text, strings.TrimSpace(field))
 	if !ok {
 		return nil, false, nil
 	}
@@ -242,64 +243,4 @@ func parseSegment(segment string) (string, []int, error) {
 		name = name[:open] + name[closeIndex+1:]
 	}
 	return name, indexes, nil
-}
-
-func cifValue(text string, tag string) (string, bool) {
-	lines := strings.Split(text, "\n")
-	needle := strings.ToLower(tag)
-	for index, line := range lines {
-		line = strings.TrimRight(line, "\r")
-		if !strings.HasPrefix(line, "_") {
-			continue
-		}
-		tokens := cifTokens(line)
-		if len(tokens) == 0 || strings.ToLower(tokens[0]) != needle {
-			continue
-		}
-		if len(tokens) > 1 {
-			return cifCleanValue(strings.Join(tokens[1:], " "))
-		}
-		if index+1 >= len(lines) {
-			return "", false
-		}
-		next := strings.TrimRight(lines[index+1], "\r")
-		return cifCleanValue(strings.Join(cifTokens(next), " "))
-	}
-	return "", false
-}
-
-func cifTokens(line string) []string {
-	tokens := make([]string, 0)
-	for index := 0; index < len(line); {
-		if line[index] == ' ' || line[index] == '\t' {
-			index++
-			continue
-		}
-		if line[index] == '\'' || line[index] == '"' {
-			quote := line[index]
-			end := strings.IndexByte(line[index+1:], quote)
-			if end == -1 {
-				tokens = append(tokens, line[index+1:])
-				break
-			}
-			tokens = append(tokens, line[index+1:index+1+end])
-			index = index + end + 2
-			continue
-		}
-		end := index
-		for end < len(line) && line[end] != ' ' && line[end] != '\t' {
-			end++
-		}
-		tokens = append(tokens, line[index:end])
-		index = end
-	}
-	return tokens
-}
-
-func cifCleanValue(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "." || value == "?" {
-		return "", false
-	}
-	return value, true
 }

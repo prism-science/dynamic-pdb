@@ -17,6 +17,16 @@ type Service interface {
 	CreateUpload(ctx context.Context, file FileUpload) (UploadGrant, error)
 	CompleteUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortUpload(ctx context.Context, key, uploadID string) error
+	// ReadArtifactHead reads at most limit bytes from the start of the object an
+	// artifact's URI points at. The object must sit in the artifact's own upload
+	// folder, so one artifact cannot be used to read another's file.
+	ReadArtifactHead(ctx context.Context, artifactID string, objectURL string, limit int64) (ObjectHead, error)
+}
+
+// ObjectHead is the first bytes of an object and the object's full size.
+type ObjectHead struct {
+	Data      []byte
+	TotalSize int64
 }
 
 type FileUpload struct {
@@ -48,6 +58,10 @@ type CompletedPart struct {
 var (
 	ErrFileTooLarge      = errors.New("cdn: file exceeds maximum upload size")
 	ErrInvalidFileUpload = errors.New("cdn: invalid file upload")
+	// ErrObjectNotFound means the artifact URI is ours but nothing is stored there.
+	ErrObjectNotFound = errors.New("cdn: object not found")
+	// ErrInvalidObjectURL means the artifact URI is not an object this service uploaded.
+	ErrInvalidObjectURL = errors.New("cdn: invalid object URL")
 )
 
 type invalidFileUploadError struct {
@@ -85,7 +99,17 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 
 	publicBaseURL := strings.TrimSpace(cfg.CloudFront.BaseURL)
 	if publicBaseURL == "" {
-		return &service{bucket: bucket, uploadMaxFileSize: cfg.S3.UploadMaxFileSize}, nil
+		// Without CloudFront the artifact URI is the bucket URL; if the bucket is
+		// not fully configured, reads report ErrInvalidObjectURL.
+		bucketBaseURL, err := expectedBucketBaseURL(cfg.S3)
+		if err != nil {
+			bucketBaseURL = nil
+		}
+		return &service{
+			bucket:            bucket,
+			uploadMaxFileSize: cfg.S3.UploadMaxFileSize,
+			bucketBaseURL:     bucketBaseURL,
+		}, nil
 	}
 
 	parsedPublicBaseURL, err := parseBaseURL("CloudFront base URL", publicBaseURL)
@@ -333,4 +357,48 @@ func cleanPathPrefix(value string) string {
 		return ""
 	}
 	return strings.TrimSuffix(cleaned, "/")
+}
+
+func (s *service) ReadArtifactHead(ctx context.Context, artifactID string, objectURL string, limit int64) (ObjectHead, error) {
+	key, err := s.keyFromObjectURL(objectURL)
+	if err != nil {
+		return ObjectHead{}, fmt.Errorf("cdn: resolve object key: %w", err)
+	}
+	segment, err := requiredKeySegment("artifact_id", artifactID)
+	if err != nil {
+		return ObjectHead{}, fmt.Errorf("cdn: artifact id segment: %w: %w", err, ErrInvalidObjectURL)
+	}
+	if !strings.Contains("/"+key, "/artifacts/"+segment+"/") {
+		return ObjectHead{}, fmt.Errorf("cdn: object %q is not in the folder of artifact %s: %w", key, segment, ErrInvalidObjectURL)
+	}
+	head, err := s.bucket.ReadObjectHead(ctx, key, limit)
+	if errors.Is(err, s3.ErrObjectNotFound) {
+		return ObjectHead{}, fmt.Errorf("cdn: read object %q: %w", key, ErrObjectNotFound)
+	}
+	if err != nil {
+		return ObjectHead{}, fmt.Errorf("cdn: read object head: %w", err)
+	}
+	return ObjectHead{Data: head.Data, TotalSize: head.TotalSize}, nil
+}
+
+// keyFromObjectURL maps a public (CloudFront) or bucket object URL back to its S3 key.
+func (s *service) keyFromObjectURL(objectURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(objectURL))
+	if err != nil {
+		return "", fmt.Errorf("parse object URL: %w: %w", err, ErrInvalidObjectURL)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("object URL must be an absolute URL without user info, query or fragment: %w", ErrInvalidObjectURL)
+	}
+	for _, base := range []*url.URL{s.publicBaseURL, s.bucketBaseURL} {
+		if base == nil ||
+			!strings.EqualFold(parsed.Scheme, base.Scheme) ||
+			!strings.EqualFold(parsed.Host, base.Host) {
+			continue
+		}
+		if key, ok := trimPathPrefix(parsed.Path, base.Path); ok && key != "" {
+			return key, nil
+		}
+	}
+	return "", fmt.Errorf("object URL is not under the configured bucket: %w", ErrInvalidObjectURL)
 }

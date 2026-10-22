@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"net/url"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 const (
@@ -28,6 +31,17 @@ type Bucket interface {
 	PresignMultipartUpload(ctx context.Context, key string, size int64) (MultipartUploadGrant, error)
 	CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortMultipartUpload(ctx context.Context, key, uploadID string) error
+	// ReadObjectHead reads at most limit bytes from the start of an object with a ranged GET.
+	ReadObjectHead(ctx context.Context, key string, limit int64) (ObjectHead, error)
+}
+
+// ErrObjectNotFound is returned when the object does not exist.
+var ErrObjectNotFound = errors.New("s3: object not found")
+
+// ObjectHead is the first bytes of an object and the object's full size.
+type ObjectHead struct {
+	Data      []byte
+	TotalSize int64
 }
 
 type RemoteBucket struct {
@@ -264,4 +278,49 @@ func (b *RemoteBucket) objectURL(key string) (string, error) {
 		Path:   "/" + trimmedKey,
 	}
 	return parsed.String(), nil
+}
+
+func (b *RemoteBucket) ReadObjectHead(ctx context.Context, key string, limit int64) (ObjectHead, error) {
+	if strings.TrimSpace(key) == "" {
+		return ObjectHead{}, errors.New("s3: object key is required")
+	}
+	if limit <= 0 {
+		return ObjectHead{}, errors.New("s3: read limit must be greater than zero")
+	}
+	output, err := b.client.GetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(b.config.Bucket),
+		Key:    aws.String(key),
+		Range:  aws.String(fmt.Sprintf("bytes=0-%d", limit-1)),
+	})
+	if err != nil {
+		var missing *s3types.NoSuchKey
+		if errors.As(err, &missing) {
+			return ObjectHead{}, fmt.Errorf("s3: read object head %q: %w", key, ErrObjectNotFound)
+		}
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidRange" {
+			return ObjectHead{Data: []byte{}}, nil
+		}
+		return ObjectHead{}, fmt.Errorf("s3: read object head %q: %w", key, err)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(output.Body, limit))
+	closeErr := output.Body.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return ObjectHead{}, fmt.Errorf("s3: read object body %q: %w", key, err)
+	}
+	return ObjectHead{Data: data, TotalSize: objectTotalSize(aws.ToString(output.ContentRange), int64(len(data)))}, nil
+}
+
+// objectTotalSize reads the size after the slash of a Content-Range header such
+// as "bytes 0-99/1234"; without one the whole object was returned.
+func objectTotalSize(contentRange string, returned int64) int64 {
+	_, total, found := strings.Cut(contentRange, "/")
+	if !found {
+		return returned
+	}
+	size, err := strconv.ParseInt(total, 10, 64)
+	if err != nil || size < returned {
+		return returned
+	}
+	return size
 }

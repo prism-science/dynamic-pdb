@@ -36,6 +36,8 @@ tags:
     description: Your own revisions and the state review left them in.
   - name: Authentication
     description: Exchanging a GitHub authorization for a backend JWT.
+  - name: Artifacts
+    description: Reading values out of uploaded artifact files.
   - name: Archive
     description: Looking up what the PDB archive says about an entry before it is imported.
   - name: Health
@@ -214,6 +216,78 @@ paths:
                 $ref: "#/components/schemas/Error"
         "502":
           description: RCSB failed or did not answer in time.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/artifacts/{id}/extract:
+    post:
+      tags: [Artifacts]
+      operationId: extractArtifact
+      summary: Extract values from an uploaded structure file
+      description: |
+        Reads the start of the artifact's uploaded mmCIF file and returns the
+        values Dynamic PDB would store for it: atom count, modeled residues,
+        protein chains, altloc fraction, ligands, cofactors, engineered
+        mutations and the refinement program. Nothing is stored.
+
+        Only the first 4 MiB of the object is read (a ranged S3 GET). The
+        connection, entity and mutation tables sit before the coordinates in
+        archive files, so they are read in full; when the coordinates run past
+        the limit, the values that need every atom are left out and a warning
+        says so.
+
+        Every value carries `source: file:<sha256>` of the artifact. Values
+        that cannot be extracted, or fail the schema rules, come back as
+        `warnings`; the request does not fail because of them. Values the
+        parser is unsure about, such as metal ions in a file without `metalc`
+        rows, are returned with `needs_review: true`.
+
+        Allowed for the user who created the artifact and for reviewers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Artifact ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Extracted values.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ArtifactExtractionDocument"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The caller neither created the artifact nor is a reviewer.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artifact not found, or nothing is stored at its URI.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The artifact is not an uploaded mmCIF file with a sha256.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: The object could not be read from storage.
           content:
             application/vnd.api+json:
               schema:
@@ -2850,6 +2924,91 @@ components:
         code:
           type: string
           description: Validation code, for `validation` warnings.
+        detail:
+          type: string
+
+    ArtifactExtractionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ArtifactExtractionData"
+
+    ArtifactExtractionData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+          enum: [artifact_extractions]
+        id:
+          type: string
+          format: uuid
+          description: The artifact ID.
+        attributes:
+          $ref: "#/components/schemas/ArtifactExtractionAttributes"
+
+    ArtifactExtractionAttributes:
+      type: object
+      required: [source, reference_version, bytes_read, object_size, truncated, values, warnings]
+      properties:
+        source:
+          type: string
+          description: "`file:<sha256>` of the artifact; every value carries the same source."
+        reference_version:
+          type: string
+          description: Version of the cofactor reference list that sorted compounds into cofactors and ligands.
+        bytes_read:
+          type: integer
+          format: int64
+        object_size:
+          type: integer
+          format: int64
+        truncated:
+          type: boolean
+          description: True when the file is larger than the bytes read.
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractedValue"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractionWarning"
+
+    ExtractedValue:
+      type: object
+      required: [name, value, source, needs_review]
+      properties:
+        name:
+          type: string
+          description: >
+            One of `atom_count`, `modeled_residues`, `unique_protein_chains`,
+            `altloc_fraction`, `ligands`, `cofactors`, `mutations`,
+            `program_name`, `program_version`.
+        value:
+          description: >
+            A number for the counts and fraction, a string for the program, and
+            a list of compounds or mutation sets for the others.
+        source:
+          type: string
+          description: "`file:<sha256>`."
+        needs_review:
+          type: boolean
+        review_reason:
+          type: string
+
+    ExtractionWarning:
+      type: object
+      required: [detail]
+      properties:
+        field:
+          type: string
+        pointer:
+          type: string
+          description: JSON pointer into the extracted values, for schema-rule violations.
+        code:
+          type: string
         detail:
           type: string
 
