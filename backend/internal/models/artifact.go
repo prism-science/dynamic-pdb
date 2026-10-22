@@ -116,3 +116,19 @@ func normalizeProteinSequence(sequence string) string {
 	}
 	return normalized.String()
 }
+
+// ArtifactMetadata is the set of keys artifact metadata may carry. Open data goes in
+// Extensions.
+type ArtifactMetadata struct {
+	Records    []FASTARecord           `json:"records,omitempty"`
+	Source     *ArtifactMetadataSource `json:"_dynamic_pdb_source,omitempty"`
+	Extensions map[string]any          `json:"extensions,omitempty"`
+}
+
+// ArtifactMetadataSource records the external experiment a file came from.
+type ArtifactMetadataSource struct {
+	Provider     string `json:"provider"`
+	ExperimentID string `json:"experiment_id,omitempty"`
+	Path         string `json:"path,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+}

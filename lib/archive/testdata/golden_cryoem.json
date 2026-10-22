@@ -47,7 +47,8 @@
       "unmodeled_fraction": 0.24121779859484777,
       "ligands": [
         "NAG"
-      ]
+      ],
+      "cofactors": null
     },
     "IdempotencyKey": null,
     "CreatedBy": "00000000-0000-0000-0000-000000000000",

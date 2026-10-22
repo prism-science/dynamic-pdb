@@ -50,10 +50,12 @@ const (
 	ModelSourceEXT ModelSource = "ext"
 )
 
+// ModelMetadata lists are null when unknown and [] when known to be empty, so the
+// list fields have no omitempty.
 type ModelMetadata struct {
 	ExternalRefs        map[ModelSource]string `json:"external_refs,omitempty"`
 	Details             *string                `json:"details,omitempty"`
-	Authors             []string               `json:"authors,omitempty"`
+	Authors             []string               `json:"authors"`
 	Affiliation         *string                `json:"affiliation,omitempty"`
 	Purpose             *ModelPurpose          `json:"purpose,omitempty"`
 	ModelType           *StructureModelType    `json:"model_type,omitempty"`
@@ -62,9 +64,10 @@ type ModelMetadata struct {
 	UniqueProteinChains *int                   `json:"unique_protein_chains,omitempty"`
 	AltLocFraction      *float64               `json:"altloc_fraction,omitempty"`
 	UnmodeledFraction   *float64               `json:"unmodeled_fraction,omitempty"`
-	Ligands             []string               `json:"ligands,omitempty"`
-	Cofactors           []string               `json:"cofactors,omitempty"`
+	Ligands             []string               `json:"ligands"`
+	Cofactors           []string               `json:"cofactors"`
 	ResidueData         []ResidueData          `json:"residue_data,omitempty"`
+	Extensions          map[string]any         `json:"extensions,omitempty"`
 }
 
 type ResidueData struct {

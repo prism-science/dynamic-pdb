@@ -137,7 +137,7 @@ export type PolymerEntity = {
   description?: string;
   source_organisms: PolymerEntityOrganism[];
   construct?: string;
-  mutations?: string;
+  mutations?: string[];
   uniprot_mappings: PolymerEntityUniProtMapping[];
   created_at: string;
 };
@@ -589,6 +589,7 @@ export type CreateModelInput = {
 
 export type CreateEntryInput = EntryProperties & {
   title: string;
+  method: string;
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
@@ -1368,8 +1369,84 @@ function createArtifactRequest(entity: CreateEntityInput): CreateArtifactRequest
     sha256: stringOrNull(payload.sha256),
     format: artifactFormat(entity),
     size_bytes: numberOrNull(payload.size),
-    metadata,
+    metadata: artifactMetadataRequest(metadata),
   };
+}
+
+// The backend accepts only these top-level artifact metadata keys
+// (ArtifactMetadata in backend/api/openapi.yaml) and rejects any other.
+const declaredArtifactMetadataKeys = new Set([
+  "records",
+  "_dynamic_pdb_source",
+  "extensions",
+]);
+
+// Counts and fractions read out of a coordinate file that describe the model.
+const modelCompositionKeys = [
+  "atom_count",
+  "modeled_residues",
+  "unique_protein_chains",
+  "altloc_fraction",
+  "unmodeled_fraction",
+] as const;
+
+// Facts the form reads out of a coordinate file and parks on its artifact.
+// The model facts are sent on the model's metadata (modelMetadataFromEntity)
+// and the entry facts have entry fields of their own, so the artifact does
+// not carry either.
+const parsedStructureFactKeys = new Set<string>([
+  "details",
+  ...modelCompositionKeys,
+  "ligands",
+  "cofactors",
+  "method",
+  "resolution",
+  "space_group",
+]);
+
+// The backend reserves keys starting with "__" at every depth of metadata.
+const reservedMetadataKeyPrefix = "__";
+
+// artifactMetadataRequest fits artifact metadata to the keys the backend
+// declares. An Ext file's own metadata is kept under extensions.ext_metadata.
+// For other files the parsed structure facts are dropped and any other key
+// moves under extensions. Artifacts already stored with the old flat keys
+// come back through the same path when a revision re-sends them.
+function artifactMetadataRequest(metadata: JSONRecord): JSONRecord {
+  const fromExt = metadata._dynamic_pdb_source !== undefined;
+  const request: JSONRecord = {};
+  const undeclared: JSONRecord = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (declaredArtifactMetadataKeys.has(key)) {
+      request[key] = value;
+    } else if (!fromExt && parsedStructureFactKeys.has(key)) {
+      continue;
+    } else if (!key.startsWith(reservedMetadataKeyPrefix)) {
+      undeclared[key] = withoutReservedKeys(value);
+    }
+  }
+  if (Object.keys(undeclared).length === 0) {
+    return request;
+  }
+  const extensions = objectRecord(request.extensions);
+  request.extensions = fromExt
+    ? { ...extensions, ext_metadata: undeclared }
+    : { ...undeclared, ...extensions };
+  return request;
+}
+
+function withoutReservedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(withoutReservedKeys);
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !key.startsWith(reservedMetadataKeyPrefix))
+      .map(([key, item]) => [key, withoutReservedKeys(item)]),
+  );
 }
 
 function modelRevisionIdempotencyKey(
@@ -1680,13 +1757,7 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   if (details) {
     metadata.details = details;
   }
-  for (const key of [
-    "atom_count",
-    "modeled_residues",
-    "unique_protein_chains",
-    "altloc_fraction",
-    "unmodeled_fraction",
-  ] as const) {
+  for (const key of modelCompositionKeys) {
     const value = numberOrNull(parsed[key]);
     if (value !== null) {
       metadata[key] = value;

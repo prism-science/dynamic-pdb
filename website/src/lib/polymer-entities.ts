@@ -40,7 +40,11 @@ export function polymerEntityViews(
     .map((entity, index) => {
       const entityId = trimmed(entity.label_entity_id);
       const sequence = sequenceForEntity(entityId, sequences);
-      const mutationsText = trimmed(entity.mutations);
+      const storedMutations = (entity.mutations ?? [])
+        .map((mutation) => mutation.trim())
+        .filter(Boolean);
+      const mutationsText =
+        storedMutations.length > 0 ? storedMutations.join(", ") : null;
       const residues = sequence ? residueCount(sequence.sequence) : null;
       const chains = sequence ? chainsFromHeader(sequence.header) : [];
 

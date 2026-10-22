@@ -178,12 +178,16 @@ func archivePolymerEntityProposal(mapping archive.PolymerEntityMapping) ArchiveP
 			UnpRelease: uniProtMapping.UniProtRelease,
 		})
 	}
+	var mutations *[]string
+	if len(metadata.Mutations) > 0 {
+		mutations = &metadata.Mutations
+	}
 	return ArchivePolymerEntityProposal{
 		LabelEntityId:   metadata.LabelEntityID,
 		Description:     metadata.Description,
 		SourceOrganisms: organisms,
 		Construct:       metadata.Construct,
-		Mutations:       metadata.Mutations,
+		Mutations:       mutations,
 		UniprotMappings: uniProtMappings,
 		Provenance:      nonNilProvenance(mapping.Provenance),
 		Conflicts:       archiveConflicts(mapping.Conflicts),

@@ -115,7 +115,7 @@ func (s *SchemaValidationSuite) Test_should_return_every_field_error_and_write_n
 	// when
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"entry": map[string]any{"title": "entry that must not be saved", "resolution": -2},
+		"entry": map[string]any{"title": "entry that must not be saved", "method": "X-ray crystallography", "resolution": -2},
 		"model_operations": []map[string]any{{
 			"op": "add",
 			"data": map[string]any{
@@ -205,7 +205,9 @@ func (s *SchemaValidationSuite) Test_should_reject_artifact_and_write_nothing_wh
 	// when
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
-		"entry": map[string]any{"title": "entry with untyped artifact", "artifacts": []map[string]any{artifact}},
+		"entry": map[string]any{
+			"title": "entry with untyped artifact", "method": "X-ray crystallography", "artifacts": []map[string]any{artifact},
+		},
 	}, ownerToken)
 
 	// then
@@ -313,4 +315,78 @@ func decodeErrorResponseForTest(t *testing.T, response *http.Response, expectedS
 	var body httpapi.Error
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
 	return body.Errors
+}
+
+func (s *SchemaValidationSuite) Test_should_return_every_typed_metadata_error_and_write_nothing_when_metadata_is_invalid() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-typed-metadata-owner", 8421)
+	ownerID := tokenUserIDForTest(s.T(), ownerToken)
+	artifact := artifactRequest(uuid.New(), "model.cif", "L2", "cif", "s3://entry/model.cif", map[string]any{"colour": "blue"})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
+		"entry": map[string]any{
+			"title":            "entry that must not be saved",
+			"polymer_entities": []map[string]any{{"label_entity_id": "1", "mutations": []string{"C54T", "nope"}}},
+		},
+		"model_operations": []map[string]any{{
+			"op": "add",
+			"data": map[string]any{
+				"title":     "model that must not be saved",
+				"metadata":  map[string]any{"lab_note": "x", "__reserved": 1, "extensions": map[string]any{"__deep": 1}},
+				"artifacts": []map[string]any{artifact},
+				"runs":      []map[string]any{{"id": uuid.New(), "name": "refine", "metadata": map[string]any{"notes": "x"}}},
+			},
+		}},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	pointers := make([]string, 0, len(errors))
+	for _, item := range errors {
+		s.Require().NotNil(item.Source)
+		pointers = append(pointers, item.Source.Pointer)
+	}
+	s.ElementsMatch([]string{
+		"/entry/method",
+		"/entry/polymer_entities/0/mutations/1",
+		"/model_operations/0/data/metadata/lab_note",
+		"/model_operations/0/data/metadata/__reserved",
+		"/model_operations/0/data/metadata/extensions/__deep",
+		"/model_operations/0/data/artifacts/0/metadata/colour",
+		"/model_operations/0/data/runs/0/metadata/notes",
+	}, pointers)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	revisionsResponse := getWithToken(
+		s.T(), fmt.Sprintf("/v1/users/%s/entries/revisions?state=in_review", ownerID), ownerToken,
+	)
+	s.Empty(decodeEntryRevisionGroupsForTest(s.T(), revisionsResponse))
+}
+
+func (s *SchemaValidationSuite) Test_should_round_trip_extensions_and_distinct_empty_lists_when_model_metadata_is_stored() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-round-trip-owner", 8422)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "round trip entry", "method": "Neutron diffraction"},
+	})
+
+	// when
+	created := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title": "round trip model",
+			"metadata": map[string]any{
+				"ligands":    []string{},
+				"cofactors":  nil,
+				"extensions": map[string]any{"lab": map[string]any{"id": "x"}},
+			},
+		},
+	})
+
+	// then
+	model := getModelForTest(s.T(), entry.EntryId, created.ModelId)
+	s.Equal([]any{}, model.Metadata["ligands"])
+	s.Contains(model.Metadata, "cofactors")
+	s.Nil(model.Metadata["cofactors"])
+	s.Equal(map[string]any{"lab": map[string]any{"id": "x"}}, model.Metadata["extensions"])
 }

@@ -40,7 +40,7 @@ func Test_should_create_and_list_polymer_entity_when_repository_called(t *testin
 				},
 			},
 			Construct: ptr("C-terminal catalytic domain"),
-			Mutations: ptr("A123G"),
+			Mutations: []string{"A123G"},
 			UniProtMappings: []models.PolymerEntityUniProtReference{
 				{
 					Accession:      "P69441",

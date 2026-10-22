@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -30,7 +31,8 @@ func requestSubject(r *http.Request) string {
 func createEntryRequestErrors(request CreateEntryRequest) []validation.FieldError {
 	entry := validation.Root.Field("entry")
 	fieldErrors := validation.RequiredText(entry.Field("title"), &request.Entry.Title)
-	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, request.Entry)...)
+	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, request.Entry, true)...)
+	fieldErrors = append(fieldErrors, depositorPolymerEntityErrors(entry.Field("polymer_entities"), request.Entry.PolymerEntities)...)
 	fieldErrors = append(fieldErrors, artifactRequestErrors(entry.Field("artifacts"), request.Entry.Artifacts)...)
 	if request.ModelOperations != nil {
 		for index, operation := range *request.ModelOperations {
@@ -58,7 +60,47 @@ func entryRevisionChangeErrors(payload createEntryRevisionPayload) []validation.
 	if _, present := payload.EntryFields["title"]; present {
 		fieldErrors = append(fieldErrors, validation.RequiredText(entry.Field("title"), payload.Request.Entry.Title)...)
 	}
-	return append(fieldErrors, entryMetadataErrors(entry, payload.Request.Entry)...)
+	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, payload.Request.Entry, false)...)
+	if raw, present := payload.EntryFields["polymer_entities"]; present {
+		if isJSONNull(raw) {
+			return append(fieldErrors, validation.MustNotBeNull(entry.Field("polymer_entities"))...)
+		}
+		fieldErrors = append(fieldErrors,
+			depositorPolymerEntityErrors(entry.Field("polymer_entities"), payload.Request.Entry.PolymerEntities)...)
+	}
+	return fieldErrors
+}
+
+func depositorPolymerEntityErrors(at validation.Pointer, entities *DepositorPolymerEntities) []validation.FieldError {
+	return validation.DepositorPolymerEntities(at, depositorPolymerEntitiesFromRequest(entities))
+}
+
+func depositorPolymerEntitiesFromRequest(entities *DepositorPolymerEntities) []domainmodels.DepositorPolymerEntity {
+	if entities == nil {
+		return nil
+	}
+	result := make([]domainmodels.DepositorPolymerEntity, 0, len(*entities))
+	for _, entity := range *entities {
+		depositorEntity := domainmodels.DepositorPolymerEntity{
+			LabelEntityID: strings.TrimSpace(entity.LabelEntityId),
+			Construct:     trimmedStringPtr(entity.Construct),
+		}
+		if entity.Mutations != nil {
+			for _, mutation := range *entity.Mutations {
+				depositorEntity.Mutations = append(depositorEntity.Mutations, strings.TrimSpace(mutation))
+			}
+		}
+		if entity.SourceOrganisms != nil {
+			for _, organism := range *entity.SourceOrganisms {
+				depositorEntity.SourceOrganisms = append(depositorEntity.SourceOrganisms, domainmodels.PolymerEntityOrganism{
+					ScientificName: strings.TrimSpace(organism.ScientificName),
+					NCBITaxonomyID: organism.NcbiTaxonomyId,
+				})
+			}
+		}
+		result = append(result, depositorEntity)
+	}
+	return result
 }
 
 // modelRevisionChangeErrors checks only the fields the change sets; the rest are
@@ -97,7 +139,7 @@ func modelRevisionChangeErrors(payload createModelRevisionPayload) []validation.
 
 // entryMetadataErrors checks the entry metadata fields of a create or change request,
 // which sit directly on the request's entry object.
-func entryMetadataErrors(at validation.Pointer, fields any) []validation.FieldError {
+func entryMetadataErrors(at validation.Pointer, fields any, requireMethod bool) []validation.FieldError {
 	metadata, err := entryMetadataFromAPIFields(fields)
 	if err != nil {
 		return []validation.FieldError{{
@@ -106,7 +148,11 @@ func entryMetadataErrors(at validation.Pointer, fields any) []validation.FieldEr
 			Detail:  "does not match the entry fields: " + err.Error(),
 		}}
 	}
-	return validation.EntryMetadata(at, metadata)
+	fieldErrors := validation.EntryMetadata(at, metadata)
+	if requireMethod {
+		fieldErrors = append(fieldErrors, validation.NewEntryMethod(at, metadata)...)
+	}
+	return fieldErrors
 }
 
 func modelMetadataErrors(at validation.Pointer, metadata *map[string]interface{}) []validation.FieldError {
@@ -125,7 +171,7 @@ func decodeModelMetadataFields(
 	metadata map[string]interface{},
 ) (domainmodels.ModelMetadata, []validation.FieldError) {
 	var decoded domainmodels.ModelMetadata
-	var fieldErrors []validation.FieldError
+	fieldErrors := validation.ObjectKeys(at, metadata, domainmodels.ModelMetadata{})
 	for _, key := range slices.Sorted(maps.Keys(metadata)) {
 		field := map[string]interface{}{key: metadata[key]}
 		// Decoding into a scratch value first keeps a failing field out of decoded.
@@ -153,6 +199,10 @@ func artifactRequestErrors(at validation.Pointer, requests *[]CreateArtifactRequ
 	for index, request := range *requests {
 		fieldErrors = append(fieldErrors, validation.RequiredID(at.Index(index).Field("id"), request.Id)...)
 		fieldErrors = append(fieldErrors, validation.Artifact(at.Index(index), artifactFromRequest(request))...)
+		if request.Metadata != nil {
+			fieldErrors = append(fieldErrors,
+				validation.ObjectKeys(at.Index(index).Field("metadata"), *request.Metadata, domainmodels.ArtifactMetadata{})...)
+		}
 	}
 	return fieldErrors
 }
@@ -166,7 +216,7 @@ func metricRequestErrors(at validation.Pointer, requests *[]CreateMetricRequest)
 	for index, request := range *requests {
 		fieldErrors = append(fieldErrors, validation.RequiredID(at.Index(index).Field("id"), request.Id)...)
 		fieldErrors = append(fieldErrors, validation.RequiredNumber(at.Index(index).Field("value"), request.Value)...)
-		metrics = append(metrics, domainmodels.Metric{ID: request.Id, Key: metricKeyFromRequest(request.Key)})
+		metrics = append(metrics, domainmodels.Metric{ID: request.Id, Key: metricKeyFromRequest(string(request.Key))})
 	}
 	return append(fieldErrors, validation.Metrics(at, metrics)...)
 }
@@ -180,6 +230,10 @@ func runRequestErrors(at validation.Pointer, requests *[]CreateRunRequest) []val
 		runAt := at.Index(index)
 		fieldErrors = append(fieldErrors, validation.RequiredID(runAt.Field("id"), request.Id)...)
 		fieldErrors = append(fieldErrors, validation.Run(runAt, runFromRequest(request))...)
+		if request.Metadata != nil {
+			fieldErrors = append(fieldErrors,
+				validation.ObjectKeys(runAt.Field("metadata"), *request.Metadata, domainmodels.RunMetadata{})...)
+		}
 		if request.Artifacts == nil {
 			continue
 		}

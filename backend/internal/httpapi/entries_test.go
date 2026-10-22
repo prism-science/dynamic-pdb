@@ -289,3 +289,20 @@ func Test_should_reject_state_field_when_model_revision_is_created(t *testing.T)
 	// then
 	require.ErrorIs(t, err, errInvalidRequest)
 }
+
+func Test_should_encode_empty_arrays_when_polymer_entity_has_no_list_metadata(t *testing.T) {
+	// given
+	entities := []domainmodels.PolymerEntity{{ID: uuid.New()}}
+
+	// when
+	items := polymerEntitiesFromModels(entities)
+	encoded, err := json.Marshal(items[0])
+
+	// then
+	require.NoError(t, err)
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &fields))
+	assert.JSONEq(t, "[]", string(fields["mutations"]))
+	assert.JSONEq(t, "[]", string(fields["source_organisms"]))
+	assert.JSONEq(t, "[]", string(fields["uniprot_mappings"]))
+}
