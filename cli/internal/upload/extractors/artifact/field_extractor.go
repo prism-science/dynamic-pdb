@@ -69,8 +69,10 @@ func (e FieldExtractor) Extract(
 		rule = extract.PDB
 	case formatMMCIF:
 		rule = extract.MMCIF
-	default:
+	case "":
 		return nil, false, nil
+	default:
+		return nil, false, fmt.Errorf("artifact %s has format %q: only %s and %s artifacts can be read for structure fields", artifactID, format, formatPDB, formatMMCIF)
 	}
 	if rule == nil {
 		return nil, false, nil
@@ -94,6 +96,9 @@ type FieldCache struct {
 	mutex   sync.Mutex
 	entries map[string]*cacheEntry
 	seed    maphash.Seed
+	// draftWarning makes the draft-list warning appear once per cache, which
+	// lives as long as one upload run, instead of once per artifact.
+	draftWarning sync.Once
 }
 
 type cacheEntry struct {
@@ -140,7 +145,7 @@ func (c *FieldCache) key(artifact extractors.Artifact, format string) string {
 func (c *FieldCache) extraction(artifact extractors.Artifact, format string) (cif.Extraction, bool, error) {
 	entry := c.entry(artifact, format)
 	entry.once.Do(func() {
-		entry.extraction, entry.ok, entry.err = readStructure(artifact, format)
+		entry.extraction, entry.ok, entry.err = c.readStructure(artifact, format)
 	})
 	return entry.extraction, entry.ok, entry.err
 }
@@ -148,7 +153,7 @@ func (c *FieldCache) extraction(artifact extractors.Artifact, format string) (ci
 // readStructure parses an artifact once and logs what a user must know about
 // the result: draft reference lists, cut-off coordinates and compounds that
 // need review.
-func readStructure(artifact extractors.Artifact, format string) (cif.Extraction, bool, error) {
+func (c *FieldCache) readStructure(artifact extractors.Artifact, format string) (cif.Extraction, bool, error) {
 	text, truncated, _, ok, err := artifactText(artifact)
 	if err != nil || !ok {
 		return cif.Extraction{}, false, err
@@ -165,16 +170,20 @@ func readStructure(artifact extractors.Artifact, format string) (cif.Extraction,
 	if err != nil {
 		return cif.Extraction{}, false, fmt.Errorf("read %s fields: %w", format, err)
 	}
-	logExtraction(artifact, extraction)
+	c.logExtraction(artifact, extraction)
 	return extraction, true, nil
 }
 
-func logExtraction(artifact extractors.Artifact, extraction cif.Extraction) {
+func (c *FieldCache) logExtraction(artifact extractors.Artifact, extraction cif.Extraction) {
 	name := artifact.Filename
 	if name == "" {
 		name = artifact.LocalPath
 	}
 	for _, warning := range extraction.Warnings {
+		if warning == cif.DraftWarning {
+			c.draftWarning.Do(func() { slog.Warn("structure extraction warning", "warning", warning) })
+			continue
+		}
 		slog.Warn("structure extraction warning", "artifact", name, "warning", warning)
 	}
 	for _, item := range extraction.Review {

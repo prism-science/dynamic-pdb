@@ -116,6 +116,9 @@ func (s *scalarScanner) readLine() ([]byte, error) {
 	}
 	s.longLine = append(s.longLine[:0], line...)
 	for errors.Is(err, bufio.ErrBufferFull) {
+		if len(s.longLine) >= maxScanLineBytes {
+			return nil, fmt.Errorf("line is longer than %d bytes", maxScanLineBytes)
+		}
 		line, err = s.reader.ReadSlice('\n')
 		s.longLine = append(s.longLine, line...)
 	}

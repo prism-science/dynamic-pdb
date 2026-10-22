@@ -1,0 +1,57 @@
+data_PAR1
+_entry.id PAR1
+#
+loop_
+_pdbx_entity_nonpoly.entity_id
+_pdbx_entity_nonpoly.name
+_pdbx_entity_nonpoly.comp_id
+2 'ligand' LIG
+3 'zinc' ZN
+4 'sulfate' SO4
+5 'no coordinates' QQQ
+6 'heme' HEM
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+_atom_site.occupancy
+_atom_site.pdbx_PDB_model_num
+ATOM 1 C CA . ALA A 1 ? 1 A 1.00 1
+ATOM 2 C CA . ALA A 2 ? 2 A 1.00 1
+ATOM 3 C CA . ALA A 3 ? 3 A 1.00 1
+HETATM 4 C C1 . LIG B . ? 101 B 1.00 1
+HETATM 5 C C2 . LIG B . ? 101 B 1.00 1
+HETATM 6 C C1 . XYZ C . ? 102 C 1.00 1
+HETATM 7 ZN ZN . ZN D . ? 201 D 1.00 1
+HETATM 8 ZN ZN . ZN E . ? 202 E 1.00 1
+HETATM 9 S S . SO4 F . ? 301 F 1.00 1
+HETATM 10 FE FE . HEM G . ? 401 G 1.00 1
+HETATM 11 C CHA . HEM G . ? 401 G 1.00 1
+HETATM 12 O O . HOH H . ? 501 H 1.00 1
+#
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_asym_id
+_struct_conn.ptnr1_label_comp_id
+_struct_conn.ptnr1_label_seq_id
+_struct_conn.ptnr1_auth_seq_id
+_struct_conn.ptnr2_label_asym_id
+_struct_conn.ptnr2_label_comp_id
+_struct_conn.ptnr2_label_seq_id
+_struct_conn.ptnr2_auth_seq_id
+_struct_conn.pdbx_ptnr1_PDB_ins_code
+_struct_conn.pdbx_ptnr2_PDB_ins_code
+c1 metalc D ZN . 201 A ALA 2 2 ? ?
+c2 metalc E ZN . 202 H HOH . 501 ? ?
+c3 covale B LIG . 101 A ALA 3 3 ? ?
+#

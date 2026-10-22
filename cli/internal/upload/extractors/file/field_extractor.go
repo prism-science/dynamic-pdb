@@ -239,11 +239,25 @@ var (
 	pdbRFreePattern = regexp.MustCompile(`(?i)^\s*FREE R VALUE\s*:\s*([0-9.]+)`)
 )
 
+const (
+	pdbFieldRFree = "REMARK 3 FREE R VALUE"
+	pdbFieldRWork = "REMARK 3 R VALUE WORKING SET"
+)
+
 // maxPDBLineBytes bounds one line of a PDB file; the format has 80 columns.
 const maxPDBLineBytes = 1 << 20
 
 func scanPDBField(source io.Reader, field string) (any, bool, error) {
 	field = strings.TrimSpace(field)
+	var pattern *regexp.Regexp
+	switch field {
+	case pdbFieldRFree:
+		pattern = pdbRFreePattern
+	case pdbFieldRWork:
+		pattern = pdbRWorkPattern
+	default:
+		return nil, false, fmt.Errorf("unknown PDB field %q: supported fields are %q and %q", field, pdbFieldRFree, pdbFieldRWork)
+	}
 	scanner := bufio.NewScanner(source)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxPDBLineBytes)
 	for scanner.Scan() {
@@ -255,15 +269,8 @@ func scanPDBField(source io.Reader, field string) (any, bool, error) {
 		if len(line) > 11 {
 			body = line[11:]
 		}
-		switch field {
-		case "REMARK 3 FREE R VALUE":
-			if value, ok := readMetricNumber(body, pdbRFreePattern); ok {
-				return value, true, nil
-			}
-		case "REMARK 3 R VALUE WORKING SET":
-			if value, ok := readMetricNumber(body, pdbRWorkPattern); ok {
-				return value, true, nil
-			}
+		if value, ok := readMetricNumber(body, pattern); ok {
+			return value, true, nil
 		}
 	}
 	if err := scanner.Err(); err != nil {

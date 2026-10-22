@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	pathpkg "path"
@@ -59,6 +60,8 @@ type Uploader struct {
 	// structureFields holds each structure artifact's parsed fields, so a
 	// file is read once however many manifest fields come from it.
 	structureFields *artifactextractor.FieldCache
+	// legacyManifestWarning logs once per run that a manifest predates cofactors.
+	legacyManifestWarning sync.Once
 }
 
 func New(
@@ -1160,6 +1163,12 @@ func (u *Uploader) modelMetadata(
 ) (map[string]any, error) {
 	result := make(map[string]any)
 	extensions := map[string]any{}
+	metadata, upgraded := metadata.WithCoordinateCofactors()
+	if upgraded {
+		u.legacyManifestWarning.Do(func() {
+			slog.Warn("manifest was saved before cofactors existed: reading cofactors and review flags from the coordinates file so HEM and metal ions are not dropped; regenerate the manifest to make this permanent")
+		})
+	}
 	for key, field := range metadata {
 		value, ok, err := u.fieldValue(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil {
@@ -1175,9 +1184,33 @@ func (u *Uploader) modelMetadata(
 		result[key] = toCanonicalModelMetadataValue(key, value)
 	}
 	if len(extensions) > 0 {
-		result["extensions"] = extensions
+		merged, err := mergeModelExtensions(result["extensions"], extensions)
+		if err != nil {
+			return nil, err
+		}
+		result["extensions"] = merged
 	}
 	return result, nil
+}
+
+// mergeModelExtensions adds the extracted extension keys to the manifest's own
+// "extensions" object. A key the manifest already sets is never replaced.
+func mergeModelExtensions(own any, extracted map[string]any) (map[string]any, error) {
+	if own == nil {
+		return extracted, nil
+	}
+	ownObject, ok := own.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("model metadata extensions must be an object, got %T", own)
+	}
+	merged := make(map[string]any, len(ownObject)+len(extracted))
+	for key, value := range extracted {
+		merged[key] = value
+	}
+	for key, value := range ownObject {
+		merged[key] = value
+	}
+	return merged, nil
 }
 
 // modelExtensionKeyPrefix marks a manifest model metadata key whose value is

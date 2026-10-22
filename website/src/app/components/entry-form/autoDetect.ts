@@ -106,13 +106,36 @@ function applyStructure(
   if (Object.keys(facts.metadata).length > 0) {
     patch.files = (patch.files ?? draft.files).map((file) =>
       file.id === parsedFile.id
-        ? { ...file, metadata: { ...facts.metadata, ...(file.metadata ?? {}) } }
+        ? { ...file, metadata: mergeFileMetadata(facts.metadata, file.metadata) }
         : file,
     );
     notes.push(`Composition and cell — from ${fileName}`);
   }
 
   return patch;
+}
+
+/**
+ * Fills the file's metadata from what the header says without overwriting what
+ * is already there. `extensions` is an open object, so it is merged key by key
+ * rather than replaced: the compound review flags are added next to whatever
+ * extensions the form already holds.
+ */
+export function mergeFileMetadata(
+  found: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const merged = { ...found, ...(existing ?? {}) };
+  const foundExtensions = found.extensions;
+  const existingExtensions = existing?.extensions;
+  if (isPlainObject(foundExtensions) && isPlainObject(existingExtensions)) {
+    merged.extensions = { ...foundExtensions, ...existingExtensions };
+  }
+  return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /* -------------------------------------------------------------- log -- */

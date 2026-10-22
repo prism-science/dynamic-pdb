@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -117,6 +119,64 @@ func Test_should_stay_under_allocation_budget_when_extracting_a_four_mebibyte_he
 	assert.True(t, attributes.Truncated)
 	allocated := after.TotalAlloc - before.TotalAlloc
 	assert.Less(t, allocated, uint64(16<<20), "bytes allocated extracting a 4 MiB head (was about 227 MiB with Parse and Extract)")
+}
+
+func hostileArtifactFiles() map[string]string {
+	repeat := func(unit string, size int) string { return strings.Repeat(unit, size/len(unit)) }
+	counted := func(template string, size int) string {
+		var builder strings.Builder
+		for counter := 0; builder.Len() < size; counter++ {
+			fmt.Fprintf(&builder, template, counter, counter)
+		}
+		return builder.String()
+	}
+	size := artifactExtractionReadLimit
+	return map[string]string{
+		"struct_conn a a a":     "data_X\nloop_\n_struct_conn.id\n" + repeat("a ", size),
+		"struct_ref_seq_dif":    "data_X\nloop_\n_struct_ref_seq_dif.align_id\n" + repeat("a ", size),
+		"wide rows":             "data_X\nloop_\n" + strings.Repeat("_struct_ref_seq_dif.c\n", 1) + strings.Join(strings.Fields(strings.Repeat("_struct_ref_seq_dif.d ", 40)), "\n") + "\n" + repeat("x ", size),
+		"entity rows":           "data_X\nloop_\n_entity.id\n_entity.pdbx_mutation\n" + repeat("a b ", size),
+		"one enormous token":    "data_X\nloop_\n_entity.id\n" + strings.Repeat("v", size) + "\n",
+		"distinct scalar items": "data_X\n" + counted("_a.t%d %d\n", size),
+		"distinct ligand ids":   "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.label_comp_id\n_atom_site.auth_seq_id\n" + counted("HETATM L%d %d\n", size),
+		"distinct residues":     "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.auth_seq_id\n_atom_site.label_alt_id\n" + counted("ATOM %d A%d\n", size),
+		"distinct metalc pairs": "data_X\nloop_\n_struct_conn.conn_type_id\n_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr1_auth_seq_id\n_struct_conn.ptnr2_label_comp_id\n_struct_conn.ptnr2_auth_seq_id\n" + counted("metalc ZN %d HIS %d\n", size),
+	}
+}
+
+// Test_should_stay_under_memory_budget_when_extracting_hostile_files is the
+// worst case the two-slot limit in artifact_extraction_limits.go relies on:
+// one request holds the file, the parser state and the encoded response.
+func Test_should_stay_under_memory_budget_when_extracting_hostile_files(t *testing.T) {
+	const liveBudget = 48 << 20
+	const allocationBudget = 128 << 20
+	for name, text := range hostileArtifactFiles() {
+		t.Run(name, func(t *testing.T) {
+			// given
+			data := []byte(text)
+			var before, after runtime.MemStats
+
+			// when
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			attributes, err := buildArtifactExtraction(data, int64(len(data)), testArtifactSource)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(attributes)
+			require.NoError(t, err)
+			runtime.GC()
+			runtime.ReadMemStats(&after)
+			runtime.KeepAlive(attributes)
+			runtime.KeepAlive(encoded)
+
+			// then
+			allocated := after.TotalAlloc - before.TotalAlloc
+			live := after.HeapAlloc - min(before.HeapAlloc, after.HeapAlloc)
+			t.Logf("MEASURE %s live=%dKiB alloc=%dKiB response=%dKiB", name, live>>10, allocated>>10, len(encoded)>>10)
+			assert.Less(t, live, uint64(liveBudget), "live heap after the request")
+			assert.Less(t, allocated, uint64(allocationBudget), "bytes allocated by the request")
+			assert.Less(t, len(encoded), 16<<20, "response size")
+		})
+	}
 }
 
 func Benchmark_extract_artifact_head(b *testing.B) {

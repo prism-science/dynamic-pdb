@@ -2,8 +2,8 @@
 
 One parser, `lib/cif`, reads structure files for the CLI upload and for
 `POST /v1/artifacts/{id}/extract`. The website preview
-(`website/src/lib/parse/structure.ts`) follows the same ligand rule as far as a
-browser can without the cofactor list.
+(`website/src/lib/parse/structure.ts`) applies the same ligand rule with the same
+reference lists (generated from the JSON files, see "Website preview" below).
 
 ## What it extracts
 
@@ -26,9 +26,43 @@ first data block is read.
 
 `cif.ExtractText` reads a file in one pass: tokens are produced one at a time,
 the `_atom_site` loop is reduced to counts as it streams past (its rows are
-never stored) and the rows of categories the rules do not use are skipped. A
-4 MiB head allocates about 4 MB this way. `cif.Parse` still builds the full
-document, for code that needs every table.
+never stored), `_struct_conn` is reduced to the metal-coordination partners (no
+object per row; `Result.Connections` is empty on this path) and the rows of
+categories the rules do not use are skipped. A 4 MiB head allocates about 4 MB
+this way. `cif.Parse` still builds the full document, for code that needs every
+table or the connections.
+
+### Memory bounds for hostile files
+
+What a parse keeps must not depend on what the file contains, because any user
+who can create an artifact can point `/extract` at a file of their choosing.
+`lib/cif/limits.go` caps everything that grows with the input; when a cap is hit
+the rest of that item is ignored, the result carries a `parser limit: ...`
+warning, and the parse still succeeds:
+
+| What | Cap | Why that number |
+| --- | --- | --- |
+| rows / values kept per table | 50,000 rows, 1,000,000 values | a real `_struct_conn` row is at least ~150 bytes, so a 4 MiB head holds under 30,000; the fixtures have under 30 |
+| columns in a loop | 1,000 | real categories have under 130; a wider loop is skipped |
+| non-looped items | 20,000 | real files have under 700 |
+| distinct residues / chains / hetero instances in `_atom_site` or PDB | 100,000 / 20,000 / 100,000 | a 4 MiB head holds under 60,000 atoms |
+| alternate-location letters per residue | 16 | they are single letters |
+| distinct metalc partner pairs | 50,000 | |
+| distinct compounds per list | 2,000 | real entries have well under 200 |
+| REMARK fields (PDB) | 5,000 | |
+| one line in the streaming scalar scan | 8 MiB | a longer line is an error, not a buffer |
+
+If `_atom_site` runs past a cap, atom counts, residue counts and altloc fraction
+are left out with a warning (as for a cut-off read) instead of being wrong. A
+head that ends before `_atom_site` begins is reported as cut off, not as "no
+atom_site records found".
+
+Measured on hostile four mebibyte files (`lib/cif/hostile_test.go`,
+`backend/internal/httpapi/artifact_extraction_limits_test.go`): at worst about 40 MiB
+reachable after parsing and about 100 MiB allocated in total per request. Before
+the caps, a file of `a a a ...` under `_struct_conn.id` kept about 930 MiB live.
+The CLI reads the same 4 MiB head through the same functions, so the same bounds
+apply there.
 
 `cif.ScalarValue` / `cif.ScalarValueFromReader` look up one non-looped item (for
 example `_refine.ls_R_factor_R_free`) by scanning the stream through a fixed
@@ -43,7 +77,10 @@ partial last line is dropped, and unless an `ENDMDL`, `CONECT`, `MASTER` or `END
 record shows that the coordinates ended, `atom_count`, `modeled_residues`,
 `unique_protein_chains` and `altloc_fraction` are left out (with a warning),
 exactly as for mmCIF. PDB files have no `metalc` rows, so every metal is a
-cofactor flagged for review.
+cofactor flagged for review. The number of atoms of a `HET` compound comes from
+its `HET` record when that has one; a compound whose atoms were cut off by the
+read limit is not called single-atom, it is flagged with the reason "atom count
+unknown" (the same applies to mmCIF).
 
 ## The ligand rule
 
@@ -84,9 +121,21 @@ Both are drafts. **Researchers must approve them once**: review the lists, then 
 - every extraction carries the warning `cif.DraftWarning` ("reference lists are draft and not yet approved by researchers ..."): the extract endpoint returns it in `warnings`, the CLI logs it once per structure file;
 - the cofactor and metal list is applied as before (it only decides what goes into the new `cofactors` field).
 
-Once both flags are true the full lists apply and the warning disappears. The website preview parser follows the same gate through `REFERENCE_LISTS_APPROVED` in `website/src/lib/parse/structure.ts`; flip it in the same change that flips the JSON flags. Tests use injectable reference data (`parseReference`), so approving the lists does not need test edits beyond the expectations that follow the JSON files.
+Once both flags are true the full lists apply and the warning disappears. The website preview parser reads the same lists and the same gate from `website/src/lib/parse/cifReference.gen.ts`, which `npm run gen:cif-reference` generates from the two JSON files: flipping the flags in the JSON and regenerating is the whole change. CI regenerates the file and fails on a diff, and a website test fails when it is stale. Tests use injectable reference data (`parseReference`), so approving the lists does not need test edits beyond the expectations that follow the JSON files.
 
 **Researchers must confirm the solvent list in particular.** It is a science decision, not an engineering one. It classes citrate (CIT), sulfate (SO4), phosphate (PO4), chloride, bromide and iodide as solvents. Those compounds are often real ligands, so a wrong entry silently removes a ligand from the record. Engineers do not change this list without researcher sign-off.
+
+## Website preview
+
+`website/src/lib/parse/structure.ts` implements the same rule (per instance,
+organic cofactors, metal links, single-atom flag, draft gate, first model only,
+altloc by occupancy) and uses the generated reference lists. The Go parser's
+answers for the fixtures and for three small files in `lib/cif/testdata/parity/`
+are committed as `lib/cif/testdata/parity-golden.json` (refresh with
+`UPDATE_PARITY_GOLDEN=1 go test ./lib/cif -run parity_golden`); `website/test/cif-parity.test.cjs`
+checks that the preview gives the same ligands, cofactors, review flags (with
+reasons) and counts. The preview sends the flags as `extensions.compound_review`
+on the model metadata, like the CLI.
 
 ## CLI upload
 
@@ -102,7 +151,11 @@ Scalar fields read from a data-folder file (for example R-free from `models/5amf
 ]}
 ```
 
-`ligands` and `cofactors` stay plain lists of IDs, so the declared fields do not change. The CLI also logs a warning per flagged compound while it reads the file (`compound needs review`). The manifest key is `extensions.compound_review`; any manifest model-metadata key starting with `extensions.` is uploaded under `extensions`.
+`ligands` and `cofactors` stay plain lists of IDs, so the declared fields do not change. The CLI also logs a warning per flagged compound while it reads the file (`compound needs review`). The manifest key is `extensions.compound_review`; any manifest model-metadata key starting with `extensions.` is uploaded under `extensions`. These keys are merged into an `extensions` object the manifest sets itself; a key the manifest sets is never replaced.
+
+**Manifests saved before cofactors existed.** Such a manifest has `ligands` read from the coordinates but no `cofactors` entry; with the new extractor HEM and metal ions would have left `ligands` and gone nowhere. When the upload reads `ligands` from the coordinates and the manifest has no `cofactors` entry, it reads `cofactors` and `extensions.compound_review` from the same coordinates as well, and logs one warning per run saying so. Regenerate the manifest (`dynamic-pdb upload manifest init <data-folder>`) to make it permanent.
+
+A manifest field that names a PDB or mmCIF rule on an artifact of another format (for example `.mmtf`), or a PDB field the file extractor does not read, is an error, not a silent "not found". The draft-list warning is logged once per run, not once per artifact.
 
 ## Extract endpoint limits
 
@@ -115,10 +168,11 @@ caller must be the artifact's creator or a reviewer.
 
 ### Concurrency and rate limits
 
-A request holds up to 4 MiB of file plus about 4 MB of parser state (measured:
-about 5 MB allocated per request), so a pod needs far less than its 512 MiB
-for the endpoint, but the cost scales with a user-supplied file and is still
-bounded explicitly. Both limits are per server instance and in memory, like the
+A request holds up to 4 MiB of file plus the parser state: about 5 MB allocated
+for a normal file and, bounded by the caps above, at most about 100 MB allocated
+(under 50 MB reachable) for a hostile one, so two in flight stay far inside a
+512 MiB pod. The cost scales with a user-supplied file and is still bounded
+explicitly. Both limits are per server instance and in memory, like the
 global per-IP limit (`GlobalRateLimitMiddleware`, `httprate`):
 
 - **At most 2 extractions at once** per instance. A third concurrent request gets `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. The slot is taken after authorization and validation (so 401/403/404/422 never use one) and released as soon as the response is built, before it is written to the client.

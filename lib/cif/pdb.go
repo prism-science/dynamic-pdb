@@ -39,12 +39,8 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 	if !reference.Approved {
 		warnings = append(warnings, DraftWarning)
 	}
-	residues := map[residueKey]struct{}{}
-	chains := map[string]struct{}{}
-	positions := map[residueKey]map[string]float64{}
-	instances := map[compoundInstance]int{}
-	atomNames := map[compoundInstance]map[string]struct{}{}
-	atomCount := 0
+	tally := newCoordinateTally()
+	notes := limitNotes{}
 	modelStarted := false
 	firstModelDone := false
 	coordinatesEnded := false
@@ -54,11 +50,15 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 		record := recordName(line)
 		switch record {
 		case "REMARK":
+			if len(fields) >= maxPDBFields {
+				notes.add("more than %d REMARK fields: the rest were ignored", maxPDBFields)
+				continue
+			}
 			addPDBRemarkFields(fields, line)
 			continue
 		case "HET":
 			if instance, count := hetInstance(line); instance.compoundID != "" {
-				instances[instance] = count
+				tally.declare(instance, count)
 			}
 			continue
 		case "MODEL":
@@ -84,17 +84,12 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 		}
 		compound := upperSlice(line, 17, 20)
 		if record == "HETATM" && compound != "" {
-			instance := compoundInstance{
+			tally.addHetero(compoundInstance{
 				compoundID: compound,
 				asymID:     slice(line, 21, 22),
 				authSeqID:  slice(line, 22, 26),
 				insCode:    slice(line, 26, 27),
-			}
-			if atomNames[instance] == nil {
-				atomNames[instance] = map[string]struct{}{}
-			}
-			atomNames[instance][slice(line, 12, 16)] = struct{}{}
-			instances[instance] = len(atomNames[instance])
+			}, slice(line, 12, 16))
 		}
 		if record == "HETATM" && isWater(compound) {
 			continue
@@ -102,43 +97,43 @@ func pdbExtraction(text string, truncated bool, reference *Reference) (Extractio
 		if element := upperSlice(line, 76, 78); element == "H" || element == "D" {
 			continue
 		}
-		atomCount++
+		tally.atomCount++
 		if record == "HETATM" {
 			continue
 		}
 		chain := slice(line, 21, 22)
 		residue := residueKey{chain: chain, seq: slice(line, 22, 26), insCode: slice(line, 26, 27)}
-		residues[residue] = struct{}{}
-		if chain != "" {
-			chains[chain] = struct{}{}
-		}
-		if altID := slice(line, 16, 17); altID != "" {
-			occupancy := 1.0
-			if parsed, parseErr := strconv.ParseFloat(slice(line, 54, 60), 64); parseErr == nil {
-				occupancy = parsed
-			}
-			if positions[residue] == nil {
-				positions[residue] = map[string]float64{}
-			}
-			positions[residue][altID] = max(positions[residue][altID], occupancy)
-		}
+		tally.addResidue(chain, residue, slice(line, 16, 17), func() float64 {
+			return parseOccupancy(slice(line, 54, 60))
+		})
 	}
 	coordinatesRead := !truncated || coordinatesEnded
-	if coordinatesRead {
-		addPositiveInt(fields, "atom_count", atomCount)
-		addPositiveInt(fields, "modeled_residues", len(residues))
-		addPositiveInt(fields, "unique_protein_chains", len(chains))
-		if len(residues) > 0 {
-			addField(fields, "altloc_fraction", float64(countAltlocResidues(positions))/float64(len(residues)))
+	instances := tally.instanceCounts(coordinatesRead)
+	switch {
+	case tally.overflow != "":
+		coordinatesRead = false
+		warnings = append(warnings, fmt.Sprintf("PDB has more distinct %s than the parser limit allows: atom counts, residue counts and altloc fraction not extracted", tally.overflow))
+	case coordinatesRead:
+		addPositiveInt(fields, "atom_count", tally.atomCount)
+		addPositiveInt(fields, "modeled_residues", len(tally.residues))
+		addPositiveInt(fields, "unique_protein_chains", len(tally.chains))
+		if len(tally.residues) > 0 {
+			addField(fields, "altloc_fraction", float64(countAltlocResidues(tally.positions))/float64(len(tally.residues)))
 		}
-	} else {
+	default:
 		warnings = append(warnings, "PDB coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted")
 	}
-	ligands, cofactors, err := classifyCompounds(instances, nil, reference)
+	for _, note := range notes.messages {
+		warnings = append(warnings, "parser limit: "+note)
+	}
+	ligands, cofactors, tooMany, err := classifyCompounds(instances, metalLinks{}, reference)
 	if err != nil {
 		return Extraction{}, fmt.Errorf("classify PDB compounds: %w", err)
 	}
-	review := addCompoundFields(fields, ligands, cofactors, coordinatesRead && atomCount > 0)
+	if tooMany {
+		warnings = append(warnings, tooManyCompoundsWarning)
+	}
+	review := addCompoundFields(fields, ligands, cofactors, coordinatesRead && tally.atomCount > 0)
 	return Extraction{Fields: fields, Warnings: warnings, Review: review}, nil
 }
 

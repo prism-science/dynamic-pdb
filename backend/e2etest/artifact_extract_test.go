@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,10 @@ func TestArtifactExtract(t *testing.T) {
 func (s *ArtifactExtractSuite) storeArtifact(createdBy uuid.UUID, fixture string, format string) models.Artifact {
 	contents, err := os.ReadFile(filepath.Join("..", "..", "lib", "cif", "testdata", fixture))
 	s.Require().NoError(err)
+	return s.storeArtifactContents(createdBy, contents, format)
+}
+
+func (s *ArtifactExtractSuite) storeArtifactContents(createdBy uuid.UUID, contents []byte, format string) models.Artifact {
 	artifactID := uuid.New()
 	objectPath := "/dynamic-pdb/entry-" + artifactID.String() + "/artifacts/" + artifactID.String() + "/model.cif"
 	s3Stub.PutObject(objectPath, contents)
@@ -49,6 +54,35 @@ func (s *ArtifactExtractSuite) storeArtifact(createdBy uuid.UUID, fixture string
 	})
 	s.Require().NoError(err)
 	return *created
+}
+
+func (s *ArtifactExtractSuite) Test_should_answer_and_report_truncation_when_file_is_a_struct_conn_bomb() {
+	// given
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "extract-bomb-owner", 8109)
+	bomb := []byte("data_X\nloop_\n_struct_conn.id\n" + strings.Repeat("a ", 3<<20))
+	artifact := s.storeArtifactContents(s.userIDFromToken(token), bomb, "mmcif")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/artifacts/"+artifact.ID.String()+"/extract", nil, token)
+	document := decodeJSONResponse[httpapi.ArtifactExtractionDocument](s.T(), response, http.StatusOK)
+	runtime.ReadMemStats(&after)
+
+	// then
+	attributes := document.Data.Attributes
+	s.True(attributes.Truncated)
+	var details []string
+	for _, warning := range attributes.Warnings {
+		details = append(details, warning.Detail)
+	}
+	s.Contains(strings.Join(details, "\n"), "ended before any atom_site coordinates")
+	s.NotContains(strings.Join(details, "\n"), "no atom_site records found")
+	// The server and the test share this process, so this bounds the whole
+	// request: the 2.1 million rows used to keep about 900 MiB.
+	s.Less(after.TotalAlloc-before.TotalAlloc, uint64(160<<20))
 }
 
 func (s *ArtifactExtractSuite) userIDFromToken(token string) uuid.UUID {

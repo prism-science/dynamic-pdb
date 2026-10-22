@@ -234,3 +234,21 @@ func Test_should_read_pdb_remark_without_loading_the_file_when_value_is_near_the
 	assert.Equal(t, 0.243, value)
 	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(1<<20))
 }
+
+func Test_should_fail_loudly_when_pdb_field_is_not_one_the_extractor_reads(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "models/5amf_model.pdb", []byte("REMARK   3   FREE R VALUE                     : 0.243\n"))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	_, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.pdb"}},
+		manifest.Extract{PDB: &manifest.ExtractRule{Field: "REMARK 3 FREE R"}},
+	)
+
+	// then
+	require.Error(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, err.Error(), "unknown PDB field")
+}

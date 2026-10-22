@@ -13,6 +13,10 @@ type Document struct {
 	tables     map[string]*Table
 	// atomSite is set when the _atom_site rows were streamed, not stored.
 	atomSite *atomSiteReader
+	// metalLinks is set when the _struct_conn rows were streamed, not stored.
+	metalLinks *metalLinkReader
+	truncated  bool
+	notes      limitNotes
 }
 
 // Table is one category: a loop, or the items of a category written as pairs.
@@ -46,6 +50,9 @@ type parseOptions struct {
 	// streamAtomSite feeds _atom_site rows to an accumulator instead of
 	// storing them; the table keeps its columns and completeness only.
 	streamAtomSite bool
+	// streamStructConn feeds _struct_conn rows to a reader that keeps only the
+	// metal coordination partners; Result.Connections stays empty.
+	streamStructConn bool
 	// onlyTables, when set, lists the categories whose rows are kept; the
 	// rows of every other loop are skipped.
 	onlyTables map[string]struct{}
@@ -54,9 +61,11 @@ type parseOptions struct {
 func parse(text string, truncated bool, options parseOptions) *Document {
 	reader := &tokenReader{tokens: newTokenizer(text, truncated)}
 	document := &Document{
-		scalars: map[string]string{},
-		tables:  map[string]*Table{},
+		scalars:   map[string]string{},
+		tables:    map[string]*Table{},
+		truncated: truncated,
 	}
+	scalarItems := 0
 	pairColumns := map[string]*Table{}
 	seenDataHeader := false
 	for {
@@ -78,6 +87,11 @@ func parse(text string, truncated bool, options parseOptions) *Document {
 			if !ok {
 				continue
 			}
+			if scalarItems >= maxScalarItems {
+				document.notes.add("more than %d non-looped items: the rest were ignored", maxScalarItems)
+				continue
+			}
+			scalarItems++
 			document.addScalar(current.text, value.text, pairColumns)
 		}
 	}
@@ -146,6 +160,7 @@ func (d *Document) addScalar(tag string, value string, pairColumns map[string]*T
 func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOptions) {
 	var category string
 	var columns []string
+	columnCount := 0
 	for {
 		current, ok := reader.next()
 		if !ok {
@@ -154,6 +169,10 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 		if current.quoted || !strings.HasPrefix(current.text, "_") {
 			reader.unread(current)
 			break
+		}
+		columnCount++
+		if columnCount > maxLoopColumns {
+			continue
 		}
 		tag := strings.ToLower(current.text)
 		tagCategory, column, ok := strings.Cut(tag, ".")
@@ -165,27 +184,40 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 		}
 		columns = append(columns, column)
 	}
-	if len(columns) == 0 {
+	if columnCount == 0 {
 		return
+	}
+	tooWide := columnCount > maxLoopColumns
+	if tooWide {
+		d.notes.add("loop %s has more than %d columns: its rows were skipped", category, maxLoopColumns)
 	}
 	width := len(columns)
 	_, exists := d.tables[category]
 	var sink *atomSiteReader
-	keepRows := !exists
+	var linkSink *metalLinkReader
+	keepRows := !exists && !tooWide
 	if keepRows && options.onlyTables != nil {
 		_, keepRows = options.onlyTables[category]
 	}
-	if !exists && options.streamAtomSite && category == "_atom_site" {
+	if !exists && !tooWide && options.streamAtomSite && category == "_atom_site" {
 		sink = newAtomSiteReader(columns)
 		d.atomSite = sink
 		keepRows = false
 	}
+	if !exists && !tooWide && options.streamStructConn && category == "_struct_conn" {
+		linkSink = newMetalLinkReader(columns)
+		d.metalLinks = linkSink
+		keepRows = false
+	}
+	cellLimit := min(maxTableCells, maxTableRows*max(width, 1))
+	cellLimit -= cellLimit % max(width, 1)
 	var values []string
 	var row []string
-	if sink != nil {
+	if sink != nil || linkSink != nil {
 		row = make([]string, 0, width)
 	}
 	count := 0
+	capped := false
 	endedByTerminator := false
 	for {
 		current, ok := reader.next()
@@ -205,11 +237,22 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 				sink.add(row)
 				row = row[:0]
 			}
+		case linkSink != nil:
+			row = append(row, current.text)
+			if len(row) == width {
+				linkSink.add(row)
+				row = row[:0]
+			}
 		case keepRows:
-			values = append(values, current.text)
+			if len(values) < cellLimit {
+				values = append(values, current.text)
+			} else if !capped {
+				capped = true
+				d.notes.add("table %s has more than %d rows or %d values: the rest were ignored", category, maxTableRows, maxTableCells)
+			}
 		}
 	}
-	if exists || (!keepRows && sink == nil) {
+	if exists || tooWide || (!keepRows && sink == nil && linkSink == nil) {
 		return
 	}
 	table := &Table{Columns: columns}
@@ -217,7 +260,7 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 		table.Rows = append(table.Rows, values[offset:offset+width])
 	}
 	openAtEnd := truncated && !reader.tokens.endsWithSeparator
-	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0
+	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0 && !capped
 	d.tables[category] = table
 }
 
@@ -228,7 +271,7 @@ func isLoopTerminator(candidate token) bool {
 	return strings.HasPrefix(candidate.text, "_") ||
 		isDataHeader(candidate.text) ||
 		strings.EqualFold(candidate.text, "loop_") ||
-		strings.HasPrefix(strings.ToLower(candidate.text), "save_") ||
+		(len(candidate.text) >= 5 && strings.EqualFold(candidate.text[:5], "save_")) ||
 		strings.EqualFold(candidate.text, "global_") ||
 		strings.EqualFold(candidate.text, "stop_")
 }

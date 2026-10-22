@@ -58,7 +58,7 @@ const PDB = [
   "REMARK   3   BIN FREE R VALUE                : 0.279",
   "REMARK   3   RESOLUTION RANGE HIGH (ANGSTROMS) : 1.77",
   "CRYST1   45.120   67.330   98.410  90.00  90.00  90.00 P 21 21 21    4",
-  atomLine({ serial: 1, resSeq: 1, chain: "A" }),
+  atomLine({ serial: 1, resSeq: 1, chain: "A", altLoc: "B" }),
   atomLine({
     serial: 2,
     name: " CA ",
@@ -148,7 +148,7 @@ const MMCIF = [
   "_atom_site.auth_asym_id",
   "_atom_site.auth_seq_id",
   "_atom_site.label_alt_id",
-  "ATOM   1 N MET A 1 .",
+  "ATOM   1 N MET A 1 B",
   "ATOM   2 C MET A 1 A",
   "ATOM   3 N ALA A 2 .",
   "HETATM 4 C NAG A 401 .",
@@ -384,6 +384,9 @@ test("a row that already fits is left alone", () => {
   assert.equal(collapseWideRows(lineage), lineage);
 });
 
+// The review flags as "list:id", without their reasons.
+const reviewed = (facts) => facts.needsReview.map((item) => `${item.list}:${item.id}`);
+
 // Rows are taken from archive entry 3CLN (calmodulin, four calcium ions).
 const MMCIF_WITH_CALCIUM = (metalcRows) =>
   [
@@ -423,7 +426,7 @@ test("a metal with a metalc row is kept as a cofactor and nothing is dropped but
   // The zinc has no metalc row in a file that has some: kept, flagged. The
   // sulfate is on the draft solvent list, which is not approved: kept, flagged.
   assert.deepEqual(facts.metadata.ligands, ["SO4", "ZN"]);
-  assert.deepEqual(facts.needsReview, { ligands: ["SO4", "ZN"], cofactors: [] });
+  assert.deepEqual(reviewed(facts), ["ligands:SO4", "ligands:ZN"]);
 });
 
 test("metals are kept and flagged when the file has no metalc rows", () => {
@@ -431,7 +434,7 @@ test("metals are kept and flagged when the file has no metalc rows", () => {
 
   assert.deepEqual(facts.metadata.cofactors, ["CA", "ZN"]);
   assert.deepEqual(facts.metadata.ligands, ["SO4"]);
-  assert.deepEqual(facts.needsReview, { ligands: ["SO4"], cofactors: ["CA", "ZN"] });
+  assert.deepEqual(reviewed(facts), ["ligands:SO4", "cofactors:CA", "cofactors:ZN"]);
 });
 
 test("pdb files keep catalytic metals and flag them for review", () => {
@@ -446,7 +449,7 @@ test("pdb files keep catalytic metals and flag them for review", () => {
 
   assert.deepEqual(facts.metadata.cofactors, ["ZN"]);
   assert.deepEqual(facts.metadata.ligands, ["SO4"]);
-  assert.deepEqual(facts.needsReview, { ligands: ["SO4"], cofactors: ["ZN"] });
+  assert.deepEqual(reviewed(facts), ["ligands:SO4", "cofactors:ZN"]);
 });
 
 test("water is dropped and counts keep draft-list solvents while the lists are not approved", () => {

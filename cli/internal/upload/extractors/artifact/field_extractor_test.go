@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -274,4 +275,121 @@ func Test_should_not_allocate_per_field_when_fields_come_from_cache(t *testing.T
 
 	// then
 	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(64<<10), "ten cached field reads must not parse again")
+}
+
+func Test_should_fail_loudly_when_artifact_format_is_neither_pdb_nor_mmcif(t *testing.T) {
+	// given
+	extractor := NewFieldExtractor(map[string]extractors.Artifact{
+		"coordinates": {Filename: "model.mmtf", Format: "mmtf", Contents: []byte("binary")},
+	})
+
+	// when
+	_, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Artifact: "coordinates"},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+
+	// then
+	require.Error(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, err.Error(), `format "mmtf"`)
+}
+
+func Test_should_report_not_found_when_artifact_has_no_format(t *testing.T) {
+	// given
+	extractor := NewFieldExtractor(map[string]extractors.Artifact{
+		"coordinates": {Filename: "model", Contents: []byte("data")},
+	})
+
+	// when
+	_, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Artifact: "coordinates"},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func Test_should_stay_under_allocation_budget_when_a_four_mebibyte_artifact_is_hostile(t *testing.T) {
+	const allocationBudget = 128 << 20
+	hostile := map[string]string{
+		"struct_conn a a a":  "data_X\nloop_\n_struct_conn.id\n" + strings.Repeat("a ", structureReadLimit/2),
+		"one enormous token": "data_X\nloop_\n_entity.id\n" + strings.Repeat("v", structureReadLimit) + "\n",
+		"ragged loop":        "data_X\nloop_\n_struct_ref_seq_dif.a\n_struct_ref_seq_dif.b\n_struct_ref_seq_dif.c\n" + strings.Repeat("xx yy ", structureReadLimit/6),
+	}
+	for name, text := range hostile {
+		t.Run(name, func(t *testing.T) {
+			// given
+			extractor := NewFieldExtractor(map[string]extractors.Artifact{
+				"coordinates": {Filename: "model.cif", Contents: []byte(text)},
+			})
+			var before, after runtime.MemStats
+
+			// when
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			_, _, err := extractor.Extract(context.Background(), "5AMF",
+				manifest.Source{Artifact: "coordinates"},
+				manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "ligands"}},
+			)
+			runtime.ReadMemStats(&after)
+
+			// then
+			require.NoError(t, err)
+			assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(allocationBudget))
+		})
+	}
+}
+
+type recordingHandler struct {
+	mutex   sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *recordingHandler) Handle(_ context.Context, record slog.Record) error {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.records = append(h.records, record)
+	return nil
+}
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+func Test_should_log_draft_warning_once_when_several_artifacts_are_read(t *testing.T) {
+	// given
+	handler := &recordingHandler{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cache := NewFieldCache()
+	artifacts := map[string]extractors.Artifact{
+		"first":  {Filename: "first.cif", Contents: readLibraryFixture(t, "3CLN.cif")},
+		"second": {Filename: "second.cif", Contents: readLibraryFixture(t, "4HHB.cif")},
+		"third":  {Filename: "third.cif", Contents: readLibraryFixture(t, "193L.cif")},
+	}
+	extractor := NewCachedFieldExtractor(artifacts, cache)
+
+	// when
+	for name := range artifacts {
+		_, _, err := extractor.Extract(context.Background(), "5AMF",
+			manifest.Source{Artifact: name},
+			manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "ligands"}},
+		)
+		require.NoError(t, err)
+	}
+
+	// then
+	draftLines := 0
+	for _, record := range handler.records {
+		record.Attrs(func(attribute slog.Attr) bool {
+			if attribute.Key == "warning" && attribute.Value.String() == cif.DraftWarning {
+				draftLines++
+			}
+			return true
+		})
+	}
+	assert.Equal(t, 1, draftLines)
 }

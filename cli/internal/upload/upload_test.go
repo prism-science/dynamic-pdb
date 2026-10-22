@@ -1401,3 +1401,136 @@ func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_revie
 		{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
 	]`, string(reviewJSON))
 }
+
+// writeManifestWithoutKeys rewrites a generated manifest the way versions before
+// cofactors existed wrote it: without the named model metadata keys.
+func writeManifestWithoutKeys(t *testing.T, manifestPath string, keys ...string) {
+	t.Helper()
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	for _, model := range manifestModels(&generated) {
+		for _, key := range keys {
+			delete(model.Metadata, key)
+		}
+	}
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+}
+
+func manifestModels(generated *manifest.Manifest) []*manifest.ModelPattern {
+	var models []*manifest.ModelPattern
+	for entryIndex := range generated.Entries {
+		for modelIndex := range generated.Entries[entryIndex].Models {
+			models = append(models, &generated.Entries[entryIndex].Models[modelIndex])
+		}
+	}
+	return models
+}
+
+// setManifestExtensions makes every model read its "extensions" object from notes.json.
+func setManifestExtensions(generated *manifest.Manifest) {
+	for _, model := range manifestModels(generated) {
+		if model.Metadata != nil {
+			model.Metadata["extensions"] = []manifest.FieldExtraction{{
+				Source:  manifest.Source{Files: []string{"notes.json"}},
+				Extract: manifest.Extract{JSON: &manifest.ExtractRule{Field: "extensions"}},
+			}}
+		}
+	}
+}
+
+func uploadedMetadataWithAtoms(t *testing.T, client *fakeDynamicPDBClient) map[string]any {
+	t.Helper()
+	var uploaded map[string]any
+	for _, model := range modelRequests(client.models) {
+		if _, hasAtoms := model.Metadata["atom_count"]; hasAtoms {
+			uploaded = model.Metadata
+		}
+	}
+	require.NotNil(t, uploaded, "no uploaded model carried atom_count")
+	return uploaded
+}
+
+func Test_should_upload_cofactors_when_manifest_was_saved_before_cofactors_existed(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	writeManifestWithoutKeys(t, manifestPath, "cofactors", "extensions.compound_review")
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	uploaded := uploadedMetadataWithAtoms(t, dynamicPDBClient)
+	assert.Equal(t, []string{"HEM"}, uploaded["cofactors"], "HEM must not be dropped from an old manifest")
+	assert.Equal(t, []string{"PO4"}, uploaded["ligands"])
+	extensions, ok := uploaded["extensions"].(map[string]any)
+	require.True(t, ok, "review flags must be uploaded for an old manifest")
+	assert.Contains(t, extensions, "compound_review")
+}
+
+func Test_should_keep_manifest_extensions_when_review_flags_are_added(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept", "compound_review": "mine"}, "nested": {"x": 1}}`)
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	setManifestExtensions(&generated)
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	extensions, ok := uploadedMetadataWithAtoms(t, dynamicPDBClient)["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	assert.Equal(t, "kept", extensions["lab_note"])
+	assert.Equal(t, "mine", extensions["compound_review"], "a key the manifest sets is never replaced")
+}
+
+func Test_should_add_review_flags_next_to_manifest_extensions_when_keys_do_not_clash(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept"}}`)
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	setManifestExtensions(&generated)
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	extensions, ok := uploadedMetadataWithAtoms(t, dynamicPDBClient)["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	assert.Equal(t, "kept", extensions["lab_note"])
+	assert.Contains(t, extensions, "compound_review")
+}

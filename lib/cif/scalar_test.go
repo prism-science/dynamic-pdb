@@ -147,6 +147,7 @@ func Test_should_extract_same_result_as_full_parse_when_text_is_read_in_one_pass
 				}
 				want, err := Extract(document)
 				require.NoError(t, err)
+				want.Connections = nil
 
 				// when
 				_, got, err := ExtractText(head, truncated)

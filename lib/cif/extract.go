@@ -3,7 +3,6 @@ package cif
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -29,9 +28,11 @@ var extractionTables = map[string]struct{}{
 }
 
 // ExtractText parses text and extracts its values in a single pass. The
-// coordinate loop is reduced to counts while it is read and the rows of
-// categories Extract does not use are skipped, so memory stays far below
-// Parse followed by Extract. The returned document holds the scalar items and
+// coordinate loop and _struct_conn are reduced to counts and metal partners
+// while they are read and the rows of categories Extract does not use are
+// skipped, so memory stays far below Parse followed by Extract and does not
+// grow with the file's content (see limits.go). Result.Connections is empty;
+// use Parse and Extract when the connections themselves are needed. The returned document holds the scalar items and
 // the small tables only. Set truncated for the head of a larger file.
 func ExtractText(text string, truncated bool) (*Document, Result, error) {
 	reference, err := DefaultReference()
@@ -43,7 +44,7 @@ func ExtractText(text string, truncated bool) (*Document, Result, error) {
 
 // ExtractTextWithReference is ExtractText with an explicit reference list.
 func ExtractTextWithReference(text string, truncated bool, reference *Reference) (*Document, Result, error) {
-	document := parse(text, truncated, parseOptions{streamAtomSite: true, onlyTables: extractionTables})
+	document := parse(text, truncated, parseOptions{streamAtomSite: true, streamStructConn: true, onlyTables: extractionTables})
 	result, err := ExtractWithReference(document, reference)
 	if err != nil {
 		return nil, Result{}, fmt.Errorf("extract mmCIF values: %w", err)
@@ -62,7 +63,16 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	if !reference.Approved {
 		result.Warnings = append(result.Warnings, DraftWarning)
 	}
-	result.Connections = readConnections(document)
+	var links metalLinks
+	if document.metalLinks != nil {
+		links = document.metalLinks.links
+		if links.overflow {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("more than %d distinct metalc connections: the rest were ignored, so a metal ion may be classified without its link", maxMetalLinks))
+		}
+	} else {
+		result.Connections = readConnections(document)
+		links = metalLinksFromConnections(result.Connections)
+	}
 	result.SequenceDifferences = readSequenceDifferences(document)
 	result.Mutations = readMutations(document, result.SequenceDifferences)
 	result.Program = mmcifProgram(document)
@@ -81,9 +91,16 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 		}
 	}
 
-	ligands, cofactors, err := classifyCompounds(instances, result.Connections, reference)
+	for _, note := range document.notes.messages {
+		result.Warnings = append(result.Warnings, "parser limit: "+note)
+	}
+
+	ligands, cofactors, tooMany, err := classifyCompounds(instances, links, reference)
 	if err != nil {
 		return Result{}, fmt.Errorf("classify compounds: %w", err)
+	}
+	if tooMany {
+		result.Warnings = append(result.Warnings, tooManyCompoundsWarning)
 	}
 	result.Ligands = ligands
 	result.Cofactors = cofactors
@@ -125,19 +142,14 @@ func partnerInstance(partner Partner) compoundInstance {
 // placed unflagged.
 func classifyCompounds(
 	instances map[compoundInstance]int,
-	connections []Connection,
+	links metalLinks,
 	reference *Reference,
-) ([]Compound, []Compound, error) {
-	hasMetalcRows := false
+) ([]Compound, []Compound, bool, error) {
+	hasMetalcRows := links.hasRows
 	linkedInstances := map[compoundInstance]bool{}
 	linkedCompounds := map[string]bool{}
-	for _, connection := range connections {
-		if !strings.EqualFold(connection.ConnTypeID, connTypeMetalCoordination) {
-			continue
-		}
-		hasMetalcRows = true
-		first := partnerInstance(connection.Partner1)
-		second := partnerInstance(connection.Partner2)
+	for _, pair := range links.pairs {
+		first, second := pair.first, pair.second
 		if reference.kind(first.compoundID) == kindMetalIon && second.compoundID != "" && !reference.isSolvent(second.compoundID) {
 			linkedInstances[first] = true
 			linkedCompounds[first.compoundID] = true
@@ -190,15 +202,22 @@ func classifyCompounds(
 		case kindCofactor:
 			cofactors.add(Compound{ID: id})
 		case kindLigand:
-			if instances[instance] == 1 {
+			switch instances[instance] {
+			case 1:
 				ligands.add(Compound{
 					ID:           id,
 					NeedsReview:  true,
 					ReviewReason: "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion",
 				})
-				continue
+			case unknownAtomCount:
+				ligands.add(Compound{
+					ID:           id,
+					NeedsReview:  true,
+					ReviewReason: "atom count unknown: the file was cut off inside this compound's coordinates, so it cannot be told whether it is a single-atom compound or a metal ion",
+				})
+			default:
+				ligands.add(Compound{ID: id})
 			}
-			ligands.add(Compound{ID: id})
 		case kindMetalIon:
 			linked := linkedInstances[instance]
 			if !instance.located() {
@@ -221,18 +240,21 @@ func classifyCompounds(
 				})
 			}
 		default:
-			return nil, nil, fmt.Errorf("unknown compound kind %d for %s", kind, id)
+			return nil, nil, false, fmt.Errorf("unknown compound kind %d for %s", kind, id)
 		}
 	}
-	return ligands.compounds(), cofactors.compounds(), nil
+	return ligands.compounds(), cofactors.compounds(), ligands.overflow || cofactors.overflow, nil
 }
 
 // compoundList keeps one entry per compound ID; a flagged entry wins over an
 // unflagged one so a review flag on any instance is never lost.
 type compoundList struct {
-	entries []Compound
-	index   map[string]int
+	entries  []Compound
+	index    map[string]int
+	overflow bool
 }
+
+var tooManyCompoundsWarning = fmt.Sprintf("parser limit: more than %d distinct compounds in one list: the rest were ignored", maxCompoundsPerList)
 
 func (list *compoundList) add(compound Compound) {
 	if list.index == nil {
@@ -240,6 +262,10 @@ func (list *compoundList) add(compound Compound) {
 	}
 	position, seen := list.index[compound.ID]
 	if !seen {
+		if len(list.entries) >= maxCompoundsPerList {
+			list.overflow = true
+			return
+		}
 		list.index[compound.ID] = len(list.entries)
 		list.entries = append(list.entries, compound)
 		return
@@ -265,13 +291,8 @@ type residueKey struct {
 // atomSiteReader reduces _atom_site rows to counts as they arrive, so a large
 // coordinate loop never has to be held in memory.
 type atomSiteReader struct {
-	columns   atomSiteColumns
-	stats     AtomStats
-	residues  map[residueKey]struct{}
-	chains    map[string]struct{}
-	positions map[residueKey]map[string]float64
-	instances map[compoundInstance]int
-	atomNames map[compoundInstance]map[string]struct{}
+	columns atomSiteColumns
+	tally   *coordinateTally
 	// started is set after the first row; firstModel is that row's model number.
 	started    bool
 	firstModel string
@@ -308,11 +329,7 @@ func newAtomSiteReader(columns []string) *atomSiteReader {
 			altID:      index("label_alt_id"),
 			occupancy:  index("occupancy"),
 		},
-		residues:  map[residueKey]struct{}{},
-		chains:    map[string]struct{}{},
-		positions: map[residueKey]map[string]float64{},
-		instances: map[compoundInstance]int{},
-		atomNames: map[compoundInstance]map[string]struct{}{},
+		tally: newCoordinateTally(),
 	}
 }
 
@@ -325,6 +342,7 @@ func cell(row []string, index int) string {
 
 func (r *atomSiteReader) add(row []string) {
 	columns := r.columns
+	tally := r.tally
 	model := cell(row, columns.model)
 	if !r.started {
 		r.started = true
@@ -339,17 +357,12 @@ func (r *atomSiteReader) add(row []string) {
 	}
 	compound := strings.ToUpper(cell(row, columns.compound))
 	if group == "HETATM" && compound != "" {
-		instance := compoundInstance{
+		tally.addHetero(compoundInstance{
 			compoundID: compound,
 			asymID:     cell(row, columns.asymID),
 			authSeqID:  cell(row, columns.authSeqID),
 			insCode:    cell(row, columns.insCode),
-		}
-		if r.atomNames[instance] == nil {
-			r.atomNames[instance] = map[string]struct{}{}
-		}
-		r.atomNames[instance][cell(row, columns.atomID)] = struct{}{}
-		r.instances[instance] = len(r.atomNames[instance])
+		}, cell(row, columns.atomID))
 	}
 	if group == "HETATM" && isWater(compound) {
 		return
@@ -357,7 +370,7 @@ func (r *atomSiteReader) add(row []string) {
 	if element := strings.ToUpper(cell(row, columns.element)); element == "H" || element == "D" {
 		return
 	}
-	r.stats.AtomCount++
+	tally.atomCount++
 	if group == "HETATM" {
 		return
 	}
@@ -367,45 +380,47 @@ func (r *atomSiteReader) add(row []string) {
 		seq:     firstNonEmpty(cell(row, columns.authSeqID), cell(row, columns.labelSeqID)),
 		insCode: cell(row, columns.insCode),
 	}
-	r.residues[residue] = struct{}{}
-	if chain != "" {
-		r.chains[chain] = struct{}{}
-	}
-	if altID := cell(row, columns.altID); altID != "" {
-		occupancy := 1.0
-		if raw := cell(row, columns.occupancy); raw != "" {
-			if parsed, err := strconv.ParseFloat(raw, 64); err == nil {
-				occupancy = parsed
-			}
-		}
-		if r.positions[residue] == nil {
-			r.positions[residue] = map[string]float64{}
-		}
-		r.positions[residue][altID] = max(r.positions[residue][altID], occupancy)
-	}
+	tally.addResidue(chain, residue, cell(row, columns.altID), func() float64 {
+		return parseOccupancy(cell(row, columns.occupancy))
+	})
 }
 
+const (
+	atomSiteCutOffWarning = "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+	atomSiteNotReached    = "the read limit ended before any atom_site coordinates: atom counts, residue counts and altloc fraction not extracted"
+)
+
 // result returns the statistics, or nil statistics with a warning when the loop
-// was cut off.
+// was cut off or ran past a limit.
 func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance]int, string) {
-	if !complete {
-		return nil, r.instances, "atom_site coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted"
+	tally := r.tally
+	instances := tally.instanceCounts(complete)
+	if tally.overflow != "" {
+		return nil, instances, fmt.Sprintf("atom_site has more distinct %s than the parser limit allows: atom counts, residue counts and altloc fraction not extracted", tally.overflow)
 	}
-	stats := r.stats
-	stats.ModeledResidues = len(r.residues)
-	stats.ProteinChains = len(r.chains)
+	if !complete {
+		return nil, instances, atomSiteCutOffWarning
+	}
+	stats := AtomStats{
+		AtomCount:       tally.atomCount,
+		ModeledResidues: len(tally.residues),
+		ProteinChains:   len(tally.chains),
+	}
 	if stats.ModeledResidues > 0 {
-		stats.AltlocFraction = float64(countAltlocResidues(r.positions)) / float64(stats.ModeledResidues)
+		stats.AltlocFraction = float64(countAltlocResidues(tally.positions)) / float64(stats.ModeledResidues)
 	}
 	if stats.AtomCount == 0 {
-		return nil, r.instances, ""
+		return nil, instances, ""
 	}
-	return &stats, r.instances, ""
+	return &stats, instances, ""
 }
 
 func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
 	table := document.Table("_atom_site")
 	if table == nil {
+		if document.truncated {
+			return nil, map[compoundInstance]int{}, atomSiteNotReached
+		}
 		return nil, map[compoundInstance]int{}, ""
 	}
 	reader := document.atomSite

@@ -10,12 +10,19 @@ import (
 )
 
 // Limits for POST /v1/artifacts/{id}/extract. A request holds up to
-// artifactExtractionReadLimit bytes of file plus the parser's working set (about
-// 4 MiB of buffer and 5 MiB of allocations, measured in
-// Test_should_stay_under_allocation_budget_when_extracting_a_four_mebibyte_head),
-// so two in flight use well under 64 MiB of a 512 MiB pod. The limits exist
-// because the cost per request scales with a user-supplied file, not because
-// two requests are expected to be a problem.
+// artifactExtractionReadLimit bytes of file plus the parser's working set. For a
+// normal file that is about 5 MiB of allocations (Benchmark_extract_artifact_head).
+// For a hostile file it is bounded too: the parser caps the rows, columns,
+// items and distinct residues, instances and compounds it keeps (lib/cif/limits.go),
+// and reads _struct_conn and _atom_site as streams. The worst of the hostile
+// four mebibyte files in Test_should_stay_under_memory_budget_when_extracting_hostile_files
+// allocates about 94 MiB in total, of which under 48 MiB is reachable at once, and
+// encodes a response under 1 MiB (before the caps, one request with 2.1 million
+// `a` rows in _struct_conn kept about 930 MiB live and allocated 1.4 GiB). Two in
+// flight, with the 4 MiB read buffers, stay under about 210 MiB even if the
+// garbage collector never ran, inside a 512 MiB pod. The limits exist because the
+// cost per request still scales with a user-supplied file, not because two
+// requests are expected to be a problem.
 const (
 	defaultExtractionMaxInFlight = 2
 	// defaultExtractionUserRequests per defaultExtractionUserWindow, per user and
