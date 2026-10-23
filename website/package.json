@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "test": "node --test test/*.test.cjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:api": "openapi-typescript ../backend/api/openapi.yaml -o src/lib/api/schema.gen.ts"
   },
   "dependencies": {
     "@dynamic-pdb/hetkit": "file:vendor/hetstar/packages/hetkit",
@@ -25,6 +26,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "openapi-typescript": "^7.13.0",
     "sass": "^1.102.0",
     "typescript": "^5.5.0"
   }

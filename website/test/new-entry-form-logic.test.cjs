@@ -79,12 +79,12 @@ test("should convert files and metrics into create entry entities", () => {
       type: "fasta",
     },
   });
-  assert.deepEqual(toMetricEntity({ id: "metrics-1", values: { r_free: "0.231", cc: "0.98", rscc: "" } }), {
+  assert.deepEqual(toMetricEntity({ id: "metrics-1", values: { r_free: "0.231", cc: "0.98", rscc: "", unknown_key: "1" } }), {
     id: "metrics-1",
     type: "metrics",
     level: "L3",
     name: "Metrics",
-    payload: { r_free: 0.231 },
+    payload: { r_free: 0.231, cc: 0.98 },
   });
 });
 
