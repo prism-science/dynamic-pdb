@@ -3,13 +3,13 @@ import { getEntityFileURL, getFilePayload } from "@/lib/entities";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 
 /**
- * Whether the heterogeneity viewer can draw this entry at all.
+ * Whether the heterogeneity viewer can draw the selected model.
  *
- * hetstar parses coordinates with Mol*'s mmCIF reader only -- its own
- * `pickPair` throws `"... is PDB format; only CIF is supported yet"` -- and it
- * picks the models it loads itself, from the catalogue, in the browser. So the
- * failure happens several requests deep inside a component we do not edit, and
- * the tab shows an error where a structure should be.
+ * hetstar loads the model the page hands it as A and the entry's deposited
+ * model as B, fetching both from the catalogue in the browser and converting
+ * PDB to mmCIF on arrival. Its `pickPair` throws when either one has no
+ * coordinate file -- several requests deep inside a component we do not edit,
+ * and the tab shows an error where a structure should be.
  *
  * This answers the same question the viewer would answer, before it is mounted,
  * from data the page has already fetched: it repeats hetstar's model choice
@@ -78,25 +78,22 @@ function coordinateKind(
     return null;
   }
   // The catalogue's own format string first, the file name only when it has
-  // none. hetstar reads the same field but treats every format that is not
-  // literally "pdb" as CIF; we go by what the file actually is, so an entry it
-  // would have tried and failed on lands on the old viewer instead.
+  // none. hetstar reads the same field: "pdb" it converts, anything else it
+  // reads as CIF; we go by what the file actually is, so a model it would have
+  // tried and failed on lands on the old viewer instead.
   return detectStructureKind(getFilePayload(entity)?.type ?? url);
 }
 
 /**
- * The pair hetstar would render: qFit against the deposited model, an ensemble
- * against it, or the deposited model alone.
+ * The pair hetstar renders for the selected model: that model against the
+ * deposited one, or the deposited model alone.
  *
- * Copied from its `pickPair`. B is looked for only when A is not itself the
- * deposited model, which matters here because a PDB deposited model stops the
- * viewer when there is a qFit model to compare it against and not otherwise.
+ * Copied from its `pickPair` given a model. B is looked for only when A is not
+ * itself the deposited model, so a deposited model without coordinates stops
+ * the viewer on every other model and not on its own.
  */
-function hetstarPair(data: EntryPageData): Model[] {
-  const a =
-    data.models.find((model) => modelRole(model) === "qfit") ??
-    data.models.find((model) => modelRole(model) === "ensemble") ??
-    data.models.find((model) => modelRole(model) === "deposited");
+function hetstarPair(data: EntryPageData, modelId: string): Model[] {
+  const a = data.models.find((model) => model.id === modelId);
   if (!a) {
     return [];
   }
@@ -108,17 +105,20 @@ function hetstarPair(data: EntryPageData): Model[] {
 }
 
 /**
- * Whether the Structure tab can hand this entry to the heterogeneity viewer.
+ * Whether the Structure tab can hand the selected model to the heterogeneity
+ * viewer.
  *
- * False when hetstar has nothing to load, or when any file in the pair it would
- * load is not mmCIF -- both of which end in the same thrown error inside the
- * viewer. The tab then falls back to the plain Mol* viewer on the selected
- * model, which reads PDB as well as mmCIF.
+ * False when the model is not in the entry, or when a model in the pair has no
+ * coordinate file hetstar reads (mmCIF or PDB). The tab then falls back to the
+ * plain Mol* viewer on the selected model.
  */
-export function hetstarCanRender(data: EntryPageData): boolean {
-  const pair = hetstarPair(data);
+export function hetstarCanRender(data: EntryPageData, modelId: string): boolean {
+  const pair = hetstarPair(data, modelId);
   return (
     pair.length > 0 &&
-    pair.every((model) => coordinateKind(model, data.entities) === "mmcif")
+    pair.every((model) => {
+      const kind = coordinateKind(model, data.entities);
+      return kind === "mmcif" || kind === "pdb";
+    })
   );
 }
