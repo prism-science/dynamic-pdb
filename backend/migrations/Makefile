@@ -24,3 +24,28 @@ migrate-local: build
 		-v "${CURDIR}"/conf:/flyway/conf \
 		--env-file flyway.env \
 		${FLYWAY_IMAGE} -environment=local migrate
+
+# Migration rehearsal on a temporary copy of production; see rehearsal/README.md.
+# BRANCH is the git ref whose migrations to run; TARGET is aws (the copy of
+# production) or local (the practice copy of the local dev database).
+REHEARSAL := ./rehearsal/rehearsal.sh
+TARGET ?= aws
+
+.PHONY: rehearsal-up rehearsal-run rehearsal-down rehearsal-status rehearsal-local-up rehearsal-local-down
+rehearsal-up:
+	$(REHEARSAL) up
+
+rehearsal-run:
+	$(REHEARSAL) run --target "$(TARGET)" --branch "$(BRANCH)"
+
+rehearsal-down:
+	$(REHEARSAL) down
+
+rehearsal-status:
+	$(REHEARSAL) status
+
+rehearsal-local-up:
+	$(REHEARSAL) local-up
+
+rehearsal-local-down:
+	$(REHEARSAL) local-down

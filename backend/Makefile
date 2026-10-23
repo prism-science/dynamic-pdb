@@ -32,6 +32,12 @@ destroy-postgres:
 migrate-local:
 	$(MAKE) -C migrations migrate-local
 
+# Migration rehearsal on a temporary copy of production; see migrations/rehearsal/README.md.
+REHEARSAL_TARGETS := rehearsal-up rehearsal-run rehearsal-down rehearsal-status rehearsal-local-up rehearsal-local-down
+.PHONY: $(REHEARSAL_TARGETS)
+$(REHEARSAL_TARGETS):
+	$(MAKE) -C migrations $@
+
 # Recreates LOADTEST_DB from the schema migrations and seeds it with synthetic data.
 loadtest-db:
 	$(LOADTEST_PSQL) -d postgres -c 'drop database if exists $(LOADTEST_DB) with (force)' -c 'create database $(LOADTEST_DB)'

@@ -1,0 +1,46 @@
+# Forwards port 5432 inside the cluster to the rehearsal RDS instance, which only
+# accepts connections from cluster nodes. rehearsal.sh fills in the __PLACEHOLDERS__,
+# applies this pod, port-forwards to it from your machine, and deletes it after the run.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: __POD_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app.kubernetes.io/name: dynamic-pdb-rehearsal-tunnel
+    app.kubernetes.io/part-of: dynamic-pdb-rehearsal
+spec:
+  restartPolicy: Never
+  # The pod stops itself after 4 hours if a run was interrupted before cleanup.
+  activeDeadlineSeconds: 14400
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: socat
+      image: __IMAGE__
+      args:
+        - TCP-LISTEN:5432,fork,reuseaddr
+        - TCP-CONNECT:__TARGET_HOST__:__TARGET_PORT__
+      ports:
+        - containerPort: 5432
+      readinessProbe:
+        tcpSocket:
+          port: 5432
+        periodSeconds: 2
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 200m
+          memory: 64Mi
