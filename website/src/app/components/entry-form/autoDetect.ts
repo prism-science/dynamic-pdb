@@ -266,7 +266,7 @@ function mergeMetrics(
   if (found.length === 0) {
     return null;
   }
-  const known = new Set(METRIC_FIELDS.map((field) => field.key));
+  const known = new Set<string>(METRIC_FIELDS.map((field) => field.key));
   const target = metrics[0] ?? { id: crypto.randomUUID(), values: {} };
   const next = { ...target, values: { ...target.values } };
   let touched = false;
