@@ -162,5 +162,26 @@
         "id": "LIG"
       }
     ]
+  },
+  "parity/wrapped_rows.cif": {
+    "atom_count": 4,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "ZN"
+      },
+      {
+        "list": "ligands",
+        "id": "1UD"
+      },
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      }
+    ]
   }
 }

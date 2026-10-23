@@ -18,6 +18,7 @@ const parityGoldenPath = "testdata/parity-golden.json"
 var parityFiles = []string{
 	"4HHB.cif", "3CLN.cif", "6OIM.cif", "193L.cif", "1AKE.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
+	"parity/wrapped_rows.cif",
 }
 
 type parityCompound struct {

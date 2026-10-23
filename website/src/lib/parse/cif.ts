@@ -83,42 +83,134 @@ export function cifValue(text: string, tag: string): string | null {
   return null;
 }
 
+// Loops wider than this are skipped, as in lib/cif.
+const MAX_LOOP_COLUMNS = 1000;
+
+/**
+ * Reads whitespace-separated tokens across lines, the way lib/cif does: bare
+ * and quoted values, `;` text blocks that start in column one, and `#`
+ * comments. Each character is visited once, so a read costs the length of
+ * the text however the rows are wrapped.
+ */
+export class CifTokens {
+  value = "";
+  quoted = false;
+  position = 0;
+
+  constructor(private readonly text: string) {}
+
+  next(): boolean {
+    const text = this.text;
+    while (this.position < text.length) {
+      const start = this.position;
+      const char = text[start];
+      if (char === " " || char === "\t" || char === "\n" || char === "\r") {
+        this.position += 1;
+      } else if (char === "#") {
+        const end = text.indexOf("\n", start);
+        this.position = end === -1 ? text.length : end;
+      } else if (char === ";" && (start === 0 || text[start - 1] === "\n")) {
+        const end = text.indexOf("\n;", start + 1);
+        this.value = text.slice(start + 1, end === -1 ? text.length : end);
+        this.quoted = true;
+        this.position = end === -1 ? text.length : end + 2;
+        return true;
+      } else if (char === "'" || char === '"') {
+        // The closing quote is the first matching one followed by whitespace;
+        // an unterminated value takes the rest of the line.
+        let cursor = start + 1;
+        let closed = false;
+        while (cursor < text.length && text[cursor] !== "\n") {
+          if (text[cursor] === char) {
+            const after = text[cursor + 1];
+            if (after === undefined || after === " " || after === "\t" || after === "\n" || after === "\r") {
+              closed = true;
+              break;
+            }
+          }
+          cursor += 1;
+        }
+        this.value = text.slice(start + 1, cursor);
+        this.quoted = true;
+        this.position = closed ? cursor + 1 : cursor;
+        return true;
+      } else {
+        let end = start;
+        while (end < text.length && !" \t\n\r".includes(text[end])) {
+          end += 1;
+        }
+        this.value = text.slice(start, end);
+        this.quoted = false;
+        this.position = end;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Steps back over the unquoted token `next` just returned. */
+  unreadBare(): void {
+    this.position -= this.value.length;
+  }
+}
+
+function endsLoop(value: string): boolean {
+  const lower = value.toLowerCase();
+  return (
+    value.startsWith("_") ||
+    lower.startsWith("data_") ||
+    lower === "loop_" ||
+    lower.startsWith("save_") ||
+    lower === "global_" ||
+    lower === "stop_"
+  );
+}
+
 /**
  * The first loop whose tags belong to `category` (given without the trailing
- * dot). Rows shorter than the column list are dropped rather than padded: a
- * truncated row means the line wrapped in a way this reader does not follow,
- * and guessing would be worse than skipping.
+ * dot). Values are read as one stream across lines and cut into rows by the
+ * column count, as lib/cif does, so a row may wrap over several lines and a
+ * value may be quoted or a `;` text block. Trailing values that do not fill a
+ * row are dropped.
  */
 export function cifLoop(text: string, category: string): CifLoop | null {
-  const lines = text.split("\n");
   const prefix = `${category.toLowerCase()}.`;
+  const tokens = new CifTokens(text);
 
-  for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index].trim().toLowerCase() !== "loop_") {
+  while (tokens.next()) {
+    if (tokens.quoted || tokens.value.toLowerCase() !== "loop_") {
       continue;
     }
     const columns: string[] = [];
-    let cursor = index + 1;
-    while (cursor < lines.length && lines[cursor].trimStart().startsWith("_")) {
-      columns.push(lines[cursor].trim().toLowerCase());
-      cursor += 1;
+    let more = false;
+    while (tokens.next()) {
+      if (tokens.quoted || !tokens.value.startsWith("_")) {
+        more = true;
+        break;
+      }
+      columns.push(tokens.value.toLowerCase());
     }
     if (columns.length === 0 || !columns[0].startsWith(prefix)) {
+      if (more && !tokens.quoted && endsLoop(tokens.value)) {
+        tokens.unreadBare();
+      }
       continue;
     }
 
+    const width = columns.length;
     const rows: string[][] = [];
-    while (cursor < lines.length) {
-      const line = lines[cursor];
-      const trimmed = line.trim();
-      if (trimmed === "" || trimmed === "#" || trimmed.startsWith("_") || trimmed.toLowerCase() === "loop_" || trimmed.startsWith("data_")) {
-        break;
-      }
-      const tokens = tokenize(line);
-      if (tokens.length >= columns.length) {
-        rows.push(tokens.slice(0, columns.length));
-      }
-      cursor += 1;
+    if (more && width <= MAX_LOOP_COLUMNS) {
+      let row: string[] = [];
+      do {
+        if (!tokens.quoted && endsLoop(tokens.value)) {
+          break;
+        }
+        row.push(tokens.value);
+        if (row.length === width) {
+          rows.push(row);
+          row = [];
+        }
+      } while (tokens.next());
     }
 
     return {
@@ -142,6 +234,6 @@ export function loopValue(
   if (index === -1) {
     return null;
   }
-  const value = row[index];
+  const value = row[index]?.trim();
   return value === undefined || isMissing(value) ? null : value;
 }
