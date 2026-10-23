@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -104,7 +105,6 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 		ctx,
 		*currentRevision,
 		desiredRevision,
-		currentMetrics,
 		desiredMetrics,
 		metricsChanged,
 	); err != nil {
@@ -186,7 +186,6 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	ctx context.Context,
 	currentRevision models.ModelRevision,
 	desiredRevision models.ModelRevision,
-	currentMetrics []models.Metric,
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
 ) error {
@@ -237,7 +236,6 @@ func (s *modelSyncStrategy) saveModelUpdate(
 			ctx,
 			parentRevisionID,
 			createdRevision.ID,
-			currentMetrics,
 			desiredMetrics,
 			metricsChanged,
 			now,
@@ -272,7 +270,6 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	ctx context.Context,
 	fromRevisionID uuid.UUID,
 	toRevisionID uuid.UUID,
-	currentMetrics []models.Metric,
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
 	createdAt time.Time,
@@ -290,13 +287,10 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 		return nil
 	}
 
-	for _, metric := range currentMetrics {
-		if isRCSBModelMetric(metric.Key) {
-			continue
-		}
-		if err := s.database.Metrics.AttachToModelRevision(ctx, toRevisionID, metric.ID); err != nil {
-			return fmt.Errorf("copy metric %s: %w", metric.Key, err)
-		}
+	if err := s.database.Metrics.CopyModelRevisionLinksExcludingKeys(
+		ctx, fromRevisionID, toRevisionID, rcsbModelMetricKeys,
+	); err != nil {
+		return fmt.Errorf("copy non-RCSB metric links: %w", err)
 	}
 	for _, desiredMetric := range desiredMetrics {
 		desiredMetric.ID = uuid.New()
@@ -342,16 +336,16 @@ func rcsbModelMetrics(metrics []models.Metric) []models.Metric {
 	return result
 }
 
+// rcsbModelMetricKeys are the metrics the data sync derives from RCSB and replaces on every update.
+var rcsbModelMetricKeys = []models.MetricKey{
+	models.MetricKeyRFree,
+	models.MetricKeyRWork,
+	models.MetricKeyRamachandranOutliers,
+	models.MetricKeyClashscore,
+}
+
 func isRCSBModelMetric(key models.MetricKey) bool {
-	switch key {
-	case models.MetricKeyRFree,
-		models.MetricKeyRWork,
-		models.MetricKeyRamachandranOutliers,
-		models.MetricKeyClashscore:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(rcsbModelMetricKeys, key)
 }
 
 // modelUpdateErrors checks the values the sync takes from RCSB with the rules that

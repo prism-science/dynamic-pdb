@@ -580,3 +580,19 @@ func Test_should_not_check_mutation_format_when_polymer_entity_comes_from_rcsb(t
 	// then
 	assert.Empty(t, fieldErrors)
 }
+
+func Test_should_report_unknown_mutations_status_when_polymer_entity_metadata_checked(t *testing.T) {
+	// given
+	unknown := models.MutationsStatus("maybe")
+	parsed := models.MutationsStatusParsed
+
+	// when
+	unknownErrors := PolymerEntity(Root, models.PolymerEntityMetadata{MutationsStatus: &unknown})
+	parsedErrors := PolymerEntity(Root, models.PolymerEntityMetadata{MutationsStatus: &parsed})
+
+	// then
+	require.Len(t, unknownErrors, 1)
+	assert.Equal(t, Root.Field("mutations_status"), unknownErrors[0].Pointer)
+	assert.Equal(t, CodeInvalidValue, unknownErrors[0].Code)
+	assert.Empty(t, parsedErrors)
+}

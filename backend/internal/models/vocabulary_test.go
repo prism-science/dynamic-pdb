@@ -17,6 +17,7 @@ func Test_should_accept_every_schema_value_when_vocabularies_are_validated(t *te
 		"artifact type":      valuesOf(ArtifactTypes),
 		"run direction":      valuesOf(RunArtifactDirections),
 		"UniProt source":     valuesOf(UniProtReferenceSources),
+		"mutations status":   valuesOf(MutationsStatuses),
 		"model external ref": valuesOf(ModelSources),
 		"entry external ref": valuesOf(EntrySources),
 	}

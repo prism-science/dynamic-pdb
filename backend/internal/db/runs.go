@@ -180,8 +180,8 @@ func (r *RunsRepository) AttachArtifact(
 ) error {
 	query := `insert into run_artifacts(run_id, artifact_id, direction)
 			  values ($1, $2, $3)
-			  on conflict (run_id, artifact_id)
-			  do update set direction = excluded.direction`
+			  on conflict (run_id, artifact_id, direction)
+			  do nothing`
 
 	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, runID, artifactID, string(direction)); err != nil {
 		return fmt.Errorf("attach artifact to run: %w", err)
@@ -197,7 +197,7 @@ func (r *RunsRepository) ListArtifactLinks(
 			  from run_artifacts
 			  join model_revision_runs on model_revision_runs.run_id = run_artifacts.run_id
 			  where model_revision_runs.model_revision_id = $1
-			  order by run_artifacts.run_id asc, run_artifacts.artifact_id asc`
+			  order by run_artifacts.run_id asc, run_artifacts.artifact_id asc, run_artifacts.direction asc`
 
 	rows := make([]runArtifactLinkRow, 0)
 	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, query, modelRevisionID); err != nil {

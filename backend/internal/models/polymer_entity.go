@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,8 +24,23 @@ type PolymerEntityMetadata struct {
 	SourceOrganisms []PolymerEntityOrganism         `json:"source_organisms,omitempty"`
 	Construct       *string                         `json:"construct,omitempty"`
 	Mutations       []string                        `json:"mutations,omitempty"`
+	MutationsRaw    *string                         `json:"mutations_raw,omitempty"`
+	MutationsStatus *MutationsStatus                `json:"mutations_status,omitempty"`
 	UniProtMappings []PolymerEntityUniProtReference `json:"uniprot_mappings,omitempty"`
 }
+
+// MutationsStatus tells how much of MutationsRaw was read into Mutations.
+type MutationsStatus string
+
+const (
+	// MutationsStatusParsed means every token of the raw text is a plain substitution.
+	MutationsStatusParsed MutationsStatus = "parsed"
+	// MutationsStatusNeedsReview means some token is not a plain substitution; only the
+	// plain ones are listed in Mutations and the original text is in MutationsRaw.
+	MutationsStatusNeedsReview MutationsStatus = "needs_review"
+	// MutationsStatusNone means the raw text names no mutation.
+	MutationsStatusNone MutationsStatus = "none"
+)
 
 type PolymerEntityOrganism struct {
 	ScientificName string `json:"scientific_name"`
@@ -61,7 +78,9 @@ func (metadata *PolymerEntityMetadata) UnmarshalJSON(data []byte) error {
 	}
 	var list []string
 	if err := json.Unmarshal(stored.Mutations, &list); err == nil {
-		metadata.Mutations = list
+		if len(list) > 0 {
+			metadata.Mutations = list
+		}
 		return nil
 	}
 	var joined string
@@ -81,6 +100,43 @@ func SplitMutations(joined string) []string {
 		}
 	}
 	return mutations
+}
+
+// mutationSubstitutionPattern matches a one-letter substitution such as C54T: the
+// original residue, its position, and the new residue.
+var mutationSubstitutionPattern = regexp.MustCompile(`^[A-Z][1-9][0-9]*[A-Z]$`)
+
+// IsMutationSubstitution reports whether value is one plain substitution such as C54T.
+func IsMutationSubstitution(value string) bool {
+	return mutationSubstitutionPattern.MatchString(value)
+}
+
+// ParseMutations reads RCSB's mutation text. Only plain substitutions become list
+// entries; anything else (ENGINEERED MUTATION, DELETION, A(-3)G) is left to the caller to
+// keep as raw text, flagged by MutationsStatusNeedsReview, and never guessed. The schema
+// migration V20261023090200 applies the same rule to stored data.
+func ParseMutations(raw string) ([]string, MutationsStatus) {
+	var accepted []string
+	tokens := SplitMutations(raw)
+	for _, token := range tokens {
+		if IsMutationSubstitution(token) {
+			accepted = append(accepted, token)
+		}
+	}
+	switch {
+	case len(tokens) == 0:
+		return nil, MutationsStatusNone
+	case len(accepted) < len(tokens):
+		return accepted, MutationsStatusNeedsReview
+	default:
+		return accepted, MutationsStatusParsed
+	}
+}
+
+// SameMutationText reports whether two raw mutation texts hold the same tokens in the same
+// order, whatever separators (, or ;) and whitespace they use.
+func SameMutationText(first string, second string) bool {
+	return slices.Equal(SplitMutations(first), SplitMutations(second))
 }
 
 // DepositorPolymerEntity holds the polymer-entity values a depositor supplies on an

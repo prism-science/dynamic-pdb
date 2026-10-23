@@ -188,11 +188,20 @@ func archivePolymerEntityProposal(mapping archive.PolymerEntityMapping) ArchiveP
 		SourceOrganisms: organisms,
 		Construct:       metadata.Construct,
 		Mutations:       mutations,
+		MutationsRaw:    metadata.MutationsRaw,
+		MutationsStatus: archiveMutationsStatusFromModel(metadata.MutationsStatus),
 		UniprotMappings: uniProtMappings,
 		Provenance:      nonNilProvenance(mapping.Provenance),
 		Conflicts:       archiveConflicts(mapping.Conflicts),
 		Warnings:        archiveWarnings(mapping.Warnings, fieldErrors),
 	}
+}
+
+func archiveMutationsStatusFromModel(status *models.MutationsStatus) *ArchivePolymerEntityProposalMutationsStatus {
+	if status == nil {
+		return nil
+	}
+	return new(ArchivePolymerEntityProposalMutationsStatus(*status))
 }
 
 func archiveConflicts(conflicts []archive.Conflict) []ArchiveConflict {

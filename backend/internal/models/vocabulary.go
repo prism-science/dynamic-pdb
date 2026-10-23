@@ -132,6 +132,17 @@ func (source UniProtReferenceSource) RequiresUniProtRelease() (bool, error) {
 	}
 }
 
+var MutationsStatuses = []MutationsStatus{MutationsStatusParsed, MutationsStatusNeedsReview, MutationsStatusNone}
+
+func (status MutationsStatus) Validate() error {
+	switch status {
+	case MutationsStatusParsed, MutationsStatusNeedsReview, MutationsStatusNone:
+		return nil
+	default:
+		return unknownValueError("mutations status", status, MutationsStatuses)
+	}
+}
+
 var ModelSources = []ModelSource{ModelSourcePDB, ModelSourceEXT}
 
 func (source ModelSource) Validate() error {

@@ -120,6 +120,40 @@ test("should name an entity after its number when the deposit gives no descripti
   assert.equal(view.name, "Entity 3");
 });
 
+test("should show the original mutation text when only part of it is a plain substitution", () => {
+  // given
+  const entities = [
+    entity({
+      label_entity_id: "1",
+      mutations: ["C54T"],
+      mutations_raw: "C54T, ENGINEERED MUTATION",
+      mutations_status: "needs_review",
+    }),
+    entity({
+      label_entity_id: "2",
+      mutations: [],
+      mutations_raw: "ENGINEERED MUTATION",
+      mutations_status: "needs_review",
+    }),
+    entity({
+      label_entity_id: "3",
+      mutations: ["C54T", "K7R"],
+      mutations_raw: "C54T, K7R",
+      mutations_status: "parsed",
+    }),
+  ];
+
+  // when
+  const [partial, textOnly, parsed] = polymerEntityViews(entities, []);
+
+  // then
+  assert.equal(partial.mutationsText, "C54T, ENGINEERED MUTATION");
+  assert.equal(partial.mutations, null);
+  assert.equal(textOnly.mutationsText, "ENGINEERED MUTATION");
+  assert.equal(hasEntityDetails(textOnly), true);
+  assert.deepEqual(parsed.mutations, ["C54T", "K7R"]);
+});
+
 test("should split mutations into substitutions only when the field is a plain list", () => {
   // given / when / then
   assert.deepEqual(mutationTokens("K986P, V987P, R682G"), [

@@ -893,6 +893,10 @@ export interface components {
             method?: string;
             space_group?: string;
             crystallography?: components["schemas"]["EntryCrystallography"];
+            /** @description Ligand component IDs of the sample. Absent means unknown; an empty list means none. */
+            ligands?: string[];
+            /** @description Cofactor component IDs of the sample. Absent means unknown; an empty list means none. */
+            cofactors?: string[];
         };
         /** @description Crystals and diffraction datasets reported for this entry. */
         EntryCrystallography: {
@@ -1078,6 +1082,13 @@ export interface components {
             construct?: string;
             /** @description Substitution strings such as C54T, one per element. */
             mutations?: string[];
+            /** @description Mutation text exactly as the source gave it (for example "C54T, ENGINEERED MUTATION"). Present when the text was read into mutations, so text that is not a plain substitution is not hidden by an empty list. */
+            mutations_raw?: string;
+            /**
+             * @description How much of mutations_raw is in mutations. parsed: every token is a substitution. needs_review: some token is not a plain substitution and is only in mutations_raw. none: the text names no mutation. Absent when the source gave no text.
+             * @enum {string}
+             */
+            mutations_status?: "parsed" | "needs_review" | "none";
             uniprot_mappings: components["schemas"]["ArchiveUniProtMapping"][];
         };
         EntryDocument: {
@@ -1111,6 +1122,13 @@ export interface components {
             construct?: string;
             /** @description Substitution strings such as C54T, one per element. */
             mutations: string[];
+            /** @description Mutation text exactly as the source gave it (for example "C54T, ENGINEERED MUTATION"). Present when the text was read into mutations, so text that is not a plain substitution is not hidden by an empty list. */
+            mutations_raw?: string;
+            /**
+             * @description How much of mutations_raw is in mutations. parsed: every token is a substitution. needs_review: some token is not a plain substitution and is only in mutations_raw. none: the text names no mutation. Absent when the source gave no text.
+             * @enum {string}
+             */
+            mutations_status?: "parsed" | "needs_review" | "none";
             uniprot_mappings: components["schemas"]["PolymerEntityUniProtMapping"][];
             /** Format: date-time */
             created_at: string;
@@ -1141,7 +1159,7 @@ export interface components {
         PolymerEntityUniProtMapping: {
             accession: string;
             /** @enum {string} */
-            source: "sifts" | "struct_ref";
+            source: "sifts" | "struct_ref" | "alignment";
             unp_release?: string;
         };
         EntryRelationships: {

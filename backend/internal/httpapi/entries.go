@@ -331,6 +331,12 @@ func applyEntryRevisionChange(
 	if _, present := fields["crystallography"]; present {
 		revision.Metadata.Crystallography = metadata.Crystallography
 	}
+	if _, present := fields["ligands"]; present {
+		revision.Metadata.Ligands = metadata.Ligands
+	}
+	if _, present := fields["cofactors"]; present {
+		revision.Metadata.Cofactors = metadata.Cofactors
+	}
 	if raw, present := fields["change_summary"]; present {
 		revision.ChangeSummary = nil
 		if !isJSONNull(raw) {
@@ -889,6 +895,8 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 				Method:            properties.Method,
 				SpaceGroup:        properties.SpaceGroup,
 				Crystallography:   properties.Crystallography,
+				Ligands:           properties.Ligands,
+				Cofactors:         properties.Cofactors,
 				PublishedAt:       revision.PublishedAt,
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
@@ -1364,7 +1372,11 @@ func (s *Server) attachArtifactToRun(ctx context.Context, runID uuid.UUID, req C
 	if req.Direction == "" {
 		return invalidRequest("run artifact direction is required")
 	}
-	if err := s.database.Runs.AttachArtifact(ctx, runID, req.ArtifactId, domainmodels.RunArtifactDirection(req.Direction)); err != nil {
+	direction := domainmodels.RunArtifactDirection(req.Direction)
+	if err := direction.Validate(); err != nil {
+		return invalidRequest("run artifact direction: %v", err)
+	}
+	if err := s.database.Runs.AttachArtifact(ctx, runID, req.ArtifactId, direction); err != nil {
 		return fmt.Errorf("attach artifact to run: %w", err)
 	}
 	return nil
@@ -1444,6 +1456,7 @@ func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (Entry
 		ThumbnailImageUrl: revision.ThumbnailImageURL, ExternalRefs: properties.ExternalRefs,
 		Details: properties.Details, Resolution: properties.Resolution, Method: properties.Method,
 		SpaceGroup: properties.SpaceGroup, Crystallography: properties.Crystallography,
+		Ligands: properties.Ligands, Cofactors: properties.Cofactors,
 		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
 }
 
@@ -1624,11 +1637,20 @@ func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerE
 			SourceOrganisms: sourceOrganisms,
 			Construct:       entity.Metadata.Construct,
 			Mutations:       mutations,
+			MutationsRaw:    entity.Metadata.MutationsRaw,
+			MutationsStatus: mutationsStatusFromModel(entity.Metadata.MutationsStatus),
 			UniprotMappings: uniProtMappings,
 			CreatedAt:       entity.CreatedAt,
 		})
 	}
 	return items
+}
+
+func mutationsStatusFromModel(status *domainmodels.MutationsStatus) *PolymerEntityMutationsStatus {
+	if status == nil {
+		return nil
+	}
+	return new(PolymerEntityMutationsStatus(*status))
 }
 
 func metadataFromValue(value any) (map[string]interface{}, error) {
@@ -1914,7 +1936,7 @@ func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPaylo
 var entryRevisionFields = map[string]struct{}{
 	"title": {}, "thumbnail_image_url": {}, "external_refs": {}, "details": {},
 	"resolution": {}, "method": {}, "space_group": {}, "crystallography": {},
-	"change_summary": {}, "polymer_entities": {},
+	"ligands": {}, "cofactors": {}, "change_summary": {}, "polymer_entities": {},
 }
 
 var modelRevisionFields = map[string]struct{}{
@@ -1944,6 +1966,9 @@ func invalidPayloadRequest(description string, err error) error {
 	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
 }
 
+// modelRevisionMetricKeyIndex is the unique index on (model revision, metric key).
+const modelRevisionMetricKeyIndex = "model_revision_metrics_revision_key_idx"
+
 func isUniqueConstraint(err error, constraint string) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
@@ -1963,6 +1988,8 @@ func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, 
 	case errors.Is(err, errConflict), errors.Is(err, db.ErrEntryRevisionConflict), errors.Is(err, db.ErrModelRevisionConflict),
 		isUniqueConstraint(err, "entry_revisions_active_pdb_ref_idx"):
 		writeError(w, http.StatusConflict, "CONFLICT", "revision conflicts with the current active state")
+	case isUniqueConstraint(err, modelRevisionMetricKeyIndex):
+		writeError(w, http.StatusConflict, "CONFLICT", "a model revision can have only one metric per key")
 	default:
 		slog.ErrorContext(ctx, action+" failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)

@@ -512,7 +512,7 @@ func applyDepositorPolymerEntities(
 				merged[index].Metadata.Construct = supplied.Construct
 			}
 			if len(supplied.Mutations) > 0 {
-				merged[index].Metadata.Mutations = supplied.Mutations
+				applyDepositorMutations(&merged[index].Metadata, supplied.Mutations)
 			}
 			if len(merged[index].Metadata.SourceOrganisms) == 0 {
 				merged[index].Metadata.SourceOrganisms = supplied.SourceOrganisms
@@ -520,6 +520,20 @@ func applyDepositorPolymerEntities(
 		}
 	}
 	return merged
+}
+
+// applyDepositorMutations replaces the extracted mutations with the depositor's. The API only
+// accepts plain substitutions; a token that is not one is kept out of Mutations all the same,
+// in the raw text, flagged for review.
+func applyDepositorMutations(metadata *models.PolymerEntityMetadata, supplied []string) {
+	accepted, status := models.ParseMutations(strings.Join(supplied, ", "))
+	if status == models.MutationsStatusParsed {
+		metadata.Mutations = supplied
+		return
+	}
+	metadata.Mutations = accepted
+	metadata.MutationsRaw = new(strings.Join(supplied, ", "))
+	metadata.MutationsStatus = &status
 }
 
 func polymerEntitiesHaveSameData(
@@ -538,12 +552,39 @@ func polymerEntitiesHaveSameData(
 		return stringValue(desired[first].Metadata.LabelEntityID) < stringValue(desired[second].Metadata.LabelEntityID)
 	})
 	for index := range desired {
+		storedMetadata := withoutBlankMutations(stored[index].Metadata)
+		desiredMetadata := comparableToStored(storedMetadata, withoutBlankMutations(desired[index].Metadata))
 		if stored[index].ProteinSequenceID != desired[index].ProteinSequenceID ||
-			!reflect.DeepEqual(stored[index].Metadata, desired[index].Metadata) {
+			!reflect.DeepEqual(storedMetadata, desiredMetadata) {
 			return false
 		}
 	}
 	return true
+}
+
+// comparableToStored drops from the desired metadata what a stored entity cannot hold:
+// entities whose mutations were already a list when the schema migration structured them
+// may have no original text, and mutation text that only differs from the stored text in
+// separators or whitespace is the same text.
+func comparableToStored(stored models.PolymerEntityMetadata, desired models.PolymerEntityMetadata) models.PolymerEntityMetadata {
+	switch {
+	case stored.MutationsRaw == nil:
+		desired.MutationsRaw = nil
+	case desired.MutationsRaw != nil && models.SameMutationText(*stored.MutationsRaw, *desired.MutationsRaw):
+		desired.MutationsRaw = stored.MutationsRaw
+	}
+	return desired
+}
+
+// withoutBlankMutations treats blank mutation text as no text: RCSB blank
+// text is never stored, but the schema migration records such text as status none.
+func withoutBlankMutations(metadata models.PolymerEntityMetadata) models.PolymerEntityMetadata {
+	if len(metadata.Mutations) == 0 && strings.TrimSpace(stringValue(metadata.MutationsRaw)) == "" {
+		metadata.Mutations = nil
+		metadata.MutationsRaw = nil
+		metadata.MutationsStatus = nil
+	}
+	return metadata
 }
 
 func stringValue(value *string) string {
