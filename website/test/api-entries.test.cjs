@@ -256,8 +256,54 @@ test("should throw ApiRequestError with status when create entry fails", async (
       (error) =>
         error instanceof ApiRequestError &&
         error.status === 400 &&
-        error.message === "Backend responded with 400",
+        error.message === "Backend responded with 400" &&
+        error.errors.length === 0,
     );
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should expose field errors when backend rejects create entry with 422", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    // given
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    global.fetch = async () =>
+      jsonResponse(
+        {
+          errors: [
+            {
+              status: "422",
+              code: "invalid_value",
+              detail: "metric key must be one of the allowed keys",
+              source: { pointer: "/model_operations/0/data/metrics/1/key" },
+            },
+            { status: "422", detail: "title is required", source: { pointer: "/entry/title" } },
+          ],
+        },
+        { status: 422 },
+      );
+
+    // when
+    const rejection = createEntry("token-123", { title: "Entry" });
+
+    // then
+    await assert.rejects(rejection, (error) => {
+      assert.ok(error instanceof ApiRequestError);
+      assert.equal(error.status, 422);
+      assert.equal(error.errors.length, 2);
+      assert.equal(error.errors[0].detail, "metric key must be one of the allowed keys");
+      assert.equal(error.errors[0].source.pointer, "/model_operations/0/data/metrics/1/key");
+      assert.equal(error.errors[0].code, "invalid_value");
+      assert.equal(
+        error.message,
+        "Backend responded with 422: metric key must be one of the allowed keys (/model_operations/0/data/metrics/1/key); title is required (/entry/title)",
+      );
+      return true;
+    });
   } finally {
     global.fetch = previousFetch;
     restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
