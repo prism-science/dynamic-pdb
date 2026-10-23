@@ -235,7 +235,7 @@ func Test_should_structure_mutations_with_raw_and_status_when_polymer_entities_m
 		{"02", []any{}, "ENGINEERED MUTATION", "needs_review"},
 		{"03", []any{"C54T", "K7R"}, "C54T;DELETION,A(-3)G, K7R", "needs_review"},
 		{"04", []any{}, "", "none"},
-		{"06", []any{"C54T", "X"}, nil, "needs_review"},
+		{"06", []any{"C54T"}, "C54T, X", "needs_review"},
 		{"08", []any{"R1Q"}, "R1Q", "parsed"},
 	}
 
@@ -254,6 +254,65 @@ func Test_should_structure_mutations_with_raw_and_status_when_polymer_entities_m
 	assert.Equal(t, 0, fixture.reviewCount(t, "polymer_entity", fixtureEntityBase+"01"))
 	details := fixture.reviewDetails(t, "polymer_entity", fixtureEntityBase+"02", "mutations_need_review")
 	assert.Equal(t, "ENGINEERED MUTATION", details["mutations_raw"])
+	listDetails := fixture.reviewDetails(t, "polymer_entity", fixtureEntityBase+"06", "mutations_need_review")
+	assert.Equal(t, "C54T, X", listDetails["mutations_raw"])
+	assert.Equal(t, []any{"C54T"}, listDetails["mutations"])
+}
+
+func Test_should_agree_with_parse_mutations_when_lists_and_strings_migrated(t *testing.T) {
+	// given
+	cases := []struct {
+		name    string
+		stored  any
+		rawText string
+	}{
+		{"list of substitutions", []string{"C54T", "C97A"}, "C54T, C97A"},
+		{"list of non substitutions", []string{"ENGINEERED MUTATION", "DELETION"}, "ENGINEERED MUTATION, DELETION"},
+		{"mixed list", []string{"C54T", "ENGINEERED MUTATION", "K7R"}, "C54T, ENGINEERED MUTATION, K7R"},
+		{"empty list", []string{}, ""},
+		{"duplicate tokens", []string{"C54T", "C54T", "X"}, "C54T, C54T, X"},
+		{"padded and non breaking space tokens", []string{" C54T ", "\u00a0K7R\u00a0", "A(-3)G\u3000"}, " C54T , \u00a0K7R\u00a0, A(-3)G\u3000"},
+		{"element holding several tokens", []string{"C54T; DELETION", "K7R"}, "C54T; DELETION, K7R"},
+		{"blank element", []string{"C54T", " "}, "C54T,  "},
+		{"string of substitutions", "C54T, C97A", "C54T, C97A"},
+		{"string with non substitution", "C54T,ENGINEERED MUTATION", "C54T,ENGINEERED MUTATION"},
+		{"empty string", "", ""},
+	}
+	var seed strings.Builder
+	fmt.Fprintf(&seed, `insert into protein_sequences(id, entry_revision_id, source_artifact_id, record_index, header, sequence)
+		select ('00000000-0000-0000-0000-00000000c2' || lpad(n::text, 2, '0'))::uuid, '%s01', '%s', 200 + n, 'h', 'A'
+		from generate_series(1, %d) n;
+		`, fixtureRevisionBase, fixtureArtifact, len(cases))
+	for index, testCase := range cases {
+		metadata, err := json.Marshal(map[string]any{"mutations": testCase.stored})
+		require.NoError(t, err)
+		fmt.Fprintf(&seed, `insert into polymer_entities(id, protein_sequence_id, metadata)
+			values ('00000000-0000-0000-0000-00000000d2%02d', '00000000-0000-0000-0000-00000000c2%02d', '%s');
+			`, index+1, index+1, strings.ReplaceAll(string(metadata), "'", "''"))
+	}
+
+	// when
+	fixture := newMigratedFixtureWithExtraSeed(t, seed.String())
+
+	// then
+	for index, testCase := range cases {
+		wantMutations, wantStatus := models.ParseMutations(testCase.rawText)
+		if wantMutations == nil {
+			wantMutations = []string{}
+		}
+		metadata := fixture.jsonbAt(t, `select metadata from polymer_entities where id = $1`,
+			fmt.Sprintf("00000000-0000-0000-0000-00000000d2%02d", index+1))
+		gotMutations := []string{}
+		for _, mutation := range metadata["mutations"].([]any) {
+			gotMutations = append(gotMutations, mutation.(string))
+		}
+		assert.Equal(t, wantMutations, gotMutations, testCase.name)
+		assert.Equal(t, testCase.rawText, metadata["mutations_raw"], testCase.name)
+		assert.Equal(t, string(wantStatus), metadata["mutations_status"], testCase.name)
+		for _, mutation := range gotMutations {
+			assert.True(t, models.IsMutationSubstitution(mutation), "%s: %q", testCase.name, mutation)
+		}
+	}
 }
 
 func Test_should_not_merge_lists_with_non_string_elements_when_ligands_migrated(t *testing.T) {

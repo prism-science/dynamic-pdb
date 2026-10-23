@@ -117,6 +117,9 @@ FROM (
     FROM polymer_entities
     WHERE jsonb_typeof(polymer_entities.metadata -> 'mutations') = 'string'
        OR polymer_entities.metadata ->> 'mutations_status' = 'needs_review'
+       OR (jsonb_typeof(polymer_entities.metadata -> 'mutations') = 'array'
+           AND EXISTS (SELECT 1 FROM jsonb_array_elements(polymer_entities.metadata -> 'mutations') AS element
+                       WHERE jsonb_typeof(element) <> 'string' OR element #>> '{}' !~ '^[A-Z][1-9][0-9]*[A-Z]$'))
 
     UNION ALL
     SELECT 'polymer_entity_uniprot_mapping_invalid', 'polymer_entity', polymer_entities.id::text,

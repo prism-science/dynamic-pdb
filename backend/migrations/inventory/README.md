@@ -24,7 +24,7 @@ Records with missing information (omitted `model_type`, NULL `sha256`) are not v
 
 Records the migrations could not resolve themselves are in `schema_migration_review`
 (`object_type, object_id, issue, details`): PDB-backed entries whose ligand/cofactor lists wait for
-the archive re-derivation (C2), entries merged from models, mutation strings needing review, and
+the archive re-derivation (C2), entries merged from models, mutation texts (strings or lists) holding a token that is not a plain substitution, and
 duplicate metric keys. Original model lists are kept in `model_revisions.metadata` and copied there.
 
 Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run_artifacts_direction_chk`,

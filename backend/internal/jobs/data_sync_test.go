@@ -602,6 +602,9 @@ func Test_should_not_detect_polymer_entity_change_when_stored_metadata_was_struc
 	}{
 		"parsed string":       {`{"label_entity_id":"1","mutations":["C54T","C97A"],"mutations_raw":"C54T, C97A","mutations_status":"parsed"}`, "C54T, C97A"},
 		"needs review":        {`{"label_entity_id":"1","mutations":[],"mutations_raw":"ENGINEERED MUTATION","mutations_status":"needs_review"}`, "ENGINEERED MUTATION"},
+		"migrated list":       {`{"label_entity_id":"1","mutations":["C54T"],"mutations_raw":"C54T, ENGINEERED MUTATION","mutations_status":"needs_review"}`, "C54T, ENGINEERED MUTATION"},
+		"other separators":    {`{"label_entity_id":"1","mutations":["C54T","K7R"],"mutations_raw":"C54T, DELETION, K7R","mutations_status":"needs_review"}`, "C54T;DELETION ,K7R"},
+		"blank stored list":   {`{"label_entity_id":"1","mutations_raw":"","mutations_status":"none"}`, ""},
 		"mixed":               {`{"label_entity_id":"1","mutations":["C54T","K7R"],"mutations_raw":"C54T;DELETION,A(-3)G, K7R","mutations_status":"needs_review"}`, "C54T;DELETION,A(-3)G, K7R"},
 		"list without raw":    {`{"label_entity_id":"1","mutations":["C54T","C97A"],"mutations_status":"parsed"}`, "C54T, C97A"},
 		"no mutations at all": {`{"label_entity_id":"1"}`, ""},
@@ -624,6 +627,42 @@ func Test_should_not_detect_polymer_entity_change_when_stored_metadata_was_struc
 		// then
 		assert.True(t, same, name)
 	}
+}
+
+func Test_should_detect_polymer_entity_change_when_rcsb_mutation_tokens_changed_but_separators_did_not(t *testing.T) {
+	// given
+	sequenceID := uuid.New()
+	var stored models.PolymerEntityMetadata
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"label_entity_id":"1","mutations":["C54T"],"mutations_raw":"C54T, ENGINEERED MUTATION","mutations_status":"needs_review"}`),
+		&stored))
+	desired := polymerEntityMetadataFromRCSB(rcsb.PolymerEntityDetails{
+		Entity:      rcsb.PolymerEntityData{Mutation: "C54T, DELETION"},
+		Identifiers: rcsb.PolymerEntityContainerIdentifiers{EntityID: "1"},
+	}, "fallback", nil)
+
+	// when
+	same := polymerEntitiesHaveSameData(
+		[]models.PolymerEntity{{ProteinSequenceID: sequenceID, Metadata: stored}},
+		[]polymerEntitySnapshot{{ProteinSequenceID: sequenceID, Metadata: desired}},
+	)
+
+	// then
+	assert.False(t, same)
+}
+
+func Test_should_keep_non_substitution_out_of_mutations_when_depositor_supplies_one(t *testing.T) {
+	// given
+	extracted := []models.PolymerEntity{{Metadata: models.PolymerEntityMetadata{LabelEntityID: optionalString("1")}}}
+	depositor := []models.DepositorPolymerEntity{{LabelEntityID: "1", Mutations: []string{"C54T", "ENGINEERED MUTATION"}}}
+
+	// when
+	merged := applyDepositorPolymerEntities(extracted, depositor)
+
+	// then
+	assert.Equal(t, []string{"C54T"}, merged[0].Metadata.Mutations)
+	assert.Equal(t, optionalString("C54T, ENGINEERED MUTATION"), merged[0].Metadata.MutationsRaw)
+	assert.Equal(t, models.MutationsStatusNeedsReview, *merged[0].Metadata.MutationsStatus)
 }
 
 func Test_should_detect_polymer_entity_change_when_rcsb_mutation_text_changed(t *testing.T) {

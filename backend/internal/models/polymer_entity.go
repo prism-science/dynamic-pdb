@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -116,25 +117,26 @@ func IsMutationSubstitution(value string) bool {
 // migration V20261023090200 applies the same rule to stored data.
 func ParseMutations(raw string) ([]string, MutationsStatus) {
 	var accepted []string
-	tokenCount := 0
-	for _, token := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' }) {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		tokenCount++
+	tokens := SplitMutations(raw)
+	for _, token := range tokens {
 		if IsMutationSubstitution(token) {
 			accepted = append(accepted, token)
 		}
 	}
 	switch {
-	case tokenCount == 0:
+	case len(tokens) == 0:
 		return nil, MutationsStatusNone
-	case len(accepted) < tokenCount:
+	case len(accepted) < len(tokens):
 		return accepted, MutationsStatusNeedsReview
 	default:
 		return accepted, MutationsStatusParsed
 	}
+}
+
+// SameMutationText reports whether two raw mutation texts hold the same tokens in the same
+// order, whatever separators (, or ;) and whitespace they use.
+func SameMutationText(first string, second string) bool {
+	return slices.Equal(SplitMutations(first), SplitMutations(second))
 }
 
 // DepositorPolymerEntity holds the polymer-entity values a depositor supplies on an
