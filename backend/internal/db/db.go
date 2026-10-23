@@ -26,6 +26,7 @@ type DB struct {
 	ProteinSequences            *ProteinSequencesRepository
 	PolymerEntities             *PolymerEntitiesRepository
 	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
+	InteractionSets             *InteractionSetsRepository
 
 	sqlx *sqlx.DB
 	// probe is a separate single-connection pool for Ping, so health checks never queue
@@ -92,6 +93,7 @@ func NewDB(cfg Config) (*DB, error) {
 		ProteinSequences:            NewProteinSequencesRepository(sqlxDB, queriers),
 		PolymerEntities:             NewPolymerEntitiesRepository(sqlxDB, queriers),
 		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
+		InteractionSets:             NewInteractionSetsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		probe:                       probe,
 		txManager:                   txManager,

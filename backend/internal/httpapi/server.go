@@ -22,6 +22,7 @@ import (
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/types"
 	"dynamic-pdb/backend/internal/validation"
+	"dynamic-pdb/lib/cif"
 )
 
 type Server struct {
@@ -40,6 +41,11 @@ type Server struct {
 	validationMode validation.Mode
 	// archive serves GET /v1/archive/pdb/{pdb_id}; see WithArchiveLookup.
 	archive ArchiveLookup
+	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
+	extractionLimits *extractionLimits
+	// extractionTimeout is the longest one extraction may spend parsing; see
+	// WithExtractionTimeout.
+	extractionTimeout time.Duration
 }
 
 func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
@@ -76,6 +82,10 @@ func NewServer(
 		downloads:      downloads,
 		publicBaseURL:  publicBaseURL,
 		validationMode: validationMode,
+		extractionLimits: newExtractionLimits(
+			defaultExtractionMaxInFlight, defaultExtractionUserRequests, defaultExtractionUserWindow,
+		),
+		extractionTimeout: cif.TimeBudget,
 	}
 }
 

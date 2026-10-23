@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -20,8 +21,15 @@ type StubServer struct {
 	abortPath        string
 	abortUploadID    string
 
+	objects map[string][]byte
+
 	createWithoutUploadID bool
 	abortStatus           int
+
+	// readGate, when set, holds every object GET until it is closed;
+	// readsStarted gets one value per GET that is waiting at the gate.
+	readGate     chan struct{}
+	readsStarted chan struct{}
 }
 
 type Requests struct {
@@ -35,7 +43,7 @@ type Requests struct {
 }
 
 func NewStubServer() *StubServer {
-	server := &StubServer{}
+	server := &StubServer{objects: map[string][]byte{}}
 	server.server = httptest.NewServer(http.HandlerFunc(server.handle))
 	server.Reset()
 	return server
@@ -62,6 +70,30 @@ func (s *StubServer) Reset() {
 	s.abortUploadID = ""
 	s.createWithoutUploadID = false
 	s.abortStatus = http.StatusNoContent
+	s.readGate = nil
+	s.readsStarted = nil
+}
+
+// HoldObjectReads makes object GETs wait until release is called. started
+// receives one value for each GET that is waiting.
+func (s *StubServer) HoldObjectReads() (started <-chan struct{}, release func()) {
+	gate := make(chan struct{})
+	waiting := make(chan struct{}, 16)
+	s.mu.Lock()
+	s.readGate = gate
+	s.readsStarted = waiting
+	s.mu.Unlock()
+	var once sync.Once
+	return waiting, func() { once.Do(func() { close(gate) }) }
+}
+
+// PutObject stores an object that ranged GETs on urlPath (for example
+// "/dynamic-pdb/entry/artifacts/id/model.cif") return.
+func (s *StubServer) PutObject(urlPath string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.objects[urlPath] = data
 }
 
 func (s *StubServer) ReturnNoUploadID() {
@@ -101,8 +133,54 @@ func (s *StubServer) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleCompleteMultipartUpload(w, r)
 	case r.Method == http.MethodDelete && r.URL.Query().Get("uploadId") != "":
 		s.handleAbortMultipartUpload(w, r)
+	case r.Method == http.MethodGet:
+		s.handleGetObject(w, r)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func (s *StubServer) handleGetObject(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	data, ok := s.objects[r.URL.Path]
+	gate, waiting := s.readGate, s.readsStarted
+	s.mu.Unlock()
+	if gate != nil {
+		waiting <- struct{}{}
+		select {
+		case <-gate:
+		case <-r.Context().Done():
+			return
+		}
+	}
+	if !ok {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusNotFound)
+		writeXML(w, `<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>`)
+		return
+	}
+	end := len(data)
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader == "" {
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		if _, err := w.Write(data); err != nil {
+			return
+		}
+		return
+	}
+	last, err := strconv.Atoi(strings.TrimPrefix(rangeHeader, "bytes=0-"))
+	if err != nil || !strings.HasPrefix(rangeHeader, "bytes=0-") {
+		http.Error(w, "unsupported range", http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+	if last+1 < end {
+		end = last + 1
+	}
+	w.Header().Set("Content-Range", "bytes 0-"+strconv.Itoa(end-1)+"/"+strconv.Itoa(len(data)))
+	w.Header().Set("Content-Length", strconv.Itoa(end))
+	w.WriteHeader(http.StatusPartialContent)
+	if _, err := w.Write(data[:end]); err != nil {
+		return
 	}
 }
 

@@ -1,0 +1,12 @@
+{
+  "name": "solvent-buffer-cryoprotectant-list",
+  "version": "2026.10.0-draft",
+  "approved": false,
+  "description": "Draft list of chemical component dictionary (CCD) IDs that the mmCIF parser drops as water, solvents, buffers, cryoprotectants or crystallization salts. This is a science decision, not an engineering one: researchers must confirm it. Citrate (CIT), sulfate (SO4), phosphate (PO4) and halide ions are often real ligands. See docs/cif-extraction.md.",
+  "solvents": [
+    "HOH", "DOD", "WAT", "H2O",
+    "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
+    "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
+    "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD"
+  ]
+}

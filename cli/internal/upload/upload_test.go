@@ -3,6 +3,7 @@ package upload
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -78,6 +79,8 @@ func Test_should_upload_entries_from_manifest(t *testing.T) {
 	assert.Equal(t, 2, models[1].Metadata["modeled_residues"])
 	assert.Equal(t, 1, models[1].Metadata["unique_protein_chains"])
 	assert.Equal(t, []string{"ATP"}, models[1].Metadata["ligands"])
+	assert.NotContains(t, models[1].Metadata, "cofactors")
+	assert.NotContains(t, models[0].Metadata, "cofactors")
 	assert.Len(t, models[1].Artifacts, 3)
 	assert.Equal(t, "model", models[1].Artifacts[0].Type)
 	assert.Equal(t, "other", models[1].Artifacts[1].Type)
@@ -1180,6 +1183,7 @@ func localModel(title string, coordinateSource string, logSource string, mtzSour
 			"modeled_residues":      pdbArtifactExtraction("modeled_residues"),
 			"unique_protein_chains": pdbArtifactExtraction("unique_protein_chains"),
 			"ligands":               pdbArtifactExtraction("ligands"),
+			"cofactors":             pdbArtifactExtraction("cofactors"),
 		},
 		Artifacts: artifacts,
 		Metrics:   pdbRefinementMetrics(),
@@ -1316,4 +1320,217 @@ func readState(t *testing.T, path string) State {
 	state, err := readUploadState(path)
 	require.NoError(t, err)
 	return state
+}
+
+func Test_should_upload_cofactors_from_mmcif_when_manifest_is_generated_from_data_folder(t *testing.T) {
+	cases := []struct {
+		name      string
+		fixture   string
+		cofactors []string
+		ligands   []string
+	}{
+		{name: "heme", fixture: "4HHB.cif", cofactors: []string{"HEM"}, ligands: []string{"PO4"}},
+		{name: "catalytic metal", fixture: "3CLN.cif", cofactors: []string{"CA"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// given
+			fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", testCase.fixture))
+			require.NoError(t, err)
+			dataRoot := t.TempDir()
+			writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+			manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+			_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+			require.NoError(t, err)
+			dynamicPDBClient := &fakeDynamicPDBClient{}
+
+			// when
+			_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+			// then
+			require.NoError(t, err)
+			var uploaded map[string]any
+			for _, model := range modelRequests(dynamicPDBClient.models) {
+				if _, hasAtoms := model.Metadata["atom_count"]; hasAtoms && model.Metadata["cofactors"] != nil {
+					uploaded = model.Metadata
+				}
+			}
+			require.NotNil(t, uploaded, "no uploaded model carried cofactors")
+			assert.Equal(t, testCase.cofactors, uploaded["cofactors"])
+			if testCase.ligands == nil {
+				assert.NotContains(t, uploaded, "ligands")
+			} else {
+				assert.Equal(t, testCase.ligands, uploaded["ligands"])
+			}
+		})
+	}
+}
+
+func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_review(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.pdb",
+		"ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n"+
+			"HETATM    2 ZN    ZN B 101      16.104  13.207   9.447  1.00 20.00          ZN\n"+
+			"HETATM    3  S   SO4 B 102      16.104  13.207   9.447  1.00 20.00           S\n")
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err := manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	var uploaded map[string]any
+	for _, model := range modelRequests(dynamicPDBClient.models) {
+		if model.Metadata["cofactors"] != nil {
+			uploaded = model.Metadata
+		}
+	}
+	require.NotNil(t, uploaded, "no uploaded model carried cofactors")
+	assert.Equal(t, []string{"ZN"}, uploaded["cofactors"])
+	assert.Equal(t, []string{"SO4"}, uploaded["ligands"])
+	extensions, ok := uploaded["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	reviewJSON, err := json.Marshal(extensions["compound_review"])
+	require.NoError(t, err)
+	assert.JSONEq(t, `[
+		{"list": "ligands", "id": "SO4", "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"},
+		{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
+	]`, string(reviewJSON))
+}
+
+// writeManifestWithoutKeys rewrites a generated manifest the way versions before
+// cofactors existed wrote it: without the named model metadata keys.
+func writeManifestWithoutKeys(t *testing.T, manifestPath string, keys ...string) {
+	t.Helper()
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	for _, model := range manifestModels(&generated) {
+		for _, key := range keys {
+			delete(model.Metadata, key)
+		}
+	}
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+}
+
+func manifestModels(generated *manifest.Manifest) []*manifest.ModelPattern {
+	var models []*manifest.ModelPattern
+	for entryIndex := range generated.Entries {
+		for modelIndex := range generated.Entries[entryIndex].Models {
+			models = append(models, &generated.Entries[entryIndex].Models[modelIndex])
+		}
+	}
+	return models
+}
+
+// setManifestExtensions makes every model read its "extensions" object from notes.json.
+func setManifestExtensions(generated *manifest.Manifest) {
+	for _, model := range manifestModels(generated) {
+		if model.Metadata != nil {
+			model.Metadata["extensions"] = []manifest.FieldExtraction{{
+				Source:  manifest.Source{Files: []string{"notes.json"}},
+				Extract: manifest.Extract{JSON: &manifest.ExtractRule{Field: "extensions"}},
+			}}
+		}
+	}
+}
+
+func uploadedMetadataWithAtoms(t *testing.T, client *fakeDynamicPDBClient) map[string]any {
+	t.Helper()
+	var uploaded map[string]any
+	for _, model := range modelRequests(client.models) {
+		if _, hasAtoms := model.Metadata["atom_count"]; hasAtoms {
+			uploaded = model.Metadata
+		}
+	}
+	require.NotNil(t, uploaded, "no uploaded model carried atom_count")
+	return uploaded
+}
+
+func Test_should_upload_cofactors_when_manifest_was_saved_before_cofactors_existed(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	writeManifestWithoutKeys(t, manifestPath, "cofactors", "extensions.compound_review")
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	uploaded := uploadedMetadataWithAtoms(t, dynamicPDBClient)
+	assert.Equal(t, []string{"HEM"}, uploaded["cofactors"], "HEM must not be dropped from an old manifest")
+	assert.Equal(t, []string{"PO4"}, uploaded["ligands"])
+	extensions, ok := uploaded["extensions"].(map[string]any)
+	require.True(t, ok, "review flags must be uploaded for an old manifest")
+	assert.Contains(t, extensions, "compound_review")
+}
+
+func Test_should_keep_manifest_extensions_when_review_flags_are_added(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept", "compound_review": "mine"}, "nested": {"x": 1}}`)
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	setManifestExtensions(&generated)
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	extensions, ok := uploadedMetadataWithAtoms(t, dynamicPDBClient)["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	assert.Equal(t, "kept", extensions["lab_note"])
+	assert.Equal(t, "mine", extensions["compound_review"], "a key the manifest sets is never replaced")
+}
+
+func Test_should_add_review_flags_next_to_manifest_extensions_when_keys_do_not_clash(t *testing.T) {
+	// given
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", "4HHB.cif"))
+	require.NoError(t, err)
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
+	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept"}}`)
+	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
+	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	generated, err := manifest.Read(manifestPath)
+	require.NoError(t, err)
+	setManifestExtensions(&generated)
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
+	dynamicPDBClient := &fakeDynamicPDBClient{}
+
+	// when
+	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+
+	// then
+	require.NoError(t, err)
+	extensions, ok := uploadedMetadataWithAtoms(t, dynamicPDBClient)["extensions"].(map[string]any)
+	require.True(t, ok, "extensions must be an object")
+	assert.Equal(t, "kept", extensions["lab_note"])
+	assert.Contains(t, extensions, "compound_review")
 }

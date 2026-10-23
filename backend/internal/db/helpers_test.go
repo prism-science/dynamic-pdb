@@ -2,6 +2,8 @@ package db_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -136,4 +138,11 @@ func createDBTestArtifact(t *testing.T, createdBy uuid.UUID, name string, create
 	})
 	require.NoError(t, err)
 	return artifact
+}
+
+func readCIFFixture(t *testing.T, name string) string {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", name))
+	require.NoError(t, err)
+	return string(contents)
 }
