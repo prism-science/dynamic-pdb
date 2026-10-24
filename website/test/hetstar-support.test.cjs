@@ -8,124 +8,101 @@ const {
   modelRole,
 } = require("../src/lib/hetstar-support.ts");
 
-test("should hand an all-mmCIF qFit and deposited pair to the heterogeneity viewer", () => {
+test("should hand the selected qFit model and the deposited model to the heterogeneity viewer", () => {
   // given
   const data = entry([
     model("m1", "Deposited model", "4gs3.cif", "mmcif"),
     model("m2", "qFit model", "4gs3_qFit_010.cif", "mmcif"),
   ]);
 
+  // when
+  const canRender = hetstarCanRender(data, "m2");
+
   // then
-  assert.equal(hetstarCanRender(data), true);
+  assert.equal(canRender, true);
 });
 
-test("should refuse the entry when the model it would load is PDB", () => {
-  // given -- the deposited model is CIF, but hetstar loads qFit as A
+test("should hand a selected PDB model to the viewer, which converts it on load", () => {
+  // given -- re-refined and ensemble models are PDB across the catalogue
   const data = entry([
     model("m1", "Deposited model", "4gs3.cif", "mmcif"),
-    model("m2", "qFit model", "4gs3_qfit.pdb", "pdb"),
+    model("m2", "Rerefined model", "4gs3_020.pdb", "pdb"),
+    model("m3", "Ensemble refinement model", "4gs3_final_ensemble.pdb", "pdb"),
   ]);
 
   // then
-  assert.equal(hetstarCanRender(data), false);
+  assert.equal(hetstarCanRender(data, "m2"), true);
+  assert.equal(hetstarCanRender(data, "m3"), true);
 });
 
-test("should refuse the entry when the model it would compare against is PDB", () => {
-  // given -- A is CIF and loads; B is the deposited model, and pickPair throws
-  // on it before anything is drawn
+test("should load the selected deposited model alone rather than looking for a partner", () => {
+  // given -- the qFit model has no coordinates, but it is not the one selected
   const data = entry([
-    model("m1", "Deposited model", "4gs3.pdb", "pdb"),
+    model("m1", "Deposited model", "4gs3.cif", "mmcif"),
+    { id: "m2", title: "qFit model" },
+  ]);
+
+  // then
+  assert.equal(hetstarCanRender(data, "m1"), true);
+});
+
+test("should refuse a selected model when the deposited model it is compared against has no coordinates", () => {
+  // given
+  const data = entry([
+    { id: "m1", title: "Deposited model" },
     model("m2", "qFit model", "4gs3_qFit_010.cif", "mmcif"),
   ]);
 
   // then
-  assert.equal(hetstarCanRender(data), false);
+  assert.equal(hetstarCanRender(data, "m2"), false);
 });
 
-test("should not mind a PDB model the viewer would never load", () => {
-  // given -- the ensemble is PDB, but a qFit model exists, so the pair is
-  // qFit + deposited and the ensemble is not opened
+test("should refuse a selected model with no coordinates, or one the entry does not have", () => {
+  // given
   const data = entry([
     model("m1", "Deposited model", "4gs3.cif", "mmcif"),
-    model("m2", "qFit model", "4gs3_qFit_010.cif", "mmcif"),
-    model("m3", "Ensemble", "4gs3_final_ensemble.pdb", "pdb"),
+    { id: "m2", title: "qFit model" },
   ]);
 
   // then
-  assert.equal(hetstarCanRender(data), true);
-});
-
-test("should take an ensemble as the model to load when there is no qFit", () => {
-  // given -- an NMR ensemble on its own, which hetstar loads as A with no B
-  assert.equal(
-    hetstarCanRender(entry([model("m1", "Ensemble", "ens.cif", "mmcif")])),
-    true,
-  );
-  assert.equal(
-    hetstarCanRender(entry([model("m1", "Ensemble", "ens.pdb", "pdb")])),
-    false,
-  );
-});
-
-test("should load a deposited model alone rather than looking for a partner", () => {
-  // given -- A is the deposited model itself, so there is no B to fail on
-  const data = entry([model("m1", "Deposited model", "4gs3.cif", "mmcif")]);
-
-  // then
-  assert.equal(hetstarCanRender(data), true);
-});
-
-test("should refuse an entry with no model the viewer recognises", () => {
-  // given -- a role it does not load, and a model with no coordinates at all
-  assert.equal(
-    hetstarCanRender(entry([model("m1", "Rerefined model", "r.cif", "mmcif")])),
-    false,
-  );
-  assert.equal(
-    hetstarCanRender({
-      entry: { id: "entry-1" },
-      models: [{ id: "m1", title: "qFit model" }],
-      entities: [],
-      relations: [],
-    }),
-    false,
-  );
+  assert.equal(hetstarCanRender(data, "m2"), false);
+  assert.equal(hetstarCanRender(data, "m9"), false);
 });
 
 test("should read the format from the catalogue before the file name", () => {
-  // given -- a url that says nothing and a payload that says PDB
+  // given -- a url that says PDB and a payload that says it is a map
   const data = entry([
     {
       id: "m1",
-      title: "qFit model",
+      title: "Deposited model",
       entities: [
         {
           id: "e-m1",
           type: "model",
           model_id: "m1",
-          payload: { file_url: "https://files.example/opaque", type: "pdb" },
+          payload: { file_url: "https://files.example/a.pdb", type: "ccp4" },
         },
       ],
     },
   ]);
 
   // then
-  assert.equal(hetstarCanRender(data), false);
+  assert.equal(hetstarCanRender(data, "m1"), false);
 });
 
 test("should prefer the model's primary artifact over the first file listed", () => {
-  // given -- two coordinate files on one model, the primary one CIF
+  // given -- two files on one model, the primary one CIF
   const data = entry([
     {
       id: "m1",
-      title: "qFit model",
+      title: "Deposited model",
       primary_artifact_id: "e-cif",
       entities: [
         {
-          id: "e-pdb",
+          id: "e-map",
           type: "model",
           model_id: "m1",
-          payload: { file_url: "https://files.example/a.pdb", type: "pdb" },
+          payload: { file_url: "https://files.example/a.map", type: "ccp4" },
         },
         {
           id: "e-cif",
@@ -138,7 +115,7 @@ test("should prefer the model's primary artifact over the first file listed", ()
   ]);
 
   // then
-  assert.equal(hetstarCanRender(data), true);
+  assert.equal(hetstarCanRender(data, "m1"), true);
 });
 
 test("should fall back to the recorded model type when the title does not say", () => {

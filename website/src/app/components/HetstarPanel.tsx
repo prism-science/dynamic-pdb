@@ -98,9 +98,11 @@ function ExpandIcon({ exit }: { exit: boolean }) {
  */
 export default function HetstarPanel({
   entryId,
+  modelId,
   dpdb,
 }: {
   entryId: string;
+  modelId: string | null;
   dpdb: HetstarDpdbConfig;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -240,7 +242,7 @@ export default function HetstarPanel({
         </div>
       )}
       <div ref={frameRef} className={styles.frame}>
-        <HetstarViewer entryId={entryId} dpdb={dpdb} />
+        <HetstarViewer entryId={entryId} modelId={modelId} dpdb={dpdb} />
       </div>
       {tray !== null && createPortal(trayButton, tray)}
     </div>
