@@ -43,8 +43,14 @@ export function polymerEntityViews(
       const storedMutations = (entity.mutations ?? [])
         .map((mutation) => mutation.trim())
         .filter(Boolean);
+      // Text that is not a plain list of substitutions is only in mutations_raw.
+      const rawMutations =
+        entity.mutations_status === "needs_review"
+          ? trimmed(entity.mutations_raw)
+          : null;
       const mutationsText =
-        storedMutations.length > 0 ? storedMutations.join(", ") : null;
+        rawMutations ??
+        (storedMutations.length > 0 ? storedMutations.join(", ") : null);
       const residues = sequence ? residueCount(sequence.sequence) : null;
       const chains = sequence ? chainsFromHeader(sequence.header) : [];
 

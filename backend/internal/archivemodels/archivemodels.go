@@ -85,8 +85,13 @@ func PolymerEntityMetadata(mapping archive.PolymerEntityMapping, includeAlignmen
 		uniProtMappings = uniProtReferences(uniProtMappings, mapping.AlignmentMappings)
 	}
 	var mutations []string
+	var mutationsRaw *string
+	var mutationsStatus *models.MutationsStatus
 	if mapping.Mutations != nil {
-		mutations = models.SplitMutations(*mapping.Mutations)
+		parsed, status := models.ParseMutations(*mapping.Mutations)
+		mutations = parsed
+		mutationsRaw = mapping.Mutations
+		mutationsStatus = &status
 	}
 	return models.PolymerEntityMetadata{
 		LabelEntityID:   mapping.LabelEntityID,
@@ -94,6 +99,8 @@ func PolymerEntityMetadata(mapping archive.PolymerEntityMapping, includeAlignmen
 		SourceOrganisms: sourceOrganisms,
 		Construct:       mapping.Construct,
 		Mutations:       mutations,
+		MutationsRaw:    mutationsRaw,
+		MutationsStatus: mutationsStatus,
 		UniProtMappings: uniProtMappings,
 	}
 }

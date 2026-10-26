@@ -2699,6 +2699,18 @@ components:
           type: string
         crystallography:
           $ref: "#/components/schemas/EntryCrystallography"
+        ligands:
+          type: array
+          description: >
+            Ligand component IDs of the sample. Absent means unknown; an empty list means none.
+          items:
+            type: string
+        cofactors:
+          type: array
+          description: >
+            Cofactor component IDs of the sample. Absent means unknown; an empty list means none.
+          items:
+            type: string
 
     EntryCrystallography:
       type: object
@@ -3172,6 +3184,19 @@ components:
               description: Substitution strings such as C54T, one per element.
               items:
                 type: string
+            mutations_raw:
+              type: string
+              description: >
+                Mutation text exactly as the source gave it (for example "C54T, ENGINEERED MUTATION").
+                Present when the text was read into mutations, so text that is not a plain
+                substitution is not hidden by an empty list.
+            mutations_status:
+              type: string
+              enum: [parsed, needs_review, none]
+              description: >
+                How much of mutations_raw is in mutations. parsed: every token is a substitution.
+                needs_review: some token is not a plain substitution and is only in mutations_raw.
+                none: the text names no mutation. Absent when the source gave no text.
             uniprot_mappings:
               type: array
               items:
@@ -3251,6 +3276,19 @@ components:
           description: Substitution strings such as C54T, one per element.
           items:
             type: string
+        mutations_raw:
+          type: string
+          description: >
+            Mutation text exactly as the source gave it (for example "C54T, ENGINEERED MUTATION").
+            Present when the text was read into mutations, so text that is not a plain
+            substitution is not hidden by an empty list.
+        mutations_status:
+          type: string
+          enum: [parsed, needs_review, none]
+          description: >
+            How much of mutations_raw is in mutations. parsed: every token is a substitution.
+            needs_review: some token is not a plain substitution and is only in mutations_raw.
+            none: the text names no mutation. Absent when the source gave no text.
         uniprot_mappings:
           type: array
           items:
@@ -3311,7 +3349,7 @@ components:
           type: string
         source:
           type: string
-          enum: [sifts, struct_ref]
+          enum: [sifts, struct_ref, alignment]
         unp_release:
           type: string
 

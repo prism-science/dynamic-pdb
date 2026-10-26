@@ -172,6 +172,60 @@ func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_
 	s.NotEqual(uuid.Nil, created.Data.Attributes.RevisionId)
 }
 
+func (s *SchemaValidationSuite) Test_should_return_409_when_mode_is_log_only_and_model_repeats_a_metric_key() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-duplicate-metric-owner", 8409)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "log-only duplicate metric entry"},
+	})
+
+	// when
+	//nolint:bodyclose // assertErrorResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
+		map[string]any{"model": map[string]any{
+			"title": "model with a repeated metric key",
+			"metrics": []map[string]any{
+				{"id": uuid.New(), "key": "r_free", "value": 0.2},
+				{"id": uuid.New(), "key": "r_free", "value": 0.3},
+			},
+		}},
+		ownerToken,
+	)
+
+	// then
+	s.Equal(http.StatusConflict, response.StatusCode)
+	assertErrorResponse(s.T(), response, "CONFLICT", "a model revision can have only one metric per key")
+}
+
+func (s *SchemaValidationSuite) Test_should_reject_unknown_run_artifact_direction_with_400_when_mode_is_log_only() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-direction-owner", 8410)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "log-only direction entry"},
+	})
+	artifactID := uuid.New()
+
+	// when
+	//nolint:bodyclose // assertErrorResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
+		map[string]any{"model": map[string]any{
+			"title":     "model with an unknown run direction",
+			"artifacts": []map[string]any{artifactRequest(artifactID, "model", "L2", "cif", "s3://model/direction.cif", nil)},
+			"runs": []map[string]any{{
+				"id": uuid.New(), "name": "refine",
+				"artifacts": []map[string]any{{"artifact_id": artifactID, "direction": "sideways"}},
+			}},
+		}},
+		ownerToken,
+	)
+
+	// then
+	s.Equal(http.StatusBadRequest, response.StatusCode)
+	assertErrorResponse(s.T(), response, "BAD_REQUEST", "run artifact direction")
+}
+
 func (s *SchemaValidationSuite) Test_should_reject_missing_metric_value_with_400_when_mode_is_log_only() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-value-owner", 8407)

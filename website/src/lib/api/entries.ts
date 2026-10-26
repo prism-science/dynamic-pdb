@@ -48,8 +48,9 @@ export type ProteinSequence = Schemas["ProteinSequence"];
 export type PolymerEntityOrganism = Schemas["PolymerEntityOrganism"];
 export type PolymerEntityUniProtMapping = Schemas["PolymerEntityUniProtMapping"];
 
-/** Where the accession came from: the wwPDB/EBI mapping, or the depositor's
- *  own struct_ref record. Only SIFTS mappings carry a UniProt release. */
+/** Where the accession came from: the wwPDB/EBI SIFTS mapping, the depositor's own
+ *  struct_ref record, or a sequence alignment. SIFTS and alignment mappings can carry a
+ *  UniProt release. */
 export type PolymerEntityUniProtSource = PolymerEntityUniProtMapping["source"];
 
 export type ResidueData = Schemas["ResidueData"];

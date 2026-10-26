@@ -127,16 +127,32 @@ func (r *MetricsRepository) AttachToModelRevision(
 	return nil
 }
 
+// CopyModelRevisionLinks links every metric of one model revision to another. The stored
+// metric_key travels with the link, so metrics quarantined as duplicates stay quarantined
+// instead of colliding on the unique (revision, metric key) index.
 func (r *MetricsRepository) CopyModelRevisionLinks(
 	ctx context.Context,
 	fromRevisionID, toRevisionID uuid.UUID,
 ) error {
-	query := `insert into model_revision_metrics(model_revision_id, metric_id)
-			  select $2, metric_id
-			  from model_revision_metrics
-			  where model_revision_id = $1
+	return r.CopyModelRevisionLinksExcludingKeys(ctx, fromRevisionID, toRevisionID, nil)
+}
+
+// CopyModelRevisionLinksExcludingKeys is CopyModelRevisionLinks without the metrics whose key is listed.
+func (r *MetricsRepository) CopyModelRevisionLinksExcludingKeys(
+	ctx context.Context,
+	fromRevisionID, toRevisionID uuid.UUID,
+	excludedKeys []models.MetricKey,
+) error {
+	query := `insert into model_revision_metrics(model_revision_id, metric_id, metric_key)
+			  select $2, link.metric_id, link.metric_key
+			  from model_revision_metrics link
+			  join metrics on metrics.id = link.metric_id
+			  where link.model_revision_id = $1
+			    and metrics.key <> all($3::text[])
 			  on conflict (model_revision_id, metric_id) do nothing`
-	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, fromRevisionID, toRevisionID); err != nil {
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(
+		ctx, query, fromRevisionID, toRevisionID, pq.Array(metricKeyStrings(excludedKeys)),
+	); err != nil {
 		return fmt.Errorf("copy model revision metric links: %w", err)
 	}
 	return nil

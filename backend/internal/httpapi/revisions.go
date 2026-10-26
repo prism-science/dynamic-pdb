@@ -1153,6 +1153,8 @@ func (s *Server) entryRevisionAttributesFromModel(
 		Method:            properties.Method,
 		SpaceGroup:        properties.SpaceGroup,
 		Crystallography:   properties.Crystallography,
+		Ligands:           properties.Ligands,
+		Cofactors:         properties.Cofactors,
 		ProteinSequences:  proteinSequencesFromModels(sequences),
 		Artifacts:         artifactAttributes,
 	}, nil
