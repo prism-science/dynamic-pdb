@@ -56,37 +56,71 @@ FROM entry_revisions
 WHERE entry_revisions.state = 'active'
   AND entry_revisions.entry_id IN (SELECT entry_id FROM entry_model_lists);
 
+-- One pass over entry_model_lists instead of two correlated subqueries per entry (which scanned the
+-- whole temporary table once per entry: quadratic). Models are ranked once per entry in the same
+-- order (created_at, id); ranking all of an entry's models instead of only the mergeable ones keeps
+-- the relative order of the mergeable ones, so every value keeps its first-seen position.
 CREATE TEMPORARY TABLE entry_merged_lists AS
+WITH ranked_models AS (
+    SELECT entry_model_lists.*,
+           row_number() OVER (PARTITION BY entry_model_lists.entry_id
+                              ORDER BY entry_model_lists.model_created_at, entry_model_lists.model_id) AS rank
+    FROM entry_model_lists
+),
+ligands_first_seen AS (
+    SELECT ranked_models.entry_id, elements.value,
+           min(ranked_models.rank * 100000 + elements.ordinality) AS position
+    FROM ranked_models,
+         jsonb_array_elements_text(ranked_models.ligands) WITH ORDINALITY AS elements(value, ordinality)
+    WHERE ranked_models.ligands_mergeable
+    GROUP BY ranked_models.entry_id, elements.value
+),
+cofactors_first_seen AS (
+    SELECT ranked_models.entry_id, elements.value,
+           min(ranked_models.rank * 100000 + elements.ordinality) AS position
+    FROM ranked_models,
+         jsonb_array_elements_text(ranked_models.cofactors) WITH ORDINALITY AS elements(value, ordinality)
+    WHERE ranked_models.cofactors_mergeable
+    GROUP BY ranked_models.entry_id, elements.value
+),
+merged_ligands AS (
+    SELECT entry_id, jsonb_agg(value ORDER BY position) AS ligands
+    FROM ligands_first_seen
+    GROUP BY entry_id
+),
+merged_cofactors AS (
+    SELECT entry_id, jsonb_agg(value ORDER BY position) AS cofactors
+    FROM cofactors_first_seen
+    GROUP BY entry_id
+),
+entry_flags AS (
+    SELECT
+        entry_model_lists.entry_id,
+        bool_or(entry_model_lists.ligands_mergeable) AS ligands_known,
+        bool_or(entry_model_lists.ligands IS NOT NULL AND NOT entry_model_lists.ligands_mergeable) AS ligands_blocked,
+        bool_or(entry_model_lists.cofactors_mergeable) AS cofactors_known,
+        bool_or(entry_model_lists.cofactors IS NOT NULL AND NOT entry_model_lists.cofactors_mergeable) AS cofactors_blocked,
+        jsonb_agg(jsonb_build_object(
+            'model_id', entry_model_lists.model_id,
+            'model_revision_id', entry_model_lists.model_revision_id,
+            'ligands', entry_model_lists.ligands,
+            'cofactors', entry_model_lists.cofactors
+        ) ORDER BY entry_model_lists.model_created_at, entry_model_lists.model_id) AS model_lists
+    FROM entry_model_lists
+    GROUP BY entry_model_lists.entry_id
+)
 SELECT
-    entry_model_lists.entry_id,
-    (SELECT jsonb_agg(first_seen.value ORDER BY first_seen.position)
-       FROM (SELECT elements.value, min(models_ordered.rank * 100000 + elements.ordinality) AS position
-               FROM (SELECT mine.model_id, row_number() OVER (ORDER BY mine.model_created_at, mine.model_id) AS rank,
-                            mine.ligands
-                       FROM entry_model_lists mine
-                      WHERE mine.entry_id = entry_model_lists.entry_id AND mine.ligands_mergeable) models_ordered,
-                    jsonb_array_elements_text(models_ordered.ligands) WITH ORDINALITY AS elements(value, ordinality)
-              GROUP BY elements.value) first_seen) AS ligands,
-    bool_or(entry_model_lists.ligands_mergeable) AS ligands_known,
-    bool_or(entry_model_lists.ligands IS NOT NULL AND NOT entry_model_lists.ligands_mergeable) AS ligands_blocked,
-    (SELECT jsonb_agg(first_seen.value ORDER BY first_seen.position)
-       FROM (SELECT elements.value, min(models_ordered.rank * 100000 + elements.ordinality) AS position
-               FROM (SELECT mine.model_id, row_number() OVER (ORDER BY mine.model_created_at, mine.model_id) AS rank,
-                            mine.cofactors
-                       FROM entry_model_lists mine
-                      WHERE mine.entry_id = entry_model_lists.entry_id AND mine.cofactors_mergeable) models_ordered,
-                    jsonb_array_elements_text(models_ordered.cofactors) WITH ORDINALITY AS elements(value, ordinality)
-              GROUP BY elements.value) first_seen) AS cofactors,
-    bool_or(entry_model_lists.cofactors_mergeable) AS cofactors_known,
-    bool_or(entry_model_lists.cofactors IS NOT NULL AND NOT entry_model_lists.cofactors_mergeable) AS cofactors_blocked,
-    jsonb_agg(jsonb_build_object(
-        'model_id', entry_model_lists.model_id,
-        'model_revision_id', entry_model_lists.model_revision_id,
-        'ligands', entry_model_lists.ligands,
-        'cofactors', entry_model_lists.cofactors
-    ) ORDER BY entry_model_lists.model_created_at, entry_model_lists.model_id) AS model_lists
-FROM entry_model_lists
-GROUP BY entry_model_lists.entry_id;
+    entry_flags.entry_id,
+    merged_ligands.ligands,
+    entry_flags.ligands_known,
+    entry_flags.ligands_blocked,
+    merged_cofactors.cofactors,
+    entry_flags.cofactors_known,
+    entry_flags.cofactors_blocked,
+    entry_flags.model_lists
+FROM entry_flags
+LEFT JOIN merged_ligands USING (entry_id)
+LEFT JOIN merged_cofactors USING (entry_id);
 
 -- A kind is merged only when no model of the entry holds an unmergeable value for it, so the
 -- entry never claims a partial list.
@@ -111,7 +145,10 @@ SELECT 'entry', entry_list_decisions.entry_id,
        'ligands_cofactors_no_active_entry_revision',
        jsonb_build_object('model_lists', entry_list_decisions.model_lists)
 FROM entry_list_decisions
-WHERE entry_list_decisions.entry_id NOT IN (SELECT entry_id FROM entry_list_targets)
+-- NOT EXISTS, not NOT IN: the planner cannot hash NOT IN over an unanalysed temporary table and
+-- compares every entry with every target (~40 s on the prod copy). entry_id is never NULL.
+WHERE NOT EXISTS (SELECT 1 FROM entry_list_targets
+                  WHERE entry_list_targets.entry_id = entry_list_decisions.entry_id)
 ON CONFLICT (object_type, object_id, issue) DO NOTHING;
 
 INSERT INTO schema_migration_review (object_type, object_id, issue, details)
