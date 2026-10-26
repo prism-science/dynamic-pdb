@@ -61,6 +61,15 @@ export type PolymerEntity = Omit<Schemas["PolymerEntity"], "mutations"> & {
   mutations?: string[];
 };
 
+/** Polymer-entity values a depositor types, matched to the extracted
+ *  entities by label_entity_id. */
+export type DepositorPolymerEntity = Schemas["DepositorPolymerEntity"];
+
+/** One polymer entity of a PDB entry as the archive lookup reads it. */
+export type ArchivePolymerEntityProposal = Schemas["ArchivePolymerEntityProposal"];
+
+export type ArchivePdbLookup = Schemas["ArchivePdbAttributes"];
+
 type EntryDocument = {
   data: EntryData;
   included?: EntryProteinSequenceData[];
@@ -454,6 +463,7 @@ export type CreateEntryInput = EntryProperties & {
   thumbnail_image_url?: string | null;
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
+  polymer_entities?: DepositorPolymerEntity[];
 };
 
 /** Creates a model and immediately places its initial revision in review. */
@@ -466,9 +476,16 @@ export async function createModel(
     "POST",
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
-    { model: createModelData(input) },
+    createModelRequestBody(input),
   );
   return attributesFromDocument(document);
+}
+
+/** The body createModel sends. API error pointers address this document. */
+export function createModelRequestBody(input: CreateModelInput): {
+  model: BackendCreateModelData;
+} {
+  return { model: createModelData(input) };
 }
 
 /** Creates an entry, its initial revision, and independent model revisions. */
@@ -480,7 +497,27 @@ export async function createEntry(
     "POST",
     "/v1/entries",
     token,
-    createEntryRequest(input),
+    createEntryRequestBody(input),
+  );
+  return attributesFromDocument(document);
+}
+
+/** The body createEntry sends. API error pointers address this document. */
+export function createEntryRequestBody(
+  input: CreateEntryInput,
+): BackendCreateEntryRequest {
+  return createEntryRequest(input);
+}
+
+/** Reads a PDB entry from the archive without storing anything: the values
+ *  Dynamic PDB would store for it, each with its RCSB source. */
+export async function getArchivePdb(
+  token: string,
+  pdbId: string,
+): Promise<ArchivePdbLookup> {
+  const document = await fetchBackend<JSONAPIDataDocument<ArchivePdbLookup>>(
+    `/v1/archive/pdb/${encodeURIComponent(pdbId)}`,
+    token,
   );
   return attributesFromDocument(document);
 }
@@ -1147,6 +1184,9 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
       method: input.method,
       space_group: input.space_group,
       crystallography: input.crystallography,
+      ligands: input.ligands,
+      cofactors: input.cofactors,
+      polymer_entities: input.polymer_entities,
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
     },
     model_operations: (input.models ?? []).map((model) => ({
@@ -1331,8 +1371,8 @@ function createRunRequest(
     name,
     software_name: name,
     software_version: stringOrNull(payload.version),
-    command: null,
-    parameters: {},
+    command: stringOrNull(payload.command),
+    parameters: objectRecord(payload.parameters),
     metadata,
     started_at: null,
     finished_at: null,
@@ -1590,15 +1630,20 @@ function artifactTypeFromEntity(entity: CreateEntityInput): ArtifactType {
 // the file, except for `extensions`, an open object: its keys are merged so the
 // compound review flags read from the coordinates survive next to extensions the
 // form sets.
+// A key the form sets to undefined overrides the file's value with "not
+// known", and is then left out of the request like any undefined value.
 function mergeModelMetadata(fromFile: JSONRecord, own: JSONRecord): JSONRecord {
   const merged: JSONRecord = { ...fromFile, ...own };
-  const fileExtensions = objectRecord(fromFile.extensions);
-  const ownExtensions = objectRecord(own.extensions);
-  if (
-    Object.keys(fileExtensions).length > 0 ||
-    Object.keys(ownExtensions).length > 0
-  ) {
-    merged.extensions = { ...fileExtensions, ...ownExtensions };
+  const extensions = Object.fromEntries(
+    Object.entries({
+      ...objectRecord(fromFile.extensions),
+      ...objectRecord(own.extensions),
+    }).filter(([, value]) => value !== undefined),
+  );
+  if (Object.keys(extensions).length > 0) {
+    merged.extensions = extensions;
+  } else {
+    delete merged.extensions;
   }
   return merged;
 }

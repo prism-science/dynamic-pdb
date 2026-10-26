@@ -1,6 +1,7 @@
 import type {
   CreateEntityInput,
   CreateEntityRelationInput,
+  CreateEntryInput,
   CreateModelInput,
   ArtifactType,
   EntityLevel,
@@ -11,8 +12,12 @@ import {
   type FileUploadContext,
 } from "@/lib/api/uploads";
 
+import { compoundListRequest, compoundReviewRequest } from "./compounds";
+import { crystallographyRequest, optionalNumber } from "./crystals";
+import { polymerEntitiesRequest } from "./polymerEntities";
 import { METRIC_FIELDS } from "./types";
 import type {
+  EntryMetadataDraft,
   MetricDraft,
   ModelDraft,
   ParsedFile,
@@ -22,14 +27,6 @@ import type {
 
 export const ONE_MODEL_FILE_ERROR =
   "Each model must contain exactly one PDB/mmCIF model file.";
-
-/**
- * A model with no coordinates yet is unfinished, not wrong. The submit button
- * is already disabled; repeating it as an error under a freshly added block
- * tells the depositor off for not having done the thing they are about to do.
- * Callers render everything except this.
- */
-export const MODEL_FILE_MISSING = "Add exactly one PDB/mmCIF model file.";
 
 export function toEntity(file: ParsedFile) {
   const entityType = fileEntityType(file);
@@ -147,6 +144,22 @@ export function buildCreateModelInput(
     }
   }
 
+  return {
+    title: modelDraft.title.trim(),
+    thumbnail_image_url: modelDraft.thumbUrl,
+    entities,
+    relations,
+    metadata: modelMetadataInput(modelDraft),
+  };
+}
+
+/**
+ * The model metadata the depositor states. It is merged over what the
+ * coordinate file says, so the composition lists are always set, even to
+ * undefined: the form's lists, prefilled from the file and then edited, are
+ * the ones to keep.
+ */
+function modelMetadataInput(modelDraft: ModelDraft): Record<string, unknown> {
   const metadata: Record<string, unknown> = {};
   if (modelDraft.purpose.trim()) {
     metadata.purpose = modelDraft.purpose.trim();
@@ -154,35 +167,68 @@ export function buildCreateModelInput(
   if (modelDraft.modelType.trim()) {
     metadata.model_type = modelDraft.modelType.trim();
   }
+  if (modelDraft.details.trim()) {
+    metadata.details = modelDraft.details.trim();
+  }
+  const authors = modelDraft.authors.map((author) => author.trim()).filter(Boolean);
+  if (authors.length > 0) {
+    metadata.authors = authors;
+  }
+  if (modelDraft.affiliation.trim()) {
+    metadata.affiliation = modelDraft.affiliation.trim();
+  }
+  const review = compoundReviewRequest(modelDraft.compounds);
+  metadata.ligands = compoundListRequest(modelDraft.compounds.ligands);
+  metadata.cofactors = compoundListRequest(modelDraft.compounds.cofactors);
+  metadata.extensions = {
+    compound_review: review.length > 0 ? review : undefined,
+  };
+  return metadata;
+}
 
+export function buildCreateEntryInput(
+  title: string,
+  metadata: EntryMetadataDraft,
+  thumbnailUrl: string | null,
+  files: ParsedFile[],
+): CreateEntryInput {
+  const pdb = metadata.pdb.trim().toUpperCase();
   return {
-    title: modelDraft.title.trim(),
-    thumbnail_image_url: modelDraft.thumbUrl,
-    entities,
-    relations,
-    metadata,
+    title: title.trim(),
+    thumbnail_image_url: thumbnailUrl,
+    details: metadata.details.trim() || undefined,
+    external_refs: pdb ? { pdb } : undefined,
+    method: metadata.method.trim(),
+    resolution: optionalNumber(metadata.resolution),
+    space_group: metadata.spaceGroup.trim() || undefined,
+    crystallography: crystallographyRequest(metadata.crystals),
+    ligands: compoundListRequest(metadata.compounds.ligands),
+    cofactors: compoundListRequest(metadata.compounds.cofactors),
+    // Typed polymer-entity values only take effect on entities the PDB
+    // lookup found, so they are sent only with a PDB ID.
+    polymer_entities: pdb
+      ? polymerEntitiesRequest(metadata.polymerEntities)
+      : undefined,
+    entities: files.map(toEntity),
   };
 }
 
-export function hasEntryMethod(method: string): boolean {
-  return method.trim().length > 0;
-}
-
-export function modelValidationMessage(modelDraft: ModelDraft): string | null {
-  const modelEntityCount = modelDraft.files.filter(isModelFile).length;
-  if (modelEntityCount === 0) {
-    return MODEL_FILE_MISSING;
+/** A run's settings as the API takes them: one JSON object. Undefined when
+ *  the text is blank, null when it is not an object. */
+export function parseRunParameters(
+  text: string,
+): Record<string, unknown> | undefined | null {
+  if (!text.trim()) {
+    return undefined;
   }
-  if (modelEntityCount > 1) {
-    return "Keep only one PDB/mmCIF model file.";
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
   }
-  const artifactTypeMessage = modelArtifactTypeValidationMessage(
-    modelDraft.files,
-  );
-  if (artifactTypeMessage) {
-    return artifactTypeMessage;
-  }
-  return programsValidationMessage(modelDraft.programs);
 }
 
 function modelArtifactTypeValidationMessage(
@@ -238,6 +284,8 @@ export function emptyProgramDraft(
     name: "",
     version: "",
     description: "",
+    command: "",
+    parameters: "",
     inputFileIds: [],
     outputFileIds: [],
     expectedInputs: [],
@@ -248,6 +296,8 @@ export function emptyProgramDraft(
 
 export function toProgramEntity(program: ProgramDraft): CreateEntityInput {
   const name = program.name.trim();
+  const command = (program.command ?? "").trim();
+  const parameters = parseRunParameters(program.parameters ?? "");
   return {
     id: program.id,
     type: "program",
@@ -257,6 +307,8 @@ export function toProgramEntity(program: ProgramDraft): CreateEntityInput {
       name,
       version: program.version.trim(),
       description: program.description.trim(),
+      ...(command ? { command } : {}),
+      ...(parameters ? { parameters } : {}),
     },
   };
 }

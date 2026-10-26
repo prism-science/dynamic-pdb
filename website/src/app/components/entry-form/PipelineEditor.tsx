@@ -1,7 +1,10 @@
 "use client";
 
 import FileLinkField from "./FileLinkField";
+import { FieldMessages } from "./FormFields";
+import { FIELDS } from "./fields";
 import { PlusIcon } from "./icons";
+import { inlineMessages, type FieldMessage } from "./messages";
 import { emptyProgramDraft } from "./helpers";
 import type { ParsedFile, ProgramDraft } from "./types";
 import styles from "./form.module.css";
@@ -17,12 +20,15 @@ export default function PipelineEditor({
   programs,
   files,
   baseline = [],
+  messages,
   onChange,
 }: {
   programs: ProgramDraft[];
   files: ParsedFile[];
   /** Files that already belong to the entry and can be fed to a run here. */
   baseline?: ParsedFile[];
+  /** Messages about a step are keyed by its program id. */
+  messages: readonly FieldMessage[];
   onChange: (next: ProgramDraft[]) => void;
 }) {
   const candidates = [...baseline, ...files];
@@ -85,6 +91,9 @@ export default function PipelineEditor({
                 data-lpignore="true"
                 data-form-type="other"
               />
+              <FieldMessages
+                messages={inlineMessages(messages, "run.name", program.id)}
+              />
             </label>
             <label className={styles.metricField}>
               <span>Version</span>
@@ -100,6 +109,9 @@ export default function PipelineEditor({
                 data-lpignore="true"
                 data-form-type="other"
               />
+              <FieldMessages
+                messages={inlineMessages(messages, "run.version", program.id)}
+              />
             </label>
             <label className={`${styles.metricField} ${styles.programDescription}`}>
               <span>Description</span>
@@ -112,8 +124,46 @@ export default function PipelineEditor({
                 placeholder="Optional — e.g. reciprocal-space refinement against processed reflections"
                 rows={2}
               />
+              <FieldMessages
+                messages={inlineMessages(messages, "run.description", program.id)}
+              />
+            </label>
+            <label className={`${styles.metricField} ${styles.programDescription}`}>
+              <span>{FIELDS["run.command"].label} (optional)</span>
+              <textarea
+                className={`${styles.textarea} ${styles.codeInput}`}
+                value={program.command}
+                onChange={(event) =>
+                  patch(program.id, { command: event.target.value })
+                }
+                placeholder="e.g. phenix.refine model.pdb data.mtz refinement.main.number_of_macro_cycles=5"
+                rows={2}
+                spellCheck={false}
+              />
+              <FieldMessages
+                messages={inlineMessages(messages, "run.command", program.id)}
+              />
+            </label>
+            <label className={`${styles.metricField} ${styles.programDescription}`}>
+              <span>{FIELDS["run.parameters"].label} (optional)</span>
+              <textarea
+                className={`${styles.textarea} ${styles.codeInput}`}
+                value={program.parameters}
+                onChange={(event) =>
+                  patch(program.id, { parameters: event.target.value })
+                }
+                placeholder='e.g. {"cycles": 5, "weight": "auto"}'
+                rows={3}
+                spellCheck={false}
+              />
+              <FieldMessages
+                messages={inlineMessages(messages, "run.parameters", program.id)}
+              />
             </label>
           </div>
+          <FieldMessages
+            messages={inlineMessages(messages, "run.files", program.id)}
+          />
 
           {candidates.length > 0 ? (
             <div className={styles.linkGrid}>

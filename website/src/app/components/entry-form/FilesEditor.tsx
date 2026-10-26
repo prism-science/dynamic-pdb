@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -36,7 +35,6 @@ import {
   isModelFile,
   isValidHttpUrl,
   uploadStatusText,
-  authorsTextToList,
 } from "./helpers";
 import styles from "./form.module.css";
 
@@ -370,18 +368,6 @@ export default function FilesEditor({
                       </button>
                     </div>
 
-                    <div className={styles.depositBlock}>
-                      <div className={styles.depositField}>
-                        <span className={styles.depositLabel}>Authors</span>
-                        <AuthorsInput
-                          value={file.authors}
-                          onChange={(next) =>
-                            onPatch(file.id, { authors: next })
-                          }
-                        />
-                      </div>
-                    </div>
-
                     {file.type === "image" && file.preview ? (
                       <div className={styles.filePreview}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -657,69 +643,6 @@ function ExtFilePicker({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function AuthorsInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const authors = authorsTextToList(value);
-
-  const commit = (raw: string) => {
-    const author = raw.trim();
-    if (!author) {
-      return;
-    }
-    onChange([...authors, author].join("\n"));
-    setDraft("");
-  };
-
-  const removeAt = (index: number) => {
-    onChange(authors.filter((_, i) => i !== index).join("\n"));
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" || event.key === ",") {
-      event.preventDefault();
-      commit(draft);
-    } else if (event.key === "Backspace" && draft === "" && authors.length > 0) {
-      removeAt(authors.length - 1);
-    }
-  };
-
-  return (
-    <div className={styles.authorsInput}>
-      {authors.map((author, index) => (
-        <span key={`${author}-${index}`} className={styles.authorChip}>
-          {author}
-          <button
-            type="button"
-            className={styles.chipRemove}
-            onClick={() => removeAt(index)}
-            aria-label={`Remove ${author}`}
-          >
-            ×
-          </button>
-        </span>
-      ))}
-      <input
-        className={styles.authorsField}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={() => commit(draft)}
-        placeholder={
-          authors.length > 0
-            ? "Add another…"
-            : "e.g. Hendrickson, W.A. — press Enter"
-        }
-      />
     </div>
   );
 }

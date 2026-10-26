@@ -590,32 +590,7 @@
   border-top: 1px solid var(--border);
 }
 
-/* Deposition block: authors of the file */
-.depositBlock {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  margin: 0 12px 12px;
-  padding: 12px;
-  border-radius: var(--radius);
-  background: var(--surface-muted);
-}
-
-.depositField {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.depositLabel {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* Authors chip input */
+/* Chip input: model authors, mutations */
 .authorsInput {
   display: flex;
   flex-wrap: wrap;
@@ -1690,19 +1665,6 @@
   border-color: var(--text-muted);
 }
 
-.entryMetaGrid {
-  display: grid;
-  /* Five fields across the full column at this width; narrower viewports wrap
-     them rather than squeezing "X-ray crystallography" into nothing. */
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  gap: 12px;
-  /* The section heading and the field labels are both small uppercase type,
-     so the section's own 8px gap reads as one crowded stack. This row needs
-     the extra air; the sections below, which start with a control rather
-     than another label, do not. */
-  margin-top: 6px;
-}
-
 .identityChoices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1751,4 +1713,346 @@
 .metricField .select {
   height: 34px;
   line-height: 32px;
+}
+
+/* ---------------------------------------------------------------------
+   Schema-driven sections and fields (fields.ts, FormFields.tsx)
+   --------------------------------------------------------------------- */
+
+/* One section per heading of the entry or model page. */
+.formSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.formSectionHead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.formSectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.formSectionHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fieldLabel {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fieldFlag {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fieldFlag[data-required="true"] {
+  color: var(--accent-hover);
+}
+
+.fieldHelp {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inlineWarning {
+  margin: 0;
+  color: var(--warning-fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.readOnlyValue {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* auto-fill keeps a lone short field, such as the PDB ID, at one column's
+   width instead of stretching it across the form. */
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+/* The thumbnail's field fills the identity row's height, like the bare drop
+   zone it wraps used to. */
+.identityThumb > .formField {
+  flex: 1 1 auto;
+}
+
+/* Why the submit button is disabled. */
+.blockers {
+  padding: 12px 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 13px;
+}
+
+.blockers ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.blockers li + li {
+  margin-top: 2px;
+}
+
+.sectionNote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sectionNote[data-state="failed"] {
+  border-style: solid;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.codeInput {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Macromolecules */
+.entityName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organismRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.archiveNote {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Ligands and cofactors */
+.compoundEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compoundAddRow {
+  display: flex;
+  gap: 8px;
+}
+
+.compoundAddRow .secondary {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.compoundAddRow .secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.compoundLists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.modeChoice {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.modeOption {
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modeOption[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.modeOption:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.compoundEmpty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.compoundChips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compoundChip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.compoundChip[data-review="true"] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.compoundChipRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compoundChipRow code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.compoundActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.chipAction {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chipAction:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.reviewTag {
+  color: var(--warning-fg);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.reviewReason {
+  margin: 0;
+  color: var(--warning-fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Crystals */
+.datasetList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.datasetRow {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 200px) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.datasetLabel {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.datasetMessages {
+  grid-column: 2 / -1;
+}
+
+.datasetMessages:empty {
+  display: none;
 }

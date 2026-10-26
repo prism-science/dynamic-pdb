@@ -7,17 +7,31 @@ import { formatEntryLabel } from "@/lib/entry-label";
 import { getExtExperiment, type ExtExperiment } from "@/lib/api/ext";
 import { createModelAction } from "@/app/entries/[entryId]/models/new/actions";
 
+import DraftRestorePrompt, {
+  draftSummary,
+} from "./entry-form/DraftRestorePrompt";
 import ExtSourceField from "./entry-form/ExtSourceField";
+import { SubmitBlockers } from "./entry-form/FormFields";
 import ModelDraftFields, {
   emptyModelDraft,
 } from "./entry-form/ModelDraftFields";
+import {
+  clearStoredModelDraft,
+  modelDraftFromStored,
+  modelDraftToStored,
+  readStoredModelDraft,
+  storedModelDraftHasContent,
+  writeStoredModelDraft,
+  type StoredModelDraft,
+} from "./entry-form/drafts";
+import { FIELDS, type SectionId } from "./entry-form/fields";
+import { blockerLines, type FieldMessage } from "./entry-form/messages";
 import type { ModelDraft, ParsedFile } from "./entry-form/types";
+import { modelFormMessages } from "./entry-form/validation";
 import {
   buildCreateModelInput,
   formatSize,
-  MODEL_FILE_MISSING,
   missingExpectedInputs,
-  modelValidationMessage,
 } from "./entry-form/helpers";
 import styles from "./entry-form/form.module.css";
 
@@ -50,6 +64,9 @@ export default function NewModelForm({
   const [extExperimentLoading, setExtExperimentLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Errors the API returned for the last submit, shown beside their fields
+  // until the depositor edits that section.
+  const [apiMessages, setApiMessages] = useState<FieldMessage[]>([]);
   const [missingWarning, setMissingWarning] = useState<
     { program: string; name: string; source: string }[]
   >([]);
@@ -86,19 +103,79 @@ export default function NewModelForm({
     return () => controller.abort();
   }, [extExperimentId]);
 
-  const validationMessage = modelValidationMessage(draft);
+  // Drafts are kept per entry, so a model half-described for one entry is
+  // never offered on another. Nothing is saved until the depositor has
+  // decided whether to continue a saved draft.
+  const [draftPrompt, setDraftPrompt] = useState<StoredModelDraft | null>(null);
+  const [storageReady, setStorageReady] = useState(false);
+
+  useEffect(() => {
+    const stored = readStoredModelDraft(entry.id);
+    if (stored && storedModelDraftHasContent(stored)) {
+      setDraftPrompt(stored);
+    } else {
+      if (stored) {
+        clearStoredModelDraft(entry.id);
+      }
+      setStorageReady(true);
+    }
+  }, [entry.id]);
+
+  const saveDraft = (current: ModelDraft) => {
+    const stored = modelDraftToStored(current);
+    if (storedModelDraftHasContent(stored)) {
+      writeStoredModelDraft(entry.id, stored);
+    } else {
+      clearStoredModelDraft(entry.id);
+    }
+  };
+
+  useEffect(() => {
+    if (storageReady) {
+      saveDraft(draft);
+    }
+    // saveDraft reads only entry.id besides the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageReady, entry.id, draft]);
+
+  const continueDraft = () => {
+    if (!draftPrompt) {
+      return;
+    }
+    setDraft(modelDraftFromStored(draftPrompt));
+    setDraftPrompt(null);
+    setStorageReady(true);
+  };
+
+  const discardDraft = () => {
+    clearStoredModelDraft(entry.id);
+    setDraftPrompt(null);
+    setStorageReady(true);
+  };
+
+  const dropApiMessages = (section: SectionId) =>
+    setApiMessages((current) =>
+      current.filter((message) => FIELDS[message.field].section !== section),
+    );
+
+  const validationMessages = modelFormMessages(draft);
+  const messages = [...validationMessages, ...apiMessages];
   const hasPendingUploads =
     draft.thumbUploadStatus === "uploading" ||
     draft.files.some((file) => file.uploadStatus === "uploading");
   const hasFailedUploads =
     draft.thumbUploadStatus === "failed" ||
     draft.files.some((file) => file.uploadStatus === "failed");
-  const canSubmit =
-    draft.title.trim().length > 0 &&
-    !validationMessage &&
-    !hasPendingUploads &&
-    !hasFailedUploads &&
-    !submitting;
+  const blockers = [
+    ...blockerLines(validationMessages),
+    ...(hasPendingUploads
+      ? ["Uploads: wait until every file has finished uploading"]
+      : []),
+    ...(hasFailedUploads
+      ? ["Uploads: remove the files that failed to upload, or add them again"]
+      : []),
+  ];
+  const canSubmit = blockers.length === 0 && !submitting;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -113,6 +190,7 @@ export default function NewModelForm({
     }
     setSubmitting(true);
     setError(null);
+    setApiMessages([]);
 
     try {
       if (draft.thumbFile && !draft.thumbUrl) {
@@ -135,9 +213,14 @@ export default function NewModelForm({
           .flatMap((program) => program.inputFileIds)
           .filter((id) => baselineIds.has(id)),
       });
+      // The action redirects on success, so the draft is cleared up front,
+      // and saved again if the action returns an error.
+      clearStoredModelDraft(entry.id);
       const result = await createModelAction(entry.id, input);
-      if (result?.error) {
+      if (result) {
+        saveDraft(draft);
         setError(result.error);
+        setApiMessages(result.fieldErrors);
         setSubmitting(false);
       }
     } catch (submitError) {
@@ -152,7 +235,19 @@ export default function NewModelForm({
   };
 
   return (
-    <form className={styles.form} onSubmit={submit}>
+    <form className={styles.form} onSubmit={submit} noValidate>
+      {draftPrompt ? (
+        <DraftRestorePrompt
+          summary={draftSummary(
+            draftPrompt.title,
+            draftPrompt.files.length,
+            "an unfinished model",
+          )}
+          onContinue={continueDraft}
+          onDiscard={discardDraft}
+        />
+      ) : null}
+
       <section className={styles.field}>
         <span className={styles.label}>Adding to</span>
         <div className={styles.sourceRow}>
@@ -188,20 +283,16 @@ export default function NewModelForm({
         />
       </section>
 
-      <section className={styles.field}>
-        <span className={styles.label}>Model</span>
-        {validationMessage && validationMessage !== MODEL_FILE_MISSING ? (
-          <p className={styles.inlineError}>{validationMessage}</p>
-        ) : null}
-        <ModelDraftFields
-          draft={draft}
-          entryId={entry.id}
-          extExperiment={extExperiment}
-          baselineFiles={baselineFiles}
-          onUpdate={(update) => setDraft((current) => update(current))}
-          onError={setError}
-        />
-      </section>
+      <ModelDraftFields
+        draft={draft}
+        entryId={entry.id}
+        extExperiment={extExperiment}
+        baselineFiles={baselineFiles}
+        messages={messages}
+        onUpdate={(update) => setDraft((current) => update(current))}
+        onEdit={dropApiMessages}
+        onError={setError}
+      />
 
       {missingWarning.length > 0 ? (
         <div className={styles.missingWarning}>
@@ -231,6 +322,9 @@ export default function NewModelForm({
       ) : null}
 
       {error ? <p className={styles.error}>{error}</p> : null}
+      {submitting ? null : (
+        <SubmitBlockers action="add the model" lines={blockers} />
+      )}
 
       <div className={styles.actions}>
         <div className={styles.actionsRight}>
