@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -23,6 +22,8 @@ import {
 import { fastaTotalLength } from "@/lib/fasta";
 
 import SequenceView from "../SequenceView";
+import { FieldMessages } from "./FormFields";
+import type { FieldMessage } from "./messages";
 import { LinkIcon, SearchIcon, UploadIcon } from "./icons";
 import { LEVELS } from "./types";
 import type { ParsedFile } from "./types";
@@ -36,7 +37,6 @@ import {
   isModelFile,
   isValidHttpUrl,
   uploadStatusText,
-  authorsTextToList,
 } from "./helpers";
 import styles from "./form.module.css";
 
@@ -59,6 +59,7 @@ export default function FilesEditor({
   hint = DEFAULT_HINT,
   title,
   artifactTypeOptions,
+  fileMessages = () => [],
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -75,6 +76,9 @@ export default function FilesEditor({
    *  coordinates first because that file is what everything else hangs off. */
   title?: ReactNode;
   artifactTypeOptions?: ArtifactType[];
+  /** The messages about one file, such as an API error whose pointer runs
+   *  through that file's artifact in the request. */
+  fileMessages?: (fileId: string) => readonly FieldMessage[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -370,18 +374,6 @@ export default function FilesEditor({
                       </button>
                     </div>
 
-                    <div className={styles.depositBlock}>
-                      <div className={styles.depositField}>
-                        <span className={styles.depositLabel}>Authors</span>
-                        <AuthorsInput
-                          value={file.authors}
-                          onChange={(next) =>
-                            onPatch(file.id, { authors: next })
-                          }
-                        />
-                      </div>
-                    </div>
-
                     {file.type === "image" && file.preview ? (
                       <div className={styles.filePreview}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -403,6 +395,7 @@ export default function FilesEditor({
                   </>
                 );
               })()}
+              <FieldMessages messages={fileMessages(file.id)} />
             </li>
           ))}
         </ul>
@@ -657,69 +650,6 @@ function ExtFilePicker({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function AuthorsInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const authors = authorsTextToList(value);
-
-  const commit = (raw: string) => {
-    const author = raw.trim();
-    if (!author) {
-      return;
-    }
-    onChange([...authors, author].join("\n"));
-    setDraft("");
-  };
-
-  const removeAt = (index: number) => {
-    onChange(authors.filter((_, i) => i !== index).join("\n"));
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" || event.key === ",") {
-      event.preventDefault();
-      commit(draft);
-    } else if (event.key === "Backspace" && draft === "" && authors.length > 0) {
-      removeAt(authors.length - 1);
-    }
-  };
-
-  return (
-    <div className={styles.authorsInput}>
-      {authors.map((author, index) => (
-        <span key={`${author}-${index}`} className={styles.authorChip}>
-          {author}
-          <button
-            type="button"
-            className={styles.chipRemove}
-            onClick={() => removeAt(index)}
-            aria-label={`Remove ${author}`}
-          >
-            ×
-          </button>
-        </span>
-      ))}
-      <input
-        className={styles.authorsField}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={() => commit(draft)}
-        placeholder={
-          authors.length > 0
-            ? "Add another…"
-            : "e.g. Hendrickson, W.A. — press Enter"
-        }
-      />
     </div>
   );
 }

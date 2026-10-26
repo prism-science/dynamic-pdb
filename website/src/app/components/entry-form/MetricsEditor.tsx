@@ -1,6 +1,8 @@
 "use client";
 
+import { FieldMessages } from "./FormFields";
 import { PlusIcon } from "./icons";
+import { inlineMessages, type FieldMessage } from "./messages";
 import { METRIC_FIELDS } from "./types";
 import type { MetricDraft } from "./types";
 import { sanitizeNumeric } from "./helpers";
@@ -8,9 +10,12 @@ import styles from "./form.module.css";
 
 export default function MetricsEditor({
   metrics,
+  messages,
   setMetrics,
 }: {
   metrics: MetricDraft[];
+  /** Messages about a score are keyed by its metric key. */
+  messages: readonly FieldMessage[];
   setMetrics: (next: MetricDraft[]) => void;
 }) {
   const add = () =>
@@ -63,6 +68,9 @@ export default function MetricsEditor({
                     })
                   }
                   placeholder={field.example}
+                />
+                <FieldMessages
+                  messages={inlineMessages(messages, "model.metrics", field.key)}
                 />
               </label>
             ))}

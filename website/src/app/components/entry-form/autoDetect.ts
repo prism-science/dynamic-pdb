@@ -1,5 +1,6 @@
 import { basename } from "@/lib/parse/runLog";
 
+import { compoundsAreUntouched, compoundsFromParsed } from "./compounds";
 import { emptyProgramDraft } from "./helpers";
 import type { ExpectedInput, MetricDraft, ModelDraft, ParsedFile, ProgramDraft } from "./types";
 import { METRIC_FIELDS } from "./types";
@@ -83,18 +84,22 @@ function applyStructure(
 
   // Only ever fills an empty field: a depositor who already typed the author
   // list must not watch a header overwrite it.
-  if (facts.authors.length > 0) {
-    const target = draft.files.find((file) => file.id === parsedFile.id);
-    if (target && !target.authors.trim()) {
-      patch.files = (patch.files ?? draft.files).map((file) =>
-        file.id === parsedFile.id
-          ? { ...file, authors: facts.authors.join("\n") }
-          : file,
-      );
-      notes.push(
-        `${facts.authors.length} author${facts.authors.length > 1 ? "s" : ""} — from ${fileName}`,
-      );
-    }
+  if (facts.authors.length > 0 && draft.authors.length === 0) {
+    patch.authors = facts.authors;
+    notes.push(
+      `${facts.authors.length} author${facts.authors.length > 1 ? "s" : ""} — from ${fileName}`,
+    );
+  }
+
+  // The composition lists start from the coordinates, with the compounds the
+  // parser is unsure about marked for the depositor to decide. Lists the
+  // depositor already touched are theirs.
+  if (
+    (facts.metadata.ligands || facts.metadata.cofactors) &&
+    compoundsAreUntouched(draft.compounds)
+  ) {
+    patch.compounds = compoundsFromParsed(facts.metadata, facts.needsReview);
+    patch.compoundsSource = fileName;
   }
 
   const metrics = mergeMetrics(draft.metrics, facts.metrics);

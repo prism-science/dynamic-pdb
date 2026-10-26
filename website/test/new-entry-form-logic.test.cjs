@@ -12,9 +12,8 @@ const {
   draftHasContent,
   extFileKeys,
   extFileToParsed,
-  modelValidationMessage,
+  emptyEntryMetadataDraft,
   fileEntityType,
-  hasEntryMethod,
   fileFromDraft,
   fileNameFromUrl,
   fileToDraft,
@@ -33,6 +32,10 @@ const {
   uploadStatusText,
   uploadsReady,
 } = require("../src/app/components/NewEntryForm.tsx");
+const {
+  entryFormMessages,
+  modelFormMessages,
+} = require("../src/app/components/entry-form/validation.ts");
 const { fastaRecordText, fastaTotalLength } = require("../src/lib/fasta.ts");
 
 test("should convert files and metrics into create entry entities", () => {
@@ -190,7 +193,7 @@ test("should build explicit graph relations for model metrics and program", () =
   const input = buildCreateModelInput(modelDraft);
 
   assert.equal(input.title, "Refined model");
-  assert.deepEqual(input.metadata, {});
+  assert.deepEqual(wire(input.metadata), { extensions: {} });
   assert.deepEqual(input.entities.map((entity) => [entity.id, entity.type, entity.level]), [
     ["model-entity-1", "model", "L2"],
     ["density-1", "data", "L1"],
@@ -268,13 +271,15 @@ test("should validate the single model entity and complete program contract", ()
 
   assert.equal(canAddModelFiles([modelFile], [dataFile]), true);
   assert.equal(canAddModelFiles([modelFile], [otherModelFile]), false);
-  assert.equal(
-    modelValidationMessage(modelDraftFixture({ files: [] })),
-    "Add exactly one PDB/mmCIF model file.",
+  assert.deepEqual(
+    modelFormMessages(modelDraftFixture({ files: [] })).map((m) => m.message),
+    ["add exactly one PDB/mmCIF model file"],
   );
-  assert.equal(
-    modelValidationMessage(modelDraftFixture({ files: [modelFile, otherModelFile] })),
-    "Keep only one PDB/mmCIF model file.",
+  assert.deepEqual(
+    modelFormMessages(
+      modelDraftFixture({ files: [modelFile, otherModelFile] }),
+    ).map((m) => m.message),
+    ["keep only one PDB/mmCIF model file"],
   );
   // A run with no name cannot be recorded; a missing version is simply a
   // version nobody wrote down.
@@ -529,9 +534,24 @@ function modelDraftFixture(overrides = {}) {
     metrics: [],
     purpose: "",
     modelType: "",
+    details: "",
+    authors: [],
+    affiliation: "",
+    compounds: {
+      ligands: { mode: "unknown", items: [] },
+      cofactors: { mode: "unknown", items: [] },
+    },
+    compoundsSource: null,
     programs: [],
     ...overrides,
   };
+}
+
+// The form sets the composition keys even when they are not known, so they
+// override what the coordinate file says; serialising drops the undefined
+// ones. The API client then leaves out an extensions object left empty.
+function wire(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 test("purpose and model type travel with the model request", () => {
@@ -542,9 +562,10 @@ test("purpose and model type travel with the model request", () => {
     }),
   );
 
-  assert.deepEqual(input.metadata, {
+  assert.deepEqual(wire(input.metadata), {
     purpose: "Refinement",
     model_type: "Multiconformer",
+    extensions: {},
   });
 });
 
@@ -554,10 +575,14 @@ test("should_block_submit_when_method_is_blank_and_allow_free_text_when_typed", 
   const typedMethods = ["CryoEM", "Neutron diffraction"];
 
   // when / then
+  const methodMessages = (method) =>
+    entryFormMessages("Title", { ...emptyEntryMetadataDraft(), method }).filter(
+      (message) => message.field === "entry.method",
+    );
   for (const method of blankMethods) {
-    assert.equal(hasEntryMethod(method), false);
+    assert.equal(methodMessages(method).length, 1, JSON.stringify(method));
   }
   for (const method of typedMethods) {
-    assert.equal(hasEntryMethod(method), true);
+    assert.deepEqual(methodMessages(method), [], method);
   }
 });

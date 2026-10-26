@@ -8,12 +8,39 @@ import {
   type FormEvent,
 } from "react";
 
-import type { CreateEntryInput } from "@/lib/api/entries";
 import { uploadFileToObjectStorage } from "@/lib/api/uploads";
-import { createEntryAction } from "@/app/entries/new/actions";
+import {
+  createEntryAction,
+  lookupArchivePolymerEntitiesAction,
+} from "@/app/entries/new/actions";
 
+import CompoundListsEditor from "./entry-form/CompoundListsEditor";
+import CrystalsEditor from "./entry-form/CrystalsEditor";
+import DraftRestorePrompt, {
+  draftSummary,
+} from "./entry-form/DraftRestorePrompt";
 import FilesEditor, { ProgressBar } from "./entry-form/FilesEditor";
+import { Field, FormSection, SubmitBlockers } from "./entry-form/FormFields";
+import PolymerEntitiesEditor, {
+  type ArchiveLookupState,
+} from "./entry-form/PolymerEntitiesEditor";
 import { UploadIcon } from "./entry-form/icons";
+import {
+  ENTRY_COMPOUND_FIELDS,
+  FIELDS,
+  type FieldId,
+  type SectionId,
+} from "./entry-form/fields";
+import {
+  blockerLines,
+  inlineMessages,
+  type FieldMessage,
+} from "./entry-form/messages";
+import {
+  PDB_ID_PATTERN,
+  polymerEntityDraftsFromArchive,
+} from "./entry-form/polymerEntities";
+import { entryFormMessages } from "./entry-form/validation";
 import {
   DRAFT_VERSION,
   METHODS,
@@ -26,11 +53,10 @@ import type {
 } from "./entry-form/types";
 import {
   assignCanonicalArtifactTypes,
-  hasEntryMethod,
+  buildCreateEntryInput,
   parseFile,
   parseUrlFile,
   sanitizeNumeric,
-  toEntity,
   uploadErrorMessage,
   uploadParsedFileNow,
   uploadStatusText,
@@ -55,6 +81,9 @@ export * from "./entry-form/types";
 export * from "./entry-form/helpers";
 export * from "./entry-form/drafts";
 
+// Long enough that typing a PDB ID does not start a lookup per keystroke.
+const LOOKUP_DELAY_MS = 400;
+
 export default function NewEntryForm() {
   const [entryId, setEntryId] = useState(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
@@ -71,6 +100,11 @@ export default function NewEntryForm() {
   const [files, setFiles] = useState<ParsedFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Errors the API returned for the last submit, shown beside their fields
+  // until the depositor edits that section.
+  const [apiMessages, setApiMessages] = useState<FieldMessage[]>([]);
+  const [lookup, setLookup] = useState<ArchiveLookupState>({ status: "idle" });
+  const [lookupAttempt, setLookupAttempt] = useState(0);
 
   // Draft persistence: restore prompt + gate so we never overwrite a saved
   // draft before the user decides whether to continue or discard it.
@@ -89,13 +123,11 @@ export default function NewEntryForm() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!storageReady) {
-      return;
-    }
+  const saveDraft = () => {
     const draft: StoredDraft = {
       version: DRAFT_VERSION,
       entryId,
+      metadata,
       title,
       thumbUrl,
       thumbPreview: httpOnly(thumbPreview),
@@ -107,14 +139,72 @@ export default function NewEntryForm() {
     } else {
       clearStoredDraft();
     }
+  };
+
+  useEffect(() => {
+    if (storageReady) {
+      saveDraft();
+    }
+    // saveDraft reads exactly these values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     storageReady,
     entryId,
+    metadata,
     title,
     thumbUrl,
     thumbPreview,
     files,
   ]);
+
+  // The polymer entities come from the PDB entry: without their
+  // label_entity_id the API cannot tell which one a construct belongs to.
+  const pdbId = metadata.pdb.trim().toUpperCase();
+  const pdbIsComplete = PDB_ID_PATTERN.test(pdbId);
+  useEffect(() => {
+    if (!pdbIsComplete) {
+      setLookup({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setLookup({ status: "loading", pdbId });
+    const timer = window.setTimeout(() => {
+      lookupArchivePolymerEntitiesAction(pdbId)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          if ("error" in result) {
+            setLookup({ status: "failed", pdbId, message: result.error });
+            return;
+          }
+          setMetadata((current) => ({
+            ...current,
+            polymerEntities: polymerEntityDraftsFromArchive(
+              result.polymerEntities,
+              current.polymerEntities,
+            ),
+          }));
+          setLookup({ status: "ready", pdbId });
+        })
+        .catch((lookupError: unknown) => {
+          if (!cancelled) {
+            setLookup({
+              status: "failed",
+              pdbId,
+              message:
+                lookupError instanceof Error
+                  ? lookupError.message
+                  : `Could not read ${pdbId} from the PDB.`,
+            });
+          }
+        });
+    }, LOOKUP_DELAY_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pdbId, pdbIsComplete, lookupAttempt]);
 
   const continueDraft = () => {
     const draft = draftPrompt;
@@ -123,6 +213,7 @@ export default function NewEntryForm() {
     }
     setEntryId(draft.entryId);
     setTitle(draft.title);
+    setMetadata(draft.metadata ?? emptyEntryMetadataDraft());
     setThumbUrl(draft.thumbUrl);
     setThumbPreview(draft.thumbPreview ?? null);
     setThumbUploadStatus(draft.thumbUrl ? "uploaded" : "idle");
@@ -149,6 +240,7 @@ export default function NewEntryForm() {
     clearStoredDraft();
     setEntryId(crypto.randomUUID());
     setTitle("");
+    setMetadata(emptyEntryMetadataDraft());
     activeThumbFileId.current = null;
     setThumbFile(null);
     setThumbPreview(null);
@@ -158,6 +250,20 @@ export default function NewEntryForm() {
     setThumbUploadError(null);
     setFiles([]);
     setError(null);
+    setApiMessages([]);
+  };
+
+  const dropApiMessages = (section: SectionId) =>
+    setApiMessages((current) =>
+      current.filter((message) => FIELDS[message.field].section !== section),
+    );
+
+  const editMetadata = (
+    section: SectionId,
+    update: (current: EntryMetadataDraft) => EntryMetadataDraft,
+  ) => {
+    setMetadata(update);
+    dropApiMessages(section);
   };
 
   const onThumb = (event: ChangeEvent<HTMLInputElement>) => {
@@ -176,9 +282,14 @@ export default function NewEntryForm() {
     void uploadEntryThumbnail(file, nextThumbFileId);
   };
 
+  const editFiles = (update: (current: ParsedFile[]) => ParsedFile[]) => {
+    setFiles(update);
+    dropApiMessages("data");
+  };
+
   const addEntryFiles = async (list: File[]) => {
     const parsed = await Promise.all(list.map((file) => parseFile(file, "L0")));
-    setFiles((current) => [
+    editFiles((current) => [
       ...current,
       ...assignCanonicalArtifactTypes(current, parsed, "entry"),
     ]);
@@ -192,7 +303,7 @@ export default function NewEntryForm() {
     if (!parsed) {
       return;
     }
-    setFiles((current) => [
+    editFiles((current) => [
       ...current,
       ...assignCanonicalArtifactTypes(current, [parsed], "entry"),
     ]);
@@ -239,12 +350,30 @@ export default function NewEntryForm() {
     thumbUploadStatus === "failed" ||
     files.some((file) => file.uploadStatus === "failed");
 
-  const canSubmit =
-    title.trim().length > 0 &&
-    hasEntryMethod(metadata.method) &&
-    !hasPendingUploads &&
-    !hasFailedUploads &&
-    !submitting;
+  // Entities from an earlier PDB ID, or from a lookup that has not finished,
+  // are neither checked nor sent.
+  const submittedMetadata: EntryMetadataDraft =
+    lookup.status === "ready"
+      ? metadata
+      : { ...metadata, polymerEntities: [] };
+  const validationMessages = entryFormMessages(title, submittedMetadata);
+  const messages = [...validationMessages, ...apiMessages];
+  const inline = (field: FieldId, item: string | null = null) =>
+    inlineMessages(messages, field, item);
+
+  const blockers = [
+    ...blockerLines(validationMessages),
+    ...(hasPendingUploads
+      ? ["Uploads: wait until every file has finished uploading"]
+      : []),
+    ...(hasFailedUploads
+      ? ["Uploads: remove the files that failed to upload, or add them again"]
+      : []),
+    ...(lookup.status === "loading"
+      ? [`PDB ID: wait until ${lookup.pdbId} has been read`]
+      : []),
+  ];
+  const canSubmit = blockers.length === 0 && !submitting;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -253,6 +382,7 @@ export default function NewEntryForm() {
     }
     setSubmitting(true);
     setError(null);
+    setApiMessages([]);
 
     try {
       if (!uploadsReady(files, thumbFile, thumbUrl)) {
@@ -261,25 +391,21 @@ export default function NewEntryForm() {
         return;
       }
 
-      const pdb = metadata.pdb.trim();
-      const input: CreateEntryInput = {
-        external_refs: pdb ? { pdb: pdb.toUpperCase() } : undefined,
-        resolution: metadata.resolution.trim()
-          ? Number.parseFloat(metadata.resolution)
-          : undefined,
-        method: metadata.method.trim(),
-        space_group: metadata.spaceGroup.trim() || undefined,
-        title: title.trim(),
-        thumbnail_image_url: thumbUrl,
-        entities: files.map(toEntity),
-      };
+      const input = buildCreateEntryInput(
+        title,
+        submittedMetadata,
+        thumbUrl,
+        files,
+      );
 
       // The server action redirects on success, so clear the saved draft up
-      // front; the persistence effect re-saves if the action returns an error.
+      // front, and save it again if the action returns an error.
       clearStoredDraft();
       const result = await createEntryAction(input);
-      if (result?.error) {
+      if (result) {
+        saveDraft();
         setError(result.error);
+        setApiMessages(result.fieldErrors);
         setSubmitting(false);
       }
     } catch (error) {
@@ -292,88 +418,117 @@ export default function NewEntryForm() {
   };
 
   return (
-    <form className={styles.form} onSubmit={submit}>
+    <form className={styles.form} onSubmit={submit} noValidate>
       {draftPrompt ? (
         <DraftRestorePrompt
-          draft={draftPrompt}
+          summary={draftSummary(
+            draftPrompt.title,
+            draftPrompt.files.length,
+            draftPrompt.metadata?.pdb.trim()
+              ? `an unfinished entry for PDB ${draftPrompt.metadata.pdb.trim()}`
+              : "an unfinished entry",
+          )}
           onContinue={continueDraft}
           onDiscard={discardDraft}
         />
       ) : null}
 
-      {/* Title and preview image are one identity block. The
-          thumbnail is placed first visually by CSS but stays last in the DOM so
-          the keyboard lands on the title field first. */}
-      <section className={styles.field}>
+      <FormSection id="overview">
+        {/* Title and preview image are one identity block. The thumbnail is
+            placed first visually by CSS but stays last in the DOM so the
+            keyboard lands on the title field first. */}
         <div className={styles.identityRow}>
           <div className={styles.identityMain}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="entry-title">
-                Title
-              </label>
+            <Field
+              id="entry.title"
+              htmlFor="entry-title"
+              messages={inline("entry.title")}
+            >
               <input
                 id="entry-title"
                 className={styles.input}
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  dropApiMessages("overview");
+                }}
                 placeholder="e.g. Hen egg-white lysozyme"
                 autoComplete="off"
                 data-1p-ignore
                 data-lpignore="true"
                 data-form-type="other"
               />
-            </div>
-
+            </Field>
+            <Field
+              id="entry.details"
+              htmlFor="entry-details"
+              messages={inline("entry.details")}
+            >
+              <textarea
+                id="entry-details"
+                className={styles.textarea}
+                rows={3}
+                value={metadata.details}
+                onChange={(event) =>
+                  editMetadata("overview", (current) => ({
+                    ...current,
+                    details: event.target.value,
+                  }))
+                }
+                placeholder="e.g. Room-temperature structure collected to compare with the cryo structure 5GY3."
+              />
+            </Field>
           </div>
 
           <div className={styles.identityThumb}>
-            <span className={styles.label}>Preview image</span>
-            <label className={styles.thumbDrop}>
-              {thumbPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className={styles.thumbImg} src={thumbPreview} alt="" />
-              ) : (
-                <span className={styles.thumbHint}>
-                  <UploadIcon />
-                  Choose an image
-                </span>
-              )}
-              {thumbUploadStatus === "uploading" ? (
-                <span className={styles.thumbOverlay}>
-                  <ProgressBar value={thumbProgress} />
+            <Field id="entry.thumbnail" messages={inline("entry.thumbnail")}>
+              <label className={styles.thumbDrop}>
+                {thumbPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className={styles.thumbImg} src={thumbPreview} alt="" />
+                ) : (
+                  <span className={styles.thumbHint}>
+                    <UploadIcon />
+                    Choose an image
+                  </span>
+                )}
+                {thumbUploadStatus === "uploading" ? (
+                  <span className={styles.thumbOverlay}>
+                    <ProgressBar value={thumbProgress} />
+                  </span>
+                ) : null}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className={styles.hiddenInput}
+                  onChange={onThumb}
+                />
+              </label>
+              {thumbUploadStatus === "failed" ? (
+                <span className={styles.uploadStatus} data-state="failed">
+                  {uploadStatusText(thumbUploadStatus, thumbUploadError)}
                 </span>
               ) : null}
-              <input
-                type="file"
-                accept="image/*"
-                className={styles.hiddenInput}
-                onChange={onThumb}
-              />
-            </label>
-            {thumbUploadStatus === "failed" ? (
-              <span className={styles.uploadStatus} data-state="failed">
-                {uploadStatusText(thumbUploadStatus, thumbUploadError)}
-              </span>
-            ) : null}
+            </Field>
           </div>
         </div>
-      </section>
 
-      {/* Properties of the structure itself, typed by the depositor. */}
-      <section className={styles.field}>
-        <span className={styles.label}>Info</span>
-        <div className={styles.entryMetaGrid}>
-          <label className={styles.metricField}>
-            <span>PDB ID</span>
+        <div className={styles.fieldGrid}>
+          <Field id="entry.pdb" htmlFor="entry-pdb" messages={inline("entry.pdb")}>
             <input
+              id="entry-pdb"
               className={styles.input}
               value={metadata.pdb}
-              onChange={(event) =>
-                setMetadata((current) => ({
-                  ...current,
-                  pdb: event.target.value.toUpperCase(),
-                }))
-              }
+              onChange={(event) => {
+                const pdb = event.target.value.toUpperCase();
+                // Typed entity values belong to the PDB entry they were
+                // typed for; a different ID starts the block over.
+                editMetadata("overview", (current) =>
+                  current.pdb === pdb
+                    ? current
+                    : { ...current, pdb, polymerEntities: [] },
+                );
+              }}
               placeholder="e.g. 5GY3"
               maxLength={4}
               autoComplete="off"
@@ -381,32 +536,48 @@ export default function NewEntryForm() {
               data-lpignore="true"
               data-form-type="other"
             />
-          </label>
-          <label className={styles.metricField}>
-            <span>Resolution, Å</span>
+          </Field>
+        </div>
+
+        <CompoundListsEditor
+          compounds={metadata.compounds}
+          onChange={(compounds) =>
+            editMetadata("overview", (current) => ({ ...current, compounds }))
+          }
+          fields={ENTRY_COMPOUND_FIELDS}
+          messages={messages}
+        />
+      </FormSection>
+
+      <FormSection id="macromolecules">
+        <PolymerEntitiesEditor
+          lookup={lookup}
+          entities={metadata.polymerEntities}
+          onChange={(polymerEntities) =>
+            editMetadata("macromolecules", (current) => ({
+              ...current,
+              polymerEntities,
+            }))
+          }
+          onRetry={() => setLookupAttempt((attempt) => attempt + 1)}
+          messages={messages}
+        />
+      </FormSection>
+
+      <FormSection id="experiment">
+        <div className={styles.fieldGrid}>
+          <Field
+            id="entry.method"
+            htmlFor="entry-method"
+            messages={inline("entry.method")}
+          >
             <input
-              className={styles.input}
-              inputMode="decimal"
-              value={metadata.resolution}
-              onChange={(event) =>
-                setMetadata((current) => ({
-                  ...current,
-                  resolution: sanitizeNumeric(event.target.value),
-                }))
-              }
-              placeholder="e.g. 1.77"
-              autoComplete="off"
-            />
-          </label>
-          <label className={styles.metricField}>
-            <span>Method *</span>
-            <input
+              id="entry-method"
               className={styles.input}
               list="entry-method-options"
-              required
               value={metadata.method}
               onChange={(event) =>
-                setMetadata((current) => ({
+                editMetadata("experiment", (current) => ({
                   ...current,
                   method: event.target.value,
                 }))
@@ -419,14 +590,38 @@ export default function NewEntryForm() {
                 <option key={value} value={value} />
               ))}
             </datalist>
-          </label>
-          <label className={styles.metricField}>
-            <span>Space group</span>
+          </Field>
+          <Field
+            id="entry.resolution"
+            htmlFor="entry-resolution"
+            messages={inline("entry.resolution")}
+          >
             <input
+              id="entry-resolution"
+              className={styles.input}
+              inputMode="decimal"
+              value={metadata.resolution}
+              onChange={(event) =>
+                editMetadata("experiment", (current) => ({
+                  ...current,
+                  resolution: sanitizeNumeric(event.target.value),
+                }))
+              }
+              placeholder="e.g. 1.77"
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            id="entry.spaceGroup"
+            htmlFor="entry-space-group"
+            messages={inline("entry.spaceGroup")}
+          >
+            <input
+              id="entry-space-group"
               className={styles.input}
               value={metadata.spaceGroup}
               onChange={(event) =>
-                setMetadata((current) => ({
+                editMetadata("experiment", (current) => ({
                   ...current,
                   spaceGroup: event.target.value,
                 }))
@@ -434,28 +629,45 @@ export default function NewEntryForm() {
               placeholder="e.g. P 21 21 21"
               autoComplete="off"
             />
-          </label>
+          </Field>
         </div>
-      </section>
 
-      <section className={styles.field}>
-        <span className={styles.label}>Baseline data</span>
-        <FilesEditor
-          files={files}
-          lockLevel
-          onAdd={addEntryFiles}
-          onAddUrl={addEntryUrl}
-          onRemove={(id) => setFiles((p) => p.filter((f) => f.id !== id))}
-          onLevel={(id, level) =>
-            setFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
+        <span className={styles.subLabel}>Crystals</span>
+        <p className={styles.fieldHelp}>{FIELDS["crystal.block"].help}</p>
+        <CrystalsEditor
+          crystals={metadata.crystals}
+          onChange={(crystals) =>
+            editMetadata("experiment", (current) => ({ ...current, crystals }))
           }
-          onPatch={(id, patch) =>
-            setFiles((p) => p.map((f) => (f.id === id ? { ...f, ...patch } : f)))
-          }
+          messages={messages}
         />
-      </section>
+      </FormSection>
+
+      <FormSection id="data">
+        <Field id="entry.files" messages={inline("entry.files")}>
+          <FilesEditor
+            files={files}
+            lockLevel
+            fileMessages={(fileId) => inline("entry.files", fileId)}
+            onAdd={addEntryFiles}
+            onAddUrl={addEntryUrl}
+            onRemove={(id) => editFiles((p) => p.filter((f) => f.id !== id))}
+            onLevel={(id, level) =>
+              editFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
+            }
+            onPatch={(id, patch) =>
+              editFiles((p) =>
+                p.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+              )
+            }
+          />
+        </Field>
+      </FormSection>
 
       {error ? <p className={styles.error}>{error}</p> : null}
+      {submitting ? null : (
+        <SubmitBlockers action="create the entry" lines={blockers} />
+      )}
 
       <div className={styles.actions}>
         <button type="button" className={styles.resetBtn} onClick={resetForm}>
@@ -475,53 +687,5 @@ export default function NewEntryForm() {
         </div>
       </div>
     </form>
-  );
-}
-
-function DraftRestorePrompt({
-  draft,
-  onContinue,
-  onDiscard,
-}: {
-  draft: StoredDraft;
-  onContinue: () => void;
-  onDiscard: () => void;
-}) {
-  const fileCount = draft.files.length;
-  const parts: string[] = [];
-  if (draft.title.trim()) {
-    parts.push(`“${draft.title.trim()}”`);
-  }
-  if (fileCount > 0) {
-    parts.push(`${fileCount} uploaded file${fileCount === 1 ? "" : "s"}`);
-  }
-  const summary = parts.length > 0 ? parts.join(" · ") : "an unfinished entry";
-
-  return (
-    <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
-      <div className={styles.modalCard}>
-        <h2 className={styles.modalTitle}>Continue where you left off?</h2>
-        <p className={styles.modalText}>
-          You have a saved draft: {summary}. Continue editing it, or start over
-          with a blank form.
-        </p>
-        <div className={styles.modalActions}>
-          <button
-            type="button"
-            className={styles.secondary}
-            onClick={onDiscard}
-          >
-            Start fresh
-          </button>
-          <button
-            type="button"
-            className={styles.primary}
-            onClick={onContinue}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
