@@ -1,0 +1,187 @@
+{
+  "193L.cif": {
+    "atom_count": 86,
+    "modeled_residues": 11,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "NA"
+      },
+      {
+        "list": "ligands",
+        "id": "CL",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      }
+    ]
+  },
+  "1AKE.cif": {
+    "atom_count": 251,
+    "modeled_residues": 17,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "AP5"
+      }
+    ]
+  },
+  "3CLN.cif": {
+    "atom_count": 71,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "CA"
+      }
+    ]
+  },
+  "4HHB.cif": {
+    "atom_count": 420,
+    "modeled_residues": 32,
+    "unique_protein_chains": 4,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "HEM"
+      },
+      {
+        "list": "ligands",
+        "id": "PO4",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      }
+    ]
+  },
+  "6OIM.cif": {
+    "atom_count": 134,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG"
+      },
+      {
+        "list": "ligands",
+        "id": "GDP"
+      },
+      {
+        "list": "ligands",
+        "id": "MOV"
+      }
+    ]
+  },
+  "parity/instances.cif": {
+    "atom_count": 11,
+    "modeled_residues": 3,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "HEM"
+      },
+      {
+        "list": "cofactors",
+        "id": "ZN"
+      },
+      {
+        "list": "ligands",
+        "id": "LIG"
+      },
+      {
+        "list": "ligands",
+        "id": "QQQ"
+      },
+      {
+        "list": "ligands",
+        "id": "SO4",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      },
+      {
+        "list": "ligands",
+        "id": "XYZ",
+        "needs_review": true,
+        "reason": "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
+      },
+      {
+        "list": "ligands",
+        "id": "ZN",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+      }
+    ]
+  },
+  "parity/no_metalc.cif": {
+    "atom_count": 9,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "needs_review": true,
+        "reason": "metal ion kept for review: the file has no metalc connection rows"
+      },
+      {
+        "list": "cofactors",
+        "id": "NA",
+        "needs_review": true,
+        "reason": "metal ion kept for review: the file has no metalc connection rows"
+      },
+      {
+        "list": "ligands",
+        "id": "CL",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      },
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      },
+      {
+        "list": "ligands",
+        "id": "PO4",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      }
+    ]
+  },
+  "parity/two_models.cif": {
+    "atom_count": 4,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "LIG"
+      }
+    ]
+  },
+  "parity/wrapped_rows.cif": {
+    "atom_count": 4,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "ZN"
+      },
+      {
+        "list": "ligands",
+        "id": "1UD"
+      },
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "needs_review": true,
+        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+      }
+    ]
+  }
+}

@@ -1,0 +1,228 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"dynamic-pdb/backend/internal/auth"
+	"dynamic-pdb/backend/internal/validation"
+)
+
+func Test_should_refuse_extra_request_when_every_extraction_slot_is_taken(t *testing.T) {
+	// given
+	limits := newExtractionLimits(2, 100, time.Minute)
+	releaseFirst, firstOK := limits.tryAcquire()
+	_, secondOK := limits.tryAcquire()
+
+	// when
+	_, thirdOK := limits.tryAcquire()
+	releaseFirst()
+	releaseFirst()
+	_, afterReleaseOK := limits.tryAcquire()
+	_, fullAgainOK := limits.tryAcquire()
+
+	// then
+	assert.True(t, firstOK)
+	assert.True(t, secondOK)
+	assert.False(t, thirdOK)
+	assert.True(t, afterReleaseOK, "releasing twice must free exactly one slot")
+	assert.False(t, fullAgainOK)
+}
+
+func Test_should_limit_each_user_separately_when_requests_exceed_the_window_budget(t *testing.T) {
+	// given
+	limits := newExtractionLimits(2, 3, time.Minute)
+	request := httptest.NewRequest(http.MethodPost, "/", nil)
+	var results []bool
+
+	// when
+	for range 4 {
+		results = append(results, limits.userLimited(httptest.NewRecorder(), request, "alice"))
+	}
+	recorder := httptest.NewRecorder()
+	limitedAgain := limits.userLimited(recorder, request, "alice")
+	bobLimited := limits.userLimited(httptest.NewRecorder(), request, "bob")
+
+	// then
+	assert.Equal(t, []bool{false, false, false, true}, results)
+	assert.True(t, limitedAgain)
+	assert.Equal(t, "60", recorder.Header().Get("Retry-After"))
+	assert.False(t, bobLimited)
+}
+
+func Test_should_not_limit_when_extraction_limits_are_not_installed(t *testing.T) {
+	// given
+	var limits *extractionLimits
+	request := httptest.NewRequest(http.MethodPost, "/", nil)
+
+	// when
+	userLimited := limits.userLimited(httptest.NewRecorder(), request, "alice")
+	release, acquired := limits.tryAcquire()
+
+	// then
+	assert.False(t, userLimited)
+	assert.True(t, acquired)
+	release()
+}
+
+func Test_should_install_default_extraction_limits_when_server_is_created(t *testing.T) {
+	// when
+	server := NewServer(nil, nil, auth.Config{}, nil, nil, nil, "", validation.ModeLogOnly)
+
+	// then
+	require.NotNil(t, server.extractionLimits)
+	assert.Equal(t, defaultExtractionMaxInFlight, cap(server.extractionLimits.slots))
+}
+
+func syntheticArtifactMMCIF(targetBytes int) []byte {
+	header := "data_SYNTH\n#\n_entry.id SYNTH\n#\n_software.name PROLSQ\n#\n" +
+		"loop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n" +
+		"_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_seq_id\n" +
+		"_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.auth_seq_id\n" +
+		"_atom_site.auth_asym_id\n_atom_site.pdbx_PDB_model_num\n"
+	var builder strings.Builder
+	builder.Grow(targetBytes + 1024)
+	builder.WriteString(header)
+	names := []string{"N", "CA", "C", "O", "CB", "CG", "CD", "NE"}
+	for atom := 0; builder.Len() < targetBytes; atom++ {
+		residue := atom/len(names) + 1
+		builder.WriteString("ATOM " + strconv.Itoa(atom+1) + " C " + names[atom%len(names)] + " . ARG A " +
+			strconv.Itoa(residue) + " 20.123 30.456 40.789 1.00 " + strconv.Itoa(residue) + " A 1\n")
+	}
+	builder.WriteString("HETATM 99999 FE FE . HEM A 2 1.000 2.000 3.000 1.00 500 A 1\n#\n")
+	return []byte(builder.String())
+}
+
+func Test_should_stay_under_allocation_budget_when_extracting_a_four_mebibyte_head(t *testing.T) {
+	// given
+	data := syntheticArtifactMMCIF(artifactExtractionReadLimit)
+	var before, after runtime.MemStats
+
+	// when
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data))+1024, testArtifactSource)
+	runtime.ReadMemStats(&after)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, attributes.Truncated)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	assert.Less(t, allocated, uint64(16<<20), "bytes allocated extracting a 4 MiB head (was about 227 MiB with Parse and Extract)")
+}
+
+func hostileArtifactFiles() map[string]string {
+	repeat := func(unit string, size int) string { return strings.Repeat(unit, size/len(unit)) }
+	counted := func(template string, size int) string {
+		var builder strings.Builder
+		for counter := 0; builder.Len() < size; counter++ {
+			fmt.Fprintf(&builder, template, counter, counter)
+		}
+		return builder.String()
+	}
+	size := artifactExtractionReadLimit
+	return map[string]string{
+		"struct_conn a a a":     "data_X\nloop_\n_struct_conn.id\n" + repeat("a ", size),
+		"struct_ref_seq_dif":    "data_X\nloop_\n_struct_ref_seq_dif.align_id\n" + repeat("a ", size),
+		"wide rows":             "data_X\nloop_\n" + strings.Repeat("_struct_ref_seq_dif.c\n", 1) + strings.Join(strings.Fields(strings.Repeat("_struct_ref_seq_dif.d ", 40)), "\n") + "\n" + repeat("x ", size),
+		"entity rows":           "data_X\nloop_\n_entity.id\n_entity.pdbx_mutation\n" + repeat("a b ", size),
+		"one enormous token":    "data_X\nloop_\n_entity.id\n" + strings.Repeat("v", size) + "\n",
+		"distinct scalar items": "data_X\n" + counted("_a.t%d %d\n", size),
+		"distinct ligand ids":   "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.label_comp_id\n_atom_site.auth_seq_id\n" + counted("HETATM L%d %d\n", size),
+		"distinct residues":     "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.auth_seq_id\n_atom_site.label_alt_id\n" + counted("ATOM %d A%d\n", size),
+		"distinct metalc pairs": "data_X\nloop_\n_struct_conn.conn_type_id\n_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr1_auth_seq_id\n_struct_conn.ptnr2_label_comp_id\n_struct_conn.ptnr2_auth_seq_id\n" + counted("metalc ZN %d HIS %d\n", size),
+	}
+}
+
+// Test_should_stay_under_memory_budget_when_extracting_hostile_files is the
+// worst case the two-slot limit in artifact_extraction_limits.go relies on:
+// one request holds the file, the parser state and the encoded response.
+func Test_should_stay_under_memory_budget_when_extracting_hostile_files(t *testing.T) {
+	const liveBudget = 48 << 20
+	const allocationBudget = 128 << 20
+	for name, text := range hostileArtifactFiles() {
+		t.Run(name, func(t *testing.T) {
+			// given
+			data := []byte(text)
+			var before, after runtime.MemStats
+
+			// when
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(attributes)
+			require.NoError(t, err)
+			runtime.GC()
+			runtime.ReadMemStats(&after)
+			runtime.KeepAlive(attributes)
+			runtime.KeepAlive(encoded)
+
+			// then
+			allocated := after.TotalAlloc - before.TotalAlloc
+			live := after.HeapAlloc - min(before.HeapAlloc, after.HeapAlloc)
+			t.Logf("MEASURE %s live=%dKiB alloc=%dKiB response=%dKiB", name, live>>10, allocated>>10, len(encoded)>>10)
+			assert.Less(t, live, uint64(liveBudget), "live heap after the request")
+			assert.Less(t, allocated, uint64(allocationBudget), "bytes allocated by the request")
+			assert.Less(t, len(encoded), 16<<20, "response size")
+		})
+	}
+}
+
+func Benchmark_extract_artifact_head(b *testing.B) {
+	data := syntheticArtifactMMCIF(artifactExtractionReadLimit)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if _, err := buildArtifactExtraction(context.Background(), data, int64(len(data))+1024, testArtifactSource); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func Test_should_finish_quickly_when_extracting_a_four_mebibyte_line_of_quoted_tokens(t *testing.T) {
+	for name, unit := range map[string]string{"single quotes": "'a' ", "double quotes": "\"a\" "} {
+		t.Run(name, func(t *testing.T) {
+			// given
+			data := []byte("data_X\nloop_\n_entity.id\n" + strings.Repeat(unit, artifactExtractionReadLimit/len(unit)))
+
+			// when
+			start := time.Now()
+			attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+			elapsed := time.Since(start)
+
+			// then
+			require.NoError(t, err)
+			assert.Less(t, elapsed, 2*time.Second)
+			assert.NotContains(t, warningDetails(attributes), "parser limit: time budget exceeded: the rest of the file was not read")
+		})
+	}
+}
+
+func Test_should_warn_and_still_answer_when_the_extraction_runs_out_of_time(t *testing.T) {
+	// given
+	data := syntheticArtifactMMCIF(artifactExtractionReadLimit)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+
+	// when
+	attributes, err := buildArtifactExtraction(ctx, data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	assert.Contains(t, warningDetails(attributes), "parser limit: time budget exceeded: the rest of the file was not read")
+	_, hasAtomCount := extractedValueByName(attributes.Values, "atom_count")
+	assert.False(t, hasAtomCount, "counts from a partial read are never reported")
+}

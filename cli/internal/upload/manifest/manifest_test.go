@@ -281,3 +281,21 @@ func writeZipFile(t *testing.T, root string, relativePath string, entries map[st
 	require.NoError(t, closeZipErr)
 	require.NoError(t, closeFileErr)
 }
+
+func Test_should_extract_cofactors_when_coordinate_file_is_added_to_manifest(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeFile(t, dataRoot, "models/5amf_model.cif", "data_5amf\n")
+	outputPath := filepath.Join(t.TempDir(), DefaultFilename)
+
+	// when
+	_, _, _, err := Init(Options{DataRoot: dataRoot, OutputPath: outputPath})
+
+	// then
+	require.NoError(t, err)
+	contents, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "cofactors:")
+	assert.Contains(t, string(contents), "field: cofactors")
+	assert.Contains(t, string(contents), "field: ligands")
+}

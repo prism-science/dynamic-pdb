@@ -1,8 +1,15 @@
 package file
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,4 +134,144 @@ func Test_should_extract_mmcif_field_from_local_file(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "Example structure", value)
+}
+
+func Test_should_extract_mmcif_field_from_zip_entry_when_source_is_an_archive(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	archive := new(bytes.Buffer)
+	writer := zip.NewWriter(archive)
+	entry, err := writer.Create("5amf/model.cif")
+	require.NoError(t, err)
+	_, err = entry.Write([]byte("data_X\n_refine.ls_R_factor_R_free 0.243\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	writeTestFile(t, dataRoot, "models.zip", archive.Bytes())
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	value, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models.zip#5amf/model.cif"}},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 0.243, value)
+}
+
+func Test_should_report_not_found_when_mmcif_source_file_is_missing(t *testing.T) {
+	// given
+	extractor := NewFieldExtractor(t.TempDir())
+
+	// when
+	_, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.cif"}},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_struct.title"}},
+	)
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func Test_should_not_hold_the_file_in_memory_when_reading_one_value_from_a_large_mmcif(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	path := filepath.Join(dataRoot, "models", "5amf_model.cif")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+	file, err := os.Create(path)
+	require.NoError(t, err)
+	_, err = file.WriteString("data_X\n_refine.ls_R_factor_R_free 0.243\nloop_\n_atom_site.id\n_atom_site.label_atom_id\n")
+	require.NoError(t, err)
+	row := []byte("1 CA\n")
+	block := bytes.Repeat(row, 1<<16)
+	const size = 40 << 20
+	for written := 0; written < size; written += len(block) {
+		_, err = file.Write(block)
+		require.NoError(t, err)
+	}
+	require.NoError(t, file.Close())
+	extractor := NewFieldExtractor(dataRoot)
+	var before, after runtime.MemStats
+
+	// when
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	value, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.cif"}},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+	runtime.ReadMemStats(&after)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 0.243, value)
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(1<<20), "bytes allocated reading one scalar from a 40 MiB file")
+}
+
+func Test_should_read_pdb_remark_without_loading_the_file_when_value_is_near_the_top(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	atoms := strings.Repeat("ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n", 1<<18)
+	writeTestFile(t, dataRoot, "models/5amf_model.pdb", []byte("REMARK   3   FREE R VALUE                     : 0.243\n"+atoms))
+	extractor := NewFieldExtractor(dataRoot)
+	var before, after runtime.MemStats
+
+	// when
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	value, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.pdb"}},
+		manifest.Extract{PDB: &manifest.ExtractRule{Field: "REMARK 3 FREE R VALUE"}},
+	)
+	runtime.ReadMemStats(&after)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 0.243, value)
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(1<<20))
+}
+
+func Test_should_fail_loudly_when_pdb_field_is_not_one_the_extractor_reads(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	writeTestFile(t, dataRoot, "models/5amf_model.pdb", []byte("REMARK   3   FREE R VALUE                     : 0.243\n"))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	_, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.pdb"}},
+		manifest.Extract{PDB: &manifest.ExtractRule{Field: "REMARK 3 FREE R"}},
+	)
+
+	// then
+	require.Error(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, err.Error(), "unknown PDB field")
+}
+
+func Test_should_finish_quickly_when_a_mmcif_file_is_one_line_of_quoted_tokens(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	text := "data_X\nloop_\n_entity.id\n" + strings.Repeat("'a' ", 1<<20) + "\n_refine.ls_R_factor_R_free 0.243\n"
+	writeTestFile(t, dataRoot, "models/5amf_model.cif", []byte(text))
+	extractor := NewFieldExtractor(dataRoot)
+
+	// when
+	start := time.Now()
+	value, ok, err := extractor.Extract(context.Background(), "5AMF",
+		manifest.Source{Files: []string{"models/{{ pdb_id }}_model.cif"}},
+		manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+	)
+	elapsed := time.Since(start)
+
+	// then
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 0.243, value)
+	assert.Less(t, elapsed, 2*time.Second)
 }

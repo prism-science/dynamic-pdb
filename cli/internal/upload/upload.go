@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	pathpkg "path"
@@ -56,6 +57,11 @@ type Uploader struct {
 	progress         Progress
 	concurrency      int
 	partConcurrency  int
+	// structureFields holds each structure artifact's parsed fields, so a
+	// file is read once however many manifest fields come from it.
+	structureFields *artifactextractor.FieldCache
+	// legacyManifestWarning logs once per run that a manifest predates cofactors.
+	legacyManifestWarning sync.Once
 }
 
 func New(
@@ -75,6 +81,7 @@ func New(
 		progress:         progress,
 		concurrency:      normalizeConcurrency(concurrency),
 		partConcurrency:  normalizedPartConcurrency,
+		structureFields:  artifactextractor.NewFieldCache(),
 	}
 }
 
@@ -528,7 +535,7 @@ func (u *Uploader) uploadModel(
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
-	program, err := modelProgram(ctx, pdbID, artifactPayloads)
+	program, err := u.modelProgram(ctx, pdbID, artifactPayloads)
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
@@ -1155,6 +1162,13 @@ func (u *Uploader) modelMetadata(
 	artifacts map[string]extractorapi.Artifact,
 ) (map[string]any, error) {
 	result := make(map[string]any)
+	extensions := map[string]any{}
+	metadata, upgraded := metadata.WithCoordinateCofactors()
+	if upgraded {
+		u.legacyManifestWarning.Do(func() {
+			slog.Warn("manifest was saved before cofactors existed: reading cofactors and review flags from the coordinates file so HEM and metal ions are not dropped; regenerate the manifest to make this permanent")
+		})
+	}
 	for key, field := range metadata {
 		value, ok, err := u.fieldValue(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil {
@@ -1163,10 +1177,46 @@ func (u *Uploader) modelMetadata(
 		if !ok {
 			continue
 		}
+		if name, nested := strings.CutPrefix(key, modelExtensionKeyPrefix); nested {
+			extensions[name] = value
+			continue
+		}
 		result[key] = toCanonicalModelMetadataValue(key, value)
+	}
+	if len(extensions) > 0 {
+		merged, err := mergeModelExtensions(result["extensions"], extensions)
+		if err != nil {
+			return nil, err
+		}
+		result["extensions"] = merged
 	}
 	return result, nil
 }
+
+// mergeModelExtensions adds the extracted extension keys to the manifest's own
+// "extensions" object. A key the manifest already sets is never replaced.
+func mergeModelExtensions(own any, extracted map[string]any) (map[string]any, error) {
+	if own == nil {
+		return extracted, nil
+	}
+	ownObject, ok := own.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("model metadata extensions must be an object, got %T", own)
+	}
+	merged := make(map[string]any, len(ownObject)+len(extracted))
+	for key, value := range extracted {
+		merged[key] = value
+	}
+	for key, value := range ownObject {
+		merged[key] = value
+	}
+	return merged, nil
+}
+
+// modelExtensionKeyPrefix marks a manifest model metadata key whose value is
+// uploaded under the model's open "extensions" object, for data the model
+// schema has no declared field for.
+const modelExtensionKeyPrefix = "extensions."
 
 func toCanonicalModelMetadataValue(key string, value any) any {
 	switch key {
@@ -1325,7 +1375,7 @@ func (u *Uploader) fieldExtractionValue(
 	case !rcsbSourceIsEmpty(source.RCSB):
 		return rcsbextractor.NewFieldExtractor(u.rcsb).Extract(ctx, pdbID, source, field.Extract)
 	case strings.TrimSpace(source.Artifact) != "":
-		return artifactextractor.NewFieldExtractor(artifacts).Extract(ctx, pdbID, source, field.Extract)
+		return artifactextractor.NewCachedFieldExtractor(artifacts, u.structureFields).Extract(ctx, pdbID, source, field.Extract)
 	default:
 		return fileextractor.NewFieldExtractor(dataRoot).Extract(ctx, pdbID, source, field.Extract)
 	}
@@ -1524,8 +1574,8 @@ type modelProgramInfo struct {
 	Version string
 }
 
-func modelProgram(ctx context.Context, pdbID string, artifacts map[string]extractorapi.Artifact) (*modelProgramInfo, error) {
-	extractor := artifactextractor.NewFieldExtractor(artifacts)
+func (u *Uploader) modelProgram(ctx context.Context, pdbID string, artifacts map[string]extractorapi.Artifact) (*modelProgramInfo, error) {
+	extractor := artifactextractor.NewCachedFieldExtractor(artifacts, u.structureFields)
 	name, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: "coordinates"}, structureExtract("program.name"))
 	if err != nil {
 		return nil, fmt.Errorf("extract model program name: %w", err)

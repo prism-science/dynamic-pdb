@@ -114,6 +114,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/artifacts/{id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract values from an uploaded structure file
+         * @description Reads the start of the artifact's uploaded mmCIF file and returns the
+         *     values Dynamic PDB would store for it: atom count, modeled residues,
+         *     protein chains, altloc fraction, ligands, cofactors, engineered
+         *     mutations and the refinement program. Nothing is stored.
+         *
+         *     Only the first 4 MiB of the object is read (a ranged S3 GET). The
+         *     connection, entity and mutation tables sit before the coordinates in
+         *     archive files, so they are read in full; when the coordinates run past
+         *     the limit, the values that need every atom are left out and a warning
+         *     says so.
+         *
+         *     Every value carries `source: file:<sha256>` of the artifact. Values
+         *     that cannot be extracted, or fail the schema rules, come back as
+         *     `warnings`; the request does not fail because of them. Values the
+         *     parser is unsure about, such as metal ions in a file without `metalc`
+         *     rows, are returned with `needs_review: true`.
+         *
+         *     While the reference lists in `lib/cif` are drafts (not approved by
+         *     researchers), only water is dropped from `ligands`; other solvents and
+         *     buffers are kept and flagged `needs_review`, and every response carries a
+         *     warning saying so.
+         *
+         *     Parsing has a time budget of 5 seconds per request. If it runs out, the
+         *     response is still 200: the values found so far come back with the warning
+         *     `parser limit: time budget exceeded: the rest of the file was not read`,
+         *     and the values that need the whole file (atom count, modeled residues,
+         *     protein chains, altloc fraction) are left out, as for a truncated read.
+         *     The extraction slot is released either way.
+         *
+         *     Allowed for the user who created the artifact and for reviewers. Each
+         *     user may make 10 extraction requests per minute and each server instance
+         *     runs at most 2 extractions at once; past those limits the response is
+         *     429 or 503 with a `Retry-After` header.
+         */
+        post: operations["extractArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/files": {
         parameters: {
             query?: never;
@@ -1028,6 +1080,50 @@ export interface components {
             code?: string;
             detail: string;
         };
+        ArtifactExtractionDocument: {
+            data: components["schemas"]["ArtifactExtractionData"];
+        };
+        ArtifactExtractionData: {
+            /** @enum {string} */
+            type: "artifact_extractions";
+            /**
+             * Format: uuid
+             * @description The artifact ID.
+             */
+            id: string;
+            attributes: components["schemas"]["ArtifactExtractionAttributes"];
+        };
+        ArtifactExtractionAttributes: {
+            /** @description `file:<sha256>` of the artifact; every value carries the same source. */
+            source: string;
+            /** @description Version of the cofactor reference list that sorted compounds into cofactors and ligands. */
+            reference_version: string;
+            /** Format: int64 */
+            bytes_read: number;
+            /** Format: int64 */
+            object_size: number;
+            /** @description True when the file is larger than the bytes read. */
+            truncated: boolean;
+            values: components["schemas"]["ExtractedValue"][];
+            warnings: components["schemas"]["ExtractionWarning"][];
+        };
+        ExtractedValue: {
+            /** @description One of `atom_count`, `modeled_residues`, `unique_protein_chains`, `altloc_fraction`, `ligands`, `cofactors`, `mutations`, `program_name`, `program_version`. */
+            name: string;
+            /** @description A number for the counts and fraction, a string for the program, and a list of compounds or mutation sets for the others. */
+            value: unknown;
+            /** @description `file:<sha256>`. */
+            source: string;
+            needs_review: boolean;
+            review_reason?: string;
+        };
+        ExtractionWarning: {
+            field?: string;
+            /** @description JSON pointer into the extracted values, for schema-rule violations. */
+            pointer?: string;
+            code?: string;
+            detail: string;
+        };
         ArchiveRevisionGroup: {
             group: string;
             revision_ordinal: number;
@@ -1789,6 +1885,96 @@ export interface operations {
             /** @description RCSB failed or did not answer in time. */
             502: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    extractArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact ID. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extracted values. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["ArtifactExtractionDocument"];
+                };
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The caller neither created the artifact nor is a reviewer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Artifact not found, or nothing is stored at its URI. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The artifact is not an uploaded mmCIF file with a sha256. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The user made too many extraction requests in the last minute. `Retry-After` gives seconds. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before extracting again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The object could not be read from storage. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Every extraction slot of this server instance is busy. `Retry-After` gives seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before extracting again. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {

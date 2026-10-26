@@ -417,6 +417,10 @@ func (s *uploadCDNStub) AbortUpload(_ context.Context, key, uploadID string) err
 	return s.abortErr
 }
 
+func (s *uploadCDNStub) ReadArtifactHead(context.Context, string, string, int64) (cdn.ObjectHead, error) {
+	return cdn.ObjectHead{}, errors.New("not implemented")
+}
+
 var _ cdn.Service = (*uploadCDNStub)(nil)
 
 func Test_should_select_artifact_when_file_has_one_matching_artifact(t *testing.T) {

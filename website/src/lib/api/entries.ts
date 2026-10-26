@@ -1168,10 +1168,10 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     idempotency_key:
       stringOrNull(input.idempotency_key) ??
       modelRevisionIdempotencyKey(artifacts, primaryModelEntity?.id ?? null),
-    metadata: {
-      ...modelMetadataFromEntity(primaryModelEntity),
-      ...(input.metadata ?? {}),
-    },
+    metadata: mergeModelMetadata(
+      modelMetadataFromEntity(primaryModelEntity),
+      input.metadata ?? {},
+    ),
     primary_artifact_id: primaryModelEntity?.id ?? null,
     artifacts,
     runs: entities
@@ -1585,6 +1585,23 @@ function artifactTypeFromEntity(entity: CreateEntityInput): ArtifactType {
   return artifactFormat(entity) === "fasta" ? "fasta" : "other";
 }
 
+// mergeModelMetadata lets the model's own metadata win over what was read from
+// the file, except for `extensions`, an open object: its keys are merged so the
+// compound review flags read from the coordinates survive next to extensions the
+// form sets.
+function mergeModelMetadata(fromFile: JSONRecord, own: JSONRecord): JSONRecord {
+  const merged: JSONRecord = { ...fromFile, ...own };
+  const fileExtensions = objectRecord(fromFile.extensions);
+  const ownExtensions = objectRecord(own.extensions);
+  if (
+    Object.keys(fileExtensions).length > 0 ||
+    Object.keys(ownExtensions).length > 0
+  ) {
+    merged.extensions = { ...fileExtensions, ...ownExtensions };
+  }
+  return merged;
+}
+
 function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   if (!entity) {
     return {};
@@ -1618,8 +1635,28 @@ function modelMetadataFromEntity(entity: CreateEntityInput | null): JSONRecord {
   if (cofactors.length > 0) {
     metadata.cofactors = cofactors;
   }
+  // Compounds the preview kept but is unsure about travel on the model's open
+  // `extensions` object, where the CLI puts them: the model schema has no field
+  // for them.
+  const compoundReview = compoundReviewItems(objectRecord(parsed.extensions).compound_review);
+  if (compoundReview.length > 0) {
+    metadata.extensions = { compound_review: compoundReview };
+  }
 
   return metadata;
+}
+
+function compoundReviewItems(value: unknown): JSONRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const record = objectRecord(item);
+    const list = stringOrNull(record.list);
+    const id = stringOrNull(record.id);
+    const reason = stringOrNull(record.reason);
+    return list && id && reason ? [{ list, id, reason }] : [];
+  });
 }
 
 function objectRecord(value: unknown): JSONRecord {

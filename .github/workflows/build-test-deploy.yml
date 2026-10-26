@@ -58,6 +58,8 @@ jobs:
             website:
               - ".github/workflows/build-test-deploy.yml"
               - "website/**"
+              - "lib/cif/*.json"
+              - "lib/cif/testdata/**"
               - "backend/api/openapi.yaml"
 
   backend:
@@ -182,6 +184,12 @@ jobs:
       - name: Install dependencies
         working-directory: website
         run: npm ci
+
+      - name: Check generated CIF reference lists are current
+        working-directory: website
+        run: |
+          npm run gen:cif-reference
+          git diff --exit-code -- src/lib/parse/cifReference.gen.ts
 
       - name: Check generated API types are current
         working-directory: website

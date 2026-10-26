@@ -8,6 +8,7 @@
     "start": "next start",
     "test": "node --test test/*.test.cjs",
     "typecheck": "tsc --noEmit",
+    "gen:cif-reference": "node scripts/gen-cif-reference.mjs",
     "gen:api": "openapi-typescript ../backend/api/openapi.yaml -o src/lib/api/schema.gen.ts"
   },
   "dependencies": {
