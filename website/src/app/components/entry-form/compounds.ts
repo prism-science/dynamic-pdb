@@ -104,6 +104,31 @@ export function addCompound(
   };
 }
 
+export type AddTypedCompoundsResult = AddCompoundResult & {
+  /** The refused IDs, joined by spaces, to leave in the box for fixing. */
+  rejected: string;
+};
+
+/** Adds each ID of a typed text, split on spaces, commas or semicolons. The
+ *  error is the first refused ID's. */
+export function addTypedCompounds(
+  compounds: CompoundsDraft,
+  text: string,
+): AddTypedCompoundsResult {
+  let next = compounds;
+  const rejected: string[] = [];
+  let firstError: string | null = null;
+  for (const raw of text.split(/[\s,;]+/).filter(Boolean)) {
+    const result = addCompound(next, raw);
+    next = result.compounds;
+    if (result.error) {
+      rejected.push(raw);
+      firstError ??= result.error;
+    }
+  }
+  return { compounds: next, rejected: rejected.join(" "), error: firstError };
+}
+
 export function removeCompound(
   compounds: CompoundsDraft,
   list: CompoundListName,

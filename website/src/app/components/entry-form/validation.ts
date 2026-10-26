@@ -1,6 +1,11 @@
 import { COMPOUND_LIST_NAMES, compoundIdError } from "./compounds";
 import { crystalIds, crystalIsEmpty } from "./crystals";
-import type { FieldId } from "./fields";
+import {
+  ENTRY_COMPOUND_FIELDS,
+  MODEL_COMPOUND_FIELDS,
+  type CompoundListFields,
+  type FieldId,
+} from "./fields";
 import { isModelFile, parseRunParameters } from "./helpers";
 import {
   advice,
@@ -51,7 +56,7 @@ export function entryFormMessages(
       invalid("entry.pdb", "use the four-character ID, a digit first, for example 5GY3"),
     );
   }
-  messages.push(...compoundMessages(metadata.compounds, "entry.ligands", "entry.cofactors"));
+  messages.push(...compoundMessages(metadata.compounds, ENTRY_COMPOUND_FIELDS));
   messages.push(...polymerEntityMessages(metadata.polymerEntities));
   if (!metadata.method.trim()) {
     messages.push(required("entry.method"));
@@ -85,7 +90,7 @@ export function modelFormMessages(draft: ModelDraft): FieldMessage[] {
   if (draft.modelType && !(MODEL_TYPES as string[]).includes(draft.modelType)) {
     messages.push(invalid("model.type", "choose one of the listed model types"));
   }
-  messages.push(...compoundMessages(draft.compounds, "model.ligands", "model.cofactors"));
+  messages.push(...compoundMessages(draft.compounds, MODEL_COMPOUND_FIELDS));
   messages.push(...modelFileMessages(draft));
   messages.push(...metricMessages(draft));
   messages.push(...programMessages(draft));
@@ -113,11 +118,10 @@ function numberMessages(
 
 function compoundMessages(
   compounds: CompoundsDraft,
-  ligandsField: FieldId,
-  cofactorsField: FieldId,
+  fields: CompoundListFields,
 ): FieldMessage[] {
   return COMPOUND_LIST_NAMES.flatMap((list) => {
-    const field = list === "ligands" ? ligandsField : cofactorsField;
+    const field = fields[list];
     return compounds[list].items.flatMap((item) => {
       const error = compoundIdError(item.id);
       return error ? [invalid(field, error)] : [];

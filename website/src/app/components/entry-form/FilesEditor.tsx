@@ -22,6 +22,8 @@ import {
 import { fastaTotalLength } from "@/lib/fasta";
 
 import SequenceView from "../SequenceView";
+import { FieldMessages } from "./FormFields";
+import type { FieldMessage } from "./messages";
 import { LinkIcon, SearchIcon, UploadIcon } from "./icons";
 import { LEVELS } from "./types";
 import type { ParsedFile } from "./types";
@@ -57,6 +59,7 @@ export default function FilesEditor({
   hint = DEFAULT_HINT,
   title,
   artifactTypeOptions,
+  fileMessages = () => [],
 }: {
   files: ParsedFile[];
   onAdd: (list: File[]) => void;
@@ -73,6 +76,9 @@ export default function FilesEditor({
    *  coordinates first because that file is what everything else hangs off. */
   title?: ReactNode;
   artifactTypeOptions?: ArtifactType[];
+  /** The messages about one file, such as an API error whose pointer runs
+   *  through that file's artifact in the request. */
+  fileMessages?: (fileId: string) => readonly FieldMessage[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -389,6 +395,7 @@ export default function FilesEditor({
                   </>
                 );
               })()}
+              <FieldMessages messages={fileMessages(file.id)} />
             </li>
           ))}
         </ul>

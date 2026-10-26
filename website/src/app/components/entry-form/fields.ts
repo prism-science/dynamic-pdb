@@ -1,5 +1,7 @@
 import type { components } from "@/lib/api/schema.gen";
 
+import type { CompoundListName } from "./types";
+
 type Schemas = components["schemas"];
 
 /**
@@ -419,6 +421,19 @@ export const FIELDS = {
 } satisfies Record<string, FieldSpec>;
 
 export type FieldId = keyof typeof FIELDS;
+
+/** The field of each compound list, on the entry form and on the model form. */
+export type CompoundListFields = Record<CompoundListName, FieldId>;
+
+export const ENTRY_COMPOUND_FIELDS: CompoundListFields = {
+  ligands: "entry.ligands",
+  cofactors: "entry.cofactors",
+};
+
+export const MODEL_COMPOUND_FIELDS: CompoundListFields = {
+  ligands: "model.ligands",
+  cofactors: "model.cofactors",
+};
 
 export function fieldSpec(id: FieldId): FieldSpec {
   return FIELDS[id];

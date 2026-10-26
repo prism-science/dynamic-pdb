@@ -25,7 +25,12 @@ import PolymerEntitiesEditor, {
   type ArchiveLookupState,
 } from "./entry-form/PolymerEntitiesEditor";
 import { UploadIcon } from "./entry-form/icons";
-import { FIELDS, type FieldId, type SectionId } from "./entry-form/fields";
+import {
+  ENTRY_COMPOUND_FIELDS,
+  FIELDS,
+  type FieldId,
+  type SectionId,
+} from "./entry-form/fields";
 import {
   blockerLines,
   inlineMessages,
@@ -353,7 +358,8 @@ export default function NewEntryForm() {
       : { ...metadata, polymerEntities: [] };
   const validationMessages = entryFormMessages(title, submittedMetadata);
   const messages = [...validationMessages, ...apiMessages];
-  const inline = (field: FieldId) => inlineMessages(messages, field);
+  const inline = (field: FieldId, item: string | null = null) =>
+    inlineMessages(messages, field, item);
 
   const blockers = [
     ...blockerLines(validationMessages),
@@ -538,7 +544,7 @@ export default function NewEntryForm() {
           onChange={(compounds) =>
             editMetadata("overview", (current) => ({ ...current, compounds }))
           }
-          fields={{ ligands: "entry.ligands", cofactors: "entry.cofactors" }}
+          fields={ENTRY_COMPOUND_FIELDS}
           messages={messages}
         />
       </FormSection>
@@ -642,6 +648,7 @@ export default function NewEntryForm() {
           <FilesEditor
             files={files}
             lockLevel
+            fileMessages={(fileId) => inline("entry.files", fileId)}
             onAdd={addEntryFiles}
             onAddUrl={addEntryUrl}
             onRemove={(id) => editFiles((p) => p.filter((f) => f.id !== id))}

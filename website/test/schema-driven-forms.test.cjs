@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const React = require("react");
+const { renderToStaticMarkup } = require("react-dom/server");
 
 const { FIELDS, SECTIONS } = require("../src/app/components/entry-form/fields.ts");
 const {
@@ -13,6 +15,7 @@ const {
 } = require("../src/app/components/entry-form/apiErrors.ts");
 const {
   addCompound,
+  addTypedCompounds,
   compoundListRequest,
   compoundReviewRequest,
   compoundsFromParsed,
@@ -31,7 +34,11 @@ const {
   entryFormMessages,
   modelFormMessages,
 } = require("../src/app/components/entry-form/validation.ts");
-const { blockerLines } = require("../src/app/components/entry-form/messages.ts");
+const {
+  blockerLines,
+  inlineMessages,
+} = require("../src/app/components/entry-form/messages.ts");
+const FilesEditor = require("../src/app/components/entry-form/FilesEditor.tsx").default;
 const {
   buildCreateEntryInput,
   buildCreateModelInput,
@@ -193,6 +200,44 @@ test("should_keep_the_message_and_skip_the_request_when_the_api_sent_no_errors",
   assert.match(withErrors.error, /marked below/);
 });
 
+test("should_show_an_api_error_under_its_file_when_the_pointer_runs_through_an_artifact", () => {
+  // given
+  const files = [
+    uploadedFile({ id: "file-1", name: "data.mtz" }),
+    uploadedFile({ id: "file-2", name: "seq.fasta" }),
+  ];
+  const request = {
+    entry: {
+      artifacts: [
+        { id: "file-1", name: "data.mtz" },
+        { id: "file-2", name: "seq.fasta" },
+      ],
+    },
+  };
+  const errors = [
+    { status: "422", detail: "format is not allowed", source: { pointer: "/entry/artifacts/1/format" } },
+  ];
+
+  // when
+  const { fieldErrors } = apiFailure("Backend responded with 422", errors, () => request);
+  const html = renderToStaticMarkup(
+    React.createElement(FilesEditor, {
+      files,
+      onAdd: () => {},
+      onAddUrl: () => {},
+      onRemove: () => {},
+      onLevel: () => {},
+      onPatch: () => {},
+      fileMessages: (fileId) => inlineMessages(fieldErrors, "entry.files", fileId),
+    }),
+  );
+
+  // then
+  const [, firstFile, secondFile] = html.split("<li");
+  assert.ok(!firstFile.includes("Format is not allowed."));
+  assert.ok(secondFile.includes("Format is not allowed."));
+});
+
 // ----------------------------------------------------- ligands, cofactors --
 
 test("should_sort_typed_compounds_by_the_reference_lists", () => {
@@ -257,6 +302,48 @@ test("should_clear_the_review_flag_when_a_compound_is_moved", () => {
   assert.deepEqual(compounds.cofactors.items, [{ id: "ZN", review: "metal ion kept for review" }]);
   assert.deepEqual(moved.ligands.items.map((item) => [item.id, item.review]), [["NAG", null], ["ZN", null]]);
   assert.equal(moved.cofactors.items.length, 0);
+});
+
+test("should_add_the_valid_ids_and_keep_the_refused_ones_when_typed_text_is_committed", () => {
+  // given
+  const compounds = addCompound(emptyCompounds(), "ATP").compounds;
+
+  // when
+  const result = addTypedCompounds(compounds, "hem, atp; NOT-A-CCD zn");
+  const blank = addTypedCompounds(compounds, "  ");
+
+  // then
+  assert.deepEqual(compoundListRequest(result.compounds.cofactors), ["HEM", "ZN"]);
+  assert.deepEqual(compoundListRequest(result.compounds.ligands), ["ATP"]);
+  assert.equal(result.rejected, "atp NOT-A-CCD");
+  assert.equal(result.error, "ATP is already listed");
+  assert.deepEqual(blank, { compounds, rejected: "", error: null });
+});
+
+test("should_report_a_bad_id_on_its_own_list_when_either_form_is_checked", () => {
+  // given: IDs restored from a draft, which skips the typed-ID checks
+  const compounds = {
+    ligands: { mode: "list", items: [{ id: "NOT-A-CCD", review: null }] },
+    cofactors: { mode: "list", items: [{ id: "HOH", review: null }] },
+  };
+  const compoundFields = new Set([
+    "entry.ligands",
+    "entry.cofactors",
+    "model.ligands",
+    "model.cofactors",
+  ]);
+  const compoundMessages = (messages) =>
+    messages
+      .filter((message) => compoundFields.has(message.field))
+      .map((message) => message.field);
+
+  // when
+  const entryMessages = entryFormMessages("Entry", { ...emptyEntryMetadataDraft(), compounds });
+  const modelMessages = modelFormMessages(modelDraft({ compounds }));
+
+  // then
+  assert.deepEqual(compoundMessages(entryMessages), ["entry.ligands", "entry.cofactors"]);
+  assert.deepEqual(compoundMessages(modelMessages), ["model.ligands", "model.cofactors"]);
 });
 
 // ------------------------------------------------- crystals and entities --

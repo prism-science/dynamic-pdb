@@ -553,6 +553,12 @@
   }
 }
 
+/* A message about one file, under its row and inside its border. */
+.fileItem > .inlineError,
+.fileItem > .inlineWarning {
+  padding: 0 12px 10px;
+}
+
 .fileRow {
   display: flex;
   align-items: center;
@@ -1812,8 +1818,7 @@
   align-items: start;
 }
 
-/* The thumbnail's field fills the identity row's height, like the bare drop
-   zone it wraps used to. */
+/* The thumbnail's field fills the identity row's height. */
 .identityThumb > .formField {
   flex: 1 1 auto;
 }

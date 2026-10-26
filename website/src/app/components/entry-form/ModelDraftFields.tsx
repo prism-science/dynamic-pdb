@@ -13,7 +13,11 @@ import MetricsEditor from "./MetricsEditor";
 import PipelineEditor from "./PipelineEditor";
 import PipelinePreview from "./PipelinePreview";
 import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
-import type { FieldId, SectionId } from "./fields";
+import {
+  MODEL_COMPOUND_FIELDS,
+  type FieldId,
+  type SectionId,
+} from "./fields";
 import { UploadIcon } from "./icons";
 import { inlineMessages, type FieldMessage } from "./messages";
 import { MODEL_PURPOSES, MODEL_TYPES, emptyCompounds } from "./types";
@@ -84,7 +88,8 @@ export default function ModelDraftFields({
   const fieldId = useId();
 
   const hasModel = draft.files.some(isModelFile);
-  const inline = (field: FieldId) => inlineMessages(messages, field);
+  const inline = (field: FieldId, item: string | null = null) =>
+    inlineMessages(messages, field, item);
 
   const edit = (
     section: SectionId,
@@ -356,7 +361,7 @@ export default function ModelDraftFields({
             onChange={(compounds) =>
               edit("overview", (current) => ({ ...current, compounds }))
             }
-            fields={{ ligands: "model.ligands", cofactors: "model.cofactors" }}
+            fields={MODEL_COMPOUND_FIELDS}
             messages={messages}
             source={draft.compoundsSource ? `from ${draft.compoundsSource}` : null}
           />
@@ -367,6 +372,7 @@ export default function ModelDraftFields({
             <FilesEditor
               files={draft.files}
               lockModelLevel
+              fileMessages={(fileId) => inline("model.files", fileId)}
               title={
                 hasModel ? undefined : (
                   <>

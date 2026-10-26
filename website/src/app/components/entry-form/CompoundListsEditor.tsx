@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 
 import {
   COMPOUND_LIST_NAMES,
-  addCompound,
+  addTypedCompounds,
   confirmCompound,
   moveCompound,
   otherCompoundList,
@@ -12,7 +12,7 @@ import {
   setCompoundListMode,
 } from "./compounds";
 import { Field, sentence } from "./FormFields";
-import type { FieldId } from "./fields";
+import type { CompoundListFields } from "./fields";
 import { inlineMessages, type FieldMessage } from "./messages";
 import type {
   CompoundListMode,
@@ -48,7 +48,7 @@ export default function CompoundListsEditor({
 }: {
   compounds: CompoundsDraft;
   onChange: (next: CompoundsDraft) => void;
-  fields: Record<CompoundListName, FieldId>;
+  fields: CompoundListFields;
   messages: readonly FieldMessage[];
   source?: string | null;
 }) {
@@ -56,23 +56,15 @@ export default function CompoundListsEditor({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Runs on Enter, on Add and when the box loses focus, so IDs typed just
+  // before submitting are not left behind in the box.
   const add = () => {
-    let next = compounds;
-    const rejected: string[] = [];
-    let firstError: string | null = null;
-    for (const raw of draft.split(/[\s,;]+/).filter(Boolean)) {
-      const result = addCompound(next, raw);
-      next = result.compounds;
-      if (result.error) {
-        rejected.push(raw);
-        firstError ??= result.error;
-      }
+    const result = addTypedCompounds(compounds, draft);
+    if (result.compounds !== compounds) {
+      onChange(result.compounds);
     }
-    if (next !== compounds) {
-      onChange(next);
-    }
-    setDraft(rejected.join(" "));
-    setError(firstError);
+    setDraft(result.rejected);
+    setError(result.error);
   };
 
   return (
@@ -95,6 +87,7 @@ export default function CompoundListsEditor({
               add();
             }
           }}
+          onBlur={add}
           placeholder="CCD IDs, for example ATP HEM ZN"
           autoComplete="off"
           data-1p-ignore
