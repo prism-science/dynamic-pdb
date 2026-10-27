@@ -132,7 +132,9 @@ about half busy with this. The first run does this for all of prod's ~568,000 ar
 one statement it ran over 5 minutes on prod and slowed the API, so it must stay in pages.
 The job's statements may run for `statementTimeout` (30 seconds) instead of the backend's 10.
 
-It runs in both environments. Each hourly run stops claiming files after 50 minutes and is
+It is paused: on 2026-10-27 at 22:04 UTC prod's database stalled on WAL writes after a day of
+heavy checksum writes, and the job stays off until the RDS metrics are understood. Each hourly
+run stops claiming files after 50 minutes and is
 stopped after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap). The
 rollout starts with a cap of 1000; set it to `0` once the first runs and the S3 bill look
 right:
