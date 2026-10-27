@@ -105,10 +105,9 @@ mmseqsJob:
       memory: 16Gi
 
 # Hashes every artifact's bytes and copies verified external files into the bucket. It runs
-# the backend image, so it always matches the deployed API. Off until its first-run fill is split
-# into batches: as one statement it ran over 5 minutes on prod and slowed the API.
+# the backend image, so it always matches the deployed API.
 checksumJob:
-  enabled: false
+  enabled: true
   schedule: "0 * * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
@@ -119,9 +118,10 @@ checksumJob:
   activeDeadlineSeconds: 3300
   # Caps the files one run checks; 0 means no cap.
   maxFilesPerRun: 1000
-  # Replaces the backend's 10s statement_timeout for the job only. The first run adds a pending
-  # row for every artifact in one statement, which takes longer than 10s on prod.
-  statementTimeout: 5m
+  # Replaces the backend's 10s statement_timeout for the job only. Each statement that adds
+  # missing rows looks at 2000 artifacts; this leaves room for a slow database and still stops
+  # a statement that runs away.
+  statementTimeout: 30s
   resources:
     requests:
       cpu: 250m

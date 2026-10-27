@@ -126,12 +126,13 @@ verified external file (such as an RCSB file) of up to 1 GiB in the data bucket.
 `/app/checksum-job` from the backend image, so it needs no image of its own, and it uses the
 backend's database and `-s3-data` secrets.
 
-The job's database statements may run for `statementTimeout` (5 minutes) instead of the
-backend's 10 seconds. The first run adds a pending row for each of prod's ~568,000 artifacts
-in one statement, and that took longer than 10 seconds on prod.
+Each run first adds a pending row for every artifact that has none, 2000 artifacts per
+statement, and after each statement pauses as long as it took, so the database is at most
+about half busy with this. The first run does this for all of prod's ~568,000 artifacts. As
+one statement it ran over 5 minutes on prod and slowed the API, so it must stay in pages.
+The job's statements may run for `statementTimeout` (30 seconds) instead of the backend's 10.
 
-It is off until the first-run fill is split into batches: as one statement it ran over 5
-minutes on prod and slowed the API. Each hourly run stops claiming files after 50 minutes and is
+It runs in both environments. Each hourly run stops claiming files after 50 minutes and is
 stopped after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap). The
 rollout starts with a cap of 1000; set it to `0` once the first runs and the S3 bill look
 right:

@@ -26,6 +26,15 @@ type ArtifactChecksum struct {
 	CheckedAt *time.Time
 }
 
+// MissingChecksumsPage is one page of artifacts, in id order, that the checksum job gave a
+// pending row where they had none. Scanned counts the artifacts in the page, Added the rows
+// it added, and LastArtifactID is where the next page starts; it is uuid.Nil for an empty page.
+type MissingChecksumsPage struct {
+	Scanned        int
+	Added          int64
+	LastArtifactID uuid.UUID
+}
+
 // ChecksumClaim is an artifact the checksum job took for one attempt. SHA256 and SizeBytes
 // are the uploader's declared values. Attempts counts this attempt.
 type ChecksumClaim struct {

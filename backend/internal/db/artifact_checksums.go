@@ -28,25 +28,46 @@ func NewArtifactChecksumsRepository(database *sqlx.DB, queriers *QuerierProvider
 	}
 }
 
-// AddMissing adds a pending row for every artifact that has none and returns how many it added.
-// It only inserts, so running it again is harmless.
-func (r *ArtifactChecksumsRepository) AddMissing(ctx context.Context) (int64, error) {
-	query := `insert into artifact_checksums(artifact_id)
-			  select artifacts.id
-			  from artifacts
-			  where not exists (
-			    select 1 from artifact_checksums where artifact_checksums.artifact_id = artifacts.id
+// AddMissingAfter takes the next limit artifacts in id order after the given id and adds a
+// pending row for each of them that has none. One page is one short statement, so filling
+// the table for every artifact never needs one long statement. It only inserts, so running
+// it again is harmless.
+func (r *ArtifactChecksumsRepository) AddMissingAfter(
+	ctx context.Context,
+	after uuid.UUID,
+	limit int,
+) (models.MissingChecksumsPage, error) {
+	if limit <= 0 {
+		return models.MissingChecksumsPage{}, errors.New("page limit must be positive")
+	}
+	query := `with page as (
+			    select id from artifacts where id > $1 order by id limit $2
+			  ), added as (
+			    insert into artifact_checksums(artifact_id)
+			    select page.id
+			    from page
+			    where not exists (
+			      select 1 from artifact_checksums where artifact_checksums.artifact_id = page.id
+			    )
+			    on conflict (artifact_id) do nothing
+			    returning artifact_id
 			  )
-			  on conflict (artifact_id) do nothing`
-	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query)
-	if err != nil {
-		return 0, fmt.Errorf("add missing artifact checksums: %w", err)
+			  select (select count(*) from page) as scanned,
+			         (select count(*) from added) as added,
+			         coalesce((select id from page order by id desc limit 1), $3) as last_artifact_id`
+	var row struct {
+		Scanned        int       `db:"scanned"`
+		Added          int64     `db:"added"`
+		LastArtifactID uuid.UUID `db:"last_artifact_id"`
 	}
-	added, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("count added artifact checksums: %w", err)
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, after, limit, uuid.Nil); err != nil {
+		return models.MissingChecksumsPage{}, fmt.Errorf("add missing artifact checksums: %w", err)
 	}
-	return added, nil
+	return models.MissingChecksumsPage{
+		Scanned:        row.Scanned,
+		Added:          row.Added,
+		LastArtifactID: row.LastArtifactID,
+	}, nil
 }
 
 // ClaimDue takes up to limit pending rows that are due at now, oldest first, together with

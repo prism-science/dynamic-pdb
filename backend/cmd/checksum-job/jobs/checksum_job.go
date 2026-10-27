@@ -34,7 +34,7 @@ var errNoURI = errors.New("artifact has no uri")
 
 // ChecksumQueue is the artifact_checksums table as the job uses it.
 type ChecksumQueue interface {
-	AddMissing(ctx context.Context) (int64, error)
+	AddMissingAfter(ctx context.Context, after uuid.UUID, limit int) (models.MissingChecksumsPage, error)
 	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]models.ChecksumClaim, error)
 	Locations(ctx context.Context, artifactIDs []uuid.UUID) (map[uuid.UUID]models.ArtifactLocation, error)
 	// Record stores the results of one URI's artifacts together.
@@ -70,6 +70,8 @@ type Config struct {
 	CopyExternal bool          `mapstructure:"copy_external"`
 	// CopyLimitBytes is the largest external file that is copied; larger ones keep only their link.
 	CopyLimitBytes int64 `mapstructure:"copy_limit_bytes"`
+	// FillBatchSize is how many artifacts one statement looks at when a run adds missing rows.
+	FillBatchSize int `mapstructure:"fill_batch_size"`
 }
 
 func (c Config) validate() error {
@@ -88,6 +90,8 @@ func (c Config) validate() error {
 		return errors.New("file_timeout must be positive")
 	case c.CopyLimitBytes <= 0:
 		return errors.New("copy_limit_bytes must be positive")
+	case c.FillBatchSize <= 0:
+		return errors.New("fill_batch_size must be positive")
 	}
 	return nil
 }
@@ -101,6 +105,7 @@ type ChecksumJob struct {
 	cfg      Config
 	logger   *slog.Logger
 	now      func() time.Time
+	sleep    func(ctx context.Context, pause time.Duration) error
 
 	hostSlotsMu sync.Mutex
 	hostSlots   map[string]chan struct{}
@@ -126,8 +131,21 @@ func NewChecksumJob(
 		cfg:       cfg,
 		logger:    logger,
 		now:       func() time.Time { return time.Now().UTC() },
+		sleep:     sleepContext,
 		hostSlots: map[string]chan struct{}{},
 	}, nil
+}
+
+// sleepContext waits for pause, or returns the context's error if it ends first.
+func sleepContext(ctx context.Context, pause time.Duration) error {
+	timer := time.NewTimer(pause)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // uriGroup is the claimed artifacts that share one URI; the URI is read once for all of them.
@@ -146,7 +164,7 @@ type runSummary struct {
 func (j *ChecksumJob) Run(ctx context.Context) error {
 	started := j.now()
 	claimUntil := started.Add(j.cfg.ClaimFor)
-	added, err := j.queue.AddMissing(ctx)
+	added, err := j.addMissing(ctx)
 	if err != nil {
 		return fmt.Errorf("add missing checksum rows: %w", err)
 	}
@@ -182,6 +200,31 @@ func (j *ChecksumJob) Run(ctx context.Context) error {
 		"retry_later", summary.statuses[models.ChecksumStatusPending],
 		"duration", j.now().Sub(started).String())
 	return nil
+}
+
+// addMissing gives every artifact without a row a pending one, FillBatchSize artifacts per
+// statement, and returns how many rows it added. After each full page it pauses as long as
+// that page took, so the fill keeps the database at most about half busy, however slow it
+// is. Each page commits on its own, so a run that ends early keeps the rows it added.
+func (j *ChecksumJob) addMissing(ctx context.Context) (int64, error) {
+	var added int64
+	// uuid.Nil sorts before every real artifact id, so the first page starts at the beginning.
+	after := uuid.Nil
+	for {
+		pageStarted := j.now()
+		page, err := j.queue.AddMissingAfter(ctx, after, j.cfg.FillBatchSize)
+		if err != nil {
+			return added, fmt.Errorf("page after artifact %s: %w", after, err)
+		}
+		added += page.Added
+		if page.Scanned < j.cfg.FillBatchSize {
+			return added, nil
+		}
+		after = page.LastArtifactID
+		if err := j.sleep(ctx, j.now().Sub(pageStarted)); err != nil {
+			return added, fmt.Errorf("pause after artifact %s: %w", after, err)
+		}
+	}
 }
 
 func groupByURI(claims []models.ChecksumClaim) []uriGroup {

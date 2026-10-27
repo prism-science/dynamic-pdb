@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -192,14 +193,44 @@ func Test_should_add_rows_only_for_artifacts_without_one_when_missing_rows_added
 	artifactsBefore := fixture.artifactRows(t)
 
 	// when
-	added, err := fixture.database.ArtifactChecksums.AddMissing(ctx)
+	page, err := fixture.database.ArtifactChecksums.AddMissingAfter(ctx, uuid.Nil, 10)
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), added)
+	assert.Equal(t, 2, page.Scanned)
+	assert.Equal(t, int64(1), page.Added)
 	assert.Equal(t, "pending", fixture.checksumRow(t, missingID).Status)
 	assert.Equal(t, "verified", fixture.checksumRow(t, checked.ID).Status)
 	assert.JSONEq(t, artifactsBefore, fixture.artifactRows(t))
+}
+
+func Test_should_add_missing_rows_one_page_of_artifacts_after_another_when_pages_are_smaller_than_the_table(t *testing.T) {
+	// given
+	ctx := context.Background()
+	fixture := newChecksumTestDB(t)
+	ids := []uuid.UUID{
+		fixture.insertArtifactWithoutChecksum(t, "https://files.example.com/a.cif"),
+		fixture.insertArtifactWithoutChecksum(t, "https://files.example.com/b.cif"),
+		fixture.insertArtifactWithoutChecksum(t, "https://files.example.com/c.cif"),
+	}
+	// PostgreSQL orders uuids by their bytes, the same order as their lowercase text.
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+
+	// when
+	first, firstErr := fixture.database.ArtifactChecksums.AddMissingAfter(ctx, uuid.Nil, 2)
+	second, secondErr := fixture.database.ArtifactChecksums.AddMissingAfter(ctx, first.LastArtifactID, 2)
+	last, lastErr := fixture.database.ArtifactChecksums.AddMissingAfter(ctx, second.LastArtifactID, 2)
+
+	// then
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
+	require.NoError(t, lastErr)
+	assert.Equal(t, models.MissingChecksumsPage{Scanned: 2, Added: 2, LastArtifactID: ids[1]}, first)
+	assert.Equal(t, models.MissingChecksumsPage{Scanned: 1, Added: 1, LastArtifactID: ids[2]}, second)
+	assert.Equal(t, models.MissingChecksumsPage{}, last)
+	for _, id := range ids {
+		assert.Equal(t, "pending", fixture.checksumRow(t, id).Status)
+	}
 }
 
 func Test_should_claim_rows_with_the_same_uri_together_when_due_rows_claimed(t *testing.T) {
