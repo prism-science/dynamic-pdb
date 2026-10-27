@@ -1152,6 +1152,9 @@ export interface components {
             key: string;
             /** Format: double */
             value: number;
+            /** @description Program the archive names as the producer of the value; null when it names none. */
+            software_name?: string | null;
+            software_version?: string | null;
         };
         ArchiveModelProposal: components["schemas"]["ArchiveReport"] & {
             details?: string;
@@ -1479,12 +1482,22 @@ export interface components {
             direction: components["schemas"]["RunArtifactDirection"];
             position?: number | null;
         };
+        /** @description A metric of a computed model names the software that produced it, or links with run_id to the run that did. A Deposited model's metrics may omit both: the archive accession is their provenance. */
         CreateMetricRequest: {
             /** Format: uuid */
             id: string;
             key: components["schemas"]["MetricKey"];
             /** Format: double */
             value: number;
+            /** @description Program that produced the value, for example PHENIX or MolProbity. */
+            software_name?: string | null;
+            /** @description Version of that program, where known. */
+            software_version?: string | null;
+            /**
+             * Format: uuid
+             * @description A run in the same request, or of the same model revision, that produced the value.
+             */
+            run_id?: string | null;
         };
         Metric: {
             /** Format: uuid */
@@ -1492,6 +1505,14 @@ export interface components {
             key: components["schemas"]["MetricKey"];
             /** Format: double */
             value: number;
+            /** @description Program that produced the value; null when the metric does not name one. */
+            software_name?: string | null;
+            software_version?: string | null;
+            /**
+             * Format: uuid
+             * @description The run that produced the value; null when the metric does not link one.
+             */
+            run_id?: string | null;
             /** Format: date-time */
             created_at: string;
         };

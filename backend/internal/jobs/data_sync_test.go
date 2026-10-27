@@ -12,6 +12,7 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
+	"dynamic-pdb/lib/archive"
 	"dynamic-pdb/lib/rcsb"
 	"dynamic-pdb/lib/sifts"
 )
@@ -249,12 +250,49 @@ func Test_should_map_rcsb_model_metrics(t *testing.T) {
 	metrics := modelMetricsFromRCSB(details)
 
 	// then
+	pipeline := new(archive.ValidationPipelineSoftware)
 	assert.Equal(t, []models.Metric{
-		{Key: models.MetricKeyClashscore, Value: 4.8},
+		{Key: models.MetricKeyClashscore, Value: 4.8, SoftwareName: pipeline},
 		{Key: models.MetricKeyRFree, Value: 0.21},
 		{Key: models.MetricKeyRWork, Value: 0.18},
-		{Key: models.MetricKeyRamachandranOutliers, Value: 0.13},
+		{Key: models.MetricKeyRamachandranOutliers, Value: 0.13, SoftwareName: pipeline},
 	}, metrics)
+}
+
+func Test_should_fill_software_only_where_unchanged_rcsb_metric_has_none_when_sync_compares_metrics(t *testing.T) {
+	// given
+	unnamedRFree, namedRWork, unnamedClashscore := uuid.New(), uuid.New(), uuid.New()
+	currentMetrics := []models.Metric{
+		{ID: namedRWork, Key: models.MetricKeyRWork, Value: 0.18, SoftwareName: new("REFMAC")},
+		{ID: unnamedRFree, Key: models.MetricKeyRFree, Value: 0.21},
+		{ID: uuid.New(), Key: "custom_score", Value: 12},
+		{ID: unnamedClashscore, Key: models.MetricKeyClashscore, Value: 3.1},
+	}
+	desiredMetrics := []models.Metric{
+		{Key: models.MetricKeyClashscore, Value: 3.1, SoftwareName: new(archive.ValidationPipelineSoftware)},
+		{Key: models.MetricKeyRFree, Value: 0.21, SoftwareName: new("PHENIX"), SoftwareVersion: new("1.21")},
+		{Key: models.MetricKeyRWork, Value: 0.18, SoftwareName: new("PHENIX"), SoftwareVersion: new("1.21")},
+	}
+
+	// when
+	fills := metricSoftwareFills(currentMetrics, desiredMetrics)
+
+	// then
+	assert.ElementsMatch(t, []metricSoftwareFill{
+		{metricID: unnamedClashscore, softwareName: archive.ValidationPipelineSoftware},
+		{metricID: unnamedRFree, softwareName: "PHENIX", softwareVersion: new("1.21")},
+	}, fills)
+}
+
+func Test_should_accept_archive_metric_without_software_when_rcsb_names_no_program(t *testing.T) {
+	// given: 4HHB lists no refinement program, so its r_work names no software.
+	metrics := []models.Metric{{Key: models.MetricKeyRWork, Value: 0.135}}
+
+	// when
+	fieldErrors := modelUpdateErrors(models.ModelRevision{}, metrics)
+
+	// then
+	assert.Empty(t, fieldErrors)
 }
 
 func Test_should_detect_model_update_when_rcsb_fields_or_metrics_changed(t *testing.T) {

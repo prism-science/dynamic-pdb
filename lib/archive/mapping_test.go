@@ -176,6 +176,69 @@ func Test_should_report_conflict_when_refinements_disagree(t *testing.T) {
 	assert.Equal(t, "refine[0].ls_R_factor_R_free", mapping.Provenance["metrics.r_free"])
 }
 
+func Test_should_name_archive_software_for_each_metric_when_archive_lists_refinement_program(t *testing.T) {
+	// given
+	details := readFixture[rcsb.EntryDetails](t, "entry_6LU7.json")
+
+	// when
+	mapping := MapModel(details)
+
+	// then
+	softwareByKey := map[string][2]*string{}
+	for _, metric := range mapping.Metrics {
+		softwareByKey[metric.Key] = [2]*string{metric.SoftwareName, metric.SoftwareVersion}
+	}
+	assert.Equal(t, [2]*string{new("PHENIX"), new("1.17.1_3660")}, softwareByKey[MetricKeyRFree])
+	assert.Equal(t, [2]*string{new("PHENIX"), new("1.17.1_3660")}, softwareByKey[MetricKeyRWork])
+	assert.Equal(t, [2]*string{new(ValidationPipelineSoftware), nil}, softwareByKey[MetricKeyClashscore])
+	assert.Equal(t, [2]*string{new(ValidationPipelineSoftware), nil}, softwareByKey[MetricKeyRamachandranOutliers])
+	assert.Equal(t, "software[classification=refinement].name", mapping.Provenance["metrics.refinement_software"])
+}
+
+func Test_should_leave_r_factor_software_empty_when_archive_lists_no_refinement_program(t *testing.T) {
+	// given
+	details := readFixture[rcsb.EntryDetails](t, "entry_4HHB.json")
+
+	// when
+	mapping := MapModel(details)
+
+	// then
+	for _, metric := range mapping.Metrics {
+		switch metric.Key {
+		case MetricKeyRWork:
+			assert.Nil(t, metric.SoftwareName)
+			assert.Nil(t, metric.SoftwareVersion)
+		case MetricKeyClashscore, MetricKeyRamachandranOutliers:
+			assert.Equal(t, new(ValidationPipelineSoftware), metric.SoftwareName)
+		default:
+			require.FailNow(t, "unexpected metric", "4HHB has no %s", metric.Key)
+		}
+	}
+}
+
+func Test_should_report_conflict_when_archive_lists_several_refinement_programs(t *testing.T) {
+	// given
+	details := rcsb.EntryDetails{
+		Refinements: []rcsb.EntryRefinement{{RFree: new(0.21)}},
+		Software: []rcsb.EntrySoftware{
+			{Classification: "refinement", Name: "REFMAC", Version: "5.8", Ordinal: 3},
+			{Classification: "data scaling", Name: "XDS", Ordinal: 1},
+			{Classification: "Refinement", Name: "PHENIX", Version: "1.21", Ordinal: 2},
+		},
+	}
+
+	// when
+	mapping := MapModel(details)
+
+	// then
+	assert.Equal(t, []Metric{{
+		Key: MetricKeyRFree, Value: 0.21, SoftwareName: new("PHENIX"), SoftwareVersion: new("1.21"),
+	}}, mapping.Metrics)
+	assert.Equal(t, []Conflict{{
+		Field: "metrics.refinement_software", Chosen: "PHENIX 1.21", Others: []string{"REFMAC 5.8"},
+	}}, mapping.Conflicts)
+}
+
 func Test_should_map_model_fields_with_provenance_when_model_is_mapped(t *testing.T) {
 	// given
 	details := readFixture[rcsb.EntryDetails](t, "entry_4HHB.json")

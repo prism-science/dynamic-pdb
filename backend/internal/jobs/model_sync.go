@@ -92,12 +92,16 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 		currentMetrics,
 		desiredMetrics,
 	)
+	if !metricsChanged {
+		if err := s.fillMetricSoftware(ctx, modelID, metricSoftwareFills(currentMetrics, desiredMetrics)); err != nil {
+			return fmt.Errorf("fill archive metric software: %w", err)
+		}
+	}
 	if !modelRevisionChanged && !metricsChanged {
 		return nil
 	}
-	if err := s.validationMode.Check(
-		ctx, s.logger, "data sync model "+modelID, modelUpdateErrors(desiredRevision, desiredMetrics),
-	); err != nil {
+	fieldErrors := modelUpdateErrors(desiredRevision, desiredMetrics)
+	if err := s.validationMode.Check(ctx, s.logger, "data sync model "+modelID, fieldErrors); err != nil {
 		return fmt.Errorf("validate model update: %w", err)
 	}
 
@@ -349,10 +353,58 @@ func isRCSBModelMetric(key models.MetricKey) bool {
 }
 
 // modelUpdateErrors checks the values the sync takes from RCSB with the rules that
-// apply to API submissions. Pointers address the model revision.
+// apply to API submissions. Pointers address the model revision. Synced metrics are
+// archive values, so the accession is their provenance and software stays optional.
 func modelUpdateErrors(revision models.ModelRevision, metrics []models.Metric) []validation.FieldError {
 	fieldErrors := validation.ModelMetadata(validation.Root.Field("metadata"), revision.Metadata)
 	return append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
+}
+
+// metricSoftwareFill is software the archive names for a stored metric that has none.
+type metricSoftwareFill struct {
+	metricID        uuid.UUID
+	softwareName    string
+	softwareVersion *string
+}
+
+// metricSoftwareFills returns the archive's software for stored RCSB metrics that name
+// none, when stored and archive values are the same; it never replaces named software.
+func metricSoftwareFills(current []models.Metric, desired []models.Metric) []metricSoftwareFill {
+	current = rcsbModelMetrics(current)
+	desired = rcsbModelMetrics(desired)
+	if !modelMetricsHaveSameData(current, desired) {
+		return nil
+	}
+	var fills []metricSoftwareFill
+	for index, stored := range current {
+		archived := desired[index]
+		if stored.SoftwareName != nil || archived.SoftwareName == nil {
+			continue
+		}
+		fills = append(fills, metricSoftwareFill{
+			metricID:        stored.ID,
+			softwareName:    *archived.SoftwareName,
+			softwareVersion: archived.SoftwareVersion,
+		})
+	}
+	return fills
+}
+
+func (s *modelSyncStrategy) fillMetricSoftware(ctx context.Context, modelID string, fills []metricSoftwareFill) error {
+	filled := 0
+	for _, fill := range fills {
+		updated, err := s.database.Metrics.FillMissingSoftware(ctx, fill.metricID, fill.softwareName, fill.softwareVersion)
+		if err != nil {
+			return fmt.Errorf("fill software of metric %s: %w", fill.metricID, err)
+		}
+		if updated {
+			filled++
+		}
+	}
+	if filled > 0 {
+		s.logger.Info("data sync filled archive metric software", "model_id", modelID, "metrics", filled)
+	}
+	return nil
 }
 
 func applyRCSBModelDetails(revision *models.ModelRevision, details rcsb.EntryDetails) {

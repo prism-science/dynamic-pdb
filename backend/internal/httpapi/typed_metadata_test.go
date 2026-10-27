@@ -15,8 +15,10 @@ import (
 func Test_should_report_unknown_model_metadata_key_at_its_own_pointer_when_key_is_not_a_field(t *testing.T) {
 	// given
 	data := CreateModelData{
-		Title:    "model",
-		Metadata: &map[string]interface{}{"purpose": "Refinement", "colour": "blue", "ligand": []any{"HEM"}},
+		Title: "model",
+		Metadata: &map[string]interface{}{
+			"model_type": "Deposited", "purpose": "Refinement", "colour": "blue", "ligand": []any{"HEM"},
+		},
 	}
 
 	// when
@@ -30,8 +32,11 @@ func Test_should_report_unknown_model_metadata_key_at_its_own_pointer_when_key_i
 func Test_should_accept_model_metadata_extensions_when_keys_are_not_reserved(t *testing.T) {
 	// given
 	data := CreateModelData{
-		Title:    "model",
-		Metadata: &map[string]interface{}{"extensions": map[string]any{"lab_note": "see ELN 42", "nested": map[string]any{"a": 1}}},
+		Title: "model",
+		Metadata: &map[string]interface{}{
+			"model_type": "Deposited",
+			"extensions": map[string]any{"lab_note": "see ELN 42", "nested": map[string]any{"a": 1}},
+		},
 	}
 
 	// when
@@ -46,8 +51,9 @@ func Test_should_accept_compound_review_when_cli_uploads_it_under_model_extensio
 	data := CreateModelData{
 		Title: "model",
 		Metadata: &map[string]interface{}{
-			"cofactors": []string{"ZN"},
-			"ligands":   []string{"SO4"},
+			"model_type": "Deposited",
+			"cofactors":  []string{"ZN"},
+			"ligands":    []string{"SO4"},
 			"extensions": map[string]any{"compound_review": []any{
 				map[string]any{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"},
 			}},
@@ -64,8 +70,10 @@ func Test_should_accept_compound_review_when_cli_uploads_it_under_model_extensio
 func Test_should_reject_reserved_keys_when_model_artifact_and_run_metadata_use_double_underscore(t *testing.T) {
 	// given
 	data := CreateModelData{
-		Title:    "model",
-		Metadata: &map[string]interface{}{"__internal": true, "extensions": map[string]any{"__hidden": 1}},
+		Title: "model",
+		Metadata: &map[string]interface{}{
+			"model_type": "Deposited", "__internal": true, "extensions": map[string]any{"__hidden": 1},
+		},
 		Artifacts: &[]CreateArtifactRequest{{
 			Id: uuid.New(), Name: "a.cif", Level: "L0", Type: new(ArtifactTypeModel),
 			Metadata: &map[string]interface{}{"__x": 1},

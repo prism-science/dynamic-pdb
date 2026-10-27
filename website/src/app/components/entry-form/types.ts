@@ -34,6 +34,9 @@ export type ParsedFile = {
 export type MetricDraft = {
   id: string;
   values: Record<string, string>;
+  /** The program that computed the scores; a stored draft may lack it. */
+  softwareName?: string;
+  softwareVersion?: string;
 };
 
 /**

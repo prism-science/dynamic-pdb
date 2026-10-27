@@ -65,7 +65,12 @@ func ModelMetadata(mapping archive.ModelMapping) models.ModelMetadata {
 func Metrics(mapping archive.ModelMapping) []models.Metric {
 	metrics := make([]models.Metric, 0, len(mapping.Metrics))
 	for _, metric := range mapping.Metrics {
-		metrics = append(metrics, models.Metric{Key: models.MetricKey(metric.Key), Value: metric.Value})
+		metrics = append(metrics, models.Metric{
+			Key:             models.MetricKey(metric.Key),
+			Value:           metric.Value,
+			SoftwareName:    metric.SoftwareName,
+			SoftwareVersion: metric.SoftwareVersion,
+		})
 	}
 	return metrics
 }

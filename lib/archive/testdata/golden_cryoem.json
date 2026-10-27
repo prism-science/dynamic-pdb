@@ -60,12 +60,18 @@
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "clashscore",
       "Value": 0.81,
+      "SoftwareName": "wwPDB validation pipeline",
+      "SoftwareVersion": null,
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     },
     {
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "ramachandran_outliers",
       "Value": 0,
+      "SoftwareName": "wwPDB validation pipeline",
+      "SoftwareVersion": null,
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     }
   ]

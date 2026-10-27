@@ -16,9 +16,17 @@ const (
 	MetricKeyRamachandranOutliers = "ramachandran_outliers"
 )
 
+// ValidationPipelineSoftware names the producer of the validation-report metrics
+// (clashscore, Ramachandran outliers). RCSB gives no version for it.
+const ValidationPipelineSoftware = "wwPDB validation pipeline"
+
+// Metric is one archive score with the software that produced it, when the archive
+// names it.
 type Metric struct {
-	Key   string
-	Value float64
+	Key             string
+	Value           float64
+	SoftwareName    *string
+	SoftwareVersion *string
 }
 
 // ModelMapping is the model-level view of an RCSB entry, which describes the
@@ -101,28 +109,73 @@ func (mapping *ModelMapping) mapMetrics(details rcsb.EntryDetails) {
 		geometryOutliers = append(geometryOutliers, geometry.RamachandranOutliersPercent)
 	}
 
-	mapping.mapMetric(MetricKeyRFree, "refine[0].ls_R_factor_R_free", refinementFree)
-	mapping.mapMetric(MetricKeyRWork, "refine[0].ls_R_factor_R_work", refinementWork)
-	mapping.mapMetric(MetricKeyClashscore, "pdbx_vrpt_summary_geometry[0].clashscore", geometryClashscore)
+	refinementSoftware := mapping.refinementSoftware(details.Software)
+	validationSoftware := &metricSoftware{name: ValidationPipelineSoftware}
+	mapping.mapMetric(MetricKeyRFree, "refine[0].ls_R_factor_R_free", refinementFree, refinementSoftware)
+	mapping.mapMetric(MetricKeyRWork, "refine[0].ls_R_factor_R_work", refinementWork, refinementSoftware)
+	mapping.mapMetric(
+		MetricKeyClashscore, "pdbx_vrpt_summary_geometry[0].clashscore", geometryClashscore, validationSoftware,
+	)
 	mapping.mapMetric(
 		MetricKeyRamachandranOutliers,
 		"pdbx_vrpt_summary_geometry[0].percent_ramachandran_outliers",
 		geometryOutliers,
+		validationSoftware,
 	)
 	sort.Slice(mapping.Metrics, func(first int, second int) bool {
 		return mapping.Metrics[first].Key < mapping.Metrics[second].Key
 	})
 }
 
+type metricSoftware struct {
+	name    string
+	version *string
+}
+
+// refinementSoftware picks the "refinement" software row with the lowest ordinal and
+// records a conflict when the entry lists other refinement programs.
+func (mapping *ModelMapping) refinementSoftware(rows []rcsb.EntrySoftware) *metricSoftware {
+	const field = "metrics.refinement_software"
+	mapping.from(field, "software[classification=refinement].name")
+	var refinement []rcsb.EntrySoftware
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.Classification), "refinement") && strings.TrimSpace(row.Name) != "" {
+			refinement = append(refinement, row)
+		}
+	}
+	if len(refinement) == 0 {
+		return nil
+	}
+	sort.SliceStable(refinement, func(first int, second int) bool {
+		return refinement[first].Ordinal < refinement[second].Ordinal
+	})
+	labels := make([]string, 0, len(refinement))
+	for _, row := range refinement {
+		labels = append(labels, strings.TrimSpace(row.Name+" "+row.Version))
+	}
+	mapping.conflictIfDifferent(field, labels)
+	return &metricSoftware{
+		name:    strings.TrimSpace(refinement[0].Name),
+		version: optionalString(refinement[0].Version),
+	}
+}
+
 // mapMetric keeps the first reported value, as the sync always has, and records a
-// conflict when later records report another value.
-func (mapping *ModelMapping) mapMetric(key string, path string, reported []*float64) {
+// conflict when later records report another value. software is nil when the archive
+// does not name the program that produced the value.
+func (mapping *ModelMapping) mapMetric(key string, path string, reported []*float64, software *metricSoftware) {
 	field := "metrics." + key
 	mapping.from(field, path)
 	if len(reported) == 0 || reported[0] == nil {
 		return
 	}
-	mapping.Metrics = append(mapping.Metrics, Metric{Key: key, Value: *reported[0]})
+	metric := Metric{Key: key, Value: *reported[0]}
+	if software != nil {
+		name := software.name
+		metric.SoftwareName = &name
+		metric.SoftwareVersion = software.version
+	}
+	mapping.Metrics = append(mapping.Metrics, metric)
 	values := make([]string, 0, len(reported))
 	for _, value := range reported {
 		if value != nil {

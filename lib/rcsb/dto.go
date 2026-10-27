@@ -20,9 +20,19 @@ type EntryDetails struct {
 	Publication        EntryPublication          `json:"pubmed"`
 	Refinements        []EntryRefinement         `json:"refine"`
 	ValidationGeometry []EntryValidationGeometry `json:"pdbx_vrpt_summary_geometry"`
+	Software           []EntrySoftware           `json:"software"`
 	AccessionInfo      EntryAccessionInfo        `json:"rcsb_accession_info"`
 	RevisionGroups     []EntryRevisionGroup      `json:"pdbx_audit_revision_group"`
 	ObsoleteRecords    []EntryObsoleteRecord     `json:"pdbx_database_PDB_obs_spr"`
+}
+
+// EntrySoftware is one software row of an entry: a program the depositors used, with
+// its role (classification, for example "refinement") and, when given, its version.
+type EntrySoftware struct {
+	Classification string `json:"classification"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Ordinal        int    `json:"pdbx_ordinal"`
 }
 
 // EntryAccessionInfo is the release and version block of an RCSB entry. Dates

@@ -168,6 +168,41 @@ func (r *ArtifactsRepository) AttachToModelRevision(
 	return nil
 }
 
+// EntryArtifactIDs returns the candidates that are linked to a revision of the entry.
+func (r *ArtifactsRepository) EntryArtifactIDs(
+	ctx context.Context,
+	entryID string,
+	candidateIDs []uuid.UUID,
+) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(candidateIDs))
+	if len(candidateIDs) == 0 {
+		return ids, nil
+	}
+	query := `select distinct link.artifact_id
+			  from entry_revision_artifacts link
+			  join entry_revisions on entry_revisions.id = link.entry_revision_id
+			  where entry_revisions.entry_id = $1
+			    and link.artifact_id = any($2)
+			  order by link.artifact_id`
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &ids, query, entryID, pq.Array(candidateIDs)); err != nil {
+		return nil, fmt.Errorf("list entry artifact ids: %w", err)
+	}
+	return ids, nil
+}
+
+// ModelRevisionArtifactIDs returns the ids of the artifacts linked to a model revision.
+func (r *ArtifactsRepository) ModelRevisionArtifactIDs(ctx context.Context, modelRevisionID uuid.UUID) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0)
+	query := `select artifact_id
+			  from model_revision_artifacts
+			  where model_revision_id = $1
+			  order by artifact_id`
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &ids, query, modelRevisionID); err != nil {
+		return nil, fmt.Errorf("list model revision artifact ids: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *ArtifactsRepository) CopyEntryRevisionLinks(
 	ctx context.Context,
 	fromRevisionID, toRevisionID uuid.UUID,

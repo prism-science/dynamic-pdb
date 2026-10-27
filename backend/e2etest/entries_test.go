@@ -54,6 +54,7 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 			"data": map[string]any{
 				"title": "independent model", "primary_artifact_id": modelArtifactID,
 				"metadata": map[string]any{
+					"model_type": "Multiconformer",
 					"residue_data": []map[string]any{{
 						"label_asym_id": "A", "label_seq_id": 1, "label_comp_id": "MET", "rscc": 0.97,
 					}},
@@ -61,9 +62,9 @@ func (s *EntriesSuite) Test_should_publish_entry_and_model_through_independent_r
 				"artifacts": []map[string]any{
 					artifactRequest(modelArtifactID, "model coordinates", "L2", "cif", "s3://model/model.cif", nil),
 				},
-				"metrics": []map[string]any{{"id": metricID, "key": "r_free", "value": 0.21}},
+				"metrics": []map[string]any{{"id": metricID, "key": "r_free", "value": 0.21, "run_id": runID}},
 				"runs": []map[string]any{{
-					"id": runID, "name": "refinement",
+					"id": runID, "name": "refinement", "software_name": "PHENIX", "software_version": "1.21",
 					"artifacts": []map[string]any{
 						{"artifact_id": entryArtifactID, "direction": "input"},
 						{"artifact_id": modelArtifactID, "direction": "output"},
@@ -276,6 +277,7 @@ func (s *EntriesSuite) Test_should_redirect_public_files_from_the_backend() {
 			"op": "add",
 			"data": map[string]any{
 				"title":               "files model",
+				"metadata":            map[string]any{"model_type": "Deposited"},
 				"primary_artifact_id": modelArtifactID,
 				"artifacts": []map[string]any{
 					modelArtifact,
@@ -334,7 +336,7 @@ func (s *EntriesSuite) Test_should_return_existing_model_revision_when_idempoten
 	idempotencyKey := uuid.NewString()
 	request := map[string]any{
 		"model": map[string]any{
-			"title": "idempotent model", "idempotency_key": idempotencyKey,
+			"title": "idempotent model", "idempotency_key": idempotencyKey, "metadata": map[string]any{"model_type": "Deposited"},
 		},
 	}
 
@@ -360,7 +362,8 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 	initialArtifactID := uuid.New()
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
 		"model": map[string]any{
-			"title": "protein model",
+			"title":    "protein model",
+			"metadata": map[string]any{"model_type": "Deposited"},
 			"artifacts": []map[string]any{
 				artifactRequest(initialArtifactID, "initial FASTA", "L2", "fasta", "s3://model/initial.fasta", map[string]any{
 					"records": []map[string]any{{"header": "initial", "sequence": "MACDEFGHIK"}},
@@ -420,7 +423,7 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"title": "shared model"},
+		"model": map[string]any{"title": "shared model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 	modelID := model.ModelId
 
@@ -432,7 +435,7 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 		"model": map[string]any{"title": "contributed model revision"},
 	})
 	newModelRevision := createModelForTest(s.T(), contributorToken, entryID, map[string]any{
-		"model": map[string]any{"title": "contributed model"},
+		"model": map[string]any{"title": "contributed model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 	//nolint:bodyclose // assertErrorResponse closes the response body.
 	deleteEntryResponse := postJSONWithToken(
@@ -463,7 +466,7 @@ func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_inde
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"title": "original model"},
+		"model": map[string]any{"title": "original model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 	modelID := model.ModelId
 	modelRevision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
@@ -508,7 +511,7 @@ func (s *EntriesSuite) Test_should_group_entry_and_model_revisions_by_entry() {
 		"entry": map[string]any{"title": "in-review entry change"},
 	})
 	modelRevision := createModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"title": "in-review model"},
+		"model": map[string]any{"title": "in-review model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 
 	// when
@@ -554,7 +557,7 @@ func (s *EntriesSuite) Test_should_reject_and_resubmit_model_revision_without_ch
 	})
 	entryID := entry.EntryId
 	model := createAndActivateModelForTest(s.T(), ownerToken, entryID, map[string]any{
-		"model": map[string]any{"title": "active model"},
+		"model": map[string]any{"title": "active model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 	modelID := model.ModelId
 	revision := createModelRevisionForTest(s.T(), ownerToken, entryID, modelID, map[string]any{
@@ -1046,8 +1049,9 @@ func (s *EntriesSuite) Test_should_create_model_revision_when_active_revision_ha
 	})
 	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
 		"model": map[string]any{
-			"title":   "model with a metric",
-			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free", "value": 0.21}},
+			"title":    "model with a metric",
+			"metadata": map[string]any{"model_type": "Deposited"},
+			"metrics":  []map[string]any{{"id": uuid.New(), "key": "r_free", "value": 0.21}},
 		},
 	})
 	duplicateMetricID := uuid.New()

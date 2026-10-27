@@ -32,8 +32,9 @@ func (s *SchemaValidationSuite) Test_should_reject_metric_when_key_not_in_schema
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
 		"model": map[string]any{
-			"title":   "model with unknown metric",
-			"metrics": []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
+			"title":    "model with unknown metric",
+			"metadata": map[string]any{"model_type": "Deposited"},
+			"metrics":  []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
 		},
 	}, ownerToken)
 
@@ -58,8 +59,9 @@ func (s *SchemaValidationSuite) Test_should_reject_metric_when_value_missing() {
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
 		"model": map[string]any{
-			"title":   "model with metric missing its value",
-			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free"}},
+			"title":    "model with metric missing its value",
+			"metadata": map[string]any{"model_type": "Deposited"},
+			"metrics":  []map[string]any{{"id": uuid.New(), "key": "r_free"}},
 		},
 	}, ownerToken)
 
@@ -140,7 +142,12 @@ func (s *SchemaValidationSuite) Test_should_return_every_field_error_and_write_n
 	s.Equal([]string{
 		"/entry/resolution",
 		"/model_operations/0/data/metadata/purpose",
+		"/model_operations/0/data/metrics/0/software_name",
 		"/model_operations/0/data/runs/0/artifacts/0/direction",
+		"/model_operations/0/data/runs/0/software_name",
+		"/model_operations/0/data/runs/0/software_version",
+		"/model_operations/0/data/runs/0/artifacts",
+		"/model_operations/0/data/runs/0/artifacts",
 	}, pointers)
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	revisionsResponse := getWithToken(
@@ -161,8 +168,9 @@ func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_
 	response := jsonRequestToServerWithToken(
 		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
 		map[string]any{"model": map[string]any{
-			"title":   "model accepted in log-only mode",
-			"metrics": []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
+			"title":    "model accepted in log-only mode",
+			"metadata": map[string]any{"model_type": "Deposited"},
+			"metrics":  []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
 		}},
 		ownerToken,
 	)
@@ -288,7 +296,8 @@ func (s *SchemaValidationSuite) Test_should_reject_artifact_when_format_not_lowe
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
 		"model": map[string]any{
-			"title": "model with uppercase format",
+			"title":    "model with uppercase format",
+			"metadata": map[string]any{"model_type": "Deposited"},
 			"artifacts": []map[string]any{
 				artifactRequest(uuid.New(), "model.cif", "L2", "MMCIF", "s3://model/model.cif", nil),
 			},
@@ -345,7 +354,7 @@ func (s *SchemaValidationSuite) Test_should_report_every_model_metadata_error_wh
 	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
 		"model": map[string]any{
 			"title":    "model with mistyped metadata",
-			"metadata": map[string]any{"atom_count": "many", "purpose": "Docking"},
+			"metadata": map[string]any{"model_type": "Deposited", "atom_count": "many", "purpose": "Docking"},
 		},
 	}, ownerToken)
 
@@ -387,8 +396,10 @@ func (s *SchemaValidationSuite) Test_should_return_every_typed_metadata_error_an
 		"model_operations": []map[string]any{{
 			"op": "add",
 			"data": map[string]any{
-				"title":     "model that must not be saved",
-				"metadata":  map[string]any{"lab_note": "x", "__reserved": 1, "extensions": map[string]any{"__deep": 1}},
+				"title": "model that must not be saved",
+				"metadata": map[string]any{
+					"model_type": "Deposited", "lab_note": "x", "__reserved": 1, "extensions": map[string]any{"__deep": 1},
+				},
 				"artifacts": []map[string]any{artifact},
 				"runs":      []map[string]any{{"id": uuid.New(), "name": "refine", "metadata": map[string]any{"notes": "x"}}},
 			},
@@ -430,6 +441,7 @@ func (s *SchemaValidationSuite) Test_should_round_trip_extensions_and_distinct_e
 		"model": map[string]any{
 			"title": "round trip model",
 			"metadata": map[string]any{
+				"model_type": "Deposited",
 				"ligands":    []string{},
 				"cofactors":  nil,
 				"extensions": map[string]any{"lab": map[string]any{"id": "x"}},

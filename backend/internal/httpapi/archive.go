@@ -139,7 +139,9 @@ func archiveModelProposal(mapping archive.ModelMapping) ArchiveModelProposal {
 
 	proposedMetrics := make([]ArchiveMetric, 0, len(mapping.Metrics))
 	for _, metric := range mapping.Metrics {
-		proposedMetrics = append(proposedMetrics, ArchiveMetric{Key: metric.Key, Value: metric.Value})
+		proposedMetrics = append(proposedMetrics, ArchiveMetric{
+			Key: metric.Key, Value: metric.Value, SoftwareName: metric.SoftwareName, SoftwareVersion: metric.SoftwareVersion,
+		})
 	}
 	return ArchiveModelProposal{
 		Details:             mapping.Details,

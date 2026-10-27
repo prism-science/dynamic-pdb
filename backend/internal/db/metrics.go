@@ -35,16 +35,19 @@ func NewMetricsRepository(database *sqlx.DB, queriers *QuerierProvider) *Metrics
 }
 
 func (r *MetricsRepository) Create(ctx context.Context, metric models.Metric) (*models.Metric, error) {
-	query := `insert into metrics(id, key, value, created_at)
-			  values (:id, :key, :value, :created_at)
-			  returning id, key, value, created_at`
+	query := `insert into metrics(id, key, value, software_name, software_version, run_id, created_at)
+			  values (:id, :key, :value, :software_name, :software_version, :run_id, :created_at)
+			  returning ` + metricColumns
 
 	var row metricRow
 	args := map[string]any{
-		"id":         metric.ID,
-		"key":        string(metric.Key),
-		"value":      metric.Value,
-		"created_at": metric.CreatedAt,
+		"id":               metric.ID,
+		"key":              string(metric.Key),
+		"value":            metric.Value,
+		"software_name":    metric.SoftwareName,
+		"software_version": metric.SoftwareVersion,
+		"run_id":           metric.RunID,
+		"created_at":       metric.CreatedAt,
 	}
 	boundQuery, queryArgs, err := sqlx.Named(query, args)
 	if err != nil {
@@ -94,8 +97,7 @@ func (r *MetricsRepository) ListByModelRevisionIDs(
 		return metricsByRevision, nil
 	}
 
-	query := `select model_revision_metrics.model_revision_id,
-			         metrics.id, metrics.key, metrics.value, metrics.created_at
+	query := `select model_revision_metrics.model_revision_id, ` + qualifiedMetricColumns + `
 			  from metrics
 			  join model_revision_metrics on model_revision_metrics.metric_id = metrics.id
 			  where model_revision_metrics.model_revision_id = any($1)
@@ -168,7 +170,7 @@ func metricListQuery(filters MetricFilters) (string, map[string]any, error) {
 
 	args := map[string]any{}
 	conditions := make([]string, 0)
-	query := `select metrics.id, metrics.key, metrics.value, metrics.created_at
+	query := `select ` + qualifiedMetricColumns + `
 			  from metrics`
 
 	if filters.ModelRevisionID != nil {
@@ -202,6 +204,33 @@ func metricListQuery(filters MetricFilters) (string, map[string]any, error) {
 	return query, args, nil
 }
 
+// FillMissingSoftware records the software of a metric that names none, and reports
+// whether it did. A metric that already names its software keeps it.
+func (r *MetricsRepository) FillMissingSoftware(
+	ctx context.Context,
+	metricID uuid.UUID,
+	softwareName string,
+	softwareVersion *string,
+) (bool, error) {
+	query := `update metrics
+			  set software_name = $2, software_version = $3
+			  where id = $1 and software_name is null`
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, metricID, softwareName, softwareVersion)
+	if err != nil {
+		return false, fmt.Errorf("fill missing metric software: %w", err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count metrics with filled software: %w", err)
+	}
+	return updated == 1, nil
+}
+
+const metricColumns = `id, key, value, software_name, software_version, run_id, created_at`
+
+const qualifiedMetricColumns = `metrics.id, metrics.key, metrics.value, metrics.software_name,
+			         metrics.software_version, metrics.run_id, metrics.created_at`
+
 func metricKeyStrings(values []models.MetricKey) []string {
 	result := make([]string, 0, len(values))
 	for _, value := range values {
@@ -212,18 +241,24 @@ func metricKeyStrings(values []models.MetricKey) []string {
 
 func metricFromRow(row *metricRow) *models.Metric {
 	return &models.Metric{
-		ID:        row.ID,
-		Key:       models.MetricKey(row.Key),
-		Value:     row.Value,
-		CreatedAt: row.CreatedAt,
+		ID:              row.ID,
+		Key:             models.MetricKey(row.Key),
+		Value:           row.Value,
+		SoftwareName:    row.SoftwareName,
+		SoftwareVersion: row.SoftwareVersion,
+		RunID:           row.RunID,
+		CreatedAt:       row.CreatedAt,
 	}
 }
 
 type metricRow struct {
-	ID        uuid.UUID `db:"id"`
-	Key       string    `db:"key"`
-	Value     float64   `db:"value"`
-	CreatedAt time.Time `db:"created_at"`
+	ID              uuid.UUID  `db:"id"`
+	Key             string     `db:"key"`
+	Value           float64    `db:"value"`
+	SoftwareName    *string    `db:"software_name"`
+	SoftwareVersion *string    `db:"software_version"`
+	RunID           *uuid.UUID `db:"run_id"`
+	CreatedAt       time.Time  `db:"created_at"`
 }
 
 type modelRevisionMetricRow struct {

@@ -402,13 +402,21 @@ export function sanitizeNumeric(raw: string): string {
 }
 
 export function toMetricEntity(metric: MetricDraft) {
-  const payload: Record<string, number> = {};
+  const payload: Record<string, number | string> = {};
   for (const field of METRIC_FIELDS) {
     const raw = metric.values[field.key];
     const value = raw != null && raw.trim() !== "" ? Number(raw) : NaN;
     if (!Number.isNaN(value)) {
       payload[field.key] = value;
     }
+  }
+  const softwareName = metric.softwareName?.trim();
+  if (softwareName) {
+    payload.software_name = softwareName;
+  }
+  const softwareVersion = metric.softwareVersion?.trim();
+  if (softwareVersion) {
+    payload.software_version = softwareVersion;
   }
   return {
     id: metric.id,

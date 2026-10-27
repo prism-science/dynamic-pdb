@@ -17,13 +17,15 @@ import (
 
 func Test_should_point_to_nested_metric_when_entry_model_operation_metric_is_invalid(t *testing.T) {
 	// given
+	deposited := &map[string]interface{}{"model_type": "Deposited"}
 	request := CreateEntryRequest{
 		Entry: CreateEntryData{Title: "Lysozyme", Method: "X-ray crystallography"},
 		ModelOperations: &[]AddModelOperation{
-			{Op: AddModelOperationOpAdd, Data: AddModelData{Title: "first"}},
+			{Op: AddModelOperationOpAdd, Data: AddModelData{Title: "first", Metadata: deposited}},
 			{Op: AddModelOperationOpAdd, Data: AddModelData{
-				Title:   "second",
-				Metrics: &[]CreateMetricRequest{{Id: uuid.New(), Key: "resolution", Value: new(2.0)}},
+				Title:    "second",
+				Metadata: deposited,
+				Metrics:  &[]CreateMetricRequest{{Id: uuid.New(), Key: "resolution", Value: new(2.0)}},
 			}},
 		},
 	}
@@ -38,8 +40,9 @@ func Test_should_point_to_nested_metric_when_entry_model_operation_metric_is_inv
 func Test_should_reject_metric_when_value_missing(t *testing.T) {
 	// given
 	data := CreateModelData{
-		Title:   "model",
-		Metrics: &[]CreateMetricRequest{{Id: uuid.New(), Key: "r_free"}},
+		Title:    "model",
+		Metadata: &map[string]interface{}{"model_type": "Deposited"},
+		Metrics:  &[]CreateMetricRequest{{Id: uuid.New(), Key: "r_free"}},
 	}
 
 	// when
@@ -85,16 +88,96 @@ func Test_should_report_every_error_at_once_when_create_model_request_has_severa
 		"/model/artifacts/0/level",
 		"/model/artifacts/0/type",
 		"/model/metrics/1/key",
+		"/model/metrics/0/software_name",
+		"/model/metrics/1/software_name",
 		"/model/runs/0/artifacts/0/artifact_id",
 		"/model/runs/0/artifacts/0/direction",
+		"/model/runs/0/software_name",
+		"/model/runs/0/software_version",
+		"/model/runs/0/artifacts",
+		"/model/runs/0/artifacts",
 	}, pointersOf(fieldErrors))
+}
+
+func Test_should_require_metric_software_and_run_provenance_when_computed_model_is_created(t *testing.T) {
+	// given
+	inputID, unknownID := uuid.New(), uuid.New()
+	data := CreateModelData{
+		Title:     "model",
+		Metadata:  &map[string]interface{}{"model_type": "Multiconformer"},
+		Artifacts: &[]CreateArtifactRequest{{Id: inputID, Name: "data.mtz", Level: "L0", Type: new(ArtifactType("structure_factors"))}},
+		Metrics:   &[]CreateMetricRequest{{Id: uuid.New(), Key: "r_free", Value: new(0.21)}},
+		Runs: &[]CreateRunRequest{{
+			Id:           uuid.New(),
+			Name:         "qFit",
+			SoftwareName: new("qFit"),
+			Artifacts: &[]CreateRunArtifactRequest{
+				{ArtifactId: inputID, Direction: "input"},
+				{ArtifactId: unknownID, Direction: "output"},
+			},
+		}},
+	}
+
+	// when
+	fieldErrors := createModelRequestErrors(validation.Root.Field("model"), data)
+
+	// then
+	assert.Equal(t, []validation.Pointer{
+		"/model/metrics/0/software_name",
+		"/model/runs/0/software_version",
+	}, pointersOf(fieldErrors))
+}
+
+func Test_should_accept_metric_run_id_when_it_names_a_run_in_the_same_request(t *testing.T) {
+	// given
+	inputID, outputID, runID := uuid.New(), uuid.New(), uuid.New()
+	data := CreateModelData{
+		Title:    "model",
+		Metadata: &map[string]interface{}{"model_type": "Ensemble"},
+		Artifacts: &[]CreateArtifactRequest{
+			{Id: inputID, Name: "data.mtz", Level: "L0", Type: new(ArtifactType("structure_factors"))},
+			{Id: outputID, Name: "model.cif", Level: "L2", Type: new(ArtifactType("model"))},
+		},
+		Metrics: &[]CreateMetricRequest{{Id: uuid.New(), Key: "r_free", Value: new(0.21), RunId: &runID}},
+		Runs: &[]CreateRunRequest{{
+			Id:              runID,
+			Name:            "refine",
+			SoftwareName:    new("PHENIX"),
+			SoftwareVersion: new("1.21"),
+			Artifacts: &[]CreateRunArtifactRequest{
+				{ArtifactId: inputID, Direction: "input"},
+				{ArtifactId: outputID, Direction: "output"},
+			},
+		}},
+	}
+
+	// when
+	fieldErrors := createModelRequestErrors(validation.Root.Field("model"), data)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_not_require_metric_software_or_runs_when_created_model_is_deposited(t *testing.T) {
+	// given
+	data := CreateModelData{
+		Title:    "Deposited model",
+		Metadata: &map[string]interface{}{"model_type": "Deposited", "purpose": "Reference"},
+		Metrics:  &[]CreateMetricRequest{{Id: uuid.New(), Key: "r_free", Value: new(0.21)}},
+	}
+
+	// when
+	fieldErrors := createModelRequestErrors(validation.Root.Field("model"), data)
+
+	// then
+	assert.Empty(t, fieldErrors)
 }
 
 func Test_should_report_metadata_error_when_model_metadata_has_wrong_type(t *testing.T) {
 	// given
 	data := CreateModelData{
 		Title:    "model",
-		Metadata: &map[string]interface{}{"atom_count": "many"},
+		Metadata: &map[string]interface{}{"model_type": "Deposited", "atom_count": "many"},
 	}
 
 	// when
@@ -110,7 +193,7 @@ func Test_should_report_other_metadata_errors_when_one_metadata_field_has_wrong_
 	// given
 	data := CreateModelData{
 		Title:    "model",
-		Metadata: &map[string]interface{}{"atom_count": "many", "purpose": "Docking"},
+		Metadata: &map[string]interface{}{"model_type": "Deposited", "atom_count": "many", "purpose": "Docking"},
 	}
 
 	// when

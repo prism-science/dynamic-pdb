@@ -3118,6 +3118,13 @@ components:
         value:
           type: number
           format: double
+        software_name:
+          type: string
+          nullable: true
+          description: Program the archive names as the producer of the value; null when it names none.
+        software_version:
+          type: string
+          nullable: true
 
     ArchiveModelProposal:
       allOf:
@@ -3882,6 +3889,10 @@ components:
     CreateMetricRequest:
       type: object
       required: [id, key, value]
+      description: >-
+        A metric of a computed model names the software that produced it, or links with
+        run_id to the run that did. A Deposited model's metrics may omit both: the
+        archive accession is their provenance.
       properties:
         id:
           type: string
@@ -3892,6 +3903,19 @@ components:
           type: number
           format: double
           x-go-type: "*float64"
+        software_name:
+          type: string
+          nullable: true
+          description: Program that produced the value, for example PHENIX or MolProbity.
+        software_version:
+          type: string
+          nullable: true
+          description: Version of that program, where known.
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: A run in the same request, or of the same model revision, that produced the value.
 
     Metric:
       type: object
@@ -3905,6 +3929,18 @@ components:
         value:
           type: number
           format: double
+        software_name:
+          type: string
+          nullable: true
+          description: Program that produced the value; null when the metric does not name one.
+        software_version:
+          type: string
+          nullable: true
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: The run that produced the value; null when the metric does not link one.
         created_at:
           type: string
           format: date-time

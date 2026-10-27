@@ -74,24 +74,36 @@
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "clashscore",
       "Value": 5.03,
+      "SoftwareName": "wwPDB validation pipeline",
+      "SoftwareVersion": null,
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     },
     {
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "r_free",
       "Value": 0.235,
+      "SoftwareName": "PHENIX",
+      "SoftwareVersion": "1.17.1_3660",
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     },
     {
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "r_work",
       "Value": 0.202,
+      "SoftwareName": "PHENIX",
+      "SoftwareVersion": "1.17.1_3660",
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     },
     {
       "ID": "00000000-0000-0000-0000-000000000000",
       "Key": "ramachandran_outliers",
       "Value": 0,
+      "SoftwareName": "wwPDB validation pipeline",
+      "SoftwareVersion": null,
+      "RunID": null,
       "CreatedAt": "0001-01-01T00:00:00Z"
     }
   ]

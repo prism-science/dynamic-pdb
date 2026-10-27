@@ -77,6 +77,8 @@ const modelMetadataPointer = (key: Key<Schemas["ModelMetadata"]>) =>
   `/model/metadata/${key}`;
 const runPointer = (key: Key<Schemas["CreateRunRequest"]>) =>
   `/model/runs/*/${key}`;
+const metricPointer = (key: Key<Schemas["CreateMetricRequest"]>) =>
+  `/model/metrics/*/${key}`;
 
 const COMPOUND_HELP =
   "CCD IDs, for example ATP or HEM. A typed ID is sorted into ligands or cofactors by the reference list; move it if the list is wrong.";
@@ -363,6 +365,15 @@ export const FIELDS = {
     unknownAllowed: false,
     autofill: null,
     pointers: [modelPointer("metrics")],
+  },
+  "model.metrics.software": {
+    section: "evaluations",
+    label: "Software",
+    help: "The program that computed these scores, for example MolProbity or phenix.refine, and its version.",
+    required: false,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [metricPointer("software_name"), metricPointer("software_version"), metricPointer("run_id")],
   },
   "run.name": {
     section: "experiment",

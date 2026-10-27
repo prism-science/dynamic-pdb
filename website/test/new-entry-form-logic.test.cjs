@@ -91,6 +91,20 @@ test("should convert files and metrics into create entry entities", () => {
   });
 });
 
+test("should_carry_trimmed_software_when_metrics_draft_names_it", () => {
+  // given
+  const named = { id: "metrics-2", values: { r_free: "0.2" }, softwareName: " MolProbity ", softwareVersion: "4.5.2" };
+  const blank = { id: "metrics-3", values: { r_free: "0.2" }, softwareName: "  ", softwareVersion: "" };
+
+  // when
+  const namedEntity = toMetricEntity(named);
+  const blankEntity = toMetricEntity(blank);
+
+  // then
+  assert.deepEqual(namedEntity.payload, { r_free: 0.2, software_name: "MolProbity", software_version: "4.5.2" });
+  assert.deepEqual(blankEntity.payload, { r_free: 0.2 });
+});
+
 test("should assign only the first canonical file for each scope", () => {
   // given
   const fastaFiles = [
