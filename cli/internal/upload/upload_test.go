@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -635,6 +636,7 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 				LocalPath: artifactPath,
 			},
 		},
+		nil,
 	)
 
 	// then
@@ -642,8 +644,49 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 	require.Len(t, requests, 2)
 	assert.Equal(t, "r_free", requests[0].Key)
 	assert.Equal(t, 0.244, requests[0].Value)
+	assert.Nil(t, requests[0].RunID)
 	assert.Equal(t, "r_work", requests[1].Key)
 	assert.Equal(t, 0.198, requests[1].Value)
+}
+
+func Test_should_link_metric_to_coordinates_run_only_when_value_comes_from_coordinates_file(t *testing.T) {
+	// given
+	dataRoot := t.TempDir()
+	artifactPath := filepath.Join(dataRoot, "5amf.cif")
+	require.NoError(t, os.WriteFile(artifactPath, []byte("_refine.ls_r_factor_r_free 0.244\n"), 0o644))
+	writeFile(t, dataRoot, "scores.csv", "pdb_id,clashscore\n5amf,3.5\n")
+	metrics := manifest.Metrics{
+		"r_free": {{
+			Source:  manifest.Source{Artifact: "coordinates"},
+			Extract: manifest.Extract{MMCIF: &manifest.ExtractRule{Field: "_refine.ls_R_factor_R_free"}},
+		}},
+		"clashscore": {{
+			Source: manifest.Source{Files: []string{"scores.csv"}},
+			Extract: manifest.Extract{CSV: &manifest.ExtractRule{
+				Column: "clashscore",
+				Where:  &manifest.ExtractRule{Column: "pdb_id", Equals: "{{ pdb_id }}"},
+			}},
+		}},
+	}
+	coordinatesRunID := uuid.NewString()
+
+	// when
+	requests, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
+		context.Background(),
+		dataRoot,
+		"5amf",
+		metrics,
+		map[string]extractorapi.Artifact{"coordinates": {Filename: "5amf.cif", LocalPath: artifactPath}},
+		&coordinatesRunID,
+	)
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, requests, 2)
+	assert.Equal(t, "r_free", requests[0].Key)
+	assert.Equal(t, &coordinatesRunID, requests[0].RunID)
+	assert.Equal(t, "clashscore", requests[1].Key)
+	assert.Nil(t, requests[1].RunID)
 }
 
 func Test_should_use_next_field_source_when_previous_source_has_no_value(t *testing.T) {

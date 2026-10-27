@@ -1397,15 +1397,24 @@ function isMetricKey(key: string): key is MetricKey {
   return Object.hasOwn(metricKeys, key);
 }
 
+/** One request per score. The set's software, when named, goes on every score:
+ *  one program computed the whole set. Unnamed software is left out, not sent as null. */
 function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] {
-  return Object.entries(entity.payload).flatMap(([key, value]) => {
+  const { software_name, software_version, ...scores } = entity.payload;
+  const softwareName = stringOrNull(software_name);
+  const softwareVersion = stringOrNull(software_version);
+  const software = {
+    ...(softwareName !== null ? { software_name: softwareName } : {}),
+    ...(softwareVersion !== null ? { software_version: softwareVersion } : {}),
+  };
+  return Object.entries(scores).flatMap(([key, value]) => {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       return [];
     }
     if (!isMetricKey(key)) {
       throw new Error(`unknown metric key: ${key}`);
     }
-    return [{ id: stableUUID(`${entity.id}:${key}`), key, value }];
+    return [{ id: stableUUID(`${entity.id}:${key}`), key, value, ...software }];
   });
 }
 

@@ -100,6 +100,28 @@ func Test_should_give_rcsb_ten_seconds_when_looking_up_pdb_entry(t *testing.T) {
 	assert.LessOrEqual(t, lookup.deadlineLeft, 10*time.Second)
 }
 
+func Test_should_propose_metric_software_when_archive_names_it(t *testing.T) {
+	// given
+	lookup := &fakeArchiveLookup{result: archive.Result{
+		PDBID: "6LU7",
+		Model: archive.ModelMapping{Metrics: []archive.Metric{
+			{Key: "r_free", Value: 0.235, SoftwareName: new("PHENIX"), SoftwareVersion: new("1.17.1_3660")},
+			{Key: "r_work", Value: 0.202},
+		}},
+	}}
+	server := (&Server{}).WithArchiveLookup(lookup)
+
+	// when
+	recorder := archiveRequest(t, server, "6LU7")
+
+	// then
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, []ArchiveMetric{
+		{Key: "r_free", Value: 0.235, SoftwareName: new("PHENIX"), SoftwareVersion: new("1.17.1_3660")},
+		{Key: "r_work", Value: 0.202},
+	}, decodeArchiveDocument(t, recorder).Data.Attributes.Model.Metrics)
+}
+
 func Test_should_return_validation_warnings_instead_of_failing_when_proposed_values_break_schema(t *testing.T) {
 	// given
 	lookup := &fakeArchiveLookup{result: archive.Result{

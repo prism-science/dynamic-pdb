@@ -142,6 +142,95 @@ func Test_should_update_entry_when_data_sync_job_is_scheduled(t *testing.T) {
 	assert.Contains(t, paths, "/rest/v1/core/polymer_entity/"+pdbID+"/1")
 }
 
+func Test_should_fill_metric_software_without_new_revision_when_sync_finds_same_archive_values(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given: a first sync stored the archive values, then their software was cleared,
+	// as on metrics stored before metrics had software.
+	root := repoRoot(t)
+	backendBinaryPath := buildBackend(t, root)
+	database := setupDB(t)
+	auth := seedUserAndIssueToken(t, database)
+	pdbID := integrationPDBID()
+	fixture := seedScheduledDataSyncModel(t, database, auth.UserID, pdbID)
+	s3 := newS3Stub(t)
+	defer s3.Close()
+	rcsb := newRCSBStub(t, pdbID)
+	defer rcsb.Close()
+	t.Setenv("DYNAMIC_PDB_RCSB_DATA_URL", rcsb.URL())
+	t.Setenv("DYNAMIC_PDB_RCSB_FILES_URL", rcsb.URL())
+	t.Setenv("DYNAMIC_PDB_RCSB_WWW_URL", rcsb.URL())
+	t.Setenv("DYNAMIC_PDB_RCSB_CDN_URL", rcsb.URL())
+	var syncedRevisionID uuid.UUID
+	// The backend syncs due jobs as it starts; it stops when this subtest ends.
+	t.Run("first sync", func(t *testing.T) {
+		startBackend(t, root, backendBinaryPath, s3.URL())
+		syncedRevisionID = waitForNewActiveModelRevision(t, database, fixture.ModelID, fixture.RevisionID)
+	})
+	revisionCountBefore := countModelRevisions(t, database, fixture.ModelID)
+	_, err := database.Conn.ExecContext(t.Context(),
+		`update metrics set software_name = null, software_version = null
+		 where id in (select metric_id from model_revision_metrics where model_revision_id = $1)`,
+		syncedRevisionID,
+	)
+	require.NoError(t, err)
+	_, err = database.Conn.ExecContext(t.Context(),
+		`update data_sync_jobs set scheduled_at = now() where model_id = $1`, fixture.ModelID)
+	require.NoError(t, err)
+
+	// when
+	startBackend(t, root, backendBinaryPath, s3.URL())
+
+	// then
+	require.Eventually(t, func() bool {
+		var softwareName sql.NullString
+		err := database.Conn.QueryRowContext(t.Context(),
+			`select metrics.software_name
+			 from metrics join model_revision_metrics link on link.metric_id = metrics.id
+			 where link.model_revision_id = $1 and metrics.key = 'r_free'`,
+			syncedRevisionID,
+		).Scan(&softwareName)
+		return err == nil && softwareName.String == "REFMAC"
+	}, 15*time.Second, 100*time.Millisecond)
+	var activeRevisionID uuid.UUID
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select id from model_revisions where model_id = $1 and state = 'active'`, fixture.ModelID,
+	).Scan(&activeRevisionID))
+	assert.Equal(t, syncedRevisionID, activeRevisionID)
+	assert.Equal(t, revisionCountBefore, countModelRevisions(t, database, fixture.ModelID))
+}
+
+func waitForNewActiveModelRevision(
+	t *testing.T,
+	database integrationDB,
+	modelID string,
+	previousRevisionID uuid.UUID,
+) uuid.UUID {
+	t.Helper()
+	var activeRevisionID uuid.UUID
+	require.Eventually(t, func() bool {
+		err := database.Conn.QueryRowContext(t.Context(),
+			`select id from model_revisions where model_id = $1 and state = 'active'`, modelID,
+		).Scan(&activeRevisionID)
+		return err == nil && activeRevisionID != previousRevisionID
+	}, 15*time.Second, 100*time.Millisecond)
+	return activeRevisionID
+}
+
+func countModelRevisions(t *testing.T, database integrationDB, modelID string) int {
+	t.Helper()
+	var count int
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select count(*) from model_revisions where model_id = $1`, modelID,
+	).Scan(&count))
+	return count
+}
+
 func Test_should_update_model_when_data_sync_job_is_scheduled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -211,6 +300,7 @@ func Test_should_update_model_when_data_sync_job_is_scheduled(t *testing.T) {
 	assertMetric(t, model.Metrics, "molprobity_score", 1.42)
 	assertMetric(t, model.Metrics, "rscc", 0.91)
 	assertMetric(t, model.Metrics, "custom_score", 12)
+	assertMetricSoftware(t, model.Metrics, "r_free", "REFMAC", "5.2.0005")
 	assertArtifactNames(t, artifacts.Items, []string{fixture.ArtifactName})
 	require.Len(t, artifacts.Runs, 1)
 	assert.Equal(t, "existing refinement", artifacts.Runs[0].Name)

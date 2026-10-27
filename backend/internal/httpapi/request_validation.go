@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -8,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
 )
@@ -18,6 +22,143 @@ import (
 // continues, and the handler's inline checks return 400 for the fields they cover.
 func (s *Server) checkSchema(r *http.Request, fieldErrors []validation.FieldError) error {
 	return s.validationMode.Check(r.Context(), slog.Default(), requestSubject(r), fieldErrors)
+}
+
+// schemaCheck names the request in logs and points at the model in its body, for
+// schema rules a write checks inside its transaction.
+type schemaCheck struct {
+	subject string
+	at      validation.Pointer
+}
+
+// checkRunArtifactLinks checks the artifacts runs link; inputs may be entry files.
+func (s *Server) checkRunArtifactLinks(
+	ctx context.Context,
+	check schemaCheck,
+	entryID string,
+	runs []validation.ModelRun,
+	modelArtifactIDs []uuid.UUID,
+) error {
+	fieldErrors, err := s.runArtifactLinkErrors(ctx, check.at.Field("runs"), entryID, runs, modelArtifactIDs)
+	if err != nil {
+		return err
+	}
+	return s.validationMode.Check(ctx, slog.Default(), check.subject, fieldErrors)
+}
+
+func (s *Server) runArtifactLinkErrors(
+	ctx context.Context,
+	at validation.Pointer,
+	entryID string,
+	runs []validation.ModelRun,
+	modelArtifactIDs []uuid.UUID,
+) ([]validation.FieldError, error) {
+	var outsideModel []uuid.UUID
+	for _, run := range runs {
+		for _, link := range run.Artifacts {
+			if link.ArtifactID != uuid.Nil && !slices.Contains(modelArtifactIDs, link.ArtifactID) {
+				outsideModel = append(outsideModel, link.ArtifactID)
+			}
+		}
+	}
+	entryArtifactIDs, err := s.database.Artifacts.EntryArtifactIDs(ctx, entryID, outsideModel)
+	if err != nil {
+		return nil, fmt.Errorf("read entry artifacts linked by runs: %w", err)
+	}
+	return validation.RunArtifactLinks(at, runs, validation.RunArtifactScope{
+		ModelArtifactIDs: modelArtifactIDs,
+		EntryArtifactIDs: entryArtifactIDs,
+	}), nil
+}
+
+// checkModelRevisionChangeProvenance checks the metrics and runs of the revision a
+// change produces. Fields the change leaves out come from base and are checked only
+// where the change affects them.
+func (s *Server) checkModelRevisionChangeProvenance(
+	ctx context.Context,
+	check schemaCheck,
+	entryID string,
+	payload createModelRevisionPayload,
+	base domainmodels.ModelRevision,
+) error {
+	_, setsMetadata := payload.ModelFields["metadata"]
+	_, setsMetrics := payload.ModelFields["metrics"]
+	_, setsRuns := payload.ModelFields["runs"]
+	change := payload.Request.Model
+	before := validation.ModelRevision{ModelType: base.Metadata.ModelType}
+	revision := validation.ModelRevision{ModelType: base.Metadata.ModelType}
+	if setsMetadata && change.Metadata != nil {
+		// Metadata field errors are reported by modelRevisionChangeErrors.
+		metadata, _ := decodeModelMetadataFields(check.at.Field("metadata"), *change.Metadata)
+		revision.ModelType = metadata.ModelType
+	}
+	becomesComputed := !before.IsComputed() && revision.IsComputed()
+	if !setsMetrics && !setsRuns && !becomesComputed {
+		return nil
+	}
+	if setsRuns {
+		revision.Runs = modelRunsFromRequests(change.Runs)
+	} else {
+		storedRuns, err := s.storedModelRuns(ctx, base.ID)
+		if err != nil {
+			return err
+		}
+		revision.Runs = storedRuns
+	}
+
+	var fieldErrors []validation.FieldError
+	if setsMetrics {
+		fieldErrors = append(fieldErrors,
+			validation.MetricProvenance(check.at.Field("metrics"), metricsFromRequests(change.Metrics), revision)...)
+	} else if setsRuns {
+		keptMetrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &base.ID})
+		if err != nil {
+			return fmt.Errorf("list metrics of the active model revision: %w", err)
+		}
+		fieldErrors = append(fieldErrors, validation.KeptMetricRuns(check.at.Field("runs"), keptMetrics, revision)...)
+	}
+	if setsRuns || becomesComputed {
+		fieldErrors = append(fieldErrors, validation.ModelRuns(check.at.Field("runs"), revision)...)
+	}
+	if setsRuns {
+		modelArtifactIDs := artifactIDsFromRequests(change.Artifacts)
+		if _, setsArtifacts := payload.ModelFields["artifacts"]; !setsArtifacts {
+			storedIDs, err := s.database.Artifacts.ModelRevisionArtifactIDs(ctx, base.ID)
+			if err != nil {
+				return fmt.Errorf("list artifacts of the active model revision: %w", err)
+			}
+			modelArtifactIDs = storedIDs
+		}
+		linkErrors, err := s.runArtifactLinkErrors(ctx, check.at.Field("runs"), entryID, revision.Runs, modelArtifactIDs)
+		if err != nil {
+			return err
+		}
+		fieldErrors = append(fieldErrors, linkErrors...)
+	}
+	return s.validationMode.Check(ctx, slog.Default(), check.subject, fieldErrors)
+}
+
+func (s *Server) storedModelRuns(ctx context.Context, modelRevisionID uuid.UUID) ([]validation.ModelRun, error) {
+	runs, err := s.database.Runs.List(ctx, db.RunFilters{ModelRevisionID: &modelRevisionID})
+	if err != nil {
+		return nil, fmt.Errorf("list runs of the active model revision: %w", err)
+	}
+	links, err := s.database.Runs.ListArtifactLinks(ctx, modelRevisionID)
+	if err != nil {
+		return nil, fmt.Errorf("list run artifacts of the active model revision: %w", err)
+	}
+	modelRuns := make([]validation.ModelRun, 0, len(runs))
+	for _, run := range runs {
+		modelRun := validation.ModelRun{Run: run}
+		for _, link := range links {
+			if link.RunID == run.ID {
+				modelRun.Artifacts = append(modelRun.Artifacts,
+					validation.RunArtifactLink{ArtifactID: link.ArtifactID, Direction: link.Direction})
+			}
+		}
+		modelRuns = append(modelRuns, modelRun)
+	}
+	return modelRuns, nil
 }
 
 // requestSubject names a request by its route, for example "POST /v1/entries/{entry_id}/models".
@@ -45,11 +186,60 @@ func createEntryRequestErrors(request CreateEntryRequest) []validation.FieldErro
 
 func createModelRequestErrors(at validation.Pointer, data CreateModelData) []validation.FieldError {
 	fieldErrors := validation.RequiredText(at.Field("title"), &data.Title)
-	fieldErrors = append(fieldErrors, modelMetadataErrors(at.Field("metadata"), data.Metadata)...)
+	metadata, metadataErrors := modelMetadataRequestErrors(at.Field("metadata"), data.Metadata)
+	fieldErrors = append(fieldErrors, metadataErrors...)
 	fieldErrors = append(fieldErrors, artifactRequestErrors(at.Field("artifacts"), data.Artifacts)...)
+	// Which artifacts a run may link needs stored data, so checkRunArtifactLinks
+	// checks that inside the write transaction.
+	revision := validation.ModelRevision{ModelType: metadata.ModelType, Runs: modelRunsFromRequests(data.Runs)}
 	fieldErrors = append(fieldErrors, metricRequestErrors(at.Field("metrics"), data.Metrics)...)
+	fieldErrors = append(fieldErrors,
+		validation.MetricProvenance(at.Field("metrics"), metricsFromRequests(data.Metrics), revision)...)
 	fieldErrors = append(fieldErrors, runRequestErrors(at.Field("runs"), data.Runs)...)
+	fieldErrors = append(fieldErrors, validation.ModelRuns(at.Field("runs"), revision)...)
 	return fieldErrors
+}
+
+func artifactIDsFromRequests(requests *[]CreateArtifactRequest) []uuid.UUID {
+	if requests == nil {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(*requests))
+	for _, request := range *requests {
+		ids = append(ids, request.Id)
+	}
+	return ids
+}
+
+func metricsFromRequests(requests *[]CreateMetricRequest) []domainmodels.Metric {
+	if requests == nil {
+		return nil
+	}
+	metrics := make([]domainmodels.Metric, 0, len(*requests))
+	for _, request := range *requests {
+		metrics = append(metrics, metricFromRequest(request))
+	}
+	return metrics
+}
+
+func modelRunsFromRequests(requests *[]CreateRunRequest) []validation.ModelRun {
+	if requests == nil {
+		return nil
+	}
+	runs := make([]validation.ModelRun, 0, len(*requests))
+	for _, request := range *requests {
+		run := validation.ModelRun{Run: runFromRequest(request)}
+		if request.Artifacts != nil {
+			for _, link := range *request.Artifacts {
+				run.Artifacts = append(run.Artifacts, validation.RunArtifactLink{
+					ArtifactID: link.ArtifactId,
+					Direction:  domainmodels.RunArtifactDirection(link.Direction),
+				})
+			}
+		}
+		runs = append(runs, run)
+	}
+	return runs
 }
 
 // entryRevisionChangeErrors checks only the fields the change sets; the rest are
@@ -116,7 +306,10 @@ func modelRevisionChangeErrors(payload createModelRevisionPayload) []validation.
 		name   string
 		errors func(at validation.Pointer) []validation.FieldError
 	}{
-		{"metadata", func(at validation.Pointer) []validation.FieldError { return modelMetadataErrors(at, change.Metadata) }},
+		{"metadata", func(at validation.Pointer) []validation.FieldError {
+			_, metadataErrors := modelMetadataRequestErrors(at, change.Metadata)
+			return metadataErrors
+		}},
 		{"artifacts", func(at validation.Pointer) []validation.FieldError {
 			return artifactRequestErrors(at, change.Artifacts)
 		}},
@@ -155,12 +348,17 @@ func entryMetadataErrors(at validation.Pointer, fields any, requireMethod bool) 
 	return fieldErrors
 }
 
-func modelMetadataErrors(at validation.Pointer, metadata *map[string]interface{}) []validation.FieldError {
+// modelMetadataRequestErrors checks request model metadata and returns the fields that
+// decoded, for rules that depend on them such as the model type.
+func modelMetadataRequestErrors(
+	at validation.Pointer,
+	metadata *map[string]interface{},
+) (domainmodels.ModelMetadata, []validation.FieldError) {
 	if metadata == nil {
-		return nil
+		return domainmodels.ModelMetadata{}, nil
 	}
 	decoded, fieldErrors := decodeModelMetadataFields(at, *metadata)
-	return append(fieldErrors, validation.ModelMetadata(at, decoded)...)
+	return decoded, append(fieldErrors, validation.ModelMetadata(at, decoded)...)
 }
 
 // decodeModelMetadataFields decodes each metadata field on its own. A field of the
@@ -216,7 +414,7 @@ func metricRequestErrors(at validation.Pointer, requests *[]CreateMetricRequest)
 	for index, request := range *requests {
 		fieldErrors = append(fieldErrors, validation.RequiredID(at.Index(index).Field("id"), request.Id)...)
 		fieldErrors = append(fieldErrors, validation.RequiredNumber(at.Index(index).Field("value"), request.Value)...)
-		metrics = append(metrics, domainmodels.Metric{ID: request.Id, Key: metricKeyFromRequest(string(request.Key))})
+		metrics = append(metrics, metricFromRequest(request))
 	}
 	return append(fieldErrors, validation.Metrics(at, metrics)...)
 }

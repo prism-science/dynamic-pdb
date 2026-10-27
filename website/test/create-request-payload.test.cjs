@@ -57,6 +57,53 @@ test("should_reject_metric_key_when_key_is_not_declared_by_the_api", async () =>
   }
 });
 
+test("should_send_software_on_every_score_when_metrics_entity_names_it", async () => {
+  // given
+  const previousFetch = global.fetch;
+  let sentBody = "";
+  global.fetch = async (_url, init) => {
+    sentBody = init.body;
+    return new Response(
+      JSON.stringify({
+        data: {
+          type: "r",
+          id: "1",
+          attributes: { entry_id: "e", model_id: "m", revision_id: "r", state: "in_review" },
+        },
+      }),
+      { status: 201, headers: { "Content-Type": "application/vnd.api+json" } },
+    );
+  };
+  const input = {
+    title: "Model",
+    entities: [
+      {
+        id: "00000000-0000-4000-8000-000000000006",
+        type: "metrics",
+        name: "Metrics",
+        payload: { r_work: 0.2, clashscore: 3.1, software_name: "MolProbity", software_version: "4.5.2" },
+      },
+    ],
+  };
+
+  try {
+    // when
+    await entries.createModel("token", "entry-1", input);
+
+    // then
+    const metrics = JSON.parse(sentBody).model.metrics;
+    assert.deepEqual(
+      metrics.map((metric) => [metric.key, metric.software_name, metric.software_version]),
+      [
+        ["r_work", "MolProbity", "4.5.2"],
+        ["clashscore", "MolProbity", "4.5.2"],
+      ],
+    );
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
 test("should_skip_non_numeric_values_when_key_is_not_a_metric", async () => {
   // given
   const previousFetch = global.fetch;

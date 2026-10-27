@@ -138,6 +138,8 @@ type CreateMetricRequest struct {
 	ID    string  `json:"id"`
 	Key   string  `json:"key"`
 	Value float64 `json:"value"`
+	// RunID names the run, in the same request, that produced the value.
+	RunID *string `json:"run_id,omitempty"`
 }
 
 type CreateRunRequest struct {

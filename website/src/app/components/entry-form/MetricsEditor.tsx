@@ -24,6 +24,12 @@ export default function MetricsEditor({
     setMetrics(metrics.map((m) => (m.id === id ? { ...m, ...next } : m)));
   const remove = (id: string) =>
     setMetrics(metrics.filter((m) => m.id !== id));
+  // The API reports software errors per score; the set has one software field.
+  const softwareMessages = uniqueByText(
+    messages.filter(
+      (message) => message.field === "model.metrics.software" && !message.missing,
+    ),
+  );
 
   return (
     <div className={styles.filesEditor}>
@@ -51,6 +57,31 @@ export default function MetricsEditor({
             </button>
           </div>
           <div className={styles.metricGrid}>
+            <label className={styles.metricField}>
+              <span>Software</span>
+              <input
+                className={styles.input}
+                type="text"
+                value={metric.softwareName ?? ""}
+                onChange={(event) =>
+                  patch(metric.id, { softwareName: event.target.value })
+                }
+                placeholder="e.g. MolProbity"
+              />
+              <FieldMessages messages={softwareMessages} />
+            </label>
+            <label className={styles.metricField}>
+              <span>Software version</span>
+              <input
+                className={styles.input}
+                type="text"
+                value={metric.softwareVersion ?? ""}
+                onChange={(event) =>
+                  patch(metric.id, { softwareVersion: event.target.value })
+                }
+                placeholder="e.g. 4.5.2"
+              />
+            </label>
             {METRIC_FIELDS.map((field) => (
               <label key={field.key} className={styles.metricField}>
                 <span>{field.label}</span>
@@ -79,4 +110,15 @@ export default function MetricsEditor({
       ))}
     </div>
   );
+}
+
+function uniqueByText(messages: readonly FieldMessage[]): FieldMessage[] {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    if (seen.has(message.message)) {
+      return false;
+    }
+    seen.add(message.message);
+    return true;
+  });
 }

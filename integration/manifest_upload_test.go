@@ -165,6 +165,8 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 			assert.Equal(t, "2.0_5824", *artifacts.Runs[0].SoftwareVersion)
 			assert.Equal(t, 2, countRunDirections(artifacts.Relations, "output"))
 			assert.Equal(t, 1, countRunDirections(artifacts.Relations, "input"))
+			// r_free is read from the coordinates file that PHENIX wrote, so it names that run.
+			assertMetricRun(t, model.Metrics, "r_free", artifacts.Runs[0].ID)
 		}
 	}
 
@@ -514,6 +516,9 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 				"polymer_entity_ids": []string{"1"},
 			},
 			"refine": []map[string]any{{"ls_R_factor_R_free": 0.21, "ls_R_factor_R_work": 0.18}},
+			"software": []map[string]any{{
+				"classification": "refinement", "name": "REFMAC", "version": "5.2.0005", "pdbx_ordinal": 1,
+			}},
 			"pdbx_vrpt_summary_geometry": []map[string]any{{
 				"clashscore": 4.8, "percent_ramachandran_outliers": 0.13,
 			}},
@@ -731,8 +736,11 @@ type modelDocumentResponse struct {
 }
 
 type metricResponse struct {
-	Key   string  `json:"key"`
-	Value float64 `json:"value"`
+	Key             string  `json:"key"`
+	Value           float64 `json:"value"`
+	SoftwareName    *string `json:"software_name"`
+	SoftwareVersion *string `json:"software_version"`
+	RunID           *string `json:"run_id"`
 }
 
 type artifactListResponse struct {
@@ -1018,6 +1026,30 @@ func assertMetric(t *testing.T, metrics []metricResponse, key string, value floa
 		}
 	}
 	assert.Failf(t, "missing metric", "metric %q was not found in %#v", key, metrics)
+}
+
+func assertMetricSoftware(t *testing.T, metrics []metricResponse, key, softwareName, softwareVersion string) {
+	t.Helper()
+	metric := findMetric(t, metrics, key)
+	assert.Equal(t, softwareName, stringValue(metric.SoftwareName), "software of metric %q", key)
+	assert.Equal(t, softwareVersion, stringValue(metric.SoftwareVersion), "software version of metric %q", key)
+}
+
+func assertMetricRun(t *testing.T, metrics []metricResponse, key, runID string) {
+	t.Helper()
+	metric := findMetric(t, metrics, key)
+	assert.Equal(t, runID, stringValue(metric.RunID), "run of metric %q", key)
+}
+
+func findMetric(t *testing.T, metrics []metricResponse, key string) metricResponse {
+	t.Helper()
+	for _, metric := range metrics {
+		if metric.Key == key {
+			return metric
+		}
+	}
+	require.Failf(t, "missing metric", "metric %q was not found in %#v", key, metrics)
+	return metricResponse{}
 }
 
 func stringValue(value *string) string {

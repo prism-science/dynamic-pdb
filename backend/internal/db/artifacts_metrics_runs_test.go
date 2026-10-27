@@ -52,6 +52,46 @@ func Test_should_create_and_list_artifacts_for_entry_revision_when_artifacts_rep
 	assert.Equal(t, "first", fasta.Records[0].Header)
 }
 
+func Test_should_return_only_candidates_linked_to_the_entry_when_entry_artifact_ids_are_checked(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "entry artifact ids entry revision", now)
+	otherEntryRevision := createDBTestEntryRevision(t, "other entry artifact ids entry revision", now)
+	entryArtifact := createDBTestArtifact(t, entryRevision.CreatedBy, "entry file", now)
+	otherEntryArtifact := createDBTestArtifact(t, entryRevision.CreatedBy, "other entry file", now)
+	require.NoError(t, testDB.Artifacts.AttachToEntryRevision(ctx, entryRevision.ID, entryArtifact.ID))
+	require.NoError(t, testDB.Artifacts.AttachToEntryRevision(ctx, otherEntryRevision.ID, otherEntryArtifact.ID))
+
+	// when
+	got, err := testDB.Artifacts.EntryArtifactIDs(ctx, entryRevision.EntryID,
+		[]uuid.UUID{entryArtifact.ID, otherEntryArtifact.ID, uuid.New()})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{entryArtifact.ID}, got)
+}
+
+func Test_should_list_artifact_ids_of_one_model_revision_when_model_revision_artifact_ids_are_read(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "model artifact ids entry revision", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "model artifact ids model revision", now)
+	otherModelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "other model artifact ids model revision", now)
+	modelArtifact := createDBTestArtifact(t, modelRevision.CreatedBy, "model file", now)
+	otherArtifact := createDBTestArtifact(t, modelRevision.CreatedBy, "other model file", now)
+	require.NoError(t, testDB.Artifacts.AttachToModelRevision(ctx, modelRevision.ID, modelArtifact.ID))
+	require.NoError(t, testDB.Artifacts.AttachToModelRevision(ctx, otherModelRevision.ID, otherArtifact.ID))
+
+	// when
+	got, err := testDB.Artifacts.ModelRevisionArtifactIDs(ctx, modelRevision.ID)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{modelArtifact.ID}, got)
+}
+
 func Test_should_create_and_list_metrics_for_model_revision_when_metrics_repository_called(t *testing.T) {
 	// given
 	ctx := context.Background()
@@ -110,6 +150,82 @@ func Test_should_group_metrics_by_model_revision_when_listing_by_model_revision_
 	assert.Equal(t, models.MetricKeyClashscore, got[secondRevision.ID][0].Key)
 	assert.InDelta(t, 3.5, got[secondRevision.ID][0].Value, 0.0001)
 	assert.NotContains(t, got, revisionWithoutMetrics.ID)
+}
+
+func Test_should_keep_software_and_run_when_metric_is_created_and_listed(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "metric software entry revision", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "metric software model revision", now)
+	run := createDBTestRun(t, modelRevision.CreatedBy)
+	metric, err := testDB.Metrics.Create(ctx, models.Metric{
+		ID:              uuid.New(),
+		Key:             models.MetricKeyRFree,
+		Value:           0.21,
+		SoftwareName:    new("PHENIX"),
+		SoftwareVersion: new("1.21"),
+		RunID:           &run.ID,
+		CreatedAt:       now,
+	})
+	require.NoError(t, err)
+	require.NoError(t, testDB.Metrics.AttachToModelRevision(ctx, modelRevision.ID, metric.ID))
+
+	// when
+	listed, listErr := testDB.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &modelRevision.ID})
+	byRevision, byRevisionErr := testDB.Metrics.ListByModelRevisionIDs(ctx, []uuid.UUID{modelRevision.ID})
+
+	// then
+	require.NoError(t, listErr)
+	require.NoError(t, byRevisionErr)
+	for _, got := range [][]models.Metric{{*metric}, listed, byRevision[modelRevision.ID]} {
+		require.Len(t, got, 1)
+		assert.Equal(t, new("PHENIX"), got[0].SoftwareName)
+		assert.Equal(t, new("1.21"), got[0].SoftwareVersion)
+		assert.Equal(t, &run.ID, got[0].RunID)
+	}
+}
+
+func Test_should_reject_metric_when_run_id_names_no_run(t *testing.T) {
+	// given
+	ctx := context.Background()
+
+	// when
+	_, err := testDB.Metrics.Create(ctx, models.Metric{
+		ID:        uuid.New(),
+		Key:       models.MetricKeyRFree,
+		Value:     0.21,
+		RunID:     new(uuid.New()),
+		CreatedAt: time.Now().UTC(),
+	})
+
+	// then
+	require.ErrorContains(t, err, "metrics_run_id_fkey")
+}
+
+func Test_should_fill_software_only_when_metric_has_none_when_software_is_filled_in_place(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "metric fill entry revision", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "metric fill model revision", now)
+	metric := createDBTestMetric(t, modelRevision.ID, models.MetricKeyRFree, 0.21, now)
+
+	// when
+	filled, fillErr := testDB.Metrics.FillMissingSoftware(ctx, metric.ID, "PHENIX", new("1.17.1_3660"))
+	refilled, refillErr := testDB.Metrics.FillMissingSoftware(ctx, metric.ID, "REFMAC", nil)
+
+	// then
+	require.NoError(t, fillErr)
+	require.NoError(t, refillErr)
+	assert.True(t, filled)
+	assert.False(t, refilled)
+	got, err := testDB.Metrics.List(ctx, db.MetricFilters{ID: &metric.ID})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, new("PHENIX"), got[0].SoftwareName)
+	assert.Equal(t, new("1.17.1_3660"), got[0].SoftwareVersion)
+	assert.InDelta(t, 0.21, got[0].Value, 0.0001)
 }
 
 func Test_should_return_empty_map_when_listing_metrics_for_no_model_revisions(t *testing.T) {

@@ -40,6 +40,20 @@ func (modelType StructureModelType) Validate() error {
 	}
 }
 
+// IsComputed reports whether a model of this type was computed from data, so its
+// provenance is the runs that produced it. A Deposited model is an unchanged archive
+// import, whose provenance is its source accession.
+func (modelType StructureModelType) IsComputed() (bool, error) {
+	switch modelType {
+	case StructureModelTypeSingleConformer, StructureModelTypeMulticonformer, StructureModelTypeEnsemble:
+		return true, nil
+	case StructureModelTypeDeposited:
+		return false, nil
+	default:
+		return false, unknownValueError("model type", modelType, StructureModelTypes)
+	}
+}
+
 var MetricKeys = []MetricKey{
 	MetricKeyRWork,
 	MetricKeyRFree,

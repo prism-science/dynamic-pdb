@@ -119,3 +119,36 @@ func valuesOf[T interface{ Validate() error }](values []T) []interface{ Validate
 	}
 	return result
 }
+
+func Test_should_tell_computed_types_from_archive_imports_when_model_type_is_checked(t *testing.T) {
+	// given
+	expected := map[StructureModelType]bool{
+		StructureModelTypeSingleConformer: true,
+		StructureModelTypeMulticonformer:  true,
+		StructureModelTypeEnsemble:        true,
+		StructureModelTypeDeposited:       false,
+	}
+
+	// when
+	actual := make(map[StructureModelType]bool, len(expected))
+	for modelType := range expected {
+		computed, err := modelType.IsComputed()
+		require.NoError(t, err)
+		actual[modelType] = computed
+	}
+
+	// then
+	assert.Equal(t, expected, actual)
+}
+
+func Test_should_fail_loudly_when_model_type_is_unknown_and_checked_for_computed(t *testing.T) {
+	// given
+	modelType := StructureModelType("Docked")
+
+	// when
+	_, err := modelType.IsComputed()
+
+	// then
+	require.EqualError(t, err,
+		`model type "Docked" is not one of "Single Conformer", "Multiconformer", "Ensemble", "Deposited"`)
+}

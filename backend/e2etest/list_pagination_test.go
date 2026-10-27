@@ -89,7 +89,7 @@ func (s *ListPaginationSuite) Test_should_return_each_entry_model_once_in_order_
 	createdOldestFirst := make([]string, 0, 5)
 	for index := range 5 {
 		model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
-			"model": map[string]any{"title": fmt.Sprintf("cursor model %d", index)},
+			"model": map[string]any{"title": fmt.Sprintf("cursor model %d", index), "metadata": map[string]any{"model_type": "Deposited"}},
 		})
 		createdOldestFirst = append(createdOldestFirst, model.ModelId)
 	}
@@ -194,6 +194,7 @@ func (s *ListPaginationSuite) Test_should_return_each_model_artifact_once_with_r
 	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
 		"model": map[string]any{
 			"title":     "cursor model artifacts model",
+			"metadata":  map[string]any{"model_type": "Deposited"},
 			"artifacts": artifactRequestsForTest(3, "L2", "cif"),
 		},
 	})
@@ -295,7 +296,7 @@ func (s *ListPaginationSuite) Test_should_return_each_model_revision_once_oldest
 		"entry": map[string]any{"title": "cursor model revisions entry"},
 	})
 	model := createAndActivateModelForTest(s.T(), authorToken, entry.EntryId, map[string]any{
-		"model": map[string]any{"title": "cursor model revisions model"},
+		"model": map[string]any{"title": "cursor model revisions model", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
 	createdOldestFirst := []uuid.UUID{model.RevisionId}
 	for index := range 2 {

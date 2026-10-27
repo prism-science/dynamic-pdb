@@ -531,11 +531,12 @@ func (u *Uploader) uploadModel(
 	if strings.TrimSpace(model.Purpose) != "" {
 		metadata["purpose"] = strings.TrimSpace(model.Purpose)
 	}
-	metrics, err := u.modelMetrics(ctx, dataRoot, pdbID, model.Metrics, artifactPayloads)
+	program, err := u.modelProgram(ctx, pdbID, artifactPayloads)
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
-	program, err := u.modelProgram(ctx, pdbID, artifactPayloads)
+	runs := modelRuns(modelArtifactRefs, program)
+	metrics, err := u.modelMetrics(ctx, dataRoot, pdbID, model.Metrics, artifactPayloads, coordinatesRunID(runs))
 	if err != nil {
 		return uploadedModel{}, false, err
 	}
@@ -546,7 +547,6 @@ func (u *Uploader) uploadModel(
 		title = model.ID
 	}
 	idempotencyKey := modelArtifacts[0].SHA256
-	runs := modelRuns(modelArtifactRefs, program)
 	modelOperation := dynamicpdbapi.AddModelOperation{
 		Op: "add",
 		Data: dynamicpdbapi.AddModelData{
@@ -618,7 +618,7 @@ func (u *Uploader) hasModelCoordinates(
 
 func modelCoordinatesArtifact(model manifest.ModelPattern) (manifest.Artifact, int, bool) {
 	for index, artifact := range model.Artifacts {
-		if strings.EqualFold(strings.TrimSpace(artifact.ID), "coordinates") {
+		if isCoordinatesArtifact(artifact.ID) {
 			return artifact, index, true
 		}
 	}
@@ -705,7 +705,7 @@ func artifactTypeForRequest(artifact manifest.Artifact, attachedToModel bool) st
 	}
 
 	switch {
-	case artifactID == "coordinates":
+	case artifactID == coordinatesArtifactID:
 		return "model"
 	case artifactID == "structure_factors" || strings.HasPrefix(artifactID, "structure_factors_"):
 		return "structure_factors"
@@ -1290,17 +1290,20 @@ func floatValue(value any) (float64, bool) {
 	}
 }
 
+// modelMetrics links a value read from the coordinates file to coordinatesRunID, the
+// run of the program that wrote that file.
 func (u *Uploader) modelMetrics(
 	ctx context.Context,
 	dataRoot string,
 	pdbID string,
 	metrics manifest.Metrics,
 	artifacts map[string]extractorapi.Artifact,
+	coordinatesRunID *string,
 ) ([]dynamicpdbapi.CreateMetricRequest, error) {
 	requests := make([]dynamicpdbapi.CreateMetricRequest, 0, len(metrics))
 	for _, key := range metricKeys(metrics) {
 		field := metrics[key]
-		value, ok, err := u.fieldValue(ctx, dataRoot, pdbID, field, artifacts)
+		value, source, ok, err := u.fieldValueAndSource(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil {
 			return nil, fmt.Errorf("extract metric %s: %w", key, err)
 		}
@@ -1311,11 +1314,15 @@ func (u *Uploader) modelMetrics(
 		if !ok {
 			return nil, fmt.Errorf("metric %s is not numeric", key)
 		}
-		requests = append(requests, dynamicpdbapi.CreateMetricRequest{
+		request := dynamicpdbapi.CreateMetricRequest{
 			ID:    uuid.NewString(),
 			Key:   key,
 			Value: number,
-		})
+		}
+		if isCoordinatesArtifact(source.Artifact) {
+			request.RunID = coordinatesRunID
+		}
+		requests = append(requests, request)
 	}
 	return requests, nil
 }
@@ -1352,13 +1359,24 @@ func (u *Uploader) fieldValue(
 	fields []manifest.FieldExtraction,
 	artifacts map[string]extractorapi.Artifact,
 ) (any, bool, error) {
+	value, _, ok, err := u.fieldValueAndSource(ctx, dataRoot, pdbID, fields, artifacts)
+	return value, ok, err
+}
+
+func (u *Uploader) fieldValueAndSource(
+	ctx context.Context,
+	dataRoot string,
+	pdbID string,
+	fields []manifest.FieldExtraction,
+	artifacts map[string]extractorapi.Artifact,
+) (any, manifest.Source, bool, error) {
 	for _, field := range fields {
 		value, ok, err := u.fieldExtractionValue(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil || fieldValuePresent(value, ok) {
-			return value, ok, err
+			return value, fieldExtractionSource(field), ok, err
 		}
 	}
-	return nil, false, nil
+	return nil, manifest.Source{}, false, nil
 }
 
 func (u *Uploader) fieldExtractionValue(
@@ -1576,7 +1594,7 @@ type modelProgramInfo struct {
 
 func (u *Uploader) modelProgram(ctx context.Context, pdbID string, artifacts map[string]extractorapi.Artifact) (*modelProgramInfo, error) {
 	extractor := artifactextractor.NewCachedFieldExtractor(artifacts, u.structureFields)
-	name, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: "coordinates"}, structureExtract("program.name"))
+	name, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: coordinatesArtifactID}, structureExtract("program.name"))
 	if err != nil {
 		return nil, fmt.Errorf("extract model program name: %w", err)
 	}
@@ -1587,7 +1605,7 @@ func (u *Uploader) modelProgram(ctx context.Context, pdbID string, artifacts map
 	if program.Name == "" {
 		return nil, nil
 	}
-	version, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: "coordinates"}, structureExtract("program.version"))
+	version, ok, err := extractor.Extract(ctx, pdbID, manifest.Source{Artifact: coordinatesArtifactID}, structureExtract("program.version"))
 	if err != nil {
 		return nil, fmt.Errorf("extract model program version: %w", err)
 	}
@@ -1604,6 +1622,22 @@ func structureExtract(field string) manifest.Extract {
 	}
 }
 
+// coordinatesArtifactID is the manifest id of a model's coordinates file.
+const coordinatesArtifactID = "coordinates"
+
+func isCoordinatesArtifact(manifestID string) bool {
+	return strings.EqualFold(strings.TrimSpace(manifestID), coordinatesArtifactID)
+}
+
+// coordinatesRunID returns the run modelRuns built, or nil when it built none.
+func coordinatesRunID(runs []dynamicpdbapi.CreateRunRequest) *string {
+	if len(runs) != 1 {
+		return nil
+	}
+	return &runs[0].ID
+}
+
+// modelRuns returns at most one run: the program named in the coordinates file.
 func modelRuns(artifacts []uploadedArtifactRef, program *modelProgramInfo) []dynamicpdbapi.CreateRunRequest {
 	runArtifacts := make([]dynamicpdbapi.CreateRunArtifactRequest, 0, len(artifacts))
 	for _, artifact := range artifacts {
@@ -1642,7 +1676,7 @@ func runArtifactDirection(artifact uploadedArtifactRef) (string, bool) {
 	id := strings.ToLower(strings.TrimSpace(artifact.ManifestID))
 	format := strings.ToLower(strings.TrimSpace(artifact.Format))
 	switch {
-	case id == "coordinates" || strings.HasPrefix(id, "log_"):
+	case id == coordinatesArtifactID || strings.HasPrefix(id, "log_"):
 		return "output", true
 	case strings.HasPrefix(id, "mtz_") || strings.HasPrefix(id, "structure_factors_"):
 		return "input", true

@@ -118,11 +118,16 @@ const (
 	MetricKeyRMSF                 MetricKey = "rmsf"
 )
 
+// Metric is one value on a model revision. Its producing software is named by
+// SoftwareName and SoftwareVersion, or by RunID, the run that produced it.
 type Metric struct {
-	ID        uuid.UUID
-	Key       MetricKey
-	Value     float64
-	CreatedAt time.Time
+	ID              uuid.UUID
+	Key             MetricKey
+	Value           float64
+	SoftwareName    *string
+	SoftwareVersion *string
+	RunID           *uuid.UUID
+	CreatedAt       time.Time
 }
 
 type ModelState string

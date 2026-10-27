@@ -155,7 +155,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.createInitialEntryRevision(r.Context(), req, user.ID)
+	result, err := s.createInitialEntryRevision(r.Context(), req, user.ID, requestSubject(r))
 	if s.writeMutationError(r.Context(), w, err, "create entry") {
 		return
 	}
@@ -172,6 +172,7 @@ func (s *Server) createInitialEntryRevision(
 	ctx context.Context,
 	req CreateEntryRequest,
 	createdBy uuid.UUID,
+	subject string,
 ) (CreateEntryRevisionAttributes, error) {
 	if err := validateArtifactRequests(req.Entry.Artifacts, artifactAttachmentScopeEntry); err != nil {
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("validate initial entry artifacts: %w", err)
@@ -248,7 +249,7 @@ func (s *Server) createInitialEntryRevision(
 			}
 		}
 		if req.ModelOperations != nil {
-			for _, operation := range *req.ModelOperations {
+			for index, operation := range *req.ModelOperations {
 				if operation.Op != AddModelOperationOpAdd {
 					return invalidRequest("model operation must be add")
 				}
@@ -257,6 +258,7 @@ func (s *Server) createInitialEntryRevision(
 					entryID,
 					createModelDataFromAddOperation(operation.Data),
 					createdBy,
+					schemaCheck{subject: subject, at: validation.Root.Field("model_operations").Index(index).Field("data")},
 				)
 				if err != nil {
 					return fmt.Errorf("create model from add operation: %w", err)
@@ -368,7 +370,8 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 		return
 	}
 
-	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID)
+	result, err := s.createInitialModelRevision(r.Context(), entryID, request.Model, user.ID,
+		schemaCheck{subject: requestSubject(r), at: validation.Root.Field("model")})
 	if s.writeMutationError(r.Context(), w, err, "create model") {
 		return
 	}
@@ -386,8 +389,9 @@ func (s *Server) createInitialModelRevision(
 	entryID string,
 	data CreateModelData,
 	createdBy uuid.UUID,
+	check schemaCheck,
 ) (CreateModelRevisionAttributes, error) {
-	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, true)
+	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, true, check)
 }
 
 func (s *Server) createInitialModelRevisionForPendingEntry(
@@ -395,8 +399,9 @@ func (s *Server) createInitialModelRevisionForPendingEntry(
 	entryID string,
 	data CreateModelData,
 	createdBy uuid.UUID,
+	check schemaCheck,
 ) (CreateModelRevisionAttributes, error) {
-	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, false)
+	return s.createInitialModelRevisionForEntry(ctx, entryID, data, createdBy, false, check)
 }
 
 func (s *Server) createInitialModelRevisionForEntry(
@@ -405,6 +410,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 	data CreateModelData,
 	createdBy uuid.UUID,
 	requireActiveEntry bool,
+	check schemaCheck,
 ) (CreateModelRevisionAttributes, error) {
 	if err := validateArtifactRequests(data.Artifacts, artifactAttachmentScopeModel); err != nil {
 		return CreateModelRevisionAttributes{}, fmt.Errorf("validate initial model artifacts: %w", err)
@@ -449,6 +455,11 @@ func (s *Server) createInitialModelRevisionForEntry(
 				return fmt.Errorf("get active entry revision: %w", err)
 			}
 		}
+		if err := s.checkRunArtifactLinks(
+			ctx, check, entryID, modelRunsFromRequests(data.Runs), artifactIDsFromRequests(data.Artifacts),
+		); err != nil {
+			return fmt.Errorf("check model run artifacts: %w", err)
+		}
 		modelID, err := s.database.Models.NextID(ctx, entryID)
 		if err != nil {
 			return fmt.Errorf("generate model id: %w", err)
@@ -484,14 +495,15 @@ func (s *Server) createInitialModelRevisionForEntry(
 		if err := s.attachModelArtifacts(ctx, revision.ID, artifacts); err != nil {
 			return fmt.Errorf("attach model artifacts: %w", err)
 		}
-		if data.Metrics != nil {
-			if err := s.createModelMetrics(ctx, revision.ID, *data.Metrics, now); err != nil {
-				return fmt.Errorf("create model metrics: %w", err)
-			}
-		}
+		// Runs first: a metric may name the run that produced it.
 		if data.Runs != nil {
 			if err := s.createModelRuns(ctx, revision.ID, *data.Runs, createdBy, now); err != nil {
 				return fmt.Errorf("create model runs: %w", err)
+			}
+		}
+		if data.Metrics != nil {
+			if err := s.createModelMetrics(ctx, revision.ID, *data.Metrics, now); err != nil {
+				return fmt.Errorf("create model metrics: %w", err)
 			}
 		}
 		return nil
@@ -555,7 +567,8 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 		return
 	}
 
-	result, err := s.createModelRevisionGraph(r.Context(), entryID, modelID, payload, user.ID)
+	result, err := s.createModelRevisionGraph(r.Context(), entryID, modelID, payload, user.ID,
+		schemaCheck{subject: requestSubject(r), at: validation.Root.Field("model")})
 	if s.writeMutationError(r.Context(), w, err, "create model revision") {
 		return
 	}
@@ -573,6 +586,7 @@ func (s *Server) createModelRevisionGraph(
 	entryID, modelID string,
 	payload createModelRevisionPayload,
 	createdBy uuid.UUID,
+	check schemaCheck,
 ) (CreateModelRevisionAttributes, error) {
 	if err := validateRevisionFields(payload.ModelFields, modelRevisionFields); err != nil {
 		return CreateModelRevisionAttributes{}, err
@@ -615,6 +629,9 @@ func (s *Server) createModelRevisionGraph(
 			if !errors.Is(err, db.ErrModelRevisionNotFound) {
 				return fmt.Errorf("check model revision idempotency key: %w", err)
 			}
+		}
+		if err := s.checkModelRevisionChangeProvenance(ctx, check, entryID, payload, *base); err != nil {
+			return fmt.Errorf("check model revision provenance: %w", err)
 		}
 		artifacts, err := s.createArtifacts(ctx, data.Artifacts, createdBy, now)
 		if err != nil {
@@ -738,19 +755,20 @@ func (s *Server) copyOrAttachModelRevisionContents(
 	} else if err := s.attachModelArtifacts(ctx, toRevisionID, artifacts); err != nil {
 		return fmt.Errorf("attach replacement model artifacts: %w", err)
 	}
-	if metrics == nil {
-		if err := s.database.Metrics.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
-			return fmt.Errorf("copy model revision metrics: %w", err)
-		}
-	} else if err := s.createModelMetrics(ctx, toRevisionID, *metrics, now); err != nil {
-		return fmt.Errorf("create replacement model metrics: %w", err)
-	}
+	// Runs first: a metric may name the run that produced it.
 	if runs == nil {
 		if err := s.database.Runs.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
 			return fmt.Errorf("copy model revision runs: %w", err)
 		}
 	} else if err := s.createModelRuns(ctx, toRevisionID, *runs, createdBy, now); err != nil {
 		return fmt.Errorf("create replacement model runs: %w", err)
+	}
+	if metrics == nil {
+		if err := s.database.Metrics.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
+			return fmt.Errorf("copy model revision metrics: %w", err)
+		}
+	} else if err := s.createModelMetrics(ctx, toRevisionID, *metrics, now); err != nil {
+		return fmt.Errorf("create replacement model metrics: %w", err)
 	}
 	return nil
 }
@@ -1304,20 +1322,38 @@ func (s *Server) createMetric(ctx context.Context, req CreateMetricRequest, now 
 	if req.Id == uuid.Nil {
 		return nil, invalidRequest("metric id is required")
 	}
-	key := metricKeyFromRequest(string(req.Key))
-	if key == "" {
+	metric := metricFromRequest(req)
+	if metric.Key == "" {
 		return nil, invalidRequest("metric key is required")
 	}
 	if req.Value == nil {
 		return nil, invalidRequest("metric value is required")
 	}
-	metric, err := s.database.Metrics.Create(ctx, domainmodels.Metric{
-		ID: req.Id, Key: key, Value: *req.Value, CreatedAt: now,
-	})
+	metric.CreatedAt = now
+	created, err := s.database.Metrics.Create(ctx, metric)
+	if isForeignKeyViolation(err, "metrics_run_id_fkey") {
+		return nil, invalidRequest("metric run_id must name a run of the same model revision")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create metric: %w", err)
 	}
-	return metric, nil
+	return created, nil
+}
+
+// metricFromRequest maps a metric request without checking it, so schema checks and
+// createMetric see the same values. A missing value maps to 0; callers check presence.
+func metricFromRequest(req CreateMetricRequest) domainmodels.Metric {
+	metric := domainmodels.Metric{
+		ID:              req.Id,
+		Key:             metricKeyFromRequest(string(req.Key)),
+		SoftwareName:    trimmedStringPtr(req.SoftwareName),
+		SoftwareVersion: trimmedStringPtr(req.SoftwareVersion),
+		RunID:           req.RunId,
+	}
+	if req.Value != nil {
+		metric.Value = *req.Value
+	}
+	return metric
 }
 
 func (s *Server) createRun(
@@ -1553,7 +1589,11 @@ func validateArtifactRequests(requests *[]CreateArtifactRequest, scope artifactA
 func metricsFromModels(metrics []domainmodels.Metric) []Metric {
 	items := make([]Metric, 0, len(metrics))
 	for _, metric := range metrics {
-		items = append(items, Metric{Id: metric.ID, Key: MetricKey(metric.Key), Value: metric.Value, CreatedAt: metric.CreatedAt})
+		items = append(items, Metric{
+			Id: metric.ID, Key: MetricKey(metric.Key), Value: metric.Value,
+			SoftwareName: metric.SoftwareName, SoftwareVersion: metric.SoftwareVersion, RunId: metric.RunID,
+			CreatedAt: metric.CreatedAt,
+		})
 	}
 	return items
 }
@@ -1972,6 +2012,11 @@ const modelRevisionMetricKeyIndex = "model_revision_metrics_revision_key_idx"
 func isUniqueConstraint(err error, constraint string) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
+}
+
+func isForeignKeyViolation(err error, constraint string) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23503" && pqErr.Constraint == constraint
 }
 
 func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
