@@ -107,7 +107,9 @@ npm run dev
 
 In development, the website defaults to `http://localhost:8080` for backend API
 calls and the backend listens on `:8080`. Override the website API target with
-`NEXT_PUBLIC_API_BASE_URL`. File uploads require S3 or S3-compatible credentials
+`NEXT_PUBLIC_API_BASE_URL`. `API_INTERNAL_BASE_URL`, when set, replaces it for
+requests the website server sends itself; the Helm chart points it at the backend
+Service so those requests stay in the cluster. File uploads require S3 or S3-compatible credentials
 configured through `backend/config/local.yml` or `DYNAMIC_PDB_*` environment
 variables.
 

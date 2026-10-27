@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { getApiBaseUrl, jsonApiMediaType } from "./baseUrl";
+import { getServerApiBaseUrl, jsonApiMediaType } from "./baseUrl";
 import {
   backendReadTimeoutMs,
   backendWriteTimeoutMs,
@@ -955,7 +955,7 @@ async function sendJSON<T>(
   token: string,
   input: unknown,
 ): Promise<T> {
-  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  const baseUrl = getServerApiBaseUrl().replace(/\/+$/, "");
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -1835,7 +1835,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 async function fetchBackend<T>(path: string, token?: string): Promise<T> {
-  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  const baseUrl = getServerApiBaseUrl().replace(/\/+$/, "");
 
   const headers: Record<string, string> = { Accept: jsonApiMediaType };
   if (token) {

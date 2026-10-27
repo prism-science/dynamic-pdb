@@ -1,8 +1,10 @@
 package config_test
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +142,8 @@ func Test_should_default_rate_limit_when_config_does_not_set_it(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 100, cfg.Server.RateLimit.Requests)
 	assert.Equal(t, 10*time.Second, cfg.Server.RateLimit.Window)
+	assert.Equal(t, 1000, cfg.Server.RateLimit.InternalRequests)
+	assert.Empty(t, cfg.Server.RateLimit.TrustedProxies)
 }
 
 func Test_should_default_validation_mode_to_log_only_when_config_does_not_set_it(t *testing.T) {
@@ -185,6 +189,7 @@ func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
 	t.Chdir(writeSampleConfig(t))
 	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_REQUESTS", "5000")
 	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_WINDOW", "1m")
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_INTERNAL_REQUESTS", "20000")
 
 	// when
 	cfg, err := config.ReadFromFile("test")
@@ -193,6 +198,7 @@ func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 5000, cfg.Server.RateLimit.Requests)
 	assert.Equal(t, time.Minute, cfg.Server.RateLimit.Window)
+	assert.Equal(t, 20000, cfg.Server.RateLimit.InternalRequests)
 }
 
 func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testing.T) {
@@ -206,6 +212,35 @@ func Test_should_reject_config_when_rate_limit_requests_is_not_positive(t *testi
 	// then
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "server.rate_limit.requests must be positive")
+}
+
+func Test_should_reject_config_when_rate_limit_internal_requests_is_not_positive(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SERVER_RATE_LIMIT_INTERNAL_REQUESTS", "0")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "server.rate_limit.internal_requests must be positive")
+}
+
+func Test_should_reject_config_when_trusted_proxy_is_not_cidr(t *testing.T) {
+	for _, value := range []string{"10.42.0.1", "10.42.0.0/33", "ingress"} {
+		t.Run(value, func(t *testing.T) {
+			// given
+			t.Chdir(writeConfig(t, "test", strings.Replace(sampleYAML, "server:\n", "server:\n  rate_limit:\n    trusted_proxies:\n      - "+value+"\n", 1)))
+
+			// when
+			_, err := config.ReadFromFile("test")
+
+			// then
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "server.rate_limit.trusted_proxies")
+		})
+	}
 }
 
 func Test_should_override_public_base_url_from_env_var(t *testing.T) {
@@ -394,6 +429,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }
 
 func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *testing.T) {
@@ -416,6 +452,19 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
+}
+
+// assertClusterTrustedProxies checks that a deployed profile trusts the pod network and the
+// AWS VPC, the two networks between the load balancer and the server.
+func assertClusterTrustedProxies(t *testing.T, rateLimit config.RateLimitConfig) {
+	t.Helper()
+	prefixes, err := rateLimit.TrustedProxyPrefixes()
+	require.NoError(t, err)
+	assert.Equal(t, []netip.Prefix{
+		netip.MustParsePrefix("10.42.0.0/16"),
+		netip.MustParsePrefix("10.7.0.0/16"),
+	}, prefixes)
 }
 
 func Test_should_enforce_schema_validation_when_repository_local_config_is_read(t *testing.T) {

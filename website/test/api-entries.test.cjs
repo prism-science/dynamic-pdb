@@ -75,6 +75,29 @@ test("should list models with a limit and optional authorization", async () => {
   }
 });
 
+test("should call the in-cluster backend when the internal API base URL is set", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const previousInternalApiBaseURL = process.env.API_INTERNAL_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    process.env.API_INTERNAL_BASE_URL = "http://dynamic-pdb-backend:8080/";
+    let requestedURL = "";
+    global.fetch = async (url) => {
+      requestedURL = String(url);
+      return jsonResponse(collectionDocument("models", []));
+    };
+
+    await listModels(undefined, { limit: 5 });
+
+    assert.equal(requestedURL, "http://dynamic-pdb-backend:8080/v1/models?limit=5");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+    restoreEnv("API_INTERNAL_BASE_URL", previousInternalApiBaseURL);
+  }
+});
+
 test("should send the cursor and return the next cursor when listing an entries page", async () => {
   const previousFetch = global.fetch;
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;

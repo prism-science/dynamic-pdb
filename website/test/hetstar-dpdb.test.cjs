@@ -81,6 +81,32 @@ test("should read the page origin from the forwarded headers behind the ingress"
   }
 });
 
+test("should give the viewer the public API base when the internal API base URL is set", async () => {
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const previousInternalApiBaseURL = process.env.API_INTERNAL_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://dynamicpdb.com/api";
+    process.env.API_INTERNAL_BASE_URL = "http://dynamic-pdb-backend:8080";
+    nextHeaders.__setRequestHeaders({
+      host: "dynamic-pdb-website.svc",
+      "x-forwarded-proto": "https",
+      "x-forwarded-host": "dynamicpdb.com",
+    });
+
+    const config = await hetstarDpdbConfig();
+
+    assert.equal(config.apiBase, "/api/v1");
+  } finally {
+    process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;
+    if (previousInternalApiBaseURL === undefined) {
+      delete process.env.API_INTERNAL_BASE_URL;
+    } else {
+      process.env.API_INTERNAL_BASE_URL = previousInternalApiBaseURL;
+    }
+    nextHeaders.__setRequestHeaders({});
+  }
+});
+
 test("should fall back to the host header when nothing is forwarded", async () => {
   const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
   try {

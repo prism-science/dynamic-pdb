@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getApiBaseUrl } from "@/lib/api/baseUrl";
+import { getServerApiBaseUrl } from "@/lib/api/baseUrl";
 import {
   backendReadTimeoutMs,
   FetchTimeoutError,
@@ -27,7 +27,7 @@ export async function GET() {
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      `${getApiBaseUrl()}/openapi.yaml`,
+      `${getServerApiBaseUrl()}/openapi.yaml`,
       { headers: { Accept: "application/yaml" } },
       backendReadTimeoutMs,
     );

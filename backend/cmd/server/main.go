@@ -95,13 +95,24 @@ func run() int {
 		sifts.NewClient(),
 	))
 
+	trustedProxies, err := cfg.Server.RateLimit.TrustedProxyPrefixes()
+	if err != nil {
+		slog.Error("parse trusted proxies failed", "err", err)
+		return 1
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(httpapi.ReadRequestTimeoutMiddleware(readRequestTimeout))
 	router.Use(httpapi.AccessLogMiddleware(logger))
 	router.Use(httpapi.RecoverMiddleware(logger))
 	router.Use(corsMiddleware(env))
-	router.Use(httpapi.GlobalRateLimitMiddleware(env, cfg.Server.RateLimit.Requests, cfg.Server.RateLimit.Window))
+	router.Use(httpapi.GlobalRateLimitMiddleware(httpapi.RateLimitPolicy{
+		Requests:         cfg.Server.RateLimit.Requests,
+		InternalRequests: cfg.Server.RateLimit.InternalRequests,
+		Window:           cfg.Server.RateLimit.Window,
+		TrustedProxies:   trustedProxies,
+	}))
 	router.Use(httpapi.MediaTypeMiddleware())
 	router.Use(httpapi.RequestBodyLimitMiddleware(httpapi.MaxRequestBodyBytes))
 	httpapi.HandlerWithOptions(srv, httpapi.ChiServerOptions{

@@ -1,6 +1,12 @@
 server:
   addr: ":8080"
   public_base_url: https://dynamicpdb.com/api
+  rate_limit:
+    # Pod network (ingress pods and the node addresses kube-proxy rewrites load balancer
+    # traffic to) and the AWS VPC (load balancer).
+    trusted_proxies:
+      - 10.42.0.0/16
+      - 10.7.0.0/16
 auth:
   allowed_orgs:
     - Astera-org
