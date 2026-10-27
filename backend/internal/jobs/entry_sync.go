@@ -87,6 +87,7 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, entryID string) error
 		desiredPolymerEntities,
 		currentRevision.Metadata.DepositorPolymerEntities,
 	)
+	keepDepositorEntryFields(*currentRevision, &desiredRevision)
 
 	entryRevisionChanged, polymerEntitiesChanged := compareEntryUpdate(
 		*currentRevision,

@@ -60,6 +60,7 @@ type EntryRevision struct {
 	Title             *string
 	ThumbnailImageURL *string
 	Metadata          EntryMetadata
+	FieldSources      FieldSources
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time

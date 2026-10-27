@@ -37,6 +37,7 @@ type ModelRevision struct {
 	Title             *string
 	ThumbnailImageURL *string
 	Metadata          ModelMetadata
+	FieldSources      FieldSources
 	IdempotencyKey    *string
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time

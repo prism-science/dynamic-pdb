@@ -74,6 +74,16 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 	if pdbID == "" {
 		return nil
 	}
+	if !isDepositedModel(*currentRevision) {
+		s.logger.Warn(
+			"data sync skipped a model that is not the archive's Deposited model",
+			"entry_id", entryID,
+			"model_id", modelID,
+			"model_type", modelTypeName(currentRevision.Metadata.ModelType),
+		)
+		return nil
+	}
+	metricKeys := syncedArchiveMetricKeys(currentRevision.FieldSources)
 
 	currentMetrics, err := s.database.Metrics.List(ctx, db.MetricFilters{
 		ModelRevisionID: &currentRevision.ID,
@@ -85,15 +95,19 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 	if err != nil {
 		return fmt.Errorf("build model update: %w", err)
 	}
+	keepDepositorModelFields(*currentRevision, &desiredRevision)
+	desiredMetrics = metricsWithKeys(desiredMetrics, metricKeys)
 
 	modelRevisionChanged, metricsChanged := compareModelUpdate(
 		*currentRevision,
 		desiredRevision,
 		currentMetrics,
 		desiredMetrics,
+		metricKeys,
 	)
 	if !metricsChanged {
-		if err := s.fillMetricSoftware(ctx, modelID, metricSoftwareFills(currentMetrics, desiredMetrics)); err != nil {
+		fills := metricSoftwareFills(currentMetrics, desiredMetrics, metricKeys)
+		if err := s.fillMetricSoftware(ctx, modelID, fills); err != nil {
 			return fmt.Errorf("fill archive metric software: %w", err)
 		}
 	}
@@ -111,6 +125,8 @@ func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, model
 		desiredRevision,
 		desiredMetrics,
 		metricsChanged,
+		metricKeys,
+		pdbID,
 	); err != nil {
 		return fmt.Errorf("save model update: %w", err)
 	}
@@ -172,6 +188,7 @@ func compareModelUpdate(
 	desiredRevision models.ModelRevision,
 	currentMetrics []models.Metric,
 	desiredMetrics []models.Metric,
+	metricKeys []models.MetricKey,
 ) (bool, bool) {
 	modelRevisionChanged := !reflect.DeepEqual(currentRevision.Metadata.Authors, desiredRevision.Metadata.Authors) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Details, desiredRevision.Metadata.Details) ||
@@ -182,7 +199,7 @@ func compareModelUpdate(
 		!reflect.DeepEqual(currentRevision.Metadata.UnmodeledFraction, desiredRevision.Metadata.UnmodeledFraction) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Ligands, desiredRevision.Metadata.Ligands) ||
 		!reflect.DeepEqual(currentRevision.Metadata.ResidueData, desiredRevision.Metadata.ResidueData)
-	metricsChanged := !modelMetricsHaveSameData(currentMetrics, desiredMetrics)
+	metricsChanged := !modelMetricsHaveSameData(currentMetrics, desiredMetrics, metricKeys)
 	return modelRevisionChanged, metricsChanged
 }
 
@@ -192,6 +209,8 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	desiredRevision models.ModelRevision,
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
+	metricKeys []models.MetricKey,
+	pdbID string,
 ) error {
 	now := s.now()
 	parentRevisionID := currentRevision.ID
@@ -205,6 +224,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	revision.Metadata.UnmodeledFraction = desiredRevision.Metadata.UnmodeledFraction
 	revision.Metadata.Ligands = desiredRevision.Metadata.Ligands
 	revision.Metadata.ResidueData = desiredRevision.Metadata.ResidueData
+	revision.FieldSources = archiveModelFieldSources(currentRevision.FieldSources, pdbID, now, metricKeys)
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
@@ -242,6 +262,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 			createdRevision.ID,
 			desiredMetrics,
 			metricsChanged,
+			metricKeys,
 			now,
 		); err != nil {
 			return fmt.Errorf("save model revision data: %w", err)
@@ -276,6 +297,7 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	toRevisionID uuid.UUID,
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
+	metricKeys []models.MetricKey,
 	createdAt time.Time,
 ) error {
 	if err := s.database.Artifacts.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
@@ -292,9 +314,9 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	}
 
 	if err := s.database.Metrics.CopyModelRevisionLinksExcludingKeys(
-		ctx, fromRevisionID, toRevisionID, rcsbModelMetricKeys,
+		ctx, fromRevisionID, toRevisionID, metricKeys,
 	); err != nil {
-		return fmt.Errorf("copy non-RCSB metric links: %w", err)
+		return fmt.Errorf("copy metric links the sync does not replace: %w", err)
 	}
 	for _, desiredMetric := range desiredMetrics {
 		desiredMetric.ID = uuid.New()
@@ -310,9 +332,9 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	return nil
 }
 
-func modelMetricsHaveSameData(current []models.Metric, desired []models.Metric) bool {
-	current = rcsbModelMetrics(current)
-	desired = rcsbModelMetrics(desired)
+func modelMetricsHaveSameData(current []models.Metric, desired []models.Metric, keys []models.MetricKey) bool {
+	current = metricsWithKeys(current, keys)
+	desired = metricsWithKeys(desired, keys)
 	if len(current) != len(desired) {
 		return false
 	}
@@ -324,10 +346,11 @@ func modelMetricsHaveSameData(current []models.Metric, desired []models.Metric) 
 	return true
 }
 
-func rcsbModelMetrics(metrics []models.Metric) []models.Metric {
+// metricsWithKeys returns the metrics whose key is one of keys, sorted by key and value.
+func metricsWithKeys(metrics []models.Metric, keys []models.MetricKey) []models.Metric {
 	result := make([]models.Metric, 0, len(metrics))
 	for _, metric := range metrics {
-		if isRCSBModelMetric(metric.Key) {
+		if slices.Contains(keys, metric.Key) {
 			result = append(result, metric)
 		}
 	}
@@ -338,18 +361,6 @@ func rcsbModelMetrics(metrics []models.Metric) []models.Metric {
 		return result[first].Value < result[second].Value
 	})
 	return result
-}
-
-// rcsbModelMetricKeys are the metrics the data sync derives from RCSB and replaces on every update.
-var rcsbModelMetricKeys = []models.MetricKey{
-	models.MetricKeyRFree,
-	models.MetricKeyRWork,
-	models.MetricKeyRamachandranOutliers,
-	models.MetricKeyClashscore,
-}
-
-func isRCSBModelMetric(key models.MetricKey) bool {
-	return slices.Contains(rcsbModelMetricKeys, key)
 }
 
 // modelUpdateErrors checks the values the sync takes from RCSB with the rules that
@@ -367,12 +378,12 @@ type metricSoftwareFill struct {
 	softwareVersion *string
 }
 
-// metricSoftwareFills returns the archive's software for stored RCSB metrics that name
+// metricSoftwareFills returns the archive's software for the stored metrics with keys that name
 // none, when stored and archive values are the same; it never replaces named software.
-func metricSoftwareFills(current []models.Metric, desired []models.Metric) []metricSoftwareFill {
-	current = rcsbModelMetrics(current)
-	desired = rcsbModelMetrics(desired)
-	if !modelMetricsHaveSameData(current, desired) {
+func metricSoftwareFills(current []models.Metric, desired []models.Metric, keys []models.MetricKey) []metricSoftwareFill {
+	current = metricsWithKeys(current, keys)
+	desired = metricsWithKeys(desired, keys)
+	if !modelMetricsHaveSameData(current, desired, keys) {
 		return nil
 	}
 	var fills []metricSoftwareFill
@@ -421,4 +432,11 @@ func applyRCSBModelDetails(revision *models.ModelRevision, details rcsb.EntryDet
 
 func modelMetricsFromRCSB(details rcsb.EntryDetails) []models.Metric {
 	return archivemodels.Metrics(archive.MapModel(details))
+}
+
+func modelTypeName(modelType *models.StructureModelType) string {
+	if modelType == nil {
+		return ""
+	}
+	return string(*modelType)
 }

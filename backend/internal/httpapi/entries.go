@@ -212,7 +212,7 @@ func (s *Server) createInitialEntryRevision(
 			return fmt.Errorf("validate initial entry PDB reference: %w", err)
 		}
 
-		revision, err := s.database.Entries.Create(ctx, domainmodels.EntryRevision{
+		initialRevision := domainmodels.EntryRevision{
 			ID:                uuid.New(),
 			EntryID:           entryID,
 			State:             domainmodels.RevisionStateInReview,
@@ -223,7 +223,9 @@ func (s *Server) createInitialEntryRevision(
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
-		})
+		}
+		initialRevision.FieldSources = domainmodels.EntryRevisionFieldSources(nil, initialRevision)
+		revision, err := s.database.Entries.Create(ctx, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
 		}
@@ -474,7 +476,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 		if err != nil {
 			return fmt.Errorf("create model artifacts: %w", err)
 		}
-		revision, err := s.database.Models.Create(ctx, entryID, domainmodels.ModelRevision{
+		initialRevision := domainmodels.ModelRevision{
 			ID:                uuid.New(),
 			ModelID:           modelID,
 			PrimaryArtifactID: data.PrimaryArtifactId,
@@ -487,7 +489,11 @@ func (s *Server) createInitialModelRevisionForEntry(
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
-		})
+		}
+		initialRevision.FieldSources = domainmodels.ModelRevisionFieldSources(
+			nil, nil, initialRevision, metricsFromRequests(data.Metrics),
+		)
+		revision, err := s.database.Models.Create(ctx, entryID, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
 		}
@@ -693,6 +699,11 @@ func (s *Server) createModelRevisionGraph(
 			}
 			revision.Metadata = metadata
 		}
+		fieldSources, err := s.modelRevisionFieldSources(ctx, *base, revision, data.Metrics)
+		if err != nil {
+			return fmt.Errorf("record model revision field sources: %w", err)
+		}
+		revision.FieldSources = fieldSources
 		created, err := s.database.Models.Create(ctx, entryID, revision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
@@ -717,6 +728,24 @@ func (s *Server) createModelRevisionGraph(
 		return CreateModelRevisionAttributes{}, fmt.Errorf("create model revision graph: %w", err)
 	}
 	return attributes, nil
+}
+
+// modelRevisionFieldSources marks the fields of a user's model revision that differ from base as
+// the depositor's. Base's metrics are read only when the request replaces the metrics.
+func (s *Server) modelRevisionFieldSources(
+	ctx context.Context,
+	base domainmodels.ModelRevision,
+	revision domainmodels.ModelRevision,
+	metrics *[]CreateMetricRequest,
+) (domainmodels.FieldSources, error) {
+	if metrics == nil {
+		return domainmodels.ModelRevisionFieldSources(&base, nil, revision, nil), nil
+	}
+	baseMetrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &base.ID})
+	if err != nil {
+		return nil, fmt.Errorf("list base model revision metrics: %w", err)
+	}
+	return domainmodels.ModelRevisionFieldSources(&base, baseMetrics, revision, metricsFromRequests(metrics)), nil
 }
 
 func (s *Server) activeModelRevisionForMutation(

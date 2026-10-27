@@ -220,6 +220,11 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
 	revision.Metadata.Crystallography = desiredRevision.Metadata.Crystallography
+	revision.FieldSources = archiveEntryFieldSources(
+		currentRevision.FieldSources,
+		strings.TrimSpace(currentRevision.Metadata.ExternalRefs[models.EntrySourcePDB]),
+		now,
+	)
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil

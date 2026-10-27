@@ -4367,6 +4367,8 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ArtifactAttributes"
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
     ModelRevisionAttributes:
       allOf:
         - $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
@@ -4394,3 +4396,36 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ArtifactAttributes"
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
+
+    FieldSources:
+      type: object
+      nullable: true
+      description: >
+        Where the values of the revision's archive-synced fields came from, keyed by JSON
+        pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free
+        for an archive metric). A field without a key was not typed by a depositor, so the
+        archive sync may update it. Null for revisions stored before sources were recorded;
+        those were imported from the archive. Read-only.
+      additionalProperties:
+        $ref: "#/components/schemas/FieldSource"
+
+    FieldSource:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+          enum: [rcsb, depositor]
+          x-enum-varnames: [FieldSourceSourceRcsb, FieldSourceSourceDepositor]
+          description: >
+            rcsb: the archive sync copied the value from RCSB. depositor: a user set or changed
+            the value, and the archive sync never overwrites it.
+        accession:
+          type: string
+          description: The PDB ID the value was read from, for archive values.
+        retrieved_at:
+          type: string
+          format: date-time
+          description: When the archive sync read the value.

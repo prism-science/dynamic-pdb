@@ -1704,6 +1704,7 @@ export interface components {
             thumbnail_image_url?: string | null;
             protein_sequences: components["schemas"]["ProteinSequence"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
+            field_sources?: components["schemas"]["FieldSources"];
         };
         ModelRevisionAttributes: components["schemas"]["ModelRevisionSummaryAttributes"] & {
             thumbnail_image_url?: string | null;
@@ -1713,6 +1714,25 @@ export interface components {
             residue_data: components["schemas"]["ResidueData"][];
             metrics: components["schemas"]["Metric"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
+            field_sources?: components["schemas"]["FieldSources"];
+        };
+        /** @description Where the values of the revision's archive-synced fields came from, keyed by JSON pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free for an archive metric). A field without a key was not typed by a depositor, so the archive sync may update it. Null for revisions stored before sources were recorded; those were imported from the archive. Read-only. */
+        FieldSources: {
+            [key: string]: components["schemas"]["FieldSource"];
+        } | null;
+        FieldSource: {
+            /**
+             * @description rcsb: the archive sync copied the value from RCSB. depositor: a user set or changed the value, and the archive sync never overwrites it.
+             * @enum {string}
+             */
+            source: "rcsb" | "depositor";
+            /** @description The PDB ID the value was read from, for archive values. */
+            accession?: string;
+            /**
+             * Format: date-time
+             * @description When the archive sync read the value.
+             */
+            retrieved_at?: string;
         };
     };
     responses: never;

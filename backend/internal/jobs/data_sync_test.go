@@ -275,7 +275,7 @@ func Test_should_fill_software_only_where_unchanged_rcsb_metric_has_none_when_sy
 	}
 
 	// when
-	fills := metricSoftwareFills(currentMetrics, desiredMetrics)
+	fills := metricSoftwareFills(currentMetrics, desiredMetrics, models.ArchiveMetricKeys)
 
 	// then
 	assert.ElementsMatch(t, []metricSoftwareFill{
@@ -311,6 +311,7 @@ func Test_should_detect_model_update_when_rcsb_fields_or_metrics_changed(t *test
 		desiredRevision,
 		currentMetrics,
 		desiredMetrics,
+		models.ArchiveMetricKeys,
 	)
 
 	// then
@@ -329,6 +330,7 @@ func Test_should_ignore_non_rcsb_metrics_when_comparing_model_update(t *testing.
 		revision,
 		currentMetrics,
 		nil,
+		models.ArchiveMetricKeys,
 	)
 
 	// then
@@ -346,7 +348,7 @@ func Test_should_detect_model_update_when_residue_data_changed(t *testing.T) {
 	}}}}
 
 	// when
-	modelChanged, metricsChanged := compareModelUpdate(currentRevision, desiredRevision, nil, nil)
+	modelChanged, metricsChanged := compareModelUpdate(currentRevision, desiredRevision, nil, nil, models.ArchiveMetricKeys)
 
 	// then
 	assert.True(t, modelChanged)
