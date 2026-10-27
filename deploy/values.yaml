@@ -105,9 +105,9 @@ mmseqsJob:
       memory: 16Gi
 
 # Hashes every artifact's bytes and copies verified external files into the bucket. It runs
-# the backend image, so it always matches the deployed API. Off until the rollout turns it on.
+# the backend image, so it always matches the deployed API.
 checksumJob:
-  enabled: false
+  enabled: true
   schedule: "0 * * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
