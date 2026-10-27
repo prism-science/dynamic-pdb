@@ -431,6 +431,50 @@ func Test_should_record_mismatch_when_declared_size_differs(t *testing.T) {
 	assert.Equal(t, models.ChecksumStatusMismatch, queue.result(t, claim.ArtifactID).Status)
 }
 
+func Test_should_log_declared_and_computed_values_when_bytes_differ(t *testing.T) {
+	cases := map[string]struct {
+		declaredSHA256    *string
+		declaredSizeBytes *int64
+		wantInLog         []string
+	}{
+		"hash and size declared": {
+			declaredSHA256:    ptr(sha256Hex("other bytes")),
+			declaredSizeBytes: ptr(int64(99)),
+			wantInLog: []string{
+				"declared_sha256=" + sha256Hex("other bytes"),
+				"computed_sha256=" + sha256Hex("abc"),
+				"declared_size_bytes=99",
+				"computed_size_bytes=3",
+			},
+		},
+		"only size declared": {
+			declaredSizeBytes: ptr(int64(4)),
+			wantInLog:         []string{"declared_sha256=none", "declared_size_bytes=4", "computed_size_bytes=3"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			files := newFakeFiles()
+			files.objects["entry-1/artifacts/a1/model.cif"] = "abc"
+			claim := claimFor(ourFilesBaseURL+"entry-1/artifacts/a1/model.cif", tc.declaredSHA256, tc.declaredSizeBytes, 1)
+			job := newTestJob(t, newFakeQueue(claim), files, nil, testJobConfig())
+			var logs bytes.Buffer
+			job.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+			// when
+			err := job.Run(context.Background())
+
+			// then
+			require.NoError(t, err)
+			for _, want := range tc.wantInLog {
+				assert.Contains(t, logs.String(), want)
+			}
+			assert.NotContains(t, logs.String(), "=0x", "a pointer address was logged instead of a value")
+		})
+	}
+}
+
 func Test_should_fail_at_once_when_stored_file_is_missing(t *testing.T) {
 	// given
 	claim := claimFor(ourFilesBaseURL+"entry-1/artifacts/a1/missing.cif", nil, nil, 1)

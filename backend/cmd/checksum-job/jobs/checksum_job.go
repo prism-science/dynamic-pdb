@@ -547,6 +547,15 @@ func matchesDeclared(claim models.ChecksumClaim, digest fileDigest) bool {
 	return true
 }
 
+// declaredValue is what a log line shows for an optional declared value: the value, or
+// "none" when the uploader declared nothing. Logging the pointer itself prints its address.
+func declaredValue[T any](value *T) any {
+	if value == nil {
+		return "none"
+	}
+	return *value
+}
+
 func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.ChecksumResult {
 	checkedAt := j.now()
 	results := make([]models.ChecksumResult, 0, len(group.claims))
@@ -565,9 +574,9 @@ func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.Ch
 			j.logger.Warn("artifact bytes differ from the declared values",
 				"artifact_id", claim.ArtifactID,
 				"uri", *group.uri,
-				"declared_sha256", claim.SHA256,
+				"declared_sha256", declaredValue(claim.SHA256),
 				"computed_sha256", digest.sha256,
-				"declared_size_bytes", claim.SizeBytes,
+				"declared_size_bytes", declaredValue(claim.SizeBytes),
 				"computed_size_bytes", digest.sizeBytes)
 		}
 		results = append(results, result)
