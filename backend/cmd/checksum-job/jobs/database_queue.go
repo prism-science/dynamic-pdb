@@ -20,12 +20,16 @@ func NewDatabaseQueue(database *db.DB) *DatabaseQueue {
 	return &DatabaseQueue{database: database}
 }
 
-func (q *DatabaseQueue) AddMissing(ctx context.Context) (int64, error) {
-	added, err := q.database.ArtifactChecksums.AddMissing(ctx)
+func (q *DatabaseQueue) AddMissingAfter(
+	ctx context.Context,
+	after uuid.UUID,
+	limit int,
+) (models.MissingChecksumsPage, error) {
+	page, err := q.database.ArtifactChecksums.AddMissingAfter(ctx, after, limit)
 	if err != nil {
-		return 0, fmt.Errorf("checksum queue: %w", err)
+		return models.MissingChecksumsPage{}, fmt.Errorf("checksum queue: %w", err)
 	}
-	return added, nil
+	return page, nil
 }
 
 func (q *DatabaseQueue) ClaimDue(

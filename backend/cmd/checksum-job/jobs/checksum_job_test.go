@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,11 +29,16 @@ const ourFilesBaseURL = "https://files.example.com/"
 
 // fakeQueue hands out its claims once each, like artifact_checksums with nothing else due.
 type fakeQueue struct {
-	mu          sync.Mutex
-	pending     []models.ChecksumClaim
-	locations   map[uuid.UUID]models.ArtifactLocation
-	results     map[uuid.UUID]models.ChecksumResult
-	addMissing  int
+	mu        sync.Mutex
+	pending   []models.ChecksumClaim
+	locations map[uuid.UUID]models.ArtifactLocation
+	results   map[uuid.UUID]models.ChecksumResult
+	// missing is the artifacts without a row, in id order; AddMissingAfter pages through them.
+	missing    []uuid.UUID
+	fillAfters []uuid.UUID
+	fillErr    error
+	// onFillPage runs inside every AddMissingAfter call, so a test can move its clock.
+	onFillPage  func()
 	claimLimits []int
 }
 
@@ -44,11 +50,28 @@ func newFakeQueue(claims ...models.ChecksumClaim) *fakeQueue {
 	}
 }
 
-func (q *fakeQueue) AddMissing(context.Context) (int64, error) {
+func (q *fakeQueue) AddMissingAfter(_ context.Context, after uuid.UUID, limit int) (models.MissingChecksumsPage, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.addMissing++
-	return 0, nil
+	q.fillAfters = append(q.fillAfters, after)
+	if q.onFillPage != nil {
+		q.onFillPage()
+	}
+	if q.fillErr != nil {
+		return models.MissingChecksumsPage{}, q.fillErr
+	}
+	page := models.MissingChecksumsPage{}
+	for _, id := range q.missing {
+		if page.Scanned == limit {
+			break
+		}
+		if id.String() > after.String() {
+			page.Scanned++
+			page.Added++
+			page.LastArtifactID = id
+		}
+	}
+	return page, nil
 }
 
 // ClaimDue takes up to limit URIs and every pending claim that shares one of them.
@@ -237,6 +260,7 @@ func testJobConfig() Config {
 		FileTimeout:        time.Minute,
 		CopyExternal:       true,
 		CopyLimitBytes:     1 << 20,
+		FillBatchSize:      100,
 	}
 }
 
@@ -251,7 +275,18 @@ func newTestJob(t *testing.T, queue *fakeQueue, files *fakeFiles, rcsb *rcsbServ
 	job, err := NewChecksumJob(queue, files, NewHTTPSource(client), cfg, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	job.now = func() time.Time { return jobTestNow }
+	job.sleep = func(context.Context, time.Duration) error { return nil }
 	return job
+}
+
+// sortedIDs is count new ids in the order PostgreSQL sorts uuids: by their lowercase text.
+func sortedIDs(count int) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, count)
+	for range count {
+		ids = append(ids, uuid.New())
+	}
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	return ids
 }
 
 func sha256Hex(content string) string {
@@ -294,7 +329,52 @@ func Test_should_record_verified_when_stored_file_matches_declared_hash_and_size
 	assert.Nil(t, result.StoredURI)
 	assert.Equal(t, jobTestNow, result.CheckedAt)
 	assert.Empty(t, files.writers)
-	assert.Equal(t, 1, queue.addMissing)
+	assert.Equal(t, []uuid.UUID{uuid.Nil}, queue.fillAfters)
+}
+
+func Test_should_add_missing_rows_page_by_page_and_pause_as_long_as_each_page_took_when_table_is_larger_than_a_page(t *testing.T) {
+	// given
+	queue := newFakeQueue()
+	queue.missing = sortedIDs(5)
+	cfg := testJobConfig()
+	cfg.FillBatchSize = 2
+	job := newTestJob(t, queue, newFakeFiles(), nil, cfg)
+	var logs bytes.Buffer
+	job.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	clock := jobTestNow
+	job.now = func() time.Time { return clock }
+	queue.onFillPage = func() { clock = clock.Add(3 * time.Second) }
+	var pauses []time.Duration
+	job.sleep = func(_ context.Context, pause time.Duration) error {
+		pauses = append(pauses, pause)
+		return nil
+	}
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{uuid.Nil, queue.missing[1], queue.missing[3]}, queue.fillAfters)
+	assert.Equal(t, []time.Duration{3 * time.Second, 3 * time.Second}, pauses)
+	assert.Contains(t, logs.String(), "added_rows=5")
+}
+
+func Test_should_stop_the_run_when_adding_missing_rows_fails(t *testing.T) {
+	// given
+	files := newFakeFiles()
+	files.objects["entry-1/artifacts/a1/model.cif"] = "data"
+	queue := newFakeQueue(claimFor(ourFilesBaseURL+"entry-1/artifacts/a1/model.cif", nil, nil, 1))
+	queue.fillErr = errors.New("canceling statement due to statement timeout")
+	job := newTestJob(t, queue, files, nil, testJobConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.ErrorIs(t, err, queue.fillErr)
+	assert.Empty(t, queue.claimLimits)
+	assert.Empty(t, queue.results)
 }
 
 func Test_should_record_computed_values_as_verified_when_nothing_was_declared(t *testing.T) {
@@ -646,6 +726,7 @@ func Test_should_reject_config_when_values_are_out_of_range(t *testing.T) {
 		"claim for":            func(cfg *Config) { cfg.ClaimFor = 0 },
 		"file timeout":         func(cfg *Config) { cfg.FileTimeout = 0 },
 		"copy limit":           func(cfg *Config) { cfg.CopyLimitBytes = 0 },
+		"fill batch size":      func(cfg *Config) { cfg.FillBatchSize = 0 },
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {

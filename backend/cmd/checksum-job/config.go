@@ -31,6 +31,7 @@ func readConfig(filename string) (config, error) {
 	v.SetDefault("checksum::file_timeout", 20*time.Minute)
 	v.SetDefault("checksum::copy_external", true)
 	v.SetDefault("checksum::copy_limit_bytes", int64(1<<30))
+	v.SetDefault("checksum::fill_batch_size", 2000)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
