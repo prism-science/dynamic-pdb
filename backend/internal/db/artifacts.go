@@ -51,33 +51,46 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 		return nil, fmt.Errorf("prepare artifact metadata: %w", err)
 	}
 
-	query := `insert into artifacts(
-			    id,
-			    name,
-			    level,
-			    type,
-			    uri,
-			    sha256,
-			    format,
-			    size_bytes,
-			    metadata,
-			    created_by,
-			    created_at
+	// The pending checksum row is inserted by the same statement, so an artifact never exists
+	// without one.
+	query := `with inserted as (
+			    insert into artifacts(
+			      id,
+			      name,
+			      level,
+			      type,
+			      uri,
+			      sha256,
+			      format,
+			      size_bytes,
+			      metadata,
+			      created_by,
+			      created_at
+			    )
+			    values (
+			      :id,
+			      :name,
+			      :level,
+			      :type,
+			      :uri,
+			      :sha256,
+			      :format,
+			      :size_bytes,
+			      cast(:metadata as jsonb),
+			      :created_by,
+			      :created_at
+			    )
+			    returning id, name, level, type, uri, sha256, format, size_bytes, metadata, created_by, created_at
+			  ), checksum as (
+			    insert into artifact_checksums(artifact_id)
+			    select id from inserted
+			    returning artifact_id, status
 			  )
-			  values (
-			    :id,
-			    :name,
-			    :level,
-			    :type,
-			    :uri,
-			    :sha256,
-			    :format,
-			    :size_bytes,
-			    cast(:metadata as jsonb),
-			    :created_by,
-			    :created_at
-			  )
-			  returning id, name, level, type, uri, sha256, format, size_bytes, metadata, created_by, created_at`
+			  select inserted.id, inserted.name, inserted.level, inserted.type, inserted.uri, inserted.sha256,
+			         inserted.format, inserted.size_bytes, inserted.metadata, inserted.created_by, inserted.created_at,
+			         checksum.status as checksum_status
+			  from inserted
+			  join checksum on checksum.artifact_id = inserted.id`
 
 	var row artifactRow
 	args := map[string]any{
@@ -246,8 +259,17 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 
 	args := map[string]any{}
 	conditions := make([]string, 0)
-	query := `select id, name, level, type, uri, sha256, format, size_bytes, metadata, created_by, created_at
-			  from artifacts`
+	// An artifact without a checksum row (created by code that predates the table) reads as
+	// pending until the checksum job adds its row.
+	query := `select artifacts.id, artifacts.name, artifacts.level, artifacts.type, artifacts.uri, artifacts.sha256,
+			         artifacts.format, artifacts.size_bytes, artifacts.metadata, artifacts.created_by, artifacts.created_at,
+			         coalesce(artifact_checksums.status, 'pending') as checksum_status,
+			         artifact_checksums.sha256 as checksum_sha256,
+			         artifact_checksums.size_bytes as checksum_size_bytes,
+			         artifact_checksums.stored_uri as checksum_stored_uri,
+			         artifact_checksums.checked_at as checksum_checked_at
+			  from artifacts
+			  left join artifact_checksums on artifact_checksums.artifact_id = artifacts.id`
 
 	if filters.EntryRevisionID != nil {
 		query += "\njoin entry_revision_artifacts on entry_revision_artifacts.artifact_id = artifacts.id"
@@ -321,6 +343,13 @@ func artifactFromRow(row *artifactRow) (*models.Artifact, error) {
 		Metadata:  metadata,
 		CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt,
+		Checksum: models.ArtifactChecksum{
+			Status:    models.ChecksumStatus(row.ChecksumStatus),
+			SHA256:    stringPtrFromSQL(row.ChecksumSHA256),
+			SizeBytes: int64PtrFromSQL(row.ChecksumSizeBytes),
+			StoredURI: stringPtrFromSQL(row.ChecksumStoredURI),
+			CheckedAt: timePtrFromSQL(row.ChecksumCheckedAt),
+		},
 	}, nil
 }
 
@@ -368,4 +397,10 @@ type artifactRow struct {
 	Metadata  []byte         `db:"metadata"`
 	CreatedBy uuid.UUID      `db:"created_by"`
 	CreatedAt time.Time      `db:"created_at"`
+
+	ChecksumStatus    string         `db:"checksum_status"`
+	ChecksumSHA256    sql.NullString `db:"checksum_sha256"`
+	ChecksumSizeBytes sql.NullInt64  `db:"checksum_size_bytes"`
+	ChecksumStoredURI sql.NullString `db:"checksum_stored_uri"`
+	ChecksumCheckedAt sql.NullTime   `db:"checksum_checked_at"`
 }

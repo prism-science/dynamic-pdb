@@ -1,0 +1,68 @@
+{{- if .Values.checksumJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dynamic-pdb.checksumJobName" . }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.checksumJob.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.checksumJob.schedule | quote }}
+  {{- if .Values.checksumJob.timeZone }}
+  timeZone: {{ .Values.checksumJob.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.checksumJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.checksumJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.checksumJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.checksumJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.checksumJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "dynamic-pdb.labels" . | nindent 12 }}
+            {{- include "dynamic-pdb.checksumJob.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: checksum-job
+              image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+              imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+              command: ["/app/checksum-job"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "dynamic-pdb.s3SecretName" . }}
+              env:
+                - name: DYNAMIC_PDB_ENV
+                  value: {{ .Values.backend.configProfile | quote }}
+                - name: DYNAMIC_PDB_DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: host
+                - name: DYNAMIC_PDB_DB_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: port
+                - name: DYNAMIC_PDB_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: database
+                - name: DYNAMIC_PDB_DB_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: username
+                - name: DYNAMIC_PDB_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: password
+                - name: DYNAMIC_PDB_CHECKSUM_MAX_FILES_PER_RUN
+                  value: {{ .Values.checksumJob.maxFilesPerRun | quote }}
+              resources:
+                {{- toYaml .Values.checksumJob.resources | nindent 16 }}
+{{- end }}

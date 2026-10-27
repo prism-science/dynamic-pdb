@@ -81,10 +81,16 @@ func (e *invalidFileUploadError) Is(target error) bool {
 }
 
 type service struct {
+	objectURLs
 	bucket            s3.Bucket
 	uploadMaxFileSize int64
-	bucketBaseURL     *url.URL
-	publicBaseURL     *url.URL
+}
+
+// objectURLs maps between object keys and the URLs artifacts store: the CloudFront URL when
+// one is configured, otherwise the bucket URL.
+type objectURLs struct {
+	bucketBaseURL *url.URL
+	publicBaseURL *url.URL
 }
 
 var _ Service = (*service)(nil)
@@ -97,6 +103,18 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 		return nil, errors.New("cdn: upload max file size must be positive")
 	}
 
+	urls, err := newObjectURLs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &service{
+		objectURLs:        urls,
+		bucket:            bucket,
+		uploadMaxFileSize: cfg.S3.UploadMaxFileSize,
+	}, nil
+}
+
+func newObjectURLs(cfg Config) (objectURLs, error) {
 	publicBaseURL := strings.TrimSpace(cfg.CloudFront.BaseURL)
 	if publicBaseURL == "" {
 		// Without CloudFront the artifact URI is the bucket URL; if the bucket is
@@ -105,28 +123,18 @@ func NewService(bucket s3.Bucket, cfg Config) (Service, error) {
 		if err != nil {
 			bucketBaseURL = nil
 		}
-		return &service{
-			bucket:            bucket,
-			uploadMaxFileSize: cfg.S3.UploadMaxFileSize,
-			bucketBaseURL:     bucketBaseURL,
-		}, nil
+		return objectURLs{bucketBaseURL: bucketBaseURL}, nil
 	}
 
 	parsedPublicBaseURL, err := parseBaseURL("CloudFront base URL", publicBaseURL)
 	if err != nil {
-		return nil, err
+		return objectURLs{}, err
 	}
 	bucketBaseURL, err := expectedBucketBaseURL(cfg.S3)
 	if err != nil {
-		return nil, err
+		return objectURLs{}, err
 	}
-
-	return &service{
-		bucket:            bucket,
-		uploadMaxFileSize: cfg.S3.UploadMaxFileSize,
-		bucketBaseURL:     bucketBaseURL,
-		publicBaseURL:     parsedPublicBaseURL,
-	}, nil
+	return objectURLs{bucketBaseURL: bucketBaseURL, publicBaseURL: parsedPublicBaseURL}, nil
 }
 
 func (s *service) CreateUpload(ctx context.Context, file FileUpload) (UploadGrant, error) {
@@ -251,7 +259,7 @@ func (s *service) AbortUpload(ctx context.Context, key, uploadID string) error {
 	return nil
 }
 
-func (s *service) publicObjectURL(bucketObjectURL string) (string, error) {
+func (s objectURLs) publicObjectURL(bucketObjectURL string) (string, error) {
 	if s.publicBaseURL == nil {
 		return bucketObjectURL, nil
 	}
@@ -382,7 +390,7 @@ func (s *service) ReadArtifactHead(ctx context.Context, artifactID string, objec
 }
 
 // keyFromObjectURL maps a public (CloudFront) or bucket object URL back to its S3 key.
-func (s *service) keyFromObjectURL(objectURL string) (string, error) {
+func (s objectURLs) keyFromObjectURL(objectURL string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(objectURL))
 	if err != nil {
 		return "", fmt.Errorf("parse object URL: %w: %w", err, ErrInvalidObjectURL)

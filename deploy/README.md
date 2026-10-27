@@ -1,7 +1,8 @@
 # dynamic-pdb deployment
 
 This chart deploys the Dynamic PDB backend, website, Flyway migrations, the S3
-proxy that serves CLI release artifacts, and the MMseqs similarity job.
+proxy that serves CLI release artifacts, the MMseqs similarity job, and the
+artifact checksum job.
 
 ## Environments and secrets
 
@@ -115,4 +116,27 @@ bucket and read-only credentials. Users can install with:
 
 ```sh
 curl -fsSL https://dynamicpdb.com/install.sh | bash
+```
+
+## Checksum job
+
+The checksum job computes the sha256 and size of every artifact's bytes and records the
+result in `artifact_checksums`: `verified`, `mismatch` or `failed`. It keeps a copy of each
+verified external file (such as an RCSB file) of up to 1 GiB in the data bucket. It runs
+`/app/checksum-job` from the backend image, so it needs no image of its own, and it uses the
+backend's database and `-s3-data` secrets.
+
+It is off by default. Each hourly run stops claiming files after 50 minutes and is stopped
+after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap):
+
+```yaml
+checksumJob:
+  enabled: true
+  maxFilesPerRun: 1000
+```
+
+To run it manually:
+
+```sh
+kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-checksum-job dynamic-pdb-checksum-job-manual-$(date +%s)
 ```

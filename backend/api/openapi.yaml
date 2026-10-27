@@ -3746,7 +3746,7 @@ components:
 
     ArtifactAttributes:
       type: object
-      required: [id, name, level, type, metadata, created_by, created_at]
+      required: [id, name, level, type, metadata, created_by, created_at, checksum]
       properties:
         id:
           type: string
@@ -3778,6 +3778,52 @@ components:
         created_at:
           type: string
           format: date-time
+        checksum:
+          $ref: "#/components/schemas/ArtifactChecksum"
+
+    ArtifactChecksum:
+      type: object
+      description: >-
+        What the checksum job computed from the file's bytes. The artifact's own sha256 and
+        size_bytes are the values the uploader declared. Read-only.
+      required: [status, sha256, size_bytes, stored_uri, checked_at]
+      properties:
+        status:
+          $ref: "#/components/schemas/ArtifactChecksumStatus"
+        sha256:
+          type: string
+          nullable: true
+          description: The sha256 of the bytes, set once they were read.
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: The size of the bytes, set once they were read.
+        stored_uri:
+          type: string
+          nullable: true
+          description: >-
+            Our copy of an external file, kept only when the bytes match the declared sha256
+            and size. Empty for files uploaded to our storage, whose uri already points there.
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ArtifactChecksumStatus:
+      type: string
+      description: >-
+        pending: not checked yet, or waiting for a retry. verified: the bytes match the
+        declared sha256 and size, or nothing was declared. mismatch: the declared sha256 or
+        size differs. failed: the bytes could not be read.
+      enum: [pending, verified, mismatch, failed]
+      x-enum-varnames:
+        [
+          ArtifactChecksumStatusPending,
+          ArtifactChecksumStatusVerified,
+          ArtifactChecksumStatusMismatch,
+          ArtifactChecksumStatusFailed,
+        ]
 
     CreateRunRequest:
       type: object

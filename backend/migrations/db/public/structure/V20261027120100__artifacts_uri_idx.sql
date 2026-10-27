@@ -1,0 +1,12 @@
+-- The checksum job hashes each URI once and records the result on every artifact with that
+-- URI, so it looks artifacts up by uri. A hash index serves those equality lookups and has no
+-- entry size limit, so a long client-sent uri cannot make an artifact insert fail.
+--
+-- CONCURRENTLY: takes only SHARE UPDATE EXCLUSIVE, so reads and writes continue. It waits for
+-- older transactions to finish, so no lock_timeout is set here. It cannot run in a transaction
+-- (executeInTransaction=false), so a failure or interruption is not rolled back: Flyway records
+-- the migration as failed and may leave an INVALID index. Recover with:
+--   1. DROP INDEX CONCURRENTLY IF EXISTS artifacts_uri_idx;
+--   2. flyway repair
+--   3. flyway migrate
+CREATE INDEX CONCURRENTLY artifacts_uri_idx ON artifacts USING hash (uri);

@@ -317,6 +317,12 @@ type backendProcess struct {
 
 func startBackend(t *testing.T, root string, binaryPath string, s3URL string) backendProcess {
 	t.Helper()
+	return startBackendWithEnv(t, root, binaryPath, s3URL, nil)
+}
+
+// startBackendWithEnv starts the backend with extraEnv after the defaults, so it can override them.
+func startBackendWithEnv(t *testing.T, root string, binaryPath string, s3URL string, extraEnv []string) backendProcess {
+	t.Helper()
 	addr := freeAddress(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cmd := exec.CommandContext(ctx, binaryPath)
@@ -331,6 +337,7 @@ func startBackend(t *testing.T, root string, binaryPath string, s3URL string) ba
 		"DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY=secret",
 		"AWS_EC2_METADATA_DISABLED=true",
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -437,6 +444,17 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeXML(w, `<CompleteMultipartUploadResult></CompleteMultipartUploadResult>`)
+	case r.Method == http.MethodGet:
+		s.mu.Lock()
+		body, found := s.bodies[r.URL.Path]
+		s.mu.Unlock()
+		if !found {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusNotFound)
+			writeBody(w, `<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>`)
+			return
+		}
+		writeBody(w, string(body))
 	default:
 		http.NotFound(w, r)
 	}
@@ -1090,6 +1108,14 @@ func writeText(w http.ResponseWriter, text string) {
 	_, err := fmt.Fprint(w, text)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// writeBody writes a stub response body after the status is sent; a failed write can only end
+// the response.
+func writeBody(w http.ResponseWriter, text string) {
+	if _, err := io.WriteString(w, text); err != nil {
+		panic(http.ErrAbortHandler)
 	}
 }
 

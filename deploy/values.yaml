@@ -104,6 +104,28 @@ mmseqsJob:
       cpu: "4"
       memory: 16Gi
 
+# Hashes every artifact's bytes and copies verified external files into the bucket. It runs
+# the backend image, so it always matches the deployed API. Off until the rollout turns it on.
+checksumJob:
+  enabled: false
+  schedule: "0 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  backoffLimit: 0
+  # The job stops claiming files after 50 minutes; this ends a run before the next one starts.
+  activeDeadlineSeconds: 3300
+  # Caps the files one run checks; 0 means no cap.
+  maxFilesPerRun: 1000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
 ingress:
   className: traefik
   annotations:

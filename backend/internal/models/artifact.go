@@ -46,6 +46,7 @@ type Artifact struct {
 	Metadata  any
 	CreatedBy uuid.UUID
 	CreatedAt time.Time
+	Checksum  ArtifactChecksum
 }
 
 type FASTAMetadata struct {
