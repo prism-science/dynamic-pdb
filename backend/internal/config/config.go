@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -32,15 +33,36 @@ type ServerConfig struct {
 	RateLimit     RateLimitConfig `mapstructure:"rate_limit"`
 }
 
-// RateLimitConfig caps how many requests one client IP may send per window on each server instance.
+// RateLimitConfig caps how many requests one client may send per window on each server instance.
 type RateLimitConfig struct {
+	// Requests caps each client that reaches the server through the load balancer and ingress.
 	Requests int           `mapstructure:"requests"`
 	Window   time.Duration `mapstructure:"window"`
+	// InternalRequests caps each in-cluster caller, such as a website pod, that calls the
+	// server directly instead of through the ingress.
+	InternalRequests int `mapstructure:"internal_requests"`
+	// TrustedProxies are the CIDRs of the load balancer, ingress and node addresses in front of
+	// the server. Only X-Forwarded-For entries added by them are believed. Empty trusts none.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
+}
+
+// TrustedProxyPrefixes parses TrustedProxies.
+func (c RateLimitConfig) TrustedProxyPrefixes() ([]netip.Prefix, error) {
+	prefixes := make([]netip.Prefix, 0, len(c.TrustedProxies))
+	for _, value := range c.TrustedProxies {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("parse trusted proxy CIDR: %w", err)
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes, nil
 }
 
 const (
-	defaultRateLimitRequests = 100
-	defaultRateLimitWindow   = 10 * time.Second
+	defaultRateLimitRequests         = 100
+	defaultRateLimitWindow           = 10 * time.Second
+	defaultRateLimitInternalRequests = 1000
 )
 
 func ReadFromFile(filename string) (Config, error) {
@@ -50,6 +72,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.AutomaticEnv()
 	v.SetDefault("server::rate_limit::requests", defaultRateLimitRequests)
 	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
+	v.SetDefault("server::rate_limit::internal_requests", defaultRateLimitInternalRequests)
 	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
@@ -94,6 +117,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.Server.RateLimit.Window <= 0 {
 		return fmt.Errorf("server.rate_limit.window must be positive")
+	}
+	if cfg.Server.RateLimit.InternalRequests <= 0 {
+		return fmt.Errorf("server.rate_limit.internal_requests must be positive")
+	}
+	if _, err := cfg.Server.RateLimit.TrustedProxyPrefixes(); err != nil {
+		return fmt.Errorf("server.rate_limit.trusted_proxies: %w", err)
 	}
 	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
 		return fmt.Errorf("server.public_base_url: %w", err)

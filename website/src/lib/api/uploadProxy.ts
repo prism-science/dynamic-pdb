@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { getApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
+import { getServerApiBaseUrl, jsonApiMediaType } from "@/lib/api/baseUrl";
 import {
   backendWriteTimeoutMs,
   FetchTimeoutError,
@@ -43,7 +43,7 @@ export async function proxyUploadControlRequest(
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      `${getApiBaseUrl().replace(/\/+$/, "")}${backendPath}`,
+      `${getServerApiBaseUrl().replace(/\/+$/, "")}${backendPath}`,
       {
         method: request.method,
         cache: "no-store",

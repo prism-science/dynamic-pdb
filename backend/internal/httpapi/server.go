@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
 	"dynamic-pdb/backend/internal/auth"
@@ -46,20 +44,6 @@ type Server struct {
 	// extractionTimeout is the longest one extraction may spend parsing; see
 	// WithExtractionTimeout.
 	extractionTimeout time.Duration
-}
-
-func GlobalRateLimitMiddleware(env string, requests int, window time.Duration) func(http.Handler) http.Handler {
-	resolveClientIP := middleware.ClientIPFromRemoteAddr
-	if env == "production" || env == "dev" {
-		resolveClientIP = middleware.ClientIPFromXFFTrustedProxies(2)
-	}
-
-	limitRequests := httprate.LimitBy(requests, window, func(r *http.Request) (string, error) {
-		return httprate.CanonicalizeIP(middleware.GetClientIP(r.Context())), nil
-	})
-	return func(next http.Handler) http.Handler {
-		return resolveClientIP(limitRequests(next))
-	}
 }
 
 func NewServer(
