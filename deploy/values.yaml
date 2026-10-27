@@ -105,9 +105,10 @@ mmseqsJob:
       memory: 16Gi
 
 # Hashes every artifact's bytes and copies verified external files into the bucket. It runs
-# the backend image, so it always matches the deployed API.
+# the backend image, so it always matches the deployed API. Paused after prod's database stalled
+# on WAL writes at 22:04 UTC on 2026-10-27; turn it back on once the RDS metrics are understood.
 checksumJob:
-  enabled: true
+  enabled: false
   schedule: "0 * * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
