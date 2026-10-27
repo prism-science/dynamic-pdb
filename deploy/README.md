@@ -126,8 +126,10 @@ verified external file (such as an RCSB file) of up to 1 GiB in the data bucket.
 `/app/checksum-job` from the backend image, so it needs no image of its own, and it uses the
 backend's database and `-s3-data` secrets.
 
-It is off by default. Each hourly run stops claiming files after 50 minutes and is stopped
-after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap):
+It runs in both environments. Each hourly run stops claiming files after 50 minutes and is
+stopped after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap). The
+rollout starts with a cap of 1000; set it to `0` once the first runs and the S3 bill look
+right:
 
 ```yaml
 checksumJob:
