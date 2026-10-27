@@ -130,7 +130,8 @@ The job's database statements may run for `statementTimeout` (5 minutes) instead
 backend's 10 seconds. The first run adds a pending row for each of prod's ~568,000 artifacts
 in one statement, and that took longer than 10 seconds on prod.
 
-It runs in both environments. Each hourly run stops claiming files after 50 minutes and is
+It is off until the first-run fill is split into batches: as one statement it ran over 5
+minutes on prod and slowed the API. Each hourly run stops claiming files after 50 minutes and is
 stopped after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap). The
 rollout starts with a cap of 1000; set it to `0` once the first runs and the S3 bill look
 right:

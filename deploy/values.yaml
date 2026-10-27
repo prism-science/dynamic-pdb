@@ -105,9 +105,10 @@ mmseqsJob:
       memory: 16Gi
 
 # Hashes every artifact's bytes and copies verified external files into the bucket. It runs
-# the backend image, so it always matches the deployed API.
+# the backend image, so it always matches the deployed API. Off until its first-run fill is split
+# into batches: as one statement it ran over 5 minutes on prod and slowed the API.
 checksumJob:
-  enabled: true
+  enabled: false
   schedule: "0 * * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
