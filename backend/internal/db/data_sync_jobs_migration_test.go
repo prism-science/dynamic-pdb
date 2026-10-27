@@ -62,3 +62,18 @@ func Test_should_reject_half_recorded_version_or_stop_when_jobs_are_migrated(t *
 	require.Error(t, stopErr)
 	assert.Contains(t, stopErr.Error(), "data_sync_jobs_stop_check")
 }
+
+func Test_should_validate_both_job_checks_when_jobs_are_migrated(t *testing.T) {
+	// given
+	fixture := newMigratedFixtureWithExtraSeed(t, joblessArchiveEntriesSeed)
+
+	// when
+	var validated []string
+	require.NoError(t, fixture.database.Select(&validated,
+		`select conname from pg_constraint
+		 where conrelid = 'data_sync_jobs'::regclass and contype = 'c' and convalidated
+		 order by conname`))
+
+	// then
+	assert.Equal(t, []string{"data_sync_jobs_archive_version_check", "data_sync_jobs_stop_check"}, validated)
+}

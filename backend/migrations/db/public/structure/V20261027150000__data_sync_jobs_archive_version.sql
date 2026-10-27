@@ -7,9 +7,11 @@
 -- A job also stops for good when RCSB obsoletes or never released its entry, instead of being
 -- deleted, so the reason stays visible.
 --
--- The new columns are nullable with no default. The two CHECK constraints scan the table once
--- (about 146,000 rows in production) while ADD COLUMN holds ACCESS EXCLUSIVE; lock_timeout makes
--- the migration fail cleanly (nothing applied, rerun it) instead of queueing behind the sync.
+-- The new columns are nullable with no default, so ADD COLUMN changes only the catalog. The two
+-- CHECK constraints are NOT VALID, so adding them scans nothing; they apply to every row written
+-- from now on, and the next migration validates the existing rows without blocking writes. ALTER
+-- TABLE takes ACCESS EXCLUSIVE for milliseconds; lock_timeout makes the migration fail cleanly
+-- (nothing applied, rerun it) instead of queueing behind the sync.
 SET LOCAL lock_timeout = '5s';
 
 ALTER TABLE data_sync_jobs
@@ -19,9 +21,9 @@ ALTER TABLE data_sync_jobs
     ADD COLUMN stopped_at timestamptz,
     ADD COLUMN stop_reason text,
     ADD CONSTRAINT data_sync_jobs_archive_version_check
-        CHECK ((archive_revision_ordinal IS NULL) = (archive_version IS NULL)),
+        CHECK ((archive_revision_ordinal IS NULL) = (archive_version IS NULL)) NOT VALID,
     ADD CONSTRAINT data_sync_jobs_stop_check
-        CHECK ((stopped_at IS NULL) = (stop_reason IS NULL));
+        CHECK ((stopped_at IS NULL) = (stop_reason IS NULL)) NOT VALID;
 
 -- The sync used to delete a job when RCSB answered 404, so archive entries that RCSB obsoleted
 -- lost their job and show stale data with no label (28 entries in production, all obsolete at
