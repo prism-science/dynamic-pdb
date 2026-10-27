@@ -1526,7 +1526,12 @@ func artifactAttributesFromModel(artifact domainmodels.Artifact) (ArtifactAttrib
 	}
 	return ArtifactAttributes{Id: artifact.ID, Name: artifact.Name, Level: ArtifactLevel(artifact.Level), Type: ArtifactType(artifact.Type), Uri: artifact.URI,
 		Sha256: artifact.SHA256, Format: artifact.Format, SizeBytes: artifact.SizeBytes, Metadata: metadata,
-		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt}, nil
+		CreatedBy: artifact.CreatedBy, CreatedAt: artifact.CreatedAt, Checksum: artifactChecksumFromModel(artifact.Checksum)}, nil
+}
+
+func artifactChecksumFromModel(checksum domainmodels.ArtifactChecksum) ArtifactChecksum {
+	return ArtifactChecksum{Status: ArtifactChecksumStatus(checksum.Status), Sha256: checksum.SHA256,
+		SizeBytes: checksum.SizeBytes, StoredUri: checksum.StoredURI, CheckedAt: checksum.CheckedAt}
 }
 
 type artifactAttachmentScope string

@@ -22,6 +22,10 @@
 {{- printf "%s-mmseqs-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "dynamic-pdb.checksumJobName" -}}
+{{- printf "%s-checksum-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "dynamic-pdb.mmseqsCacheName" -}}
 {{- printf "%s-mmseqs-cache" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -69,4 +73,9 @@ app.kubernetes.io/component: s3proxy
 {{- define "dynamic-pdb.mmseqsJob.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "dynamic-pdb.mmseqsJobName" . }}
 app.kubernetes.io/component: mmseqs-job
+{{- end -}}
+
+{{- define "dynamic-pdb.checksumJob.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "dynamic-pdb.checksumJobName" . }}
+app.kubernetes.io/component: checksum-job
 {{- end -}}

@@ -1428,7 +1428,28 @@ export interface components {
             created_by: string;
             /** Format: date-time */
             created_at: string;
+            checksum: components["schemas"]["ArtifactChecksum"];
         };
+        /** @description What the checksum job computed from the file's bytes. The artifact's own sha256 and size_bytes are the values the uploader declared. Read-only. */
+        ArtifactChecksum: {
+            status: components["schemas"]["ArtifactChecksumStatus"];
+            /** @description The sha256 of the bytes, set once they were read. */
+            sha256: string | null;
+            /**
+             * Format: int64
+             * @description The size of the bytes, set once they were read.
+             */
+            size_bytes: number | null;
+            /** @description Our copy of an external file, kept only when the bytes match the declared sha256 and size. Empty for files uploaded to our storage, whose uri already points there. */
+            stored_uri: string | null;
+            /** Format: date-time */
+            checked_at: string | null;
+        };
+        /**
+         * @description pending: not checked yet, or waiting for a retry. verified: the bytes match the declared sha256 and size, or nothing was declared. mismatch: the declared sha256 or size differs. failed: the bytes could not be read.
+         * @enum {string}
+         */
+        ArtifactChecksumStatus: "pending" | "verified" | "mismatch" | "failed";
         CreateRunRequest: {
             /** Format: uuid */
             id: string;

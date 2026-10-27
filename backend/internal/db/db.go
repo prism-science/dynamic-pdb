@@ -21,6 +21,7 @@ type DB struct {
 	EntrySearch                 *EntrySearchIndexRepository
 	Models                      *ModelsRepository
 	Artifacts                   *ArtifactsRepository
+	ArtifactChecksums           *ArtifactChecksumsRepository
 	Metrics                     *MetricsRepository
 	Runs                        *RunsRepository
 	ProteinSequences            *ProteinSequencesRepository
@@ -88,6 +89,7 @@ func NewDB(cfg Config) (*DB, error) {
 		EntrySearch:                 NewEntrySearchIndexRepository(sqlxDB, queriers),
 		Models:                      NewModelsRepository(sqlxDB, queriers),
 		Artifacts:                   NewArtifactsRepository(sqlxDB, queriers),
+		ArtifactChecksums:           NewArtifactChecksumsRepository(sqlxDB, queriers),
 		Metrics:                     NewMetricsRepository(sqlxDB, queriers),
 		Runs:                        NewRunsRepository(sqlxDB, queriers),
 		ProteinSequences:            NewProteinSequencesRepository(sqlxDB, queriers),
