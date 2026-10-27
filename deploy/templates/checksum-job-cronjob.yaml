@@ -61,6 +61,8 @@ spec:
                     secretKeyRef:
                       name: {{ include "dynamic-pdb.dbSecretName" . }}
                       key: password
+                - name: DYNAMIC_PDB_DB_STATEMENT_TIMEOUT
+                  value: {{ .Values.checksumJob.statementTimeout | quote }}
                 - name: DYNAMIC_PDB_CHECKSUM_MAX_FILES_PER_RUN
                   value: {{ .Values.checksumJob.maxFilesPerRun | quote }}
               resources:
