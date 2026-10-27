@@ -157,7 +157,7 @@ func Test_should_fill_metric_software_without_new_revision_when_sync_finds_same_
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
 	pdbID := integrationPDBID()
-	fixture := seedScheduledDataSyncModel(t, database, auth.UserID, pdbID)
+	fixture := seedScheduledDataSyncModel(t, database, auth.UserID, pdbID, "Deposited")
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	rcsb := newRCSBStub(t, pdbID)
@@ -245,7 +245,7 @@ func Test_should_update_model_when_data_sync_job_is_scheduled(t *testing.T) {
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
 	pdbID := integrationPDBID()
-	fixture := seedScheduledDataSyncModel(t, database, auth.UserID, pdbID)
+	fixture := seedScheduledDataSyncModel(t, database, auth.UserID, pdbID, "Deposited")
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	rcsb := newRCSBStub(t, pdbID)
@@ -290,7 +290,7 @@ func Test_should_update_model_when_data_sync_job_is_scheduled(t *testing.T) {
 	assert.InDelta(t, 0.18, model.Metadata["unmodeled_fraction"], 0.000001)
 	assert.Equal(t, []any{"ATP"}, model.Metadata["ligands"])
 	assert.Equal(t, "Refinement", model.Metadata["purpose"])
-	assert.Equal(t, "Single Conformer", model.Metadata["model_type"])
+	assert.Equal(t, "Deposited", model.Metadata["model_type"])
 	externalRefs := model.Metadata["external_refs"].(map[string]any)
 	assert.Equal(t, pdbID, externalRefs["pdb"])
 	assertMetric(t, model.Metrics, "r_free", 0.21)
@@ -441,7 +441,8 @@ func seedScheduledDataSyncEntry(
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),
-		`insert into data_sync_jobs(entry_id, model_id, scheduled_at) values ($1, null, $2)`,
+		`insert into data_sync_jobs(entry_id, model_id, scheduled_at, archive_revision_ordinal, archive_version)
+		 values ($1, null, $2, 1, '1.0')`,
 		entryID,
 		now.Add(-time.Hour),
 	)
@@ -468,6 +469,7 @@ func seedScheduledDataSyncModel(
 	database integrationDB,
 	createdBy string,
 	pdbID string,
+	modelType string,
 ) scheduledDataSyncModel {
 	t.Helper()
 	entryID := "entry-" + uuid.NewString()
@@ -483,8 +485,9 @@ func seedScheduledDataSyncModel(
 	artifactName := strings.ToLower(pdbID) + ".cif"
 	now := time.Now().UTC()
 	modelMetadata := fmt.Sprintf(
-		`{"external_refs":{"pdb":%q},"purpose":"Refinement","model_type":"Single Conformer","atom_count":1}`,
+		`{"external_refs":{"pdb":%q},"purpose":"Refinement","model_type":%q,"atom_count":1}`,
 		pdbID,
+		modelType,
 	)
 
 	transaction, err := database.Conn.BeginTx(t.Context(), nil)
@@ -608,7 +611,8 @@ func seedScheduledDataSyncModel(
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),
-		`insert into data_sync_jobs(entry_id, model_id, scheduled_at) values ($1, $2, $3)`,
+		`insert into data_sync_jobs(entry_id, model_id, scheduled_at, archive_revision_ordinal, archive_version)
+		 values ($1, $2, $3, 1, '1.0')`,
 		entryID,
 		modelID,
 		now.Add(-time.Hour),

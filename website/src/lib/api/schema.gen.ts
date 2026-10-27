@@ -1211,6 +1211,27 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             polymer_entities: components["schemas"]["PolymerEntity"][];
+            archive_status?: components["schemas"]["EntryArchiveStatus"];
+        };
+        /** @description Present when the PDB archive no longer serves the entry's PDB entry. Only the archive sync sets it; the entry stays visible. Read-only. */
+        EntryArchiveStatus: {
+            /**
+             * @description obsolete: the archive obsoleted the entry, usually replacing it.
+             * @enum {string}
+             */
+            state: "obsolete";
+            /**
+             * Format: date-time
+             * @description When the archive obsoleted the entry.
+             */
+            obsoleted_at?: string;
+            /** @description The archive entries that replaced it; empty when the archive names none. */
+            superseded_by: components["schemas"]["EntrySuccessor"][];
+        };
+        EntrySuccessor: {
+            pdb_id: string;
+            /** @description The registry entry for this PDB ID, when the registry has one. */
+            entry_id?: string;
         };
         PolymerEntity: {
             /** Format: uuid */
@@ -1704,6 +1725,7 @@ export interface components {
             thumbnail_image_url?: string | null;
             protein_sequences: components["schemas"]["ProteinSequence"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
+            field_sources?: components["schemas"]["FieldSources"];
         };
         ModelRevisionAttributes: components["schemas"]["ModelRevisionSummaryAttributes"] & {
             thumbnail_image_url?: string | null;
@@ -1713,6 +1735,27 @@ export interface components {
             residue_data: components["schemas"]["ResidueData"][];
             metrics: components["schemas"]["Metric"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
+            field_sources?: components["schemas"]["FieldSources"];
+        };
+        /** @description Where the values of the revision's archive-synced fields came from, keyed by JSON pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free for an archive metric). A field without a key was not typed by a depositor, so the archive sync may update it. Null for revisions stored before sources were recorded; those were imported from the archive. Read-only. */
+        FieldSources: {
+            [key: string]: components["schemas"]["FieldSource"];
+        } | null;
+        FieldSource: {
+            /**
+             * @description rcsb: the archive sync copied the value from RCSB. depositor: a user set or changed the value, and the archive sync never overwrites it.
+             * @enum {string}
+             */
+            source: "rcsb" | "depositor";
+            /** @description The PDB ID the value was read from, for archive values. */
+            accession?: string;
+            /** @description The archive version the value was read from, such as 4.3, for archive values. */
+            release?: string;
+            /**
+             * Format: date-time
+             * @description When the archive sync read the value.
+             */
+            retrieved_at?: string;
         };
     };
     responses: never;

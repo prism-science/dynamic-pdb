@@ -212,7 +212,7 @@ func (s *Server) createInitialEntryRevision(
 			return fmt.Errorf("validate initial entry PDB reference: %w", err)
 		}
 
-		revision, err := s.database.Entries.Create(ctx, domainmodels.EntryRevision{
+		initialRevision := domainmodels.EntryRevision{
 			ID:                uuid.New(),
 			EntryID:           entryID,
 			State:             domainmodels.RevisionStateInReview,
@@ -223,7 +223,9 @@ func (s *Server) createInitialEntryRevision(
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
-		})
+		}
+		initialRevision.FieldSources = domainmodels.EntryRevisionFieldSources(nil, initialRevision)
+		revision, err := s.database.Entries.Create(ctx, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
 		}
@@ -474,7 +476,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 		if err != nil {
 			return fmt.Errorf("create model artifacts: %w", err)
 		}
-		revision, err := s.database.Models.Create(ctx, entryID, domainmodels.ModelRevision{
+		initialRevision := domainmodels.ModelRevision{
 			ID:                uuid.New(),
 			ModelID:           modelID,
 			PrimaryArtifactID: data.PrimaryArtifactId,
@@ -487,7 +489,11 @@ func (s *Server) createInitialModelRevisionForEntry(
 			CreatedBy:         createdBy,
 			CreatedAt:         now,
 			UpdatedAt:         now,
-		})
+		}
+		initialRevision.FieldSources = domainmodels.ModelRevisionFieldSources(
+			nil, nil, initialRevision, metricsFromRequests(data.Metrics),
+		)
+		revision, err := s.database.Models.Create(ctx, entryID, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
 		}
@@ -693,6 +699,11 @@ func (s *Server) createModelRevisionGraph(
 			}
 			revision.Metadata = metadata
 		}
+		fieldSources, err := s.modelRevisionFieldSources(ctx, *base, revision, data.Metrics)
+		if err != nil {
+			return fmt.Errorf("record model revision field sources: %w", err)
+		}
+		revision.FieldSources = fieldSources
 		created, err := s.database.Models.Create(ctx, entryID, revision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
@@ -717,6 +728,24 @@ func (s *Server) createModelRevisionGraph(
 		return CreateModelRevisionAttributes{}, fmt.Errorf("create model revision graph: %w", err)
 	}
 	return attributes, nil
+}
+
+// modelRevisionFieldSources marks the fields of a user's model revision that differ from base as
+// the depositor's. Base's metrics are read only when the request replaces the metrics.
+func (s *Server) modelRevisionFieldSources(
+	ctx context.Context,
+	base domainmodels.ModelRevision,
+	revision domainmodels.ModelRevision,
+	metrics *[]CreateMetricRequest,
+) (domainmodels.FieldSources, error) {
+	if metrics == nil {
+		return domainmodels.ModelRevisionFieldSources(&base, nil, revision, nil), nil
+	}
+	baseMetrics, err := s.database.Metrics.List(ctx, db.MetricFilters{ModelRevisionID: &base.ID})
+	if err != nil {
+		return nil, fmt.Errorf("list base model revision metrics: %w", err)
+	}
+	return domainmodels.ModelRevisionFieldSources(&base, baseMetrics, revision, metricsFromRequests(metrics)), nil
 }
 
 func (s *Server) activeModelRevisionForMutation(
@@ -877,6 +906,12 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
+	archiveStatus, err := s.entryArchiveStatus(r.Context(), revision.Metadata.ArchiveStatus)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build entry archive status failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
 	included := make([]EntryProteinSequenceData, 0, len(sequences))
 	sequenceIdentifiers := make([]EntryProteinSequenceIdentifier, 0, len(sequences))
 	for _, sequence := range sequences {
@@ -919,6 +954,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
 				PolymerEntities:   polymerEntitiesFromModels(polymerEntities),
+				ArchiveStatus:     archiveStatus,
 			},
 			Relationships: EntryRelationships{
 				CreatedBy: EntryCreatedByRelationship{
@@ -1796,6 +1832,62 @@ func (s *Server) activeEntryRevision(ctx context.Context, entryID string) (*doma
 		return nil, fmt.Errorf("get active entry revision: %w", err)
 	}
 	return revision, nil
+}
+
+// entryArchiveStatus returns an entry's archive status for a response, with the registry entry of
+// each successor the registry holds, or nil while the archive still serves the entry.
+func (s *Server) entryArchiveStatus(
+	ctx context.Context,
+	status *domainmodels.EntryArchiveStatus,
+) (*EntryArchiveStatus, error) {
+	if status == nil || len(status.SupersededBy) == 0 {
+		return entryArchiveStatusFromModel(status, nil)
+	}
+	successors, err := s.database.Entries.List(ctx, db.EntryRevisionFilters{
+		PDBIDs:     status.SupersededBy,
+		State:      new(domainmodels.RevisionStateActive),
+		EntryState: new(domainmodels.EntryStateActive),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list successor entries: %w", err)
+	}
+	registryEntries := make(map[string]string, len(successors))
+	for _, successor := range successors {
+		pdbID := strings.ToUpper(strings.TrimSpace(successor.Metadata.ExternalRefs[domainmodels.EntrySourcePDB]))
+		registryEntries[pdbID] = successor.EntryID
+	}
+	return entryArchiveStatusFromModel(status, registryEntries)
+}
+
+// entryArchiveStatusFromModel converts an entry's archive status. registryEntries maps upper-case
+// PDB IDs to the registry entries that hold them.
+func entryArchiveStatusFromModel(
+	status *domainmodels.EntryArchiveStatus,
+	registryEntries map[string]string,
+) (*EntryArchiveStatus, error) {
+	if status == nil {
+		return nil, nil
+	}
+	var state EntryArchiveStatusState
+	switch status.State {
+	case domainmodels.EntryArchiveStateObsolete:
+		state = EntryArchiveStatusStateObsolete
+	default:
+		return nil, fmt.Errorf("unknown entry archive state: %s", status.State)
+	}
+	successors := make([]EntrySuccessor, 0, len(status.SupersededBy))
+	for _, pdbID := range status.SupersededBy {
+		successor := EntrySuccessor{PdbId: pdbID}
+		if entryID, ok := registryEntries[strings.ToUpper(pdbID)]; ok {
+			successor.EntryId = new(entryID)
+		}
+		successors = append(successors, successor)
+	}
+	return &EntryArchiveStatus{
+		State:        state,
+		ObsoletedAt:  status.ObsoletedAt,
+		SupersededBy: successors,
+	}, nil
 }
 
 func (s *Server) activeModelRevision(

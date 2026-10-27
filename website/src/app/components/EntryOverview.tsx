@@ -1,4 +1,7 @@
+import Link from "next/link";
+
 import type { Entity, Entry } from "@/lib/api/entries";
+import { obsoleteNotice, type ObsoleteNotice } from "@/lib/archive-status";
 import { dataTableEntities } from "@/lib/entities";
 import type { MetricScale } from "@/lib/model-comparison";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
@@ -67,9 +70,14 @@ export default function EntryOverview({
   const title = entry.title?.trim() ?? null;
   const details = entry.details?.trim() ?? null;
   const heading = model?.title ?? title;
+  const obsolete = obsoleteNotice(entry.archive_status);
 
   return (
     <div className={styles.overview}>
+      {/* Above everything: the record is still here, but the PDB has replaced it, and a reader
+          should know that before reading any of it. */}
+      {obsolete ? <ObsoleteBanner notice={obsolete} /> : null}
+
       <div className={styles.head} data-solo={model ? undefined : "true"}>
         {model ? (
           <div
@@ -147,6 +155,33 @@ export default function EntryOverview({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function ObsoleteBanner({ notice }: { notice: ObsoleteNotice }) {
+  return (
+    <p className={styles.obsolete} role="note">
+      Obsoleted by the PDB{notice.date ? ` on ${notice.date}` : ""}.
+      {notice.successors.length > 0 ? (
+        <>
+          {" "}
+          Superseded by{" "}
+          {notice.successors.map((successor, index) => (
+            <span key={successor.pdbId}>
+              {index > 0 ? ", " : null}
+              {successor.external ? (
+                <a href={successor.href} target="_blank" rel="noreferrer">
+                  {successor.pdbId}
+                </a>
+              ) : (
+                <Link href={successor.href}>{successor.pdbId}</Link>
+              )}
+            </span>
+          ))}
+          .
+        </>
+      ) : null}
+    </p>
   );
 }
 

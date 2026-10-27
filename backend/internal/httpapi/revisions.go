@@ -89,6 +89,7 @@ func (s *Server) createEntryRevisionGraph(
 		if err := applyEntryRevisionChange(&revision, req.Entry, payload.EntryFields); err != nil {
 			return fmt.Errorf("apply entry changes: %w", err)
 		}
+		revision.FieldSources = domainmodels.EntryRevisionFieldSources(base, revision)
 		if err := s.ensurePDBReferenceAvailable(ctx, revision.Metadata, &entryID); err != nil {
 			return fmt.Errorf("validate entry PDB reference: %w", err)
 		}
@@ -1133,6 +1134,10 @@ func (s *Server) entryRevisionAttributesFromModel(
 	if err != nil {
 		return EntryRevisionAttributes{}, fmt.Errorf("list entry revision protein sequences: %w", err)
 	}
+	fieldSources, err := fieldSourcesFromModel(revision.FieldSources)
+	if err != nil {
+		return EntryRevisionAttributes{}, fmt.Errorf("build entry revision field sources: %w", err)
+	}
 	listItem := entryRevisionSummaryAttributesFromModel(revision)
 	return EntryRevisionAttributes{
 		Id:                listItem.Id,
@@ -1157,6 +1162,7 @@ func (s *Server) entryRevisionAttributesFromModel(
 		Cofactors:         properties.Cofactors,
 		ProteinSequences:  proteinSequencesFromModels(sequences),
 		Artifacts:         artifactAttributes,
+		FieldSources:      fieldSources,
 	}, nil
 }
 
@@ -1180,6 +1186,10 @@ func (s *Server) modelRevisionAttributesFromModel(
 	if err != nil {
 		return ModelRevisionAttributes{}, fmt.Errorf("list model revision metrics: %w", err)
 	}
+	fieldSources, err := fieldSourcesFromModel(revision.FieldSources)
+	if err != nil {
+		return ModelRevisionAttributes{}, fmt.Errorf("build model revision field sources: %w", err)
+	}
 	listItem := modelRevisionSummaryAttributesFromModel(revision)
 	return ModelRevisionAttributes{
 		Id:                listItem.Id,
@@ -1201,7 +1211,41 @@ func (s *Server) modelRevisionAttributesFromModel(
 		PublishedAt:       listItem.PublishedAt,
 		Metrics:           metricsFromModels(metrics),
 		Artifacts:         artifactAttributes,
+		FieldSources:      fieldSources,
 	}, nil
+}
+
+// fieldSourcesFromModel converts revision field sources for a response. Sources that were never
+// recorded stay null.
+func fieldSourcesFromModel(sources domainmodels.FieldSources) (*FieldSources, error) {
+	if sources == nil {
+		return nil, nil
+	}
+	result := make(FieldSources, len(sources))
+	for pointer, source := range sources {
+		kind, err := fieldSourceKindFromModel(source.Source)
+		if err != nil {
+			return nil, fmt.Errorf("field source of %s: %w", pointer, err)
+		}
+		result[string(pointer)] = FieldSource{
+			Source:      kind,
+			Accession:   source.Accession,
+			Release:     source.Release,
+			RetrievedAt: source.RetrievedAt,
+		}
+	}
+	return &result, nil
+}
+
+func fieldSourceKindFromModel(kind domainmodels.FieldSourceKind) (FieldSourceSource, error) {
+	switch kind {
+	case domainmodels.FieldSourceRCSB:
+		return FieldSourceSourceRcsb, nil
+	case domainmodels.FieldSourceDepositor:
+		return FieldSourceSourceDepositor, nil
+	default:
+		return "", fmt.Errorf("unknown field source: %s", kind)
+	}
 }
 
 func entryRevisionSummaryAttributesFromModel(revision domainmodels.EntryRevision) EntryRevisionSummaryAttributes {

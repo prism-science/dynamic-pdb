@@ -6,6 +6,25 @@
   min-width: 0;
 }
 
+/* The PDB obsoleted this entry. A warning, not an error: the record is still valid history. */
+.obsolete {
+  margin: 0 0 20px;
+  padding: 8px 12px;
+  border: 1px solid var(--warning-border);
+  border-left: 3px solid var(--warning-fg);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.obsolete a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 /* Picture left, everything that describes the record right. The square is
    fixed and modest: the preview arrives from RCSB around 500px, so a larger
    frame would only be showing a larger blur. */

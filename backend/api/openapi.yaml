@@ -3260,6 +3260,40 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PolymerEntity"
+            archive_status:
+              $ref: "#/components/schemas/EntryArchiveStatus"
+
+    EntryArchiveStatus:
+      type: object
+      description: >
+        Present when the PDB archive no longer serves the entry's PDB entry. Only the archive sync
+        sets it; the entry stays visible. Read-only.
+      required: [state, superseded_by]
+      properties:
+        state:
+          type: string
+          enum: [obsolete]
+          x-enum-varnames: [EntryArchiveStatusStateObsolete]
+          description: "obsolete: the archive obsoleted the entry, usually replacing it."
+        obsoleted_at:
+          type: string
+          format: date-time
+          description: When the archive obsoleted the entry.
+        superseded_by:
+          type: array
+          description: The archive entries that replaced it; empty when the archive names none.
+          items:
+            $ref: "#/components/schemas/EntrySuccessor"
+
+    EntrySuccessor:
+      type: object
+      required: [pdb_id]
+      properties:
+        pdb_id:
+          type: string
+        entry_id:
+          type: string
+          description: The registry entry for this PDB ID, when the registry has one.
 
     PolymerEntity:
       type: object
@@ -4367,6 +4401,8 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ArtifactAttributes"
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
     ModelRevisionAttributes:
       allOf:
         - $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
@@ -4394,3 +4430,39 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ArtifactAttributes"
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
+
+    FieldSources:
+      type: object
+      nullable: true
+      description: >
+        Where the values of the revision's archive-synced fields came from, keyed by JSON
+        pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free
+        for an archive metric). A field without a key was not typed by a depositor, so the
+        archive sync may update it. Null for revisions stored before sources were recorded;
+        those were imported from the archive. Read-only.
+      additionalProperties:
+        $ref: "#/components/schemas/FieldSource"
+
+    FieldSource:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+          enum: [rcsb, depositor]
+          x-enum-varnames: [FieldSourceSourceRcsb, FieldSourceSourceDepositor]
+          description: >
+            rcsb: the archive sync copied the value from RCSB. depositor: a user set or changed
+            the value, and the archive sync never overwrites it.
+        accession:
+          type: string
+          description: The PDB ID the value was read from, for archive values.
+        release:
+          type: string
+          description: The archive version the value was read from, such as 4.3, for archive values.
+        retrieved_at:
+          type: string
+          format: date-time
+          description: When the archive sync read the value.

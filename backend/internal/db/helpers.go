@@ -7,7 +7,33 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"dynamic-pdb/backend/internal/models"
 )
+
+// fieldSourcesToSQL encodes revision field sources. Nil sources, not recorded, are SQL NULL.
+func fieldSourcesToSQL(sources models.FieldSources) (*string, error) {
+	if sources == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(sources)
+	if err != nil {
+		return nil, fmt.Errorf("marshal field sources: %w", err)
+	}
+	return new(string(data)), nil
+}
+
+// fieldSourcesFromSQL decodes revision field sources. SQL NULL decodes to nil sources.
+func fieldSourcesFromSQL(data []byte) (models.FieldSources, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var sources models.FieldSources
+	if err := json.Unmarshal(data, &sources); err != nil {
+		return nil, fmt.Errorf("unmarshal field sources: %w", err)
+	}
+	return sources, nil
+}
 
 func marshalJSON(value any) (string, error) {
 	if value == nil {

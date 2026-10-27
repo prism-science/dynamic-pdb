@@ -22,6 +22,7 @@ type EntryDetails struct {
 	ValidationGeometry []EntryValidationGeometry `json:"pdbx_vrpt_summary_geometry"`
 	Software           []EntrySoftware           `json:"software"`
 	AccessionInfo      EntryAccessionInfo        `json:"rcsb_accession_info"`
+	RevisionHistory    []EntryRevisionHistory    `json:"pdbx_audit_revision_history"`
 	RevisionGroups     []EntryRevisionGroup      `json:"pdbx_audit_revision_group"`
 	ObsoleteRecords    []EntryObsoleteRecord     `json:"pdbx_database_PDB_obs_spr"`
 }
@@ -43,6 +44,15 @@ type EntryAccessionInfo struct {
 	RevisionDate       string `json:"revision_date"`
 	MajorRevision      *int   `json:"major_revision"`
 	MinorRevision      *int   `json:"minor_revision"`
+}
+
+// EntryRevisionHistory is one pdbx_audit_revision_history row: one released version of the
+// entry. Ordinal numbers the versions in order; RevisionDate is the RFC 3339 string RCSB returns.
+type EntryRevisionHistory struct {
+	Ordinal       int    `json:"ordinal"`
+	MajorRevision int    `json:"major_revision"`
+	MinorRevision int    `json:"minor_revision"`
+	RevisionDate  string `json:"revision_date"`
 }
 
 type EntryRevisionGroup struct {

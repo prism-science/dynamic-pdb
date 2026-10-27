@@ -62,12 +62,12 @@ func Test_should_return_oldest_due_data_sync_job_when_jobs_scheduled(t *testing.
 	assert.Nil(t, next)
 }
 
-func Test_should_delete_exact_data_sync_job_when_job_selected(t *testing.T) {
+func Test_should_skip_stopped_data_sync_job_when_next_job_is_selected(t *testing.T) {
 	// given
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	entryRevision := createDBTestEntryRevision(t, "deleted-data-sync-entry", now)
-	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "deleted-data-sync-model", now)
+	entryRevision := createDBTestEntryRevision(t, "stopped-data-sync-entry", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "stopped-data-sync-model", now)
 	entryJob := models.DataSyncJob{
 		EntryID:     entryRevision.EntryID,
 		ScheduledAt: now.Add(-2 * time.Hour),
@@ -81,7 +81,7 @@ func Test_should_delete_exact_data_sync_job_when_job_selected(t *testing.T) {
 	require.NoError(t, testDB.DataSyncJobs.Schedule(ctx, modelJob))
 
 	// when
-	err := testDB.DataSyncJobs.Delete(ctx, entryJob)
+	err := testDB.DataSyncJobs.Stop(ctx, entryJob, "obsoleted at RCSB", now)
 
 	// then
 	require.NoError(t, err)
@@ -92,13 +92,45 @@ func Test_should_delete_exact_data_sync_job_when_job_selected(t *testing.T) {
 	assert.Equal(t, modelRevision.ModelID, *next.ModelID)
 
 	// when
-	err = testDB.DataSyncJobs.Delete(ctx, modelJob)
+	err = testDB.DataSyncJobs.Stop(ctx, modelJob, "entry not found at RCSB", now)
 
 	// then
 	require.NoError(t, err)
 	next, err = testDB.DataSyncJobs.GetNextScheduled(ctx, now)
 	require.NoError(t, err)
 	assert.Nil(t, next)
+}
+
+func Test_should_return_recorded_archive_version_when_job_is_selected_again(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "versioned-data-sync-entry", now)
+	job := models.DataSyncJob{EntryID: entryRevision.EntryID, ScheduledAt: now.Add(-3 * time.Hour)}
+	require.NoError(t, testDB.DataSyncJobs.Schedule(ctx, job))
+	before, err := testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+	require.NoError(t, err)
+	revisionDate := time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)
+	version := models.ArchiveVersion{Ordinal: 9, Version: "4.3", RevisionDate: &revisionDate}
+
+	// when
+	err = testDB.DataSyncJobs.RecordArchiveVersion(ctx, job, version)
+	require.NoError(t, err)
+	after, getErr := testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+
+	// then
+	require.NoError(t, getErr)
+	require.NotNil(t, before)
+	assert.Equal(t, job.EntryID, before.EntryID)
+	assert.Nil(t, before.ArchiveVersion)
+	require.NotNil(t, after)
+	assert.Equal(t, job.EntryID, after.EntryID)
+	require.NotNil(t, after.ArchiveVersion)
+	assert.Equal(t, 9, after.ArchiveVersion.Ordinal)
+	assert.Equal(t, "4.3", after.ArchiveVersion.Version)
+	require.NotNil(t, after.ArchiveVersion.RevisionDate)
+	assert.True(t, revisionDate.Equal(*after.ArchiveVersion.RevisionDate))
+	require.NoError(t, testDB.DataSyncJobs.Stop(ctx, job, "test finished", now))
 }
 
 func Test_should_run_callback_when_advisory_lock_acquired(t *testing.T) {

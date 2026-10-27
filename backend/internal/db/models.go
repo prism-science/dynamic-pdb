@@ -82,6 +82,10 @@ func (r *ModelsRepository) Create(
 	if err != nil {
 		return nil, fmt.Errorf("prepare model revision metadata: %w", err)
 	}
+	fieldSources, err := fieldSourcesToSQL(revision.FieldSources)
+	if err != nil {
+		return nil, fmt.Errorf("prepare model revision field sources: %w", err)
+	}
 	modelState := revision.ModelState
 	if modelState == "" {
 		modelState = models.ModelStateActive
@@ -106,6 +110,7 @@ func (r *ModelsRepository) Create(
 			    title,
 			    thumbnail_image_url,
 			    metadata,
+			    field_sources,
 			    idempotency_key,
 			    created_by,
 			    created_at,
@@ -124,6 +129,7 @@ func (r *ModelsRepository) Create(
 			    :title,
 			    :thumbnail_image_url,
 			    cast(:metadata as jsonb),
+			    cast(:field_sources as jsonb),
 			    :idempotency_key,
 			    :created_by,
 			    :created_at,
@@ -131,7 +137,7 @@ func (r *ModelsRepository) Create(
 			  )
 			  returning id, model_id, parent_revision_id, primary_artifact_id, revision_number,
 			            state, model_state, change_summary, published_at, title,
-			            thumbnail_image_url, metadata, idempotency_key, created_by, created_at, updated_at`
+			            thumbnail_image_url, metadata, field_sources, idempotency_key, created_by, created_at, updated_at`
 
 	var row modelRevisionRow
 	args := map[string]any{
@@ -148,6 +154,7 @@ func (r *ModelsRepository) Create(
 		"title":               revision.Title,
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
+		"field_sources":       fieldSources,
 		"idempotency_key":     revision.IdempotencyKey,
 		"created_by":          revision.CreatedBy,
 		"created_at":          revision.CreatedAt,
@@ -342,7 +349,7 @@ func (r *ModelsRepository) RejectRevision(
 const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_id, model_revisions.model_id,
 			model_revisions.parent_revision_id, model_revisions.primary_artifact_id, model_revisions.revision_number,
 			model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at, model_revisions.title,
-			model_revisions.thumbnail_image_url, model_revisions.metadata,
+			model_revisions.thumbnail_image_url, model_revisions.metadata, model_revisions.field_sources,
 			model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
 
 // GetLive returns the latest non-archived revision of a model.
@@ -495,7 +502,7 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 			         model_revisions.primary_artifact_id, model_revisions.revision_number,
 			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
 			         model_revisions.title, model_revisions.thumbnail_image_url,
-			         ` + metadataColumn + `, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
+			         ` + metadataColumn + `, model_revisions.field_sources, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
 			         model_revisions.updated_at
 			  from model_revisions
 			  join models on models.id = model_revisions.model_id`
@@ -524,6 +531,10 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 	if err := unmarshalJSON(row.Metadata, &metadata); err != nil {
 		return nil, fmt.Errorf("decode metadata: %w", err)
 	}
+	fieldSources, err := fieldSourcesFromSQL(row.FieldSources)
+	if err != nil {
+		return nil, fmt.Errorf("decode field sources: %w", err)
+	}
 
 	return &models.ModelRevision{
 		ID:                row.ID,
@@ -539,6 +550,7 @@ func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) 
 		Title:             stringPtrFromSQL(row.Title),
 		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
 		Metadata:          metadata,
+		FieldSources:      fieldSources,
 		IdempotencyKey:    stringPtrFromSQL(row.IdempotencyKey),
 		CreatedBy:         row.CreatedBy,
 		CreatedAt:         row.CreatedAt,
@@ -560,6 +572,7 @@ type modelRevisionRow struct {
 	Title             sql.NullString `db:"title"`
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	Metadata          []byte         `db:"metadata"`
+	FieldSources      []byte         `db:"field_sources"`
 	IdempotencyKey    sql.NullString `db:"idempotency_key"`
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	CreatedAt         time.Time      `db:"created_at"`
