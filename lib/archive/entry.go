@@ -38,9 +38,12 @@ type EntryMapping struct {
 	InitialReleaseDate *time.Time
 	LatestRevisionDate *time.Time
 	LatestVersion      *string
-	RevisionGroups     []RevisionGroup
-	Supersedes         []string
-	SupersededBy       []string
+	// LatestRevisionOrdinal numbers the latest version in the entry's revision history. The
+	// revision groups name the versions by this ordinal.
+	LatestRevisionOrdinal *int
+	RevisionGroups        []RevisionGroup
+	Supersedes            []string
+	SupersededBy          []string
 }
 
 type Crystallography struct {
@@ -85,6 +88,7 @@ func MapEntry(details rcsb.EntryDetails) EntryMapping {
 	mapping.Crystallography = crystallographyFromRCSB(details)
 	mapping.from("crystallography", "exptl_crystal,exptl_crystal_grow,diffrn")
 	mapping.mapRelease(details.AccessionInfo)
+	mapping.mapRevisionHistory(details.RevisionHistory)
 	mapping.mapRevisionGroups(details.RevisionGroups)
 	mapping.mapObsoleteRecords(details.ObsoleteRecords)
 	return mapping
@@ -172,6 +176,19 @@ func (mapping *EntryMapping) mapTime(field string, path string, raw string) *tim
 		return nil
 	}
 	return &parsed
+}
+
+func (mapping *EntryMapping) mapRevisionHistory(history []rcsb.EntryRevisionHistory) {
+	mapping.from("latest_revision_ordinal", "pdbx_audit_revision_history.ordinal")
+	if len(history) == 0 {
+		mapping.warn("latest_revision_ordinal", "RCSB lists no revision history")
+		return
+	}
+	latest := history[0].Ordinal
+	for _, revision := range history[1:] {
+		latest = max(latest, revision.Ordinal)
+	}
+	mapping.LatestRevisionOrdinal = &latest
 }
 
 func (mapping *EntryMapping) mapRevisionGroups(groups []rcsb.EntryRevisionGroup) {

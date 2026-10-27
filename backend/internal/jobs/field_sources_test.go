@@ -68,8 +68,10 @@ func Test_should_record_rcsb_source_for_synced_entry_fields_and_keep_depositor_s
 	retrievedAt := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	current := models.FieldSources{models.EntryFieldTitle: {Source: models.FieldSourceDepositor}}
 
+	source := archiveRevisionSource{pdbID: "1ABC", version: models.ArchiveVersion{Ordinal: 9, Version: "4.3"}}
+
 	// when
-	sources := archiveEntryFieldSources(current, "1ABC", retrievedAt)
+	sources := archiveEntryFieldSources(current, source, retrievedAt)
 
 	// then
 	require.Len(t, sources, len(models.EntryArchiveFields))
@@ -77,6 +79,7 @@ func Test_should_record_rcsb_source_for_synced_entry_fields_and_keep_depositor_s
 	assert.Equal(t, models.FieldSource{
 		Source:      models.FieldSourceRCSB,
 		Accession:   new("1ABC"),
+		Release:     new("4.3"),
 		RetrievedAt: &retrievedAt,
 	}, sources[models.EntryFieldResolution])
 }
@@ -146,7 +149,8 @@ func Test_should_record_rcsb_source_for_synced_model_fields_and_metrics(t *testi
 	}
 
 	// when
-	sources := archiveModelFieldSources(current, "5AMF", retrievedAt, syncedArchiveMetricKeys(current))
+	source := archiveRevisionSource{pdbID: "5AMF", version: models.ArchiveVersion{Ordinal: 3, Version: "2.1"}}
+	sources := archiveModelFieldSources(current, source, retrievedAt, syncedArchiveMetricKeys(current))
 
 	// then
 	require.Len(t, sources, len(models.ModelArchiveFields)+len(models.ArchiveMetricKeys))

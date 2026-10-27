@@ -16,10 +16,12 @@ const (
 	FieldSourceDepositor FieldSourceKind = "depositor"
 )
 
-// FieldSource records where the value of one revision field came from.
+// FieldSource records where the value of one revision field came from. For archive values,
+// Accession is the PDB ID and Release the archive version, such as 4.3.
 type FieldSource struct {
 	Source      FieldSourceKind `json:"source"`
 	Accession   *string         `json:"accession,omitempty"`
+	Release     *string         `json:"release,omitempty"`
 	RetrievedAt *time.Time      `json:"retrieved_at,omitempty"`
 }
 

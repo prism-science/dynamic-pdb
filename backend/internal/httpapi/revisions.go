@@ -1230,6 +1230,7 @@ func fieldSourcesFromModel(sources domainmodels.FieldSources) (*FieldSources, er
 		result[string(pointer)] = FieldSource{
 			Source:      kind,
 			Accession:   source.Accession,
+			Release:     source.Release,
 			RetrievedAt: source.RetrievedAt,
 		}
 	}

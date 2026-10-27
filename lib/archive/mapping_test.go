@@ -45,6 +45,35 @@ func Test_should_map_release_and_revision_fields_when_entry_is_released(t *testi
 	assert.Equal(t, "pdbx_database_PDB_obs_spr", mapping.Provenance["supersedes"])
 }
 
+func Test_should_map_latest_revision_ordinal_when_entry_has_revision_history(t *testing.T) {
+	// given
+	details := readFixture[rcsb.EntryDetails](t, "entry_4HHB.json")
+
+	// when
+	mapping := MapEntry(details)
+
+	// then
+	require.NotNil(t, mapping.LatestRevisionOrdinal)
+	assert.Equal(t, 9, *mapping.LatestRevisionOrdinal)
+	assert.Equal(t, "4.3", *mapping.LatestVersion)
+	assert.Equal(t, "pdbx_audit_revision_history.ordinal", mapping.Provenance["latest_revision_ordinal"])
+}
+
+func Test_should_warn_and_leave_ordinal_unknown_when_entry_has_no_revision_history(t *testing.T) {
+	// given
+	details := rcsb.EntryDetails{}
+
+	// when
+	mapping := MapEntry(details)
+
+	// then
+	assert.Nil(t, mapping.LatestRevisionOrdinal)
+	assert.Contains(t, mapping.Warnings, Warning{
+		Field:  "latest_revision_ordinal",
+		Detail: "RCSB lists no revision history",
+	})
+}
+
 func Test_should_record_provenance_for_every_field_when_entry_is_mapped(t *testing.T) {
 	// given
 	details := readFixture[rcsb.EntryDetails](t, "entry_6LU7.json")
@@ -115,7 +144,10 @@ func Test_should_warn_when_obsolete_record_kind_is_unknown(t *testing.T) {
 
 func Test_should_warn_when_release_date_is_malformed(t *testing.T) {
 	// given
-	details := rcsb.EntryDetails{AccessionInfo: rcsb.EntryAccessionInfo{InitialReleaseDate: "yesterday"}}
+	details := rcsb.EntryDetails{
+		AccessionInfo:   rcsb.EntryAccessionInfo{InitialReleaseDate: "yesterday"},
+		RevisionHistory: []rcsb.EntryRevisionHistory{{Ordinal: 1, MajorRevision: 1}},
+	}
 
 	// when
 	mapping := MapEntry(details)

@@ -79,7 +79,24 @@ type EntryMetadata struct {
 	Cofactors *[]string `json:"cofactors,omitempty"`
 
 	DepositorPolymerEntities []DepositorPolymerEntity `json:"depositor_polymer_entities,omitempty"`
+
+	// ArchiveStatus is set only by the archive sync, when the archive stops serving the entry.
+	ArchiveStatus *EntryArchiveStatus `json:"archive_status,omitempty"`
 }
+
+// EntryArchiveStatus records that the archive no longer serves the entry's PDB entry. It is
+// archive metadata, not an entry state: the entry stays visible.
+type EntryArchiveStatus struct {
+	State        EntryArchiveState `json:"state"`
+	ObsoletedAt  *time.Time        `json:"obsoleted_at,omitempty"`
+	SupersededBy []string          `json:"superseded_by,omitempty"`
+}
+
+type EntryArchiveState string
+
+// EntryArchiveStateObsolete means the archive obsoleted the entry, usually replacing it with
+// the entries in SupersededBy.
+const EntryArchiveStateObsolete EntryArchiveState = "obsolete"
 
 type EntryCrystallography struct {
 	Crystals []EntryCrystal `json:"crystals,omitempty"`
@@ -113,7 +130,8 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography) &&
 		reflect.DeepEqual(revision.Metadata.Ligands, other.Metadata.Ligands) &&
 		reflect.DeepEqual(revision.Metadata.Cofactors, other.Metadata.Cofactors) &&
-		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities)
+		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities) &&
+		reflect.DeepEqual(revision.Metadata.ArchiveStatus, other.Metadata.ArchiveStatus)
 }
 
 func pointersEqual[T comparable](left *T, right *T) bool {

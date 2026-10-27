@@ -37,7 +37,7 @@ type polymerEntitySnapshot = models.PolymerEntity
 
 type dataSyncStrategy interface {
 	appliesTo(models.DataSyncJob) bool
-	sync(context.Context, models.DataSyncJob) error
+	sync(context.Context, models.DataSyncJob) (dataSyncOutcome, error)
 }
 
 type DataSyncJob struct {
@@ -137,22 +137,8 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	if executionErr := j.execute(ctx, *job); executionErr != nil {
-		if errors.Is(executionErr, rcsb.ErrNotFound) {
-			if err := j.database.DataSyncJobs.Delete(ctx, *job); err != nil {
-				return false, errors.Join(
-					fmt.Errorf("execute data sync job: %w", executionErr),
-					fmt.Errorf("delete data sync job after RCSB 404: %w", err),
-				)
-			}
-			j.logger.Warn(
-				"data sync job removed after RCSB resource was not found",
-				"entry_id", job.EntryID,
-				"model_id", stringValue(job.ModelID),
-				"err", executionErr,
-			)
-			return true, nil
-		}
+	outcome, executionErr := j.execute(ctx, *job)
+	if executionErr != nil {
 		job.ScheduledAt = j.now().Add(dataSyncRetryInterval)
 		if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
 			return false, errors.Join(
@@ -168,6 +154,23 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 		)
 		return true, nil
 	}
+	if outcome.stopReason != "" {
+		if err := j.database.DataSyncJobs.Stop(ctx, *job, outcome.stopReason, j.now()); err != nil {
+			return false, fmt.Errorf("stop data sync job: %w", err)
+		}
+		j.logger.Warn(
+			"data sync job stopped",
+			"entry_id", job.EntryID,
+			"model_id", stringValue(job.ModelID),
+			"reason", outcome.stopReason,
+		)
+		return true, nil
+	}
+	if outcome.archiveVersion != nil {
+		if err := j.database.DataSyncJobs.RecordArchiveVersion(ctx, *job, *outcome.archiveVersion); err != nil {
+			return false, fmt.Errorf("record data sync job archive version: %w", err)
+		}
+	}
 	job.ScheduledAt = j.nextScheduledAt(j.now())
 	if err := j.database.DataSyncJobs.Schedule(ctx, *job); err != nil {
 		return false, fmt.Errorf("reschedule data sync job: %w", err)
@@ -175,13 +178,13 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (j *DataSyncJob) execute(ctx context.Context, job models.DataSyncJob) error {
+func (j *DataSyncJob) execute(ctx context.Context, job models.DataSyncJob) (dataSyncOutcome, error) {
 	for _, strategy := range j.strategies {
 		if strategy.appliesTo(job) {
 			return strategy.sync(ctx, job)
 		}
 	}
-	return nil
+	return dataSyncOutcome{}, nil
 }
 
 func compareEntryUpdate(
@@ -203,38 +206,72 @@ func compareEntryUpdate(
 	return entryRevisionChanged, polymerEntitiesChanged
 }
 
+// archiveRevisionSource names the archive version a sync revision applies and how its
+// change_summary describes it.
+type archiveRevisionSource struct {
+	pdbID   string
+	version models.ArchiveVersion
+	summary string
+}
+
 func (j *entrySyncStrategy) saveEntryUpdate(
 	ctx context.Context,
 	currentRevision models.EntryRevision,
 	desiredRevision models.EntryRevision,
 	desiredPolymerEntities []models.PolymerEntity,
 	polymerEntitiesChanged bool,
+	source archiveRevisionSource,
 ) error {
 	now := j.now()
-	entryID := currentRevision.EntryID
-	parentRevisionID := currentRevision.ID
-	revision := currentRevision
+	revision := newSyncEntryRevision(currentRevision, source.summary, now)
 	revision.Title = desiredRevision.Title
 	revision.Metadata.Details = desiredRevision.Metadata.Details
 	revision.Metadata.Resolution = desiredRevision.Metadata.Resolution
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
 	revision.Metadata.Crystallography = desiredRevision.Metadata.Crystallography
-	revision.FieldSources = archiveEntryFieldSources(
-		currentRevision.FieldSources,
-		strings.TrimSpace(currentRevision.Metadata.ExternalRefs[models.EntrySourcePDB]),
-		now,
-	)
-	revision.ParentRevisionID = new(parentRevisionID)
+	revision.FieldSources = archiveEntryFieldSources(currentRevision.FieldSources, source, now)
+	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, desiredPolymerEntities, polymerEntitiesChanged)
+}
+
+// saveObsoleteEntry activates a sync revision that marks the entry obsolete and changes nothing
+// else.
+func (j *entrySyncStrategy) saveObsoleteEntry(
+	ctx context.Context,
+	currentRevision models.EntryRevision,
+	status models.EntryArchiveStatus,
+	summary string,
+) error {
+	revision := newSyncEntryRevision(currentRevision, summary, j.now())
+	revision.Metadata.ArchiveStatus = &status
+	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, nil, false)
+}
+
+// newSyncEntryRevision starts a sync revision as a copy of the active one.
+func newSyncEntryRevision(currentRevision models.EntryRevision, summary string, now time.Time) models.EntryRevision {
+	revision := currentRevision
+	revision.ParentRevisionID = new(currentRevision.ID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
 	revision.State = models.RevisionStateInReview
-	revision.ChangeSummary = nil
+	revision.ChangeSummary = new(summary)
 	revision.PublishedAt = nil
 	revision.CreatedBy = dataSyncUserID
 	revision.CreatedAt = now
 	revision.UpdatedAt = now
+	return revision
+}
 
+// saveSyncEntryRevision creates revision, gives it the parent's data, and activates it, unless the
+// parent stopped being the active revision meanwhile.
+func (j *entrySyncStrategy) saveSyncEntryRevision(
+	ctx context.Context,
+	parentRevisionID uuid.UUID,
+	revision models.EntryRevision,
+	desiredPolymerEntities []models.PolymerEntity,
+	polymerEntitiesChanged bool,
+) error {
+	entryID := revision.EntryID
 	if err := j.database.Do(ctx, func(ctx context.Context) error {
 		if err := j.database.Entries.Lock(ctx, entryID); err != nil {
 			return fmt.Errorf("lock entry: %w", err)
@@ -261,7 +298,7 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 			createdRevision.ID,
 			desiredPolymerEntities,
 			polymerEntitiesChanged,
-			now,
+			revision.CreatedAt,
 		); err != nil {
 			return fmt.Errorf("save entry revision data: %w", err)
 		}
@@ -284,6 +321,7 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 		"data sync entry revision activated",
 		"entry_id", entryID,
 		"revision_id", revision.ID,
+		"change_summary", stringValue(revision.ChangeSummary),
 	)
 	return nil
 }
@@ -355,12 +393,9 @@ func (j *entrySyncStrategy) reindexEntry(ctx context.Context, revision models.En
 func (j *entrySyncStrategy) buildEntryUpdate(
 	ctx context.Context,
 	pdbID string,
+	details rcsb.EntryDetails,
 	proteinSequences []models.ProteinSequence,
 ) (models.EntryRevision, []models.PolymerEntity, error) {
-	details, err := j.rcsbClient.GetEntryDetails(ctx, pdbID)
-	if err != nil {
-		return models.EntryRevision{}, nil, fmt.Errorf("get RCSB entry %s: %w", pdbID, err)
-	}
 	desiredPolymerEntities, err := j.buildPolymerEntities(
 		ctx,
 		pdbID,

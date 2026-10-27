@@ -3260,6 +3260,40 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PolymerEntity"
+            archive_status:
+              $ref: "#/components/schemas/EntryArchiveStatus"
+
+    EntryArchiveStatus:
+      type: object
+      description: >
+        Present when the PDB archive no longer serves the entry's PDB entry. Only the archive sync
+        sets it; the entry stays visible. Read-only.
+      required: [state, superseded_by]
+      properties:
+        state:
+          type: string
+          enum: [obsolete]
+          x-enum-varnames: [EntryArchiveStatusStateObsolete]
+          description: "obsolete: the archive obsoleted the entry, usually replacing it."
+        obsoleted_at:
+          type: string
+          format: date-time
+          description: When the archive obsoleted the entry.
+        superseded_by:
+          type: array
+          description: The archive entries that replaced it; empty when the archive names none.
+          items:
+            $ref: "#/components/schemas/EntrySuccessor"
+
+    EntrySuccessor:
+      type: object
+      required: [pdb_id]
+      properties:
+        pdb_id:
+          type: string
+        entry_id:
+          type: string
+          description: The registry entry for this PDB ID, when the registry has one.
 
     PolymerEntity:
       type: object
@@ -4425,6 +4459,9 @@ components:
         accession:
           type: string
           description: The PDB ID the value was read from, for archive values.
+        release:
+          type: string
+          description: The archive version the value was read from, such as 4.3, for archive values.
         retrieved_at:
           type: string
           format: date-time

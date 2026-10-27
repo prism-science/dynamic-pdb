@@ -85,20 +85,21 @@ func isDepositedModel(revision models.ModelRevision) bool {
 }
 
 // archiveEntryFieldSources returns the sources of an entry revision the sync creates: fields a
-// depositor typed keep their source, and every other synced field comes from the RCSB entry.
+// depositor typed keep their source, and every other synced field comes from the RCSB entry at
+// the version the revision applies.
 func archiveEntryFieldSources(
 	current models.FieldSources,
-	pdbID string,
+	source archiveRevisionSource,
 	retrievedAt time.Time,
 ) models.FieldSources {
-	return archiveFieldSources(current, models.EntryArchiveFields, pdbID, retrievedAt)
+	return archiveFieldSources(current, models.EntryArchiveFields, source, retrievedAt)
 }
 
 // archiveModelFieldSources is archiveEntryFieldSources for model revisions, where the synced
 // archive metrics also come from the RCSB entry.
 func archiveModelFieldSources(
 	current models.FieldSources,
-	pdbID string,
+	source archiveRevisionSource,
 	retrievedAt time.Time,
 	metricKeys []models.MetricKey,
 ) models.FieldSources {
@@ -106,7 +107,7 @@ func archiveModelFieldSources(
 	for _, key := range metricKeys {
 		fields = append(fields, models.ArchiveMetricField(key))
 	}
-	sources := archiveFieldSources(current, fields, pdbID, retrievedAt)
+	sources := archiveFieldSources(current, fields, source, retrievedAt)
 	for _, key := range models.ArchiveMetricKeys {
 		pointer := models.ArchiveMetricField(key)
 		if current.IsDepositor(pointer) {
@@ -119,7 +120,7 @@ func archiveModelFieldSources(
 func archiveFieldSources(
 	current models.FieldSources,
 	fields []models.FieldPointer,
-	pdbID string,
+	source archiveRevisionSource,
 	retrievedAt time.Time,
 ) models.FieldSources {
 	sources := make(models.FieldSources, len(fields))
@@ -130,7 +131,8 @@ func archiveFieldSources(
 		}
 		sources[pointer] = models.FieldSource{
 			Source:      models.FieldSourceRCSB,
-			Accession:   new(pdbID),
+			Accession:   new(source.pdbID),
+			Release:     new(source.version.Version),
 			RetrievedAt: new(retrievedAt),
 		}
 	}

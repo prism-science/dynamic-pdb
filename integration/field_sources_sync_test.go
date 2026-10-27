@@ -26,6 +26,7 @@ type entryRevisionSourcesDocument struct {
 type fieldSourceBody struct {
 	Source    string  `json:"source"`
 	Accession *string `json:"accession"`
+	Release   *string `json:"release"`
 }
 
 func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_synced(t *testing.T) {
@@ -98,6 +99,13 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 	assert.Equal(t, "rcsb", sources["/metadata/method"].Source)
 	require.NotNil(t, sources["/metadata/method"].Accession)
 	assert.Equal(t, pdbID, *sources["/metadata/method"].Accession)
+	require.NotNil(t, sources["/metadata/method"].Release)
+	assert.Equal(t, "1.1", *sources["/metadata/method"].Release)
+	var changeSummary string
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select change_summary from entry_revisions where id = $1`, syncedRevisionID,
+	).Scan(&changeSummary))
+	assert.Equal(t, "RCSB version 1.1 (2026-08-12): Refinement description", changeSummary)
 }
 
 func Test_should_leave_model_unchanged_when_synced_model_is_not_deposited(t *testing.T) {

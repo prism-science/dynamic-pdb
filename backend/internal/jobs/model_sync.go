@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -48,108 +49,144 @@ func (*modelSyncStrategy) appliesTo(job models.DataSyncJob) bool {
 	return job.ModelID != nil
 }
 
-func (s *modelSyncStrategy) sync(ctx context.Context, job models.DataSyncJob) error {
+func (s *modelSyncStrategy) sync(ctx context.Context, job models.DataSyncJob) (dataSyncOutcome, error) {
 	modelID := strings.TrimSpace(*job.ModelID)
 	if modelID == "" {
-		return fmt.Errorf("sync model for entry %s: model ID is empty", job.EntryID)
+		return dataSyncOutcome{}, fmt.Errorf("sync model for entry %s: model ID is empty", job.EntryID)
 	}
-	if err := s.syncModel(ctx, job.EntryID, modelID); err != nil {
-		return fmt.Errorf("sync model %s: %w", modelID, err)
+	outcome, err := s.syncModel(ctx, job, modelID)
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("sync model %s: %w", modelID, err)
 	}
-	return nil
+	return outcome, nil
 }
 
-func (s *modelSyncStrategy) syncModel(ctx context.Context, entryID string, modelID string) error {
+// syncModel applies the archive's latest version to the archive's own Deposited model when it is
+// newer than the version the job last applied. The job's first run only records that version
+// (decision D2). Missing metric software is filled on every run, since that makes no revision.
+func (s *modelSyncStrategy) syncModel(
+	ctx context.Context,
+	job models.DataSyncJob,
+	modelID string,
+) (dataSyncOutcome, error) {
 	currentRevision, err := s.database.Models.Get(ctx, db.ModelRevisionFilters{
-		EntryID:    &entryID,
+		EntryID:    &job.EntryID,
 		ModelID:    &modelID,
 		State:      new(models.RevisionStateActive),
 		ModelState: new(models.ModelStateActive),
 		EntryState: new(models.EntryStateActive),
 	})
 	if err != nil {
-		return fmt.Errorf("get current model revision: %w", err)
+		return dataSyncOutcome{}, fmt.Errorf("get current model revision: %w", err)
 	}
 	pdbID := strings.TrimSpace(currentRevision.Metadata.ExternalRefs[models.ModelSourcePDB])
 	if pdbID == "" {
-		return nil
+		return dataSyncOutcome{}, nil
 	}
 	if !isDepositedModel(*currentRevision) {
 		s.logger.Warn(
 			"data sync skipped a model that is not the archive's Deposited model",
-			"entry_id", entryID,
+			"entry_id", job.EntryID,
 			"model_id", modelID,
 			"model_type", modelTypeName(currentRevision.Metadata.ModelType),
 		)
-		return nil
+		return dataSyncOutcome{}, nil
 	}
-	metricKeys := syncedArchiveMetricKeys(currentRevision.FieldSources)
 
+	details, err := s.rcsbClient.GetEntryDetails(ctx, pdbID)
+	if errors.Is(err, rcsb.ErrNotFound) {
+		return dataSyncOutcome{
+			stopReason: "RCSB serves no entry " + pdbID + "; the entry's own job marks it if RCSB obsoleted it",
+		}, nil
+	}
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("get RCSB entry %s: %w", pdbID, err)
+	}
+	mapping := archive.MapEntry(details)
+	latest, err := archiveVersionOf(mapping)
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("read version of RCSB entry %s: %w", pdbID, err)
+	}
+
+	metricKeys := syncedArchiveMetricKeys(currentRevision.FieldSources)
 	currentMetrics, err := s.database.Metrics.List(ctx, db.MetricFilters{
 		ModelRevisionID: &currentRevision.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("list current model metrics: %w", err)
+		return dataSyncOutcome{}, fmt.Errorf("list current model metrics: %w", err)
 	}
-	desiredRevision, desiredMetrics, err := s.buildModelUpdate(ctx, pdbID)
+	desiredMetrics := metricsWithKeys(modelMetricsFromRCSB(details), metricKeys)
+	if modelMetricsHaveSameData(currentMetrics, desiredMetrics, metricKeys) {
+		fills := metricSoftwareFills(currentMetrics, desiredMetrics, metricKeys)
+		if err := s.fillMetricSoftware(ctx, modelID, fills); err != nil {
+			return dataSyncOutcome{}, fmt.Errorf("fill archive metric software: %w", err)
+		}
+	}
+
+	if job.ArchiveVersion == nil {
+		return dataSyncOutcome{archiveVersion: &latest}, nil
+	}
+	if !isNewerArchiveVersion(job.ArchiveVersion, latest) {
+		return dataSyncOutcome{}, nil
+	}
+	source := archiveRevisionSource{
+		pdbID:   pdbID,
+		version: latest,
+		summary: archiveChangeSummary(*job.ArchiveVersion, latest, mapping.RevisionGroups),
+	}
+	if err := s.applyArchiveVersion(ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source); err != nil {
+		return dataSyncOutcome{}, err
+	}
+	return dataSyncOutcome{archiveVersion: &latest}, nil
+}
+
+// applyArchiveVersion activates a sync revision with the archive's values when they differ from
+// the active revision's. Values and metrics a depositor typed stay as they are.
+func (s *modelSyncStrategy) applyArchiveVersion(
+	ctx context.Context,
+	currentRevision models.ModelRevision,
+	details rcsb.EntryDetails,
+	currentMetrics []models.Metric,
+	desiredMetrics []models.Metric,
+	metricKeys []models.MetricKey,
+	source archiveRevisionSource,
+) error {
+	desiredRevision := models.ModelRevision{}
+	applyRCSBModelDetails(&desiredRevision, details)
+	residueData, err := s.buildResidueData(ctx, source.pdbID, details.Identifiers.PolymerEntityIDs)
 	if err != nil {
-		return fmt.Errorf("build model update: %w", err)
+		return fmt.Errorf("build RCSB residue data for %s: %w", source.pdbID, err)
 	}
-	keepDepositorModelFields(*currentRevision, &desiredRevision)
-	desiredMetrics = metricsWithKeys(desiredMetrics, metricKeys)
+	desiredRevision.Metadata.ResidueData = residueData
+	keepDepositorModelFields(currentRevision, &desiredRevision)
 
 	modelRevisionChanged, metricsChanged := compareModelUpdate(
-		*currentRevision,
+		currentRevision,
 		desiredRevision,
 		currentMetrics,
 		desiredMetrics,
 		metricKeys,
 	)
-	if !metricsChanged {
-		fills := metricSoftwareFills(currentMetrics, desiredMetrics, metricKeys)
-		if err := s.fillMetricSoftware(ctx, modelID, fills); err != nil {
-			return fmt.Errorf("fill archive metric software: %w", err)
-		}
-	}
 	if !modelRevisionChanged && !metricsChanged {
 		return nil
 	}
 	fieldErrors := modelUpdateErrors(desiredRevision, desiredMetrics)
-	if err := s.validationMode.Check(ctx, s.logger, "data sync model "+modelID, fieldErrors); err != nil {
+	if err := s.validationMode.Check(ctx, s.logger, "data sync model "+currentRevision.ModelID, fieldErrors); err != nil {
 		return fmt.Errorf("validate model update: %w", err)
 	}
 
 	if err := s.saveModelUpdate(
 		ctx,
-		*currentRevision,
+		currentRevision,
 		desiredRevision,
 		desiredMetrics,
 		metricsChanged,
 		metricKeys,
-		pdbID,
+		source,
 	); err != nil {
 		return fmt.Errorf("save model update: %w", err)
 	}
 	return nil
-}
-
-func (s *modelSyncStrategy) buildModelUpdate(
-	ctx context.Context,
-	pdbID string,
-) (models.ModelRevision, []models.Metric, error) {
-	details, err := s.rcsbClient.GetEntryDetails(ctx, pdbID)
-	if err != nil {
-		return models.ModelRevision{}, nil, fmt.Errorf("get RCSB entry %s: %w", pdbID, err)
-	}
-
-	desiredRevision := models.ModelRevision{}
-	applyRCSBModelDetails(&desiredRevision, details)
-	residueData, err := s.buildResidueData(ctx, pdbID, details.Identifiers.PolymerEntityIDs)
-	if err != nil {
-		return models.ModelRevision{}, nil, fmt.Errorf("build RCSB residue data for %s: %w", pdbID, err)
-	}
-	desiredRevision.Metadata.ResidueData = residueData
-	return desiredRevision, modelMetricsFromRCSB(details), nil
 }
 
 func (s *modelSyncStrategy) buildResidueData(
@@ -210,7 +247,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
 	metricKeys []models.MetricKey,
-	pdbID string,
+	source archiveRevisionSource,
 ) error {
 	now := s.now()
 	parentRevisionID := currentRevision.ID
@@ -224,12 +261,12 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	revision.Metadata.UnmodeledFraction = desiredRevision.Metadata.UnmodeledFraction
 	revision.Metadata.Ligands = desiredRevision.Metadata.Ligands
 	revision.Metadata.ResidueData = desiredRevision.Metadata.ResidueData
-	revision.FieldSources = archiveModelFieldSources(currentRevision.FieldSources, pdbID, now, metricKeys)
+	revision.FieldSources = archiveModelFieldSources(currentRevision.FieldSources, source, now, metricKeys)
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
 	revision.State = models.RevisionStateInReview
-	revision.ChangeSummary = nil
+	revision.ChangeSummary = new(source.summary)
 	revision.PublishedAt = nil
 	revision.IdempotencyKey = nil
 	revision.CreatedBy = dataSyncUserID
@@ -287,6 +324,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 		"entry_id", currentRevision.EntryID,
 		"model_id", currentRevision.ModelID,
 		"revision_id", revision.ID,
+		"change_summary", source.summary,
 	)
 	return nil
 }

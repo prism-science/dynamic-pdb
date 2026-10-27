@@ -489,6 +489,9 @@ type rcsbStub struct {
 	pdbID  string
 	nonce  string
 	seen   []string
+	// obsoletedBy, when set, makes the stub serve pdbID as an entry RCSB obsoleted and replaced
+	// with this PDB ID.
+	obsoletedBy string
 }
 
 func newRCSBStub(t *testing.T, pdbID string) *rcsbStub {
@@ -496,6 +499,35 @@ func newRCSBStub(t *testing.T, pdbID string) *rcsbStub {
 	stub := &rcsbStub{pdbID: pdbID, nonce: uuid.NewString()}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.handle))
 	return stub
+}
+
+// newObsoleteRCSBStub serves pdbID as an entry RCSB obsoleted on 2024-01-17 and replaced with
+// successor: no entry, and holdings that say so.
+func newObsoleteRCSBStub(t *testing.T, pdbID string, successor string) *rcsbStub {
+	t.Helper()
+	stub := &rcsbStub{pdbID: pdbID, nonce: uuid.NewString(), obsoletedBy: successor}
+	stub.server = httptest.NewServer(http.HandlerFunc(stub.handleObsolete))
+	return stub
+}
+
+func (s *rcsbStub) handleObsolete(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.seen = append(s.seen, r.URL.Path)
+	s.mu.Unlock()
+
+	switch r.URL.Path {
+	case "/rest/v1/holdings/status/" + s.pdbID:
+		writeJSON(w, map[string]any{"rcsb_repository_holdings_combined": map[string]any{
+			"status": "REMOVED", "status_code": "OBS", "id_code_replaced_by_latest": s.obsoletedBy,
+		}})
+	case "/rest/v1/holdings/removed/" + s.pdbID:
+		writeJSON(w, map[string]any{"rcsb_repository_holdings_removed": map[string]any{
+			"id_codes_replaced_by": []string{s.obsoletedBy},
+			"remove_date":          "2024-01-17T00:00:00.000+00:00",
+		}})
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (s *rcsbStub) URL() string {
@@ -545,6 +577,20 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 				{"name": "Sawaya, M.R."},
 			},
 			"pubmed": map[string]any{"rcsb_pubmed_affiliation_info": []string{"Howard Hughes Medical Institute, UCLA, USA."}},
+			"rcsb_accession_info": map[string]any{
+				"status_code":          "REL",
+				"initial_release_date": "2020-01-15T00:00:00.000+00:00",
+				"revision_date":        "2026-08-12T00:00:00.000+00:00",
+				"major_revision":       1,
+				"minor_revision":       1,
+			},
+			"pdbx_audit_revision_history": []map[string]any{
+				{"ordinal": 1, "major_revision": 1, "minor_revision": 0, "revision_date": "2020-01-15T00:00:00.000+00:00"},
+				{"ordinal": 2, "major_revision": 1, "minor_revision": 1, "revision_date": "2026-08-12T00:00:00.000+00:00"},
+			},
+			"pdbx_audit_revision_group": []map[string]any{
+				{"group": "Refinement description", "revision_ordinal": 2},
+			},
 		})
 	case "/rest/v1/core/polymer_entity/" + s.pdbID + "/1":
 		writeJSON(w, map[string]any{

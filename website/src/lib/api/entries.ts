@@ -27,6 +27,8 @@ export type Entry = Schemas["EntryInfoAttributes"] & {
   idempotency_key?: string | null;
   protein_sequences?: ProteinSequence[];
   polymer_entities?: PolymerEntity[];
+  /** Set when the PDB no longer serves the entry; only the entry page's request returns it. */
+  archive_status?: Schemas["EntryArchiveStatus"];
 };
 
 export type Model = Omit<Schemas["ModelAttributes"], "metadata" | "metrics" | "idempotency_key"> & {
@@ -1133,6 +1135,7 @@ function entryFromDocument(document: EntryDocument): Entry {
     ...definedEntryProperties(attributes),
     protein_sequences: proteinSequences,
     polymer_entities: attributes.polymer_entities ?? [],
+    ...(attributes.archive_status ? { archive_status: attributes.archive_status } : {}),
     published_at: attributes.published_at,
     created_at: attributes.created_at,
     updated_at: attributes.updated_at,

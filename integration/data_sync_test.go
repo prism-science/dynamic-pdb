@@ -441,7 +441,8 @@ func seedScheduledDataSyncEntry(
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),
-		`insert into data_sync_jobs(entry_id, model_id, scheduled_at) values ($1, null, $2)`,
+		`insert into data_sync_jobs(entry_id, model_id, scheduled_at, archive_revision_ordinal, archive_version)
+		 values ($1, null, $2, 1, '1.0')`,
 		entryID,
 		now.Add(-time.Hour),
 	)
@@ -610,7 +611,8 @@ func seedScheduledDataSyncModel(
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),
-		`insert into data_sync_jobs(entry_id, model_id, scheduled_at) values ($1, $2, $3)`,
+		`insert into data_sync_jobs(entry_id, model_id, scheduled_at, archive_revision_ordinal, archive_version)
+		 values ($1, $2, $3, 1, '1.0')`,
 		entryID,
 		modelID,
 		now.Add(-time.Hour),
