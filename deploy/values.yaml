@@ -118,6 +118,9 @@ checksumJob:
   activeDeadlineSeconds: 3300
   # Caps the files one run checks; 0 means no cap.
   maxFilesPerRun: 1000
+  # Replaces the backend's 10s statement_timeout for the job only. The first run adds a pending
+  # row for every artifact in one statement, which takes longer than 10s on prod.
+  statementTimeout: 5m
   resources:
     requests:
       cpu: 250m
