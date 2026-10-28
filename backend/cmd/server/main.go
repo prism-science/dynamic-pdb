@@ -125,6 +125,7 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	slog.Info("data sync configured", "coordinate_revisions", cfg.DataSync.CoordinateRevisions)
 	// TODO: Replace the disabled backend cache with a bounded RCSB cache that expires entries by TTL.
 	dataSyncJob, err := jobs.NewDataSyncJob(
 		database,
@@ -132,6 +133,7 @@ func run() int {
 		sifts.NewClient(),
 		logger,
 		cfg.Validation.Mode,
+		cfg.DataSync,
 	)
 	if err != nil {
 		slog.Error("data sync job init failed", "err", err)

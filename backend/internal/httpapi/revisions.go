@@ -578,8 +578,12 @@ func (s *Server) UpdateModelRevisionState(
 		if err := s.ensureModelRevisionParentIsActive(ctx, *target); err != nil {
 			return fmt.Errorf("validate model revision parent: %w", err)
 		}
-		if _, err := s.database.Models.ActivateRevision(ctx, revisionID); err != nil {
+		activated, err := s.database.Models.ActivateRevision(ctx, revisionID)
+		if err != nil {
 			return fmt.Errorf("activate model revision: %w", err)
+		}
+		if err := s.ensureArchiveModelSyncJob(ctx, *activated, time.Now().UTC()); err != nil {
+			return fmt.Errorf("ensure model data sync job: %w", err)
 		}
 		activeState := domainmodels.RevisionStateActive
 		activeEntry, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{

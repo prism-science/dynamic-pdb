@@ -50,6 +50,23 @@ func (r *DataSyncJobsRepository) Schedule(ctx context.Context, job models.DataSy
 	return nil
 }
 
+// CreateIfMissing adds job unless one exists for its entry and model, stopped or not; an existing
+// job keeps its schedule and recorded version. It reports whether it added the job.
+func (r *DataSyncJobsRepository) CreateIfMissing(ctx context.Context, job models.DataSyncJob) (bool, error) {
+	query := `insert into data_sync_jobs(entry_id, model_id, scheduled_at)
+		      values ($1, $2, $3)
+		      on conflict on constraint data_sync_jobs_entry_model_key do nothing`
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, job.EntryID, job.ModelID, job.ScheduledAt)
+	if err != nil {
+		return false, fmt.Errorf("create data sync job: %w", err)
+	}
+	created, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count created data sync jobs: %w", err)
+	}
+	return created == 1, nil
+}
+
 // RecordArchiveVersion stores the archive version a job applied or recorded as its baseline.
 func (r *DataSyncJobsRepository) RecordArchiveVersion(
 	ctx context.Context,

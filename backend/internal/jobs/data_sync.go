@@ -40,6 +40,14 @@ type dataSyncStrategy interface {
 	sync(context.Context, models.DataSyncJob) (dataSyncOutcome, error)
 }
 
+// DataSyncConfig controls the archive sync.
+type DataSyncConfig struct {
+	// CoordinateRevisions lets the model sync add a Deposited model revision with a new
+	// coordinate file when RCSB changes an entry's atomic model. It stays off until the checksum
+	// job has copied the current coordinate files, because RCSB's URL serves only the newest file.
+	CoordinateRevisions bool `mapstructure:"coordinate_revisions"`
+}
+
 type DataSyncJob struct {
 	database        *db.DB
 	logger          *slog.Logger
@@ -54,6 +62,7 @@ func NewDataSyncJob(
 	siftsClient *sifts.RemoteClient,
 	logger *slog.Logger,
 	validationMode validation.Mode,
+	config DataSyncConfig,
 ) (*DataSyncJob, error) {
 	if database == nil {
 		return nil, errors.New("database is nil")
@@ -77,7 +86,7 @@ func NewDataSyncJob(
 		logger:   logger,
 		strategies: []dataSyncStrategy{
 			newEntrySyncStrategy(database, rcsbClient, siftsClient, logger, now, validationMode),
-			newModelSyncStrategy(database, rcsbClient, logger, now, validationMode),
+			newModelSyncStrategy(database, rcsbClient, logger, now, validationMode, config.CoordinateRevisions),
 		},
 		now:             now,
 		nextScheduledAt: nextDataSyncScheduledAt,

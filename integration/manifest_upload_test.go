@@ -312,7 +312,31 @@ func dbDSN(connectionParams string) string {
 }
 
 type backendProcess struct {
-	URL string
+	URL    string
+	output *syncBuffer
+}
+
+// Logs returns what the backend has written to stdout and stderr so far.
+func (p backendProcess) Logs() string {
+	return p.output.String()
+}
+
+// syncBuffer is a bytes.Buffer that the backend process writes to while the test reads it.
+type syncBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *syncBuffer) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(data)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }
 
 func startBackend(t *testing.T, root string, binaryPath string, s3URL string) backendProcess {
@@ -338,9 +362,9 @@ func startBackendWithEnv(t *testing.T, root string, binaryPath string, s3URL str
 		"AWS_EC2_METADATA_DISABLED=true",
 	)
 	cmd.Env = append(cmd.Env, extraEnv...)
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
+	output := &syncBuffer{}
+	cmd.Stdout = output
+	cmd.Stderr = output
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -379,7 +403,7 @@ func startBackendWithEnv(t *testing.T, root string, binaryPath string, s3URL str
 		}()
 		return response.StatusCode == http.StatusOK
 	}, 15*time.Second, 100*time.Millisecond, output.String())
-	return backendProcess{URL: url}
+	return backendProcess{URL: url, output: output}
 }
 
 func freeAddress(t *testing.T) string {
@@ -492,6 +516,11 @@ type rcsbStub struct {
 	// obsoletedBy, when set, makes the stub serve pdbID as an entry RCSB obsoleted and replaced
 	// with this PDB ID.
 	obsoletedBy string
+	// revisionGroups, when set, replaces the revision groups of version 1.1 ("Refinement
+	// description").
+	revisionGroups []string
+	// coordinateFile, when set, replaces the mmCIF served at /download/<PDB ID>.cif.
+	coordinateFile string
 }
 
 func newRCSBStub(t *testing.T, pdbID string) *rcsbStub {
@@ -588,9 +617,7 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 				{"ordinal": 1, "major_revision": 1, "minor_revision": 0, "revision_date": "2020-01-15T00:00:00.000+00:00"},
 				{"ordinal": 2, "major_revision": 1, "minor_revision": 1, "revision_date": "2026-08-12T00:00:00.000+00:00"},
 			},
-			"pdbx_audit_revision_group": []map[string]any{
-				{"group": "Refinement description", "revision_ordinal": 2},
-			},
+			"pdbx_audit_revision_group": s.versionRevisionGroups(),
 		})
 	case "/rest/v1/core/polymer_entity/" + s.pdbID + "/1":
 		writeJSON(w, map[string]any{
@@ -599,6 +626,10 @@ func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 			"rcsb_entity_source_organism":               []map[string]any{{"ncbi_scientific_name": "Homo sapiens"}},
 		})
 	case "/download/" + s.pdbID + ".cif":
+		if s.coordinateFile != "" {
+			writeText(w, s.coordinateFile)
+			return
+		}
 		writeText(w, `data_`+pdbIDLower+`
 loop_
 _software.name
@@ -630,6 +661,19 @@ REFMAC refinement 5.2.0005 ? 1
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// versionRevisionGroups is pdbx_audit_revision_group for version 1.1, the stub's latest version.
+func (s *rcsbStub) versionRevisionGroups() []map[string]any {
+	names := s.revisionGroups
+	if names == nil {
+		names = []string{"Refinement description"}
+	}
+	groups := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		groups = append(groups, map[string]any{"group": name, "revision_ordinal": 2})
+	}
+	return groups
 }
 
 func (s *rcsbStub) paths() []string {

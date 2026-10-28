@@ -91,6 +91,16 @@ func readMutations(document *Document, differences []SequenceDifference) []Mutat
 	return result
 }
 
+// MutationsComplete reports whether the parse read every row Result.Mutations is built from: no
+// parser limit was hit and the time budget did not end the read, and a cut-off read went on into
+// the coordinates, which archive files write after the mutation rows.
+func (d *Document) MutationsComplete() bool {
+	if d == nil || d.timedOut || len(d.notes.messages) > 0 {
+		return false
+	}
+	return !d.truncated || d.Table("_atom_site") != nil
+}
+
 func mutationSetFor(sets map[mutationKey]*MutationSet, key mutationKey, originals map[string]string) *MutationSet {
 	set, ok := sets[key]
 	if !ok {

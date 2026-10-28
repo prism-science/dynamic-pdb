@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// HeadReadLimit is how much of a structure file is read for extraction. Archive files list
+// entities, connections and mutations before the coordinates, so this covers them for files of
+// any size.
+const HeadReadLimit = 4 * 1024 * 1024
+
 // TimeBudget is how long one extraction may run before it stops reading and
 // reports what it has, with a "parser limit: time budget exceeded" warning.
 // Reading is linear in the input, so a 4 MiB head takes well under a second;

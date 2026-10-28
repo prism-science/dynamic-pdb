@@ -171,6 +171,31 @@ func Test_should_override_validation_mode_from_env_var(t *testing.T) {
 	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
 }
 
+func Test_should_leave_coordinate_revisions_off_when_config_does_not_set_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, cfg.DataSync.CoordinateRevisions)
+}
+
+func Test_should_turn_coordinate_revisions_on_when_env_var_sets_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_DATA_SYNC_COORDINATE_REVISIONS", "true")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.DataSync.CoordinateRevisions)
+}
+
 func Test_should_reject_config_when_validation_mode_is_unknown(t *testing.T) {
 	// given
 	t.Chdir(writeSampleConfig(t))
@@ -429,6 +454,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+	assert.False(t, cfg.DataSync.CoordinateRevisions)
 	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }
 
@@ -452,6 +478,7 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+	assert.False(t, cfg.DataSync.CoordinateRevisions)
 	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }
 

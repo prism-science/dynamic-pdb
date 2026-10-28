@@ -115,6 +115,18 @@ func Test_should_accept_artifact_metadata_when_it_holds_fasta_records_and_single
 	assert.Empty(t, fieldErrors)
 }
 
+func Test_should_accept_artifact_metadata_when_it_names_the_archive_version_of_a_coordinate_file(t *testing.T) {
+	// given
+	metadata := map[string]interface{}{"archive_version": "4.3"}
+	request := []CreateArtifactRequest{{Id: uuid.New(), Name: "1ABC.cif", Level: "L2", Type: new(ArtifactTypeModel), Metadata: &metadata}}
+
+	// when
+	fieldErrors := artifactRequestErrors(validation.Root.Field("artifacts"), &request)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
 func Test_should_report_unknown_artifact_and_run_metadata_keys_when_keys_are_outside_the_schema(t *testing.T) {
 	// given
 	artifactMetadata := map[string]interface{}{"records": []any{map[string]any{"header": "h", "sequence": "A", "length": 1}}, "color": 1}

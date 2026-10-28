@@ -20,9 +20,8 @@ import (
 )
 
 // artifactExtractionReadLimit bounds the ranged GET used to read an uploaded
-// structure file. Archive files list entities, connections and mutations before
-// the coordinates, so this covers them for files of any size.
-const artifactExtractionReadLimit = 4 * 1024 * 1024
+// structure file.
+const artifactExtractionReadLimit = cif.HeadReadLimit
 
 const artifactExtractionDataType = ArtifactExtractionDataType("artifact_extractions")
 

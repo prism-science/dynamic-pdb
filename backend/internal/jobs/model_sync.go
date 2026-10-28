@@ -27,6 +27,8 @@ type modelSyncStrategy struct {
 	logger         *slog.Logger
 	now            func() time.Time
 	validationMode validation.Mode
+	// coordinateRevisions is DataSyncConfig.CoordinateRevisions.
+	coordinateRevisions bool
 }
 
 func newModelSyncStrategy(
@@ -35,13 +37,15 @@ func newModelSyncStrategy(
 	logger *slog.Logger,
 	now func() time.Time,
 	validationMode validation.Mode,
+	coordinateRevisions bool,
 ) *modelSyncStrategy {
 	return &modelSyncStrategy{
-		database:       database,
-		rcsbClient:     rcsbClient,
-		logger:         logger,
-		now:            now,
-		validationMode: validationMode,
+		database:            database,
+		rcsbClient:          rcsbClient,
+		logger:              logger,
+		now:                 now,
+		validationMode:      validationMode,
+		coordinateRevisions: coordinateRevisions,
 	}
 }
 
@@ -64,6 +68,8 @@ func (s *modelSyncStrategy) sync(ctx context.Context, job models.DataSyncJob) (d
 // syncModel applies the archive's latest version to the archive's own Deposited model when it is
 // newer than the version the job last applied. The job's first run only records that version
 // (decision D2). Missing metric software is filled on every run, since that makes no revision.
+// A version that changed the atomic model also replaces the model's coordinate file (researcher
+// answer Q4a) when that is safe; otherwise the rest is applied and the version is not recorded.
 func (s *modelSyncStrategy) syncModel(
 	ctx context.Context,
 	job models.DataSyncJob,
@@ -134,14 +140,60 @@ func (s *modelSyncStrategy) syncModel(
 		version: latest,
 		summary: archiveChangeSummary(*job.ArchiveVersion, latest, mapping.RevisionGroups),
 	}
-	if err := s.applyArchiveVersion(ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source); err != nil {
+	var change *coordinateChange
+	if hasAtomicModelChange(*job.ArchiveVersion, latest, mapping.RevisionGroups) {
+		var reason string
+		change, reason, err = s.planCoordinateChange(ctx, *currentRevision, pdbID, latest)
+		if err != nil {
+			return dataSyncOutcome{}, fmt.Errorf("plan coordinate change: %w", err)
+		}
+		if reason != "" {
+			return s.applyWithoutCoordinateChange(
+				ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source, reason,
+			)
+		}
+	}
+	if err := s.applyArchiveVersion(
+		ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source, change,
+	); err != nil {
 		return dataSyncOutcome{}, err
 	}
 	return dataSyncOutcome{archiveVersion: &latest}, nil
 }
 
+// applyWithoutCoordinateChange applies a version whose coordinate change must wait: every other
+// value is applied, the previous coordinate file stays linked, and the version is not recorded,
+// so a later run makes the coordinate change.
+func (s *modelSyncStrategy) applyWithoutCoordinateChange(
+	ctx context.Context,
+	currentRevision models.ModelRevision,
+	details rcsb.EntryDetails,
+	currentMetrics []models.Metric,
+	desiredMetrics []models.Metric,
+	metricKeys []models.MetricKey,
+	source archiveRevisionSource,
+	reason string,
+) (dataSyncOutcome, error) {
+	s.logger.Warn(
+		"data sync left the RCSB coordinate change for a later run; the version stays unrecorded",
+		"entry_id", currentRevision.EntryID,
+		"model_id", currentRevision.ModelID,
+		"pdb_id", source.pdbID,
+		"archive_version", source.version.Version,
+		"reason", reason,
+	)
+	source.summary += coordinateFileKeptNote
+	if err := s.applyArchiveVersion(
+		ctx, currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source, nil,
+	); err != nil {
+		return dataSyncOutcome{}, err
+	}
+	return dataSyncOutcome{}, nil
+}
+
 // applyArchiveVersion activates a sync revision with the archive's values when they differ from
-// the active revision's. Values and metrics a depositor typed stay as they are.
+// the active revision's, or when change replaces its coordinate file. Values and metrics a
+// depositor typed stay as they are.
 func (s *modelSyncStrategy) applyArchiveVersion(
 	ctx context.Context,
 	currentRevision models.ModelRevision,
@@ -150,6 +202,7 @@ func (s *modelSyncStrategy) applyArchiveVersion(
 	desiredMetrics []models.Metric,
 	metricKeys []models.MetricKey,
 	source archiveRevisionSource,
+	change *coordinateChange,
 ) error {
 	desiredRevision := models.ModelRevision{}
 	applyRCSBModelDetails(&desiredRevision, details)
@@ -167,7 +220,7 @@ func (s *modelSyncStrategy) applyArchiveVersion(
 		desiredMetrics,
 		metricKeys,
 	)
-	if !modelRevisionChanged && !metricsChanged {
+	if !modelRevisionChanged && !metricsChanged && change == nil {
 		return nil
 	}
 	fieldErrors := modelUpdateErrors(desiredRevision, desiredMetrics)
@@ -183,6 +236,7 @@ func (s *modelSyncStrategy) applyArchiveVersion(
 		metricsChanged,
 		metricKeys,
 		source,
+		change,
 	); err != nil {
 		return fmt.Errorf("save model update: %w", err)
 	}
@@ -248,6 +302,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	metricsChanged bool,
 	metricKeys []models.MetricKey,
 	source archiveRevisionSource,
+	change *coordinateChange,
 ) error {
 	now := s.now()
 	parentRevisionID := currentRevision.ID
@@ -272,6 +327,11 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	revision.CreatedBy = dataSyncUserID
 	revision.CreatedAt = now
 	revision.UpdatedAt = now
+	if change != nil {
+		revision.PrimaryArtifactID = coordinatePrimaryArtifact(
+			currentRevision.PrimaryArtifactID, change.previous.ID, change.replacement.ID,
+		)
+	}
 
 	if err := s.database.Do(ctx, func(ctx context.Context) error {
 		if err := s.database.Entries.Lock(ctx, currentRevision.EntryID); err != nil {
@@ -289,6 +349,11 @@ func (s *modelSyncStrategy) saveModelUpdate(
 			return fmt.Errorf("model revision parent is no longer active: %w", db.ErrModelRevisionConflict)
 		}
 
+		if change != nil {
+			if _, err := s.database.Artifacts.Create(ctx, change.replacement); err != nil {
+				return fmt.Errorf("create new coordinate file: %w", err)
+			}
+		}
 		createdRevision, err := s.database.Models.Create(ctx, currentRevision.EntryID, revision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
@@ -300,6 +365,7 @@ func (s *modelSyncStrategy) saveModelUpdate(
 			desiredMetrics,
 			metricsChanged,
 			metricKeys,
+			change,
 			now,
 		); err != nil {
 			return fmt.Errorf("save model revision data: %w", err)
@@ -319,16 +385,25 @@ func (s *modelSyncStrategy) saveModelUpdate(
 		return fmt.Errorf("save model revision update: %w", err)
 	}
 
-	s.logger.Info(
-		"data sync model revision activated",
+	attributes := []any{
 		"entry_id", currentRevision.EntryID,
 		"model_id", currentRevision.ModelID,
 		"revision_id", revision.ID,
 		"change_summary", source.summary,
-	)
+	}
+	if change != nil {
+		attributes = append(attributes,
+			"previous_coordinate_artifact_id", change.previous.ID,
+			"coordinate_artifact_id", change.replacement.ID,
+		)
+	}
+	s.logger.Info("data sync model revision activated", attributes...)
 	return nil
 }
 
+// saveModelRevisionData gives a sync revision its parent's artifact, run and metric links, with
+// the coordinate file replaced when change is set and the archive metrics replaced when they
+// changed.
 func (s *modelSyncStrategy) saveModelRevisionData(
 	ctx context.Context,
 	fromRevisionID uuid.UUID,
@@ -336,10 +411,11 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 	desiredMetrics []models.Metric,
 	metricsChanged bool,
 	metricKeys []models.MetricKey,
+	change *coordinateChange,
 	createdAt time.Time,
 ) error {
-	if err := s.database.Artifacts.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
-		return fmt.Errorf("copy artifact links: %w", err)
+	if err := s.saveArtifactLinks(ctx, fromRevisionID, toRevisionID, change); err != nil {
+		return fmt.Errorf("save artifact links: %w", err)
 	}
 	if err := s.database.Runs.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
 		return fmt.Errorf("copy run links: %w", err)
@@ -365,6 +441,30 @@ func (s *modelSyncStrategy) saveModelRevisionData(
 		}
 		if err := s.database.Metrics.AttachToModelRevision(ctx, toRevisionID, createdMetric.ID); err != nil {
 			return fmt.Errorf("attach metric %s: %w", desiredMetric.Key, err)
+		}
+	}
+	return nil
+}
+
+func (s *modelSyncStrategy) saveArtifactLinks(
+	ctx context.Context,
+	fromRevisionID uuid.UUID,
+	toRevisionID uuid.UUID,
+	change *coordinateChange,
+) error {
+	if change == nil {
+		if err := s.database.Artifacts.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
+			return fmt.Errorf("copy artifact links: %w", err)
+		}
+		return nil
+	}
+	parentLinks, err := s.database.Artifacts.ModelRevisionArtifactIDs(ctx, fromRevisionID)
+	if err != nil {
+		return fmt.Errorf("list parent artifact links: %w", err)
+	}
+	for _, artifactID := range coordinateArtifactLinks(parentLinks, change.previous.ID, change.replacement.ID) {
+		if err := s.database.Artifacts.AttachToModelRevision(ctx, toRevisionID, artifactID); err != nil {
+			return fmt.Errorf("link artifact %s: %w", artifactID, err)
 		}
 	}
 	return nil

@@ -359,18 +359,29 @@ func (c *RemoteClient) get(ctx context.Context, url string) ([]byte, error) {
 			return bytes.Clone(cached.contents), nil
 		}
 	}
+	contents, err := retryGet(ctx, func() ([]byte, error) {
+		return c.getOnce(ctx, url)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if c.cache != nil {
+		c.cacheMutex.Lock()
+		c.cache.Add(url, cachedResponse{
+			contents:  bytes.Clone(contents),
+			expiresAt: c.now().Add(c.cacheTTL),
+		})
+		c.cacheMutex.Unlock()
+	}
+	return contents, nil
+}
+
+// retryGet calls getOnce until it succeeds, fails for good, or runs out of attempts.
+func retryGet(ctx context.Context, getOnce func() ([]byte, error)) ([]byte, error) {
 	var lastErr error
 	for attempt := 1; attempt <= getAttempts; attempt++ {
-		contents, err := c.getOnce(ctx, url)
+		contents, err := getOnce()
 		if err == nil {
-			if c.cache != nil {
-				c.cacheMutex.Lock()
-				c.cache.Add(url, cachedResponse{
-					contents:  bytes.Clone(contents),
-					expiresAt: c.now().Add(c.cacheTTL),
-				})
-				c.cacheMutex.Unlock()
-			}
 			return contents, nil
 		}
 		lastErr = err

@@ -125,6 +125,11 @@ func (s *entrySyncStrategy) applyArchiveVersion(
 	if err != nil {
 		return fmt.Errorf("build entry update: %w", err)
 	}
+	mutations, err := s.readArchiveMutations(ctx, source.pdbID)
+	if err != nil {
+		return fmt.Errorf("read archive mutations: %w", err)
+	}
+	desiredPolymerEntities = applyArchiveMutations(desiredPolymerEntities, currentPolymerEntities, mutations)
 	desiredPolymerEntities = applyDepositorPolymerEntities(
 		desiredPolymerEntities,
 		currentRevision.Metadata.DepositorPolymerEntities,
