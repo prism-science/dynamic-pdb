@@ -276,7 +276,11 @@ export interface paths {
         get: operations["getEntry"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete entry
+         * @description Soft-deletes an entry. The server adds a revision that marks the entry deleted, without its PDB ID, and approves it at once, so the entry leaves every list, search and read endpoint and its PDB ID can be used by a new entry. Revisions of the entry and its models that are still pending or in review are rejected, and its archive sync jobs are stopped. Rows and files are kept. Only callers who can approve revisions may delete, and only on servers where entry deletion is turned on (dev).
+         */
+        delete: operations["deleteEntry"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2455,6 +2459,63 @@ export interface operations {
             };
             /** @description Entry not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entry ID. */
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entry deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Entry deletion is turned off on this server, or the caller cannot approve revisions. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Entry not found, or already deleted. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Entry changed while it was being deleted. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

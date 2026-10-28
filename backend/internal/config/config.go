@@ -25,6 +25,7 @@ type Config struct {
 	Analytics  analytics.Config    `mapstructure:"analytics"`
 	Validation validation.Config   `mapstructure:"validation"`
 	DataSync   jobs.DataSyncConfig `mapstructure:"data_sync"`
+	Entries    EntriesConfig       `mapstructure:"entries"`
 }
 
 type ServerConfig struct {
@@ -33,6 +34,13 @@ type ServerConfig struct {
 	// ingress strips (for example https://dynamicpdb.com/api). Pagination links start with it.
 	PublicBaseURL string          `mapstructure:"public_base_url"`
 	RateLimit     RateLimitConfig `mapstructure:"rate_limit"`
+}
+
+// EntriesConfig holds the switches for changing entries.
+type EntriesConfig struct {
+	// DeleteEnabled lets reviewers soft-delete entries with DELETE /v1/entries/{entry_id}. It is
+	// on only on dev, so researchers can delete their test entries and retest the deposition forms.
+	DeleteEnabled bool `mapstructure:"delete_enabled"`
 }
 
 // RateLimitConfig caps how many requests one client may send per window on each server instance.
@@ -77,6 +85,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("server::rate_limit::internal_requests", defaultRateLimitInternalRequests)
 	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
 	v.SetDefault("data_sync::coordinate_revisions", false)
+	v.SetDefault("entries::delete_enabled", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

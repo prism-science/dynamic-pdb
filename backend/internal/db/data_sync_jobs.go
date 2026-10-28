@@ -104,6 +104,32 @@ func (r *DataSyncJobsRepository) Stop(
 	return nil
 }
 
+// StopForEntry stops every data sync job of the entry and its models that is not stopped yet,
+// and returns how many it stopped.
+func (r *DataSyncJobsRepository) StopForEntry(
+	ctx context.Context,
+	entryID string,
+	reason string,
+	stoppedAt time.Time,
+) (int64, error) {
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(
+		ctx,
+		`update data_sync_jobs
+		 set stopped_at = $2, stop_reason = $3
+		 where entry_id = $1
+		   and stopped_at is null`,
+		entryID, stoppedAt, reason,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("stop entry data sync jobs: %w", err)
+	}
+	stopped, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count stopped entry data sync jobs: %w", err)
+	}
+	return stopped, nil
+}
+
 func (r *DataSyncJobsRepository) GetNextScheduled(
 	ctx context.Context,
 	scheduledBefore time.Time,

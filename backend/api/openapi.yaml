@@ -640,6 +640,54 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Entries]
+      operationId: deleteEntry
+      summary: Delete entry
+      description: >
+        Soft-deletes an entry. The server adds a revision that marks the entry deleted, without
+        its PDB ID, and approves it at once, so the entry leaves every list, search and read
+        endpoint and its PDB ID can be used by a new entry. Revisions of the entry and its models
+        that are still pending or in review are rejected, and its archive sync jobs are stopped.
+        Rows and files are kept. Only callers
+        who can approve revisions may delete, and only on servers where entry deletion is turned
+        on (dev).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entry_id
+          in: path
+          description: Entry ID.
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Entry deleted.
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Entry deletion is turned off on this server, or the caller cannot approve revisions.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Entry not found, or already deleted.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Entry changed while it was being deleted.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries:
     get:

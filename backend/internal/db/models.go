@@ -346,6 +346,28 @@ func (r *ModelsRepository) RejectRevision(
 	return updated, nil
 }
 
+// RejectOpenRevisionsForEntry rejects every revision of the entry's models that is still pending
+// or in review, and returns how many it rejected.
+func (r *ModelsRepository) RejectOpenRevisionsForEntry(ctx context.Context, entryID string) (int64, error) {
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(
+		ctx,
+		`update model_revisions
+		 set state = 'rejected',
+		     updated_at = now()
+		 where model_id in (select id from models where entry_id = $1)
+		   and state in ('pending', 'in_review')`,
+		entryID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("reject open model revisions: %w", err)
+	}
+	rejected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count rejected model revisions: %w", err)
+	}
+	return rejected, nil
+}
+
 const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_id, model_revisions.model_id,
 			model_revisions.parent_revision_id, model_revisions.primary_artifact_id, model_revisions.revision_number,
 			model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at, model_revisions.title,

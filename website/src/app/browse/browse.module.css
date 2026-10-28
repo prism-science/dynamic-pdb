@@ -16,3 +16,22 @@
     padding: 24px 14px 64px;
   }
 }
+
+/* Shown once after the Delete entry action lands here; same toast as the entry
+   page's "waiting for review" notice. */
+.deletedNotice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 10;
+  max-width: min(360px, calc(100vw - 48px));
+  margin: 0;
+  padding: 10px 14px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 13px;
+  font-weight: 600;
+}
