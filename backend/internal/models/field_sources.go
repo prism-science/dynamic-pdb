@@ -1,6 +1,7 @@
 package models
 
 import (
+	"maps"
 	"reflect"
 	"time"
 )
@@ -108,6 +109,27 @@ func EntryRevisionFieldSources(parent *EntryRevision, revision EntryRevision) Fi
 		return depositorFieldSources(nil, nil, entryFieldValues(revision))
 	}
 	return depositorFieldSources(parent.FieldSources, entryFieldValues(*parent), entryFieldValues(revision))
+}
+
+// ArchiveEntryFieldSources marks each field of a new entry revision whose value equals the
+// archive's with source, so the archive sync keeps that value current. Every other field
+// keeps its source in sources. archive holds the archive's values, shaped the way a request
+// carries them.
+func ArchiveEntryFieldSources(
+	sources FieldSources,
+	revision EntryRevision,
+	archive EntryRevision,
+	source FieldSource,
+) FieldSources {
+	archiveValues := entryFieldValues(archive)
+	marked := make(FieldSources, len(sources))
+	maps.Copy(marked, sources)
+	for pointer, value := range entryFieldValues(revision) {
+		if !isUnset(value) && reflect.DeepEqual(value, archiveValues[pointer]) {
+			marked[pointer] = source
+		}
+	}
+	return marked
 }
 
 // ModelRevisionFieldSources returns the sources of a model revision a user creates from

@@ -620,6 +620,26 @@
   color: var(--accent-hover);
 }
 
+/* An edit form just sent a change; it shows once a reviewer approves it.
+   Fixed, so the scope's sticky head cannot scroll it out of sight, and out
+   of the flow, so it does not move the page under it. */
+.changeNotice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 10;
+  max-width: min(360px, calc(100vw - 48px));
+  margin: 0;
+  padding: 10px 14px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* --------------------------------------------------------------------- */
 /* Responsive                                                            */
 /* --------------------------------------------------------------------- */

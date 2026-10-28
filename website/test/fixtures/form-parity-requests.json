@@ -1,0 +1,104 @@
+{
+  "entry_create": {
+    "entry": {
+      "title": "example structure",
+      "thumbnail_image_url": null,
+      "external_refs": {
+        "pdb": "9PAR"
+      },
+      "details": "Room-temperature structure.",
+      "resolution": 1.4,
+      "method": "X-ray crystallography",
+      "space_group": "P 21 21 21",
+      "crystallography": {
+        "crystals": [
+          {
+            "id": "1",
+            "growth": {
+              "ph": 7.5,
+              "temperature_kelvin": 293
+            },
+            "diffractions": [
+              {
+                "id": "1",
+                "temperature_kelvin": 100
+              }
+            ]
+          }
+        ]
+      },
+      "ligands": [
+        "ATP"
+      ],
+      "cofactors": [],
+      "polymer_entities": [
+        {
+          "label_entity_id": "1",
+          "construct": "residues 1-164",
+          "mutations": [
+            "C54T"
+          ]
+        }
+      ],
+      "artifacts": []
+    },
+    "model_operations": []
+  },
+  "entry_revision": {
+    "entry": {
+      "method": "Neutron diffraction",
+      "crystallography": {
+        "crystals": [
+          {
+            "id": "1",
+            "growth": {
+              "ph": 7.5
+            },
+            "diffractions": [
+              {
+                "id": "1",
+                "temperature_kelvin": 100
+              }
+            ]
+          },
+          {
+            "id": "2",
+            "growth": {
+              "temperature_kelvin": 293
+            }
+          }
+        ]
+      }
+    }
+  },
+  "model_revision": {
+    "model": {
+      "metadata": {
+        "purpose": "Refinement",
+        "model_type": "Multiconformer",
+        "details": "Edited details",
+        "authors": [
+          "A. Author",
+          "B. Author"
+        ],
+        "ligands": [],
+        "cofactors": [],
+        "extensions": {
+          "lab": {
+            "notebook": "page 12"
+          }
+        }
+      },
+      "metrics": [
+        {
+          "key": "r_free",
+          "value": 0.231,
+          "software_name": "phenix.refine",
+          "software_version": "1.21",
+          "run_id": null,
+          "id": "00000000-0000-4000-8000-000000000001"
+        }
+      ]
+    }
+  }
+}

@@ -800,7 +800,7 @@ func proteinSequencesFromEntryDocumentForTest(document httpapi.EntryDocument) []
 	return sequences
 }
 
-func getModelForTest(t *testing.T, entryID, modelID string) httpapi.ModelAttributes {
+func getModelForTest(t *testing.T, entryID, modelID string) httpapi.ModelDetailAttributes {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := getWithToken(t, fmt.Sprintf("/v1/entries/%s/models/%s", entryID, modelID), "")

@@ -1,5 +1,7 @@
 "use client";
 
+import type { MetricKey } from "@/lib/api/entries";
+
 import { FieldMessages } from "./FormFields";
 import { PlusIcon } from "./icons";
 import { inlineMessages, type FieldMessage } from "./messages";
@@ -12,11 +14,15 @@ export default function MetricsEditor({
   metrics,
   messages,
   setMetrics,
+  locked = {},
 }: {
   metrics: MetricDraft[];
   /** Messages about a score are keyed by its metric key. */
   messages: readonly FieldMessage[];
   setMetrics: (next: MetricDraft[]) => void;
+  /** Scores the PDB archive keeps up to date, each with its source badge.
+   *  They are shown read-only. */
+  locked?: Partial<Record<MetricKey, string>>;
 }) {
   const add = () =>
     setMetrics([...metrics, { id: crypto.randomUUID(), values: {} }]);
@@ -24,6 +30,8 @@ export default function MetricsEditor({
     setMetrics(metrics.map((m) => (m.id === id ? { ...m, ...next } : m)));
   const remove = (id: string) =>
     setMetrics(metrics.filter((m) => m.id !== id));
+  const holdsLockedScore = (metric: MetricDraft) =>
+    METRIC_FIELDS.some((field) => locked[field.key] && metric.values[field.key]);
   // The API reports software errors per score; the set has one software field.
   const softwareMessages = uniqueByText(
     messages.filter(
@@ -47,14 +55,16 @@ export default function MetricsEditor({
         <div key={metric.id} className={styles.metricCard}>
           <div className={styles.metricTop}>
             <span className={styles.metricTag}>Metrics · L3</span>
-            <button
-              type="button"
-              className={styles.remove}
-              onClick={() => remove(metric.id)}
-              aria-label="Remove metrics"
-            >
-              ×
-            </button>
+            {holdsLockedScore(metric) ? null : (
+              <button
+                type="button"
+                className={styles.remove}
+                onClick={() => remove(metric.id)}
+                aria-label="Remove metrics"
+              >
+                ×
+              </button>
+            )}
           </div>
           <div className={styles.metricGrid}>
             <label className={styles.metricField}>
@@ -84,11 +94,17 @@ export default function MetricsEditor({
             </label>
             {METRIC_FIELDS.map((field) => (
               <label key={field.key} className={styles.metricField}>
-                <span>{field.label}</span>
+                <span>
+                  {field.label}
+                  {locked[field.key] ? (
+                    <span className={styles.sourceBadge}>{locked[field.key]}</span>
+                  ) : null}
+                </span>
                 <input
                   className={styles.input}
                   type="text"
                   inputMode="decimal"
+                  readOnly={locked[field.key] !== undefined}
                   value={metric.values[field.key] ?? ""}
                   onChange={(event) =>
                     patch(metric.id, {

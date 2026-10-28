@@ -23,17 +23,31 @@ export type EntryCrystal = Schemas["EntryCrystal"];
 export type EntryCrystallography = Schemas["EntryCrystallography"];
 export type EntryProperties = Schemas["EntryProperties"];
 
+/** Where the values of a revision's archive-synced fields came from, keyed by
+ *  JSON pointer such as /title. Null for revisions stored before sources were
+ *  recorded, which were imported from the archive. */
+export type FieldSources = Schemas["FieldSources"];
+export type FieldSource = Schemas["FieldSource"];
+
 export type Entry = Schemas["EntryInfoAttributes"] & {
   idempotency_key?: string | null;
   protein_sequences?: ProteinSequence[];
   polymer_entities?: PolymerEntity[];
   /** Set when the PDB no longer serves the entry; only the entry page's request returns it. */
   archive_status?: Schemas["EntryArchiveStatus"];
+  /** Only the entry's own request returns these two. */
+  depositor_polymer_entities?: DepositorPolymerEntity[];
+  field_sources?: FieldSources;
 };
 
 export type Model = Omit<Schemas["ModelAttributes"], "metadata" | "metrics" | "idempotency_key"> & {
   metadata?: JSONRecord;
   metrics?: Metric[];
+};
+
+/** A model as its own request returns it: a list item plus its field sources. */
+export type ModelDetail = Model & {
+  field_sources: FieldSources;
 };
 
 export type EntityType = "data" | "metrics" | "model" | "program";
@@ -71,6 +85,9 @@ export type DepositorPolymerEntity = Schemas["DepositorPolymerEntity"];
 export type ArchivePolymerEntityProposal = Schemas["ArchivePolymerEntityProposal"];
 
 export type ArchivePdbLookup = Schemas["ArchivePdbAttributes"];
+
+/** The entry values the archive lookup proposes for a PDB ID. */
+export type ArchiveEntryProposal = Schemas["ArchiveEntryProposal"];
 
 type EntryDocument = {
   data: EntryData;
@@ -214,7 +231,7 @@ type CreateArtifactRequest = Omit<Schemas["CreateArtifactRequest"], "metadata"> 
   metadata: JSONRecord;
 };
 
-type CreateMetricRequest = Schemas["CreateMetricRequest"];
+export type CreateMetricRequest = Schemas["CreateMetricRequest"];
 
 type CreateRunArtifactRequest = Schemas["CreateRunArtifactRequest"];
 
@@ -259,7 +276,7 @@ export type EntryPageData = {
 
 export type ModelPageData = {
   entry: Entry;
-  model: Model;
+  model: ModelDetail;
   entities: Entity[];
   relations: EntityRelation[];
 };
@@ -522,6 +539,67 @@ export async function getArchivePdb(
     token,
   );
   return attributesFromDocument(document);
+}
+
+// --- Revisions of published entries and models -----------------------------
+
+/** A change to an entry's active revision. A key left out keeps the active
+ *  value; a key sent as null clears it. */
+export type EntryRevisionChange = {
+  [Key in keyof Schemas["EntryRevisionChange"]]?:
+    | Schemas["EntryRevisionChange"][Key]
+    | null;
+};
+
+/** A change to a model's active revision. metadata replaces the whole
+ *  metadata object, apart from residue_data, which the backend keeps. */
+export type ModelRevisionChange = Schemas["ModelRevisionChange"];
+
+/** Proposes a change to a published entry: a new revision in review. */
+export async function createEntryRevision(
+  token: string,
+  entryId: string,
+  change: EntryRevisionChange,
+): Promise<CreateEntryRevisionResult> {
+  const document = await sendJSON<JSONAPIDataDocument<CreateEntryRevisionResult>>(
+    "POST",
+    `/v1/entries/${encodeURIComponent(entryId)}/revisions`,
+    token,
+    createEntryRevisionRequestBody(change),
+  );
+  return attributesFromDocument(document);
+}
+
+/** The body createEntryRevision sends. API error pointers address this document. */
+export function createEntryRevisionRequestBody(change: EntryRevisionChange): {
+  entry: EntryRevisionChange;
+} {
+  return { entry: change };
+}
+
+/** Proposes a change to a published model: a new revision in review. */
+export async function createModelRevision(
+  token: string,
+  entryId: string,
+  modelId: string,
+  change: ModelRevisionChange,
+): Promise<CreateModelRevisionResult> {
+  const document = await sendJSON<JSONAPIDataDocument<CreateModelRevisionResult>>(
+    "POST",
+    `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(
+      modelId,
+    )}/revisions`,
+    token,
+    createModelRevisionRequestBody(change),
+  );
+  return attributesFromDocument(document);
+}
+
+/** The body createModelRevision sends. API error pointers address this document. */
+export function createModelRevisionRequestBody(change: ModelRevisionChange): {
+  model: ModelRevisionChange;
+} {
+  return { model: change };
 }
 
 // --- Review workflow -------------------------------------------------------
@@ -1037,8 +1115,8 @@ export async function getModel(
   token: string | undefined,
   entryId: string,
   modelId: string,
-): Promise<Model> {
-  const document = await fetchBackend<JSONAPIDataDocument<Model>>(
+): Promise<ModelDetail> {
+  const document = await fetchBackend<JSONAPIDataDocument<ModelDetail>>(
     `/v1/entries/${encodeURIComponent(entryId)}/models/${encodeURIComponent(modelId)}`,
     token,
   );
@@ -1135,6 +1213,8 @@ function entryFromDocument(document: EntryDocument): Entry {
     ...definedEntryProperties(attributes),
     protein_sequences: proteinSequences,
     polymer_entities: attributes.polymer_entities ?? [],
+    depositor_polymer_entities: attributes.depositor_polymer_entities ?? [],
+    field_sources: attributes.field_sources ?? null,
     ...(attributes.archive_status ? { archive_status: attributes.archive_status } : {}),
     published_at: attributes.published_at,
     created_at: attributes.created_at,
@@ -1157,6 +1237,10 @@ function definedEntryProperties(properties: EntryProperties): EntryProperties {
       : {}),
     ...(properties.crystallography !== undefined
       ? { crystallography: properties.crystallography }
+      : {}),
+    ...(properties.ligands !== undefined ? { ligands: properties.ligands } : {}),
+    ...(properties.cofactors !== undefined
+      ? { cofactors: properties.cofactors }
       : {}),
   };
 }

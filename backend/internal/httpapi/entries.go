@@ -9,12 +9,14 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"dynamic-pdb/backend/internal/archivemodels"
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
@@ -194,6 +196,10 @@ func (s *Server) createInitialEntryRevision(
 	}
 	metadata.DepositorPolymerEntities = depositorPolymerEntitiesFromRequest(req.Entry.PolymerEntities)
 	now := time.Now().UTC()
+	// Read before the transaction: the lookup may call RCSB, although the form's own lookup
+	// a moment earlier has usually filled the cache.
+	pdbID := strings.ToUpper(strings.TrimSpace(metadata.ExternalRefs[domainmodels.EntrySourcePDB]))
+	archiveValues, archiveSource, archiveFound := s.archiveEntryValues(ctx, pdbID, now)
 	attributes := CreateEntryRevisionAttributes{
 		EntryId:      entryID,
 		State:        CreateEntryRevisionAttributesStateInReview,
@@ -225,6 +231,10 @@ func (s *Server) createInitialEntryRevision(
 			UpdatedAt:         now,
 		}
 		initialRevision.FieldSources = domainmodels.EntryRevisionFieldSources(nil, initialRevision)
+		if archiveFound {
+			initialRevision.FieldSources = domainmodels.ArchiveEntryFieldSources(
+				initialRevision.FieldSources, initialRevision, archiveValues, archiveSource)
+		}
 		revision, err := s.database.Entries.Create(ctx, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
@@ -279,6 +289,50 @@ func (s *Server) createInitialEntryRevision(
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("create initial entry graph: %w", err)
 	}
 	return attributes, nil
+}
+
+// archiveEntryValues reads what the archive says about the entry pdbID names, through the
+// cached lookup the form has just made, and returns those values with the source a value
+// equal to one of them gets. The values go through the conversions a create request goes
+// through, so a value the form copied from the lookup compares equal. found is false when
+// there is no PDB ID, the lookup is off, or it fails: every value the entry was given is
+// then the depositor's.
+func (s *Server) archiveEntryValues(
+	ctx context.Context,
+	pdbID string,
+	retrievedAt time.Time,
+) (values domainmodels.EntryRevision, source domainmodels.FieldSource, found bool) {
+	if pdbID == "" || s.archive == nil {
+		return domainmodels.EntryRevision{}, domainmodels.FieldSource{}, false
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, archiveLookupTimeout)
+	defer cancel()
+	result, err := s.archive.Get(lookupCtx, pdbID)
+	if err != nil {
+		slog.WarnContext(ctx, "archive lookup for a new entry failed; its values stay the depositor's",
+			"err", err, "pdb_id", pdbID)
+		return domainmodels.EntryRevision{}, domainmodels.FieldSource{}, false
+	}
+	properties, err := entryPropertiesFromModel(archivemodels.EntryMetadata(result.Entry))
+	if err != nil {
+		slog.WarnContext(ctx, "convert archive values for a new entry failed; its values stay the depositor's",
+			"err", err, "pdb_id", pdbID)
+		return domainmodels.EntryRevision{}, domainmodels.FieldSource{}, false
+	}
+	metadata, err := entryMetadataFromAPIFields(properties)
+	if err != nil {
+		slog.WarnContext(ctx, "convert archive values for a new entry failed; its values stay the depositor's",
+			"err", err, "pdb_id", pdbID)
+		return domainmodels.EntryRevision{}, domainmodels.FieldSource{}, false
+	}
+	values = domainmodels.EntryRevision{Title: trimmedStringPtr(result.Entry.Title), Metadata: metadata}
+	source = domainmodels.FieldSource{
+		Source:      domainmodels.FieldSourceRCSB,
+		Accession:   new(result.PDBID),
+		Release:     result.Entry.LatestVersion,
+		RetrievedAt: new(retrievedAt),
+	}
+	return values, source, true
 }
 
 func nextEntryDataSyncScheduledAt(now time.Time) time.Time {
@@ -697,6 +751,11 @@ func (s *Server) createModelRevisionGraph(
 			if err != nil {
 				return fmt.Errorf("decode model metadata: %w", err)
 			}
+			// Responses return residue data beside metadata, never inside it, so a client
+			// that sends metadata back cannot include it. Leaving it out keeps the base's.
+			if _, sent := (*data.Metadata)["residue_data"]; !sent {
+				metadata.ResidueData = base.Metadata.ResidueData
+			}
 			revision.Metadata = metadata
 		}
 		fieldSources, err := s.modelRevisionFieldSources(ctx, *base, revision, data.Metrics)
@@ -912,6 +971,12 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
 		return
 	}
+	fieldSources, err := fieldSourcesFromModel(revision.FieldSources)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build entry field sources failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get entry")
+		return
+	}
 	included := make([]EntryProteinSequenceData, 0, len(sequences))
 	sequenceIdentifiers := make([]EntryProteinSequenceIdentifier, 0, len(sequences))
 	for _, sequence := range sequences {
@@ -954,7 +1019,11 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
 				PolymerEntities:   polymerEntitiesFromModels(polymerEntities),
-				ArchiveStatus:     archiveStatus,
+				DepositorPolymerEntities: depositorPolymerEntitiesFromModels(
+					revision.Metadata.DepositorPolymerEntities,
+				),
+				FieldSources:  fieldSources,
+				ArchiveStatus: archiveStatus,
 			},
 			Relationships: EntryRelationships{
 				CreatedBy: EntryCreatedByRelationship{
@@ -1161,20 +1230,51 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
-	model, err := modelAttributesFromRevision(*revision, metrics)
+	model, err := modelDetailAttributesFromRevision(*revision, metrics)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "build model response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
-	model.ResidueData = ptr(residueDataFromModels(revision.Metadata.ResidueData))
 	writeJSON(w, http.StatusOK, ModelDocument{
-		Data: ModelData{
+		Data: ModelDetailData{
 			Type:       jsonAPITypeModels,
 			Id:         model.Id,
 			Attributes: model,
 		},
 	})
+}
+
+// modelDetailAttributesFromRevision is modelAttributesFromRevision plus what only the model
+// detail endpoint returns: the residue data and the field sources.
+func modelDetailAttributesFromRevision(
+	revision domainmodels.ModelRevision,
+	metrics []domainmodels.Metric,
+) (ModelDetailAttributes, error) {
+	model, err := modelAttributesFromRevision(revision, metrics)
+	if err != nil {
+		return ModelDetailAttributes{}, fmt.Errorf("build model attributes: %w", err)
+	}
+	fieldSources, err := fieldSourcesFromModel(revision.FieldSources)
+	if err != nil {
+		return ModelDetailAttributes{}, fmt.Errorf("build model field sources: %w", err)
+	}
+	return ModelDetailAttributes{
+		Id:                model.Id,
+		EntryId:           model.EntryId,
+		CreatedBy:         model.CreatedBy,
+		Title:             model.Title,
+		ThumbnailImageUrl: model.ThumbnailImageUrl,
+		IdempotencyKey:    model.IdempotencyKey,
+		Metadata:          model.Metadata,
+		ResidueData:       ptr(residueDataFromModels(revision.Metadata.ResidueData)),
+		PrimaryArtifactId: model.PrimaryArtifactId,
+		PublishedAt:       model.PublishedAt,
+		CreatedAt:         model.CreatedAt,
+		UpdatedAt:         model.UpdatedAt,
+		Metrics:           model.Metrics,
+		FieldSources:      fieldSources,
+	}, nil
 }
 
 func (s *Server) ListArtifacts(w http.ResponseWriter, r *http.Request, entryID string, params ListArtifactsParams) {
@@ -1725,6 +1825,33 @@ func polymerEntitiesFromModels(entities []domainmodels.PolymerEntity) []PolymerE
 		})
 	}
 	return items
+}
+
+// depositorPolymerEntitiesFromModels returns the typed values as the request sent them, so an
+// edit form can start from them. The list is never null.
+func depositorPolymerEntitiesFromModels(entities []domainmodels.DepositorPolymerEntity) DepositorPolymerEntities {
+	result := make(DepositorPolymerEntities, 0, len(entities))
+	for _, entity := range entities {
+		item := DepositorPolymerEntity{
+			LabelEntityId: entity.LabelEntityID,
+			Construct:     entity.Construct,
+		}
+		if len(entity.Mutations) > 0 {
+			item.Mutations = new(slices.Clone(entity.Mutations))
+		}
+		if len(entity.SourceOrganisms) > 0 {
+			organisms := make([]PolymerEntityOrganism, 0, len(entity.SourceOrganisms))
+			for _, organism := range entity.SourceOrganisms {
+				organisms = append(organisms, PolymerEntityOrganism{
+					ScientificName: organism.ScientificName,
+					NcbiTaxonomyId: organism.NCBITaxonomyID,
+				})
+			}
+			item.SourceOrganisms = &organisms
+		}
+		result = append(result, item)
+	}
+	return result
 }
 
 func mutationsStatusFromModel(status *domainmodels.MutationsStatus) *PolymerEntityMutationsStatus {

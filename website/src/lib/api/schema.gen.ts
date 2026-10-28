@@ -755,7 +755,16 @@ export interface components {
             meta?: components["schemas"]["CursorPageMeta"];
         };
         ModelDocument: {
-            data: components["schemas"]["ModelData"];
+            data: components["schemas"]["ModelDetailData"];
+        };
+        ModelDetailData: {
+            type: string;
+            id: string;
+            attributes: components["schemas"]["ModelDetailAttributes"];
+        };
+        /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from. */
+        ModelDetailAttributes: components["schemas"]["ModelAttributes"] & {
+            field_sources: components["schemas"]["FieldSources"];
         };
         ModelData: {
             type: string;
@@ -1211,6 +1220,9 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             polymer_entities: components["schemas"]["PolymerEntity"][];
+            /** @description The polymer-entity values a depositor typed for the active revision, as sent in polymer_entities on create or revision; empty when none were typed. Read-only. */
+            depositor_polymer_entities: components["schemas"]["DepositorPolymerEntities"];
+            field_sources: components["schemas"]["FieldSources"];
             archive_status?: components["schemas"]["EntryArchiveStatus"];
         };
         /** @description Present when the PDB archive no longer serves the entry's PDB entry. Only the archive sync sets it; the entry stays visible. Read-only. */
@@ -1625,6 +1637,7 @@ export interface components {
             thumbnail_image_url?: string | null;
             change_summary?: string | null;
             idempotency_key?: string | null;
+            /** @description Replaces the whole metadata object of the active revision, except residue_data: when this object leaves residue_data out, the active revision's residue data is kept, because responses return it beside metadata, never inside it. */
             metadata?: components["schemas"]["ModelMetadata"];
             /** Format: uuid */
             primary_artifact_id?: string | null;

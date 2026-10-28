@@ -7,6 +7,7 @@ import {
   createEntry,
   createEntryRequestBody,
   getArchivePdb,
+  type ArchiveEntryProposal,
   type ArchivePolymerEntityProposal,
   type CreateEntryInput,
 } from "@/lib/api/entries";
@@ -38,12 +39,13 @@ export async function createEntryAction(
 }
 
 export type ArchiveLookupResult =
-  | { polymerEntities: ArchivePolymerEntityProposal[] }
+  | { entry: ArchiveEntryProposal; polymerEntities: ArchivePolymerEntityProposal[] }
   | { error: string };
 
-/** The PDB entry's polymer entities, so the form can ask for each one's
- *  construct and mutations. Nothing is stored. */
-export async function lookupArchivePolymerEntitiesAction(
+/** What the PDB archive says about the entry: the values the form fills in,
+ *  and the polymer entities, so the form can ask for each one's construct
+ *  and mutations. Nothing is stored. */
+export async function lookupArchiveEntryAction(
   pdbId: string,
 ): Promise<ArchiveLookupResult> {
   const session = await getAuthSession();
@@ -53,7 +55,7 @@ export async function lookupArchivePolymerEntitiesAction(
 
   try {
     const lookup = await getArchivePdb(session.token, pdbId);
-    return { polymerEntities: lookup.polymer_entities };
+    return { entry: lookup.entry, polymerEntities: lookup.polymer_entities };
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) {
       return { error: `The PDB has no entry ${pdbId}.` };
