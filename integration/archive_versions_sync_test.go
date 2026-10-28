@@ -119,6 +119,67 @@ func Test_should_mark_entry_obsolete_and_stop_its_job_when_rcsb_obsoleted_it(t *
 	assert.Equal(t, fixture.RevisionID, parentRevisionID)
 }
 
+// obsoleteRCSBTitle is the title in the RCSB stub's removal record.
+const obsoleteRCSBTitle = "Structure RCSB obsoleted"
+
+func Test_should_fill_title_without_changing_status_when_untitled_entry_is_already_obsolete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given: an archive entry already marked obsolete, without a title, like the 28 imported
+	// after RCSB had obsoleted them
+	root := repoRoot(t)
+	backendBinaryPath := buildBackend(t, root)
+	database := setupDB(t)
+	auth := seedUserAndIssueToken(t, database)
+	pdbID := integrationPDBID()
+	successorPDBID := integrationPDBID()
+	fixture := seedScheduledDataSyncEntry(t, database, auth.UserID, pdbID)
+	_, err := database.Conn.ExecContext(t.Context(),
+		`update entry_revisions
+		 set title = null,
+		     metadata = metadata || jsonb_build_object('archive_status', jsonb_build_object(
+		         'state', 'obsolete', 'obsoleted_at', '2024-01-17T00:00:00Z', 'superseded_by', jsonb_build_array($2::text)))
+		 where id = $1`,
+		fixture.RevisionID, successorPDBID)
+	require.NoError(t, err)
+	s3 := newS3Stub(t)
+	defer s3.Close()
+	rcsb := newObsoleteRCSBStub(t, pdbID, successorPDBID)
+	defer rcsb.Close()
+	setRCSBURLs(t, rcsb.URL())
+
+	// when
+	backend := startBackend(t, root, backendBinaryPath, s3.URL())
+	var stopReason sql.NullString
+	require.Eventually(t, func() bool {
+		err := database.Conn.QueryRowContext(t.Context(),
+			`select stop_reason from data_sync_jobs where entry_id = $1 and model_id is null`, fixture.EntryID,
+		).Scan(&stopReason)
+		return err == nil && stopReason.Valid
+	}, 20*time.Second, 100*time.Millisecond)
+	entry := getJSON[obsoleteEntryDocument](t, backend.URL+"/v1/entries/"+fixture.EntryID, auth.AccessToken)
+
+	// then
+	assert.Equal(t, "RCSB obsoleted "+pdbID, stopReason.String)
+	require.NotNil(t, entry.Data.Attributes.Title)
+	assert.Equal(t, obsoleteRCSBTitle, *entry.Data.Attributes.Title)
+	require.NotNil(t, entry.Data.Attributes.ArchiveStatus)
+	assert.Equal(t, "obsolete", entry.Data.Attributes.ArchiveStatus.State)
+	var changeSummary string
+	var parentRevisionID uuid.UUID
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select change_summary, parent_revision_id from entry_revisions where entry_id = $1 and state = 'active'`,
+		fixture.EntryID,
+	).Scan(&changeSummary, &parentRevisionID))
+	assert.Equal(t, "Title from RCSB's removal record of "+pdbID, changeSummary)
+	assert.Equal(t, fixture.RevisionID, parentRevisionID)
+}
+
 type obsoleteEntryDocument struct {
 	Data struct {
 		Attributes struct {

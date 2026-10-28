@@ -140,6 +140,112 @@ func runObsoleteEntryJobsMigration(t *testing.T, fixture *migratedFixture) {
 	require.NoError(t, err)
 }
 
+// untitledArchiveEntriesMigration runs the entry jobs of archive entries without a title again.
+const untitledArchiveEntriesMigration = "V20261028120000__"
+
+// untitledArchiveEntriesSeed adds an active archive entry without a title, one with a title, and
+// a deleted archive entry without a title, each with an entry job.
+const untitledArchiveEntriesSeed = `
+insert into entries(id, state, created_by) values
+    ('e_untitled', 'active', '00000000-0000-0000-0000-0000000000a1'),
+    ('e_titled', 'active', '00000000-0000-0000-0000-0000000000a1'),
+    ('e_untitled_deleted', 'deleted', '00000000-0000-0000-0000-0000000000a1');
+insert into entry_revisions(id, entry_id, state, title, metadata, created_by) values
+    ('00000000-0000-0000-0000-0000000002b0', 'e_untitled', 'active', null,
+     '{"external_refs":{"pdb":"8PYQ"}}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-0000000002b1', 'e_titled', 'active', 'Ficin C crystal form I',
+     '{"external_refs":{"pdb":"4YYU"}}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-0000000002b2', 'e_untitled_deleted', 'active', null,
+     '{"external_refs":{"pdb":"3ABC"}}', '00000000-0000-0000-0000-0000000000a1');
+insert into data_sync_jobs(entry_id, model_id, scheduled_at) values
+    ('e_untitled', null, '2026-10-28T11:47:00Z'),
+    ('e_titled', null, '2026-10-28T11:47:00Z'),
+    ('e_untitled_deleted', null, '2026-10-28T11:47:00Z');
+`
+
+type entryJobState struct {
+	ScheduledAt time.Time  `db:"scheduled_at"`
+	StoppedAt   *time.Time `db:"stopped_at"`
+	StopReason  *string    `db:"stop_reason"`
+}
+
+func Test_should_resume_stopped_job_of_untitled_archive_entry_due_in_15_minutes_when_untitled_entries_are_migrated(t *testing.T) {
+	// given
+	fixture := newMigratedFixtureWithExtraSeed(t, untitledArchiveEntriesSeed)
+	stopEntryJobLikeBackend(t, fixture, "e_untitled", "RCSB obsoleted 8PYQ")
+
+	// when
+	runUntitledArchiveEntriesMigration(t, fixture)
+
+	// then
+	job := entryJob(t, fixture, "e_untitled")
+	assert.Nil(t, job.StoppedAt)
+	assert.Nil(t, job.StopReason)
+	assert.WithinDuration(t, time.Now().Add(15*time.Minute), job.ScheduledAt, time.Minute)
+}
+
+func Test_should_leave_jobs_of_titled_and_deleted_entries_stopped_when_untitled_entries_are_migrated(t *testing.T) {
+	// given
+	fixture := newMigratedFixtureWithExtraSeed(t, untitledArchiveEntriesSeed)
+	stopEntryJobLikeBackend(t, fixture, "e_titled", "RCSB obsoleted 4YYU")
+	stopEntryJobLikeBackend(t, fixture, "e_untitled_deleted", "RCSB obsoleted 3ABC")
+
+	// when
+	runUntitledArchiveEntriesMigration(t, fixture)
+
+	// then
+	titled := entryJob(t, fixture, "e_titled")
+	require.NotNil(t, titled.StopReason)
+	assert.Equal(t, "RCSB obsoleted 4YYU", *titled.StopReason)
+	deleted := entryJob(t, fixture, "e_untitled_deleted")
+	require.NotNil(t, deleted.StopReason)
+	assert.Equal(t, "RCSB obsoleted 3ABC", *deleted.StopReason)
+}
+
+func Test_should_leave_job_stopped_when_untitled_entries_migration_reruns_after_sync_gave_the_title(t *testing.T) {
+	// given
+	fixture := newMigratedFixtureWithExtraSeed(t, untitledArchiveEntriesSeed)
+	runUntitledArchiveEntriesMigration(t, fixture)
+	_, err := fixture.database.Exec(`update entry_revisions set title = '10 micrometer HEWL crystals'
+		where entry_id = 'e_untitled' and state = 'active'`)
+	require.NoError(t, err)
+	stopEntryJobLikeBackend(t, fixture, "e_untitled", "RCSB obsoleted 8PYQ")
+
+	// when
+	runUntitledArchiveEntriesMigration(t, fixture)
+
+	// then
+	job := entryJob(t, fixture, "e_untitled")
+	require.NotNil(t, job.StopReason)
+	assert.Equal(t, "RCSB obsoleted 8PYQ", *job.StopReason)
+}
+
+// stopEntryJobLikeBackend stops an entry's job, as the backend does when RCSB obsoleted the entry.
+func stopEntryJobLikeBackend(t *testing.T, fixture *migratedFixture, entryID string, reason string) {
+	t.Helper()
+	_, err := fixture.database.Exec(
+		`update data_sync_jobs set stopped_at = now(), stop_reason = $2 where entry_id = $1 and model_id is null`,
+		entryID, reason)
+	require.NoError(t, err)
+}
+
+func runUntitledArchiveEntriesMigration(t *testing.T, fixture *migratedFixture) {
+	t.Helper()
+	migrationSQL, err := os.ReadFile(migrationPathWithPrefix(t, untitledArchiveEntriesMigration))
+	require.NoError(t, err)
+	_, err = fixture.database.Exec(string(migrationSQL))
+	require.NoError(t, err)
+}
+
+func entryJob(t *testing.T, fixture *migratedFixture, entryID string) entryJobState {
+	t.Helper()
+	var job entryJobState
+	require.NoError(t, fixture.database.Get(&job,
+		`select scheduled_at, stopped_at, stop_reason from data_sync_jobs where entry_id = $1 and model_id is null`,
+		entryID))
+	return job
+}
+
 func dataSyncJobCount(t *testing.T, fixture *migratedFixture) int {
 	t.Helper()
 	var count int
