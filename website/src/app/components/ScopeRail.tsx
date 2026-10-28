@@ -58,6 +58,8 @@ export default function ScopeRail({
   sort,
   direction,
   addModelHref,
+  editEntryHref,
+  editModelHref,
 }: {
   entryId: string;
   models: EntryModel[];
@@ -70,6 +72,10 @@ export default function ScopeRail({
   direction: string | null;
   /** Omitted for signed-out visitors, who cannot add one. */
   addModelHref?: string | null;
+  /** Omitted for signed-out visitors, who cannot edit. */
+  editEntryHref?: string | null;
+  /** The model on screen; omitted when there is none or the visitor cannot edit. */
+  editModelHref?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const intent = useRef<number | null>(null);
@@ -348,6 +354,16 @@ export default function ScopeRail({
         {addModelHref ? (
           <Link className={styles.add} href={addModelHref}>
             + Add model
+          </Link>
+        ) : null}
+        {editModelHref ? (
+          <Link className={styles.add} href={editModelHref}>
+            Edit model
+          </Link>
+        ) : null}
+        {editEntryHref ? (
+          <Link className={styles.add} href={editEntryHref}>
+            Edit entry
           </Link>
         ) : null}
       </aside>

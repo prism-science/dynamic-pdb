@@ -166,3 +166,39 @@ func Test_should_compare_exactly_the_archive_fields_when_sources_are_computed(t 
 func archiveSource(pdbID string) FieldSource {
 	return FieldSource{Source: FieldSourceRCSB, Accession: new(pdbID)}
 }
+
+func Test_should_mark_values_equal_to_the_archive_rcsb_when_entry_is_created(t *testing.T) {
+	// given
+	revision := EntryRevision{
+		Title:    new("Archive title"),
+		Metadata: EntryMetadata{Resolution: new(1.8), SpaceGroup: new("P 1")},
+	}
+	archive := EntryRevision{
+		Title:    new("Archive title"),
+		Metadata: EntryMetadata{Resolution: new(1.8), SpaceGroup: new("P 21 21 21")},
+	}
+	source := archiveSource("1ABC")
+
+	// when
+	sources := ArchiveEntryFieldSources(EntryRevisionFieldSources(nil, revision), revision, archive, source)
+
+	// then
+	assert.Equal(t, FieldSources{
+		EntryFieldTitle:      source,
+		EntryFieldResolution: source,
+		EntryFieldSpaceGroup: {Source: FieldSourceDepositor},
+	}, sources)
+}
+
+func Test_should_mark_nothing_rcsb_when_entry_leaves_a_value_out_that_the_archive_also_lacks(t *testing.T) {
+	// given
+	revision := EntryRevision{Title: new("Depositor title")}
+	archive := EntryRevision{Title: new("Archive title")}
+
+	// when
+	sources := ArchiveEntryFieldSources(
+		EntryRevisionFieldSources(nil, revision), revision, archive, archiveSource("1ABC"))
+
+	// then
+	assert.Equal(t, FieldSources{EntryFieldTitle: {Source: FieldSourceDepositor}}, sources)
+}

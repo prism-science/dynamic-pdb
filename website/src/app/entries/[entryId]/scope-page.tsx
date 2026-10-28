@@ -61,6 +61,7 @@ import {
   summaryModelFacts,
 } from "./entry-view";
 
+import { CHANGE_SUBMITTED_NOTICE } from "./changeNotice";
 import styles from "./entry-page.module.css";
 
 /**
@@ -78,6 +79,7 @@ export default async function ScopePage({
   requestedTab,
   requestedSort,
   requestedDirection,
+  changeSubmitted = false,
 }: {
   entryId: string;
   /** null on the entry route, which then starts on the deposited model. */
@@ -87,6 +89,8 @@ export default async function ScopePage({
    *  models and can be sent to someone else. */
   requestedSort: string | undefined;
   requestedDirection: string | undefined;
+  /** Set when an edit form has just sent a change for review. */
+  changeSubmitted?: boolean;
 }) {
   const session = await getAuthSession();
   const [data, similarEntries] = await Promise.all([
@@ -219,6 +223,11 @@ export default async function ScopePage({
       className={`${styles.page} ${styles.scopePage}`}
       aria-label={`${entryLabel} entry`}
     >
+      {changeSubmitted ? (
+        <p className={styles.changeNotice} role="status">
+          {CHANGE_SUBMITTED_NOTICE}
+        </p>
+      ) : null}
       <div className={styles.scope}>
         {/* The name spans both columns; the tabs belong to the right one,
             because that is the only column they change. Both stay put while
@@ -274,6 +283,12 @@ export default async function ScopePage({
             tab={active === OVERVIEW_TAB ? null : active}
             sort={requestedSort ?? null}
             direction={requestedDirection ?? null}
+            editEntryHref={canAddModel ? `${entryBase}/edit` : null}
+            editModelHref={
+              canAddModel && model !== null
+                ? `${entryBase}/models/${encodeURIComponent(model.id)}/edit`
+                : null
+            }
             addModelHref={
               canAddModel
                 ? `${entryBase}/models/new`

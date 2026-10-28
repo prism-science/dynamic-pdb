@@ -28,11 +28,13 @@ import {
   mutationError,
   organismIsEditable,
 } from "./polymerEntities";
+import type { ModelEditDraft, ModelLocks } from "./revisionChanges";
 import { METRIC_FIELDS, MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type {
   CompoundsDraft,
   CrystalDraft,
   EntryMetadataDraft,
+  MetricDraft,
   ModelDraft,
   PolymerEntityDraft,
 } from "./types";
@@ -91,20 +93,57 @@ export function entryFormMessages(
 }
 
 export function modelFormMessages(draft: ModelDraft): FieldMessage[] {
+  return [
+    ...modelOverviewMessages(draft, { purpose: false, modelType: false, compounds: false }),
+    ...modelFileMessages(draft),
+    ...metricMessages(draft.metrics),
+    ...programMessages(draft),
+  ];
+}
+
+/**
+ * The model edit form's checks. Files and runs are read-only there, and a
+ * read-only value is not checked: the depositor could not fix it.
+ */
+export function modelEditMessages(
+  draft: ModelEditDraft,
+  locks: ModelLocks,
+): FieldMessage[] {
+  return [
+    ...modelOverviewMessages(draft, {
+      purpose: locks.purpose,
+      modelType: locks.modelType,
+      compounds: locks.fields.ligands !== undefined,
+    }),
+    ...metricMessages(draft.metrics),
+  ];
+}
+
+function modelOverviewMessages(
+  values: Pick<ModelDraft, "title" | "purpose" | "modelType" | "compounds">,
+  readOnly: { purpose: boolean; modelType: boolean; compounds: boolean },
+): FieldMessage[] {
   const messages: FieldMessage[] = [];
-  if (!draft.title.trim()) {
+  if (!values.title.trim()) {
     messages.push(required("model.title"));
   }
-  if (draft.purpose && !(MODEL_PURPOSES as string[]).includes(draft.purpose)) {
+  if (
+    !readOnly.purpose &&
+    values.purpose &&
+    !(MODEL_PURPOSES as string[]).includes(values.purpose)
+  ) {
     messages.push(invalid("model.purpose", "choose one of the listed purposes"));
   }
-  if (draft.modelType && !(MODEL_TYPES as string[]).includes(draft.modelType)) {
+  if (
+    !readOnly.modelType &&
+    values.modelType &&
+    !(MODEL_TYPES as string[]).includes(values.modelType)
+  ) {
     messages.push(invalid("model.type", "choose one of the listed model types"));
   }
-  messages.push(...compoundMessages(draft.compounds, MODEL_COMPOUND_FIELDS));
-  messages.push(...modelFileMessages(draft));
-  messages.push(...metricMessages(draft));
-  messages.push(...programMessages(draft));
+  if (!readOnly.compounds) {
+    messages.push(...compoundMessages(values.compounds, MODEL_COMPOUND_FIELDS));
+  }
   return messages;
 }
 
@@ -302,8 +341,8 @@ function modelFileMessages(draft: ModelDraft): FieldMessage[] {
   return messages;
 }
 
-function metricMessages(draft: ModelDraft): FieldMessage[] {
-  return draft.metrics.flatMap((metric) =>
+function metricMessages(metrics: MetricDraft[]): FieldMessage[] {
+  return metrics.flatMap((metric) =>
     METRIC_FIELDS.flatMap((field) =>
       numberMessages(
         "model.metrics",

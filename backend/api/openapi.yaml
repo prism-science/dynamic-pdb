@@ -2319,7 +2319,30 @@ components:
       required: [data]
       properties:
         data:
-          $ref: "#/components/schemas/ModelData"
+          $ref: "#/components/schemas/ModelDetailData"
+
+    ModelDetailData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/ModelDetailAttributes"
+
+    ModelDetailAttributes:
+      description: >
+        A model as the model detail endpoint returns it: the list attributes plus where the
+        values of its archive-synced fields came from.
+      allOf:
+        - $ref: "#/components/schemas/ModelAttributes"
+        - type: object
+          required: [field_sources]
+          properties:
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
 
     ModelData:
       type: object
@@ -3238,7 +3261,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EntryProperties"
         - type: object
-          required: [title, created_at, updated_at, polymer_entities]
+          required: [title, created_at, updated_at, polymer_entities, depositor_polymer_entities, field_sources]
           properties:
             title:
               type: string
@@ -3260,6 +3283,14 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/PolymerEntity"
+            depositor_polymer_entities:
+              description: >
+                The polymer-entity values a depositor typed for the active revision, as sent in
+                polymer_entities on create or revision; empty when none were typed. Read-only.
+              allOf:
+                - $ref: "#/components/schemas/DepositorPolymerEntities"
+            field_sources:
+              $ref: "#/components/schemas/FieldSources"
             archive_status:
               $ref: "#/components/schemas/EntryArchiveStatus"
 
@@ -4196,7 +4227,12 @@ components:
           type: string
           nullable: true
         metadata:
-          $ref: "#/components/schemas/ModelMetadata"
+          description: >
+            Replaces the whole metadata object of the active revision, except residue_data:
+            when this object leaves residue_data out, the active revision's residue data is kept,
+            because responses return it beside metadata, never inside it.
+          allOf:
+            - $ref: "#/components/schemas/ModelMetadata"
         primary_artifact_id:
           type: string
           format: uuid

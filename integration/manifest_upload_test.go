@@ -1107,9 +1107,17 @@ func integrationPDBModelTextWithNonce() string {
 	return "REMARK   1 " + uuid.NewString() + "\n" + integrationPDBModelText()
 }
 
+// integrationPDBID returns "9" and three random letters or digits, about 47,000 IDs. Test
+// entries stay in the shared local database and an active PDB ID is unique, so a narrow ID
+// space makes tests collide with entries earlier runs left behind.
 func integrationPDBID() string {
-	compactUUID := strings.ReplaceAll(uuid.NewString(), "-", "")
-	return "9" + strings.ToUpper(compactUUID[:3])
+	const symbols = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	random := uuid.New()
+	id := []byte{'9'}
+	for _, value := range random[:3] {
+		id = append(id, symbols[int(value)%len(symbols)])
+	}
+	return string(id)
 }
 
 func assertArtifactNames(t *testing.T, artifacts []artifactResponse, names []string) {
