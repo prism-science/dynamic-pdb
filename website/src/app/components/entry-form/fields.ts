@@ -83,6 +83,8 @@ const metricPointer = (key: Key<Schemas["CreateMetricRequest"]>) =>
 const COMPOUND_HELP =
   "CCD IDs, for example ATP or HEM. A typed ID is sorted into ligands or cofactors by the reference list; move it if the list is wrong.";
 
+const APO_NOTE = "None does not by itself mean the sample is apo.";
+
 export const FIELDS = {
   // ---------------------------------------------------------- entry form --
   "entry.title": {
@@ -133,7 +135,7 @@ export const FIELDS = {
   "entry.cofactors": {
     section: "overview",
     label: "Cofactors",
-    help: "Cofactors, and metal ions that are part of the protein (for example ZN).",
+    help: `Cofactors, and metal ions that are part of the protein (for example ZN). ${APO_NOTE}`,
     required: false,
     unknownAllowed: true,
     autofill: null,
@@ -241,7 +243,7 @@ export const FIELDS = {
   "crystal.growthTemperature": {
     section: "experiment",
     label: "Growth temperature (K)",
-    help: "In kelvin. Room temperature is about 293 K.",
+    help: "In kelvin, which is °C + 273.15. Room temperature, 20 °C, is about 293 K.",
     required: false,
     unknownAllowed: false,
     autofill: null,
@@ -342,7 +344,7 @@ export const FIELDS = {
   "model.cofactors": {
     section: "overview",
     label: "Cofactors",
-    help: "Cofactors and bound metal ions this model contains, read from the coordinate file.",
+    help: `Cofactors and bound metal ions this model contains, read from the coordinate file. ${APO_NOTE}`,
     required: false,
     unknownAllowed: true,
     autofill: "file",

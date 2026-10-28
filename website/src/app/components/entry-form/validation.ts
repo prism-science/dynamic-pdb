@@ -1,5 +1,15 @@
 import { COMPOUND_LIST_NAMES, compoundIdError } from "./compounds";
-import { crystalIds, crystalIsEmpty } from "./crystals";
+import {
+  COLLECTION_TEMPERATURE_RANGE,
+  GROWTH_TEMPERATURE_RANGE,
+  celsiusToKelvin,
+  crystalIds,
+  crystalIsEmpty,
+  formatTemperature,
+  inTemperatureRange,
+  optionalNumber,
+  type TemperatureRange,
+} from "./crystals";
 import {
   ENTRY_COMPOUND_FIELDS,
   MODEL_COMPOUND_FIELDS,
@@ -33,7 +43,8 @@ import type {
 // mistake shows beside its field instead of coming back as a 422, and add
 // the format checks the API leaves to the client: PDB ID, CCD ID, pH and
 // temperatures. A space group that does not look like Hermann–Mauguin
-// notation is only flagged, because the API stores any text.
+// notation is only flagged, because the API stores any text; so is a
+// temperature outside the wwPDB's usual ranges.
 
 const HERMANN_MAUGUIN_PATTERN =
   /^[PABCFIRH](\s*-?[1-6]{1,2}(\/[mnabcde])?|\s*[mnabcde])+(\s*:\s*[HR12])?$/i;
@@ -191,6 +202,7 @@ function crystalMessages(crystals: CrystalDraft[]): FieldMessage[] {
         crystalId,
         itemLabel,
       ),
+      ...growthTemperatureAdvice(crystal.growthTemperature, crystalId),
     );
     crystal.diffractions.forEach((diffraction, position) => {
       const item = `${crystalId}/${diffractionIds[position]}`;
@@ -214,10 +226,65 @@ function crystalMessages(crystals: CrystalDraft[]): FieldMessage[] {
           item,
           datasetLabel,
         ),
+        ...collectionTemperatureAdvice(diffraction.temperature, item),
       );
     });
     return messages;
   });
+}
+
+/**
+ * A growth temperature outside the usual range gets a warning. One that
+ * would be in range read as °C, such as 20, was almost certainly typed in °C,
+ * so it gets a hint with the kelvin value instead.
+ */
+function growthTemperatureAdvice(text: string, item: string): FieldMessage[] {
+  const kelvin = usableKelvin(text);
+  if (kelvin === null || inTemperatureRange(kelvin, GROWTH_TEMPERATURE_RANGE)) {
+    return [];
+  }
+  const kelvinIfCelsius = celsiusToKelvin(kelvin);
+  if (inTemperatureRange(kelvinIfCelsius, GROWTH_TEMPERATURE_RANGE)) {
+    return [
+      advice(
+        "crystal.growthTemperature",
+        `this looks like °C; ${formatTemperature(kelvin)} °C is ${formatTemperature(kelvinIfCelsius)} K`,
+        item,
+      ),
+    ];
+  }
+  return [
+    advice(
+      "crystal.growthTemperature",
+      outsideRangeLine(GROWTH_TEMPERATURE_RANGE, "crystal growth"),
+      item,
+    ),
+  ];
+}
+
+function collectionTemperatureAdvice(text: string, item: string): FieldMessage[] {
+  const kelvin = usableKelvin(text);
+  if (kelvin === null || inTemperatureRange(kelvin, COLLECTION_TEMPERATURE_RANGE)) {
+    return [];
+  }
+  return [
+    advice(
+      "diffraction.temperature",
+      outsideRangeLine(COLLECTION_TEMPERATURE_RANGE, "data collection"),
+      item,
+    ),
+  ];
+}
+
+/** The temperature to range-check, or null when the box is empty or already
+ *  has a blocking message (not a number, or not above 0 K). */
+function usableKelvin(text: string): number | null {
+  const kelvin = optionalNumber(text);
+  return kelvin !== undefined && kelvin > 0 ? kelvin : null;
+}
+
+function outsideRangeLine(range: TemperatureRange, stage: string): string {
+  return `outside the usual ${range.min}–${range.max} K for ${stage}; keep it only if it is right`;
 }
 
 function modelFileMessages(draft: ModelDraft): FieldMessage[] {
