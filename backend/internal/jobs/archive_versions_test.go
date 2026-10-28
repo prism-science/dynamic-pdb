@@ -127,3 +127,114 @@ func Test_should_fail_when_removal_date_is_malformed(t *testing.T) {
 	// then
 	require.ErrorContains(t, err, "parse RCSB removal date")
 }
+
+func Test_should_mark_obsolete_and_fill_title_when_untitled_entry_is_obsoleted(t *testing.T) {
+	// given
+	current := models.EntryRevision{}
+	removed := rcsb.RemovedEntry{
+		ReplacedBy: []string{"8R76"},
+		RemoveDate: "2024-01-17T00:00:00.000+00:00",
+		Title:      " Ficin C crystal form I ",
+	}
+
+	// when
+	update, changed, err := planObsoleteEntryUpdate("4YYU", current, removed)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, changed)
+	require.NotNil(t, update.title)
+	assert.Equal(t, "Ficin C crystal form I", *update.title)
+	assert.Equal(t, models.EntryArchiveStateObsolete, update.status.State)
+	assert.Equal(t,
+		"RCSB obsoleted 4YYU on 2024-01-17; superseded by 8R76; title from RCSB's removal record",
+		update.summary)
+}
+
+func Test_should_keep_title_when_obsoleted_entry_already_has_one(t *testing.T) {
+	// given
+	current := models.EntryRevision{Title: new("outdated title")}
+	removed := rcsb.RemovedEntry{RemoveDate: "2024-01-17T00:00:00.000+00:00", Title: "Ficin C crystal form I"}
+
+	// when
+	update, changed, err := planObsoleteEntryUpdate("4YYU", current, removed)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Nil(t, update.title)
+	assert.Equal(t, "RCSB obsoleted 4YYU on 2024-01-17", update.summary)
+}
+
+func Test_should_fill_only_title_when_untitled_entry_is_already_obsolete(t *testing.T) {
+	// given: the status as the database returns it, in UTC
+	current := models.EntryRevision{
+		Title: new("  "),
+		Metadata: models.EntryMetadata{ArchiveStatus: &models.EntryArchiveStatus{
+			State:        models.EntryArchiveStateObsolete,
+			ObsoletedAt:  new(time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC)),
+			SupersededBy: []string{"9RVI"},
+		}},
+	}
+	removed := rcsb.RemovedEntry{
+		ReplacedBy: []string{"9RVI"},
+		RemoveDate: "2025-09-10T00:00:00.000+00:00",
+		Title:      "10 micrometer HEWL crystals",
+	}
+
+	// when
+	update, changed, err := planObsoleteEntryUpdate("8PYQ", current, removed)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, changed)
+	require.NotNil(t, update.title)
+	assert.Equal(t, "10 micrometer HEWL crystals", *update.title)
+	assert.Equal(t, "Title from RCSB's removal record of 8PYQ", update.summary)
+}
+
+func Test_should_change_nothing_when_entry_already_records_obsolete_status_and_title(t *testing.T) {
+	// given
+	current := models.EntryRevision{
+		Title: new("Ficin C crystal form I"),
+		Metadata: models.EntryMetadata{ArchiveStatus: &models.EntryArchiveStatus{
+			State:        models.EntryArchiveStateObsolete,
+			ObsoletedAt:  new(time.Date(2024, 1, 17, 0, 0, 0, 0, time.UTC)),
+			SupersededBy: []string{"8R76"},
+		}},
+	}
+	removed := rcsb.RemovedEntry{
+		ReplacedBy: []string{"8R76"},
+		RemoveDate: "2024-01-17T00:00:00.000+00:00",
+		Title:      "Ficin C crystal form I",
+	}
+
+	// when
+	_, changed, err := planObsoleteEntryUpdate("4YYU", current, removed)
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+func Test_should_record_new_successor_when_rcsb_names_another_one(t *testing.T) {
+	// given
+	current := models.EntryRevision{
+		Title: new("Ficin C crystal form I"),
+		Metadata: models.EntryMetadata{ArchiveStatus: &models.EntryArchiveStatus{
+			State:        models.EntryArchiveStateObsolete,
+			ObsoletedAt:  new(time.Date(2024, 1, 17, 0, 0, 0, 0, time.UTC)),
+			SupersededBy: []string{"8R76"},
+		}},
+	}
+	removed := rcsb.RemovedEntry{ReplacedBy: []string{"8R76", "9ABC"}, RemoveDate: "2024-01-17T00:00:00.000+00:00"}
+
+	// when
+	update, changed, err := planObsoleteEntryUpdate("4YYU", current, removed)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, []string{"8R76", "9ABC"}, update.status.SupersededBy)
+	assert.Equal(t, "RCSB obsoleted 4YYU on 2024-01-17; superseded by 8R76, 9ABC", update.summary)
+}

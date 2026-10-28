@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"maps"
 	"slices"
 	"time"
 
@@ -93,6 +94,23 @@ func archiveEntryFieldSources(
 	retrievedAt time.Time,
 ) models.FieldSources {
 	return archiveFieldSources(current, models.EntryArchiveFields, source, retrievedAt)
+}
+
+// removalTitleFieldSources returns the sources of a sync revision that takes its title from
+// RCSB's removal record. NULL sources stay NULL: they mean every field came from the archive
+// import (decision D1), which still holds. The removal record has no archive version, so the
+// title's source names no release.
+func removalTitleFieldSources(current models.FieldSources, pdbID string, retrievedAt time.Time) models.FieldSources {
+	if current == nil {
+		return nil
+	}
+	sources := maps.Clone(current)
+	sources[models.EntryFieldTitle] = models.FieldSource{
+		Source:      models.FieldSourceRCSB,
+		Accession:   new(pdbID),
+		RetrievedAt: new(retrievedAt),
+	}
+	return sources
 }
 
 // archiveModelFieldSources is archiveEntryFieldSources for model revisions, where the synced

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_should_read_obsolete_status_and_successors_when_rcsb_removed_the_entry(t *testing.T) {
+func Test_should_read_obsolete_status_successors_and_title_when_rcsb_removed_the_entry(t *testing.T) {
 	// given
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -27,7 +27,8 @@ func Test_should_read_obsolete_status_and_successors_when_rcsb_removed_the_entry
 			writeText(t, w, `{
 				"rcsb_repository_holdings_removed": {
 					"id_codes_replaced_by": ["8R76"],
-					"remove_date": "2024-01-17T00:00:00.000+00:00"
+					"remove_date": "2024-01-17T00:00:00.000+00:00",
+					"title": "Ficin C crystal form I"
 				}
 			}`)
 		default:
@@ -47,6 +48,7 @@ func Test_should_read_obsolete_status_and_successors_when_rcsb_removed_the_entry
 	require.NoError(t, removedErr)
 	assert.Equal(t, HoldingsStatus{Status: "REMOVED", StatusCode: "OBS", ReplacedByLatest: "8R76"}, status)
 	assert.Equal(t, []string{"8R76"}, removed.ReplacedBy)
+	assert.Equal(t, "Ficin C crystal form I", removed.Title)
 	removeDate, err := time.Parse(time.RFC3339, removed.RemoveDate)
 	require.NoError(t, err)
 	assert.Equal(t, time.Date(2024, 1, 17, 0, 0, 0, 0, time.UTC), removeDate.UTC())

@@ -234,16 +234,21 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, desiredPolymerEntities, polymerEntitiesChanged)
 }
 
-// saveObsoleteEntry activates a sync revision that marks the entry obsolete and changes nothing
-// else.
+// saveObsoleteEntry activates a sync revision that marks the entry obsolete and, when the entry
+// has no title, gives it the title of RCSB's removal record. It changes nothing else.
 func (j *entrySyncStrategy) saveObsoleteEntry(
 	ctx context.Context,
 	currentRevision models.EntryRevision,
-	status models.EntryArchiveStatus,
-	summary string,
+	pdbID string,
+	update obsoleteEntryUpdate,
 ) error {
-	revision := newSyncEntryRevision(currentRevision, summary, j.now())
-	revision.Metadata.ArchiveStatus = &status
+	now := j.now()
+	revision := newSyncEntryRevision(currentRevision, update.summary, now)
+	revision.Metadata.ArchiveStatus = &update.status
+	if update.title != nil {
+		revision.Title = update.title
+		revision.FieldSources = removalTitleFieldSources(currentRevision.FieldSources, pdbID, now)
+	}
 	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, nil, false)
 }
 

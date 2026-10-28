@@ -524,6 +524,7 @@ func (s *rcsbStub) handleObsolete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"rcsb_repository_holdings_removed": map[string]any{
 			"id_codes_replaced_by": []string{s.obsoletedBy},
 			"remove_date":          "2024-01-17T00:00:00.000+00:00",
+			"title":                obsoleteRCSBTitle,
 		}})
 	default:
 		http.NotFound(w, r)

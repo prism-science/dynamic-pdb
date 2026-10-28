@@ -160,3 +160,34 @@ func Test_should_record_rcsb_source_for_synced_model_fields_and_metrics(t *testi
 	assert.Equal(t, models.FieldSourceRCSB, sources[models.ArchiveMetricField(models.MetricKeyClashscore)].Source)
 	assert.Equal(t, new("5AMF"), sources[models.ArchiveMetricField(models.MetricKeyClashscore)].Accession)
 }
+
+func Test_should_keep_null_field_sources_when_title_comes_from_removal_record(t *testing.T) {
+	// given: NULL sources, the mark of an archive import
+	var current models.FieldSources
+
+	// when
+	sources := removalTitleFieldSources(current, "8PYQ", time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC))
+
+	// then
+	assert.Nil(t, sources)
+}
+
+func Test_should_record_rcsb_title_source_without_release_when_title_comes_from_removal_record(t *testing.T) {
+	// given
+	current := models.FieldSources{models.EntryFieldDetails: {Source: models.FieldSourceDepositor}}
+	retrievedAt := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+
+	// when
+	sources := removalTitleFieldSources(current, "8PYQ", retrievedAt)
+
+	// then
+	assert.Equal(t, models.FieldSources{
+		models.EntryFieldDetails: {Source: models.FieldSourceDepositor},
+		models.EntryFieldTitle: {
+			Source:      models.FieldSourceRCSB,
+			Accession:   new("8PYQ"),
+			RetrievedAt: new(retrievedAt),
+		},
+	}, sources)
+	assert.NotContains(t, current, models.EntryFieldTitle)
+}

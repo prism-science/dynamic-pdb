@@ -200,12 +200,14 @@ func (s *entrySyncStrategy) handleRemovedEntry(
 		if err != nil {
 			return dataSyncOutcome{}, fmt.Errorf("get RCSB removal of %s: %w", pdbID, err)
 		}
-		status, err := obsoleteArchiveStatus(removed)
+		update, changed, err := planObsoleteEntryUpdate(pdbID, currentRevision, removed)
 		if err != nil {
 			return dataSyncOutcome{}, fmt.Errorf("read RCSB removal of %s: %w", pdbID, err)
 		}
-		if err := s.saveObsoleteEntry(ctx, currentRevision, status, obsoleteChangeSummary(pdbID, status)); err != nil {
-			return dataSyncOutcome{}, fmt.Errorf("mark entry obsolete: %w", err)
+		if changed {
+			if err := s.saveObsoleteEntry(ctx, currentRevision, pdbID, update); err != nil {
+				return dataSyncOutcome{}, fmt.Errorf("mark entry obsolete: %w", err)
+			}
 		}
 		return dataSyncOutcome{stopReason: "RCSB obsoleted " + pdbID}, nil
 	case rcsb.StatusCodeWithdrawn:

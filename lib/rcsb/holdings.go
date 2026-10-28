@@ -26,11 +26,12 @@ type HoldingsStatus struct {
 	ReplacedByLatest string `json:"id_code_replaced_by_latest"`
 }
 
-// RemovedEntry describes an entry the archive removed: the entries that replaced it, and the
-// RFC 3339 date it was removed.
+// RemovedEntry describes an entry the archive removed: the entries that replaced it, the
+// RFC 3339 date it was removed, and the title it had.
 type RemovedEntry struct {
 	ReplacedBy []string `json:"id_codes_replaced_by"`
 	RemoveDate string   `json:"remove_date"`
+	Title      string   `json:"title"`
 }
 
 // GetHoldingsStatus returns where pdbID stands in the archive. It returns ErrNotFound for an ID
