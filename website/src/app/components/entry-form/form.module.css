@@ -2061,3 +2061,29 @@
 .datasetMessages:empty {
   display: none;
 }
+
+/* A kelvin box: the unit sits inside the box, the °C value under it */
+.unitInput {
+  position: relative;
+}
+
+.unitInput > .input {
+  padding-right: 32px;
+}
+
+.unitSuffix {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.celsiusEcho {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}

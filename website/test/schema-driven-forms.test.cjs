@@ -7,7 +7,11 @@ const test = require("node:test");
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 
-const { FIELDS, SECTIONS } = require("../src/app/components/entry-form/fields.ts");
+const {
+  ENTRY_COMPOUND_FIELDS,
+  FIELDS,
+  SECTIONS,
+} = require("../src/app/components/entry-form/fields.ts");
 const {
   apiFailure,
   fieldForPointer,
@@ -23,6 +27,7 @@ const {
   setCompoundListMode,
 } = require("../src/app/components/entry-form/compounds.ts");
 const {
+  celsiusEcho,
   crystallographyRequest,
 } = require("../src/app/components/entry-form/crystals.ts");
 const {
@@ -39,6 +44,8 @@ const {
   inlineMessages,
 } = require("../src/app/components/entry-form/messages.ts");
 const FilesEditor = require("../src/app/components/entry-form/FilesEditor.tsx").default;
+const CompoundListsEditor = require("../src/app/components/entry-form/CompoundListsEditor.tsx").default;
+const CrystalsEditor = require("../src/app/components/entry-form/CrystalsEditor.tsx").default;
 const {
   buildCreateEntryInput,
   buildCreateModelInput,
@@ -288,6 +295,30 @@ test("should_tell_not_known_from_none_from_a_list", () => {
   assert.equal(compoundListRequest(unknown.ligands), undefined);
 });
 
+test("should_explain_not_known_and_none_and_that_none_is_not_apo", () => {
+  // given
+  const compounds = setCompoundListMode(emptyCompounds(), "cofactors", "none");
+  const apoNote = "None does not by itself mean the sample is apo.";
+
+  // when
+  const html = renderToStaticMarkup(
+    React.createElement(CompoundListsEditor, {
+      compounds,
+      onChange: () => {},
+      fields: ENTRY_COMPOUND_FIELDS,
+      messages: [],
+    }),
+  );
+
+  // then
+  const [ligands, cofactors] = html.split("Not known").slice(1);
+  assert.ok(ligands.includes("We have not checked."));
+  assert.ok(cofactors.includes("Checked, and none are present."));
+  assert.ok(cofactors.includes(apoNote));
+  assert.ok(!ligands.includes(apoNote));
+  assert.ok(FIELDS["model.cofactors"].help.endsWith(apoNote));
+});
+
 test("should_clear_the_review_flag_when_a_compound_is_moved", () => {
   // given: a metal from a file without metalc rows
   const compounds = compoundsFromParsed(
@@ -373,6 +404,109 @@ test("should_number_crystals_and_datasets_like_the_archive_and_leave_blanks_out"
     ],
   });
   assert.equal(crystallographyRequest([]), undefined);
+});
+
+test("should_warn_but_never_block_on_temperatures_outside_the_wwpdb_ranges", () => {
+  // given
+  const crystal = (growthTemperature, collectionTemperatures) => ({
+    key: `c-${growthTemperature}`,
+    ph: "",
+    growthTemperature,
+    diffractions: collectionTemperatures.map((temperature, index) => ({
+      key: `d-${growthTemperature}-${index}`,
+      temperature,
+    })),
+  });
+  const metadata = {
+    ...emptyEntryMetadataDraft(),
+    method: "X-ray crystallography",
+    crystals: [
+      crystal("293", ["100"]),
+      crystal("277", ["80"]),
+      crystal("316", ["300"]),
+      crystal("20", ["50"]),
+      crystal("250", ["310"]),
+      crystal("4", []),
+      crystal("43", []),
+    ],
+  };
+  const growthLine = "outside the usual 277–316 K for crystal growth; keep it only if it is right";
+  const collectionLine = "outside the usual 80–300 K for data collection; keep it only if it is right";
+
+  // when
+  const messages = entryFormMessages("Lysozyme", metadata);
+
+  // then
+  assert.deepEqual(messages.filter((message) => message.blocking), []);
+  assert.deepEqual(
+    messages.map((message) => [message.field, message.item, message.message]),
+    [
+      ["crystal.growthTemperature", "4", "this looks like °C; 20 °C is 293.15 K"],
+      ["diffraction.temperature", "4/4", collectionLine],
+      ["crystal.growthTemperature", "5", growthLine],
+      ["diffraction.temperature", "5/5", collectionLine],
+      ["crystal.growthTemperature", "6", "this looks like °C; 4 °C is 277.15 K"],
+      ["crystal.growthTemperature", "7", growthLine],
+    ],
+  );
+});
+
+test("should_only_block_a_temperature_at_or_below_0_k", () => {
+  // given
+  const metadata = {
+    ...emptyEntryMetadataDraft(),
+    method: "X-ray crystallography",
+    crystals: [{ key: "a", ph: "", growthTemperature: "0", diffractions: [{ key: "d", temperature: "-5" }] }],
+  };
+
+  // when
+  const messages = entryFormMessages("Lysozyme", metadata);
+
+  // then
+  assert.deepEqual(
+    messages.map((message) => [message.field, message.item, message.blocking]),
+    [
+      ["crystal.growthTemperature", "1", true],
+      ["diffraction.temperature", "1/1", true],
+    ],
+  );
+});
+
+test("should_echo_a_kelvin_value_in_celsius_as_it_is_typed", () => {
+  // when / then
+  assert.equal(celsiusEcho("293.15"), "20 °C");
+  assert.equal(celsiusEcho("293"), "19.85 °C");
+  assert.equal(celsiusEcho(" 100 "), "-173.15 °C");
+  for (const unfinished of ["", "-", "."]) {
+    assert.equal(celsiusEcho(unfinished), null, JSON.stringify(unfinished));
+  }
+});
+
+test("should_show_k_beside_each_temperature_box_and_the_celsius_value_under_it", () => {
+  // given
+  const crystals = [
+    {
+      key: "a",
+      ph: "",
+      growthTemperature: "293.15",
+      diffractions: [
+        { key: "d1", temperature: "100" },
+        { key: "d2", temperature: "" },
+      ],
+    },
+  ];
+
+  // when
+  const html = renderToStaticMarkup(
+    React.createElement(CrystalsEditor, { crystals, onChange: () => {}, messages: [] }),
+  );
+
+  // then
+  assert.equal(html.match(/>K<\/span>/g).length, 3);
+  assert.deepEqual(
+    [...html.matchAll(/>(= [^<]*)</g)].map((match) => match[1]),
+    ["= 20 °C", "= -173.15 °C"],
+  );
 });
 
 test("should_send_only_typed_entity_values_and_the_organism_only_when_the_pdb_has_none", () => {

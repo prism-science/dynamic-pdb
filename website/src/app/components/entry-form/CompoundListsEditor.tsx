@@ -176,16 +176,10 @@ function CompoundChips({
   const { mode, items } = compounds[list];
   switch (mode) {
     case "unknown":
-      return (
-        <p className={styles.compoundEmpty}>
-          Not stated, so it is read as not known.
-        </p>
-      );
+      return <p className={styles.compoundEmpty}>We have not checked.</p>;
     case "none":
       return (
-        <p className={styles.compoundEmpty}>
-          Known to have no {LIST_LABELS[list]}.
-        </p>
+        <p className={styles.compoundEmpty}>Checked, and none are present.</p>
       );
     case "list":
       break;

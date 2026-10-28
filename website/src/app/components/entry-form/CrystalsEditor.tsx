@@ -2,7 +2,12 @@
 
 import { useId } from "react";
 
-import { crystalIds, emptyCrystal, emptyDiffraction } from "./crystals";
+import {
+  celsiusEcho,
+  crystalIds,
+  emptyCrystal,
+  emptyDiffraction,
+} from "./crystals";
 import { Field, FieldMessages } from "./FormFields";
 import { sanitizeNumeric } from "./helpers";
 import { PlusIcon } from "./icons";
@@ -117,17 +122,13 @@ function CrystalCard({
           htmlFor={`${fieldId}-growth`}
           messages={inlineMessages(messages, "crystal.growthTemperature", crystalId)}
         >
-          <input
+          <KelvinInput
             id={`${fieldId}-growth`}
-            className={styles.input}
-            inputMode="decimal"
             value={crystal.growthTemperature}
-            onChange={(event) =>
-              onPatch({ growthTemperature: sanitizeNumeric(event.target.value) })
-            }
+            onChange={(growthTemperature) => onPatch({ growthTemperature })}
             placeholder="e.g. 293"
-            autoComplete="off"
           />
+          <CelsiusEcho kelvin={crystal.growthTemperature} />
         </Field>
       </div>
 
@@ -144,25 +145,19 @@ function CrystalCard({
                 >
                   Dataset {datasetId}
                 </label>
-                <input
+                <KelvinInput
                   id={`${fieldId}-dataset-${diffraction.key}`}
-                  className={styles.input}
-                  inputMode="decimal"
                   value={diffraction.temperature}
-                  onChange={(event) =>
+                  onChange={(temperature) =>
                     onPatch({
                       diffractions: crystal.diffractions.map((other) =>
                         other.key === diffraction.key
-                          ? {
-                              ...other,
-                              temperature: sanitizeNumeric(event.target.value),
-                            }
+                          ? { ...other, temperature }
                           : other,
                       ),
                     })
                   }
                   placeholder="e.g. 100"
-                  autoComplete="off"
                 />
                 <button
                   type="button"
@@ -179,6 +174,7 @@ function CrystalCard({
                   ×
                 </button>
                 <div className={styles.datasetMessages}>
+                  <CelsiusEcho kelvin={diffraction.temperature} />
                   <FieldMessages
                     messages={inlineMessages(
                       messages,
@@ -205,4 +201,41 @@ function CrystalCard({
       </Field>
     </div>
   );
+}
+
+/** A temperature box with its unit beside the number, because many people
+ *  think of temperatures in °C and the API takes kelvin. */
+function KelvinInput({
+  id,
+  value,
+  onChange,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className={styles.unitInput}>
+      <input
+        id={id}
+        className={styles.input}
+        inputMode="decimal"
+        value={value}
+        onChange={(event) => onChange(sanitizeNumeric(event.target.value))}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      <span className={styles.unitSuffix} aria-hidden="true">
+        K
+      </span>
+    </div>
+  );
+}
+
+/** The °C value of a kelvin box, updated as the depositor types. */
+function CelsiusEcho({ kelvin }: { kelvin: string }) {
+  const celsius = celsiusEcho(kelvin);
+  return celsius ? <p className={styles.celsiusEcho}>{`= ${celsius}`}</p> : null;
 }
