@@ -5,10 +5,12 @@ import {
   type ListPage,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { canDeleteEntries } from "@/lib/auth/permissions";
 import EntriesBrowser from "@/app/components/EntriesBrowser";
 import SearchTracker from "@/app/components/SearchTracker";
 
 import styles from "./browse.module.css";
+import { ENTRY_DELETED_PARAM, entryDeletedNotice } from "./deletedNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +32,21 @@ export default async function Browse({ searchParams }: BrowseProps) {
   const session = await getAuthSession();
   const resolvedSearchParams = (await searchParams) ?? {};
   const query = firstQueryValue(resolvedSearchParams.query)?.trim() ?? "";
+  // Only someone who can delete has just deleted; for anyone else the
+  // parameter is a hand-made link, and the notice would be a false claim.
+  const deletedEntryId =
+    session !== null && canDeleteEntries(session.permissions)
+      ? firstQueryValue(resolvedSearchParams[ENTRY_DELETED_PARAM])
+      : undefined;
   const firstPage = await loadEntries(session?.token, query);
 
   return (
     <main className={styles.page} aria-label="dynamic-pdb entries">
+      {deletedEntryId ? (
+        <p className={styles.deletedNotice} role="status">
+          {entryDeletedNotice(deletedEntryId)}
+        </p>
+      ) : null}
       <section className={styles.entriesShell}>
         <EntriesBrowser
           entries={firstPage.items}

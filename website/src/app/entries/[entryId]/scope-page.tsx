@@ -13,6 +13,7 @@ import {
   type SimilarEntry,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { canDeleteEntries } from "@/lib/auth/permissions";
 import {
   getEntityFileURL,
   getFilePayload,
@@ -293,6 +294,9 @@ export default async function ScopePage({
               canAddModel
                 ? `${entryBase}/models/new`
                 : null
+            }
+            canDeleteEntry={
+              session !== null && canDeleteEntries(session.permissions)
             }
           />
 

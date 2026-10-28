@@ -51,3 +51,6 @@ validation:
 data_sync:
   # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
   coordinate_revisions: false
+entries:
+  # Entry deletion is for testing on dev only; production keeps every entry.
+  delete_enabled: false

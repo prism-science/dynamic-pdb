@@ -47,3 +47,6 @@ validation:
 data_sync:
   # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
   coordinate_revisions: false
+entries:
+  # Reviewers can soft-delete entries, so researchers can delete test entries and retest the forms.
+  delete_enabled: true

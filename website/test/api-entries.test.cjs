@@ -8,6 +8,7 @@ const {
   createEntry,
   createModel,
   decideEntryReview,
+  deleteEntry,
   findReviewItem,
   getEntry,
   getEntryPageData,
@@ -289,6 +290,68 @@ test("should throw ApiRequestError with status when create entry fails", async (
         error.status === 400 &&
         error.message === "Backend responded with 400" &&
         error.errors.length === 0,
+    );
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should send DELETE without a body when deleting an entry", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    // given
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    const requests = [];
+    global.fetch = async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(null, { status: 204 });
+    };
+
+    // when
+    await deleteEntry("token-123", "dpdb_entry/1");
+
+    // then
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://backend.example/v1/entries/dpdb_entry%2F1");
+    assert.equal(requests[0].init.method, "DELETE");
+    assert.equal(requests[0].init.body, undefined);
+    assert.equal(requests[0].init.headers.Accept, jsonApiMediaType);
+    assert.equal(requests[0].init.headers.Authorization, "Bearer token-123");
+  } finally {
+    global.fetch = previousFetch;
+    restoreEnv("NEXT_PUBLIC_API_BASE_URL", previousApiBaseURL);
+  }
+});
+
+test("should throw the backend's message when deleting an entry is refused", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    // given
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example";
+    global.fetch = async () =>
+      jsonResponse(
+        {
+          errors: [
+            { status: "403", code: "FORBIDDEN", detail: "entry deletion is turned off on this server" },
+          ],
+        },
+        { status: 403 },
+      );
+
+    // when
+    const rejection = deleteEntry("token-123", "dpdb_entry");
+
+    // then
+    await assert.rejects(
+      rejection,
+      (error) =>
+        error instanceof ApiRequestError &&
+        error.status === 403 &&
+        error.message ===
+          "Backend responded with 403: entry deletion is turned off on this server",
     );
   } finally {
     global.fetch = previousFetch;

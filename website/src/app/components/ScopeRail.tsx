@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import type { EntryModel } from "@/lib/entry-models";
+import DeleteEntryButton from "./DeleteEntryButton";
 import {
   bestMetricValues,
   formatMetric,
@@ -60,6 +61,7 @@ export default function ScopeRail({
   addModelHref,
   editEntryHref,
   editModelHref,
+  canDeleteEntry = false,
 }: {
   entryId: string;
   models: EntryModel[];
@@ -76,6 +78,8 @@ export default function ScopeRail({
   editEntryHref?: string | null;
   /** The model on screen; omitted when there is none or the visitor cannot edit. */
   editModelHref?: string | null;
+  /** True only for sessions holding entries.delete (reviewers, on dev). */
+  canDeleteEntry?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const intent = useRef<number | null>(null);
@@ -366,6 +370,7 @@ export default function ScopeRail({
             Edit entry
           </Link>
         ) : null}
+        {canDeleteEntry ? <DeleteEntryButton entryId={entryId} /> : null}
       </aside>
     </div>
   );

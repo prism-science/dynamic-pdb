@@ -49,11 +49,24 @@ var (
 	limitedExtractionServer *httptest.Server
 	// timeoutExtractionServer allows one extraction at a time and gives the parser no time at all.
 	timeoutExtractionServer *httptest.Server
-	testDatabase            *db.DB
-	githubClient            *MockGitHubClient
-	s3Stub                  *e2es3.StubServer
-	adminToken              string
+	// entryDeletionServer shares the database with testServer and has entry deletion turned on.
+	entryDeletionServer *httptest.Server
+	testDatabase        *db.DB
+	githubClient        *MockGitHubClient
+	s3Stub              *e2es3.StubServer
+	adminToken          string
 )
+
+// testRouterOptions configures one of the test servers that TestMain starts.
+type testRouterOptions struct {
+	validationMode validation.Mode
+	// limitExtraction allows one extraction at a time and three per user per minute.
+	limitExtraction bool
+	// extractionTimeout, when set, replaces the time one extraction may spend parsing.
+	extractionTimeout time.Duration
+	// entryDeletion turns DELETE /v1/entries/{entry_id} on.
+	entryDeletion bool
+}
 
 type MockGitHubClient struct {
 	mock.Mock
@@ -156,16 +169,16 @@ func TestMain(m *testing.M) {
 		rcsb.NewClient(rcsb.WithBaseURLs(rcsbStub.URL, rcsbStub.URL, rcsbStub.URL, rcsbStub.URL)),
 		sifts.NewClient(sifts.WithBaseURL(rcsbStub.URL)),
 	)
-	newTestRouter := func(validationMode validation.Mode, limitExtraction bool, extractionTimeout time.Duration) http.Handler {
+	newTestRouter := func(options testRouterOptions) http.Handler {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
-			validationMode,
-		).WithArchiveLookup(archiveLookup)
-		if limitExtraction {
+			options.validationMode,
+		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion)
+		if options.limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
 		}
-		if extractionTimeout > 0 {
-			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(extractionTimeout)
+		if options.extractionTimeout > 0 {
+			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(options.extractionTimeout)
 		}
 		router := chi.NewRouter()
 		router.Use(corsMiddleware())
@@ -179,10 +192,20 @@ func TestMain(m *testing.M) {
 		})
 		return router
 	}
-	testServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, false, 0))
-	logOnlyTestServer = httptest.NewServer(newTestRouter(validation.ModeLogOnly, false, 0))
-	limitedExtractionServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, true, 0))
-	timeoutExtractionServer = httptest.NewServer(newTestRouter(validation.ModeEnforce, false, time.Nanosecond))
+	testServer = httptest.NewServer(newTestRouter(testRouterOptions{validationMode: validation.ModeEnforce}))
+	logOnlyTestServer = httptest.NewServer(newTestRouter(testRouterOptions{validationMode: validation.ModeLogOnly}))
+	limitedExtractionServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validationMode:  validation.ModeEnforce,
+		limitExtraction: true,
+	}))
+	timeoutExtractionServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validationMode:    validation.ModeEnforce,
+		extractionTimeout: time.Nanosecond,
+	}))
+	entryDeletionServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validationMode: validation.ModeEnforce,
+		entryDeletion:  true,
+	}))
 
 	code := m.Run()
 
@@ -190,6 +213,7 @@ func TestMain(m *testing.M) {
 	logOnlyTestServer.Close()
 	limitedExtractionServer.Close()
 	timeoutExtractionServer.Close()
+	entryDeletionServer.Close()
 	s3Stub.Close()
 	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {

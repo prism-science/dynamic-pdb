@@ -49,6 +49,8 @@ type Server struct {
 	// activated model gets a sync job. Its base URL comes from DYNAMIC_PDB_RCSB_FILES_URL, as for
 	// the data sync.
 	rcsbFiles RCSBFiles
+	// entryDeletionEnabled turns DELETE /v1/entries/{entry_id} on; see WithEntryDeletion.
+	entryDeletionEnabled bool
 }
 
 func NewServer(
@@ -175,10 +177,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load user permissions")
 		return
 	}
-	permissionKeys := make([]string, 0, len(effectivePermissions))
-	for _, permission := range effectivePermissions {
-		permissionKeys = append(permissionKeys, string(permission.Key))
-	}
+	permissionKeys := s.grantedPermissionKeys(effectivePermissions)
 
 	token, expiresAt, err := s.jwt.Issue(persisted.ID)
 	if err != nil {

@@ -1,0 +1,87 @@
+/* Sits under the rail's "Edit entry" link and matches its size, in the danger
+   colour, so it reads as part of the same short list of actions. */
+.delete {
+  padding: 10px 8px 0;
+  border: none;
+  background: none;
+  color: var(--danger-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.delete:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.confirm {
+  margin: 10px 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  font-size: 12px;
+}
+
+.question {
+  margin: 0 0 8px;
+  color: var(--danger-fg);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirmDelete,
+.cancel {
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.confirmDelete {
+  border: 1px solid var(--danger-fg);
+  background: var(--danger-fg);
+  color: #fff;
+}
+
+.cancel {
+  border: 1px solid var(--danger-border);
+  background: none;
+  color: var(--danger-fg);
+}
+
+.confirmDelete:disabled,
+.cancel:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.error {
+  margin: 8px 0 0;
+  color: var(--danger-fg);
+  font-weight: 600;
+}
+
+/* Narrow: the rail's other actions sit at the right edge of the strip
+   (ScopeRail.module.css, .add); line this one up with them. */
+@media (max-width: 900px) {
+  .delete {
+    flex: none;
+    margin: 0 0 0 auto;
+    padding: 6px 8px;
+  }
+
+  .confirm {
+    max-width: 360px;
+    margin: 6px 0 0 auto;
+  }
+}

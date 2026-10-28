@@ -687,6 +687,33 @@ export type EntryReview = {
   models: (ReviewPair<ReviewModel> & { model_id: string })[];
 };
 
+/** Soft-deletes an entry, so it leaves the site, search and the API. The
+ *  backend allows it only for reviewers, and only where entry deletion is
+ *  turned on; it answers 204 with no body. */
+export async function deleteEntry(token: string, entryId: string): Promise<void> {
+  const baseUrl = getServerApiBaseUrl().replace(/\/+$/, "");
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${baseUrl}/v1/entries/${encodeURIComponent(entryId)}`,
+      {
+        method: "DELETE",
+        cache: "no-store",
+        headers: {
+          Accept: jsonApiMediaType,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      backendWriteTimeoutMs,
+    );
+  } catch (error) {
+    throw backendRequestError(error);
+  }
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+}
+
 export type RevisionDecision = "active" | "rejected";
 
 export async function submitModelRevision(

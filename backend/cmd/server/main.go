@@ -93,7 +93,8 @@ func run() int {
 	).WithArchiveLookup(archive.NewLookup(
 		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
 		sifts.NewClient(),
-	))
+	)).WithEntryDeletion(cfg.Entries.DeleteEnabled)
+	slog.Info("entry deletion configured", "enabled", cfg.Entries.DeleteEnabled)
 
 	trustedProxies, err := cfg.Server.RateLimit.TrustedProxyPrefixes()
 	if err != nil {

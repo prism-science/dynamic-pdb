@@ -214,29 +214,36 @@ func (s *Server) UpdateEntryRevisionState(
 			}
 			return nil
 		}
-
-		if err := s.database.Entries.Lock(ctx, entryID); err != nil {
-			return fmt.Errorf("lock entry: %w", err)
-		}
-		if err := s.ensureRevisionParentIsActive(ctx, *target); err != nil {
-			return fmt.Errorf("validate entry revision parent: %w", err)
-		}
-		if err := s.reconcileProteinSequencesForActivation(ctx, *target); err != nil {
-			return fmt.Errorf("reconcile activated protein sequences: %w", err)
-		}
-		activated, err := s.database.Entries.ActivateRevision(ctx, entryID, revisionID)
-		if err != nil {
-			return fmt.Errorf("activate entry revision: %w", err)
-		}
-		if err := s.reindexActiveEntry(ctx, *activated); err != nil {
-			return fmt.Errorf("reindex activated entry: %w", err)
-		}
-		return nil
+		return s.activateEntryRevision(ctx, *target)
 	})
 	if s.writeMutationError(r.Context(), w, err, "update entry revision") {
 		return
 	}
 	s.writeEntryRevision(w, r, entryID, revisionID, nil)
+}
+
+// activateEntryRevision approves an in-review entry revision inside the caller's transaction:
+// it locks the entry, checks that the revision's parent is still the active revision, reconciles
+// the entry's protein sequences, makes the revision active and rebuilds the entry's search index.
+// A reviewer's approval and DeleteEntry both go through it.
+func (s *Server) activateEntryRevision(ctx context.Context, target domainmodels.EntryRevision) error {
+	if err := s.database.Entries.Lock(ctx, target.EntryID); err != nil {
+		return fmt.Errorf("lock entry: %w", err)
+	}
+	if err := s.ensureRevisionParentIsActive(ctx, target); err != nil {
+		return fmt.Errorf("validate entry revision parent: %w", err)
+	}
+	if err := s.reconcileProteinSequencesForActivation(ctx, target); err != nil {
+		return fmt.Errorf("reconcile activated protein sequences: %w", err)
+	}
+	activated, err := s.database.Entries.ActivateRevision(ctx, target.EntryID, target.ID)
+	if err != nil {
+		return fmt.Errorf("activate entry revision: %w", err)
+	}
+	if err := s.reindexActiveEntry(ctx, *activated); err != nil {
+		return fmt.Errorf("reindex activated entry: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) reconcileProteinSequencesForActivation(
