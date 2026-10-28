@@ -38,3 +38,6 @@ cdn:
 validation:
   # Reject requests that break Dynamic PDB Schema v0.2.0 (HTTP 422).
   mode: enforce
+data_sync:
+  # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
+  coordinate_revisions: false

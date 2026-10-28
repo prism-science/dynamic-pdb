@@ -48,3 +48,6 @@ analytics:
 validation:
   # Log schema violations without rejecting requests until clients are updated.
   mode: log_only
+data_sync:
+  # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
+  coordinate_revisions: false

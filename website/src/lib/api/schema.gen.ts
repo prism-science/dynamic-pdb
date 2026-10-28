@@ -1394,6 +1394,8 @@ export interface components {
                 path?: string;
                 sha256?: string;
             };
+            /** @description RCSB version (major.minor) an archive coordinate file stands for. The archive sync sets it on the file a new Deposited model revision links when RCSB changes the coordinates. */
+            archive_version?: string;
             extensions?: components["schemas"]["Extensions"];
         };
         /** @description Run metadata. The only key is extensions; other keys get 422 when validation mode is enforce. Keys starting with "__" are reserved. */

@@ -98,7 +98,7 @@ func Test_should_pass_validation_mode_to_sync_strategies_when_job_created(t *tes
 	database := &db.DB{}
 
 	// when
-	job, err := NewDataSyncJob(database, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeEnforce)
+	job, err := NewDataSyncJob(database, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeEnforce, DataSyncConfig{})
 
 	// then
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func Test_should_pass_validation_mode_to_sync_strategies_when_job_created(t *tes
 
 func Test_should_reject_data_sync_job_when_validation_mode_unknown(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), sifts.NewClient(), nil, validation.Mode("warn"))
+	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), sifts.NewClient(), nil, validation.Mode("warn"), DataSyncConfig{})
 
 	// then
 	require.EqualError(t, err, "validation mode: unknown validation mode: warn")

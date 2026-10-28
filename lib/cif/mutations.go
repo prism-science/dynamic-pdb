@@ -2,6 +2,7 @@ package cif
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,7 +28,8 @@ type mutationKey struct {
 // readMutations pairs each entity's own pdbx_mutation text with the engineered
 // mutations found in _struct_ref_seq_dif. Rows that cannot be mapped to an
 // entity, a UniProt accession and numbered standard residues are listed as
-// unmapped and flag the set for review instead of being guessed.
+// unmapped and flag the set for review instead of being guessed. The rows repeat
+// for every chain of an entity, so each mutation and unmapped row is listed once.
 func readMutations(document *Document, differences []SequenceDifference) []MutationSet {
 	originals := entityMutationText(document)
 	alignEntities := alignEntityIDs(document)
@@ -46,14 +48,14 @@ func readMutations(document *Document, differences []SequenceDifference) []Mutat
 		}
 		if reason != "" {
 			set := mutationSetFor(sets, mutationKey{entityID: entityID}, originals)
-			set.Unmapped = append(set.Unmapped, describeDifference(difference, reason))
+			set.Unmapped = appendNew(set.Unmapped, describeDifference(difference, reason))
 			set.NeedsReview = true
 			set.ReviewReason = "engineered mutation rows could not be mapped to UniProt numbering"
 			continue
 		}
 		key := mutationKey{entityID: entityID, accession: difference.SeqDBAccession}
 		set := mutationSetFor(sets, key, originals)
-		set.Mutations = append(set.Mutations, mutation)
+		set.Mutations = appendNew(set.Mutations, mutation)
 	}
 
 	result := make([]MutationSet, 0, len(sets)+len(originals))
@@ -89,6 +91,24 @@ func readMutations(document *Document, differences []SequenceDifference) []Mutat
 		return result[left].Accession < result[right].Accession
 	})
 	return result
+}
+
+// MutationsComplete reports whether the parse read every row Result.Mutations is built from: no
+// parser limit was hit and the time budget did not end the read, and a cut-off read went on into
+// the coordinates, which archive files write after the mutation rows.
+func (d *Document) MutationsComplete() bool {
+	if d == nil || d.timedOut || len(d.notes.messages) > 0 {
+		return false
+	}
+	return !d.truncated || d.Table("_atom_site") != nil
+}
+
+// appendNew appends value unless values already holds it.
+func appendNew(values []string, value string) []string {
+	if slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
 }
 
 func mutationSetFor(sets map[mutationKey]*MutationSet, key mutationKey, originals map[string]string) *MutationSet {

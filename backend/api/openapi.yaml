@@ -3683,6 +3683,12 @@ components:
               type: string
             sha256:
               type: string
+        archive_version:
+          type: string
+          description: >
+            RCSB version (major.minor) an archive coordinate file stands for. The archive sync
+            sets it on the file a new Deposited model revision links when RCSB changes the
+            coordinates.
         extensions:
           $ref: "#/components/schemas/Extensions"
 

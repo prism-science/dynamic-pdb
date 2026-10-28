@@ -24,7 +24,9 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	siftsClient := sifts.NewClient()
 
 	// when
-	job, err := NewDataSyncJob(database, rcsbClient, siftsClient, nil, validation.ModeLogOnly)
+	job, err := NewDataSyncJob(
+		database, rcsbClient, siftsClient, nil, validation.ModeLogOnly, DataSyncConfig{CoordinateRevisions: true},
+	)
 
 	// then
 	require.NoError(t, err)
@@ -41,11 +43,12 @@ func Test_should_create_data_sync_job_when_database_passed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, database, modelStrategy.database)
 	assert.Equal(t, rcsbClient, modelStrategy.rcsbClient)
+	assert.True(t, modelStrategy.coordinateRevisions)
 }
 
 func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeLogOnly)
+	job, err := NewDataSyncJob(nil, rcsb.NewClient(), sifts.NewClient(), nil, validation.ModeLogOnly, DataSyncConfig{})
 
 	// then
 	require.Error(t, err)
@@ -55,7 +58,7 @@ func Test_should_reject_data_sync_job_when_database_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil, validation.ModeLogOnly)
+	job, err := NewDataSyncJob(&db.DB{}, nil, sifts.NewClient(), nil, validation.ModeLogOnly, DataSyncConfig{})
 
 	// then
 	require.Error(t, err)
@@ -65,7 +68,7 @@ func Test_should_reject_data_sync_job_when_rcsb_client_missing(t *testing.T) {
 
 func Test_should_reject_data_sync_job_when_sifts_client_missing(t *testing.T) {
 	// when
-	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil, validation.ModeLogOnly)
+	job, err := NewDataSyncJob(&db.DB{}, rcsb.NewClient(), nil, nil, validation.ModeLogOnly, DataSyncConfig{})
 
 	// then
 	require.Error(t, err)

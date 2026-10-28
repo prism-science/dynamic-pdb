@@ -191,6 +191,33 @@ func Test_should_flag_review_when_dif_row_is_not_uniprot_or_residue_is_unknown(t
 	assert.Len(t, result.Mutations[0].Unmapped, 2)
 }
 
+func Test_should_list_each_mutation_once_when_every_chain_of_the_entity_has_the_row(t *testing.T) {
+	// given
+	text := "data_X\nloop_\n_entity.id\n_entity.type\n_entity.pdbx_mutation\n1 polymer 'K127R'\n" +
+		"_struct_ref.id 1\n_struct_ref.entity_id 1\n" +
+		"loop_\n_struct_ref_seq.align_id\n_struct_ref_seq.ref_id\n_struct_ref_seq.pdbx_strand_id\n1 1 A\n2 1 B\n" +
+		"loop_\n_struct_ref_seq_dif.align_id\n_struct_ref_seq_dif.mon_id\n_struct_ref_seq_dif.pdbx_seq_db_name\n" +
+		"_struct_ref_seq_dif.pdbx_seq_db_accession_code\n_struct_ref_seq_dif.db_mon_id\n" +
+		"_struct_ref_seq_dif.pdbx_seq_db_seq_num\n_struct_ref_seq_dif.details\n" +
+		"1 ARG UNP B0Y813 LYS 127 'engineered mutation'\n" +
+		"1 MSE UNP B0Y813 MET 130 'engineered mutation'\n" +
+		"2 ARG UNP B0Y813 LYS 127 'engineered mutation'\n" +
+		"2 MSE UNP B0Y813 MET 130 'engineered mutation'\n"
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, result.Mutations, 2)
+	unmapped, mapped := result.Mutations[0], result.Mutations[1]
+	assert.Equal(t, "B0Y813", mapped.Accession)
+	assert.Equal(t, []string{"K127R"}, mapped.Mutations)
+	assert.Empty(t, unmapped.Accession)
+	assert.Len(t, unmapped.Unmapped, 1)
+	assert.True(t, unmapped.NeedsReview)
+}
+
 func Test_should_count_altloc_residues_when_second_position_has_enough_occupancy(t *testing.T) {
 	// given
 	text := "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.type_symbol\n_atom_site.label_comp_id\n" +

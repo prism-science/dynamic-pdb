@@ -21,6 +21,7 @@ import (
 	"dynamic-pdb/backend/internal/types"
 	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/cif"
+	"dynamic-pdb/lib/rcsb"
 )
 
 type Server struct {
@@ -44,6 +45,10 @@ type Server struct {
 	// extractionTimeout is the longest one extraction may spend parsing; see
 	// WithExtractionTimeout.
 	extractionTimeout time.Duration
+	// rcsbFiles names RCSB's coordinate file of an archive model, which decides whether an
+	// activated model gets a sync job. Its base URL comes from DYNAMIC_PDB_RCSB_FILES_URL, as for
+	// the data sync.
+	rcsbFiles RCSBFiles
 }
 
 func NewServer(
@@ -70,6 +75,7 @@ func NewServer(
 			defaultExtractionMaxInFlight, defaultExtractionUserRequests, defaultExtractionUserWindow,
 		),
 		extractionTimeout: cif.TimeBudget,
+		rcsbFiles:         rcsb.NewClient(rcsb.WithCacheEntries(0)),
 	}
 }
 

@@ -121,9 +121,12 @@ func normalizeProteinSequence(sequence string) string {
 // ArtifactMetadata is the set of keys artifact metadata may carry. Open data goes in
 // Extensions.
 type ArtifactMetadata struct {
-	Records    []FASTARecord           `json:"records,omitempty"`
-	Source     *ArtifactMetadataSource `json:"_dynamic_pdb_source,omitempty"`
-	Extensions map[string]any          `json:"extensions,omitempty"`
+	Records []FASTARecord           `json:"records,omitempty"`
+	Source  *ArtifactMetadataSource `json:"_dynamic_pdb_source,omitempty"`
+	// ArchiveVersion is the RCSB version (major.minor) an archive coordinate file stands for.
+	// The archive sync sets it on the file it links when RCSB changes the coordinates.
+	ArchiveVersion *string        `json:"archive_version,omitempty"`
+	Extensions     map[string]any `json:"extensions,omitempty"`
 }
 
 // ArtifactMetadataSource records the external experiment a file came from.

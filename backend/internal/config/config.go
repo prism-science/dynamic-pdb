@@ -11,18 +11,20 @@ import (
 
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/jobs"
 	"dynamic-pdb/backend/internal/services/analytics"
 	"dynamic-pdb/backend/internal/services/cdn"
 	"dynamic-pdb/backend/internal/validation"
 )
 
 type Config struct {
-	Server     ServerConfig      `mapstructure:"server"`
-	Auth       auth.Config       `mapstructure:"auth"`
-	DB         db.Config         `mapstructure:"db"`
-	CDN        cdn.Config        `mapstructure:"cdn"`
-	Analytics  analytics.Config  `mapstructure:"analytics"`
-	Validation validation.Config `mapstructure:"validation"`
+	Server     ServerConfig        `mapstructure:"server"`
+	Auth       auth.Config         `mapstructure:"auth"`
+	DB         db.Config           `mapstructure:"db"`
+	CDN        cdn.Config          `mapstructure:"cdn"`
+	Analytics  analytics.Config    `mapstructure:"analytics"`
+	Validation validation.Config   `mapstructure:"validation"`
+	DataSync   jobs.DataSyncConfig `mapstructure:"data_sync"`
 }
 
 type ServerConfig struct {
@@ -74,6 +76,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
 	v.SetDefault("server::rate_limit::internal_requests", defaultRateLimitInternalRequests)
 	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
+	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

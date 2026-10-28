@@ -148,3 +148,55 @@ func Test_should_run_callback_when_advisory_lock_acquired(t *testing.T) {
 	assert.True(t, ran)
 	assert.True(t, callbackCalled)
 }
+
+func Test_should_create_model_data_sync_job_only_once_when_create_if_missing_runs_twice(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "create-if-missing-entry", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "create-if-missing-model", now)
+	job := models.DataSyncJob{EntryID: entryRevision.EntryID, ModelID: &modelRevision.ModelID, ScheduledAt: now.Add(-time.Hour)}
+	version := models.ArchiveVersion{Ordinal: 2, Version: "1.1"}
+
+	// when
+	created, createErr := testDB.DataSyncJobs.CreateIfMissing(ctx, job)
+	require.NoError(t, testDB.DataSyncJobs.RecordArchiveVersion(ctx, job, version))
+	again := job
+	again.ScheduledAt = now.Add(-2 * time.Hour)
+	createdAgain, againErr := testDB.DataSyncJobs.CreateIfMissing(ctx, again)
+	next, nextErr := testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+
+	// then
+	require.NoError(t, createErr)
+	require.NoError(t, againErr)
+	require.NoError(t, nextErr)
+	assert.True(t, created)
+	assert.False(t, createdAgain)
+	require.NotNil(t, next)
+	require.NotNil(t, next.ModelID)
+	assert.Equal(t, modelRevision.ModelID, *next.ModelID)
+	assert.True(t, job.ScheduledAt.Equal(next.ScheduledAt))
+	assert.Equal(t, &version, next.ArchiveVersion)
+	require.NoError(t, testDB.DataSyncJobs.Stop(ctx, job, "test finished", now))
+}
+
+func Test_should_leave_stopped_model_data_sync_job_stopped_when_create_if_missing_runs(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	entryRevision := createDBTestEntryRevision(t, "stopped-create-if-missing-entry", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "stopped-create-if-missing-model", now)
+	job := models.DataSyncJob{EntryID: entryRevision.EntryID, ModelID: &modelRevision.ModelID, ScheduledAt: now.Add(-time.Hour)}
+	require.NoError(t, testDB.DataSyncJobs.Schedule(ctx, job))
+	require.NoError(t, testDB.DataSyncJobs.Stop(ctx, job, "RCSB obsoleted 1ABC", now))
+
+	// when
+	created, err := testDB.DataSyncJobs.CreateIfMissing(ctx, job)
+	next, nextErr := testDB.DataSyncJobs.GetNextScheduled(ctx, now)
+
+	// then
+	require.NoError(t, err)
+	require.NoError(t, nextErr)
+	assert.False(t, created)
+	assert.Nil(t, next)
+}
