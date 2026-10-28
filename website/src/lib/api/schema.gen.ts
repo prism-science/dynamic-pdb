@@ -297,7 +297,7 @@ export interface paths {
         put?: never;
         /**
          * Create entry
-         * @description Atomically creates a new entry, its initial in-review entry revision, and a separate in-review model revision for every add operation.
+         * @description Atomically creates a new entry, its initial in-review entry revision, and a separate in-review model revision for every add operation. When external_refs names a PDB ID, each archive-synced value that equals the archive's value for that entry is recorded as from the archive (field source rcsb, with accession and release), so the weekly archive sync keeps it current. Every other value is recorded as the depositor's, and so is every value when the archive lookup fails.
          */
         post: operations["createEntry"];
         delete?: never;
@@ -1758,7 +1758,7 @@ export interface components {
         } | null;
         FieldSource: {
             /**
-             * @description rcsb: the archive sync copied the value from RCSB. depositor: a user set or changed the value, and the archive sync never overwrites it.
+             * @description rcsb: the value came from RCSB, either copied by the archive sync or sent on create equal to the archive's value; the archive sync keeps it current. depositor: a user set or changed the value, and the archive sync never overwrites it.
              * @enum {string}
              */
             source: "rcsb" | "depositor";
@@ -1768,7 +1768,7 @@ export interface components {
             release?: string;
             /**
              * Format: date-time
-             * @description When the archive sync read the value.
+             * @description When the value was read from the archive.
              */
             retrieved_at?: string;
         };
