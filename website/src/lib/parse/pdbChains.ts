@@ -1,5 +1,9 @@
 import { instanceKey, type ChainPosition, type CompoundInstance, type MetalcLinks } from "./ligandRule";
 
+// The distinct chain and residue name pairs kept from SEQRES records, as
+// maxSequenceNames in lib/cif/limits.go.
+const MAX_SEQUENCE_NAMES = 100_000;
+
 /**
  * Mirrors pdbChains in lib/cif/pdbchains.go: what a PDB-format file says about
  * its polymer chains and metal links. The residue names in each chain's SEQRES
@@ -10,9 +14,11 @@ import { instanceKey, type ChainPosition, type CompoundInstance, type MetalcLink
  */
 export class PdbChains {
   private readonly seqres = new Map<string, Set<string>>();
+  private sequenceNameCount = 0;
   private readonly modified = new Set<string>();
   /** MODRES residue IDs in file order. */
   readonly modifiedNames: string[] = [];
+  private readonly modifiedSeen = new Set<string>();
   private readonly terLine = new Map<string, number>();
   private readonly atomRange = new Map<string, { first: number; last: number }>();
   private readonly firstLine = new Map<string, number>();
@@ -20,14 +26,26 @@ export class PdbChains {
   private readonly linkPairs: Array<[CompoundInstance, CompoundInstance]> = [];
   private readonly linkSeen = new Set<string>();
 
-  /** A SEQRES record: the chain and up to 13 residue names. */
+  /** A SEQRES record: the chain and the residue names in columns 20 to 70
+   *  (13 slots); anything past column 70 is not a residue name. */
   addSeqres(line: string): void {
     const chain = line.slice(11, 12).trim();
-    const names = this.seqres.get(chain) ?? new Set<string>();
-    for (const name of line.slice(19).trim().split(/\s+/).filter(Boolean)) {
-      names.add(name.toUpperCase());
+    for (const name of line.slice(19, 70).trim().split(/\s+/).filter(Boolean)) {
+      const upper = name.toUpperCase();
+      const names = this.seqres.get(chain);
+      if (names?.has(upper)) {
+        continue;
+      }
+      if (this.sequenceNameCount >= MAX_SEQUENCE_NAMES) {
+        return;
+      }
+      if (names) {
+        names.add(upper);
+      } else {
+        this.seqres.set(chain, new Set([upper]));
+      }
+      this.sequenceNameCount += 1;
     }
-    this.seqres.set(chain, names);
   }
 
   /** A MODRES record: a modified residue of a chain. */
@@ -42,7 +60,8 @@ export class PdbChains {
       return;
     }
     this.modified.add(instanceKey(instance));
-    if (!this.modifiedNames.includes(instance.compound)) {
+    if (!this.modifiedSeen.has(instance.compound)) {
+      this.modifiedSeen.add(instance.compound);
       this.modifiedNames.push(instance.compound);
     }
   }

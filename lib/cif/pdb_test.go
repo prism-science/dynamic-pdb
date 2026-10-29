@@ -155,7 +155,7 @@ func pdbSources(t *testing.T, text string) (Extraction, CompoundSources) {
 	return extraction, extraction.CompoundSources
 }
 
-func Test_should_treat_seqres_residue_before_ter_as_polymer_and_one_after_as_ligand(t *testing.T) {
+func Test_should_treat_seqres_residue_as_polymer_when_it_comes_before_ter_and_as_ligand_after(t *testing.T) {
 	// given: MSE in chain A; a free glutamate after chain A's TER, as in 1II5.
 	text := pdbSeqres("A", "ALA", "MSE", "GLU") +
 		pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
@@ -175,7 +175,7 @@ func Test_should_treat_seqres_residue_before_ter_as_polymer_and_one_after_as_lig
 	assert.Equal(t, source(ruleCCDType), sources.Ligands["GLU"])
 }
 
-func Test_should_count_a_seqres_residue_of_any_ccd_type_as_polymer(t *testing.T) {
+func Test_should_count_residue_as_polymer_when_seqres_names_it_whatever_its_ccd_type(t *testing.T) {
 	// given: HT0 is a "non-polymer" in the CCD but a residue of 7LTB's chain.
 	text := pdbSeqres("A", "HT0", "PHE") +
 		pdbRecord("HETATM", 1, "C1", "HT0", "A", 1, "C") +
@@ -191,7 +191,7 @@ func Test_should_count_a_seqres_residue_of_any_ccd_type_as_polymer(t *testing.T)
 	assert.Empty(t, sources.Ligands)
 }
 
-func Test_should_keep_modres_residue_in_chain_and_add_its_bound_cofactor(t *testing.T) {
+func Test_should_add_the_bound_cofactor_when_modres_lists_a_covalent_cofactor_residue(t *testing.T) {
 	// given: LLP (PLP on a lysine), as MODRES lists it in 3CEB.
 	text := pdbModres("LLP", "A", 5, "LYS") +
 		pdbRecord("ATOM", 1, "CA", "ALA", "A", 4, "C") +
@@ -230,7 +230,7 @@ func Test_should_place_residues_by_numbers_when_chain_has_neither_seqres_nor_ter
 	assert.Equal(t, source(ruleList), sources.Ligands["GLU"])
 }
 
-func Test_should_not_flag_a_nucleotide_ligand_whose_name_no_seqres_uses(t *testing.T) {
+func Test_should_not_flag_a_nucleotide_ligand_when_no_seqres_uses_its_name(t *testing.T) {
 	// given: GDP, which the CCD types as "RNA linking", bound to a protein
 	// chain, as in 6OIM.
 	text := pdbSeqres("A", "ALA", "GLY") +
@@ -249,7 +249,7 @@ func Test_should_not_flag_a_nucleotide_ligand_whose_name_no_seqres_uses(t *testi
 	assert.Equal(t, source(ruleList), sources.Ligands["GDP"])
 }
 
-func Test_should_read_link_records_as_metal_links(t *testing.T) {
+func Test_should_link_metals_when_link_records_join_them_to_residues(t *testing.T) {
 	// given: zinc bound to a cysteine, magnesium only to water, calcium to nothing.
 	text := pdbLink("SG", "CYS", "A", 1, "ZN", "ZN", "B", 101) +
 		pdbLink("MG", "MG", "B", 102, "O", "HOH", "C", 201) +
@@ -285,7 +285,7 @@ func Test_should_keep_metal_flagged_when_link_records_join_no_metal(t *testing.T
 	assert.Equal(t, []ReviewItem{{List: ListCofactors, ID: "ZN", Reason: noMetalcRowsReason}}, extraction.Review)
 }
 
-func Test_should_place_a_sugar_outside_any_chain_as_a_glycan(t *testing.T) {
+func Test_should_place_a_sugar_as_a_glycan_when_it_sits_outside_any_chain(t *testing.T) {
 	// given
 	text := pdbRecord("ATOM", 1, "CA", "ASN", "A", 1, "C") +
 		pdbRecord("HETATM", 2, "C1", "NAG", "B", 1, "C") +

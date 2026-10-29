@@ -1,0 +1,42 @@
+data_NOXY
+# Synthetic: the categories that sort compounds, without coordinates. ATP
+# comes from _pdbx_entity_nonpoly, the glycan record from the branched entity,
+# and PLP from the LLP modified residue.
+_entry.id NOXY
+#
+loop_
+_entity.id
+_entity.type
+_entity.pdbx_description
+1 polymer 'protein'
+2 branched 'glycan'
+3 non-polymer 'ATP'
+#
+loop_
+_pdbx_entity_nonpoly.entity_id
+_pdbx_entity_nonpoly.name
+_pdbx_entity_nonpoly.comp_id
+3 "ADENOSINE-5'-TRIPHOSPHATE" ATP
+#
+loop_
+_pdbx_entity_branch_list.entity_id
+_pdbx_entity_branch_list.comp_id
+_pdbx_entity_branch_list.num
+2 NAG 1
+2 NAG 2
+#
+loop_
+_pdbx_entity_branch_descriptor.ordinal
+_pdbx_entity_branch_descriptor.entity_id
+_pdbx_entity_branch_descriptor.descriptor
+_pdbx_entity_branch_descriptor.type
+1 2 'WURCS=2.0/1,2,1/[a2122h-1b_1-5_2*NCC/3=O]/1-1/a4-b1' WURCS
+#
+loop_
+_pdbx_struct_mod_residue.id
+_pdbx_struct_mod_residue.label_asym_id
+_pdbx_struct_mod_residue.label_comp_id
+_pdbx_struct_mod_residue.label_seq_id
+_pdbx_struct_mod_residue.parent_comp_id
+1 A LLP 2 LYS
+#

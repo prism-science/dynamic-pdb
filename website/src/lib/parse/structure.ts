@@ -1,4 +1,4 @@
-import { cifLoop, cifValue, loopColumn, loopValue, type CifLoop } from "./cif";
+import { cifCategory, cifLoop, cifValue, firstDataBlock, loopColumn, loopValue, type CifLoop } from "./cif";
 import { PdbChains } from "./pdbChains";
 import {
   CompoundTally,
@@ -349,7 +349,9 @@ function readNumber(
 
 /* --------------------------------------------------------------- mmCIF -- */
 
-function parseMmcif(text: string): StructureFacts {
+function parseMmcif(fileText: string): StructureFacts {
+  // lib/cif stops at the second data block; so does the preview.
+  const text = firstDataBlock(fileText);
   const facts: StructureFacts = {
     program: null,
     authors: [],
@@ -396,10 +398,10 @@ function parseMmcif(text: string): StructureFacts {
   }
 
   const atomSite = cifLoop(text, "_atom_site");
+  let atomCount = 0;
+  const residueTally = new ResidueTally();
+  const compounds = new CompoundTally();
   if (atomSite) {
-    let atomCount = 0;
-    const residueTally = new ResidueTally();
-    const compounds = new CompoundTally();
     // Only the first model counts, as in lib/cif.
     let firstModel: string | null | undefined;
 
@@ -460,30 +462,29 @@ function parseMmcif(text: string): StructureFacts {
         Number.isFinite(occupancy) ? occupancy : 1,
       );
     }
-    for (const { compound, entityId } of nonpolymerCompounds(text)) {
-      compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0, entityId);
-    }
-    const annotations = readAnnotations(text, loopColumn(atomSite, "ihm_model_id") !== -1);
-    applyCounts(facts, atomCount, residueTally, compounds.facts(), readMetalcLinks(text), annotations);
-    facts.glycans = annotations.glycans;
   }
+  // The compounds are sorted even without coordinates, as in lib/cif: they
+  // come from _pdbx_entity_nonpoly, and the annotations add glycans and
+  // covalently bound cofactors.
+  for (const { compound, entityId } of nonpolymerCompounds(text)) {
+    compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0, entityId);
+  }
+  const annotations = readAnnotations(text, atomSite !== null && loopColumn(atomSite, "ihm_model_id") !== -1);
+  applyCounts(facts, atomCount, residueTally, compounds.facts(), readMetalcLinks(text), annotations);
+  facts.glycans = annotations.glycans;
 
   return facts;
 }
 
 /** Compounds `_pdbx_entity_nonpoly` lists, which may have no coordinates. */
 function nonpolymerCompounds(text: string): Array<{ compound: string; entityId: string }> {
-  const loop = cifLoop(text, "_pdbx_entity_nonpoly");
-  if (loop) {
-    return loop.rows
-      .map((row) => ({
-        compound: (loopValue(loop, row, "comp_id") ?? "").toUpperCase(),
-        entityId: loopValue(loop, row, "entity_id") ?? "",
-      }))
-      .filter(({ compound }) => compound !== "");
-  }
-  const single = (cifValue(text, "_pdbx_entity_nonpoly.comp_id") ?? "").toUpperCase();
-  return single ? [{ compound: single, entityId: cifValue(text, "_pdbx_entity_nonpoly.entity_id") ?? "" }] : [];
+  const nonpoly = cifCategory(text, "_pdbx_entity_nonpoly");
+  return (nonpoly?.rows ?? [])
+    .map((row) => ({
+      compound: (loopValue(nonpoly!, row, "comp_id") ?? "").toUpperCase(),
+      entityId: loopValue(nonpoly!, row, "entity_id") ?? "",
+    }))
+    .filter(({ compound }) => compound !== "");
 }
 
 function mmcifAuthors(text: string): string[] {

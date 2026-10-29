@@ -233,7 +233,7 @@ func Test_should_stop_without_writing_when_the_metal_rule_would_drop_a_reviewed_
 	assert.Equal(t, before, string(files[metalIonsFile]))
 }
 
-func Test_should_report_a_replaced_id_and_never_rewrite_it(t *testing.T) {
+func Test_should_report_and_keep_a_reviewed_id_when_the_ccd_replaced_it(t *testing.T) {
 	// given
 	dictionary := testDictionary()
 	replaced := dictionary.records["HEM"]
@@ -252,7 +252,7 @@ func Test_should_report_a_replaced_id_and_never_rewrite_it(t *testing.T) {
 	assert.Equal(t, before, string(files[cofactorsFile]))
 }
 
-func Test_should_report_a_listed_id_that_is_not_a_non_polymer(t *testing.T) {
+func Test_should_report_a_listed_id_when_its_ccd_type_is_not_non_polymer(t *testing.T) {
 	// given
 	files := testFiles(`"HO", "ZN"`)
 	files[solventsFile] = []byte(strings.Replace(string(files[solventsFile]), `"GOL"`, `"GOL", "MSE"`, 1))
@@ -280,7 +280,7 @@ func Test_should_stop_when_the_ccd_has_a_type_nobody_knows(t *testing.T) {
 	assert.Empty(t, result.Written)
 }
 
-func Test_should_reject_a_covalent_residue_of_unknown_type(t *testing.T) {
+func Test_should_report_a_problem_when_a_covalent_residue_has_an_unknown_ccd_type(t *testing.T) {
 	// given
 	dictionary := testDictionary()
 	residue := dictionary.records["LLP"]
@@ -295,11 +295,20 @@ func Test_should_reject_a_covalent_residue_of_unknown_type(t *testing.T) {
 	assert.Contains(t, result.Problems, `covalent_cofactors.json: LLP: unknown CCD type "L-peptide linking, new kind": add it to cif.CCDTypeCategory and knownCCDTypes`)
 }
 
-func Test_should_map_every_known_ccd_type_and_reject_others(t *testing.T) {
+func Test_should_map_every_known_type_and_fail_when_a_type_is_unknown(t *testing.T) {
+	// given
+	unknownType := "glycolipid"
+
+	// when
+	knownErrors := map[string]error{}
 	for _, ccdType := range knownCCDTypes {
-		_, err := categoryOfType(ccdType)
+		_, knownErrors[ccdType] = categoryOfType(ccdType)
+	}
+	_, unknownErr := categoryOfType(unknownType)
+
+	// then
+	for ccdType, err := range knownErrors {
 		assert.NoError(t, err, ccdType)
 	}
-	_, err := categoryOfType("glycolipid")
-	require.Error(t, err)
+	require.Error(t, unknownErr)
 }

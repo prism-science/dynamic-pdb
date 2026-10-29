@@ -66,6 +66,22 @@ func Test_should_warn_and_withhold_counts_when_the_budget_ends_inside_the_coordi
 	assert.Less(t, ctx.calls, 10, "the parse should stop reading once the budget is gone")
 }
 
+func Test_should_not_apply_a_loop_the_budget_ended_at_a_row_boundary(t *testing.T) {
+	// given: a one-column loop of modified residues, so the budget can only end
+	// it between two rows.
+	ctx := &expiringContext{Context: context.Background(), allowed: 2}
+	text := "data_X\nloop_\n_pdbx_struct_mod_residue.label_comp_id\n" + strings.Repeat("LLP\n", 10*checkInterval) + "#\n"
+
+	// when
+	_, result, err := ExtractTextContext(ctx, text, false)
+
+	// then
+	require.NoError(t, err)
+	assert.Contains(t, result.Warnings, timeBudgetWarning)
+	assert.Empty(t, result.Cofactors, "the rows read before the budget ended may not be all of them")
+	assert.Contains(t, strings.Join(result.Warnings, "\n"), "_pdbx_struct_mod_residue (covalently bound cofactors)")
+}
+
 func Test_should_not_warn_when_the_file_is_read_within_the_budget(t *testing.T) {
 	// given
 	text := archiveWithAtoms(10 * checkInterval)

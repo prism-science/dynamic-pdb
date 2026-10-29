@@ -165,6 +165,8 @@ func Test_should_stay_under_memory_budget_when_reading_hostile_pdb_files(t *test
 	files["HET records"] = hetRecords.String()
 	files["distinct chains"] = distinctChains.String()
 	files["remark lines"] = repeatToSizeCounted("REMARK   3   PROGRAM %d : X\n", hostileFileBytes)
+	files["SEQRES lines of distinct names"] = hostileSeqresLines(hostileFileBytes)
+	files["one SEQRES line of distinct names"] = "SEQRES   1 A 9999  " + repeatToSizeCounted("N%d ", hostileFileBytes) + "\n"
 	files["one enormous line"] = "REMARK   3  PROGRAM : " + strings.Repeat("v", hostileFileBytes) + "\n"
 	for name, text := range files {
 		t.Run(name, func(t *testing.T) {

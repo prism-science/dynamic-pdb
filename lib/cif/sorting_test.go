@@ -1,6 +1,7 @@
 package cif
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -125,7 +126,7 @@ func Test_should_sort_by_ccd_type_and_chain_position_when_file_has_no_entity(t *
 	}, result.CompoundSources.Ligands)
 }
 
-func Test_should_prefer_the_files_own_chem_comp_type_and_flag_an_unknown_one(t *testing.T) {
+func Test_should_use_the_files_own_chem_comp_type_when_it_has_one_and_flag_an_unknown_one(t *testing.T) {
 	// given: the file calls NAG a non-polymer and QQQ something unknown.
 	text := mmcifFile(
 		"loop_\n_chem_comp.id\n_chem_comp.type\nNAG non-polymer\nQQQ 'mystery linking'\n#",
@@ -156,7 +157,7 @@ func flagLoop(rows ...string) string {
 		"_pdbx_entity_instance_feature.feature_type\n" + strings.Join(rows, "\n") + "\n#"
 }
 
-func Test_should_follow_the_depositor_flag_over_the_lists(t *testing.T) {
+func Test_should_follow_the_depositor_flag_when_it_contradicts_the_lists(t *testing.T) {
 	// given: biotin (a listed cofactor) is the subject; sulfate (ambiguous) has
 	// no functional role; zinc is flagged OTHER.
 	text := mmcifFile(
@@ -182,7 +183,7 @@ func Test_should_follow_the_depositor_flag_over_the_lists(t *testing.T) {
 	assert.Equal(t, source(ruleMetalc), result.CompoundSources.Cofactors["ZN"])
 }
 
-func Test_should_apply_a_located_depositor_flag_to_that_instance_only(t *testing.T) {
+func Test_should_flag_only_that_instance_when_the_depositor_flag_has_a_location(t *testing.T) {
 	// given: two glycerols; the depositor marks the one at C 202.
 	text := mmcifFile(
 		entityLoop("1 polymer", "2 non-polymer"),
@@ -202,6 +203,97 @@ func Test_should_apply_a_located_depositor_flag_to_that_instance_only(t *testing
 	assert.Equal(t, []Compound{{ID: "GOL"}}, result.Ligands)
 	assert.Equal(t, source(ruleDepositorFlag), result.CompoundSources.Ligands["GOL"])
 	assert.Equal(t, source(ruleList), result.CompoundSources.Excluded["GOL"])
+}
+
+func Test_should_follow_the_first_matching_depositor_flag_in_file_order(t *testing.T) {
+	cases := []struct {
+		name     string
+		flags    []string
+		ligands  map[string]CompoundSource
+		excluded map[string]CompoundSource
+	}{
+		{
+			name:     "should_exclude_ATP_when_the_flag_for_every_ATP_comes_first",
+			flags:    []string{"1 ATP ? ? 'NO FUNCTIONAL ROLE'", "2 ATP B 101 'SUBJECT OF INVESTIGATION'"},
+			ligands:  map[string]CompoundSource{},
+			excluded: map[string]CompoundSource{"ATP": source(ruleDepositorFlag)},
+		},
+		{
+			name:     "should_keep_ATP_when_the_flag_for_that_instance_comes_first",
+			flags:    []string{"1 ATP B 101 'SUBJECT OF INVESTIGATION'", "2 ATP ? ? 'NO FUNCTIONAL ROLE'"},
+			ligands:  map[string]CompoundSource{"ATP": source(ruleDepositorFlag)},
+			excluded: map[string]CompoundSource{},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// given: both flags match ATP at B 101.
+			text := mmcifFile(
+				entityLoop("1 polymer", "2 non-polymer"),
+				flagLoop(testCase.flags...),
+				hetatmLoop("HETATM ATP B 2 . 101 PG P 1", "HETATM ATP B 2 . 101 PB P 1"),
+			)
+
+			// when
+			result := extractTextResult(t, text, false)
+
+			// then
+			assert.Equal(t, testCase.ligands, result.CompoundSources.Ligands)
+			assert.Equal(t, testCase.excluded, result.CompoundSources.Excluded)
+		})
+	}
+}
+
+// metalcLoop lists metalc rows as "comp1 asym1 seq1 comp2 asym2 seq2".
+func metalcLoop(rows ...string) string {
+	numbered := make([]string, len(rows))
+	for index, row := range rows {
+		numbered[index] = "metalc" + strconv.Itoa(index+1) + " metalc " + row
+	}
+	return "loop_\n_struct_conn.id\n_struct_conn.conn_type_id\n" +
+		"_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr1_label_asym_id\n_struct_conn.ptnr1_auth_seq_id\n" +
+		"_struct_conn.ptnr2_label_comp_id\n_struct_conn.ptnr2_label_asym_id\n_struct_conn.ptnr2_auth_seq_id\n" +
+		strings.Join(numbered, "\n") + "\n#"
+}
+
+func Test_should_not_count_a_metal_link_when_the_depositor_leaves_the_partner_out(t *testing.T) {
+	// given: zinc's only partner is an ATP the depositor marks as having no
+	// functional role.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer", "3 non-polymer"),
+		flagLoop("1 ATP B 101 'NO FUNCTIONAL ROLE'"),
+		metalcLoop("ZN C 201 ATP B 101"),
+		hetatmLoop("HETATM ATP B 2 . 101 PG P 1", "HETATM ATP B 2 . 101 PB P 1", "HETATM ZN C 3 . 201 ZN ZN 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "ZN", NeedsReview: true, ReviewReason: unlinkedMetalReason}}, result.Ligands)
+	assert.Empty(t, result.Cofactors)
+	assert.Equal(t, source(ruleMetalc), result.CompoundSources.Ligands["ZN"])
+	assert.Equal(t, map[string]CompoundSource{"ATP": source(ruleDepositorFlag)}, result.CompoundSources.Excluded)
+}
+
+func Test_should_count_a_metal_link_when_the_depositor_keeps_a_solvent_partner(t *testing.T) {
+	// given: magnesium's only partner is a glycerol the depositor marks as the
+	// subject of investigation.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer", "3 non-polymer"),
+		flagLoop("1 GOL B 101 'SUBJECT OF INVESTIGATION'"),
+		metalcLoop("MG C 201 GOL B 101"),
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1", "HETATM MG C 3 . 201 MG MG 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "GOL"}}, result.Ligands)
+	assert.Equal(t, []Compound{{ID: "MG"}}, result.Cofactors)
+	assert.Equal(t, source(ruleDepositorFlag), result.CompoundSources.Ligands["GOL"])
+	assert.Equal(t, source(ruleMetalc), result.CompoundSources.Cofactors["MG"])
 }
 
 func Test_should_flag_compound_and_warn_when_depositor_flag_is_unknown(t *testing.T) {
@@ -238,7 +330,7 @@ func Test_should_add_the_bound_cofactor_when_a_covalent_cofactor_residue_is_modi
 	assert.Equal(t, map[string]CompoundSource{"PLP": source(ruleCovalentMap)}, result.CompoundSources.Cofactors)
 }
 
-func Test_should_keep_wurcs_descriptors_per_branched_entity(t *testing.T) {
+func Test_should_keep_wurcs_descriptors_when_file_has_branched_entities(t *testing.T) {
 	// given
 	text := mmcifFile(
 		entityLoop("1 polymer", "2 branched", "3 branched"),
@@ -317,7 +409,7 @@ func Test_should_skip_rules_and_warn_when_a_cut_off_read_may_have_lost_their_cat
 		"_pdbx_entity_instance_feature (depositor flags), _pdbx_struct_mod_residue (covalently bound cofactors)")
 }
 
-func Test_should_not_apply_a_depositor_flag_category_the_read_limit_cut_open(t *testing.T) {
+func Test_should_not_apply_depositor_flags_when_the_read_limit_cut_their_category_open(t *testing.T) {
 	// given: the head ends inside the flag loop, so later flags may be missing.
 	text := "data_X\n" + entityLoop("1 polymer", "2 non-polymer") + "\n" +
 		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1") + "\n" +
@@ -331,6 +423,37 @@ func Test_should_not_apply_a_depositor_flag_category_the_read_limit_cut_open(t *
 	assert.Empty(t, result.Ligands, "a flag from a cut-off category is never applied")
 	assert.Equal(t, source(ruleList), result.CompoundSources.Excluded["GOL"])
 	assert.Contains(t, strings.Join(result.Warnings, "\n"), "_pdbx_entity_instance_feature (depositor flags)")
+}
+
+func Test_should_not_apply_a_pair_form_depositor_flag_when_the_read_limit_cut_it_open(t *testing.T) {
+	// given: the head ends inside the flag's items, so its asym_id and
+	// auth_seq_num may follow in the part not read.
+	text := "data_X\n" + entityLoop("1 polymer", "2 non-polymer") + "\n" +
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1") + "\n" +
+		"_pdbx_entity_instance_feature.comp_id GOL\n_pdbx_entity_instance_feature.feature_type 'SUBJECT OF INVESTIGATION'\n"
+
+	// when
+	result := extractTextResult(t, text, true)
+
+	// then
+	assert.Empty(t, result.Ligands, "a flag from a cut-off category is never applied")
+	assert.Equal(t, source(ruleList), result.CompoundSources.Excluded["GOL"])
+	assert.Contains(t, strings.Join(result.Warnings, "\n"), "_pdbx_entity_instance_feature (depositor flags)")
+}
+
+func Test_should_apply_a_pair_form_depositor_flag_when_a_hash_line_closed_it_before_the_cut(t *testing.T) {
+	// given: archive files end every category with a "#" line.
+	text := "data_X\n" + entityLoop("1 polymer", "2 non-polymer") + "\n" +
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1") + "\n" +
+		"_pdbx_entity_instance_feature.comp_id GOL\n_pdbx_entity_instance_feature.feature_type 'SUBJECT OF INVESTIGATION'\n#\n"
+
+	// when
+	result := extractTextResult(t, text, true)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "GOL"}}, result.Ligands)
+	assert.Equal(t, source(ruleDepositorFlag), result.CompoundSources.Ligands["GOL"])
+	assert.NotContains(t, strings.Join(result.Warnings, "\n"), "_pdbx_entity_instance_feature")
 }
 
 func Test_should_record_the_more_specific_rule_when_an_id_is_placed_twice_in_one_group(t *testing.T) {
@@ -352,7 +475,7 @@ func Test_should_record_the_more_specific_rule_when_an_id_is_placed_twice_in_one
 	assert.Equal(t, map[string]CompoundSource{"NAG": source(ruleBranched)}, result.CompoundSources.Ligands)
 }
 
-func Test_should_reject_a_rule_it_does_not_know(t *testing.T) {
+func Test_should_fail_when_asked_to_rank_an_unknown_rule(t *testing.T) {
 	// when
 	_, err := rulePrecedence("curator")
 

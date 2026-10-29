@@ -23,7 +23,7 @@ func testRCSB(server *httptest.Server) *rcsbDictionary {
 	}
 }
 
-func Test_should_read_search_hits_and_treat_no_content_as_no_hits(t *testing.T) {
+func Test_should_read_hits_and_return_none_when_search_answers_no_content(t *testing.T) {
 	// given
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
@@ -54,7 +54,7 @@ func Test_should_read_search_hits_and_treat_no_content_as_no_hits(t *testing.T) 
 	assert.Zero(t, none)
 }
 
-func Test_should_read_chem_comp_records_and_skip_unknown_ids(t *testing.T) {
+func Test_should_skip_an_id_when_chem_comps_returns_no_record_for_it(t *testing.T) {
 	// given
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(writer, `{"data": {"chem_comps": [

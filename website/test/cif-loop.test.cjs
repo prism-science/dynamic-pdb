@@ -3,7 +3,7 @@ require("./register.cjs");
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { cifLoop, loopValue } = require("../src/lib/parse/cif.ts");
+const { cifCategory, cifLoop, firstDataBlock, loopValue } = require("../src/lib/parse/cif.ts");
 
 test("should_read_a_row_wrapped_over_several_lines_when_values_are_split_across_lines", () => {
   // given
@@ -103,3 +103,60 @@ test("should_finish_quickly_when_a_4_MiB_text_has_many_unterminated_quotes_and_l
   assert.equal(loop, null);
   assert.ok(elapsed < 2000, `took ${elapsed} ms`);
 });
+
+test("should_read_pair_items_when_their_tags_are_indented_and_followed_by_comments", () => {
+  // given: lib/cif reads tokens, so layout and comments do not matter.
+  const text = [
+    "data_X",
+    "  _f.comp_id GOL # the glycerol",
+    "\t_f.feature_type 'SUBJECT OF INVESTIGATION'",
+    "_f.asym_id ?",
+    "#",
+  ].join("\n");
+
+  // when
+  const category = cifCategory(text, "_f");
+
+  // then
+  assert.deepEqual(category.columns, ["comp_id", "feature_type", "asym_id"]);
+  assert.equal(loopValue(category, category.rows[0], "comp_id"), "GOL");
+  assert.equal(loopValue(category, category.rows[0], "feature_type"), "SUBJECT OF INVESTIGATION");
+  assert.equal(loopValue(category, category.rows[0], "asym_id"), null);
+});
+
+test("should_take_only_the_next_token_as_an_item_value_when_a_line_holds_more", () => {
+  // given
+  const text = ["data_X", "_f.comp_id GOL _f.feature_type OTHER", "#"].join("\n");
+
+  // when
+  const category = cifCategory(text, "_f");
+
+  // then
+  assert.deepEqual(category.columns, ["comp_id", "feature_type"]);
+  assert.deepEqual(category.rows, [["GOL", "OTHER"]]);
+});
+
+test("should_not_read_loop_tags_as_items_when_a_loop_names_another_category", () => {
+  // given
+  const text = ["data_X", "loop_", "_g.id", "_g.name", "1 a", "2 b", "_f.comp_id GOL", "#"].join("\n");
+
+  // when
+  const category = cifCategory(text, "_f");
+
+  // then
+  assert.deepEqual(category, { columns: ["comp_id"], rows: [["GOL"]] });
+});
+
+test("should_end_the_first_data_block_at_the_second_data_header", () => {
+  // given: a data_ value in quotes or a text block is not a header.
+  const first = ["data_FIRST", "_x.a 'data_quoted'", ";", "data_in_block", ";", "_x.b 1", ""].join("\n");
+  const text = first + ["data_SECOND", "_f.comp_id ATP", "#"].join("\n");
+
+  // when
+  const block = firstDataBlock(text);
+
+  // then
+  assert.equal(block, first);
+  assert.equal(cifCategory(block, "_f"), null);
+});
+

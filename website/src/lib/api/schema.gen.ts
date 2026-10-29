@@ -2068,6 +2068,93 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "type": "artifact_extractions",
+                     *         "id": "6f1c2a9e-3b4d-4c5e-8f7a-1b2c3d4e5f60",
+                     *         "attributes": {
+                     *           "source": "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90",
+                     *           "reference_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0",
+                     *           "bytes_read": 100352,
+                     *           "object_size": 100352,
+                     *           "truncated": false,
+                     *           "values": [
+                     *             {
+                     *               "name": "ligands",
+                     *               "value": [
+                     *                 {
+                     *                   "id": "BMA"
+                     *                 },
+                     *                 {
+                     *                   "id": "NAG"
+                     *                 },
+                     *                 {
+                     *                   "id": "SO4",
+                     *                   "needs_review": true,
+                     *                   "review_reason": "often from the buffer: confirm it is part of the sample"
+                     *                 }
+                     *               ],
+                     *               "source": "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90",
+                     *               "needs_review": true,
+                     *               "review_reason": "often from the buffer: confirm it is part of the sample"
+                     *             },
+                     *             {
+                     *               "name": "compound_sources",
+                     *               "value": {
+                     *                 "ligands": {
+                     *                   "BMA": {
+                     *                     "rule": "branched",
+                     *                     "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+                     *                   },
+                     *                   "NAG": {
+                     *                     "rule": "branched",
+                     *                     "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+                     *                   },
+                     *                   "SO4": {
+                     *                     "rule": "list",
+                     *                     "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+                     *                   }
+                     *                 },
+                     *                 "cofactors": {},
+                     *                 "excluded": {
+                     *                   "GOL": {
+                     *                     "rule": "list",
+                     *                     "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+                     *                   }
+                     *                 }
+                     *               },
+                     *               "source": "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90",
+                     *               "needs_review": false
+                     *             },
+                     *             {
+                     *               "name": "glycan_descriptors",
+                     *               "value": [
+                     *                 {
+                     *                   "entity_id": "2",
+                     *                   "compound_ids": [
+                     *                     "BMA",
+                     *                     "NAG"
+                     *                   ],
+                     *                   "descriptors": [
+                     *                     {
+                     *                       "descriptor": "WURCS=2.0/2,3,2/[a2122h-1b_1-5_2*NCC/3=O][a1122h-1b_1-5]/1-1-2/a4-b1_b4-c1",
+                     *                       "type": "WURCS",
+                     *                       "program": "PDB2Glycan",
+                     *                       "program_version": "1.1.0"
+                     *                     }
+                     *                   ]
+                     *                 }
+                     *               ],
+                     *               "source": "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90",
+                     *               "needs_review": false
+                     *             }
+                     *           ],
+                     *           "warnings": []
+                     *         }
+                     *       }
+                     *     }
+                     */
                     "application/vnd.api+json": components["schemas"]["ArtifactExtractionDocument"];
                 };
             };

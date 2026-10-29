@@ -29,6 +29,9 @@ const (
 	maxCompoundsPerList = 2_000
 	// maxMetalLinks bounds the distinct metalc partner pairs kept.
 	maxMetalLinks = 50_000
+	// maxSequenceNames bounds the distinct chain and residue name pairs kept
+	// from SEQRES records (a real chain uses under 30 residue names).
+	maxSequenceNames = 100_000
 	// maxPDBFields bounds the REMARK fields kept from a PDB file.
 	maxPDBFields = 5_000
 	// maxScanLineBytes bounds one line read by the streaming scalar scan.

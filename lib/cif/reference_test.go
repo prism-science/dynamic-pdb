@@ -53,9 +53,13 @@ func Test_should_sort_known_compounds_when_reference_is_loaded(t *testing.T) {
 
 func Test_should_name_every_file_version_when_reference_is_loaded(t *testing.T) {
 	// given
-	reference := approvedReference(t)
+	files := embeddedReferenceFiles()
+
+	// when
+	reference, err := parseReference(files)
 
 	// then
+	require.NoError(t, err)
 	assert.Equal(t,
 		"cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0",
 		reference.Version)
@@ -110,15 +114,21 @@ func Test_should_hold_the_reviewed_lists_when_reference_is_loaded(t *testing.T) 
 		"IN", "4TI", "SB", "BS3",
 	}
 
+	// when
+	missing := []string{}
+	for _, id := range reviewedMetals {
+		if _, listed := reference.metals[id]; !listed {
+			missing = append(missing, id)
+		}
+	}
+
 	// then
 	assert.Len(t, reference.cofactors, 57)
 	assert.Len(t, reference.solvents, 40, "36 drops and 4 water IDs")
 	assert.ElementsMatch(t, []string{"SO4", "PO4", "CIT", "FLC", "F", "CL", "BR", "IOD"}, keys(reference.ambiguous))
 	assert.ElementsMatch(t, []string{"IMD"}, keys(reference.keepWhenMetalLinked))
 	assert.Len(t, reviewedMetals, 60)
-	for _, id := range reviewedMetals {
-		assert.Contains(t, reference.metals, id, "reviewed metal %s must stay on the generated list", id)
-	}
+	assert.Empty(t, missing, "reviewed metals must stay on the generated list")
 	assert.Equal(t, map[string]string{"LLP": "PLP", "LYR": "RET"}, reference.covalentCofactors)
 }
 
@@ -236,7 +246,7 @@ func Test_should_drop_only_water_when_lists_are_not_approved(t *testing.T) {
 	assert.Equal(t, kindLigand, reference.kind("ATP"))
 }
 
-func Test_should_keep_buffer_and_flag_it_only_while_solvent_list_is_draft(t *testing.T) {
+func Test_should_keep_and_flag_buffer_when_the_solvent_list_is_a_draft(t *testing.T) {
 	// given
 	text := "data_X\nloop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 GOL\n3 HOH\n4 ATP\n5 SO4\n"
 

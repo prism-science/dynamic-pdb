@@ -1,0 +1,43 @@
+data_NOENT
+# Synthetic: a depositor-made file without _entity. Its own _chem_comp calls
+# NAG a non-polymer (so the lists sort it) and gives QQQ an unknown type
+# (flagged). MSE with a label_seq_id is in the chain; the free MSE is not and,
+# with no SEQRES to name it, is an ordinary ligand. BGC is not in _chem_comp,
+# so the CCD table makes it a sugar (branched).
+_entry.id NOENT
+#
+loop_
+_chem_comp.id
+_chem_comp.type
+_chem_comp.name
+ALA 'L-peptide linking' ALANINE
+MSE 'L-peptide linking' SELENOMETHIONINE
+NAG non-polymer 'N-ACETYL-D-GLUCOSAMINE'
+QQQ 'mystery linking' 'UNKNOWN KIND'
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+_atom_site.occupancy
+_atom_site.pdbx_PDB_model_num
+ATOM 1 C CA . ALA A 1 ? 1 A 1.00 1
+HETATM 2 SE SE . MSE A 2 ? 2 A 1.00 1
+HETATM 3 C CA . MSE A 2 ? 2 A 1.00 1
+HETATM 4 SE SE . MSE B . ? 301 B 1.00 1
+HETATM 5 C CA . MSE B . ? 301 B 1.00 1
+HETATM 6 C C1 . NAG C . ? 401 C 1.00 1
+HETATM 7 C C2 . NAG C . ? 401 C 1.00 1
+HETATM 8 C C1 . BGC D . ? 501 D 1.00 1
+HETATM 9 C C2 . BGC D . ? 501 D 1.00 1
+HETATM 10 C C1 . QQQ E . ? 601 E 1.00 1
+HETATM 11 C C2 . QQQ E . ? 601 E 1.00 1
+#

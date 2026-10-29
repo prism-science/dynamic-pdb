@@ -3,6 +3,7 @@ package cif
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -151,36 +152,36 @@ func DefaultReference() (*Reference, error) {
 	return reference, nil
 }
 
-func decodeList(name string, data []byte, file any, header *listHeader) error {
+func decodeList(data []byte, file any, header *listHeader) error {
 	if err := json.Unmarshal(data, file); err != nil {
-		return fmt.Errorf("decode %s: %w", name, err)
+		return fmt.Errorf("decode JSON: %w", err)
 	}
 	if strings.TrimSpace(header.Version) == "" {
-		return fmt.Errorf("%s has no version", name)
+		return errors.New("no version")
 	}
 	return nil
 }
 
 func parseReference(files referenceFiles) (*Reference, error) {
 	var cofactorList cofactorFile
-	if err := decodeList("cofactor list", files.cofactors, &cofactorList, &cofactorList.listHeader); err != nil {
-		return nil, err
+	if err := decodeList(files.cofactors, &cofactorList, &cofactorList.listHeader); err != nil {
+		return nil, fmt.Errorf("load the cofactor list: %w", err)
 	}
 	var metalList metalIonFile
-	if err := decodeList("metal ion list", files.metalIons, &metalList, &metalList.listHeader); err != nil {
-		return nil, err
+	if err := decodeList(files.metalIons, &metalList, &metalList.listHeader); err != nil {
+		return nil, fmt.Errorf("load the metal ion list: %w", err)
 	}
 	var solventList solventFile
-	if err := decodeList("solvent list", files.solvents, &solventList, &solventList.listHeader); err != nil {
-		return nil, err
+	if err := decodeList(files.solvents, &solventList, &solventList.listHeader); err != nil {
+		return nil, fmt.Errorf("load the solvent list: %w", err)
 	}
 	var covalentList covalentCofactorFile
-	if err := decodeList("covalent cofactor map", files.covalentCofactors, &covalentList, &covalentList.listHeader); err != nil {
-		return nil, err
+	if err := decodeList(files.covalentCofactors, &covalentList, &covalentList.listHeader); err != nil {
+		return nil, fmt.Errorf("load the covalent cofactor map: %w", err)
 	}
 	var ccdTypes ccdTypeFile
-	if err := decodeList("CCD type table", files.ccdTypes, &ccdTypes, &ccdTypes.listHeader); err != nil {
-		return nil, err
+	if err := decodeList(files.ccdTypes, &ccdTypes, &ccdTypes.listHeader); err != nil {
+		return nil, fmt.Errorf("load the CCD type table: %w", err)
 	}
 
 	reference := &Reference{

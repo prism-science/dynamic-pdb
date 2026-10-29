@@ -94,6 +94,40 @@
       }
     ]
   },
+  "2VSD.cif": {
+    "atom_count": 98,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "BMA",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "NAG",
+        "rule": "branched"
+      }
+    ],
+    "glycans": [
+      {
+        "entity_id": "2",
+        "compound_ids": [
+          "BMA",
+          "NAG"
+        ],
+        "descriptors": [
+          {
+            "descriptor": "WURCS=2.0/2,3,2/[a2122h-1b_1-5_2*NCC/3=O][a1122h-1b_1-5]/1-1-2/a4-b1_b4-c1",
+            "type": "WURCS",
+            "program": "PDB2Glycan",
+            "program_version": "1.1.0"
+          }
+        ]
+      }
+    ]
+  },
   "3CEB.cif": {
     "atom_count": 161,
     "modeled_residues": 8,
@@ -352,6 +386,67 @@
     "unique_protein_chains": 1,
     "compounds": []
   },
+  "parity/entity_rules.cif": {
+    "atom_count": 16,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
+        "list": "excluded",
+        "id": "SO4",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "BMA",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "ERY",
+        "rule": "macrolide"
+      },
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "NAG",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "QQQ",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "unknown entity type \"cyclic peptide\": confirm where this compound belongs"
+      }
+    ],
+    "glycans": [
+      {
+        "entity_id": "2",
+        "compound_ids": [
+          "BMA",
+          "NAG"
+        ],
+        "descriptors": [
+          {
+            "descriptor": "WURCS=2.0/2,2,1/[a2122h-1b_1-5_2*NCC/3=O][a1122h-1b_1-5]/1-2/a4-b1",
+            "type": "WURCS",
+            "program": "PDB2Glycan",
+            "program_version": "1.1.0"
+          }
+        ]
+      }
+    ]
+  },
   "parity/ihm_probe.cif": {
     "atom_count": 6,
     "modeled_residues": 2,
@@ -415,6 +510,95 @@
       }
     ]
   },
+  "parity/metal_partner_flags.cif": {
+    "atom_count": 7,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "rule": "metalc"
+      },
+      {
+        "list": "excluded",
+        "id": "ATP",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "ZN",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+      }
+    ]
+  },
+  "parity/no_atom_site.cif": {
+    "atom_count": 0,
+    "modeled_residues": 0,
+    "unique_protein_chains": 0,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "PLP",
+        "rule": "covalent_map"
+      },
+      {
+        "list": "ligands",
+        "id": "ATP",
+        "rule": "list"
+      }
+    ],
+    "glycans": [
+      {
+        "entity_id": "2",
+        "compound_ids": [
+          "NAG"
+        ],
+        "descriptors": [
+          {
+            "descriptor": "WURCS=2.0/1,2,1/[a2122h-1b_1-5_2*NCC/3=O]/1-1/a4-b1",
+            "type": "WURCS"
+          }
+        ]
+      }
+    ]
+  },
+  "parity/no_entity_chem_comp.cif": {
+    "atom_count": 11,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "BGC",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "MSE",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "NAG",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "QQQ",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "unknown chemical component type \"mystery linking\": confirm where this compound belongs"
+      }
+    ]
+  },
   "parity/no_metalc.cif": {
     "atom_count": 9,
     "modeled_residues": 2,
@@ -452,6 +636,18 @@
         "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
+  "parity/pair_form_layout.cif": {
+    "atom_count": 3,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "GOL",
+        "rule": "depositor_flag"
       }
     ]
   },
@@ -506,6 +702,30 @@
       {
         "list": "ligands",
         "id": "GLU",
+        "rule": "list"
+      }
+    ]
+  },
+  "parity/pdb_seqres_columns.pdb": {
+    "atom_count": 4,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "GLU",
+        "rule": "list"
+      }
+    ]
+  },
+  "parity/two_data_blocks.cif": {
+    "atom_count": 3,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "ATP",
         "rule": "list"
       }
     ]

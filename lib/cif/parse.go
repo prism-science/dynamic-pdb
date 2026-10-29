@@ -26,8 +26,10 @@ type Document struct {
 type Table struct {
 	Columns []string
 	Rows    [][]string
-	// Complete is false when the input ended while the loop was still open,
-	// which means more rows may exist beyond a truncated read.
+	// Complete is false when the read may have ended inside the category: a
+	// truncated input or the time budget ended it while the loop, or the
+	// category's pair items, were still being read, so more rows or items may
+	// exist beyond.
 	Complete bool
 }
 
@@ -70,6 +72,9 @@ func parse(ctx context.Context, text string, truncated bool, options parseOption
 	}
 	scalarItems := 0
 	pairColumns := map[string]*Table{}
+	// openPairCategory is the category of the last pair item read, until a
+	// loop starts: if the read ends there, more of its items may follow.
+	openPairCategory := ""
 	seenDataHeader := false
 	for {
 		current, ok := reader.next()
@@ -80,12 +85,14 @@ func parse(ctx context.Context, text string, truncated bool, options parseOption
 		case current.quoted:
 		case isDataHeader(current.text):
 			if seenDataHeader {
-				return document.finish(pairColumns, reader)
+				return document.finish(pairColumns, reader, "")
 			}
 			seenDataHeader = true
 		case strings.EqualFold(current.text, "loop_"):
+			openPairCategory = ""
 			document.readLoop(reader, truncated, options)
 		case strings.HasPrefix(current.text, "_"):
+			openPairCategory, _, _ = strings.Cut(strings.ToLower(current.text), ".")
 			value, ok := reader.next()
 			if !ok {
 				continue
@@ -98,7 +105,7 @@ func parse(ctx context.Context, text string, truncated bool, options parseOption
 			document.addScalar(current.text, value.text, pairColumns)
 		}
 	}
-	return document.finish(pairColumns, reader)
+	return document.finish(pairColumns, reader, openPairCategory)
 }
 
 // tokenReader adds one token of pushback to the tokenizer.
@@ -121,14 +128,20 @@ func (r *tokenReader) unread(held token) {
 	r.hasHeld = true
 }
 
-func (d *Document) finish(pairColumns map[string]*Table, reader *tokenReader) *Document {
+// finish stores the pair-form categories. openCategory is the one whose items
+// were being read when the input ended ("" when a data block header ended the
+// read): it is incomplete when the read was cut off before a "#" line closed it,
+// or when the time budget ended it.
+func (d *Document) finish(pairColumns map[string]*Table, reader *tokenReader, openCategory string) *Document {
 	if reader.tokens.check.err != nil {
 		d.timedOut = true
 		d.notes.add(timeBudgetNote)
 	}
+	cutOff := d.timedOut || (d.truncated && !reader.tokens.endsWithSeparator)
 	for category, table := range pairColumns {
 		if _, exists := d.tables[category]; !exists {
 			table.Rows = [][]string{rowFromPairs(table)}
+			table.Complete = !cutOff || category != openCategory
 			d.tables[category] = table
 		}
 	}
@@ -266,7 +279,10 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 	for offset := 0; offset+width <= len(values); offset += width {
 		table.Rows = append(table.Rows, values[offset:offset+width])
 	}
-	openAtEnd := truncated && !reader.tokens.endsWithSeparator
+	// The loop is open at the end when the input stopped before a "#" line
+	// closed it, or the time budget stopped the read inside it (even at a row
+	// boundary).
+	openAtEnd := (truncated && !reader.tokens.endsWithSeparator) || reader.tokens.check.err != nil
 	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0 && !capped
 	d.tables[category] = table
 }

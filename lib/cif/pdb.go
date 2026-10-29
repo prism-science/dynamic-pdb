@@ -52,8 +52,8 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		warnings = append(warnings, DraftWarning)
 	}
 	tally := newCoordinateTally()
-	chains := newPDBChains()
 	notes := limitNotes{}
+	chains := newPDBChains(&notes)
 	modelStarted := false
 	firstModelDone := false
 	coordinatesEnded := false

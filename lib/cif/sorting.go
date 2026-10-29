@@ -137,23 +137,23 @@ func classifyCompounds(
 	annotations fileAnnotations,
 	reference *Reference,
 ) (sortedCompounds, error) {
-	partners, err := readMetalPartners(links, reference)
-	if err != nil {
-		return sortedCompounds{}, err
-	}
 	sorter := compoundSorter{
 		instances:   instances,
-		partners:    partners,
 		hasMetalc:   links.hasRows,
 		annotations: annotations,
 		reference:   reference,
 		warnedTypes: map[string]bool{},
 	}
+	partners, err := sorter.readMetalPartners(links)
+	if err != nil {
+		return sortedCompounds{}, fmt.Errorf("read metal links: %w", err)
+	}
+	sorter.partners = partners
 	decisions := []decision{}
 	for _, instance := range orderedInstances(instances, annotations.ihm) {
 		placed, isCompound, err := sorter.decide(instance)
 		if err != nil {
-			return sortedCompounds{}, err
+			return sortedCompounds{}, fmt.Errorf("place %s: %w", instance.compoundID, err)
 		}
 		if isCompound {
 			decisions = append(decisions, placed)
@@ -166,7 +166,7 @@ func classifyCompounds(
 	}
 	sorted, err := collectDecisions(decisions, reference)
 	if err != nil {
-		return sortedCompounds{}, err
+		return sortedCompounds{}, fmt.Errorf("collect decisions: %w", err)
 	}
 	sorted.warnings = sorter.warnings
 	return sorted, nil
@@ -219,7 +219,7 @@ func (s *compoundSorter) decide(instance compoundInstance) (decision, bool, erro
 	}
 	shape, review, err := s.shapeOf(instance, facts)
 	if err != nil {
-		return decision{}, false, err
+		return decision{}, false, fmt.Errorf("read the shape of %s: %w", id, err)
 	}
 	if annotationReview := s.annotations.reviewFor(instance, facts.entityID); annotationReview != "" {
 		review = annotationReview
@@ -229,7 +229,7 @@ func (s *compoundSorter) decide(instance compoundInstance) (decision, bool, erro
 	}
 	placed, err := s.placeByShape(instance, facts, shape)
 	if err != nil {
-		return decision{}, false, err
+		return decision{}, false, fmt.Errorf("place %s by its shape: %w", id, err)
 	}
 	if review != "" && placed.placement != placeExcluded && !placed.compound.NeedsReview {
 		placed.compound.NeedsReview, placed.compound.ReviewReason = true, review
@@ -263,6 +263,8 @@ func (s *compoundSorter) placeByShape(instance compoundInstance, facts instanceF
 		return decision{compound: Compound{ID: id, NeedsReview: true, ReviewReason: outsideChainReason}, placement: placeLigand, rule: ruleCCDType}, nil
 	case shapeListed:
 		return s.byLists(instance, facts)
+	case shapePolymer, shapeWater:
+		return decision{}, fmt.Errorf("%s is not a compound", id)
 	default:
 		return decision{}, fmt.Errorf("unknown compound shape %d for %s", shape, id)
 	}
@@ -372,7 +374,7 @@ func (s *compoundSorter) byLists(instance compoundInstance, facts instanceFacts)
 	case kindLigand:
 		compound, err := ligandCompound(id, facts, s.reference)
 		if err != nil {
-			return decision{}, err
+			return decision{}, fmt.Errorf("place ligand %s: %w", id, err)
 		}
 		return decision{compound: compound, placement: placeLigand, rule: ruleList}, nil
 	case kindMetalIon:
@@ -448,7 +450,7 @@ func collectDecisions(decisions []decision, reference *Reference) (sortedCompoun
 			return sortedCompounds{}, fmt.Errorf("unknown placement %d for %s", placed.placement, placed.compound.ID)
 		}
 		if err := sources.record(group, placed.compound.ID, placed.rule); err != nil {
-			return sortedCompounds{}, err
+			return sortedCompounds{}, fmt.Errorf("record %s: %w", placed.compound.ID, err)
 		}
 	}
 	return sortedCompounds{
@@ -469,7 +471,7 @@ type sourceRecord struct {
 func (r *sourceRecord) record(group map[string]CompoundSource, id string, rule compoundRule) error {
 	newRank, err := rulePrecedence(rule)
 	if err != nil {
-		return err
+		return fmt.Errorf("rank the new rule for %s: %w", id, err)
 	}
 	current, seen := group[id]
 	if !seen {
@@ -482,7 +484,7 @@ func (r *sourceRecord) record(group map[string]CompoundSource, id string, rule c
 	}
 	currentRank, err := rulePrecedence(compoundRule(current.Rule))
 	if err != nil {
-		return err
+		return fmt.Errorf("rank the recorded rule for %s: %w", id, err)
 	}
 	if newRank > currentRank {
 		group[id] = CompoundSource{Rule: string(rule), ListVersion: r.listVersion}
@@ -514,7 +516,25 @@ type metalPartners struct {
 	boundCompounds  map[string]bool
 }
 
-func readMetalPartners(links metalLinks, reference *Reference) (metalPartners, error) {
+// partnerFate is what happens to a metal's link partner, and so what the link
+// means for the metal.
+type partnerFate int
+
+const (
+	// partnerDropped: left out of the entry (a solvent, a compound the
+	// depositor marks as having no functional role, an integrative model's
+	// probe). The link does not count.
+	partnerDropped partnerFate = iota
+	// partnerKept: a polymer residue or a kept compound. The metal is linked.
+	partnerKept
+	// partnerWater: water. The metal may be linked only to water (R4).
+	partnerWater
+	// partnerBindsMetal: a compound kept only when a metal binds it
+	// (imidazole). The metal is linked and the partner kept.
+	partnerBindsMetal
+)
+
+func (s *compoundSorter) readMetalPartners(links metalLinks) (metalPartners, error) {
 	partners := metalPartners{
 		linkedInstances: map[compoundInstance]bool{},
 		linkedCompounds: map[string]bool{},
@@ -524,42 +544,113 @@ func readMetalPartners(links metalLinks, reference *Reference) (metalPartners, e
 		boundCompounds:  map[string]bool{},
 	}
 	for _, pair := range links.pairs {
-		if err := partners.add(pair.first, pair.second, reference); err != nil {
-			return metalPartners{}, err
+		if err := s.addMetalPartner(partners, pair.first, pair.second); err != nil {
+			return metalPartners{}, fmt.Errorf("read metalc pair %s-%s: %w", pair.first.compoundID, pair.second.compoundID, err)
 		}
-		if err := partners.add(pair.second, pair.first, reference); err != nil {
-			return metalPartners{}, err
+		if err := s.addMetalPartner(partners, pair.second, pair.first); err != nil {
+			return metalPartners{}, fmt.Errorf("read metalc pair %s-%s: %w", pair.second.compoundID, pair.first.compoundID, err)
 		}
 	}
 	return partners, nil
 }
 
-// add records one side of a metalc row: what the partner means for the metal.
-// A link counts when the partner is kept. Water makes the metal "linked only to
-// water" (R4); another dropped solvent does not count.
-func (p metalPartners) add(metal compoundInstance, partner compoundInstance, reference *Reference) error {
-	if reference.kind(metal.compoundID) != kindMetalIon || partner.compoundID == "" {
+// addMetalPartner records one side of a metalc row: what the partner means
+// for the metal.
+func (s *compoundSorter) addMetalPartner(partners metalPartners, metal compoundInstance, partner compoundInstance) error {
+	if s.reference.kind(metal.compoundID) != kindMetalIon || partner.compoundID == "" {
 		return nil
 	}
-	kind := reference.kind(partner.compoundID)
-	switch kind {
-	case kindSolvent:
-		if isWater(partner.compoundID) {
-			p.waterInstances[metal] = true
-			p.waterCompounds[metal.compoundID] = true
-		}
-	case kindSolventUnlessMetalLinked:
-		p.boundInstances[partner] = true
-		p.boundCompounds[partner.compoundID] = true
-		p.linkedInstances[metal] = true
-		p.linkedCompounds[metal.compoundID] = true
-	case kindLigand, kindCofactor, kindMetalIon, kindAmbiguous, kindDraftSolvent:
-		p.linkedInstances[metal] = true
-		p.linkedCompounds[metal.compoundID] = true
+	fate, err := s.partnerFate(partner)
+	if err != nil {
+		return fmt.Errorf("place partner %s: %w", partner.compoundID, err)
+	}
+	switch fate {
+	case partnerDropped:
+	case partnerKept:
+		partners.linkedInstances[metal] = true
+		partners.linkedCompounds[metal.compoundID] = true
+	case partnerWater:
+		partners.waterInstances[metal] = true
+		partners.waterCompounds[metal.compoundID] = true
+	case partnerBindsMetal:
+		partners.boundInstances[partner] = true
+		partners.boundCompounds[partner.compoundID] = true
+		partners.linkedInstances[metal] = true
+		partners.linkedCompounds[metal.compoundID] = true
 	default:
-		return fmt.Errorf("unknown compound kind %d for metal partner %s", kind, partner.compoundID)
+		return fmt.Errorf("unknown partner fate %d for %s", fate, partner.compoundID)
 	}
 	return nil
+}
+
+// partnerFate places a metal's link partner by the steps that place it as a
+// compound, so a link counts only when the partner stays in the entry. A
+// partner with coordinates goes by its shape (entity type or chain position),
+// the depositor's flag and the probe exclusion first; a polymer residue of the
+// ATOM records, and a partner left to the lists, go by the lists.
+func (s *compoundSorter) partnerFate(partner compoundInstance) (partnerFate, error) {
+	if isWater(partner.compoundID) {
+		return partnerWater, nil
+	}
+	if facts, ok := s.instances[partner]; ok {
+		fate, decided, err := s.annotatedPartnerFate(partner, facts)
+		if err != nil || decided {
+			return fate, err
+		}
+	}
+	kind := s.reference.kind(partner.compoundID)
+	switch kind {
+	case kindSolvent:
+		return partnerDropped, nil
+	case kindSolventUnlessMetalLinked:
+		return partnerBindsMetal, nil
+	case kindLigand, kindCofactor, kindMetalIon, kindAmbiguous, kindDraftSolvent:
+		return partnerKept, nil
+	default:
+		return 0, fmt.Errorf("unknown compound kind %d for %s", kind, partner.compoundID)
+	}
+}
+
+// annotatedPartnerFate applies steps 1 to 4 of the rule (see classifyCompounds)
+// to a partner with coordinates. decided is false when the lists decide.
+func (s *compoundSorter) annotatedPartnerFate(partner compoundInstance, facts instanceFacts) (partnerFate, bool, error) {
+	shape, _, err := s.shapeOf(partner, facts)
+	if err != nil {
+		return 0, false, fmt.Errorf("read the shape of %s: %w", partner.compoundID, err)
+	}
+	switch shape {
+	case shapeWater:
+		return partnerWater, true, nil
+	case shapePolymer:
+		return partnerKept, true, nil
+	case shapeBranched, shapeMacrolide, shapeOutsideChain, shapeListed:
+	default:
+		return 0, false, fmt.Errorf("unknown compound shape %d for %s", shape, partner.compoundID)
+	}
+	if flag, ok := s.annotations.flagFor(partner); ok {
+		switch flag.feature {
+		case featureSubjectOfInvestigation:
+			return partnerKept, true, nil
+		case featureNoFunctionalRole:
+			return partnerDropped, true, nil
+		case featureOther, featureUnknownType:
+		default:
+			return 0, false, fmt.Errorf("unknown depositor flag %d for %s", flag.feature, partner.compoundID)
+		}
+	}
+	if s.annotations.probeEntities[facts.entityID] {
+		return partnerDropped, true, nil
+	}
+	switch shape {
+	case shapeBranched, shapeMacrolide, shapeOutsideChain:
+		return partnerKept, true, nil
+	case shapeListed:
+		return 0, false, nil
+	case shapeWater, shapePolymer:
+		return 0, false, fmt.Errorf("%s is not a compound", partner.compoundID)
+	default:
+		return 0, false, fmt.Errorf("unknown compound shape %d for %s", shape, partner.compoundID)
+	}
 }
 
 func (p metalPartners) state(metal compoundInstance) metalLinkState {

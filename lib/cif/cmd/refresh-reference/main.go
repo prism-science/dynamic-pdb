@@ -28,15 +28,15 @@ func main() {
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags := flag.NewFlagSet("refresh-reference", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	dir := flags.String("dir", "lib/cif", "directory holding the reference JSON files")
+	directory := flags.String("dir", "lib/cif", "directory holding the reference JSON files")
 	check := flags.Bool("check", false, "report drift against the dictionary without writing; exit 1 on drift or a problem")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
-	root, err := os.OpenRoot(*dir)
+	root, err := os.OpenRoot(*directory)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "open %s: %v\n", *dir, err)
+		_, _ = fmt.Fprintf(stderr, "open %s: %v\n", *directory, err)
 		return 1
 	}
 	defer func() { _ = root.Close() }()

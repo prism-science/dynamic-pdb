@@ -44,6 +44,14 @@ type depositorFlag struct {
 	feature    featureType
 }
 
+// flagKey is what a depositor flag names: a compound, and the asym and residue
+// number it applies to ("" for every one).
+type flagKey struct {
+	compoundID string
+	asymID     string
+	authSeqID  string
+}
+
 // fileAnnotations is what the categories besides _atom_site say about the
 // compounds of a file.
 type fileAnnotations struct {
@@ -53,7 +61,10 @@ type fileAnnotations struct {
 	entityTypes  map[string]entityType
 	// chemCompTypes is the file's own _chem_comp.type per compound ID.
 	chemCompTypes map[string]string
-	flags         []depositorFlag
+	// flags are the depositor flags in file order; firstFlag is the position
+	// in flags of the first one with each key.
+	flags     []depositorFlag
+	firstFlag map[flagKey]int
 	// modifiedResidues are the label_comp_id values of _pdbx_struct_mod_residue.
 	modifiedResidues []string
 	// sequenceNames are the residue names of every chain's SEQRES records (PDB
@@ -77,6 +88,7 @@ func pdbAnnotations() fileAnnotations {
 	return fileAnnotations{
 		entityTypes:    map[string]entityType{},
 		chemCompTypes:  map[string]string{},
+		firstFlag:      map[flagKey]int{},
 		sequenceNames:  map[string]bool{},
 		probeEntities:  map[string]bool{},
 		entityReview:   map[string]string{},
@@ -114,6 +126,7 @@ func readAnnotations(document *Document, atomSiteIHM bool) fileAnnotations {
 	annotations := fileAnnotations{
 		entityTypes:    map[string]entityType{},
 		chemCompTypes:  map[string]string{},
+		firstFlag:      map[flagKey]int{},
 		probeEntities:  map[string]bool{},
 		entityReview:   map[string]string{},
 		compoundReview: map[string]string{},
@@ -230,6 +243,10 @@ func (a *fileAnnotations) readFlags(table *Table) {
 			a.compoundReview[flag.compoundID] = fmt.Sprintf("unknown depositor flag %q: confirm where this compound belongs", value)
 			a.warnings = append(a.warnings, fmt.Sprintf("%s has unknown depositor flag %q: no override applied, compound flagged for review", flag.compoundID, value))
 		}
+		key := flagKey{compoundID: flag.compoundID, asymID: flag.asymID, authSeqID: flag.authSeqID}
+		if _, seen := a.firstFlag[key]; !seen {
+			a.firstFlag[key] = len(a.flags)
+		}
 		a.flags = append(a.flags, flag)
 	}
 }
@@ -238,8 +255,10 @@ func (a *fileAnnotations) readModifiedResidues(table *Table) {
 	if table == nil {
 		return
 	}
+	seen := map[string]bool{}
 	for _, row := range table.Rows {
-		if id := strings.ToUpper(table.Value(row, "label_comp_id")); id != "" && !slices.Contains(a.modifiedResidues, id) {
+		if id := strings.ToUpper(table.Value(row, "label_comp_id")); id != "" && !seen[id] {
+			seen[id] = true
 			a.modifiedResidues = append(a.modifiedResidues, id)
 		}
 	}
@@ -267,10 +286,14 @@ func (a *fileAnnotations) readGlycans(descriptors *Table, members *Table) {
 		}
 	}
 	if members != nil {
+		type member struct{ entityID, compoundID string }
+		seen := map[member]bool{}
 		for _, row := range members.Rows {
-			glycan := byEntity[members.Value(row, "entity_id")]
+			entityID := members.Value(row, "entity_id")
+			glycan := byEntity[entityID]
 			compound := strings.ToUpper(members.Value(row, "comp_id"))
-			if glycan != nil && compound != "" && !slices.Contains(glycan.CompoundIDs, compound) {
+			if glycan != nil && compound != "" && !seen[member{entityID, compound}] {
+				seen[member{entityID, compound}] = true
 				glycan.CompoundIDs = append(glycan.CompoundIDs, compound)
 			}
 		}
@@ -351,22 +374,27 @@ func (a fileAnnotations) entityOf(entityID string) entityType {
 	return kind
 }
 
-// flagFor returns the depositor flag that matches an instance. An instance
-// without a location matches only flags without one.
+// flagFor returns the first depositor flag, in file order, that matches an
+// instance: one that names its compound and either names its asym and residue
+// number or leaves them open. An instance without a location matches only flags
+// without one. The four keys an instance can match are looked up, so the cost
+// does not grow with the number of flags.
 func (a fileAnnotations) flagFor(instance compoundInstance) (depositorFlag, bool) {
-	for _, flag := range a.flags {
-		if flag.compoundID != instance.compoundID {
-			continue
+	first := -1
+	for _, key := range []flagKey{
+		{compoundID: instance.compoundID, asymID: instance.asymID, authSeqID: instance.authSeqID},
+		{compoundID: instance.compoundID, asymID: instance.asymID},
+		{compoundID: instance.compoundID, authSeqID: instance.authSeqID},
+		{compoundID: instance.compoundID},
+	} {
+		if position, ok := a.firstFlag[key]; ok && (first < 0 || position < first) {
+			first = position
 		}
-		if flag.asymID != "" && flag.asymID != instance.asymID {
-			continue
-		}
-		if flag.authSeqID != "" && flag.authSeqID != instance.authSeqID {
-			continue
-		}
-		return flag, true
 	}
-	return depositorFlag{}, false
+	if first < 0 {
+		return depositorFlag{}, false
+	}
+	return a.flags[first], true
 }
 
 // reviewFor returns the reason an annotation flags an instance, or "".

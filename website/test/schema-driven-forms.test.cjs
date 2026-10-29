@@ -267,7 +267,7 @@ test("should_sort_typed_compounds_by_the_reference_lists", () => {
   );
 });
 
-test("should_give_a_typed_ambiguous_compound_the_buffer_hint_and_a_typed_buffer_the_solvent_hint", () => {
+test("should_give_the_matching_hint_when_an_ambiguous_compound_or_a_buffer_is_typed", () => {
   // given
   let compounds = emptyCompounds();
 

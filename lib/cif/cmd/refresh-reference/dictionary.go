@@ -126,7 +126,7 @@ func (d *rcsbDictionary) singleHeavyAtomNonPolymers(ctx context.Context) ([]stri
 func (d *rcsbDictionary) searchAll(ctx context.Context, query any) ([]string, error) {
 	response, err := d.search(ctx, query, map[string]any{"return_all_hits": true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("search all hits: %w", err)
 	}
 	if len(response.ResultSet) != response.TotalCount {
 		return nil, fmt.Errorf("search returned %d of %d hits", len(response.ResultSet), response.TotalCount)
@@ -149,7 +149,7 @@ func (d *rcsbDictionary) search(ctx context.Context, query any, options map[stri
 	}
 	contents, status, err := d.post(ctx, d.searchURL, body)
 	if err != nil {
-		return searchResponse{}, err
+		return searchResponse{}, fmt.Errorf("send search query: %w", err)
 	}
 	if status == http.StatusNoContent {
 		return searchResponse{}, nil
@@ -248,11 +248,11 @@ func (d *rcsbDictionary) post(ctx context.Context, url string, body []byte) ([]b
 		}
 		select {
 		case <-ctx.Done():
-			return nil, 0, ctx.Err()
+			return nil, 0, fmt.Errorf("wait to retry %s: %w", url, ctx.Err())
 		case <-time.After(d.retryDelay * time.Duration(attempt)):
 		}
 	}
-	return nil, 0, lastErr
+	return nil, 0, fmt.Errorf("give up on %s: %w", url, lastErr)
 }
 
 func (d *rcsbDictionary) postOnce(ctx context.Context, url string, body []byte) ([]byte, int, error) {

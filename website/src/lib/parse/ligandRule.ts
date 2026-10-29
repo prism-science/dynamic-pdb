@@ -316,7 +316,10 @@ export type FileAnnotations = {
   entitiesRead: boolean;
   entityTypes: Map<string, EntityType>;
   chemCompTypes: Map<string, string>;
+  /** The depositor flags in file order; firstFlag is the position in flags of
+   *  the first one with each compound, asym and residue number. */
   flags: DepositorFlag[];
+  firstFlag: Map<string, number>;
   modifiedResidues: string[];
   /** Residue names of every chain's SEQRES records (PDB format): only a
    *  peptide or nucleotide named there is suspicious outside a chain. */
@@ -335,6 +338,7 @@ export function pdbAnnotations(): FileAnnotations {
     entityTypes: new Map(),
     chemCompTypes: new Map(),
     flags: [],
+    firstFlag: new Map(),
     modifiedResidues: [],
     sequenceNames: new Set(),
     glycans: [],
@@ -416,18 +420,25 @@ export function readAnnotations(text: string, atomSiteIHM: boolean): FileAnnotat
         feature = "unknownType";
         annotations.compoundReview.set(compound, `unknown depositor flag ${JSON.stringify(type)}: confirm where this compound belongs`);
     }
-    annotations.flags.push({
+    const flag: DepositorFlag = {
       compound,
       asym: value(features!, row, "asym_id"),
       seq: value(features!, row, "auth_seq_num"),
       feature,
-    });
+    };
+    const key = flagKey(flag.compound, flag.asym, flag.seq);
+    if (!annotations.firstFlag.has(key)) {
+      annotations.firstFlag.set(key, annotations.flags.length);
+    }
+    annotations.flags.push(flag);
   }
 
   const modified = cifCategory(text, "_pdbx_struct_mod_residue");
+  const modifiedSeen = new Set<string>();
   for (const row of modified?.rows ?? []) {
     const id = value(modified!, row, "label_comp_id").toUpperCase();
-    if (id && !annotations.modifiedResidues.includes(id)) {
+    if (id && !modifiedSeen.has(id)) {
+      modifiedSeen.add(id);
       annotations.modifiedResidues.push(id);
     }
   }
@@ -460,10 +471,14 @@ function readGlycans(text: string, annotations: FileAnnotations): Glycan[] {
     }
   }
   const members = cifCategory(text, "_pdbx_entity_branch_list");
+  const seen = new Set<string>();
   for (const row of members?.rows ?? []) {
-    const glycan = byEntity.get(value(members!, row, "entity_id"));
+    const entityId = value(members!, row, "entity_id");
+    const glycan = byEntity.get(entityId);
     const compound = value(members!, row, "comp_id").toUpperCase();
-    if (glycan && compound && !glycan.compound_ids.includes(compound)) {
+    const member = `${entityId}\u0000${compound}`;
+    if (glycan && compound && !seen.has(member)) {
+      seen.add(member);
       glycan.compound_ids.push(compound);
     }
   }
@@ -543,6 +558,13 @@ type Placement = "ligand" | "cofactor" | "excluded";
 type Decision = { id: string; review: string | null; placement: Placement; rule: CompoundRule };
 type Shape = "polymer" | "water" | "listed" | "branched" | "macrolide" | "outsideChain";
 
+/** What happens to a metal's link partner, and so what the link means for the
+ *  metal. Mirrors partnerFate in lib/cif/sorting.go: "dropped" (left out, so
+ *  the link does not count), "kept" (a polymer residue or a kept compound),
+ *  "water" (the metal may be linked only to water), "bindsMetal" (imidazole:
+ *  the metal is linked and the partner kept). */
+type PartnerFate = "dropped" | "kept" | "water" | "bindsMetal";
+
 /** Mirrors metalPartners in lib/cif/sorting.go: which metal instances the
  *  metalc rows link to a kept partner or only to water, and which instances of
  *  keep-when-metal-linked compounds (imidazole) they bind to a metal. An
@@ -552,39 +574,34 @@ class MetalPartners {
   private readonly water = new Set<string>();
   private readonly bound = new Set<string>();
 
-  constructor(metalcLinks: MetalcLinks) {
+  constructor(metalcLinks: MetalcLinks, fateOf: (partner: CompoundInstance) => PartnerFate) {
     for (const [first, second] of metalcLinks.pairs) {
-      this.add(first, second);
-      this.add(second, first);
+      this.add(first, second, fateOf);
+      this.add(second, first, fateOf);
     }
   }
 
-  /** A link counts when the partner is kept; water makes the metal "linked only
-   *  to water"; another dropped solvent does not count. */
-  private add(metal: CompoundInstance, partner: CompoundInstance): void {
+  /** One side of a metalc row: what the partner means for the metal. */
+  private add(metal: CompoundInstance, partner: CompoundInstance, fateOf: (partner: CompoundInstance) => PartnerFate): void {
     if (compoundKind(metal.compound) !== "metal" || partner.compound === "") {
       return;
     }
-    const kind = compoundKind(partner.compound);
-    switch (kind) {
-      case "solvent":
-        if (WATER_COMPOUNDS.has(partner.compound)) {
-          this.mark(this.water, metal);
-        }
+    const fate = fateOf(partner);
+    switch (fate) {
+      case "dropped":
         return;
-      case "solventUnlessMetalLinked":
+      case "kept":
+        this.mark(this.linked, metal);
+        return;
+      case "water":
+        this.mark(this.water, metal);
+        return;
+      case "bindsMetal":
         this.mark(this.bound, partner);
         this.mark(this.linked, metal);
         return;
-      case "ligand":
-      case "cofactor":
-      case "metal":
-      case "ambiguous":
-      case "draftSolvent":
-        this.mark(this.linked, metal);
-        return;
       default:
-        throw new Error(`unknown compound kind for metal partner ${partner.compound}: ${String(kind satisfies never)}`);
+        throw new Error(`unknown partner fate for ${partner.compound}: ${String(fate satisfies never)}`);
     }
   }
 
@@ -630,7 +647,7 @@ export function sortCompounds(
   metalcLinks: MetalcLinks,
   annotations: FileAnnotations,
 ): SortedCompounds {
-  const partners = new MetalPartners(metalcLinks);
+  const partners = new MetalPartners(metalcLinks, (partner) => partnerFate(partner, instances, annotations));
   const decisions: Decision[] = [];
   for (const facts of orderedInstances(instances, annotations.ihm)) {
     const placed = decide(facts, partners, metalcLinks.hasRows, annotations);
@@ -647,6 +664,88 @@ export function sortCompounds(
   return collectDecisions(decisions);
 }
 
+/** Mirrors partnerFate in lib/cif/sorting.go: places a metal's link partner
+ *  by the steps that place it as a compound, so a link counts only when the
+ *  partner stays in the entry. A partner with coordinates goes by its shape,
+ *  the depositor's flag and the probe exclusion first; a polymer residue of the
+ *  ATOM records, and a partner left to the lists, go by the lists. */
+function partnerFate(
+  partner: CompoundInstance,
+  instances: Map<string, InstanceFacts>,
+  annotations: FileAnnotations,
+): PartnerFate {
+  if (WATER_COMPOUNDS.has(partner.compound)) {
+    return "water";
+  }
+  const facts = instances.get(instanceKey(partner));
+  const annotated = facts ? annotatedPartnerFate(facts, annotations) : null;
+  if (annotated) {
+    return annotated;
+  }
+  const kind = compoundKind(partner.compound);
+  switch (kind) {
+    case "solvent":
+      return "dropped";
+    case "solventUnlessMetalLinked":
+      return "bindsMetal";
+    case "ligand":
+    case "cofactor":
+    case "metal":
+    case "ambiguous":
+    case "draftSolvent":
+      return "kept";
+    default:
+      throw new Error(`unknown compound kind for metal partner ${partner.compound}: ${String(kind satisfies never)}`);
+  }
+}
+
+/** Steps 1 to 4 of the rule for a partner with coordinates; null when the
+ *  lists decide. Mirrors annotatedPartnerFate in lib/cif/sorting.go. */
+function annotatedPartnerFate(facts: InstanceFacts, annotations: FileAnnotations): PartnerFate | null {
+  const id = facts.instance.compound;
+  const [shape] = shapeOf(facts, annotations);
+  switch (shape) {
+    case "water":
+      return "water";
+    case "polymer":
+      return "kept";
+    case "branched":
+    case "macrolide":
+    case "outsideChain":
+    case "listed":
+      break;
+    default:
+      throw new Error(`unknown compound shape for ${id}: ${String(shape satisfies never)}`);
+  }
+  const flag = flagFor(annotations, facts.instance);
+  if (flag) {
+    switch (flag.feature) {
+      case "subject":
+        return "kept";
+      case "noFunctionalRole":
+        return "dropped";
+      case "other":
+      case "unknownType":
+        break;
+      default:
+        throw new Error(`unknown depositor flag for ${id}: ${String(flag.feature satisfies never)}`);
+    }
+  }
+  if (annotations.probeEntities.has(facts.entityId)) {
+    return "dropped";
+  }
+  switch (shape) {
+    case "branched":
+    case "macrolide":
+    case "outsideChain":
+      return "kept";
+    case "listed":
+      return null;
+    default:
+      throw new Error(`unknown compound shape for ${id}: ${String(shape satisfies never)}`);
+  }
+}
+
 /** Instances sorted by compound and location. A compound seen only in
  *  `_pdbx_entity_nonpoly` is skipped when the coordinates placed instances of
  *  it, and instances of later models count only for an integrative file. */
@@ -655,16 +754,12 @@ function orderedInstances(instances: Map<string, InstanceFacts>, allModels: bool
   const placed = new Set(included.filter(({ instance }) => instance.asym !== "").map(({ instance }) => instance.compound));
   return included
     .filter(({ instance }) => instance.asym !== "" || !placed.has(instance.compound))
-    .sort((left, right) => {
-      const a = left.instance;
-      const b = right.instance;
-      return (
-        compareText(a.compound, b.compound) ||
-        compareText(a.asym, b.asym) ||
-        compareText(a.seq, b.seq) ||
-        compareText(a.ins, b.ins)
-      );
-    });
+    .sort(({ instance: left }, { instance: right }) =>
+      compareText(left.compound, right.compound) ||
+      compareText(left.asym, right.asym) ||
+      compareText(left.seq, right.seq) ||
+      compareText(left.ins, right.ins),
+    );
 }
 
 /** Places one instance; null when it is not a compound. */
@@ -692,6 +787,31 @@ function decide(
   return placed;
 }
 
+function flagKey(compound: string, asym: string, seq: string): string {
+  return [compound, asym, seq].join("\u0000");
+}
+
+/** The first depositor flag, in file order, that matches an instance: one that
+ *  names its compound and either names its asym and residue number or leaves
+ *  them open. An instance without a location matches only flags without one.
+ *  The four keys an instance can match are looked up, so the cost does not
+ *  grow with the number of flags. */
+function flagFor(annotations: FileAnnotations, instance: CompoundInstance): DepositorFlag | undefined {
+  let first = -1;
+  for (const key of [
+    flagKey(instance.compound, instance.asym, instance.seq),
+    flagKey(instance.compound, instance.asym, ""),
+    flagKey(instance.compound, "", instance.seq),
+    flagKey(instance.compound, "", ""),
+  ]) {
+    const position = annotations.firstFlag.get(key);
+    if (position !== undefined && (first < 0 || position < first)) {
+      first = position;
+    }
+  }
+  return first < 0 ? undefined : annotations.flags[first];
+}
+
 /** Steps 2 to 5 of the rule. */
 function placeByShape(
   facts: InstanceFacts,
@@ -702,12 +822,7 @@ function placeByShape(
 ): Decision {
   const { instance } = facts;
   const id = instance.compound;
-  const flag = annotations.flags.find(
-    (candidate) =>
-      candidate.compound === id &&
-      (candidate.asym === "" || candidate.asym === instance.asym) &&
-      (candidate.seq === "" || candidate.seq === instance.seq),
-  );
+  const flag = flagFor(annotations, instance);
   if (flag) {
     switch (flag.feature) {
       case "subject":

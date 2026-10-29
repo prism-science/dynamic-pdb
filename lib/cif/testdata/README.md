@@ -25,6 +25,7 @@ Counts in the tests are for these cut files.
 | 7LTB | a branched disaccharide with a WURCS descriptor, and depositor flags (SUBJECT OF INVESTIGATION) on ligands, sugars, a formate and the antibiotic's own polymer residues |
 | 3CEB | LLP in `_pdbx_struct_mod_residue` (adds PLP as a cofactor), MSE, sulfate and glycerol; its modified residues come after `_atom_site` |
 | 9A8B | an integrative (IHM) entry whose `HETATM` residues all belong to a `POLYMER` entity |
+| 2VSD | an N-glycoprotein: an NAG-NAG-BMA glycan on an asparagine, with a WURCS descriptor and no depositor flags (rule `branched`) |
 
 ## Real PDB-format files
 
@@ -52,4 +53,11 @@ they are.
 | wrapped_rows.cif | loop rows that wrap across lines |
 | ihm_probe.cif | no released entry had `_ihm_ligand_probe` on 2026-10-29 (all 407 integrative entries checked). Two models; the probe is left out, and ATP, only in model 2, is listed |
 | pdb_rules.pdb | a chain without `SEQRES` or `TER` (MSE inside its numbers is polymer, ATP inside them stays a ligand, a glutamate far outside is an ordinary ligand), `LINK` records binding zinc to a cysteine and magnesium only to water, a calcium with no link |
+| entity_rules.cif | a glycan without depositor flags (`branched`), a macrolide, an unknown entity type (flagged), a depositor flag with a location (only one glycerol kept), NO FUNCTIONAL ROLE on sulfate (left out) |
+| no_entity_chem_comp.cif | a file without `_entity`: its own `_chem_comp.type` (NAG as non-polymer, an unknown type flagged), MSE in the chain by `label_seq_id`, a free MSE (ordinary ligand), BGC a sugar by the CCD table |
 | pdb_no_metal_link.pdb | the only `LINK` joins a sugar to an asparagine, so the zinc is flagged as in a file without metal links |
+| metal_partner_flags.cif | a zinc whose only `metalc` partner is an ATP marked NO FUNCTIONAL ROLE (unlinked: a flagged ligand), a magnesium whose only partner is a glycerol marked SUBJECT OF INVESTIGATION (a cofactor) |
+| pair_form_layout.cif | a single depositor flag written as indented items with `#` comments (RCSB files never indent tags) |
+| two_data_blocks.cif | a second data block after the structure, holding a flag on ATP that is not applied (RCSB files have one block) |
+| no_atom_site.cif | no coordinates: ATP from `_pdbx_entity_nonpoly`, a glycan record and PLP from LLP are still sorted (RCSB files always have `_atom_site`) |
+| pdb_seqres_columns.pdb | a `SEQRES` record with a residue name past column 70, which is not read, so the free glutamate after `TER` is an ordinary ligand |

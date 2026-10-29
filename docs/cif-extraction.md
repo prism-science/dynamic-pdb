@@ -51,6 +51,7 @@ warning, and the parse still succeeds:
 | distinct residues / chains / hetero instances in `_atom_site` or PDB | 100,000 / 20,000 / 100,000 | a 4 MiB head holds under 60,000 atoms |
 | alternate-location letters per residue | 16 | they are single letters |
 | distinct metalc partner pairs | 50,000 | |
+| distinct chain and residue name pairs in PDB `SEQRES` (and distinct `MODRES` residues) | 100,000 (100,000) | a real chain uses under 30 residue names |
 | distinct compounds per list | 2,000 | real entries have well under 200 |
 | REMARK fields (PDB) | 5,000 | |
 | one line in the streaming scalar scan | 8 MiB | a longer line is an error, not a buffer |
@@ -112,6 +113,7 @@ A PDB-format file has no entity types, so the parser reads its chains instead
 
 - **Chain residues.** A `HETATM` residue is part of a polymer chain (and so not a
   compound) when `MODRES` lists it, or when its name is in its chain's `SEQRES`
+  (columns 20 to 70, the 13 residue slots of the record)
   and it sits in the chain's polymer block: before the chain's `TER` record, or,
   for a chain without one, within the residue numbers of the chain's `ATOM`
   records. Selenomethionine (MSE) in a chain is therefore not a ligand, and a
@@ -175,7 +177,10 @@ sorted once (`classifyCompounds` in `lib/cif/sorting.go`):
      number): a cofactor when a `metalc` connection joins the instance to a kept
      partner (a protein residue, a ligand, a cofactor, another metal, or the
      imidazole it keeps). Water does not count as a partner, and neither does a
-     compound left out (glycerol).
+     compound left out (glycerol). The partner is kept or left out by the same
+     steps that place it: an ATP the depositor marks NO FUNCTIONAL ROLE, or an
+     integrative model's probe, does not count; a glycerol the depositor marks
+     SUBJECT OF INVESTIGATION does.
      - Joined only to water: a cofactor flagged "metal linked only to water:
        confirm the site".
      - The file has **no `metalc` rows at all**: a cofactor flagged for review.
@@ -335,7 +340,10 @@ it does not send the decision record or the glycans yet.
 
 The preview reads the first 4 MiB of a file, like the CLI, but does not know when
 it was cut: it applies what it read, where the Go parser skips a rule whose
-category may have been cut off.
+category may have been cut off. Otherwise it reads a file as the Go parser does:
+only the first data block, single-row categories as tokens (indented tags and
+`#` comments allowed), and compounds sorted even when the file has no
+coordinates.
 
 ## CLI upload
 
@@ -370,9 +378,13 @@ flags (`_pdbx_entity_instance_feature`, after `_atom_site` in 5ZCK), the glycan
 descriptors (1C0R) and the modified residues (3CEB) can all come after the
 coordinates. A category that is missing, or open at the end, in a cut-off read is
 never guessed: the rule it feeds is not applied, and one warning names each such
-category, for example "the read limit may have cut these categories, so the rules
-they feed were not applied: _pdbx_entity_instance_feature (depositor flags),
-_pdbx_struct_mod_residue (covalently bound cofactors)".
+category. A category is open at the end when no `#` line closed it before the
+cut, whether it is a loop or a single row written as items (its `asym_id` could
+follow in the part not read), and when the time budget stopped the read inside
+it, even between two rows. The warning reads, for example "the read limit may
+have cut these categories, so the rules they feed were not applied:
+_pdbx_entity_instance_feature (depositor flags), _pdbx_struct_mod_residue
+(covalently bound cofactors)".
 
 ### Time budget
 

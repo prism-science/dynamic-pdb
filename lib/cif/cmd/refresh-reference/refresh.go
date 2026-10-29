@@ -229,13 +229,13 @@ func (lists referenceLists) checkListed(records map[string]chemComp) []string {
 // generateMetals applies the metal rule (researchers' decision of 2026-10-28):
 // every released single-atom non-polymer whose element is a metal. A reviewed
 // metal the rule would drop is a problem.
-func generateMetals(ctx context.Context, dict dictionary, lists referenceLists) ([]string, []string, []string, error) {
-	candidates, err := dict.singleHeavyAtomNonPolymers(ctx)
+func generateMetals(ctx context.Context, ccd dictionary, lists referenceLists) ([]string, []string, []string, error) {
+	candidates, err := ccd.singleHeavyAtomNonPolymers(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("find single-atom candidates: %w", err)
 	}
 	slices.Sort(candidates)
-	records, err := dict.chemComps(ctx, candidates)
+	records, err := ccd.chemComps(ctx, candidates)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("read single-heavy-atom records: %w", err)
 	}
@@ -289,10 +289,10 @@ func generateMetals(ctx context.Context, dict dictionary, lists referenceLists) 
 // generateCategories lists the IDs of every CCD type that is not sorted by the
 // reference lists, by category. When the known types no longer cover every ID
 // with a type, the CCD has a new type and the run stops.
-func generateCategories(ctx context.Context, dict dictionary) (map[cif.CCDCategory][]string, []string, error) {
-	total, err := dict.countWithType(ctx)
+func generateCategories(ctx context.Context, ccd dictionary) (map[cif.CCDCategory][]string, []string, error) {
+	total, err := ccd.countWithType(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("count CCD IDs with a type: %w", err)
 	}
 	byCategory := map[cif.CCDCategory][]string{}
 	firstType := map[string]string{}
@@ -301,19 +301,19 @@ func generateCategories(ctx context.Context, dict dictionary) (map[cif.CCDCatego
 	for _, ccdType := range knownCCDTypes {
 		category, err := categoryOfType(ccdType)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("map CCD type %q: %w", ccdType, err)
 		}
 		if category == cif.CCDNonPolymer {
-			count, err := dict.countOfType(ctx, ccdType)
+			count, err := ccd.countOfType(ctx, ccdType)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("count CCD IDs of type %q: %w", ccdType, err)
 			}
 			covered += count
 			continue
 		}
-		ids, err := dict.idsOfType(ctx, ccdType)
+		ids, err := ccd.idsOfType(ctx, ccdType)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("list CCD IDs of type %q: %w", ccdType, err)
 		}
 		covered += len(ids)
 		for _, id := range ids {
@@ -364,27 +364,27 @@ func (r refreshResult) clean() bool {
 // refresh checks every list against the dictionary. With check set it writes
 // nothing and reports drift; otherwise it rewrites the generated files and the
 // ccd_checked date of every file, unless there is a problem.
-func refresh(ctx context.Context, dict dictionary, files referenceFiles, today string, check bool) (refreshResult, error) {
+func refresh(ctx context.Context, ccd dictionary, files referenceFiles, today string, check bool) (refreshResult, error) {
 	lists, err := loadLists(files)
 	if err != nil {
-		return refreshResult{}, err
+		return refreshResult{}, fmt.Errorf("load the reference lists: %w", err)
 	}
-	records, err := dict.chemComps(ctx, lists.dictionaryIDs())
+	records, err := ccd.chemComps(ctx, lists.dictionaryIDs())
 	if err != nil {
 		return refreshResult{}, fmt.Errorf("read listed records: %w", err)
 	}
 	result := refreshResult{Problems: lists.checkListed(records)}
 
-	metals, notes, problems, err := generateMetals(ctx, dict, lists)
+	metals, notes, problems, err := generateMetals(ctx, ccd, lists)
 	if err != nil {
-		return refreshResult{}, err
+		return refreshResult{}, fmt.Errorf("apply the metal rule: %w", err)
 	}
 	result.Notes = append(result.Notes, notes...)
 	result.Problems = append(result.Problems, problems...)
 
-	categories, problems, err := generateCategories(ctx, dict)
+	categories, problems, err := generateCategories(ctx, ccd)
 	if err != nil {
-		return refreshResult{}, err
+		return refreshResult{}, fmt.Errorf("build the CCD category table: %w", err)
 	}
 	result.Problems = append(result.Problems, problems...)
 

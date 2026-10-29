@@ -1,7 +1,6 @@
 package cif
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,10 +12,14 @@ import (
 // a HETATM residue is part of a chain (selenomethionine) or not (a free
 // glutamate after the chain's TER record).
 type pdbChains struct {
-	seqres map[string]map[string]bool
+	// seqres holds the residue names of each chain's SEQRES records;
+	// sequenceNameCount counts its chain and name pairs, up to maxSequenceNames.
+	seqres            map[string]map[string]bool
+	sequenceNameCount int
 	// modified holds the MODRES residues; modifiedNames their IDs in file order.
 	modified      map[compoundInstance]bool
 	modifiedNames []string
+	modifiedSeen  map[string]bool
 	// terLine is the line number of each chain's first TER record.
 	terLine map[string]int
 	// atomRange is the span of residue numbers of each chain's ATOM records.
@@ -30,36 +33,47 @@ type pdbChains struct {
 	linkSeen  map[metalPair]struct{}
 	// linksOverflow is set when distinct LINK pairs ran past maxMetalLinks.
 	linksOverflow bool
+	// notes collects the limits the SEQRES and MODRES records ran into.
+	notes *limitNotes
 }
 
 type residueRange struct {
 	first, last int
 }
 
-func newPDBChains() *pdbChains {
+func newPDBChains(notes *limitNotes) *pdbChains {
 	return &pdbChains{
-		seqres:    map[string]map[string]bool{},
-		modified:  map[compoundInstance]bool{},
-		terLine:   map[string]int{},
-		atomRange: map[string]residueRange{},
-		firstLine: map[compoundInstance]int{},
-		linkSeen:  map[metalPair]struct{}{},
+		seqres:       map[string]map[string]bool{},
+		modified:     map[compoundInstance]bool{},
+		modifiedSeen: map[string]bool{},
+		terLine:      map[string]int{},
+		atomRange:    map[string]residueRange{},
+		firstLine:    map[compoundInstance]int{},
+		linkSeen:     map[metalPair]struct{}{},
+		notes:        notes,
 	}
 }
 
-// addSeqres reads a SEQRES record: the chain and up to 13 residue names.
+// addSeqres reads a SEQRES record: the chain and the residue names in columns
+// 20 to 70 (13 slots); anything past column 70 is not a residue name.
 func (c *pdbChains) addSeqres(line string) {
 	chain := slice(line, 11, 12)
-	if len(line) <= 19 {
-		return
-	}
-	names := c.seqres[chain]
-	if names == nil {
-		names = map[string]bool{}
-		c.seqres[chain] = names
-	}
-	for _, name := range strings.Fields(line[19:]) {
-		names[strings.ToUpper(name)] = true
+	for _, name := range strings.Fields(slice(line, 19, 70)) {
+		name = strings.ToUpper(name)
+		names := c.seqres[chain]
+		if names[name] {
+			continue
+		}
+		if c.sequenceNameCount >= maxSequenceNames {
+			c.notes.add("more than %d distinct SEQRES residue names: the rest were ignored, so a residue outside a chain may go unflagged", maxSequenceNames)
+			return
+		}
+		if names == nil {
+			names = map[string]bool{}
+			c.seqres[chain] = names
+		}
+		names[name] = true
+		c.sequenceNameCount++
 	}
 }
 
@@ -71,11 +85,16 @@ func (c *pdbChains) addModres(line string) {
 		authSeqID:  slice(line, 18, 22),
 		insCode:    slice(line, 22, 23),
 	}
-	if instance.compoundID == "" || len(c.modified) >= maxDistinctInstances {
+	if instance.compoundID == "" || c.modified[instance] {
+		return
+	}
+	if len(c.modified) >= maxDistinctInstances {
+		c.notes.add("more than %d distinct MODRES records: the rest were ignored, so a modified residue may be sorted as a compound", maxDistinctInstances)
 		return
 	}
 	c.modified[instance] = true
-	if !slices.Contains(c.modifiedNames, instance.compoundID) {
+	if !c.modifiedSeen[instance.compoundID] {
+		c.modifiedSeen[instance.compoundID] = true
 		c.modifiedNames = append(c.modifiedNames, instance.compoundID)
 	}
 }
