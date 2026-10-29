@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 
 import { ApiRequestError, decideEntryReview } from "@/lib/api/entries";
 import type { RevisionTarget } from "@/lib/api/entries";
-import { reviewPermissionsFor } from "@/lib/auth/permissions";
+import { ownRevisionMessage, reviewPermissionsFor } from "@/lib/auth/permissions";
 import { getAuthSession } from "@/lib/auth/session";
 import { REVIEW_COUNT_TAG } from "./count";
 
@@ -13,6 +13,9 @@ type ActionResult = { error: string } | void;
 function messageForStatus(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 403) {
+      if (error.errors.some((item) => item.code === "SELF_REVIEW")) {
+        return ownRevisionMessage;
+      }
       return "You don't have permission to make this decision.";
     }
     if (error.status === 404) {

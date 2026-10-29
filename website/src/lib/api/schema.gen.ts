@@ -500,7 +500,7 @@ export interface paths {
         head?: never;
         /**
          * Update entry revision
-         * @description Changes a revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`.
+         * @description Changes a revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it.
          */
         patch: operations["updateEntryRevisionState"];
         trace?: never;
@@ -552,7 +552,7 @@ export interface paths {
         head?: never;
         /**
          * Update model revision
-         * @description Changes a model revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`.
+         * @description Changes a model revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it.
          */
         patch: operations["updateModelRevisionState"];
         trace?: never;
@@ -3253,7 +3253,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Caller does not have the required permission. */
+            /** @description Caller does not have the required permission, or asks to approve a revision they created (code `SELF_REVIEW`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3517,7 +3517,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Caller does not have the required permission. */
+            /** @description Caller does not have the required permission, or asks to approve a revision they created (code `SELF_REVIEW`). */
             403: {
                 headers: {
                     [name: string]: unknown;

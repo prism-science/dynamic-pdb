@@ -206,6 +206,9 @@ func (s *Server) UpdateEntryRevisionState(
 		writeError(w, http.StatusConflict, "CONFLICT", "entry revision is not in the required state")
 		return
 	}
+	if refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
+		return
+	}
 
 	err = s.database.Do(r.Context(), func(ctx context.Context) error {
 		if state == domainmodels.RevisionStateRejected {
@@ -574,6 +577,9 @@ func (s *Server) UpdateModelRevisionState(
 		writeError(w, http.StatusConflict, "CONFLICT", "model revision is not in the required state")
 		return
 	}
+	if refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
+		return
+	}
 
 	err = s.database.Do(r.Context(), func(ctx context.Context) error {
 		if state == domainmodels.RevisionStateRejected {
@@ -795,6 +801,25 @@ func (s *Server) requirePermission(
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "required permission is missing")
 		return false
 	}
+	return true
+}
+
+// selfReviewCode is the error code of a reviewer's attempt to approve a revision they created.
+const selfReviewCode = "SELF_REVIEW"
+
+// refuseSelfApproval writes 403 and returns true when the caller asks to approve a revision they
+// created, so that publishing a change always takes a second person. Rejecting one's own revision
+// stays allowed: it publishes nothing, and it is how a reviewer withdraws their own test submission.
+func refuseSelfApproval(
+	w http.ResponseWriter,
+	requested domainmodels.RevisionState,
+	createdBy uuid.UUID,
+	userID uuid.UUID,
+) bool {
+	if requested != domainmodels.RevisionStateActive || createdBy != userID {
+		return false
+	}
+	writeError(w, http.StatusForbidden, selfReviewCode, "a reviewer cannot approve a revision they created")
 	return true
 }
 

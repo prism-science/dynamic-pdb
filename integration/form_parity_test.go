@@ -48,6 +48,7 @@ func Test_should_store_the_same_records_when_form_and_api_send_the_same_content(
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	pdbID := unusedPDBID(t, database)
@@ -108,8 +109,8 @@ func Test_should_store_the_same_records_when_form_and_api_send_the_same_content(
 			"ligands":   []string{"ATP"},
 			"cofactors": []string{},
 		}}
-		formEntryID := createPublishedEntry(t, backend.URL, auth.AccessToken, baseBody)
-		apiEntryID := createPublishedEntry(t, backend.URL, auth.AccessToken, baseBody)
+		formEntryID := createPublishedEntry(t, backend.URL, auth.AccessToken, reviewer.AccessToken, baseBody)
+		apiEntryID := createPublishedEntry(t, backend.URL, auth.AccessToken, reviewer.AccessToken, baseBody)
 		apiBody := map[string]any{"entry": map[string]any{
 			"method": "Neutron diffraction",
 			"crystallography": map[string]any{"crystals": []any{
@@ -201,11 +202,12 @@ func createEntryThroughAPI(t *testing.T, backendURL, token string, body any) (st
 	return document.Data.Attributes.EntryID, document.Data.ID
 }
 
-// createPublishedEntry creates an entry and approves its first revision.
-func createPublishedEntry(t *testing.T, backendURL, token string, body any) string {
+// createPublishedEntry creates an entry and approves its first revision as another user: a
+// reviewer cannot approve their own revisions.
+func createPublishedEntry(t *testing.T, backendURL, token, reviewerToken string, body any) string {
 	t.Helper()
 	entryID, revisionID := createEntryThroughAPI(t, backendURL, token, body)
-	patchJSON(t, backendURL+"/v1/entries/"+entryID+"/revisions/"+revisionID, token,
+	patchJSON(t, backendURL+"/v1/entries/"+entryID+"/revisions/"+revisionID, reviewerToken,
 		map[string]any{"state": "active"}, http.StatusOK)
 	return entryID
 }

@@ -11,7 +11,10 @@ import type {
   ReviewModel,
   RevisionTarget,
 } from "@/lib/api/entries";
-import type { ReviewPermissions } from "@/lib/auth/permissions";
+import {
+  ownRevisionReason,
+  type ReviewPermissions,
+} from "@/lib/auth/permissions";
 import ReviewDecision from "@/app/reviews/ReviewDecision";
 
 import styles from "./review-inbox.module.css";
@@ -23,17 +26,25 @@ type Props = {
   title: string;
   review: EntryReview;
   reviewPermissions: ReviewPermissions | null;
+  /** The signed-in reviewer, so the card can tell their own revisions apart.
+   *  Null when unknown or when the card only shows submissions. */
+  viewerId?: string | null;
 };
 
 export default function SubmissionCard({
   title,
   review,
   reviewPermissions,
+  viewerId = null,
 }: Props) {
   return (
     <div className={styles.pvScroll}>
       <div className={styles.pvTitle}>{title}</div>
-      <Changes review={review} reviewPermissions={reviewPermissions} />
+      <Changes
+        review={review}
+        reviewPermissions={reviewPermissions}
+        viewerId={viewerId}
+      />
     </div>
   );
 }
@@ -44,9 +55,11 @@ export default function SubmissionCard({
 function Changes({
   review,
   reviewPermissions,
+  viewerId,
 }: {
   review: EntryReview;
   reviewPermissions: ReviewPermissions | null;
+  viewerId: string | null;
 }) {
   // No published revision behind the entry means nothing for a model to go live
   // under, and the backend refuses it. Same condition the "new" badge reads, so
@@ -56,6 +69,10 @@ function Changes({
     reviewPermissions && entryUnpublished
       ? "Approve the entry first — it has no published revision yet."
       : null;
+  // The backend refuses to let a reviewer approve their own revision, so the
+  // block says so up front instead of failing on click.
+  const approveBlockedFor = (createdBy: string) =>
+    reviewPermissions?.canApprove ? ownRevisionReason(viewerId, createdBy) : null;
 
   return (
     <>
@@ -68,6 +85,7 @@ function Changes({
             target={review.entry.target}
             removes={entryRemovals(review.entry.active)}
             publishedHref={`/entries/${encodeURIComponent(review.entry_id)}`}
+            approveBlockedReason={approveBlockedFor(review.entry.proposed.created_by)}
           />
         ) : (
           <DiffBlock
@@ -76,6 +94,7 @@ function Changes({
             badge={review.entry.active ? "revision" : "new"}
             sections={diffEntry(review.entry.active, review.entry.proposed)}
             target={review.entry.target}
+            approveBlockedReason={approveBlockedFor(review.entry.proposed.created_by)}
             previewHref={`/review/preview/${encodeURIComponent(
               review.entry_id,
             )}/${encodeURIComponent(review.entry.target.revision_id)}`}
@@ -105,6 +124,7 @@ function Changes({
               review.entry_id,
             )}/models/${encodeURIComponent(model.model_id)}`}
             blockedReason={modelsBlockedReason}
+            approveBlockedReason={approveBlockedFor(model.proposed.created_by)}
           />
         ) : (
           <DiffBlock
@@ -115,6 +135,7 @@ function Changes({
             sections={diffModel(model.active, model.proposed)}
             target={model.target}
             blockedReason={modelsBlockedReason}
+            approveBlockedReason={approveBlockedFor(model.proposed.created_by)}
             previewHref={`/review/preview/${encodeURIComponent(
               review.entry_id,
             )}/models/${encodeURIComponent(
@@ -136,6 +157,7 @@ function DeletionBlock({
   removes,
   publishedHref,
   blockedReason,
+  approveBlockedReason,
   reviewPermissions,
 }: {
   title: string;
@@ -144,6 +166,7 @@ function DeletionBlock({
   removes: string[];
   publishedHref: string;
   blockedReason?: string | null;
+  approveBlockedReason?: string | null;
   reviewPermissions: ReviewPermissions | null;
 }) {
   return (
@@ -156,6 +179,7 @@ function DeletionBlock({
       previewLabel="Open published"
       target={target}
       blockedReason={blockedReason}
+      approveBlockedReason={approveBlockedReason}
     >
       {blockedReason ? (
         <div className={styles.blocked}>{blockedReason}</div>
@@ -211,6 +235,7 @@ function DiffBlock({
   target,
   previewHref,
   blockedReason,
+  approveBlockedReason,
   reviewPermissions,
 }: {
   title: string;
@@ -219,6 +244,7 @@ function DiffBlock({
   target: RevisionTarget;
   previewHref: string;
   blockedReason?: string | null;
+  approveBlockedReason?: string | null;
   reviewPermissions: ReviewPermissions | null;
 }) {
   const visible = sections
@@ -235,6 +261,7 @@ function DiffBlock({
       previewHref={previewHref}
       target={target}
       blockedReason={blockedReason}
+      approveBlockedReason={approveBlockedReason}
       reviewPermissions={reviewPermissions}
     >
       {blockedReason ? (
@@ -264,6 +291,7 @@ function Block({
   previewLabel = "Preview",
   target,
   blockedReason,
+  approveBlockedReason,
   reviewPermissions,
   children,
 }: {
@@ -274,6 +302,8 @@ function Block({
   previewLabel?: string;
   target: RevisionTarget;
   blockedReason?: string | null;
+  /** When set, only Approve is held back, and this says why. */
+  approveBlockedReason?: string | null;
   reviewPermissions: ReviewPermissions | null;
   children: React.ReactNode;
 }) {
@@ -313,10 +343,16 @@ function Block({
             canApprove={reviewPermissions.canApprove}
             canReject={reviewPermissions.canReject}
             blockedReason={blockedReason}
+            approveBlockedReason={approveBlockedReason}
           />
         ) : null}
       </div>
-      <div className={styles.blockBody}>{children}</div>
+      <div className={styles.blockBody}>
+        {approveBlockedReason ? (
+          <div className={styles.blocked}>{approveBlockedReason}</div>
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }

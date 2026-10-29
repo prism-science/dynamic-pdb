@@ -38,6 +38,7 @@ func Test_should_record_checksums_of_stored_and_external_files_when_checksum_job
 	// shared local database.
 	database, schemaEnv := setupMigratedSchema(t, root)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	pdbID := integrationPDBID()
@@ -79,7 +80,7 @@ func Test_should_record_checksums_of_stored_and_external_files_when_checksum_job
 		`select last_error from artifact_checksums where artifact_id = $1`, external).Scan(&lastError))
 	assert.Contains(t, lastError, "address is not allowed")
 
-	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
+	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID, reviewer.AccessToken)
 	apiChecksums := artifactChecksums(t, backend.URL+"/v1/entries/"+apiEntryID+"/artifacts", auth.AccessToken)
 	require.Contains(t, apiChecksums, uploaded, output)
 	assert.Equal(t, "verified", apiChecksums[uploaded].Status, output)
