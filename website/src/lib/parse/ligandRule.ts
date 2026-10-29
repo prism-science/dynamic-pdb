@@ -1,5 +1,6 @@
 import { cifCategory, loopValue, type CifLoop } from "./cif";
-import { CCD_CATEGORIES, CIF_REFERENCE } from "./cifReference.gen";
+import { CCD_CATEGORIES } from "./ccdCategories.gen";
+import { CIF_REFERENCE } from "./cifReference.gen";
 import {
   AMBIGUOUS_COMPOUND_REASON,
   DRAFT_SOLVENT_REASON,

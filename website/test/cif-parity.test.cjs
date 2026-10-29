@@ -79,20 +79,16 @@ test("the preview and the CLI agree that 4HHB has HEM as a cofactor and phosphat
 test("the committed reference lists match the JSON files in lib/cif", async () => {
   // given
   const { generate } = await import("../scripts/gen-cif-reference.mjs");
-  const committed = fs.readFileSync(
-    path.join(__dirname, "..", "src", "lib", "parse", "cifReference.gen.ts"),
-    "utf8",
-  );
 
   // when
   const generated = generate();
 
   // then
-  assert.equal(
-    committed,
-    generated,
-    "src/lib/parse/cifReference.gen.ts is out of date: run `npm run gen:cif-reference`",
-  );
+  assert.deepEqual(Object.keys(generated), ["cifReference.gen.ts", "ccdCategories.gen.ts"]);
+  for (const [name, contents] of Object.entries(generated)) {
+    const committed = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "parse", name), "utf8");
+    assert.equal(committed, contents, `src/lib/parse/${name} is out of date: run \`npm run gen:cif-reference\``);
+  }
 });
 
 /** The preview parser loaded once more with the approval flag of the generated
