@@ -17,6 +17,7 @@ const parityGoldenPath = "testdata/parity-golden.json"
 // website test reads the same files and the same golden.
 var parityFiles = []string{
 	"4HHB.cif", "3CLN.cif", "6OIM.cif", "193L.cif", "1AKE.cif",
+	"184D.cif", "4UG1.cif", "1W53.cif", "4HB1.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
 	"parity/wrapped_rows.cif",
 }

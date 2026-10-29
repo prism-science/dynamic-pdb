@@ -8,7 +8,20 @@ const unknownAtomCount = -1
 
 type instanceAtoms struct {
 	firstAtom string
-	multiple  bool
+	// element is the upper-case element symbol of the first atom.
+	element  string
+	multiple bool
+}
+
+// instanceFacts is what the coordinates say about one compound instance.
+type instanceFacts struct {
+	// atoms is the number of distinct atoms: 1, or 2 for several, replaced by
+	// the HET record's count when it has one; 0 when unknown, unknownAtomCount
+	// when the coordinates were cut off inside the instance.
+	atoms int
+	// element is the upper-case element symbol of the first atom read, empty
+	// when no atom of the instance was read.
+	element string
 }
 
 // coordinateTally reduces coordinate rows to counts as they arrive, with every
@@ -37,8 +50,8 @@ func newCoordinateTally() *coordinateTally {
 }
 
 // addHetero records one atom of a non-polymer instance. Only whether the
-// instance has one atom or several is kept.
-func (t *coordinateTally) addHetero(instance compoundInstance, atomName string) {
+// instance has one atom or several, and the element of its first atom, is kept.
+func (t *coordinateTally) addHetero(instance compoundInstance, atomName string, element string) {
 	if t.overflow != "" {
 		return
 	}
@@ -50,7 +63,7 @@ func (t *coordinateTally) addHetero(instance compoundInstance, atomName string) 
 			t.overflow = "compound instances"
 			return
 		}
-		t.hetero[instance] = instanceAtoms{firstAtom: atomName}
+		t.hetero[instance] = instanceAtoms{firstAtom: atomName, element: element}
 	case !atoms.multiple && atoms.firstAtom != atomName:
 		atoms.multiple = true
 		t.hetero[instance] = atoms
@@ -106,12 +119,13 @@ func (t *coordinateTally) addResidue(chain string, residue residueKey, altID str
 	byAltID[altID] = max(byAltID[altID], occupancy())
 }
 
-// instanceCounts returns the number of distinct atoms per instance: 1 or 2 for
-// "one" or "several" from the coordinates, replaced by the HET record's count
-// when it has one. When the coordinates were cut off, the instance being read at
-// the cut may be missing atoms, so a single atom seen there is unknown.
-func (t *coordinateTally) instanceCounts(coordinatesComplete bool) map[compoundInstance]int {
-	counts := make(map[compoundInstance]int, len(t.hetero)+len(t.declared))
+// instanceFacts returns, per instance, the number of distinct atoms (1 or 2
+// for "one" or "several" from the coordinates, replaced by the HET record's
+// count when it has one) and the first atom's element. When the coordinates
+// were cut off, the instance being read at the cut may be missing atoms, so a
+// single atom seen there is unknown.
+func (t *coordinateTally) instanceFacts(coordinatesComplete bool) map[compoundInstance]instanceFacts {
+	facts := make(map[compoundInstance]instanceFacts, len(t.hetero)+len(t.declared))
 	for instance, atoms := range t.hetero {
 		count := 1
 		if atoms.multiple {
@@ -120,18 +134,18 @@ func (t *coordinateTally) instanceCounts(coordinatesComplete bool) map[compoundI
 		if !coordinatesComplete && count == 1 && t.hasHetero && instance == t.lastHetero {
 			count = unknownAtomCount
 		}
-		counts[instance] = count
+		facts[instance] = instanceFacts{atoms: count, element: atoms.element}
 	}
 	for instance, declared := range t.declared {
-		_, observed := counts[instance]
+		observed, seen := facts[instance]
 		switch {
 		case declared > 0:
-			counts[instance] = declared
-		case !observed:
-			counts[instance] = 0
+			facts[instance] = instanceFacts{atoms: declared, element: observed.element}
+		case !seen:
+			facts[instance] = instanceFacts{}
 		}
 	}
-	return counts
+	return facts
 }
 
 // parseOccupancy reads an occupancy; a missing or unreadable value counts as 1.

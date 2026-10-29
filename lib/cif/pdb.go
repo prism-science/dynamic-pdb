@@ -97,18 +97,19 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 			continue
 		}
 		compound := upperSlice(line, 17, 20)
+		element := upperSlice(line, 76, 78)
 		if record == "HETATM" && compound != "" {
 			tally.addHetero(compoundInstance{
 				compoundID: compound,
 				asymID:     slice(line, 21, 22),
 				authSeqID:  slice(line, 22, 26),
 				insCode:    slice(line, 26, 27),
-			}, slice(line, 12, 16))
+			}, slice(line, 12, 16), element)
 		}
 		if record == "HETATM" && isWater(compound) {
 			continue
 		}
-		if element := upperSlice(line, 76, 78); element == "H" || element == "D" {
+		if element == "H" || element == "D" {
 			continue
 		}
 		tally.atomCount++
@@ -122,7 +123,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		})
 	}
 	coordinatesRead := (!truncated || coordinatesEnded) && check.err == nil
-	instances := tally.instanceCounts(coordinatesRead)
+	instances := tally.instanceFacts(coordinatesRead)
 	switch {
 	case tally.overflow != "":
 		coordinatesRead = false

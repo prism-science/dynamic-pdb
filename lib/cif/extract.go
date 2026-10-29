@@ -105,7 +105,7 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	if table := document.Table("_pdbx_entity_nonpoly"); table != nil {
 		for _, row := range table.Rows {
 			if id := strings.ToUpper(table.Value(row, "comp_id")); id != "" {
-				instances[compoundInstance{compoundID: id}] = 0
+				instances[compoundInstance{compoundID: id}] = instanceFacts{}
 			}
 		}
 	}
@@ -128,8 +128,8 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 
 // compoundInstance is one placed copy of a non-polymer compound. Instances read
 // from _pdbx_entity_nonpoly alone have no location and carry only the compound
-// ID. The maps of instances hold the number of distinct atoms placed for the
-// instance, 0 when unknown.
+// ID. The maps of instances hold what the coordinates say about each instance
+// (instanceFacts): its distinct atoms and the element of its first atom.
 type compoundInstance struct {
 	compoundID string
 	asymID     string
@@ -150,33 +150,148 @@ func partnerInstance(partner Partner) compoundInstance {
 	}
 }
 
-// classifyCompounds applies the single ligand rule. Water is always dropped;
-// other solvents, buffers and cryoprotectants are dropped only once the
-// reference lists are approved, and are kept and flagged until then. Nothing
-// else is dropped. The metal rule is per instance: a metal instance is a
-// cofactor when a metalc connection joins that instance to a protein residue or
-// ligand. If the file has no metalc rows at all, its metals are cofactors
-// flagged for review. A metal instance without a link in a file that has metalc
-// rows becomes a ligand flagged for review, so it is never dropped and never
-// placed unflagged.
+const (
+	singleAtomReason     = "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
+	unknownAtomsReason   = "atom count unknown: the file was cut off inside this compound's coordinates, so it cannot be told whether it is a single-atom compound or a metal ion"
+	noMetalcRowsReason   = "metal ion kept for review: the file has no metalc connection rows"
+	unlinkedMetalReason  = "metal ion instance has no metalc connection to a protein residue or ligand"
+	waterOnlyMetalReason = "metal linked only to water: confirm the site"
+)
+
+// metalLinkState is what the metalc rows say about one metal instance.
+type metalLinkState int
+
+const (
+	metalUnlinked metalLinkState = iota
+	// metalLinked: joined to a kept partner (a protein residue, a ligand, a
+	// cofactor, another metal, or a compound the link itself keeps, like imidazole).
+	metalLinked
+	// metalWaterOnly: joined to water and to nothing that is kept.
+	metalWaterOnly
+)
+
+// metalPartners records, from the metalc rows, which metal instances are
+// linked and which instances of keep-when-metal-linked compounds are bound to a
+// metal. Instances without a location are looked up by compound ID.
+type metalPartners struct {
+	linkedInstances map[compoundInstance]bool
+	linkedCompounds map[string]bool
+	waterInstances  map[compoundInstance]bool
+	waterCompounds  map[string]bool
+	boundInstances  map[compoundInstance]bool
+	boundCompounds  map[string]bool
+}
+
+func readMetalPartners(links metalLinks, reference *Reference) (metalPartners, error) {
+	partners := metalPartners{
+		linkedInstances: map[compoundInstance]bool{},
+		linkedCompounds: map[string]bool{},
+		waterInstances:  map[compoundInstance]bool{},
+		waterCompounds:  map[string]bool{},
+		boundInstances:  map[compoundInstance]bool{},
+		boundCompounds:  map[string]bool{},
+	}
+	for _, pair := range links.pairs {
+		if err := partners.add(pair.first, pair.second, reference); err != nil {
+			return metalPartners{}, err
+		}
+		if err := partners.add(pair.second, pair.first, reference); err != nil {
+			return metalPartners{}, err
+		}
+	}
+	return partners, nil
+}
+
+// add records one side of a metalc row: what the partner means for the metal.
+// A link counts when the partner is kept. Water makes the metal "linked only to
+// water" (R4); another dropped solvent does not count.
+func (p metalPartners) add(metal compoundInstance, partner compoundInstance, reference *Reference) error {
+	if reference.kind(metal.compoundID) != kindMetalIon || partner.compoundID == "" {
+		return nil
+	}
+	kind := reference.kind(partner.compoundID)
+	switch kind {
+	case kindSolvent:
+		if isWater(partner.compoundID) {
+			p.waterInstances[metal] = true
+			p.waterCompounds[metal.compoundID] = true
+		}
+	case kindSolventUnlessMetalLinked:
+		p.boundInstances[partner] = true
+		p.boundCompounds[partner.compoundID] = true
+		p.linkedInstances[metal] = true
+		p.linkedCompounds[metal.compoundID] = true
+	case kindLigand, kindCofactor, kindMetalIon, kindAmbiguous, kindDraftSolvent:
+		p.linkedInstances[metal] = true
+		p.linkedCompounds[metal.compoundID] = true
+	default:
+		return fmt.Errorf("unknown compound kind %d for metal partner %s", kind, partner.compoundID)
+	}
+	return nil
+}
+
+func (p metalPartners) state(metal compoundInstance) metalLinkState {
+	linked, water := p.linkedInstances[metal], p.waterInstances[metal]
+	if !metal.located() {
+		linked, water = p.linkedCompounds[metal.compoundID], p.waterCompounds[metal.compoundID]
+	}
+	switch {
+	case linked:
+		return metalLinked
+	case water:
+		return metalWaterOnly
+	default:
+		return metalUnlinked
+	}
+}
+
+func (p metalPartners) boundToMetal(instance compoundInstance) bool {
+	if !instance.located() {
+		return p.boundCompounds[instance.compoundID]
+	}
+	return p.boundInstances[instance]
+}
+
+// ligandCompound places a compound no list names. A single-atom instance is
+// flagged when its element is a metal (a metal missing from the metal list) or
+// unknown; a single non-metal atom (xenon, a halide not on any list) is not.
+func ligandCompound(id string, facts instanceFacts, reference *Reference) (Compound, error) {
+	switch facts.atoms {
+	case 1:
+		class := reference.elementClass(facts.element)
+		switch class {
+		case elementNonmetal:
+			return Compound{ID: id}, nil
+		case elementMetal, elementUnknown:
+			return Compound{ID: id, NeedsReview: true, ReviewReason: singleAtomReason}, nil
+		default:
+			return Compound{}, fmt.Errorf("unknown element class %d for %s", class, id)
+		}
+	case unknownAtomCount:
+		return Compound{ID: id, NeedsReview: true, ReviewReason: unknownAtomsReason}, nil
+	default:
+		return Compound{ID: id}, nil
+	}
+}
+
+// classifyCompounds applies the ligand rule. Water is always dropped; other
+// solvents, buffers and cryoprotectants are dropped only once the reference
+// lists are approved, and are kept and flagged until then. Imidazole is kept
+// when a metalc connection binds it to a metal. Ambiguous compounds (sulfate,
+// phosphate, citrate, halides) are kept and flagged. The metal rule is per
+// instance: a metal instance is a cofactor when a metalc connection joins it to
+// a kept partner, and a flagged cofactor when water is its only partner. If the
+// file has no metalc rows at all, its metals are cofactors flagged for review.
+// A metal instance without a link in a file that has metalc rows becomes a
+// ligand flagged for review, so it is never dropped and never placed unflagged.
 func classifyCompounds(
-	instances map[compoundInstance]int,
+	instances map[compoundInstance]instanceFacts,
 	links metalLinks,
 	reference *Reference,
 ) ([]Compound, []Compound, bool, error) {
-	hasMetalcRows := links.hasRows
-	linkedInstances := map[compoundInstance]bool{}
-	linkedCompounds := map[string]bool{}
-	for _, pair := range links.pairs {
-		first, second := pair.first, pair.second
-		if reference.kind(first.compoundID) == kindMetalIon && second.compoundID != "" && !reference.isSolvent(second.compoundID) {
-			linkedInstances[first] = true
-			linkedCompounds[first.compoundID] = true
-		}
-		if reference.kind(second.compoundID) == kindMetalIon && first.compoundID != "" && !reference.isSolvent(first.compoundID) {
-			linkedInstances[second] = true
-			linkedCompounds[second.compoundID] = true
-		}
+	partners, err := readMetalPartners(links, reference)
+	if err != nil {
+		return nil, nil, false, err
 	}
 
 	// A compound seen only in _pdbx_entity_nonpoly is skipped when atom_site
@@ -216,47 +331,37 @@ func classifyCompounds(
 		switch kind {
 		case kindSolvent:
 			continue
+		case kindSolventUnlessMetalLinked:
+			if partners.boundToMetal(instance) {
+				ligands.add(Compound{ID: id})
+			}
 		case kindDraftSolvent:
 			ligands.add(Compound{ID: id, NeedsReview: true, ReviewReason: draftSolventReason})
+		case kindAmbiguous:
+			ligands.add(Compound{ID: id, NeedsReview: true, ReviewReason: ambiguousReason})
 		case kindCofactor:
 			cofactors.add(Compound{ID: id})
 		case kindLigand:
-			switch instances[instance] {
-			case 1:
-				ligands.add(Compound{
-					ID:           id,
-					NeedsReview:  true,
-					ReviewReason: "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion",
-				})
-			case unknownAtomCount:
-				ligands.add(Compound{
-					ID:           id,
-					NeedsReview:  true,
-					ReviewReason: "atom count unknown: the file was cut off inside this compound's coordinates, so it cannot be told whether it is a single-atom compound or a metal ion",
-				})
-			default:
-				ligands.add(Compound{ID: id})
+			compound, err := ligandCompound(id, instances[instance], reference)
+			if err != nil {
+				return nil, nil, false, err
 			}
+			ligands.add(compound)
 		case kindMetalIon:
-			linked := linkedInstances[instance]
-			if !instance.located() {
-				linked = linkedCompounds[id]
-			}
-			switch {
-			case linked:
+			state := partners.state(instance)
+			switch state {
+			case metalLinked:
 				cofactors.add(Compound{ID: id})
-			case !hasMetalcRows:
-				cofactors.add(Compound{
-					ID:           id,
-					NeedsReview:  true,
-					ReviewReason: "metal ion kept for review: the file has no metalc connection rows",
-				})
+			case metalWaterOnly:
+				cofactors.add(Compound{ID: id, NeedsReview: true, ReviewReason: waterOnlyMetalReason})
+			case metalUnlinked:
+				if links.hasRows {
+					ligands.add(Compound{ID: id, NeedsReview: true, ReviewReason: unlinkedMetalReason})
+				} else {
+					cofactors.add(Compound{ID: id, NeedsReview: true, ReviewReason: noMetalcRowsReason})
+				}
 			default:
-				ligands.add(Compound{
-					ID:           id,
-					NeedsReview:  true,
-					ReviewReason: "metal ion instance has no metalc connection to a protein residue or ligand",
-				})
+				return nil, nil, false, fmt.Errorf("unknown metal link state %d for %s", state, id)
 			}
 		default:
 			return nil, nil, false, fmt.Errorf("unknown compound kind %d for %s", kind, id)
@@ -375,18 +480,19 @@ func (r *atomSiteReader) add(row []string) {
 		group = "ATOM"
 	}
 	compound := strings.ToUpper(cell(row, columns.compound))
+	element := strings.ToUpper(cell(row, columns.element))
 	if group == "HETATM" && compound != "" {
 		tally.addHetero(compoundInstance{
 			compoundID: compound,
 			asymID:     cell(row, columns.asymID),
 			authSeqID:  cell(row, columns.authSeqID),
 			insCode:    cell(row, columns.insCode),
-		}, cell(row, columns.atomID))
+		}, cell(row, columns.atomID), element)
 	}
 	if group == "HETATM" && isWater(compound) {
 		return
 	}
-	if element := strings.ToUpper(cell(row, columns.element)); element == "H" || element == "D" {
+	if element == "H" || element == "D" {
 		return
 	}
 	tally.atomCount++
@@ -412,9 +518,9 @@ const (
 
 // result returns the statistics, or nil statistics with a warning when the loop
 // was cut off or ran past a limit.
-func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance]int, string) {
+func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance]instanceFacts, string) {
 	tally := r.tally
-	instances := tally.instanceCounts(complete)
+	instances := tally.instanceFacts(complete)
 	if tally.overflow != "" {
 		return nil, instances, fmt.Sprintf("atom_site has more distinct %s than the parser limit allows: atom counts, residue counts and altloc fraction not extracted", tally.overflow)
 	}
@@ -435,16 +541,16 @@ func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance
 	return &stats, instances, ""
 }
 
-func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]int, string) {
+func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]instanceFacts, string) {
 	table := document.Table("_atom_site")
 	if table == nil {
 		if document.timedOut {
-			return nil, map[compoundInstance]int{}, atomSiteTimedOut
+			return nil, map[compoundInstance]instanceFacts{}, atomSiteTimedOut
 		}
 		if document.truncated {
-			return nil, map[compoundInstance]int{}, atomSiteNotReached
+			return nil, map[compoundInstance]instanceFacts{}, atomSiteNotReached
 		}
-		return nil, map[compoundInstance]int{}, ""
+		return nil, map[compoundInstance]instanceFacts{}, ""
 	}
 	reader := document.atomSite
 	if reader == nil {

@@ -1,12 +1,15 @@
 {
   "name": "solvent-buffer-cryoprotectant-list",
-  "version": "2026.10.0-draft",
-  "approved": false,
-  "description": "Draft list of chemical component dictionary (CCD) IDs that the mmCIF parser drops as water, solvents, buffers, cryoprotectants or crystallization salts. This is a science decision, not an engineering one: researchers must confirm it. Citrate (CIT), sulfate (SO4), phosphate (PO4) and halide ions are often real ligands. See docs/cif-extraction.md.",
+  "version": "2026.10.0",
+  "approved": true,
+  "ccd_checked": "2026-10-29",
+  "description": "Chemical component dictionary (CCD) IDs the parsers drop as water, solvents, buffers, cryoprotectants or crystallization salts (solvents), keep as ligands flagged for review because they are often from the buffer but often real ligands (ambiguous), or drop unless a metalc connection joins them to a metal ion (keep_when_metal_linked, also on the solvents list). Reviewed by researchers on 2026-10-28 and 2026-10-29. See docs/cif-extraction.md.",
   "solvents": [
     "HOH", "DOD", "WAT", "H2O",
     "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "2PE", "P6G", "PE4", "MPD", "MRD", "DMS",
-    "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "CIT",
-    "SO4", "PO4", "NO3", "NH4", "SCN", "CL", "BR", "IOD"
-  ]
+    "ACT", "ACY", "FMT", "TRS", "EPE", "MES", "BME", "TAM", "BTB", "IMD", "NO3", "NH4",
+    "SCN", "CO3", "TLA", "IPA", "MOH", "EOH", "PGO", "MLI", "CAC", "B3P", "NHE", "MPO"
+  ],
+  "ambiguous": ["SO4", "PO4", "CIT", "FLC", "F", "CL", "BR", "IOD"],
+  "keep_when_metal_linked": ["IMD"]
 }

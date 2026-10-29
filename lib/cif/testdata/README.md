@@ -1,9 +1,10 @@
 # Test fixtures
 
-Real archive files from files.rcsb.org (4HHB, 3CLN, 6OIM, 193L, 1AKE). Every
-category outside `_atom_site` is verbatim. The `_atom_site` loop is cut to every
-`HETATM` row, every row with an alternate location, and the first 8 residues of
-each chain, to keep the files small. Counts in the tests are for these cut files.
+Real archive files from files.rcsb.org (4HHB, 3CLN, 6OIM, 193L, 1AKE, 184D,
+4UG1, 1W53, 4HB1). Every category outside `_atom_site` is verbatim. The
+`_atom_site` loop is cut to every `HETATM` row, every row with an alternate
+location, and the first 8 residues of each chain, to keep the files small.
+Counts in the tests are for these cut files.
 
 | File | Used for |
 | --- | --- |
@@ -12,3 +13,7 @@ each chain, to keep the files small. Counts in the tests are for these cut files
 | 6OIM | engineered mutations in UniProt numbering, Mg with `metalc`, covalent ligand |
 | 193L | alternate locations, sodium with `metalc` |
 | 1AKE | `;` text blocks, alternate locations, two chains |
+| 184D | DNA with a magnesium whose only `metalc` partners are waters (flagged cofactor), and one with no `metalc` row |
+| 4UG1 | imidazole bound to nickel by `metalc` (kept), two unbound imidazoles (dropped) |
+| 1W53 | xenon, a single non-metal atom on no list (not flagged), glycerol (dropped) |
+| 4HB1 | UNX, a single atom of unknown element (flagged) |

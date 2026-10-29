@@ -1,4 +1,23 @@
 {
+  "184D.cif": {
+    "atom_count": 142,
+    "modeled_residues": 7,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "needs_review": true,
+        "reason": "metal linked only to water: confirm the site"
+      },
+      {
+        "list": "ligands",
+        "id": "MG",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+      }
+    ]
+  },
   "193L.cif": {
     "atom_count": 86,
     "modeled_residues": 11,
@@ -12,7 +31,7 @@
         "list": "ligands",
         "id": "CL",
         "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+        "reason": "often from the buffer: confirm it is part of the sample"
       }
     ]
   },
@@ -27,6 +46,17 @@
       }
     ]
   },
+  "1W53.cif": {
+    "atom_count": 165,
+    "modeled_residues": 15,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "XE"
+      }
+    ]
+  },
   "3CLN.cif": {
     "atom_count": 71,
     "modeled_residues": 8,
@@ -35,6 +65,19 @@
       {
         "list": "cofactors",
         "id": "CA"
+      }
+    ]
+  },
+  "4HB1.cif": {
+    "atom_count": 51,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "UNX",
+        "needs_review": true,
+        "reason": "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
       }
     ]
   },
@@ -51,7 +94,22 @@
         "list": "ligands",
         "id": "PO4",
         "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+        "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
+  "4UG1.cif": {
+    "atom_count": 132,
+    "modeled_residues": 16,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "NI"
+      },
+      {
+        "list": "ligands",
+        "id": "IMD"
       }
     ]
   },
@@ -85,7 +143,9 @@
       },
       {
         "list": "cofactors",
-        "id": "ZN"
+        "id": "ZN",
+        "needs_review": true,
+        "reason": "metal linked only to water: confirm the site"
       },
       {
         "list": "ligands",
@@ -99,19 +159,11 @@
         "list": "ligands",
         "id": "SO4",
         "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+        "reason": "often from the buffer: confirm it is part of the sample"
       },
       {
         "list": "ligands",
-        "id": "XYZ",
-        "needs_review": true,
-        "reason": "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
-      },
-      {
-        "list": "ligands",
-        "id": "ZN",
-        "needs_review": true,
-        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+        "id": "XYZ"
       }
     ]
   },
@@ -136,19 +188,13 @@
         "list": "ligands",
         "id": "CL",
         "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
-      },
-      {
-        "list": "ligands",
-        "id": "GOL",
-        "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+        "reason": "often from the buffer: confirm it is part of the sample"
       },
       {
         "list": "ligands",
         "id": "PO4",
         "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
+        "reason": "often from the buffer: confirm it is part of the sample"
       }
     ]
   },
@@ -175,12 +221,6 @@
       {
         "list": "ligands",
         "id": "1UD"
-      },
-      {
-        "list": "ligands",
-        "id": "GOL",
-        "needs_review": true,
-        "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"
       }
     ]
   }

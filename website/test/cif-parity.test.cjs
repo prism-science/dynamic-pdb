@@ -61,7 +61,7 @@ test("the preview and the CLI agree that 4HHB has HEM as a cofactor and phosphat
   );
 });
 
-test("the committed reference lists match lib/cif/cofactors.json and solvents.json", async () => {
+test("the committed reference lists match the JSON files in lib/cif", async () => {
   // given
   const { generate } = await import("../scripts/gen-cif-reference.mjs");
   const committed = fs.readFileSync(
@@ -80,29 +80,74 @@ test("the committed reference lists match lib/cif/cofactors.json and solvents.js
   );
 });
 
+/** The preview parser loaded once more with the approval flag of the generated
+ *  lists cleared, as it runs while a new list version is a draft. The module
+ *  cache is restored, so other tests keep the approved parser. */
+function draftPreviewParser() {
+  const referencePath = require.resolve("../src/lib/parse/cifReference.gen.ts");
+  const structurePath = require.resolve("../src/lib/parse/structure.ts");
+  const reference = require(referencePath);
+  const approvedStructure = require.cache[structurePath];
+  try {
+    require.cache[referencePath].exports = {
+      ...reference,
+      CIF_REFERENCE: { ...reference.CIF_REFERENCE, approved: false },
+    };
+    delete require.cache[structurePath];
+    return require(structurePath).parseStructureFacts;
+  } finally {
+    require.cache[referencePath].exports = reference;
+    require.cache[structurePath] = approvedStructure;
+  }
+}
+
+const BUFFER_FILE = [
+  "data_X",
+  "loop_",
+  "_atom_site.group_PDB",
+  "_atom_site.label_comp_id",
+  "_atom_site.label_asym_id",
+  "_atom_site.auth_seq_id",
+  "_atom_site.label_atom_id",
+  "ATOM ALA A 1 CA",
+  "HETATM HOH B 2 O",
+  "HETATM GOL C 3 C1",
+  "HETATM GOL C 3 C2",
+  "HETATM SO4 D 4 S",
+  "HETATM SO4 D 4 O1",
+  "#",
+].join("\n");
+
 test("water is the only compound dropped while the reference lists are drafts", () => {
   // given
-  const { CIF_REFERENCE } = require("../src/lib/parse/cifReference.gen.ts");
-  const text = [
-    "data_X",
-    "loop_",
-    "_atom_site.group_PDB",
-    "_atom_site.label_comp_id",
-    "_atom_site.label_asym_id",
-    "_atom_site.auth_seq_id",
-    "_atom_site.label_atom_id",
-    "ATOM ALA A 1 CA",
-    "HETATM HOH B 2 O",
-    "HETATM GOL C 3 C1",
-    "HETATM GOL C 3 C2",
-    "#",
-  ].join("\n");
+  const parseWithDraftLists = draftPreviewParser();
 
   // when
-  const facts = parseStructureFacts(text, "mmcif");
+  const facts = parseWithDraftLists(BUFFER_FILE, "mmcif");
 
   // then
-  assert.equal(CIF_REFERENCE.approved, false, "this test describes the draft gate");
-  assert.deepEqual(facts.metadata.ligands, ["GOL"]);
-  assert.deepEqual(facts.needsReview.map((item) => item.id), ["GOL"]);
+  assert.deepEqual(facts.metadata.ligands, ["GOL", "SO4"]);
+  assert.deepEqual(
+    facts.needsReview.map((item) => [item.id, item.reason]),
+    [
+      ["GOL", "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"],
+      ["SO4", "often from the buffer: confirm it is part of the sample"],
+    ],
+  );
+});
+
+test("buffers are dropped and ambiguous compounds flagged once the reference lists are approved", () => {
+  // given
+  const { CIF_REFERENCE } = require("../src/lib/parse/cifReference.gen.ts");
+
+  // when
+  const facts = parseStructureFacts(BUFFER_FILE, "mmcif");
+
+  // then
+  assert.equal(CIF_REFERENCE.approved, true, "this test describes the approved lists");
+  assert.deepEqual(facts.metadata.ligands, ["SO4"]);
+  assert.deepEqual(
+    facts.needsReview.map((item) => [item.id, item.reason]),
+    [["SO4", "often from the buffer: confirm it is part of the sample"]],
+  );
 });

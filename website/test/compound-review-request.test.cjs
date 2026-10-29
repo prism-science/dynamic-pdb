@@ -90,8 +90,7 @@ test("a website upload sends the compound review flags under extensions.compound
       {
         list: "ligands",
         id: "PO4",
-        reason:
-          "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped",
+        reason: "often from the buffer: confirm it is part of the sample",
       },
     ],
   });

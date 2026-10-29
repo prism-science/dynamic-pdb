@@ -172,10 +172,10 @@ func Test_should_flag_unknown_atom_count_when_pdb_head_is_cut_after_one_atom_of_
 	assert.Contains(t, extraction.Review[0].Reason, "atom count unknown")
 }
 
-func Test_should_flag_single_atom_when_pdb_file_is_complete_and_ligand_has_one_atom(t *testing.T) {
-	// given
+func Test_should_flag_single_atom_when_pdb_file_is_complete_and_ligand_has_one_metal_atom(t *testing.T) {
+	// given: LIG is on no list; its one atom is platinum.
 	text := "ATOM      1  CA  ALA A   1      11.104  13.207   9.447  1.00 20.00           C\n" +
-		"HETATM 9000  C1  LIG B 101      16.104  13.207   9.447  1.00 20.00           C\nEND\n"
+		"HETATM 9000 PT   LIG B 101      16.104  13.207   9.447  1.00 20.00          PT\nEND\n"
 
 	// when
 	extraction, err := PDBExtraction(text, false)

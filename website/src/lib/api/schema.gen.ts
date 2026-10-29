@@ -1114,7 +1114,7 @@ export interface components {
         ArtifactExtractionAttributes: {
             /** @description `file:<sha256>` of the artifact; every value carries the same source. */
             source: string;
-            /** @description Version of the cofactor reference list that sorted compounds into cofactors and ligands. */
+            /** @description Versions of the reference lists that sorted compounds into cofactors and ligands, one per list (cofactors, metal ions, solvents, covalent cofactors, CCD types), for example `cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0`. */
             reference_version: string;
             /** Format: int64 */
             bytes_read: number;
