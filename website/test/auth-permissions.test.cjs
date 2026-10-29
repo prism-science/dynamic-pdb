@@ -6,6 +6,8 @@ const test = require("node:test");
 const {
   canDeleteEntries,
   hasReviewAccess,
+  ownRevisionMessage,
+  ownRevisionReason,
   reviewPermissionsFor,
 } = require("../src/lib/auth/permissions.ts");
 
@@ -34,4 +36,10 @@ test("should allow deleting entries only with the entries.delete permission", ()
   assert.equal(canDeleteEntries(["revisions.approve", "entries.delete"]), true);
   assert.equal(canDeleteEntries(["revisions.approve", "revisions.reject"]), false);
   assert.equal(canDeleteEntries([]), false);
+});
+
+test("should hold back approval only on the viewer's own revision", () => {
+  assert.equal(ownRevisionReason("user-1", "user-1"), ownRevisionMessage);
+  assert.equal(ownRevisionReason("user-1", "user-2"), null);
+  assert.equal(ownRevisionReason(null, "user-1"), null);
 });

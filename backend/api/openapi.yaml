@@ -1470,6 +1470,8 @@ paths:
       description: >
         Changes a revision from `in_review` to active or rejected. Activating
         requires `revisions.approve`; rejecting requires `revisions.reject`.
+        A reviewer cannot approve a revision they created (403 `SELF_REVIEW`);
+        they can reject it.
       security:
         - bearerAuth: []
       requestBody:
@@ -1498,7 +1500,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller does not have the required permission.
+          description: >
+            Caller does not have the required permission, or asks to approve
+            a revision they created (code `SELF_REVIEW`).
           content:
             application/vnd.api+json:
               schema:
@@ -1714,6 +1718,8 @@ paths:
       description: >
         Changes a model revision from `in_review` to active or rejected. Activating
         requires `revisions.approve`; rejecting requires `revisions.reject`.
+        A reviewer cannot approve a revision they created (403 `SELF_REVIEW`);
+        they can reject it.
       security:
         - bearerAuth: []
       requestBody:
@@ -1742,7 +1748,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Caller does not have the required permission.
+          description: >
+            Caller does not have the required permission, or asks to approve
+            a revision they created (code `SELF_REVIEW`).
           content:
             application/vnd.api+json:
               schema:

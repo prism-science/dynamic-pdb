@@ -32,6 +32,7 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	backend := startBackend(t, root, backendBinaryPath, s3.URL())
@@ -44,7 +45,7 @@ func Test_should_recalculate_protein_sequence_similarities_from_mmseqs_job(t *te
 	sourceEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-source", sourceSequence)
 	similarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar", similarSequence)
 	secondSimilarEntryID := createProteinEntry(t, backend.URL, auth.AccessToken, "mmseqs-similar-2", secondSimilarSequence)
-	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
+	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID, reviewer.AccessToken)
 
 	// when
 	runMMseqsJobContainer(t, root, mmseqsJobImage, cacheDir)

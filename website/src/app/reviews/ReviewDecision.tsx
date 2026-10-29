@@ -13,6 +13,8 @@ type Props = {
   canReject: boolean;
   /** When set, the decision cannot be made yet and this says why. */
   blockedReason?: string | null;
+  /** When set, only Approve is held back (Reject stays), and this says why. */
+  approveBlockedReason?: string | null;
 };
 
 export default function ReviewDecision({
@@ -20,6 +22,7 @@ export default function ReviewDecision({
   canApprove,
   canReject,
   blockedReason,
+  approveBlockedReason,
 }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -48,8 +51,8 @@ export default function ReviewDecision({
           type="button"
           className={`${styles.buttonSm} ${styles.approve}`}
           onClick={approve}
-          disabled={pending || blocked}
-          title={blockedReason ?? undefined}
+          disabled={pending || blocked || Boolean(approveBlockedReason)}
+          title={blockedReason ?? approveBlockedReason ?? undefined}
         >
           Approve
         </button>

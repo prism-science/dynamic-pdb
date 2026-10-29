@@ -46,6 +46,7 @@ func Test_should_return_field_sources_and_typed_entities_when_entry_is_read(t *t
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	entryID := seedActiveEntry(t, database, auth.UserID)
 	s3 := newS3Stub(t)
 	defer s3.Close()
@@ -60,7 +61,7 @@ func Test_should_return_field_sources_and_typed_entities_when_entry_is_read(t *t
 			"polymer_entities": []map[string]any{{"label_entity_id": "1", "construct": "residues 1-164"}},
 		},
 	})
-	patchJSON(t, fmt.Sprintf("%s/revisions/%s", entryURL, revisionID), auth.AccessToken,
+	patchJSON(t, fmt.Sprintf("%s/revisions/%s", entryURL, revisionID), reviewer.AccessToken,
 		map[string]any{"state": "active"}, http.StatusOK)
 	afterEdit := getJSON[editEntryDocument](t, entryURL, auth.AccessToken).Data.Attributes
 
@@ -88,6 +89,7 @@ func Test_should_keep_residue_data_when_model_revision_metadata_leaves_it_out(t 
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	entryID, modelID := seedActiveModelWithResidueData(t, database, auth.UserID)
 	s3 := newS3Stub(t)
 	defer s3.Close()
@@ -106,7 +108,7 @@ func Test_should_keep_residue_data_when_model_revision_metadata_leaves_it_out(t 
 	metadata["details"] = "Edited description"
 	revisionID := createModelRevisionThroughAPI(t, modelURL, auth.AccessToken,
 		map[string]any{"model": map[string]any{"metadata": metadata}})
-	patchJSON(t, modelURL+"/revisions/"+revisionID, auth.AccessToken, map[string]any{"state": "active"}, http.StatusOK)
+	patchJSON(t, modelURL+"/revisions/"+revisionID, reviewer.AccessToken, map[string]any{"state": "active"}, http.StatusOK)
 	afterEdit := getJSON[editModelDocument](t, modelURL, auth.AccessToken).Data.Attributes
 
 	// then

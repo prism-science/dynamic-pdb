@@ -43,6 +43,7 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	pdbID := integrationPDBID()
 	fixture := seedScheduledDataSyncEntry(t, database, auth.UserID, pdbID)
 	_, err := database.Conn.ExecContext(t.Context(),
@@ -63,7 +64,7 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 		revisionID := createEntryRevisionThroughAPI(t, backend.URL, auth.AccessToken, fixture.EntryID,
 			map[string]any{"entry": map[string]any{"title": "Depositor title"}})
 		revisionURL := fmt.Sprintf("%s/v1/entries/%s/revisions/%s", backend.URL, fixture.EntryID, revisionID)
-		patchJSON(t, revisionURL, auth.AccessToken, map[string]any{"state": "active"}, http.StatusOK)
+		patchJSON(t, revisionURL, reviewer.AccessToken, map[string]any{"state": "active"}, http.StatusOK)
 		depositorRevision = getJSON[entryRevisionSourcesDocument](t, revisionURL, auth.AccessToken)
 	})
 

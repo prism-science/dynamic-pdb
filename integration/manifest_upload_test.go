@@ -58,6 +58,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	backend := startBackend(t, root, backendBinaryPath, s3.URL())
@@ -91,7 +92,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Contains(t, initOutput, "PDB IDs: 1")
 	assert.Contains(t, initOutput, "Local files: 2")
 	assert.Contains(t, uploadOutput, "Uploaded 1 entries, 2 models, 6 artifacts.")
-	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID)
+	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID, reviewer.AccessToken)
 
 	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
@@ -951,7 +952,9 @@ func patchJSON(t *testing.T, url string, token string, body any, expectedStatus 
 	require.Equal(t, expectedStatus, response.StatusCode, string(responseBody))
 }
 
-func activateUserRevisions(t *testing.T, backendURL string, token string, userID string) {
+// activateUserRevisions approves every in-review revision of the user that token signs in as.
+// reviewerToken must belong to another user: a reviewer cannot approve their own revisions.
+func activateUserRevisions(t *testing.T, backendURL string, token string, userID string, reviewerToken string) {
 	t.Helper()
 	groups := getJSON[entryRevisionGroupListResponse](
 		t,
@@ -963,7 +966,7 @@ func activateUserRevisions(t *testing.T, backendURL string, token string, userID
 			patchJSON(
 				t,
 				fmt.Sprintf("%s/v1/entries/%s/revisions/%s", backendURL, revision.EntryID, revision.ID),
-				token,
+				reviewerToken,
 				map[string]any{"state": "active"},
 				http.StatusOK,
 			)
@@ -978,7 +981,7 @@ func activateUserRevisions(t *testing.T, backendURL string, token string, userID
 					revision.ModelID,
 					revision.ID,
 				),
-				token,
+				reviewerToken,
 				map[string]any{"state": "active"},
 				http.StatusOK,
 			)

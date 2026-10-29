@@ -166,6 +166,7 @@ func Test_should_create_one_model_sync_job_when_archive_deposited_model_is_activ
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	reviewer := seedUserAndIssueToken(t, database)
 	pdbID := integrationPDBID()
 	rcsb := newRCSBStub(t, pdbID)
 	defer rcsb.Close()
@@ -185,11 +186,11 @@ func Test_should_create_one_model_sync_job_when_archive_deposited_model_is_activ
 	activatedAt := time.Now().UTC()
 
 	// when
-	patchJSON(t, modelRevisionsURL+fixture.RevisionID.String(), auth.AccessToken,
+	patchJSON(t, modelRevisionsURL+fixture.RevisionID.String(), reviewer.AccessToken,
 		map[string]any{"state": "active"}, http.StatusOK)
 	firstJobs, firstScheduledAt := modelJobs(t, database, fixture)
 	secondRevisionID := seedInReviewModelRevision(t, database, fixture, auth.UserID)
-	patchJSON(t, modelRevisionsURL+secondRevisionID.String(), auth.AccessToken,
+	patchJSON(t, modelRevisionsURL+secondRevisionID.String(), reviewer.AccessToken,
 		map[string]any{"state": "active"}, http.StatusOK)
 	secondJobs, secondScheduledAt := modelJobs(t, database, fixture)
 
