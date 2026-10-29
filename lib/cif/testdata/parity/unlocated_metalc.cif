@@ -1,0 +1,24 @@
+data_ULMC
+# Synthetic: metalc rows that give compound IDs only, and coordinates with a
+# residue number but no asym ID, as a hand-written file may have (RCSB files
+# always name both sides of a connection). A row that names no location for
+# the calcium applies to every calcium: both are cofactors.
+_entry.id ULMC
+#
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_comp_id
+_struct_conn.ptnr2_label_comp_id
+metalc1 metalc ASP CA
+#
+loop_
+_atom_site.group_PDB
+_atom_site.type_symbol
+_atom_site.label_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+ATOM N ASP A 20
+HETATM CA CA A 149
+HETATM CA CA A 150
+#

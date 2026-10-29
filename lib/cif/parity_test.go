@@ -19,13 +19,14 @@ const parityGoldenPath = "testdata/parity-golden.json"
 var parityFiles = []string{
 	"4HHB.cif", "3CLN.cif", "6OIM.cif", "193L.cif", "1AKE.cif",
 	"184D.cif", "4UG1.cif", "1W53.cif", "4HB1.cif", "1A62.cif", "7LTB.cif", "3CEB.cif",
-	"9A8B.cif", "2VSD.cif",
+	"9A8B.cif", "2VSD.cif", "6TQP.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
 	"parity/wrapped_rows.cif", "parity/ihm_probe.cif", "parity/entity_rules.cif",
 	"parity/no_entity_chem_comp.cif", "parity/metal_partner_flags.cif", "parity/pair_form_layout.cif",
-	"parity/two_data_blocks.cif", "parity/no_atom_site.cif",
-	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb", "6OIM.pdb",
+	"parity/two_data_blocks.cif", "parity/no_atom_site.cif", "parity/unlocated_metalc.cif",
+	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb", "6OIM.pdb", "2HQZ.pdb",
 	"parity/pdb_rules.pdb", "parity/pdb_no_metal_link.pdb", "parity/pdb_seqres_columns.pdb",
+	"parity/pdb_blank_chain.pdb",
 }
 
 // parityExcluded is the list name the golden gives a compound left out.

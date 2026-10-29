@@ -147,8 +147,9 @@ function elementClass(symbol: string): ElementClass {
 }
 
 /** Mirrors cif.CCDTypeCategory: a chem_comp.type value, ignoring case. Null
- *  for a type it does not know. */
-function ccdTypeCategory(ccdType: string): CcdCategory | null {
+ *  for a type it does not know. Checked against the Go switch by
+ *  `lib/cif/testdata/ccd-type-categories.json`. */
+export function ccdTypeCategory(ccdType: string): CcdCategory | null {
   switch (ccdType.trim().toLowerCase()) {
     case "d-beta-peptide, c-gamma linking":
     case "d-gamma-peptide, c-delta linking":
@@ -202,6 +203,24 @@ export type CompoundInstance = {
 
 export function instanceKey(instance: CompoundInstance): string {
   return [instance.compound, instance.asym, instance.seq, instance.ins].join("\u0000");
+}
+
+/** Mirrors located: false for an instance read from `_pdbx_entity_nonpoly`
+ *  alone. A PDB-format residue on a blank chain is located by its number. */
+function isLocated(instance: CompoundInstance): boolean {
+  return instance.asym !== "" || instance.seq !== "";
+}
+
+/** The compound with no location: how `_pdbx_entity_nonpoly` declares it, and
+ *  the key of a metalc row that names no location. */
+function unlocated(compound: string): CompoundInstance {
+  return { compound, asym: "", seq: "", ins: "" };
+}
+
+/** Mirrors linkKey: the instance a metalc row records for one of its sides,
+ *  or the bare compound when the row names no location for it. */
+function linkKey(instance: CompoundInstance): CompoundInstance {
+  return isLocated(instance) ? instance : unlocated(instance.compound);
 }
 
 /** One HETATM row as the rule needs it. */
@@ -606,12 +625,17 @@ class MetalPartners {
   }
 
   private mark(set: Set<string>, instance: CompoundInstance): void {
-    set.add(instanceKey(instance));
+    set.add(instanceKey(linkKey(instance)));
     set.add(instance.compound);
   }
 
+  /** Mirrors state and boundToMetal: a metalc row that names no location for
+   *  a side applies to every instance of that compound. */
   private has(set: Set<string>, instance: CompoundInstance): boolean {
-    return set.has(instance.asym !== "" ? instanceKey(instance) : instance.compound);
+    if (!isLocated(instance)) {
+      return set.has(instance.compound);
+    }
+    return set.has(instanceKey(instance)) || set.has(instanceKey(unlocated(instance.compound)));
   }
 
   state(metal: CompoundInstance): "linked" | "waterOnly" | "unlinked" {
@@ -666,9 +690,11 @@ export function sortCompounds(
 
 /** Mirrors partnerFate in lib/cif/sorting.go: places a metal's link partner
  *  by the steps that place it as a compound, so a link counts only when the
- *  partner stays in the entry. A partner with coordinates goes by its shape,
- *  the depositor's flag and the probe exclusion first; a polymer residue of the
- *  ATOM records, and a partner left to the lists, go by the lists. */
+ *  partner stays in the entry. A partner with coordinates, or one the file
+ *  declares in `_pdbx_entity_nonpoly` without coordinates (cut off, or never
+ *  written), goes by its shape, the depositor's flag and the probe exclusion
+ *  first; a polymer residue of the ATOM records, and a partner left to the
+ *  lists, go by the lists. */
 function partnerFate(
   partner: CompoundInstance,
   instances: Map<string, InstanceFacts>,
@@ -677,8 +703,8 @@ function partnerFate(
   if (WATER_COMPOUNDS.has(partner.compound)) {
     return "water";
   }
-  const facts = instances.get(instanceKey(partner));
-  const annotated = facts ? annotatedPartnerFate(facts, annotations) : null;
+  const facts = instances.get(instanceKey(partner)) ?? instances.get(instanceKey(unlocated(partner.compound)));
+  const annotated = facts ? annotatedPartnerFate(partner, facts, annotations) : null;
   if (annotated) {
     return annotated;
   }
@@ -699,11 +725,16 @@ function partnerFate(
   }
 }
 
-/** Steps 1 to 4 of the rule for a partner with coordinates; null when the
- *  lists decide. Mirrors annotatedPartnerFate in lib/cif/sorting.go. */
-function annotatedPartnerFate(facts: InstanceFacts, annotations: FileAnnotations): PartnerFate | null {
-  const id = facts.instance.compound;
-  const [shape] = shapeOf(facts, annotations);
+/** Steps 1 to 4 of the rule for a partner, with the facts of its coordinates
+ *  or of its `_pdbx_entity_nonpoly` declaration; null when the lists decide.
+ *  Mirrors annotatedPartnerFate in lib/cif/sorting.go. */
+function annotatedPartnerFate(
+  partner: CompoundInstance,
+  facts: InstanceFacts,
+  annotations: FileAnnotations,
+): PartnerFate | null {
+  const id = partner.compound;
+  const [shape, shapeReview] = shapeOf(facts, annotations);
   switch (shape) {
     case "water":
       return "water";
@@ -717,7 +748,7 @@ function annotatedPartnerFate(facts: InstanceFacts, annotations: FileAnnotations
     default:
       throw new Error(`unknown compound shape for ${id}: ${String(shape satisfies never)}`);
   }
-  const flag = flagFor(annotations, facts.instance);
+  const flag = flagFor(annotations, partner);
   if (flag) {
     switch (flag.feature) {
       case "subject":
@@ -740,6 +771,10 @@ function annotatedPartnerFate(facts: InstanceFacts, annotations: FileAnnotations
     case "outsideChain":
       return "kept";
     case "listed":
+      // decide keeps a solvent the file gives an unknown value for.
+      if (unknownValueReview(facts, annotations, shapeReview) && compoundKind(id) === "solvent") {
+        return "kept";
+      }
       return null;
     default:
       throw new Error(`unknown compound shape for ${id}: ${String(shape satisfies never)}`);
@@ -751,9 +786,9 @@ function annotatedPartnerFate(facts: InstanceFacts, annotations: FileAnnotations
  *  it, and instances of later models count only for an integrative file. */
 function orderedInstances(instances: Map<string, InstanceFacts>, allModels: boolean): InstanceFacts[] {
   const included = [...instances.values()].filter((facts) => allModels || !facts.laterModel);
-  const placed = new Set(included.filter(({ instance }) => instance.asym !== "").map(({ instance }) => instance.compound));
+  const placed = new Set(included.filter(({ instance }) => isLocated(instance)).map(({ instance }) => instance.compound));
   return included
-    .filter(({ instance }) => instance.asym !== "" || !placed.has(instance.compound))
+    .filter(({ instance }) => isLocated(instance) || !placed.has(instance.compound))
     .sort(({ instance: left }, { instance: right }) =>
       compareText(left.compound, right.compound) ||
       compareText(left.asym, right.asym) ||
@@ -775,16 +810,35 @@ function decide(
     return null;
   }
   const [shape, shapeReview] = shapeOf(facts, annotations);
-  const review =
-    annotations.compoundReview.get(id) ?? annotations.entityReview.get(facts.entityId) ?? shapeReview;
+  const review = unknownValueReview(facts, annotations, shapeReview);
   if (shape === "water" || shape === "polymer") {
     return null;
   }
   const placed = placeByShape(facts, shape, partners, hasMetalcRows, annotations);
+  if (review && placed.placement === "excluded" && placed.rule === "list") {
+    // The file holds a value the parser does not know, so the lists may be
+    // wrong about this compound: it is kept for review instead of left out.
+    placed.placement = "ligand";
+  }
   if (review && placed.placement !== "excluded" && placed.review === null) {
     placed.review = review;
   }
   return placed;
+}
+
+/** Mirrors unknownValueReview: the review reason a value the parser does not
+ *  know (an entity type, a depositor flag, a `_chem_comp.type`) gives the
+ *  instance, or null when the file holds no such value for it. */
+function unknownValueReview(
+  facts: InstanceFacts,
+  annotations: FileAnnotations,
+  shapeReview: string | null,
+): string | null {
+  return (
+    annotations.compoundReview.get(facts.instance.compound) ??
+    annotations.entityReview.get(facts.entityId) ??
+    shapeReview
+  );
 }
 
 function flagKey(compound: string, asym: string, seq: string): string {

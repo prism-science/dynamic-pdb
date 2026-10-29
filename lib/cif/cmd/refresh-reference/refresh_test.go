@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"dynamic-pdb/lib/cif"
 )
 
 // memoryFiles is a reference directory held in memory.
@@ -292,7 +294,7 @@ func Test_should_report_a_problem_when_a_covalent_residue_has_an_unknown_ccd_typ
 
 	// then
 	require.NoError(t, err)
-	assert.Contains(t, result.Problems, `covalent_cofactors.json: LLP: unknown CCD type "L-peptide linking, new kind": add it to cif.CCDTypeCategory and knownCCDTypes`)
+	assert.Contains(t, result.Problems, `covalent_cofactors.json: LLP: sort the CCD type (a new type goes in cif.CCDTypeCategory and cif.KnownCCDTypes): unknown CCD type "L-peptide linking, new kind"`)
 }
 
 func Test_should_map_every_known_type_and_fail_when_a_type_is_unknown(t *testing.T) {
@@ -301,7 +303,7 @@ func Test_should_map_every_known_type_and_fail_when_a_type_is_unknown(t *testing
 
 	// when
 	knownErrors := map[string]error{}
-	for _, ccdType := range knownCCDTypes {
+	for _, ccdType := range cif.KnownCCDTypes {
 		_, knownErrors[ccdType] = categoryOfType(ccdType)
 	}
 	_, unknownErr := categoryOfType(unknownType)
@@ -311,4 +313,15 @@ func Test_should_map_every_known_type_and_fail_when_a_type_is_unknown(t *testing
 		assert.NoError(t, err, ccdType)
 	}
 	require.Error(t, unknownErr)
+}
+
+func Test_should_fail_when_asked_for_the_header_of_an_unknown_file(t *testing.T) {
+	// given
+	lists := referenceLists{}
+
+	// when
+	_, err := lists.header("unexpected.json")
+
+	// then
+	require.EqualError(t, err, "unknown reference file: unexpected.json")
 }

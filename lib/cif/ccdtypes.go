@@ -19,6 +19,41 @@ const (
 	CCDNonPolymer CCDCategory = "non-polymer"
 )
 
+// KnownCCDTypes are the chem_comp.type values of the PDBx/mmCIF dictionary,
+// each sorted by CCDTypeCategory. On 2026-10-29 they covered all 51,512 CCD
+// IDs with a type.
+var KnownCCDTypes = []string{
+	"D-beta-peptide, C-gamma linking",
+	"D-gamma-peptide, C-delta linking",
+	"D-peptide COOH carboxy terminus",
+	"D-peptide NH3 amino terminus",
+	"D-peptide linking",
+	"L-beta-peptide, C-gamma linking",
+	"L-gamma-peptide, C-delta linking",
+	"L-peptide COOH carboxy terminus",
+	"L-peptide NH3 amino terminus",
+	"L-peptide linking",
+	"peptide linking",
+	"peptide-like",
+	"DNA OH 3 prime terminus",
+	"DNA OH 5 prime terminus",
+	"DNA linking",
+	"L-DNA linking",
+	"L-RNA linking",
+	"RNA OH 3 prime terminus",
+	"RNA OH 5 prime terminus",
+	"RNA linking",
+	"D-saccharide",
+	"D-saccharide, alpha linking",
+	"D-saccharide, beta linking",
+	"L-saccharide",
+	"L-saccharide, alpha linking",
+	"L-saccharide, beta linking",
+	"saccharide",
+	"non-polymer",
+	"other",
+}
+
 // CCDTypeCategory maps a chem_comp.type value of the PDBx/mmCIF dictionary to
 // its category, ignoring case. An unknown type is an error: the refresh tool
 // stops on it, and the parser warns and flags the compound for review.

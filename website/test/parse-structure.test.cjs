@@ -460,21 +460,25 @@ const MMCIF_WITH_TWO_FLAGS = (flags) =>
   ].join("\n");
 
 test("should_exclude_ATP_when_the_flag_for_every_ATP_comes_first", () => {
-  const facts = parseStructureFacts(
-    MMCIF_WITH_TWO_FLAGS(["ATP ? ? 'NO FUNCTIONAL ROLE'", "ATP B 101 'SUBJECT OF INVESTIGATION'"]),
-    "mmcif",
-  );
+  // given
+  const text = MMCIF_WITH_TWO_FLAGS(["ATP ? ? 'NO FUNCTIONAL ROLE'", "ATP B 101 'SUBJECT OF INVESTIGATION'"]);
 
+  // when
+  const facts = parseStructureFacts(text, "mmcif");
+
+  // then
   assert.deepEqual(Object.keys(facts.compoundSources.ligands), []);
   assert.equal(facts.compoundSources.excluded.ATP.rule, "depositor_flag");
 });
 
 test("should_keep_ATP_when_the_flag_for_that_instance_comes_first", () => {
-  const facts = parseStructureFacts(
-    MMCIF_WITH_TWO_FLAGS(["ATP B 101 'SUBJECT OF INVESTIGATION'", "ATP ? ? 'NO FUNCTIONAL ROLE'"]),
-    "mmcif",
-  );
+  // given
+  const text = MMCIF_WITH_TWO_FLAGS(["ATP B 101 'SUBJECT OF INVESTIGATION'", "ATP ? ? 'NO FUNCTIONAL ROLE'"]);
 
+  // when
+  const facts = parseStructureFacts(text, "mmcif");
+
+  // then
   assert.equal(facts.compoundSources.ligands.ATP.rule, "depositor_flag");
   assert.deepEqual(Object.keys(facts.compoundSources.excluded), []);
 });

@@ -278,8 +278,8 @@ function parsePdb(text: string): StructureFacts {
   annotations.modifiedResidues = [...chains.modifiedNames];
   annotations.sequenceNames = chains.sequenceNames();
   const instances = compounds.facts();
-  for (const instance of instances.values()) {
-    instance.chain = chains.position(instance.instance);
+  for (const instanceFacts of instances.values()) {
+    instanceFacts.chain = chains.position(instanceFacts.instance);
   }
   applyCounts(facts, atomCount, residueTally, instances, chains.metalcLinks(isMetalIon), annotations);
   return facts;
@@ -606,8 +606,10 @@ function applyCounts(
   facts.compoundSources = sorted.sources;
 }
 
+/** The metalc rows of `_struct_conn`. A file with a single connection writes it
+ *  as `_struct_conn.tag value` items, not a loop (6TQP). */
 function readMetalcLinks(text: string): MetalcLinks {
-  const connections = cifLoop(text, "_struct_conn");
+  const connections = cifCategory(text, "_struct_conn");
   if (!connections) {
     return NO_METALC_ROWS;
   }

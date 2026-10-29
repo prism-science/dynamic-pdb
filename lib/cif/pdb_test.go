@@ -272,6 +272,22 @@ func Test_should_link_metals_when_link_records_join_them_to_residues(t *testing.
 	assert.Equal(t, source(ruleMetalc), sources.Cofactors["ZN"])
 }
 
+func Test_should_judge_each_metal_by_its_own_links_when_the_chain_id_is_blank(t *testing.T) {
+	// given: on a blank chain, a LINK binds zinc 101 to a histidine; zinc 102 has no link.
+	text := pdbLink("NE2", "HIS", " ", 1, "ZN", "ZN", " ", 101) +
+		pdbRecord("ATOM", 1, "CA", "HIS", " ", 1, "C") +
+		pdbRecord("HETATM", 2, "ZN", "ZN", " ", 101, "ZN") +
+		pdbRecord("HETATM", 3, "ZN", "ZN", " ", 102, "ZN") + "END\n"
+
+	// when
+	extraction, _ := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"ZN"}, extraction.Fields["cofactors"])
+	assert.Equal(t, []string{"ZN"}, extraction.Fields["ligands"])
+	assert.Equal(t, []ReviewItem{{List: ListLigands, ID: "ZN", Reason: unlinkedMetalReason}}, extraction.Review)
+}
+
 func Test_should_keep_metal_flagged_when_link_records_join_no_metal(t *testing.T) {
 	// given: the only LINK joins a sugar to an asparagine.
 	text := pdbLink("ND2", "ASN", "A", 1, "C1", "NAG", "B", 1) +

@@ -152,8 +152,20 @@ type compoundInstance struct {
 	insCode    string
 }
 
+// located is false for an instance read from _pdbx_entity_nonpoly alone. A
+// PDB-format residue on a blank chain is located by its residue number.
 func (instance compoundInstance) located() bool {
-	return instance.asymID != ""
+	return instance.asymID != "" || instance.authSeqID != ""
+}
+
+// linkKey is the key a metalc row records for one of its sides: the instance
+// itself, or the bare compound ID when the row names no location for it, so
+// the row applies to every instance of the compound.
+func (instance compoundInstance) linkKey() compoundInstance {
+	if instance.located() {
+		return instance
+	}
+	return compoundInstance{compoundID: instance.compoundID}
 }
 
 func partnerInstance(partner Partner) compoundInstance {

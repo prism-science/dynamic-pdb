@@ -1,8 +1,9 @@
 data_ENTR
 # Synthetic: rules no real fixture combines. A glycan with no depositor flag
-# (branched), a macrolide, an unknown entity type (flagged), a depositor flag
-# with a location (only the glycerol at E 302 is kept), and NO FUNCTIONAL ROLE
-# on sulfate (left out).
+# (branched), a macrolide, an unknown entity type (flagged; its ethylene glycol,
+# which the lists leave out, is kept and flagged, and the magnesium linked only
+# to it counts as linked), a depositor flag with a location (only the glycerol
+# at E 302 is kept), and NO FUNCTIONAL ROLE on sulfate (left out).
 _entry.id ENTR
 #
 loop_
@@ -16,6 +17,7 @@ _entity.pdbx_description
 5 non-polymer 'sulfate'
 6 'cyclic peptide' 'unknown kind'
 7 water 'water'
+8 non-polymer 'magnesium'
 #
 loop_
 _pdbx_entity_branch_list.entity_id
@@ -46,6 +48,17 @@ _pdbx_entity_instance_feature.feature_type
 _pdbx_entity_instance_feature.details
 1 GOL E ? GOL E 302 'SUBJECT OF INVESTIGATION' ?
 2 SO4 ? ? SO4 ? ? 'NO FUNCTIONAL ROLE' ?
+#
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_comp_id
+_struct_conn.ptnr1_label_asym_id
+_struct_conn.ptnr1_auth_seq_id
+_struct_conn.ptnr2_label_comp_id
+_struct_conn.ptnr2_label_asym_id
+_struct_conn.ptnr2_auth_seq_id
+metalc1 metalc MG J 701 EDO I 502
 #
 loop_
 _atom_site.group_PDB
@@ -79,4 +92,7 @@ HETATM 14 O O1 . SO4 F 5 . ? 401 F 1.00 1
 HETATM 15 C C1 . QQQ G 6 . ? 501 G 1.00 1
 HETATM 16 C C2 . QQQ G 6 . ? 501 G 1.00 1
 HETATM 17 O O . HOH H 7 . ? 601 H 1.00 1
+HETATM 18 C C1 . EDO I 6 . ? 502 I 1.00 1
+HETATM 19 C C2 . EDO I 6 . ? 502 I 1.00 1
+HETATM 20 MG MG . MG J 8 . ? 701 J 1.00 1
 #

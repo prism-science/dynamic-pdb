@@ -102,6 +102,56 @@ func Test_should_sort_by_lists_and_flag_when_entity_type_is_unknown(t *testing.T
 	assert.Contains(t, result.Warnings, `entity 2 has unknown type "cyclic peptide": its compounds are sorted by the reference lists and flagged for review`)
 }
 
+func Test_should_keep_a_solvent_as_a_flagged_ligand_when_its_entity_type_is_unknown(t *testing.T) {
+	// given: glycerol, which the lists leave out, in an entity of a type the parser does not know.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 oligo-thing"),
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	reason := `unknown entity type "oligo-thing": confirm where this compound belongs`
+	assert.Equal(t, []Compound{{ID: "GOL", NeedsReview: true, ReviewReason: reason}}, result.Ligands)
+	assert.Equal(t, source(ruleList), result.CompoundSources.Ligands["GOL"])
+	assert.Empty(t, result.CompoundSources.Excluded)
+}
+
+func Test_should_keep_a_solvent_as_a_flagged_ligand_when_its_depositor_flag_is_unknown(t *testing.T) {
+	// given
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer"),
+		flagLoop("1 EDO ? ? 'LIGAND OF INTEREST'"),
+		hetatmLoop("HETATM EDO B 2 . 101 C1 C 1", "HETATM EDO B 2 . 101 C2 C 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	reason := `unknown depositor flag "LIGAND OF INTEREST": confirm where this compound belongs`
+	assert.Equal(t, []Compound{{ID: "EDO", NeedsReview: true, ReviewReason: reason}}, result.Ligands)
+	assert.Empty(t, result.CompoundSources.Excluded)
+}
+
+func Test_should_leave_a_compound_out_when_the_depositor_says_so_even_if_its_entity_type_is_unknown(t *testing.T) {
+	// given: the depositor's NO FUNCTIONAL ROLE decides, not the lists.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 oligo-thing"),
+		flagLoop("1 GOL ? ? 'NO FUNCTIONAL ROLE'"),
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Empty(t, result.Ligands)
+	assert.Equal(t, map[string]CompoundSource{"GOL": source(ruleDepositorFlag)}, result.CompoundSources.Excluded)
+}
+
 func Test_should_sort_by_ccd_type_and_chain_position_when_file_has_no_entity(t *testing.T) {
 	// given: MSE in a chain (label_seq_id set) and a free MSE, a sugar, a ligand.
 	text := mmcifFile(hetatmLoop(
@@ -205,7 +255,7 @@ func Test_should_flag_only_that_instance_when_the_depositor_flag_has_a_location(
 	assert.Equal(t, source(ruleList), result.CompoundSources.Excluded["GOL"])
 }
 
-func Test_should_follow_the_first_matching_depositor_flag_in_file_order(t *testing.T) {
+func Test_should_follow_the_first_matching_depositor_flag_when_several_match_an_instance(t *testing.T) {
 	cases := []struct {
 		name     string
 		flags    []string
@@ -293,6 +343,81 @@ func Test_should_count_a_metal_link_when_the_depositor_keeps_a_solvent_partner(t
 	assert.Equal(t, []Compound{{ID: "GOL"}}, result.Ligands)
 	assert.Equal(t, []Compound{{ID: "MG"}}, result.Cofactors)
 	assert.Equal(t, source(ruleDepositorFlag), result.CompoundSources.Ligands["GOL"])
+	assert.Equal(t, source(ruleMetalc), result.CompoundSources.Cofactors["MG"])
+}
+
+func Test_should_not_count_a_metal_link_when_the_depositor_leaves_out_a_partner_without_coordinates(t *testing.T) {
+	// given: magnesium's only partner is an ATP the file declares but gives no
+	// coordinates (as when the read limit cuts them off), marked as having no
+	// functional role.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer", "3 non-polymer"),
+		"loop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 MG\n3 ATP\n#",
+		flagLoop("1 ATP ? ? 'NO FUNCTIONAL ROLE'"),
+		metalcLoop("MG B 101 ATP C 201"),
+		hetatmLoop("HETATM MG B 2 . 101 MG MG 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "MG", NeedsReview: true, ReviewReason: unlinkedMetalReason}}, result.Ligands)
+	assert.Empty(t, result.Cofactors)
+	assert.Equal(t, map[string]CompoundSource{"ATP": source(ruleDepositorFlag)}, result.CompoundSources.Excluded)
+}
+
+func Test_should_link_every_instance_of_a_metal_when_its_metalc_row_names_no_location(t *testing.T) {
+	// given: the metalc row gives compound IDs only, as in a hand-written file;
+	// the calcium's coordinates have a residue number but no asym ID.
+	text := mmcifFile(
+		"loop_\n_struct_conn.id\n_struct_conn.conn_type_id\n_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr2_label_comp_id\nmetalc1 metalc ASP CA\n#",
+		"loop_\n_atom_site.group_PDB\n_atom_site.type_symbol\n_atom_site.label_comp_id\n_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n"+
+			"ATOM N ASP A 20\nHETATM CA CA A 149\n#",
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "CA"}}, result.Cofactors)
+	assert.Empty(t, result.Ligands)
+}
+
+func Test_should_count_a_metal_link_when_the_partner_is_a_flagged_polymer_residue(t *testing.T) {
+	// given: zinc's only partner is a cysteine of the chain, which the file does
+	// not declare as a non-polymer; the depositor flag on it cannot remove it.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer"),
+		flagLoop("1 CYS ? ? 'NO FUNCTIONAL ROLE'"),
+		metalcLoop("ZN B 101 CYS A 5"),
+		hetatmLoop("ATOM CYS A 1 5 5 SG S 1", "HETATM ZN B 2 . 101 ZN ZN 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	assert.Equal(t, []Compound{{ID: "ZN"}}, result.Cofactors)
+	assert.Empty(t, result.Ligands)
+}
+
+func Test_should_count_a_metal_link_when_the_partner_is_a_solvent_kept_for_an_unknown_entity_type(t *testing.T) {
+	// given: magnesium's only partner is a glycerol in an entity of a type the
+	// parser does not know, which keeps the glycerol for review.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 oligo-thing", "3 non-polymer"),
+		metalcLoop("MG C 201 GOL B 101"),
+		hetatmLoop("HETATM GOL B 2 . 101 C1 C 1", "HETATM GOL B 2 . 101 C2 C 1", "HETATM MG C 3 . 201 MG MG 1"),
+	)
+
+	// when
+	result := extractTextResult(t, text, false)
+
+	// then
+	reason := `unknown entity type "oligo-thing": confirm where this compound belongs`
+	assert.Equal(t, []Compound{{ID: "GOL", NeedsReview: true, ReviewReason: reason}}, result.Ligands)
+	assert.Equal(t, []Compound{{ID: "MG"}}, result.Cofactors)
 	assert.Equal(t, source(ruleMetalc), result.CompoundSources.Cofactors["MG"])
 }
 

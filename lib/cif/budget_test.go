@@ -66,7 +66,7 @@ func Test_should_warn_and_withhold_counts_when_the_budget_ends_inside_the_coordi
 	assert.Less(t, ctx.calls, 10, "the parse should stop reading once the budget is gone")
 }
 
-func Test_should_not_apply_a_loop_the_budget_ended_at_a_row_boundary(t *testing.T) {
+func Test_should_not_apply_a_loop_when_the_budget_ended_it_at_a_row_boundary(t *testing.T) {
 	// given: a one-column loop of modified residues, so the budget can only end
 	// it between two rows.
 	ctx := &expiringContext{Context: context.Background(), allowed: 2}

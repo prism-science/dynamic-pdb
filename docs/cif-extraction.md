@@ -174,13 +174,18 @@ sorted once (`classifyCompounds` in `lib/cif/sorting.go`):
      it is part of the sample". Only the depositor's NO FUNCTIONAL ROLE flag
      leaves them out.
    - **Metal ions**, decided per instance (one placed copy, by chain and residue
-     number): a cofactor when a `metalc` connection joins the instance to a kept
+     number; a PDB-format residue on a blank chain by its number alone; a
+     `metalc` row that names no location applies to every instance): a
+     cofactor when a `metalc` connection joins the instance to a kept
      partner (a protein residue, a ligand, a cofactor, another metal, or the
      imidazole it keeps). Water does not count as a partner, and neither does a
      compound left out (glycerol). The partner is kept or left out by the same
      steps that place it: an ATP the depositor marks NO FUNCTIONAL ROLE, or an
      integrative model's probe, does not count; a glycerol the depositor marks
-     SUBJECT OF INVESTIGATION does.
+     SUBJECT OF INVESTIGATION does. A partner the file declares in
+     `_pdbx_entity_nonpoly` but gives no coordinates (they were cut off) is
+     placed by that declaration and the depositor's flags; a residue of the
+     chain always counts, whatever flag it carries.
      - Joined only to water: a cofactor flagged "metal linked only to water:
        confirm the site".
      - The file has **no `metalc` rows at all**: a cofactor flagged for review.
@@ -206,7 +211,11 @@ There is no separate metals list; kept metals are in `cofactors`. A value the
 parser does not know in a category it reads (an entity type, a depositor flag, a
 glycan descriptor type, a `_chem_comp.type`) never fails the extraction: the
 compound is sorted as above and flagged for review, and a warning names the
-value.
+value. A compound the lists would leave out (glycerol in an entity of an
+unknown type) is kept as a flagged ligand instead, since the lists may be wrong
+about it; a depositor's NO FUNCTIONAL ROLE or an IHM probe still leaves it out.
+A `_chem_comp.type` is read only for a compound whose entity the file does not
+type (step 1), so an unknown one is flagged only there.
 
 ## Decision record
 
@@ -311,8 +320,9 @@ Without it the tool rewrites `metal_ions.json`, `ccd_types.json` and the
   residue;
 - the metal rule would drop a metal that is on `metal_ions.json` now;
 - the CCD has a type the parser does not know (the known types no longer cover
-  every ID with a type): add it to `cif.CCDTypeCategory` and the tool's
-  `knownCCDTypes`.
+  every ID with a type): add it to `cif.CCDTypeCategory` and
+  `cif.KnownCCDTypes`, then to the website's `ccdTypeCategory` (the parity
+  test `testdata/ccd-type-categories.json` checks both).
 
 IDs the metal rule adds are listed as notes, for the researchers to see in the
 PR. BIRD molecule IDs (`PRD_...`) the search returns are not CCD IDs and are
@@ -342,8 +352,10 @@ The preview reads the first 4 MiB of a file, like the CLI, but does not know whe
 it was cut: it applies what it read, where the Go parser skips a rule whose
 category may have been cut off. Otherwise it reads a file as the Go parser does:
 only the first data block, single-row categories as tokens (indented tags and
-`#` comments allowed), and compounds sorted even when the file has no
-coordinates.
+`#` comments allowed; a file with one connection writes `_struct_conn` that
+way, as 6TQP does), and compounds sorted even when the file has no
+coordinates. Its CCD type switch is checked against the Go parser's by
+`lib/cif/testdata/ccd-type-categories.json`.
 
 ## CLI upload
 
@@ -384,7 +396,9 @@ follow in the part not read), and when the time budget stopped the read inside
 it, even between two rows. The warning reads, for example "the read limit may
 have cut these categories, so the rules they feed were not applied:
 _pdbx_entity_instance_feature (depositor flags), _pdbx_struct_mod_residue
-(covalently bound cofactors)".
+(covalently bound cofactors)". `_chem_comp` is the one exception: the rows read
+are used, and a compound whose row was cut off falls back to the CCD table,
+which gives an archive file's own types.
 
 ### Time budget
 

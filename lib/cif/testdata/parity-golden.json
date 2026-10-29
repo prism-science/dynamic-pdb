@@ -94,6 +94,25 @@
       }
     ]
   },
+  "2HQZ.pdb": {
+    "atom_count": 215,
+    "modeled_residues": 21,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal linked only to water: confirm the site"
+      },
+      {
+        "list": "excluded",
+        "id": "EDO",
+        "rule": "list"
+      }
+    ]
+  },
   "2VSD.cif": {
     "atom_count": 98,
     "modeled_residues": 8,
@@ -299,6 +318,18 @@
       }
     ]
   },
+  "6TQP.cif": {
+    "atom_count": 136,
+    "modeled_residues": 16,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "NA",
+        "rule": "metalc"
+      }
+    ]
+  },
   "7LTB.cif": {
     "atom_count": 236,
     "modeled_residues": 2,
@@ -387,10 +418,15 @@
     "compounds": []
   },
   "parity/entity_rules.cif": {
-    "atom_count": 16,
+    "atom_count": 19,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
     "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "rule": "metalc"
+      },
       {
         "list": "excluded",
         "id": "GOL",
@@ -405,6 +441,13 @@
         "list": "ligands",
         "id": "BMA",
         "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "EDO",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "unknown entity type \"cyclic peptide\": confirm where this compound belongs"
       },
       {
         "list": "ligands",
@@ -511,8 +554,8 @@
     ]
   },
   "parity/metal_partner_flags.cif": {
-    "atom_count": 7,
-    "modeled_residues": 1,
+    "atom_count": 10,
+    "modeled_residues": 2,
     "unique_protein_chains": 1,
     "compounds": [
       {
@@ -521,9 +564,26 @@
         "rule": "metalc"
       },
       {
+        "list": "cofactors",
+        "id": "NI",
+        "rule": "metalc"
+      },
+      {
+        "list": "excluded",
+        "id": "ADP",
+        "rule": "depositor_flag"
+      },
+      {
         "list": "excluded",
         "id": "ATP",
         "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "CA",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
       },
       {
         "list": "ligands",
@@ -651,6 +711,25 @@
       }
     ]
   },
+  "parity/pdb_blank_chain.pdb": {
+    "atom_count": 3,
+    "modeled_residues": 1,
+    "unique_protein_chains": 0,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "ZN",
+        "rule": "metalc"
+      },
+      {
+        "list": "ligands",
+        "id": "ZN",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+      }
+    ]
+  },
   "parity/pdb_no_metal_link.pdb": {
     "atom_count": 4,
     "modeled_residues": 1,
@@ -739,6 +818,18 @@
         "list": "ligands",
         "id": "LIG",
         "rule": "list"
+      }
+    ]
+  },
+  "parity/unlocated_metalc.cif": {
+    "atom_count": 3,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "CA",
+        "rule": "metalc"
       }
     ]
   },

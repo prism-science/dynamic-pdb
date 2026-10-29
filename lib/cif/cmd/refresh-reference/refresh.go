@@ -298,7 +298,7 @@ func generateCategories(ctx context.Context, ccd dictionary) (map[cif.CCDCategor
 	firstType := map[string]string{}
 	problems := []string{}
 	covered := 0
-	for _, ccdType := range knownCCDTypes {
+	for _, ccdType := range cif.KnownCCDTypes {
 		category, err := categoryOfType(ccdType)
 		if err != nil {
 			return nil, nil, fmt.Errorf("map CCD type %q: %w", ccdType, err)
@@ -331,7 +331,7 @@ func generateCategories(ctx context.Context, ccd dictionary) (map[cif.CCDCategor
 		}
 	}
 	if covered != total {
-		problems = append(problems, fmt.Sprintf("%s: %d CCD IDs have a type but the known types cover %d: the CCD has a new type; add it to cif.CCDTypeCategory and knownCCDTypes", ccdTypesFile, total, covered))
+		problems = append(problems, fmt.Sprintf("%s: %d CCD IDs have a type but the known types cover %d: the CCD has a new type; add it to cif.CCDTypeCategory and cif.KnownCCDTypes", ccdTypesFile, total, covered))
 	}
 	for category := range byCategory {
 		slices.Sort(byCategory[category])
@@ -399,7 +399,10 @@ func refresh(ctx context.Context, ccd dictionary, files referenceFiles, today st
 	generatedFiles := []string{metalIonsFile, ccdTypesFile}
 	for _, name := range generatedFiles {
 		// Compare with the file's own date, so a check on a later day is clean.
-		header := lists.header(name)
+		header, err := lists.header(name)
+		if err != nil {
+			return refreshResult{}, fmt.Errorf("compare %s with the dictionary: %w", name, err)
+		}
 		if !bytes.Equal(lists.raw[name], formatGenerated(header, header.CCDChecked, generatedGroups[name])) {
 			result.Drift = append(result.Drift, name)
 		}
@@ -410,7 +413,11 @@ func refresh(ctx context.Context, ccd dictionary, files referenceFiles, today st
 
 	updates := map[string][]byte{}
 	for _, name := range generatedFiles {
-		updates[name] = formatGenerated(lists.header(name), today, generatedGroups[name])
+		header, err := lists.header(name)
+		if err != nil {
+			return refreshResult{}, fmt.Errorf("regenerate %s: %w", name, err)
+		}
+		updates[name] = formatGenerated(header, today, generatedGroups[name])
 	}
 	for _, name := range handEditedFiles {
 		current := lists.raw[name]
@@ -434,20 +441,20 @@ func refresh(ctx context.Context, ccd dictionary, files referenceFiles, today st
 	return result, nil
 }
 
-func (lists referenceLists) header(name string) listHeader {
+func (lists referenceLists) header(name string) (listHeader, error) {
 	switch name {
 	case cofactorsFile:
-		return lists.cofactors.listHeader
+		return lists.cofactors.listHeader, nil
 	case metalIonsFile:
-		return lists.metalIons.listHeader
+		return lists.metalIons.listHeader, nil
 	case solventsFile:
-		return lists.solvents.listHeader
+		return lists.solvents.listHeader, nil
 	case covalentFile:
-		return lists.covalent.listHeader
+		return lists.covalent.listHeader, nil
 	case ccdTypesFile:
-		return lists.ccdTypes.listHeader
+		return lists.ccdTypes.listHeader, nil
 	default:
-		panic(fmt.Sprintf("unknown reference file: %s", name))
+		return listHeader{}, fmt.Errorf("unknown reference file: %s", name)
 	}
 }
 

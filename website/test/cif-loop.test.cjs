@@ -147,7 +147,7 @@ test("should_not_read_loop_tags_as_items_when_a_loop_names_another_category", ()
   assert.deepEqual(category, { columns: ["comp_id"], rows: [["GOL"]] });
 });
 
-test("should_end_the_first_data_block_at_the_second_data_header", () => {
+test("should_end_the_first_data_block_when_a_second_data_header_follows", () => {
   // given: a data_ value in quotes or a text block is not a header.
   const first = ["data_FIRST", "_x.a 'data_quoted'", ";", "data_in_block", ";", "_x.b 1", ""].join("\n");
   const text = first + ["data_SECOND", "_f.comp_id ATP", "#"].join("\n");

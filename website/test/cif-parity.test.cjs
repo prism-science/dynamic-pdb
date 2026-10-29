@@ -76,7 +76,7 @@ test("the preview and the CLI agree that 4HHB has HEM as a cofactor and phosphat
   );
 });
 
-test("the committed reference lists match the JSON files in lib/cif", async () => {
+test("should_match_the_json_files_in_lib_cif_when_the_reference_lists_are_generated", async () => {
   // given
   const { generate } = await import("../scripts/gen-cif-reference.mjs");
 
@@ -89,6 +89,29 @@ test("the committed reference lists match the JSON files in lib/cif", async () =
     const committed = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "parse", name), "utf8");
     assert.equal(committed, contents, `src/lib/parse/${name} is out of date: run \`npm run gen:cif-reference\``);
   }
+});
+
+// The Go parser's category for every CCD type is committed as
+// ccd-type-categories.json (see lib/cif/ccdtypes_test.go). The preview's own
+// switch must sort each type the same way.
+test("should_sort_every_ccd_type_like_the_go_parser_when_given_the_committed_categories", () => {
+  // given
+  const goCategories = JSON.parse(
+    fs.readFileSync(path.join(cifRoot, "testdata", "ccd-type-categories.json"), "utf8"),
+  );
+  const previewName = { peptide: "peptide", nucleotide: "nucleotide", saccharide: "saccharide", "non-polymer": "nonPolymer" };
+  const { ccdTypeCategory } = require("../src/lib/parse/ligandRule.ts");
+
+  // when
+  const sorted = Object.keys(goCategories).map((ccdType) => [ccdType, ccdTypeCategory(ccdType)]);
+
+  // then
+  assert.equal(sorted.length, 29);
+  assert.deepEqual(
+    sorted,
+    Object.entries(goCategories).map(([ccdType, category]) => [ccdType, previewName[category]]),
+  );
+  assert.equal(ccdTypeCategory("glycolipid"), null);
 });
 
 /** The preview parser loaded once more with the approval flag of the generated
@@ -154,7 +177,7 @@ test("water is the only compound dropped while the reference lists are drafts", 
   );
 });
 
-test("buffers are dropped and ambiguous compounds flagged once the reference lists are approved", () => {
+test("should_drop_buffers_and_flag_ambiguous_compounds_when_the_reference_lists_are_approved", () => {
   // given
   const { CIF_REFERENCE } = require("../src/lib/parse/cifReference.gen.ts");
 

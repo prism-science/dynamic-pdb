@@ -217,13 +217,11 @@ func (s *compoundSorter) decide(instance compoundInstance) (decision, bool, erro
 	if isWater(id) {
 		return decision{}, false, nil
 	}
-	shape, review, err := s.shapeOf(instance, facts)
+	shape, shapeReview, err := s.shapeOf(instance, facts)
 	if err != nil {
 		return decision{}, false, fmt.Errorf("read the shape of %s: %w", id, err)
 	}
-	if annotationReview := s.annotations.reviewFor(instance, facts.entityID); annotationReview != "" {
-		review = annotationReview
-	}
+	review := s.unknownValueReview(instance, facts, shapeReview)
 	if shape == shapeWater || shape == shapePolymer {
 		return decision{}, false, nil
 	}
@@ -231,10 +229,25 @@ func (s *compoundSorter) decide(instance compoundInstance) (decision, bool, erro
 	if err != nil {
 		return decision{}, false, fmt.Errorf("place %s by its shape: %w", id, err)
 	}
+	if review != "" && placed.placement == placeExcluded && placed.rule == ruleList {
+		// The file holds a value the parser does not know, so the lists may be
+		// wrong about this compound: it is kept for review instead of left out.
+		placed.placement = placeLigand
+	}
 	if review != "" && placed.placement != placeExcluded && !placed.compound.NeedsReview {
 		placed.compound.NeedsReview, placed.compound.ReviewReason = true, review
 	}
 	return placed, true, nil
+}
+
+// unknownValueReview is the review reason a value the parser does not know (an
+// entity type, a depositor flag, a _chem_comp.type) gives the instance, or ""
+// when the file holds no such value for it.
+func (s *compoundSorter) unknownValueReview(instance compoundInstance, facts instanceFacts, shapeReview string) string {
+	if review := s.annotations.reviewFor(instance, facts.entityID); review != "" {
+		return review
+	}
+	return shapeReview
 }
 
 // placeByShape applies steps 2 to 5 of the rule to a compound.
@@ -567,15 +580,15 @@ func (s *compoundSorter) addMetalPartner(partners metalPartners, metal compoundI
 	switch fate {
 	case partnerDropped:
 	case partnerKept:
-		partners.linkedInstances[metal] = true
+		partners.linkedInstances[metal.linkKey()] = true
 		partners.linkedCompounds[metal.compoundID] = true
 	case partnerWater:
-		partners.waterInstances[metal] = true
+		partners.waterInstances[metal.linkKey()] = true
 		partners.waterCompounds[metal.compoundID] = true
 	case partnerBindsMetal:
-		partners.boundInstances[partner] = true
+		partners.boundInstances[partner.linkKey()] = true
 		partners.boundCompounds[partner.compoundID] = true
-		partners.linkedInstances[metal] = true
+		partners.linkedInstances[metal.linkKey()] = true
 		partners.linkedCompounds[metal.compoundID] = true
 	default:
 		return fmt.Errorf("unknown partner fate %d for %s", fate, partner.compoundID)
@@ -585,14 +598,20 @@ func (s *compoundSorter) addMetalPartner(partners metalPartners, metal compoundI
 
 // partnerFate places a metal's link partner by the steps that place it as a
 // compound, so a link counts only when the partner stays in the entry. A
-// partner with coordinates goes by its shape (entity type or chain position),
-// the depositor's flag and the probe exclusion first; a polymer residue of the
-// ATOM records, and a partner left to the lists, go by the lists.
+// partner with coordinates, or one the file declares in _pdbx_entity_nonpoly
+// without coordinates (cut off, or never written), goes by its shape (entity
+// type or chain position), the depositor's flag and the probe exclusion first;
+// a polymer residue of the ATOM records, and a partner left to the lists, go
+// by the lists.
 func (s *compoundSorter) partnerFate(partner compoundInstance) (partnerFate, error) {
 	if isWater(partner.compoundID) {
 		return partnerWater, nil
 	}
-	if facts, ok := s.instances[partner]; ok {
+	facts, ok := s.instances[partner]
+	if !ok {
+		facts, ok = s.instances[compoundInstance{compoundID: partner.compoundID}]
+	}
+	if ok {
 		fate, decided, err := s.annotatedPartnerFate(partner, facts)
 		if err != nil || decided {
 			return fate, err
@@ -612,9 +631,10 @@ func (s *compoundSorter) partnerFate(partner compoundInstance) (partnerFate, err
 }
 
 // annotatedPartnerFate applies steps 1 to 4 of the rule (see classifyCompounds)
-// to a partner with coordinates. decided is false when the lists decide.
+// to a partner, with the facts of its coordinates or of its
+// _pdbx_entity_nonpoly declaration. decided is false when the lists decide.
 func (s *compoundSorter) annotatedPartnerFate(partner compoundInstance, facts instanceFacts) (partnerFate, bool, error) {
-	shape, _, err := s.shapeOf(partner, facts)
+	shape, shapeReview, err := s.shapeOf(partner, facts)
 	if err != nil {
 		return 0, false, fmt.Errorf("read the shape of %s: %w", partner.compoundID, err)
 	}
@@ -645,6 +665,10 @@ func (s *compoundSorter) annotatedPartnerFate(partner compoundInstance, facts in
 	case shapeBranched, shapeMacrolide, shapeOutsideChain:
 		return partnerKept, true, nil
 	case shapeListed:
+		// decide keeps a solvent the file gives an unknown value for.
+		if s.unknownValueReview(partner, facts, shapeReview) != "" && s.reference.kind(partner.compoundID) == kindSolvent {
+			return partnerKept, true, nil
+		}
 		return 0, false, nil
 	case shapeWater, shapePolymer:
 		return 0, false, fmt.Errorf("%s is not a compound", partner.compoundID)
@@ -653,10 +677,14 @@ func (s *compoundSorter) annotatedPartnerFate(partner compoundInstance, facts in
 	}
 }
 
+// state is what the metalc rows say about one metal instance. A row that
+// names no location for the metal applies to every instance of it.
 func (p metalPartners) state(metal compoundInstance) metalLinkState {
-	linked, water := p.linkedInstances[metal], p.waterInstances[metal]
-	if !metal.located() {
-		linked, water = p.linkedCompounds[metal.compoundID], p.waterCompounds[metal.compoundID]
+	linked, water := p.linkedCompounds[metal.compoundID], p.waterCompounds[metal.compoundID]
+	if metal.located() {
+		anywhere := compoundInstance{compoundID: metal.compoundID}
+		linked = p.linkedInstances[metal] || p.linkedInstances[anywhere]
+		water = p.waterInstances[metal] || p.waterInstances[anywhere]
 	}
 	switch {
 	case linked:
@@ -672,7 +700,7 @@ func (p metalPartners) boundToMetal(instance compoundInstance) bool {
 	if !instance.located() {
 		return p.boundCompounds[instance.compoundID]
 	}
-	return p.boundInstances[instance]
+	return p.boundInstances[instance] || p.boundInstances[compoundInstance{compoundID: instance.compoundID}]
 }
 
 // compoundList keeps one entry per compound ID; a flagged entry wins over an
