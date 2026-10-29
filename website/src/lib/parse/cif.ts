@@ -221,6 +221,34 @@ export function cifLoop(text: string, category: string): CifLoop | null {
   return null;
 }
 
+/**
+ * A category as a loop, whether the file writes it as a loop or, for a single
+ * row, as `_category.tag value` items (lib/cif reads both the same way). Null
+ * when the file has neither.
+ */
+export function cifCategory(text: string, category: string): CifLoop | null {
+  const prefix = `${category.toLowerCase()}.`;
+  if (!text.toLowerCase().includes(`\n${prefix}`)) {
+    return null;
+  }
+  const loop = cifLoop(text, category);
+  if (loop) {
+    return loop;
+  }
+  const columns: string[] = [];
+  const row: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.toLowerCase().startsWith(prefix)) {
+      continue;
+    }
+    const tag = tokenize(line)[0];
+    const value = cifValue(text, tag);
+    columns.push(tag.toLowerCase().slice(prefix.length));
+    row.push(value ?? "?");
+  }
+  return columns.length > 0 ? { columns, rows: [row] } : null;
+}
+
 export function loopColumn(loop: CifLoop, name: string): number {
   return loop.columns.indexOf(name.toLowerCase());
 }

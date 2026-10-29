@@ -1,0 +1,502 @@
+data_9A8B
+
+#
+_entry.id  9A8B
+#
+loop_
+_atom_type.symbol
+C
+H
+N
+O
+#
+loop_
+_audit_author.name
+_audit_author.pdbx_ordinal
+"Moyer, A.P."	1
+"Baker, D."	2
+"Ramelot, T.A."	3
+"Montelione, G.T."	4
+#
+loop_
+_audit_conform.dict_location
+_audit_conform.dict_name
+_audit_conform.dict_version
+https://mmcif.wwpdb.org/dictionaries/ascii/mmcif_ihm_ext.dic	mmcif_ihm_ext.dic	1.27
+http://mmcif.wwpdb.org/dictionaries/ascii/mmcif_pdbx_v50.dic	mmcif_pdbx.dic	5.399
+#
+_pdbx_database_status.status_code                     REL
+_pdbx_database_status.entry_id                        9A8B
+_pdbx_database_status.deposit_site                    RCSB
+_pdbx_database_status.process_site                    RCSB
+_pdbx_database_status.recvd_initial_deposition_date   2024-03-08 
+# 
+loop_
+_pdbx_audit_revision_history.ordinal
+_pdbx_audit_revision_history.data_content_type
+_pdbx_audit_revision_history.major_revision
+_pdbx_audit_revision_history.minor_revision
+_pdbx_audit_revision_history.revision_date
+1 'Structure model' 1 0 2024-08-21 
+# 
+_pdbx_audit_revision_details.ordinal             1
+_pdbx_audit_revision_details.revision_ordinal    1
+_pdbx_audit_revision_details.data_content_type   'Structure model'
+_pdbx_audit_revision_details.provider            repository
+_pdbx_audit_revision_details.type                'Initial release'
+_pdbx_audit_revision_details.description         ?
+#
+loop_
+_database_2.database_id 
+_database_2.database_code 
+_database_2.pdbx_database_accession 
+_database_2.pdbx_DOI 
+PDB 9A8B pdb_00009a8b 10.2210/pdb9a8b/pdb
+PDB-Dev PDBDEV_00000376 PDBDEV_00000376 ?
+#
+loop_
+_chem_comp.formula
+_chem_comp.formula_weight
+_chem_comp.id
+_chem_comp.mon_nstd_flag
+_chem_comp.name
+_chem_comp.pdbx_synonyms
+_chem_comp.type
+"C2 H4 O"	44.053	ACE	.	"ACETYL GROUP"	.	non-polymer
+"C H5 N"	31.058	NME	.	METHYLAMINE	.	non-polymer
+"C5 H9 N O2"	115.132	PRO	.	PROLINE	.	"L-peptide linking"
+"C9 H11 N O2"	165.192	ZTR	.	"[2-(aminomethyl)phenyl]acetic acid"	.	non-polymer
+#
+_citation.country	.
+_citation.id	1
+_citation.journal_abbrev	J.Am.Chem.Soc.
+_citation.journal_id_ASTM	.
+_citation.journal_id_CSD	.
+_citation.journal_id_ISSN	.
+_citation.journal_issue	.
+_citation.journal_volume	.
+_citation.page_first	.
+_citation.page_last	.
+_citation.pdbx_database_id_DOI	10.1021/jacs.4c04991
+_citation.pdbx_database_id_PubMed	.
+_citation.title	"Enumerative Discovery of Non-Canonical Polypeptide Secondary Structures"
+_citation.year	2024
+#
+loop_
+_citation_author.citation_id
+_citation_author.name
+_citation_author.ordinal
+1	"Moyer, A.P."	1
+1	"Ramelot, T.A."	2
+1	"Curti, M."	3
+1	"Eastman, M.A."	4
+1	"Kang, A."	5
+1	"Bera, A.K."	6
+1	"Tejero, R."	7
+1	"Salveson, P.J."	8
+1	"Curutchet, C."	9
+1	"Romero, E."	10
+1	"Montelione, G.T."	11
+1	"Baker, D."	12
+#
+_entity.details	"solid phase peptide synthesis"
+_entity.formula_weight	1196.407
+_entity.id	1
+_entity.pdbx_description	"ACE-ZTR-PRO-ZTR-PRO-ZTR-PRO-ZTR-PRO-NME peptide"
+_entity.pdbx_number_of_molecules	1
+_entity.src_method	SYN
+_entity.type	POLYMER
+#
+_entity_poly.entity_id	1
+_entity_poly.nstd_chirality	.
+_entity_poly.nstd_linkage	NO
+_entity_poly.nstd_monomer	YES
+_entity_poly.pdbx_seq_one_letter_code	(ACE)(ZTR)P(ZTR)P(ZTR)P(ZTR)P(NME)
+_entity_poly.pdbx_seq_one_letter_code_can	XXPXPXPXPX
+_entity_poly.pdbx_sequence_evidence_code	.
+_entity_poly.pdbx_strand_id	A
+_entity_poly.type	polypeptide(L)
+#
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.hetero
+_entity_poly_seq.mon_id
+_entity_poly_seq.num
+1	.	ACE	1
+1	.	ZTR	2
+1	.	PRO	3
+1	.	ZTR	4
+1	.	PRO	5
+1	.	ZTR	6
+1	.	PRO	7
+1	.	ZTR	8
+1	.	PRO	9
+1	.	NME	10
+#
+_ihm_dataset_group.application	validation
+_ihm_dataset_group.details	.
+_ihm_dataset_group.id	2
+_ihm_dataset_group.name	.
+#
+loop_
+_ihm_dataset_group_link.dataset_list_id
+_ihm_dataset_group_link.group_id
+2	2
+3	2
+4	2
+#
+loop_
+_ihm_dataset_list.data_type
+_ihm_dataset_list.database_hosted
+_ihm_dataset_list.details
+_ihm_dataset_list.id
+"NMR data"	YES	"BMRB ID 52499"	2
+Other	NO	"CD spectra"	3
+"NMR data"	YES	"BMRB ID 52504"	4
+#
+loop_
+_ihm_dataset_related_db_reference.accession_code
+_ihm_dataset_related_db_reference.dataset_list_id
+_ihm_dataset_related_db_reference.db_name
+_ihm_dataset_related_db_reference.details
+_ihm_dataset_related_db_reference.id
+_ihm_dataset_related_db_reference.version
+52499	2	BMRB	"1x DPR2 chemical shifts and NMR FID data"	1	.
+52504	4	BMRB	"10x DPR2 chemical shifts and NMR FID data"	2	.
+#
+_ihm_entity_poly_segment.comp_id_begin	ACE
+_ihm_entity_poly_segment.comp_id_end	NME
+_ihm_entity_poly_segment.entity_id	1
+_ihm_entity_poly_segment.id	1
+_ihm_entity_poly_segment.seq_id_begin	1
+_ihm_entity_poly_segment.seq_id_end	10
+#
+_ihm_model_group.details	.
+_ihm_model_group.id	1
+_ihm_model_group.name	.
+#
+_ihm_model_group_link.group_id	1
+_ihm_model_group_link.model_id	1
+#
+_ihm_model_list.assembly_id	1
+_ihm_model_list.model_id	1
+_ihm_model_list.model_name	.
+_ihm_model_list.protocol_id	1
+_ihm_model_list.representation_id	1
+#
+_ihm_model_representation.details	"No starting models were used"
+_ihm_model_representation.id	1
+_ihm_model_representation.name	.
+#
+_ihm_model_representation_details.description	.
+_ihm_model_representation_details.entity_asym_id	A
+_ihm_model_representation_details.entity_description	ACE-ZTR-PRO-ZTR-PRO-ZTR-PRO-ZTR-PRO-NME
+_ihm_model_representation_details.entity_id	1
+_ihm_model_representation_details.entity_poly_segment_id	1
+_ihm_model_representation_details.id	1
+_ihm_model_representation_details.model_granularity	by-atom
+_ihm_model_representation_details.model_mode	flexible
+_ihm_model_representation_details.model_object_count	.
+_ihm_model_representation_details.model_object_primitive	atomistic
+_ihm_model_representation_details.representation_id	1
+_ihm_model_representation_details.starting_model_id	.
+#
+loop_
+_ihm_modeling_post_process.analysis_id
+_ihm_modeling_post_process.dataset_group_id
+_ihm_modeling_post_process.details
+_ihm_modeling_post_process.feature
+_ihm_modeling_post_process.feature_name
+_ihm_modeling_post_process.id
+_ihm_modeling_post_process.num_models_begin
+_ihm_modeling_post_process.num_models_end
+_ihm_modeling_post_process.protocol_id
+_ihm_modeling_post_process.script_file_id
+_ihm_modeling_post_process.software_id
+_ihm_modeling_post_process.step_id
+_ihm_modeling_post_process.struct_assembly_id
+_ihm_modeling_post_process.type
+1	2	"In depth manual comparison of experimental and predicted NMR NOESY data"	other	"Created simulated 2D HH NOESY peak lists using the model structure as a guide"	1	.	.	1	.	4	1	1	validation
+2	2	"In depth manual comparison of experimental and predicted NMR NOESY data"	other	"Overlay simulated 2D HH NOESY peak lists with the experimental NMR data"	2	.	.	1	.	5	2	1	validation
+#
+_ihm_modeling_protocol.details	"De novo modeling was carried out without using any starting models or input data. Experimental data was used to validate the de novo models generated. "
+_ihm_modeling_protocol.id	1
+_ihm_modeling_protocol.num_steps	1
+_ihm_modeling_protocol.protocol_name	modeling
+#
+_ihm_modeling_protocol_details.dataset_group_id	.
+_ihm_modeling_protocol_details.description	"Computational model produced with in-house monomer and dimer sampling protocols using AIMnet(SMD)-D4 for energy minimizations and scoring."
+_ihm_modeling_protocol_details.ensemble_flag	NO
+_ihm_modeling_protocol_details.id	1
+_ihm_modeling_protocol_details.multi_scale_flag	NO
+_ihm_modeling_protocol_details.multi_state_flag	NO
+_ihm_modeling_protocol_details.num_models_begin	.
+_ihm_modeling_protocol_details.num_models_end	.
+_ihm_modeling_protocol_details.ordered_flag	NO
+_ihm_modeling_protocol_details.protocol_id	1
+_ihm_modeling_protocol_details.script_file_id	.
+_ihm_modeling_protocol_details.software_id	1
+_ihm_modeling_protocol_details.step_id	1
+_ihm_modeling_protocol_details.step_method	.
+_ihm_modeling_protocol_details.step_name	.
+_ihm_modeling_protocol_details.struct_assembly_description	.
+_ihm_modeling_protocol_details.struct_assembly_id	1
+#
+_ihm_struct_assembly.description	"4x DPR2 dipeptide repeat of (AMPA, S-Proline)4 octamer computationally modeled using monomer and dimer sampling protocols, energy minimizations, and scoring, and validated using CD and NMR data."
+_ihm_struct_assembly.id	1
+_ihm_struct_assembly.name	"4x DPR2 dipeptide repeat of (AMPA, S-Proline)4 octamer"
+#
+_ihm_struct_assembly_details.assembly_id	1
+_ihm_struct_assembly_details.asym_id	A
+_ihm_struct_assembly_details.entity_description	ACE-ZTR-PRO-ZTR-PRO-ZTR-PRO-ZTR-PRO-NME
+_ihm_struct_assembly_details.entity_id	1
+_ihm_struct_assembly_details.entity_poly_segment_id	1
+_ihm_struct_assembly_details.id	1
+_ihm_struct_assembly_details.parent_assembly_id	1
+#
+loop_
+_software.citation_id
+_software.classification
+_software.description
+_software.location
+_software.name
+_software.pdbx_ordinal
+_software.type
+_software.version
+.	"energy minimization and scoring"	'"atoms-in-molecules" neural network potential trained by all atom DFT calculations, greatly increasing the computational speed. Includes implicit solvation energy (SMD method) and the empirical D4 dispersion corrections'	https://github.com/aiqm/aimnet	AIMNet	1	other	AIMNet(SMD)-D4
+.	"initial conformation generator"	"Cambridge Structural Database conformational search method for generation of conformers, which leverages data from small molecule crystal structures"	http://confgen.net	"Cambridge Structural Database (CSD) ConfGen"	2	other	.
+.	"code for model building"	"algorithms for mathematical operations and scientific computing in Python"	https://scipy.org/	SciPy	3	other	.
+.	"restraint analysis and structure quality assessment"	.	https://github.rpi.edu/RPIBioinformatics/PDBStat_public	PDBStat	4	program	5.21
+.	"NMR data analysis"	.	https://sites.google.com/view/pokynmr	Poky	5	program	"build 20220114"
+#
+_struct.entry_id	9A8B
+_struct.pdbx_CASP_flag	.
+_struct.pdbx_descriptor	"4x DPR2 dipeptide repeat of (AMPA, S-Proline)4 octamer"
+_struct.pdbx_details	.
+_struct.pdbx_model_details	"Model produced with in-house monomer and dimer sampling protocols using AIMnet(SMD)-D4 for energy minimizations and scoring."
+_struct.pdbx_model_type_details	"lowest energy model"
+_struct.pdbx_structure_determination_methodology	integrative
+_struct.title	"Dipeptide repeat designed model, 4x DPR2, verified with CD and NMR data."
+#
+_struct_asym.details	.
+_struct_asym.entity_id	1
+_struct_asym.id	A
+_struct_asym.pdbx_PDB_id	.
+_struct_asym.pdbx_alt_id	.
+_struct_asym.pdbx_blank_PDB_chainid_flag	.
+_struct_asym.pdbx_modified	.
+_struct_asym.pdbx_order	.
+_struct_asym.pdbx_type	.
+#
+_struct_ref.db_code	9A8B
+_struct_ref.db_name	PDB
+_struct_ref.details	.
+_struct_ref.entity_id	1
+_struct_ref.id	1
+_struct_ref.pdbx_align_begin	1
+_struct_ref.pdbx_align_end	10
+_struct_ref.pdbx_db_accession	9A8B
+_struct_ref.pdbx_db_isoform	.
+_struct_ref.pdbx_seq_one_letter_code	.
+#
+_struct_ref_seq.align_id	1
+_struct_ref_seq.db_align_beg	1
+_struct_ref_seq.db_align_end	10
+_struct_ref_seq.ref_id	1
+_struct_ref_seq.seq_align_beg	1
+_struct_ref_seq.seq_align_end	10
+#
+loop_
+_pdbx_poly_seq_scheme.asym_id
+_pdbx_poly_seq_scheme.entity_id
+_pdbx_poly_seq_scheme.seq_id
+_pdbx_poly_seq_scheme.mon_id
+_pdbx_poly_seq_scheme.pdb_seq_num
+_pdbx_poly_seq_scheme.auth_seq_num
+_pdbx_poly_seq_scheme.pdb_mon_id
+_pdbx_poly_seq_scheme.auth_mon_id
+_pdbx_poly_seq_scheme.pdb_strand_id
+_pdbx_poly_seq_scheme.pdb_ins_code
+A 1 1 ACE 1 1 ACE ACE A .
+A 1 2 ZTR 2 2 ZTR ZTR A .
+A 1 3 PRO 3 3 PRO PRO A .
+A 1 4 ZTR 4 4 ZTR ZTR A .
+A 1 5 PRO 5 5 PRO PRO A .
+A 1 6 ZTR 6 6 ZTR ZTR A .
+A 1 7 PRO 7 7 PRO PRO A .
+A 1 8 ZTR 8 8 ZTR ZTR A .
+A 1 9 PRO 9 9 PRO PRO A .
+A 1 10 NME 1 1 NME NME A 0
+#
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.label_asym_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.label_entity_id
+_atom_site.auth_asym_id
+_atom_site.auth_comp_id
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_PDB_model_num
+_atom_site.ihm_model_id
+HETATM 1 C C . ACE 1 1 ? A 2.537 1.633 0.493 1.000 1 A ACE 0 1 1
+HETATM 2 O O . ACE 1 1 ? A 2.967 2.562 -0.198 1.000 1 A ACE 0 1 1
+HETATM 3 C CM . ACE 1 1 ? A 2.896 1.525 1.940 1.000 1 A ACE 0 1 1
+HETATM 4 H HM1 . ACE 1 1 ? A 2.769 0.512 2.327 1.000 1 A ACE 0 1 1
+HETATM 5 H HM2 . ACE 1 1 ? A 2.249 2.194 2.509 1.000 1 A ACE 0 1 1
+HETATM 6 H HM3 . ACE 1 1 ? A 3.919 1.861 2.090 1.000 1 A ACE 0 1 1
+HETATM 7 N N . ZTR 2 2 ? A 1.707 0.697 -0.003 1.000 1 A ZTR 0 1 1
+HETATM 8 C C2 . ZTR 2 2 ? A 1.243 0.688 -1.379 1.000 1 A ZTR 0 1 1
+HETATM 9 C C3 . ZTR 2 2 ? A -0.266 0.631 -1.515 1.000 1 A ZTR 0 1 1
+HETATM 10 C C4 . ZTR 2 2 ? A -1.076 1.752 -1.318 1.000 1 A ZTR 0 1 1
+HETATM 11 C C5 . ZTR 2 2 ? A -2.448 1.639 -1.478 1.000 1 A ZTR 0 1 1
+HETATM 12 C C6 . ZTR 2 2 ? A -3.033 0.426 -1.813 1.000 1 A ZTR 0 1 1
+HETATM 13 C C7 . ZTR 2 2 ? A -2.240 -0.688 -1.991 1.000 1 A ZTR 0 1 1
+HETATM 14 C C8 . ZTR 2 2 ? A -0.865 -0.582 -1.847 1.000 1 A ZTR 0 1 1
+HETATM 15 C C9 . ZTR 2 2 ? A -0.496 3.094 -0.944 1.000 1 A ZTR 0 1 1
+HETATM 16 C C . ZTR 2 2 ? A 0.258 3.801 -2.057 1.000 1 A ZTR 0 1 1
+HETATM 17 O O . ZTR 2 2 ? A 0.115 3.469 -3.238 1.000 1 A ZTR 0 1 1
+HETATM 18 H H . ZTR 2 2 ? A 1.367 -0.024 0.612 1.000 1 A ZTR 0 1 1
+HETATM 19 H H21 . ZTR 2 2 ? A 1.637 1.587 -1.857 1.000 1 A ZTR 0 1 1
+HETATM 20 H H22 . ZTR 2 2 ? A 1.670 -0.173 -1.897 1.000 1 A ZTR 0 1 1
+HETATM 21 H H5 . ZTR 2 2 ? A -3.076 2.512 -1.349 1.000 1 A ZTR 0 1 1
+HETATM 22 H H6 . ZTR 2 2 ? A -4.109 0.368 -1.931 1.000 1 A ZTR 0 1 1
+HETATM 23 H H7 . ZTR 2 2 ? A -2.674 -1.646 -2.249 1.000 1 A ZTR 0 1 1
+HETATM 24 H H8 . ZTR 2 2 ? A -0.248 -1.457 -1.990 1.000 1 A ZTR 0 1 1
+HETATM 25 H H91 . ZTR 2 2 ? A -1.294 3.757 -0.609 1.000 1 A ZTR 0 1 1
+HETATM 26 H H92 . ZTR 2 2 ? A 0.192 2.978 -0.100 1.000 1 A ZTR 0 1 1
+ATOM 27 N N . PRO 3 3 ? A 1.074 4.806 -1.707 1.000 1 A PRO 0 1 1
+ATOM 28 C CA . PRO 3 3 ? A 1.753 5.609 -2.719 1.000 1 A PRO 0 1 1
+ATOM 29 C C . PRO 3 3 ? A 2.743 4.835 -3.578 1.000 1 A PRO 0 1 1
+ATOM 30 O O . PRO 3 3 ? A 2.932 5.206 -4.742 1.000 1 A PRO 0 1 1
+ATOM 31 C CB . PRO 3 3 ? A 2.443 6.719 -1.917 1.000 1 A PRO 0 1 1
+ATOM 32 C CG . PRO 3 3 ? A 1.629 6.807 -0.628 1.000 1 A PRO 0 1 1
+ATOM 33 C CD . PRO 3 3 ? A 1.229 5.363 -0.360 1.000 1 A PRO 0 1 1
+ATOM 34 H HA . PRO 3 3 ? A 1.024 6.032 -3.412 1.000 1 A PRO 0 1 1
+ATOM 35 H HB2 . PRO 3 3 ? A 2.479 7.653 -2.475 1.000 1 A PRO 0 1 1
+ATOM 36 H HB3 . PRO 3 3 ? A 3.468 6.430 -1.681 1.000 1 A PRO 0 1 1
+ATOM 37 H HG2 . PRO 3 3 ? A 0.731 7.406 -0.788 1.000 1 A PRO 0 1 1
+ATOM 38 H HG3 . PRO 3 3 ? A 2.185 7.247 0.200 1.000 1 A PRO 0 1 1
+ATOM 39 H HD2 . PRO 3 3 ? A 2.005 4.817 0.185 1.000 1 A PRO 0 1 1
+ATOM 40 H HD3 . PRO 3 3 ? A 0.292 5.276 0.195 1.000 1 A PRO 0 1 1
+HETATM 41 N N . ZTR 4 4 ? A 3.444 3.849 -3.005 1.000 1 A ZTR 0 1 1
+HETATM 42 C C2 . ZTR 4 4 ? A 4.495 3.119 -3.690 1.000 1 A ZTR 0 1 1
+HETATM 43 C C3 . ZTR 4 4 ? A 4.310 1.614 -3.667 1.000 1 A ZTR 0 1 1
+HETATM 44 C C4 . ZTR 4 4 ? A 3.400 0.962 -4.503 1.000 1 A ZTR 0 1 1
+HETATM 45 C C5 . ZTR 4 4 ? A 3.293 -0.419 -4.449 1.000 1 A ZTR 0 1 1
+HETATM 46 C C6 . ZTR 4 4 ? A 4.061 -1.163 -3.563 1.000 1 A ZTR 0 1 1
+HETATM 47 C C7 . ZTR 4 4 ? A 4.947 -0.522 -2.723 1.000 1 A ZTR 0 1 1
+HETATM 48 C C8 . ZTR 4 4 ? A 5.071 0.858 -2.781 1.000 1 A ZTR 0 1 1
+HETATM 49 C C9 . ZTR 4 4 ? A 2.533 1.720 -5.479 1.000 1 A ZTR 0 1 1
+HETATM 50 C C . ZTR 4 4 ? A 3.267 2.293 -6.679 1.000 1 A ZTR 0 1 1
+HETATM 51 O O . ZTR 4 4 ? A 4.389 1.887 -6.997 1.000 1 A ZTR 0 1 1
+HETATM 52 H H . ZTR 4 4 ? A 3.224 3.579 -2.060 1.000 1 A ZTR 0 1 1
+HETATM 53 H H21 . ZTR 4 4 ? A 4.523 3.486 -4.719 1.000 1 A ZTR 0 1 1
+HETATM 54 H H22 . ZTR 4 4 ? A 5.456 3.357 -3.231 1.000 1 A ZTR 0 1 1
+HETATM 55 H H5 . ZTR 4 4 ? A 2.606 -0.930 -5.112 1.000 1 A ZTR 0 1 1
+HETATM 56 H H6 . ZTR 4 4 ? A 3.954 -2.241 -3.543 1.000 1 A ZTR 0 1 1
+HETATM 57 H H7 . ZTR 4 4 ? A 5.554 -1.081 -2.021 1.000 1 A ZTR 0 1 1
+HETATM 58 H H8 . ZTR 4 4 ? A 5.769 1.355 -2.122 1.000 1 A ZTR 0 1 1
+HETATM 59 H H91 . ZTR 4 4 ? A 1.744 1.066 -5.851 1.000 1 A ZTR 0 1 1
+HETATM 60 H H92 . ZTR 4 4 ? A 2.038 2.551 -4.965 1.000 1 A ZTR 0 1 1
+ATOM 61 N N . PRO 5 5 ? A 2.643 3.247 -7.385 1.000 1 A PRO 0 1 1
+ATOM 62 C CA . PRO 5 5 ? A 3.226 3.776 -8.613 1.000 1 A PRO 0 1 1
+ATOM 63 C C . PRO 5 5 ? A 4.550 4.501 -8.421 1.000 1 A PRO 0 1 1
+ATOM 64 O O . PRO 5 5 ? A 5.374 4.484 -9.342 1.000 1 A PRO 0 1 1
+ATOM 65 C CB . PRO 5 5 ? A 2.144 4.708 -9.172 1.000 1 A PRO 0 1 1
+ATOM 66 C CG . PRO 5 5 ? A 0.848 4.181 -8.562 1.000 1 A PRO 0 1 1
+ATOM 67 C CD . PRO 5 5 ? A 1.271 3.719 -7.174 1.000 1 A PRO 0 1 1
+ATOM 68 H HA . PRO 5 5 ? A 3.431 2.963 -9.311 1.000 1 A PRO 0 1 1
+ATOM 69 H HB2 . PRO 5 5 ? A 2.144 4.712 -10.261 1.000 1 A PRO 0 1 1
+ATOM 70 H HB3 . PRO 5 5 ? A 2.317 5.730 -8.834 1.000 1 A PRO 0 1 1
+ATOM 71 H HG2 . PRO 5 5 ? A 0.482 3.324 -9.131 1.000 1 A PRO 0 1 1
+ATOM 72 H HG3 . PRO 5 5 ? A 0.055 4.928 -8.530 1.000 1 A PRO 0 1 1
+ATOM 73 H HD2 . PRO 5 5 ? A 1.261 4.538 -6.449 1.000 1 A PRO 0 1 1
+ATOM 74 H HD3 . PRO 5 5 ? A 0.648 2.908 -6.787 1.000 1 A PRO 0 1 1
+HETATM 75 N N . ZTR 6 6 ? A 4.725 5.215 -7.301 1.000 1 A ZTR 0 1 1
+HETATM 76 C C2 . ZTR 6 6 ? A 5.896 6.039 -7.058 1.000 1 A ZTR 0 1 1
+HETATM 77 C C3 . ZTR 6 6 ? A 6.600 5.731 -5.751 1.000 1 A ZTR 0 1 1
+HETATM 78 C C4 . ZTR 6 6 ? A 7.430 4.619 -5.595 1.000 1 A ZTR 0 1 1
+HETATM 79 C C5 . ZTR 6 6 ? A 8.062 4.405 -4.380 1.000 1 A ZTR 0 1 1
+HETATM 80 C C6 . ZTR 6 6 ? A 7.868 5.267 -3.310 1.000 1 A ZTR 0 1 1
+HETATM 81 C C7 . ZTR 6 6 ? A 7.035 6.357 -3.453 1.000 1 A ZTR 0 1 1
+HETATM 82 C C8 . ZTR 6 6 ? A 6.410 6.587 -4.669 1.000 1 A ZTR 0 1 1
+HETATM 83 C C9 . ZTR 6 6 ? A 7.670 3.643 -6.721 1.000 1 A ZTR 0 1 1
+HETATM 84 C C . ZTR 6 6 ? A 8.540 4.167 -7.850 1.000 1 A ZTR 0 1 1
+HETATM 85 O O . ZTR 6 6 ? A 9.255 5.162 -7.699 1.000 1 A ZTR 0 1 1
+HETATM 86 H H . ZTR 6 6 ? A 4.027 5.166 -6.577 1.000 1 A ZTR 0 1 1
+HETATM 87 H H21 . ZTR 6 6 ? A 6.573 5.891 -7.902 1.000 1 A ZTR 0 1 1
+HETATM 88 H H22 . ZTR 6 6 ? A 5.602 7.090 -7.055 1.000 1 A ZTR 0 1 1
+HETATM 89 H H5 . ZTR 6 6 ? A 8.725 3.556 -4.263 1.000 1 A ZTR 0 1 1
+HETATM 90 H H6 . ZTR 6 6 ? A 8.375 5.073 -2.371 1.000 1 A ZTR 0 1 1
+HETATM 91 H H7 . ZTR 6 6 ? A 6.866 7.041 -2.631 1.000 1 A ZTR 0 1 1
+HETATM 92 H H8 . ZTR 6 6 ? A 5.760 7.443 -4.777 1.000 1 A ZTR 0 1 1
+HETATM 93 H H91 . ZTR 6 6 ? A 8.141 2.741 -6.329 1.000 1 A ZTR 0 1 1
+HETATM 94 H H92 . ZTR 6 6 ? A 6.713 3.336 -7.155 1.000 1 A ZTR 0 1 1
+ATOM 95 N N . PRO 7 7 ? A 8.509 3.499 -9.013 1.000 1 A PRO 0 1 1
+ATOM 96 C CA . PRO 7 7 ? A 9.391 3.867 -10.114 1.000 1 A PRO 0 1 1
+ATOM 97 C C . PRO 7 7 ? A 9.151 5.261 -10.677 1.000 1 A PRO 0 1 1
+ATOM 98 O O . PRO 7 7 ? A 10.107 5.878 -11.159 1.000 1 A PRO 0 1 1
+ATOM 99 C CB . PRO 7 7 ? A 9.150 2.780 -11.169 1.000 1 A PRO 0 1 1
+ATOM 100 C CG . PRO 7 7 ? A 8.626 1.592 -10.366 1.000 1 A PRO 0 1 1
+ATOM 101 C CD . PRO 7 7 ? A 7.796 2.244 -9.269 1.000 1 A PRO 0 1 1
+ATOM 102 H HA . PRO 7 7 ? A 10.430 3.856 -9.782 1.000 1 A PRO 0 1 1
+ATOM 103 H HB2 . PRO 7 7 ? A 10.055 2.561 -11.732 1.000 1 A PRO 0 1 1
+ATOM 104 H HB3 . PRO 7 7 ? A 8.386 3.106 -11.876 1.000 1 A PRO 0 1 1
+ATOM 105 H HG2 . PRO 7 7 ? A 9.456 1.046 -9.913 1.000 1 A PRO 0 1 1
+ATOM 106 H HG3 . PRO 7 7 ? A 8.048 0.890 -10.967 1.000 1 A PRO 0 1 1
+ATOM 107 H HD2 . PRO 7 7 ? A 6.773 2.452 -9.597 1.000 1 A PRO 0 1 1
+ATOM 108 H HD3 . PRO 7 7 ? A 7.749 1.644 -8.356 1.000 1 A PRO 0 1 1
+HETATM 109 N N . ZTR 8 8 ? A 7.893 5.719 -10.718 1.000 1 A ZTR 0 1 1
+HETATM 110 C C2 . ZTR 8 8 ? A 7.527 6.982 -11.334 1.000 1 A ZTR 0 1 1
+HETATM 111 C C3 . ZTR 8 8 ? A 6.746 7.905 -10.419 1.000 1 A ZTR 0 1 1
+HETATM 112 C C4 . ZTR 8 8 ? A 7.361 8.650 -9.409 1.000 1 A ZTR 0 1 1
+HETATM 113 C C5 . ZTR 8 8 ? A 6.594 9.492 -8.620 1.000 1 A ZTR 0 1 1
+HETATM 114 C C6 . ZTR 8 8 ? A 5.222 9.594 -8.803 1.000 1 A ZTR 0 1 1
+HETATM 115 C C7 . ZTR 8 8 ? A 4.608 8.847 -9.787 1.000 1 A ZTR 0 1 1
+HETATM 116 C C8 . ZTR 8 8 ? A 5.369 8.012 -10.591 1.000 1 A ZTR 0 1 1
+HETATM 117 C C9 . ZTR 8 8 ? A 8.847 8.572 -9.159 1.000 1 A ZTR 0 1 1
+HETATM 118 C C . ZTR 8 8 ? A 9.712 9.239 -10.214 1.000 1 A ZTR 0 1 1
+HETATM 119 O O . ZTR 8 8 ? A 9.237 10.054 -11.011 1.000 1 A ZTR 0 1 1
+HETATM 120 H H . ZTR 8 8 ? A 7.162 5.179 -10.284 1.000 1 A ZTR 0 1 1
+HETATM 121 H H21 . ZTR 8 8 ? A 8.453 7.460 -11.661 1.000 1 A ZTR 0 1 1
+HETATM 122 H H22 . ZTR 8 8 ? A 6.927 6.788 -12.224 1.000 1 A ZTR 0 1 1
+HETATM 123 H H5 . ZTR 8 8 ? A 7.071 10.089 -7.852 1.000 1 A ZTR 0 1 1
+HETATM 124 H H6 . ZTR 8 8 ? A 4.648 10.260 -8.170 1.000 1 A ZTR 0 1 1
+HETATM 125 H H7 . ZTR 8 8 ? A 3.538 8.907 -9.946 1.000 1 A ZTR 0 1 1
+HETATM 126 H H8 . ZTR 8 8 ? A 4.883 7.431 -11.361 1.000 1 A ZTR 0 1 1
+HETATM 127 H H91 . ZTR 8 8 ? A 9.080 9.032 -8.197 1.000 1 A ZTR 0 1 1
+HETATM 128 H H92 . ZTR 8 8 ? A 9.157 7.524 -9.090 1.000 1 A ZTR 0 1 1
+ATOM 129 N N . PRO 9 9 ? A 11.014 8.916 -10.238 1.000 1 A PRO 0 1 1
+ATOM 130 C CA . PRO 9 9 ? A 11.937 9.588 -11.146 1.000 1 A PRO 0 1 1
+ATOM 131 C C . PRO 9 9 ? A 11.646 9.361 -12.623 1.000 1 A PRO 0 1 1
+ATOM 132 O O . PRO 9 9 ? A 11.944 10.251 -13.428 1.000 1 A PRO 0 1 1
+ATOM 133 C CB . PRO 9 9 ? A 13.316 9.045 -10.749 1.000 1 A PRO 0 1 1
+ATOM 134 C CG . PRO 9 9 ? A 13.135 8.592 -9.303 1.000 1 A PRO 0 1 1
+ATOM 135 C CD . PRO 9 9 ? A 11.709 8.060 -9.273 1.000 1 A PRO 0 1 1
+ATOM 136 H HA . PRO 9 9 ? A 11.892 10.668 -10.996 1.000 1 A PRO 0 1 1
+ATOM 137 H HB2 . PRO 9 9 ? A 14.093 9.796 -10.877 1.000 1 A PRO 0 1 1
+ATOM 138 H HB3 . PRO 9 9 ? A 13.574 8.187 -11.369 1.000 1 A PRO 0 1 1
+ATOM 139 H HG2 . PRO 9 9 ? A 13.215 9.445 -8.626 1.000 1 A PRO 0 1 1
+ATOM 140 H HG3 . PRO 9 9 ? A 13.866 7.846 -8.993 1.000 1 A PRO 0 1 1
+ATOM 141 H HD2 . PRO 9 9 ? A 11.655 7.014 -9.590 1.000 1 A PRO 0 1 1
+ATOM 142 H HD3 . PRO 9 9 ? A 11.242 8.145 -8.288 1.000 1 A PRO 0 1 1
+HETATM 143 N N . NME 10 1 0 A 11.176 8.167 -12.995 1.000 1 A NME 0 1 1
+HETATM 144 C CM . NME 10 1 0 A 10.867 7.879 -14.388 1.000 1 A NME 0 1 1
+HETATM 145 H H . NME 10 1 0 A 10.899 7.498 -12.295 1.000 1 A NME 0 1 1
+HETATM 146 H HM1 . NME 10 1 0 A 11.752 8.007 -15.013 1.000 1 A NME 0 1 1
+HETATM 147 H HM2 . NME 10 1 0 A 10.521 6.847 -14.465 1.000 1 A NME 0 1 1
+HETATM 148 H HM3 . NME 10 1 0 A 10.089 8.547 -14.766 1.000 1 A NME 0 1 1
+#
+#

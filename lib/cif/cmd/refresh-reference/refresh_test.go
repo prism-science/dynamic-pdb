@@ -292,7 +292,7 @@ func Test_should_reject_a_covalent_residue_of_unknown_type(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Contains(t, result.Problems, `covalent_cofactors.json: LLP: unknown CCD type "L-peptide linking, new kind": add it to knownCCDTypes and categoryOfType`)
+	assert.Contains(t, result.Problems, `covalent_cofactors.json: LLP: unknown CCD type "L-peptide linking, new kind": add it to cif.CCDTypeCategory and knownCCDTypes`)
 }
 
 func Test_should_map_every_known_ccd_type_and_reject_others(t *testing.T) {

@@ -128,13 +128,17 @@ export interface paths {
          * @description Reads the start of the artifact's uploaded mmCIF file and returns the
          *     values Dynamic PDB would store for it: atom count, modeled residues,
          *     protein chains, altloc fraction, ligands, cofactors, engineered
-         *     mutations and the refinement program. Nothing is stored.
+         *     mutations and the refinement program. It also returns the rule that
+         *     placed each compound (`compound_sources`, including the compounds left
+         *     out) and the WURCS descriptor of each glycan (`glycan_descriptors`).
+         *     Nothing is stored.
          *
-         *     Only the first 4 MiB of the object is read (a ranged S3 GET). The
-         *     connection, entity and mutation tables sit before the coordinates in
-         *     archive files, so they are read in full; when the coordinates run past
-         *     the limit, the values that need every atom are left out and a warning
-         *     says so.
+         *     Only the first 4 MiB of the object is read (a ranged S3 GET). When the
+         *     coordinates run past the limit, the values that need every atom are left
+         *     out and a warning says so. Archive files do not write their categories in
+         *     a fixed order, so the depositor flags, modified residues or glycan
+         *     descriptors of a larger file can also fall past the limit: the rules they
+         *     feed are then not applied, and one warning names each such category.
          *
          *     Every value carries `source: file:<sha256>` of the artifact. Values
          *     that cannot be extracted, or fail the schema rules, come back as
@@ -142,9 +146,10 @@ export interface paths {
          *     parser is unsure about, such as metal ions in a file without `metalc`
          *     rows, are returned with `needs_review: true`.
          *
-         *     While the reference lists in `lib/cif` are drafts (not approved by
-         *     researchers), only water is dropped from `ligands`; other solvents and
-         *     buffers are kept and flagged `needs_review`, and every response carries a
+         *     The reference lists in `lib/cif` are approved by researchers: solvents
+         *     and buffers are left out of `ligands`, and sulfate, phosphate, citrate
+         *     and halides are kept and flagged `needs_review`. While a future list
+         *     version is a draft, only water is left out and every response carries a
          *     warning saying so.
          *
          *     Parsing has a time budget of 5 seconds per request. If it runs out, the
@@ -1126,9 +1131,31 @@ export interface components {
             warnings: components["schemas"]["ExtractionWarning"][];
         };
         ExtractedValue: {
-            /** @description One of `atom_count`, `modeled_residues`, `unique_protein_chains`, `altloc_fraction`, `ligands`, `cofactors`, `mutations`, `program_name`, `program_version`. */
+            /** @description One of `atom_count`, `modeled_residues`, `unique_protein_chains`, `altloc_fraction`, `ligands`, `cofactors`, `compound_sources`, `glycan_descriptors`, `mutations`, `program_name`, `program_version`. */
             name: string;
-            /** @description A number for the counts and fraction, a string for the program, and a list of compounds or mutation sets for the others. */
+            /**
+             * @description A number for the counts and fraction, a string for the program, a list of compounds or mutation sets for `ligands`, `cofactors` and `mutations`. `compound_sources` is the decision record: the groups `ligands`, `cofactors` and `excluded`, each mapping a CCD ID to the `rule` that placed it (`list`, `metalc`, `branched`, `macrolide`, `ccd_type`, `depositor_flag`, `covalent_map` or `ihm_probe`) and the reference `list_version`; water and polymer residues are never in it. `glycan_descriptors` lists one glycan per branched entity: `entity_id`, `compound_ids` and its WURCS `descriptors` (`descriptor`, `type`, `program`, `program_version`).
+             * @example {
+             *       "ligands": {
+             *         "NAG": {
+             *           "rule": "branched",
+             *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+             *         }
+             *       },
+             *       "cofactors": {
+             *         "ZN": {
+             *           "rule": "metalc",
+             *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+             *         }
+             *       },
+             *       "excluded": {
+             *         "GOL": {
+             *           "rule": "list",
+             *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+             *         }
+             *       }
+             *     }
+             */
             value: unknown;
             /** @description `file:<sha256>`. */
             source: string;

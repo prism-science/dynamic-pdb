@@ -7,12 +7,14 @@
       {
         "list": "cofactors",
         "id": "MG",
+        "rule": "metalc",
         "needs_review": true,
         "reason": "metal linked only to water: confirm the site"
       },
       {
         "list": "ligands",
         "id": "MG",
+        "rule": "metalc",
         "needs_review": true,
         "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
       }
@@ -25,15 +27,23 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "NA"
+        "id": "NA",
+        "rule": "metalc"
       },
       {
         "list": "ligands",
         "id": "CL",
+        "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
     ]
+  },
+  "1A62.cif": {
+    "atom_count": 88,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": []
   },
   "1AKE.cif": {
     "atom_count": 251,
@@ -42,7 +52,8 @@
     "compounds": [
       {
         "list": "ligands",
-        "id": "AP5"
+        "id": "AP5",
+        "rule": "list"
       }
     ]
   },
@@ -52,8 +63,38 @@
     "unique_protein_chains": 1,
     "compounds": [
       {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
         "list": "ligands",
-        "id": "XE"
+        "id": "XE",
+        "rule": "list"
+      }
+    ]
+  },
+  "3CEB.cif": {
+    "atom_count": 161,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "PLP",
+        "rule": "covalent_map"
+      },
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "SO4",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "often from the buffer: confirm it is part of the sample"
       }
     ]
   },
@@ -64,7 +105,8 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "CA"
+        "id": "CA",
+        "rule": "metalc"
       }
     ]
   },
@@ -76,6 +118,7 @@
       {
         "list": "ligands",
         "id": "UNX",
+        "rule": "list",
         "needs_review": true,
         "reason": "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
       }
@@ -88,11 +131,13 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "HEM"
+        "id": "HEM",
+        "rule": "list"
       },
       {
         "list": "ligands",
         "id": "PO4",
+        "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
@@ -105,11 +150,18 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "NI"
+        "id": "NI",
+        "rule": "metalc"
+      },
+      {
+        "list": "excluded",
+        "id": "IMD",
+        "rule": "list"
       },
       {
         "list": "ligands",
-        "id": "IMD"
+        "id": "IMD",
+        "rule": "metalc"
       }
     ]
   },
@@ -120,15 +172,95 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "MG"
+        "id": "MG",
+        "rule": "metalc"
       },
       {
         "list": "ligands",
-        "id": "GDP"
+        "id": "GDP",
+        "rule": "list"
       },
       {
         "list": "ligands",
-        "id": "MOV"
+        "id": "MOV",
+        "rule": "list"
+      }
+    ]
+  },
+  "7LTB.cif": {
+    "atom_count": 236,
+    "modeled_residues": 2,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "BGC",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "FMT",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "MAN",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "YBJ",
+        "rule": "depositor_flag"
+      },
+      {
+        "list": "ligands",
+        "id": "Z6G",
+        "rule": "depositor_flag"
+      }
+    ],
+    "glycans": [
+      {
+        "entity_id": "2",
+        "compound_ids": [
+          "BGC",
+          "Z6G"
+        ],
+        "descriptors": [
+          {
+            "descriptor": "WURCS=2.0/2,2,1/[a2122h-1b_1-5][ad211m-1a_1-5_3*N]/1-2/a2-b1",
+            "type": "WURCS",
+            "program": "PDB2Glycan",
+            "program_version": "1.1.0"
+          }
+        ]
+      }
+    ]
+  },
+  "9A8B.cif": {
+    "atom_count": 77,
+    "modeled_residues": 4,
+    "unique_protein_chains": 1,
+    "compounds": []
+  },
+  "parity/ihm_probe.cif": {
+    "atom_count": 6,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "HEM",
+        "rule": "list"
+      },
+      {
+        "list": "excluded",
+        "id": "DYE",
+        "rule": "ihm_probe"
+      },
+      {
+        "list": "ligands",
+        "id": "ATP",
+        "rule": "list"
       }
     ]
   },
@@ -139,31 +271,37 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "HEM"
+        "id": "HEM",
+        "rule": "list"
       },
       {
         "list": "cofactors",
         "id": "ZN",
+        "rule": "metalc",
         "needs_review": true,
         "reason": "metal linked only to water: confirm the site"
       },
       {
         "list": "ligands",
-        "id": "LIG"
+        "id": "LIG",
+        "rule": "list"
       },
       {
         "list": "ligands",
-        "id": "QQQ"
+        "id": "QQQ",
+        "rule": "list"
       },
       {
         "list": "ligands",
         "id": "SO4",
+        "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       },
       {
         "list": "ligands",
-        "id": "XYZ"
+        "id": "ZZ9",
+        "rule": "list"
       }
     ]
   },
@@ -175,24 +313,33 @@
       {
         "list": "cofactors",
         "id": "MG",
+        "rule": "metalc",
         "needs_review": true,
         "reason": "metal ion kept for review: the file has no metalc connection rows"
       },
       {
         "list": "cofactors",
         "id": "NA",
+        "rule": "metalc",
         "needs_review": true,
         "reason": "metal ion kept for review: the file has no metalc connection rows"
       },
       {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
         "list": "ligands",
         "id": "CL",
+        "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       },
       {
         "list": "ligands",
         "id": "PO4",
+        "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
@@ -205,7 +352,8 @@
     "compounds": [
       {
         "list": "ligands",
-        "id": "LIG"
+        "id": "LIG",
+        "rule": "list"
       }
     ]
   },
@@ -216,11 +364,18 @@
     "compounds": [
       {
         "list": "cofactors",
-        "id": "ZN"
+        "id": "ZN",
+        "rule": "metalc"
+      },
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
       },
       {
         "list": "ligands",
-        "id": "1UD"
+        "id": "1UD",
+        "rule": "list"
       }
     ]
   }

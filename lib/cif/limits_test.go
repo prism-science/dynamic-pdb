@@ -123,7 +123,7 @@ func Test_should_report_no_cut_off_when_a_complete_file_has_no_atom_site(t *test
 func Test_should_flag_unknown_atom_count_when_mmcif_head_is_cut_after_one_atom_of_a_ligand(t *testing.T) {
 	// given
 	header := "data_X\nloop_\n_atom_site.group_PDB\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.auth_seq_id\n_atom_site.label_atom_id\n_atom_site.pdbx_PDB_model_num\n"
-	text := header + "ATOM ALA A 1 CA 1\nHETATM LIG B 101 C1 1\nHETATM LIG B 101 C2 1\nHETATM XYZ B 102 C1 1\nHETATM XYZ B 102 C"
+	text := header + "ATOM ALA A 1 CA 1\nHETATM LIG B 101 C1 1\nHETATM LIG B 101 C2 1\nHETATM ZZ9 B 102 C1 1\nHETATM ZZ9 B 102 C"
 
 	// when
 	_, result, err := ExtractText(text, true)
@@ -135,9 +135,9 @@ func Test_should_flag_unknown_atom_count_when_mmcif_head_is_cut_after_one_atom_o
 		byID[compound.ID] = compound
 	}
 	assert.False(t, byID["LIG"].NeedsReview, "a ligand with two atoms read is not a single-atom compound")
-	assert.True(t, byID["XYZ"].NeedsReview)
-	assert.Contains(t, byID["XYZ"].ReviewReason, "atom count unknown")
-	assert.NotContains(t, byID["XYZ"].ReviewReason, "single-atom compound is not")
+	assert.True(t, byID["ZZ9"].NeedsReview)
+	assert.Contains(t, byID["ZZ9"].ReviewReason, "atom count unknown")
+	assert.NotContains(t, byID["ZZ9"].ReviewReason, "single-atom compound is not")
 }
 
 func Test_should_not_flag_single_atom_when_pdb_het_record_declares_more_atoms_and_head_is_cut_after_one(t *testing.T) {

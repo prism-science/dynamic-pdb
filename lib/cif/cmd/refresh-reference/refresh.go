@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"dynamic-pdb/lib/cif"
 )
 
 // The refresh checks the reference lists of lib/cif against the chemical
@@ -205,7 +207,7 @@ func (lists referenceLists) checkListed(records map[string]chemComp) []string {
 			problems = append(problems, fmt.Sprintf("%s: %s", covalentFile, problem))
 		} else if category, err := categoryOfType(record.Type); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %s: %v", covalentFile, pair.Residue, err))
-		} else if category != categoryPeptide {
+		} else if category != cif.CCDPeptide {
 			problems = append(problems, fmt.Sprintf("%s: %s has CCD type %q, not a peptide-linking residue", covalentFile, pair.Residue, record.Type))
 		}
 		if !cofactors[pair.Cofactor] {
@@ -287,12 +289,12 @@ func generateMetals(ctx context.Context, dict dictionary, lists referenceLists) 
 // generateCategories lists the IDs of every CCD type that is not sorted by the
 // reference lists, by category. When the known types no longer cover every ID
 // with a type, the CCD has a new type and the run stops.
-func generateCategories(ctx context.Context, dict dictionary) (map[category][]string, []string, error) {
+func generateCategories(ctx context.Context, dict dictionary) (map[cif.CCDCategory][]string, []string, error) {
 	total, err := dict.countWithType(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	byCategory := map[category][]string{}
+	byCategory := map[cif.CCDCategory][]string{}
 	firstType := map[string]string{}
 	problems := []string{}
 	covered := 0
@@ -301,7 +303,7 @@ func generateCategories(ctx context.Context, dict dictionary) (map[category][]st
 		if err != nil {
 			return nil, nil, err
 		}
-		if category == categoryNone {
+		if category == cif.CCDNonPolymer {
 			count, err := dict.countOfType(ctx, ccdType)
 			if err != nil {
 				return nil, nil, err
@@ -329,7 +331,7 @@ func generateCategories(ctx context.Context, dict dictionary) (map[category][]st
 		}
 	}
 	if covered != total {
-		problems = append(problems, fmt.Sprintf("%s: %d CCD IDs have a type but the known types cover %d: the CCD has a new type; add it to knownCCDTypes and categoryOfType", ccdTypesFile, total, covered))
+		problems = append(problems, fmt.Sprintf("%s: %d CCD IDs have a type but the known types cover %d: the CCD has a new type; add it to cif.CCDTypeCategory and knownCCDTypes", ccdTypesFile, total, covered))
 	}
 	for category := range byCategory {
 		slices.Sort(byCategory[category])
@@ -389,9 +391,9 @@ func refresh(ctx context.Context, dict dictionary, files referenceFiles, today s
 	generatedGroups := map[string][]namedIDs{
 		metalIonsFile: {{"metal_ions", metals}},
 		ccdTypesFile: {
-			{string(categoryPeptide), categories[categoryPeptide]},
-			{string(categoryNucleotide), categories[categoryNucleotide]},
-			{string(categorySaccharide), categories[categorySaccharide]},
+			{string(cif.CCDPeptide), categories[cif.CCDPeptide]},
+			{string(cif.CCDNucleotide), categories[cif.CCDNucleotide]},
+			{string(cif.CCDSaccharide), categories[cif.CCDSaccharide]},
 		},
 	}
 	generatedFiles := []string{metalIonsFile, ccdTypesFile}

@@ -17,14 +17,21 @@ const parityGoldenPath = "testdata/parity-golden.json"
 // website test reads the same files and the same golden.
 var parityFiles = []string{
 	"4HHB.cif", "3CLN.cif", "6OIM.cif", "193L.cif", "1AKE.cif",
-	"184D.cif", "4UG1.cif", "1W53.cif", "4HB1.cif",
+	"184D.cif", "4UG1.cif", "1W53.cif", "4HB1.cif", "1A62.cif", "7LTB.cif", "3CEB.cif",
+	"9A8B.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
-	"parity/wrapped_rows.cif",
+	"parity/wrapped_rows.cif", "parity/ihm_probe.cif",
 }
 
+// parityExcluded is the list name the golden gives a compound left out.
+const parityExcluded = "excluded"
+
+// parityCompound is one placed compound with the rule that placed it. A
+// compound left out has the list "excluded".
 type parityCompound struct {
 	List   string `json:"list"`
 	ID     string `json:"id"`
+	Rule   string `json:"rule"`
 	Review bool   `json:"needs_review,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
@@ -34,6 +41,7 @@ type parityEntry struct {
 	ModeledResidues     int              `json:"modeled_residues"`
 	UniqueProteinChains int              `json:"unique_protein_chains"`
 	Compounds           []parityCompound `json:"compounds"`
+	Glycans             []Glycan         `json:"glycans,omitempty"`
 }
 
 func parityGolden(t *testing.T) map[string]parityEntry {
@@ -48,11 +56,34 @@ func parityGolden(t *testing.T) map[string]parityEntry {
 			entry.ModeledResidues = result.Atoms.ModeledResidues
 			entry.UniqueProteinChains = result.Atoms.ProteinChains
 		}
-		for _, compound := range result.Ligands {
-			entry.Compounds = append(entry.Compounds, parityCompound{ListLigands, compound.ID, compound.NeedsReview, compound.ReviewReason})
+		for _, group := range []struct {
+			list      string
+			compounds []Compound
+			sources   map[string]CompoundSource
+		}{
+			{ListLigands, result.Ligands, result.CompoundSources.Ligands},
+			{ListCofactors, result.Cofactors, result.CompoundSources.Cofactors},
+		} {
+			require.Len(t, group.sources, len(group.compounds), "%s: every %s entry has one source", name, group.list)
+			for _, compound := range group.compounds {
+				source, ok := group.sources[compound.ID]
+				require.True(t, ok, "%s: %s %s has no source", name, group.list, compound.ID)
+				entry.Compounds = append(entry.Compounds, parityCompound{
+					List: group.list, ID: compound.ID, Rule: source.Rule,
+					Review: compound.NeedsReview, Reason: compound.ReviewReason,
+				})
+			}
 		}
-		for _, compound := range result.Cofactors {
-			entry.Compounds = append(entry.Compounds, parityCompound{ListCofactors, compound.ID, compound.NeedsReview, compound.ReviewReason})
+		for id, source := range result.CompoundSources.Excluded {
+			entry.Compounds = append(entry.Compounds, parityCompound{List: parityExcluded, ID: id, Rule: source.Rule})
+		}
+		for _, sources := range []map[string]CompoundSource{result.CompoundSources.Ligands, result.CompoundSources.Cofactors, result.CompoundSources.Excluded} {
+			for id, source := range sources {
+				require.Equal(t, result.ReferenceVersion, source.ListVersion, "%s: %s", name, id)
+			}
+		}
+		if len(result.Glycans) > 0 {
+			entry.Glycans = result.Glycans
 		}
 		sort.SliceStable(entry.Compounds, func(i, j int) bool {
 			left, right := entry.Compounds[i], entry.Compounds[j]

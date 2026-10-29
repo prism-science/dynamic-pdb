@@ -6,10 +6,23 @@ import "strconv"
 // because the input ended inside its coordinates.
 const unknownAtomCount = -1
 
+// heteroAtom is one HETATM row as the compound rules need it.
+type heteroAtom struct {
+	name string
+	// element is the upper-case element symbol.
+	element string
+	// entityID is the row's label_entity_id; empty in PDB-format files.
+	entityID string
+	// inChain is set when the row has a label_seq_id: the residue sits in a
+	// polymer chain.
+	inChain bool
+	// laterModel is set for a row of any model after the first.
+	laterModel bool
+}
+
 type instanceAtoms struct {
-	firstAtom string
-	// element is the upper-case element symbol of the first atom.
-	element  string
+	// first is the instance's first atom; its facts stand for the instance.
+	first    heteroAtom
 	multiple bool
 }
 
@@ -22,6 +35,13 @@ type instanceFacts struct {
 	// element is the upper-case element symbol of the first atom read, empty
 	// when no atom of the instance was read.
 	element string
+	// entityID is the instance's label_entity_id, empty when unknown.
+	entityID string
+	// inChain is set when the instance's residue has a label_seq_id.
+	inChain bool
+	// laterModel is set when the instance appears only in models after the
+	// first; an integrative (IHM) file lists those compounds too.
+	laterModel bool
 }
 
 // coordinateTally reduces coordinate rows to counts as they arrive, with every
@@ -49,9 +69,10 @@ func newCoordinateTally() *coordinateTally {
 	}
 }
 
-// addHetero records one atom of a non-polymer instance. Only whether the
-// instance has one atom or several, and the element of its first atom, is kept.
-func (t *coordinateTally) addHetero(instance compoundInstance, atomName string, element string) {
+// addHetero records one HETATM row of an instance. Only whether the instance
+// has one atom or several, and the facts of its first atom, are kept. Rows of a
+// later model add an instance the first model lacks, never atoms to one it has.
+func (t *coordinateTally) addHetero(instance compoundInstance, atom heteroAtom) {
 	if t.overflow != "" {
 		return
 	}
@@ -63,8 +84,10 @@ func (t *coordinateTally) addHetero(instance compoundInstance, atomName string, 
 			t.overflow = "compound instances"
 			return
 		}
-		t.hetero[instance] = instanceAtoms{firstAtom: atomName, element: element}
-	case !atoms.multiple && atoms.firstAtom != atomName:
+		t.hetero[instance] = instanceAtoms{first: atom}
+	case atom.laterModel && !atoms.first.laterModel:
+		return
+	case !atoms.multiple && atoms.first.name != atom.name:
 		atoms.multiple = true
 		t.hetero[instance] = atoms
 	}
@@ -134,13 +157,20 @@ func (t *coordinateTally) instanceFacts(coordinatesComplete bool) map[compoundIn
 		if !coordinatesComplete && count == 1 && t.hasHetero && instance == t.lastHetero {
 			count = unknownAtomCount
 		}
-		facts[instance] = instanceFacts{atoms: count, element: atoms.element}
+		facts[instance] = instanceFacts{
+			atoms:      count,
+			element:    atoms.first.element,
+			entityID:   atoms.first.entityID,
+			inChain:    atoms.first.inChain,
+			laterModel: atoms.first.laterModel,
+		}
 	}
 	for instance, declared := range t.declared {
 		observed, seen := facts[instance]
 		switch {
 		case declared > 0:
-			facts[instance] = instanceFacts{atoms: declared, element: observed.element}
+			observed.atoms = declared
+			facts[instance] = observed
 		case !seen:
 			facts[instance] = instanceFacts{}
 		}

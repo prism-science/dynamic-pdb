@@ -136,6 +136,56 @@ func Test_should_keep_sulfate_flagged_and_drop_water_when_reference_lists_are_ap
 	assert.NotContains(t, warningDetails(attributes), cif.DraftWarning)
 }
 
+func Test_should_return_the_rule_behind_each_compound_when_extracting_mmcif(t *testing.T) {
+	// given: 3CEB has LLP (PLP on a lysine), sulfate and glycerol.
+	data := readCIFFixture(t, "3CEB.cif")
+	reference, err := cif.DefaultReference()
+	require.NoError(t, err)
+	record := func(rule string) cif.CompoundSource {
+		return cif.CompoundSource{Rule: rule, ListVersion: reference.Version}
+	}
+
+	// when
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	sources, ok := extractedValueByName(attributes.Values, "compound_sources")
+	require.True(t, ok)
+	assert.Equal(t, testArtifactSource, sources.Source)
+	assert.False(t, sources.NeedsReview)
+	assert.Equal(t, cif.CompoundSources{
+		Ligands:   map[string]cif.CompoundSource{"SO4": record("list")},
+		Cofactors: map[string]cif.CompoundSource{"PLP": record("covalent_map")},
+		Excluded:  map[string]cif.CompoundSource{"GOL": record("list")},
+	}, sources.Value)
+	_, hasGlycans := extractedValueByName(attributes.Values, "glycan_descriptors")
+	assert.False(t, hasGlycans, "a file without branched entities has no glycan descriptors")
+}
+
+func Test_should_return_glycan_descriptors_when_file_has_a_branched_entity(t *testing.T) {
+	// given
+	data := readCIFFixture(t, "7LTB.cif")
+
+	// when
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	glycans, ok := extractedValueByName(attributes.Values, "glycan_descriptors")
+	require.True(t, ok)
+	assert.Equal(t, []cif.Glycan{{
+		EntityID:    "2",
+		CompoundIDs: []string{"BGC", "Z6G"},
+		Descriptors: []cif.GlycanDescriptor{{
+			Descriptor:     "WURCS=2.0/2,2,1/[a2122h-1b_1-5][ad211m-1a_1-5_3*N]/1-2/a2-b1",
+			Type:           "WURCS",
+			Program:        "PDB2Glycan",
+			ProgramVersion: "1.1.0",
+		}},
+	}}, glycans.Value)
+}
+
 func Test_should_drop_value_and_warn_when_it_breaks_schema_rules(t *testing.T) {
 	// given
 	values := []ExtractedValue{

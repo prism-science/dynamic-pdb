@@ -1,5 +1,6 @@
 import { CIF_REFERENCE } from "@/lib/parse/cifReference.gen";
-import { AMBIGUOUS_COMPOUND_REASON, type CompoundReview } from "@/lib/parse/structure";
+import type { CompoundReview } from "@/lib/parse/ligandRule";
+import { AMBIGUOUS_COMPOUND_REASON } from "@/lib/parse/reviewReasons";
 
 import type {
   CompoundList,

@@ -206,6 +206,12 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 	if result.Atoms != nil || len(result.Cofactors) > 0 {
 		values = append(values, compoundsValue("cofactors", result.Cofactors, source))
 	}
+	if result.Atoms != nil || hasCompoundSources(result.CompoundSources) {
+		values = append(values, ExtractedValue{Name: "compound_sources", Value: result.CompoundSources, Source: source})
+	}
+	if len(result.Glycans) > 0 {
+		values = append(values, ExtractedValue{Name: "glycan_descriptors", Value: result.Glycans, Source: source})
+	}
 	if len(result.Mutations) > 0 {
 		values = append(values, mutationsValue(result.Mutations, source))
 	}
@@ -238,6 +244,10 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 // is in use; buildArtifactExtraction only reads it.
 func bytesAsString(data []byte) string {
 	return unsafe.String(unsafe.SliceData(data), len(data))
+}
+
+func hasCompoundSources(sources cif.CompoundSources) bool {
+	return len(sources.Ligands)+len(sources.Cofactors)+len(sources.Excluded) > 0
 }
 
 func compoundsValue(name string, compounds []cif.Compound, source string) ExtractedValue {

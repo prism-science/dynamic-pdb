@@ -72,6 +72,10 @@ export function generate() {
   const covalent = files["covalent_cofactors.json"];
   const ccdTypes = files["ccd_types.json"];
   const approved = Object.values(files).every((file) => file.approved);
+  // The same string as Reference.Version in lib/cif/reference.go.
+  const referenceVersion =
+    `cofactors:${cofactors.version}+metals:${metalIons.version}+solvents:${solvents.version}` +
+    `+covalent:${covalent.version}+ccd-types:${ccdTypes.version}`;
   const covalentMap = covalent.covalent_cofactors
     .map((pair) => `${JSON.stringify(pair.residue.toUpperCase())}: ${JSON.stringify(pair.cofactor.toUpperCase())}`)
     .join(", ");
@@ -87,6 +91,8 @@ export const CIF_REFERENCE = {
   solventVersion: ${JSON.stringify(solvents.version)},
   covalentCofactorVersion: ${JSON.stringify(covalent.version)},
   ccdTypeVersion: ${JSON.stringify(ccdTypes.version)},
+  /** Every list version, as the backend parser reports it (reference_version). */
+  referenceVersion: ${JSON.stringify(referenceVersion)},
   /** True only when researchers approved every list. */
   approved: ${approved},
   cofactors: ${list(cofactors.cofactors.map((cofactor) => cofactor.id))},

@@ -1,5 +1,20 @@
-import { cifLoop, cifValue, loopValue, type CifLoop } from "./cif";
-import { CIF_REFERENCE } from "./cifReference.gen";
+import { cifLoop, cifValue, loopColumn, loopValue, type CifLoop } from "./cif";
+import {
+  CompoundTally,
+  NO_METALC_ROWS,
+  WATER_COMPOUNDS,
+  pdbAnnotations,
+  readAnnotations,
+  sortCompounds,
+  type CompoundInstance,
+  type CompoundReview,
+  type CompoundSources,
+  type FileAnnotations,
+  type Glycan,
+  type MetalcLinks,
+} from "./ligandRule";
+
+export type { CompoundReview, CompoundSources, Glycan } from "./ligandRule";
 
 // What a coordinate file says about itself.
 //
@@ -46,79 +61,15 @@ export type StructureFacts = {
   /** Compounds the preview kept but is unsure about. Nothing is dropped on
    *  this account. The same list is `metadata.extensions.compound_review`. */
   needsReview: CompoundReview[];
-};
-
-/** One compound flagged for review: the shape of the backend's
- *  `extensions.compound_review` entries. */
-export type CompoundReview = {
-  list: "ligands" | "cofactors";
-  id: string;
-  reason: string;
+  /** The rule that placed each compound, including the ones left out, as the
+   *  extract endpoint's `compound_sources` gives it. Not sent anywhere yet. */
+  compoundSources: CompoundSources;
+  /** One glycan per branched entity with its WURCS descriptors, as the extract
+   *  endpoint's `glycan_descriptors` gives them. Not sent anywhere yet. */
+  glycans: Glycan[];
 };
 
 export type StructureFormat = "pdb" | "mmcif";
-
-// Water is always dropped: every crystal has it and nobody means it when they
-// say "the ligand".
-const WATER_COMPOUNDS = new Set(["HOH", "DOD", "WAT", "H2O"]);
-
-// The reference lists are generated from the JSON files in lib/cif
-// (npm run gen:cif-reference), so the preview and the backend parser cannot
-// disagree about them. While any list is a draft (`approved: false` in the
-// JSON), only water is dropped; other listed solvents are kept and flagged for
-// review.
-const REFERENCE_LISTS_APPROVED: boolean = CIF_REFERENCE.approved;
-const SOLVENT_COMPOUNDS = new Set<string>(CIF_REFERENCE.solvents);
-const AMBIGUOUS_COMPOUNDS = new Set<string>(CIF_REFERENCE.ambiguous);
-const KEEP_WHEN_METAL_LINKED = new Set<string>(CIF_REFERENCE.keepWhenMetalLinked);
-const COFACTOR_COMPOUNDS = new Set<string>(CIF_REFERENCE.cofactors);
-const METAL_IONS = new Set<string>(CIF_REFERENCE.metalIons);
-const METAL_ELEMENTS = new Set<string>(CIF_REFERENCE.metalElements);
-const NONMETAL_ELEMENTS = new Set<string>(CIF_REFERENCE.nonmetalElements);
-
-type CompoundKind =
-  | "ligand"
-  | "cofactor"
-  | "metal"
-  | "solvent"
-  | "draftSolvent"
-  | "ambiguous"
-  | "solventUnlessMetalLinked";
-
-// Mirrors Reference.kind in lib/cif/reference.go.
-function compoundKind(compound: string): CompoundKind {
-  if (WATER_COMPOUNDS.has(compound)) {
-    return "solvent";
-  }
-  if (SOLVENT_COMPOUNDS.has(compound)) {
-    if (!REFERENCE_LISTS_APPROVED) {
-      return "draftSolvent";
-    }
-    return KEEP_WHEN_METAL_LINKED.has(compound) ? "solventUnlessMetalLinked" : "solvent";
-  }
-  if (AMBIGUOUS_COMPOUNDS.has(compound)) {
-    return "ambiguous";
-  }
-  if (METAL_IONS.has(compound)) {
-    return "metal";
-  }
-  if (COFACTOR_COMPOUNDS.has(compound)) {
-    return "cofactor";
-  }
-  return "ligand";
-}
-
-type ElementClass = "metal" | "nonmetal" | "unknown";
-
-// Mirrors Reference.elementClass in lib/cif/reference.go: a symbol on neither
-// list (empty, or X for an unknown atom) is unknown.
-function elementClass(symbol: string): ElementClass {
-  const element = symbol.trim().toUpperCase();
-  if (METAL_ELEMENTS.has(element)) {
-    return "metal";
-  }
-  return NONMETAL_ELEMENTS.has(element) ? "nonmetal" : "unknown";
-}
 
 export function detectStructureFormat(name: string): StructureFormat | null {
   const lower = name.toLowerCase();
@@ -149,6 +100,8 @@ function parsePdb(text: string): StructureFacts {
     metrics: {},
     metadata: {},
     needsReview: [],
+    compoundSources: { ligands: {}, cofactors: {}, excluded: {} },
+    glycans: [],
   };
   const authorLines: string[] = [];
 
@@ -173,6 +126,7 @@ function parsePdb(text: string): StructureFacts {
             ins: line.slice(17, 18).trim(),
           },
           Number.parseInt(line.slice(20, 25).trim(), 10) || 0,
+          "",
         );
       }
       continue;
@@ -204,8 +158,7 @@ function parsePdb(text: string): StructureFacts {
             seq: line.slice(22, 26).trim(),
             ins: line.slice(26, 27).trim(),
           },
-          line.slice(12, 16).trim(),
-          element,
+          { name: line.slice(12, 16).trim(), element, entityId: "", inChain: false, laterModel: false },
         );
       }
       if (record === "HETATM" && WATER_COMPOUNDS.has(compound)) {
@@ -292,7 +245,7 @@ function parsePdb(text: string): StructureFacts {
     .filter(Boolean)
     .map(pdbAuthorName);
 
-  applyCounts(facts, atomCount, residueTally, compounds, NO_METALC_ROWS);
+  applyCounts(facts, atomCount, residueTally, compounds, NO_METALC_ROWS, pdbAnnotations(), false);
   return facts;
 }
 
@@ -368,6 +321,8 @@ function parseMmcif(text: string): StructureFacts {
     metrics: {},
     metadata: {},
     needsReview: [],
+    compoundSources: { ligands: {}, cofactors: {}, excluded: {} },
+    glycans: [],
   };
 
   facts.program = mmcifProgram(text);
@@ -417,9 +372,7 @@ function parseMmcif(text: string): StructureFacts {
       if (firstModel === undefined) {
         firstModel = model;
       }
-      if (model !== firstModel) {
-        continue;
-      }
+      const laterModel = model !== firstModel;
       const group = (loopValue(atomSite, row, "group_pdb") ?? "ATOM").toUpperCase();
       const compound = (loopValue(atomSite, row, "label_comp_id") ?? "").toUpperCase();
       const element = (loopValue(atomSite, row, "type_symbol") ?? "").toUpperCase();
@@ -431,9 +384,19 @@ function parseMmcif(text: string): StructureFacts {
             seq: loopValue(atomSite, row, "auth_seq_id") ?? "",
             ins: loopValue(atomSite, row, "pdbx_pdb_ins_code") ?? "",
           },
-          loopValue(atomSite, row, "label_atom_id") ?? "",
-          element,
+          {
+            name: loopValue(atomSite, row, "label_atom_id") ?? "",
+            element,
+            entityId: loopValue(atomSite, row, "label_entity_id") ?? "",
+            inChain: loopValue(atomSite, row, "label_seq_id") !== null,
+            laterModel,
+          },
         );
+      }
+      // Only the first model is counted; later models add compound instances
+      // that an integrative (IHM) file lists too.
+      if (laterModel) {
+        continue;
       }
       if (group === "HETATM" && WATER_COMPOUNDS.has(compound)) {
         continue;
@@ -461,25 +424,30 @@ function parseMmcif(text: string): StructureFacts {
         Number.isFinite(occupancy) ? occupancy : 1,
       );
     }
-    for (const compound of nonpolymerCompounds(text)) {
-      compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0);
+    for (const { compound, entityId } of nonpolymerCompounds(text)) {
+      compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0, entityId);
     }
-    applyCounts(facts, atomCount, residueTally, compounds, readMetalcLinks(text));
+    const annotations = readAnnotations(text, loopColumn(atomSite, "ihm_model_id") !== -1);
+    applyCounts(facts, atomCount, residueTally, compounds, readMetalcLinks(text), annotations, true);
+    facts.glycans = annotations.glycans;
   }
 
   return facts;
 }
 
 /** Compounds `_pdbx_entity_nonpoly` lists, which may have no coordinates. */
-function nonpolymerCompounds(text: string): string[] {
+function nonpolymerCompounds(text: string): Array<{ compound: string; entityId: string }> {
   const loop = cifLoop(text, "_pdbx_entity_nonpoly");
   if (loop) {
     return loop.rows
-      .map((row) => (loopValue(loop, row, "comp_id") ?? "").toUpperCase())
-      .filter(Boolean);
+      .map((row) => ({
+        compound: (loopValue(loop, row, "comp_id") ?? "").toUpperCase(),
+        entityId: loopValue(loop, row, "entity_id") ?? "",
+      }))
+      .filter(({ compound }) => compound !== "");
   }
   const single = (cifValue(text, "_pdbx_entity_nonpoly.comp_id") ?? "").toUpperCase();
-  return single ? [single] : [];
+  return single ? [{ compound: single, entityId: cifValue(text, "_pdbx_entity_nonpoly.entity_id") ?? "" }] : [];
 }
 
 function mmcifAuthors(text: string): string[] {
@@ -528,71 +496,6 @@ function numberOf(value: string | null): number | null {
 
 /* -------------------------------------------------------------- shared -- */
 
-/** One placed copy of a non-polymer compound. Mirrors compoundInstance in
- *  lib/cif/extract.go: an instance read from `_pdbx_entity_nonpoly` alone has
- *  no asym ID and no atoms. */
-type CompoundInstance = {
-  compound: string;
-  asym: string;
-  seq: string;
-  ins: string;
-};
-
-function instanceKey(instance: CompoundInstance): string {
-  return [instance.compound, instance.asym, instance.seq, instance.ins].join("\u0000");
-}
-
-/** What the coordinates say about one instance: its atom count (0 when
- *  unknown) and the element of its first atom ("" when none was read). */
-type InstanceFacts = { instance: CompoundInstance; atomCount: number; element: string };
-
-/** The coordinates' view of the non-polymer compounds: the distinct atoms seen
- *  per instance with the first atom's element, and the atom count a PDB `HET`
- *  record declares. */
-class CompoundTally {
-  readonly instances = new Map<
-    string,
-    { instance: CompoundInstance; atoms: Set<string>; element: string }
-  >();
-  readonly declared = new Map<string, { instance: CompoundInstance; count: number }>();
-
-  addAtom(instance: CompoundInstance, atomName: string, element: string): void {
-    const key = instanceKey(instance);
-    const entry = this.instances.get(key) ?? { instance, atoms: new Set<string>(), element };
-    entry.atoms.add(atomName);
-    this.instances.set(key, entry);
-  }
-
-  declare(instance: CompoundInstance, count: number): void {
-    this.declared.set(instanceKey(instance), { instance, count });
-  }
-
-  /** Instance → facts. A declared atom count wins. */
-  counts(): Map<string, InstanceFacts> {
-    const counts = new Map<string, InstanceFacts>();
-    for (const [key, entry] of this.instances) {
-      counts.set(key, {
-        instance: entry.instance,
-        atomCount: entry.atoms.size,
-        element: entry.element,
-      });
-    }
-    for (const [key, entry] of this.declared) {
-      const observed = counts.get(key);
-      if (entry.count > 0) {
-        counts.set(key, {
-          instance: entry.instance,
-          atomCount: entry.count,
-          element: observed?.element ?? "",
-        });
-      } else if (!observed) {
-        counts.set(key, { instance: entry.instance, atomCount: 0, element: "" });
-      }
-    }
-    return counts;
-  }
-}
-
 /** Residues and alternate locations, as lib/cif counts them: a residue is
  *  altloc when two alternate positions each reach this occupancy. */
 const MIN_ALTLOC_OCCUPANCY = 0.1;
@@ -637,6 +540,8 @@ function applyCounts(
   residueTally: ResidueTally,
   compounds: CompoundTally,
   metalcLinks: MetalcLinks,
+  annotations: FileAnnotations,
+  byCCDType: boolean,
 ): void {
   const residueCount = residueTally.residues.size;
   if (atomCount > 0) {
@@ -651,253 +556,18 @@ function applyCounts(
   if (residueCount > 0) {
     facts.metadata.altloc_fraction = residueTally.altlocResidueCount() / residueCount;
   }
-  sortCompounds(facts, compounds.counts(), metalcLinks);
-}
-
-/** What the file's `metalc` connection rows say about metal ions. */
-type MetalcLinks = {
-  /** False when the file has no metalc rows at all (every PDB file here). */
-  hasRows: boolean;
-  /** The two partners of each metalc row. */
-  pairs: Array<[CompoundInstance, CompoundInstance]>;
-};
-
-const NO_METALC_ROWS: MetalcLinks = { hasRows: false, pairs: [] };
-
-// Review reasons: the same text as lib/cif/extract.go and reference.go. The
-// parity test (parity-golden.json) fails when they drift.
-const DRAFT_SOLVENT_REASON =
-  "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped";
-const SINGLE_ATOM_REASON =
-  "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion";
-const NO_METALC_ROWS_REASON =
-  "metal ion kept for review: the file has no metalc connection rows";
-const UNLINKED_METAL_REASON =
-  "metal ion instance has no metalc connection to a protein residue or ligand";
-const WATER_ONLY_METAL_REASON = "metal linked only to water: confirm the site";
-/** Shared with the entry form, which gives a typed ambiguous ID the same hint. */
-export const AMBIGUOUS_COMPOUND_REASON =
-  "often from the buffer: confirm it is part of the sample";
-
-/** Mirrors metalPartners in lib/cif/extract.go: which metal instances the
- *  metalc rows link to a kept partner or only to water, and which instances of
- *  keep-when-metal-linked compounds (imidazole) they bind to a metal. An
- *  instance without a location is looked up by compound ID. */
-class MetalPartners {
-  private readonly linked = new Set<string>();
-  private readonly water = new Set<string>();
-  private readonly bound = new Set<string>();
-
-  constructor(metalcLinks: MetalcLinks) {
-    for (const [first, second] of metalcLinks.pairs) {
-      this.add(first, second);
-      this.add(second, first);
-    }
+  const sorted = sortCompounds(compounds.facts(), metalcLinks, annotations, byCCDType);
+  if (sorted.ligands.length > 0) {
+    facts.metadata.ligands = sorted.ligands;
   }
-
-  /** A link counts when the partner is kept; water makes the metal "linked only
-   *  to water"; another dropped solvent does not count. */
-  private add(metal: CompoundInstance, partner: CompoundInstance): void {
-    if (compoundKind(metal.compound) !== "metal" || partner.compound === "") {
-      return;
-    }
-    const kind = compoundKind(partner.compound);
-    switch (kind) {
-      case "solvent":
-        if (WATER_COMPOUNDS.has(partner.compound)) {
-          this.mark(this.water, metal);
-        }
-        return;
-      case "solventUnlessMetalLinked":
-        this.mark(this.bound, partner);
-        this.mark(this.linked, metal);
-        return;
-      case "ligand":
-      case "cofactor":
-      case "metal":
-      case "ambiguous":
-      case "draftSolvent":
-        this.mark(this.linked, metal);
-        return;
-      default:
-        throw new Error(`unknown compound kind for metal partner ${partner.compound}: ${String(kind satisfies never)}`);
-    }
+  if (sorted.cofactors.length > 0) {
+    facts.metadata.cofactors = sorted.cofactors;
   }
-
-  private mark(set: Set<string>, instance: CompoundInstance): void {
-    set.add(instanceKey(instance));
-    set.add(instance.compound);
-  }
-
-  private has(set: Set<string>, instance: CompoundInstance): boolean {
-    return set.has(instance.asym !== "" ? instanceKey(instance) : instance.compound);
-  }
-
-  state(metal: CompoundInstance): "linked" | "waterOnly" | "unlinked" {
-    if (this.has(this.linked, metal)) {
-      return "linked";
-    }
-    return this.has(this.water, metal) ? "waterOnly" : "unlinked";
-  }
-
-  boundToMetal(instance: CompoundInstance): boolean {
-    return this.has(this.bound, instance);
-  }
-}
-
-/** Mirrors ligandCompound in lib/cif/extract.go: a single-atom instance no
- *  list names is flagged when its element is a metal or unknown. */
-function singleAtomReview(atomCount: number, element: string): string | null {
-  if (atomCount !== 1) {
-    return null;
-  }
-  const kind = elementClass(element);
-  switch (kind) {
-    case "nonmetal":
-      return null;
-    case "metal":
-    case "unknown":
-      return SINGLE_ATOM_REASON;
-    default:
-      throw new Error(`unknown element class: ${String(kind satisfies never)}`);
-  }
-}
-
-/**
- * The same rule as the backend parser (classifyCompounds in lib/cif/extract.go),
- * per placed instance. Water is always dropped; other solvents only once the
- * reference lists are approved, and until then they are kept and flagged.
- * Imidazole is kept when a metalc row binds it to a metal. Ambiguous compounds
- * (sulfate, phosphate, citrate, halides) are kept and flagged. Organic
- * cofactors go to `cofactors`. A metal instance is a cofactor when a metalc row
- * joins it to a kept partner, and a flagged cofactor when water is its only
- * partner; in a file with no metalc rows its metals are cofactors flagged for
- * review; in a file that has them, a metal instance nothing is linked to stays
- * a ligand, flagged. A single-atom compound no list names is flagged when its
- * element is a metal or unknown.
- */
-function sortCompounds(
-  facts: StructureFacts,
-  instances: Map<string, InstanceFacts>,
-  metalcLinks: MetalcLinks,
-): void {
-  const partners = new MetalPartners(metalcLinks);
-
-  // A compound seen only in _pdbx_entity_nonpoly is skipped when the
-  // coordinates already placed an instance of it.
-  const placed = new Set<string>();
-  for (const { instance } of instances.values()) {
-    if (instance.asym !== "") {
-      placed.add(instance.compound);
-    }
-  }
-  const ordered = [...instances.values()].filter(
-    ({ instance }) => instance.asym !== "" || !placed.has(instance.compound),
-  );
-  ordered.sort((left, right) => {
-    const a = left.instance;
-    const b = right.instance;
-    return (
-      compareText(a.compound, b.compound) ||
-      compareText(a.asym, b.asym) ||
-      compareText(a.seq, b.seq) ||
-      compareText(a.ins, b.ins)
-    );
-  });
-
-  const ligands = new CompoundList("ligands");
-  const cofactors = new CompoundList("cofactors");
-  for (const { instance, atomCount, element } of ordered) {
-    const id = instance.compound;
-    const kind = compoundKind(id);
-    switch (kind) {
-      case "solvent":
-        break;
-      case "solventUnlessMetalLinked":
-        if (partners.boundToMetal(instance)) {
-          ligands.add(id, null);
-        }
-        break;
-      case "draftSolvent":
-        ligands.add(id, DRAFT_SOLVENT_REASON);
-        break;
-      case "ambiguous":
-        ligands.add(id, AMBIGUOUS_COMPOUND_REASON);
-        break;
-      case "cofactor":
-        cofactors.add(id, null);
-        break;
-      case "ligand":
-        ligands.add(id, singleAtomReview(atomCount, element));
-        break;
-      case "metal": {
-        const state = partners.state(instance);
-        switch (state) {
-          case "linked":
-            cofactors.add(id, null);
-            break;
-          case "waterOnly":
-            cofactors.add(id, WATER_ONLY_METAL_REASON);
-            break;
-          case "unlinked":
-            if (metalcLinks.hasRows) {
-              ligands.add(id, UNLINKED_METAL_REASON);
-            } else {
-              cofactors.add(id, NO_METALC_ROWS_REASON);
-            }
-            break;
-          default:
-            throw new Error(`unknown metal link state for ${id}: ${String(state satisfies never)}`);
-        }
-        break;
-      }
-      default:
-        throw new Error(`unknown compound kind for ${id}: ${String(kind satisfies never)}`);
-    }
-  }
-  if (ligands.ids().length > 0) {
-    facts.metadata.ligands = ligands.ids();
-  }
-  if (cofactors.ids().length > 0) {
-    facts.metadata.cofactors = cofactors.ids();
-  }
-  facts.needsReview = [...ligands.reviews(), ...cofactors.reviews()];
+  facts.needsReview = sorted.reviews;
   if (facts.needsReview.length > 0) {
     facts.metadata.extensions = { compound_review: facts.needsReview };
   }
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-/** One entry per compound ID; a flagged entry wins over an unflagged one so a
- *  review flag on any instance is never lost. */
-class CompoundList {
-  private readonly entries = new Map<string, string | null>();
-
-  constructor(private readonly list: "ligands" | "cofactors") {}
-
-  add(id: string, reviewReason: string | null): void {
-    const existing = this.entries.get(id);
-    if (existing === undefined || (existing === null && reviewReason !== null)) {
-      this.entries.set(id, reviewReason);
-    }
-  }
-
-  ids(): string[] {
-    return [...this.entries.keys()];
-  }
-
-  reviews(): CompoundReview[] {
-    const reviews: CompoundReview[] = [];
-    for (const [id, reason] of this.entries) {
-      if (reason !== null) {
-        reviews.push({ list: this.list, id, reason });
-      }
-    }
-    return reviews;
-  }
+  facts.compoundSources = sorted.sources;
 }
 
 function readMetalcLinks(text: string): MetalcLinks {

@@ -41,16 +41,6 @@ const (
 	kindSolventUnlessMetalLinked
 )
 
-// ccdCategory is how a CCD ID whose type is not "non-polymer" is sorted before
-// the reference lists: the name of its array in ccd_types.json.
-type ccdCategory string
-
-const (
-	ccdPeptide    ccdCategory = "peptide"
-	ccdNucleotide ccdCategory = "nucleotide"
-	ccdSaccharide ccdCategory = "saccharide"
-)
-
 // elementClass sorts an element symbol for the single-atom rule.
 type elementClass int
 
@@ -82,7 +72,7 @@ type Reference struct {
 	keepWhenMetalLinked map[string]struct{}
 	// covalentCofactors maps a modified residue to the cofactor bound in it.
 	covalentCofactors map[string]string
-	ccdCategories     map[string]ccdCategory
+	ccdCategories     map[string]CCDCategory
 	metalElements     map[string]struct{}
 	nonmetalElements  map[string]struct{}
 }
@@ -210,7 +200,7 @@ func parseReference(files referenceFiles) (*Reference, error) {
 		ambiguous:           idSet(solventList.Ambiguous),
 		keepWhenMetalLinked: idSet(solventList.KeepWhenMetalLinked),
 		covalentCofactors:   map[string]string{},
-		ccdCategories:       map[string]ccdCategory{},
+		ccdCategories:       map[string]CCDCategory{},
 		metalElements:       idSet(cofactorList.MetalElements),
 		nonmetalElements:    idSet(cofactorList.NonmetalElements),
 	}
@@ -230,9 +220,9 @@ func parseReference(files referenceFiles) (*Reference, error) {
 		reference.covalentCofactors[residue] = cofactor
 	}
 	for _, group := range []struct {
-		category ccdCategory
+		category CCDCategory
 		ids      []string
-	}{{ccdPeptide, ccdTypes.Peptide}, {ccdNucleotide, ccdTypes.Nucleotide}, {ccdSaccharide, ccdTypes.Saccharide}} {
+	}{{CCDPeptide, ccdTypes.Peptide}, {CCDNucleotide, ccdTypes.Nucleotide}, {CCDSaccharide, ccdTypes.Saccharide}} {
 		for _, id := range group.ids {
 			reference.ccdCategories[strings.ToUpper(id)] = group.category
 		}
@@ -313,7 +303,7 @@ func (r *Reference) covalentCofactor(residue string) (string, bool) {
 
 // ccdCategoryOf returns the category of a CCD ID whose type is a peptide,
 // nucleotide or saccharide type; false for every other ID.
-func (r *Reference) ccdCategoryOf(compoundID string) (ccdCategory, bool) {
+func (r *Reference) ccdCategoryOf(compoundID string) (CCDCategory, bool) {
 	category, ok := r.ccdCategories[strings.ToUpper(compoundID)]
 	return category, ok
 }

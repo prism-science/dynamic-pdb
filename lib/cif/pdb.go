@@ -104,7 +104,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 				asymID:     slice(line, 21, 22),
 				authSeqID:  slice(line, 22, 26),
 				insCode:    slice(line, 26, 27),
-			}, slice(line, 12, 16), element)
+			}, heteroAtom{name: slice(line, 12, 16), element: element})
 		}
 		if record == "HETATM" && isWater(compound) {
 			continue
@@ -141,14 +141,14 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	for _, note := range notes.messages {
 		warnings = append(warnings, "parser limit: "+note)
 	}
-	ligands, cofactors, tooMany, err := classifyCompounds(instances, metalLinks{}, reference)
+	sorted, err := classifyCompounds(instances, metalLinks{}, pdbAnnotations(), false, reference)
 	if err != nil {
 		return Extraction{}, fmt.Errorf("classify PDB compounds: %w", err)
 	}
-	if tooMany {
+	if sorted.tooMany {
 		warnings = append(warnings, tooManyCompoundsWarning)
 	}
-	review := addCompoundFields(fields, ligands, cofactors, coordinatesRead && tally.atomCount > 0)
+	review := addCompoundFields(fields, sorted.ligands, sorted.cofactors, coordinatesRead && tally.atomCount > 0)
 	return Extraction{Fields: fields, Warnings: warnings, Review: review}, nil
 }
 

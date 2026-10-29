@@ -156,7 +156,7 @@ func Test_should_know_ccd_categories_and_covalent_cofactors_when_reference_is_lo
 	reference := approvedReference(t)
 
 	// when / then
-	for id, want := range map[string]ccdCategory{"MSE": ccdPeptide, "LLP": ccdPeptide, "NAG": ccdSaccharide, "DA": ccdNucleotide, "U": ccdNucleotide} {
+	for id, want := range map[string]CCDCategory{"MSE": CCDPeptide, "LLP": CCDPeptide, "NAG": CCDSaccharide, "DA": CCDNucleotide, "U": CCDNucleotide} {
 		got, ok := reference.ccdCategoryOf(id)
 		assert.True(t, ok, id)
 		assert.Equal(t, want, got, id)

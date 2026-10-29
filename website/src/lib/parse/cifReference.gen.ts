@@ -9,6 +9,8 @@ export const CIF_REFERENCE = {
   solventVersion: "2026.10.0",
   covalentCofactorVersion: "2026.10.0",
   ccdTypeVersion: "2026.10.0",
+  /** Every list version, as the backend parser reports it (reference_version). */
+  referenceVersion: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0",
   /** True only when researchers approved every list. */
   approved: true,
   cofactors: ["HEM", "HEC", "HEA", "HEB", "SRM", "NAD", "NAI", "NAP", "NDP", "FAD", "FDA", "FMN", "PLP", "PMP", "SAM", "COA", "PNS", "TPP", "B12", "COB", "CNC", "BTN", "LPA", "PQQ", "H4B", "THF", "THG", "MGD", "MTE", "F43", "F42", "COM", "RET", "CLA", "CHL", "BCL", "PHO", "HEO", "DHE", "HAS", "SF4", "FES", "F3S", "ICS", "CLF", "CUA", "UQ1", "UQ2", "UQ5", "UQ6", "UQ7", "UQ8", "UQ9", "U10", "MQ7", "MQ8", "MQ9"],
