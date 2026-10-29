@@ -180,9 +180,10 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 			      sha256 = $3,
 			      size_bytes = $4,
 			      stored_uri = $5,
-			      last_error = $6,
-			      checked_at = $7,
-			      next_attempt_at = coalesce($8, next_attempt_at)
+			      copy_status = $6,
+			      last_error = $7,
+			      checked_at = $8,
+			      next_attempt_at = coalesce($9, next_attempt_at)
 			  where artifact_id = $1`
 	for _, result := range results {
 		if err := validateChecksumResult(result); err != nil {
@@ -192,9 +193,14 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 		if result.Status != models.ChecksumStatusPending {
 			checkedAt = &result.CheckedAt
 		}
+		var copyStatus *string
+		if result.CopyStatus != nil {
+			value := string(*result.CopyStatus)
+			copyStatus = &value
+		}
 		updated, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query,
 			result.ArtifactID, string(result.Status), result.SHA256, result.SizeBytes, result.StoredURI,
-			result.Error, checkedAt, result.NextAttemptAt)
+			copyStatus, result.Error, checkedAt, result.NextAttemptAt)
 		if err != nil {
 			return fmt.Errorf("record checksum of artifact %s: %w", result.ArtifactID, err)
 		}
@@ -209,12 +215,15 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 	return nil
 }
 
+// validateChecksumResult checks a result against the table's CHECK constraints, so a wrong
+// result fails with a message that names the rule.
 func validateChecksumResult(result models.ChecksumResult) error {
 	switch result.Status {
 	case models.ChecksumStatusVerified:
 		if result.SHA256 == nil || result.SizeBytes == nil {
 			return errors.New("a verified result needs sha256 and size")
 		}
+		return validateVerifiedCopy(result)
 	case models.ChecksumStatusMismatch:
 		if result.SHA256 == nil || result.SizeBytes == nil {
 			return errors.New("a mismatch result needs sha256 and size")
@@ -222,18 +231,69 @@ func validateChecksumResult(result models.ChecksumResult) error {
 		if result.StoredURI != nil {
 			return errors.New("a mismatch result keeps no copy")
 		}
+		return validateMismatchCopy(result)
 	case models.ChecksumStatusFailed:
 		if result.Error == nil {
 			return errors.New("a failed result needs an error")
+		}
+		if result.CopyStatus != nil {
+			return errors.New("a failed result has no copy status")
 		}
 	case models.ChecksumStatusPending:
 		if result.NextAttemptAt == nil || result.Error == nil {
 			return errors.New("a retry needs the next attempt time and an error")
 		}
+		if result.CopyStatus != nil {
+			return errors.New("a retry has no copy status")
+		}
 	default:
 		return fmt.Errorf("unknown checksum status: %q", result.Status)
 	}
 	return nil
+}
+
+// validateVerifiedCopy checks that a verified result has a copy status, and a copy exactly when
+// the status is copied.
+func validateVerifiedCopy(result models.ChecksumResult) error {
+	if result.CopyStatus == nil {
+		return errors.New("a verified result needs a copy status")
+	}
+	switch *result.CopyStatus {
+	case models.CopyStatusCopied:
+		if result.StoredURI == nil {
+			return errors.New("a copied result needs the copy's uri")
+		}
+	case models.CopyStatusOwnStorage,
+		models.CopyStatusOverLimit,
+		models.CopyStatusCopyFailed,
+		models.CopyStatusCopyOff:
+		if result.StoredURI != nil {
+			return fmt.Errorf("a verified result with copy status %s keeps no copy", *result.CopyStatus)
+		}
+	case models.CopyStatusMismatch:
+		return errors.New("a verified result cannot have copy status mismatch")
+	default:
+		return fmt.Errorf("unknown copy status: %q", *result.CopyStatus)
+	}
+	return nil
+}
+
+// validateMismatchCopy checks that a mismatch result's copy status is own_storage or mismatch.
+func validateMismatchCopy(result models.ChecksumResult) error {
+	if result.CopyStatus == nil {
+		return errors.New("a mismatch result needs a copy status")
+	}
+	switch *result.CopyStatus {
+	case models.CopyStatusOwnStorage, models.CopyStatusMismatch:
+		return nil
+	case models.CopyStatusCopied,
+		models.CopyStatusOverLimit,
+		models.CopyStatusCopyFailed,
+		models.CopyStatusCopyOff:
+		return fmt.Errorf("a mismatch result cannot have copy status %s", *result.CopyStatus)
+	default:
+		return fmt.Errorf("unknown copy status: %q", *result.CopyStatus)
+	}
 }
 
 type checksumClaimRow struct {

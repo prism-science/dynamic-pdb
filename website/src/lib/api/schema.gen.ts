@@ -1480,8 +1480,10 @@ export interface components {
              * @description The size of the bytes, set once they were read.
              */
             size_bytes: number | null;
-            /** @description Our copy of an external file, kept only when the bytes match the declared sha256 and size. Empty for files uploaded to our storage, whose uri already points there. */
+            /** @description Our copy of an external file, set when copy_status is copied. Empty for files uploaded to our storage, whose uri already points there. */
             stored_uri: string | null;
+            /** @description Whether we keep a copy of the file, and if not, why. Set once the bytes were read (status verified or mismatch); null while pending and when failed. */
+            copy_status: components["schemas"]["ArtifactChecksumCopyStatus"] | null;
             /** Format: date-time */
             checked_at: string | null;
         };
@@ -1490,6 +1492,11 @@ export interface components {
          * @enum {string}
          */
         ArtifactChecksumStatus: "pending" | "verified" | "mismatch" | "failed";
+        /**
+         * @description copied: our copy of the external file is at stored_uri. own_storage: the file is in our storage already, so it needs no copy. over_limit: the external file is larger than the copy limit, so only its link is kept. mismatch: the bytes differ from the declared sha256 or size, so no copy is kept. copy_failed: the copy could not be stored. copy_off: copying external files is turned off.
+         * @enum {string}
+         */
+        ArtifactChecksumCopyStatus: "copied" | "own_storage" | "over_limit" | "mismatch" | "copy_failed" | "copy_off";
         CreateRunRequest: {
             /** Format: uuid */
             id: string;

@@ -292,8 +292,10 @@ func seedArchiveDepositedModel(
 		         ($6, $7, 'L1', 'structure_factors', $8, repeat('b', 64), 'structure_factors_cif', 50, '{}'::jsonb, $4, $5)`,
 			[]any{fixture.CoordinateArtifactID, pdbID + ".cif", fixture.CoordinateURI, createdBy, now,
 				fixture.StructureFactorsArtifactID, pdbID + "-sf.cif", filesURL + "/download/" + pdbID + "-sf.cif"}},
-		{`insert into artifact_checksums(artifact_id, status, sha256, size_bytes, stored_uri, checked_at)
-		  values ($1, $2, repeat('c', 64), 100, $3, case when $2 = 'pending' then null else $4::timestamptz end)`,
+		{`insert into artifact_checksums(artifact_id, status, sha256, size_bytes, stored_uri, copy_status, checked_at)
+		  values ($1, $2, repeat('c', 64), 100, $3,
+		          case $2 when 'verified' then 'copied' when 'mismatch' then 'mismatch' end,
+		          case when $2 = 'pending' then null else $4::timestamptz end)`,
 			[]any{fixture.CoordinateArtifactID, checksumStatus, storedURI, now}},
 		{`insert into models(id, entry_id, state, created_by, created_at) values ($1, $2, 'active', $3, $4)`,
 			[]any{fixture.ModelID, fixture.EntryID, createdBy, now}},

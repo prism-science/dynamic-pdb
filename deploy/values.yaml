@@ -119,6 +119,11 @@ checksumJob:
   activeDeadlineSeconds: 3300
   # Caps the files one run checks; 0 means no cap.
   maxFilesPerRun: 1000
+  # The largest external file the job copies into the bucket; a larger one is still hashed and
+  # keeps only its link (copy status over_limit). 1 GiB, the same as the upload limit, from the
+  # researchers' round-1 answer. They asked for 2 GB on 2026-10-29; their answer to question A
+  # sets this: 1 GB = 1000000000, 2 GB = 2000000000, 2 GiB = 2147483648.
+  copyLimitBytes: 1073741824
   # Replaces the backend's 10s statement_timeout for the job only. Each statement that adds
   # missing rows looks at 2000 artifacts; this leaves room for a slow database and still stops
   # a statement that runs away.

@@ -68,12 +68,19 @@ func Test_should_record_checksums_of_stored_and_external_files_when_checksum_job
 	assert.Equal(t, int64(len(storedContent)), *checksums[stored].SizeBytes)
 	assert.NotNil(t, checksums[stored].CheckedAt)
 	assert.Nil(t, checksums[stored].StoredURI)
+	assert.Equal(t, "own_storage", stringValue(checksums[stored].CopyStatus))
+	var storedCopyStatus string
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select copy_status from artifact_checksums where artifact_id = $1`, stored).Scan(&storedCopyStatus))
+	assert.Equal(t, "own_storage", storedCopyStatus)
 
 	assert.Equal(t, "mismatch", checksums[changed].Status, output)
 	assert.Equal(t, sha256Hex("data_changed\n"), stringValue(checksums[changed].SHA256))
+	assert.Equal(t, "own_storage", stringValue(checksums[changed].CopyStatus), "a file in our bucket never needed a copy")
 
 	// RCSB is stubbed on 127.0.0.1, which the job must refuse to reach.
 	assert.Equal(t, "failed", checksums[external].Status, output)
+	assert.Nil(t, checksums[external].CopyStatus)
 	assert.NotContains(t, rcsb.paths(), externalPath)
 	var lastError string
 	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
@@ -85,6 +92,7 @@ func Test_should_record_checksums_of_stored_and_external_files_when_checksum_job
 	require.Contains(t, apiChecksums, uploaded, output)
 	assert.Equal(t, "verified", apiChecksums[uploaded].Status, output)
 	assert.Equal(t, sha256Hex(apiContent), stringValue(apiChecksums[uploaded].SHA256))
+	assert.Equal(t, "own_storage", stringValue(apiChecksums[uploaded].CopyStatus))
 }
 
 // createEntryWithStoredArtifact creates an entry through the API with one file stored in the S3
@@ -265,11 +273,12 @@ func seedStoredArtifact(
 }
 
 type artifactChecksumResponse struct {
-	Status    string     `json:"status"`
-	SHA256    *string    `json:"sha256"`
-	SizeBytes *int64     `json:"size_bytes"`
-	StoredURI *string    `json:"stored_uri"`
-	CheckedAt *time.Time `json:"checked_at"`
+	Status     string     `json:"status"`
+	SHA256     *string    `json:"sha256"`
+	SizeBytes  *int64     `json:"size_bytes"`
+	StoredURI  *string    `json:"stored_uri"`
+	CopyStatus *string    `json:"copy_status"`
+	CheckedAt  *time.Time `json:"checked_at"`
 }
 
 func artifactChecksums(t *testing.T, url string, token string) map[uuid.UUID]artifactChecksumResponse {

@@ -3924,7 +3924,7 @@ components:
       description: >-
         What the checksum job computed from the file's bytes. The artifact's own sha256 and
         size_bytes are the values the uploader declared. Read-only.
-      required: [status, sha256, size_bytes, stored_uri, checked_at]
+      required: [status, sha256, size_bytes, stored_uri, copy_status, checked_at]
       properties:
         status:
           $ref: "#/components/schemas/ArtifactChecksumStatus"
@@ -3941,8 +3941,15 @@ components:
           type: string
           nullable: true
           description: >-
-            Our copy of an external file, kept only when the bytes match the declared sha256
-            and size. Empty for files uploaded to our storage, whose uri already points there.
+            Our copy of an external file, set when copy_status is copied. Empty for files
+            uploaded to our storage, whose uri already points there.
+        copy_status:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ArtifactChecksumCopyStatus"
+          description: >-
+            Whether we keep a copy of the file, and if not, why. Set once the bytes were read
+            (status verified or mismatch); null while pending and when failed.
         checked_at:
           type: string
           format: date-time
@@ -3961,6 +3968,25 @@ components:
           ArtifactChecksumStatusVerified,
           ArtifactChecksumStatusMismatch,
           ArtifactChecksumStatusFailed,
+        ]
+
+    ArtifactChecksumCopyStatus:
+      type: string
+      description: >-
+        copied: our copy of the external file is at stored_uri. own_storage: the file is in our
+        storage already, so it needs no copy. over_limit: the external file is larger than the
+        copy limit, so only its link is kept. mismatch: the bytes differ from the declared sha256
+        or size, so no copy is kept. copy_failed: the copy could not be stored. copy_off:
+        copying external files is turned off.
+      enum: [copied, own_storage, over_limit, mismatch, copy_failed, copy_off]
+      x-enum-varnames:
+        [
+          ArtifactChecksumCopyStatusCopied,
+          ArtifactChecksumCopyStatusOwnStorage,
+          ArtifactChecksumCopyStatusOverLimit,
+          ArtifactChecksumCopyStatusMismatch,
+          ArtifactChecksumCopyStatusCopyFailed,
+          ArtifactChecksumCopyStatusCopyOff,
         ]
 
     CreateRunRequest:

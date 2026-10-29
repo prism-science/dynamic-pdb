@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -144,6 +145,79 @@ func Test_should_mark_file_gone_only_when_status_will_not_change(t *testing.T) {
 			// then
 			require.Error(t, err)
 			assert.Equal(t, gone, errors.Is(err, errNotRetryable))
+		})
+	}
+}
+
+func Test_should_refuse_landing_page_as_not_retryable_when_server_answers_with_html(t *testing.T) {
+	cases := map[string]struct {
+		contentType string
+		body        string
+	}{
+		"html content type":           {contentType: "text/html; charset=utf-8", body: "<!DOCTYPE html>\n<html></html>\n"},
+		"xhtml content type":          {contentType: "application/xhtml+xml", body: "<?xml version=\"1.0\"?>\n<html></html>\n"},
+		"html sent as octet-stream":   {contentType: "application/octet-stream", body: "\n  <!doctype HTML>\n<html></html>\n"},
+		"html sent as plain text":     {contentType: "text/plain", body: "<HTML><body>Dataset 1303</body></HTML>"},
+		"html with a byte order mark": {contentType: "application/octet-stream", body: "\xef\xbb\xbf<html></html>"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", testCase.contentType)
+				_, err := w.Write([]byte(testCase.body))
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			source := NewHTTPSource(server.Client())
+
+			// when
+			body, err := source.Open(context.Background(), server.URL+"/dataset/1303/")
+
+			// then
+			require.Error(t, err)
+			assert.Nil(t, body)
+			assert.Contains(t, err.Error(), "landing page, not a file")
+			assert.ErrorIs(t, err, errNotRetryable)
+		})
+	}
+}
+
+// The content types and first bytes are what production's hosts sent on 2026-10-29:
+// files.rcsb.org/download, www.rcsb.org/fasta and our own bucket (files.dynamicpdb.com).
+func Test_should_stream_whole_file_when_real_file_is_served(t *testing.T) {
+	cases := map[string]struct {
+		contentType string
+		body        string
+	}{
+		"rcsb mmcif":             {contentType: "chemical/x-cif", body: "data_101M\n#\n_entry.id   101M\n"},
+		"rcsb structure factors": {contentType: "chemical/x-cif", body: "data_r106msf\n#\nloop_\n"},
+		"rcsb fasta":             {contentType: "text/x-fasta; charset=utf-8", body: ">101M_1|Chain A|MYOGLOBIN\nMVLSEGEWQLV\n"},
+		"bucket log":             {contentType: "application/octet-stream", body: "Starting phenix.refine\n"},
+		"xml file":               {contentType: "application/xml", body: "<?xml version=\"1.0\"?>\n<report/>\n"},
+		"file longer than sniff": {contentType: "chemical/x-cif", body: "data_big\n" + strings.Repeat("x", 3*sniffBytes)},
+		"empty file":             {contentType: "application/octet-stream", body: ""},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", testCase.contentType)
+				_, err := w.Write([]byte(testCase.body))
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			source := NewHTTPSource(server.Client())
+
+			// when
+			body, err := source.Open(context.Background(), server.URL+"/download/file")
+
+			// then
+			require.NoError(t, err)
+			data, err := io.ReadAll(body)
+			require.NoError(t, err)
+			require.NoError(t, body.Close())
+			assert.Equal(t, testCase.body, string(data))
 		})
 	}
 }
