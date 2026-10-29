@@ -164,28 +164,34 @@ function ModeChoice({
   );
 }
 
-function CompoundChips({
-  list,
-  compounds,
-  onChange,
-}: {
+type CompoundListProps = {
   list: CompoundListName;
   compounds: CompoundsDraft;
   onChange: (next: CompoundsDraft) => void;
-}) {
-  const { mode, items } = compounds[list];
+};
+
+function CompoundChips({ list, compounds, onChange }: CompoundListProps) {
+  const { mode } = compounds[list];
   switch (mode) {
     case "unknown":
-      return <p className={styles.compoundEmpty}>We have not checked.</p>;
+      return <p className={styles.compoundEmpty}>Not assessed.</p>;
     case "none":
-      return (
-        <p className={styles.compoundEmpty}>Checked, and none are present.</p>
-      );
+      return <p className={styles.compoundEmpty}>Assessed; none present.</p>;
     case "list":
-      break;
+      return (
+        <>
+          <p className={styles.compoundEmpty}>Assessed; present as listed.</p>
+          <ListedCompounds list={list} compounds={compounds} onChange={onChange} />
+        </>
+      );
     default:
       throw new Error(`unknown compound list mode: ${String(mode)}`);
   }
+}
+
+/** The chips of a Listed list, or a hint while it is still empty. */
+function ListedCompounds({ list, compounds, onChange }: CompoundListProps) {
+  const { items } = compounds[list];
   if (items.length === 0) {
     return (
       <p className={styles.compoundEmpty}>

@@ -312,11 +312,41 @@ test("should_explain_not_known_and_none_and_that_none_is_not_apo", () => {
 
   // then
   const [ligands, cofactors] = html.split("Not known").slice(1);
-  assert.ok(ligands.includes("We have not checked."));
-  assert.ok(cofactors.includes("Checked, and none are present."));
+  assert.ok(ligands.includes("Not assessed."));
+  assert.ok(cofactors.includes("Assessed; none present."));
+  assert.ok(!html.includes("We have not checked."));
+  assert.ok(!html.includes("Checked, and none are present."));
   assert.ok(cofactors.includes(apoNote));
   assert.ok(!ligands.includes(apoNote));
   assert.ok(FIELDS["model.cofactors"].help.endsWith(apoNote));
+});
+
+test("should_say_assessed_present_as_listed_above_the_hint_or_the_chips", () => {
+  // given: ligands Listed, once still empty and once with ATP
+  const empty = setCompoundListMode(emptyCompounds(), "ligands", "list");
+  const withAtp = addCompound(emptyCompounds(), "ATP").compounds;
+  const listedNote = "Assessed; present as listed.";
+  const emptyHint = "Add CCD IDs above. An empty list is saved as none.";
+
+  // when
+  const [emptyLigands, withAtpLigands] = [empty, withAtp].map((compounds) => {
+    const html = renderToStaticMarkup(
+      React.createElement(CompoundListsEditor, {
+        compounds,
+        onChange: () => {},
+        fields: ENTRY_COMPOUND_FIELDS,
+        messages: [],
+      }),
+    );
+    return html.split("Not known")[1];
+  });
+
+  // then
+  assert.ok(emptyLigands.indexOf(listedNote) >= 0);
+  assert.ok(emptyLigands.indexOf(listedNote) < emptyLigands.indexOf(emptyHint));
+  assert.ok(withAtpLigands.indexOf(listedNote) >= 0);
+  assert.ok(withAtpLigands.indexOf(listedNote) < withAtpLigands.indexOf("<code>ATP</code>"));
+  assert.ok(!withAtpLigands.includes(emptyHint));
 });
 
 test("should_clear_the_review_flag_when_a_compound_is_moved", () => {
