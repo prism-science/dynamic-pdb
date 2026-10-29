@@ -14,7 +14,8 @@ import (
 )
 
 // ReviewDecisionSuite covers the no-self-approval rule: publishing a change always takes a second
-// person, so a reviewer cannot approve a revision they created, but can reject it.
+// person, so a reviewer cannot approve a revision they created, but can reject it. Servers with
+// self-approval turned on (dev) let them approve it.
 type ReviewDecisionSuite struct {
 	baseSuite
 }
@@ -108,6 +109,45 @@ func (s *ReviewDecisionSuite) Test_should_reject_when_reviewer_created_the_revis
 	// then
 	s.Equal(httpapi.RevisionStateRejected, rejectedEntry.State)
 	s.Equal(httpapi.RevisionStateRejected, rejectedModel.State)
+}
+
+func (s *ReviewDecisionSuite) Test_should_approve_own_entry_revision_when_self_approval_is_on() {
+	// given
+	reviewerToken := issueReviewerTokenForTest(s.T(), "self-approval-entry-reviewer", 8505)
+	created := createEntryForTest(s.T(), reviewerToken, map[string]any{
+		"entry": map[string]any{"title": "entry its reviewer approves on dev"},
+	})
+	path := fmt.Sprintf("/v1/entries/%s/revisions/%s", created.EntryId, created.RevisionId)
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(s.T(), selfApprovalServer.URL, http.MethodPatch, path,
+		map[string]any{"state": "active"}, reviewerToken)
+
+	// then
+	approved := decodeJSONResponse[httpapi.EntryRevisionDocument](s.T(), response, http.StatusOK)
+	s.Equal(httpapi.RevisionStateActive, approved.Data.Attributes.State)
+}
+
+func (s *ReviewDecisionSuite) Test_should_approve_own_model_revision_when_self_approval_is_on() {
+	// given
+	reviewerToken := issueReviewerTokenForTest(s.T(), "self-approval-model-reviewer", 8506)
+	entry := createAndActivateEntryForTest(s.T(), reviewerToken, map[string]any{
+		"entry": map[string]any{"title": "entry for a model its reviewer approves on dev"},
+	})
+	created := createModelForTest(s.T(), reviewerToken, entry.EntryId, map[string]any{
+		"model": map[string]any{"title": "model its reviewer approves on dev", "metadata": map[string]any{"model_type": "Deposited"}},
+	})
+	path := fmt.Sprintf("/v1/entries/%s/models/%s/revisions/%s", created.EntryId, created.ModelId, created.RevisionId)
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(s.T(), selfApprovalServer.URL, http.MethodPatch, path,
+		map[string]any{"state": "active"}, reviewerToken)
+
+	// then
+	approved := decodeJSONResponse[httpapi.ModelRevisionDocument](s.T(), response, http.StatusOK)
+	s.Equal(httpapi.RevisionStateActive, approved.Data.Attributes.State)
 }
 
 // issueReviewerTokenForTest signs in a new user and gives them the reviewer role. The role is

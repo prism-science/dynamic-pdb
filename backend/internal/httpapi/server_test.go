@@ -276,3 +276,81 @@ func (s *authorizerStub) Can(
 	s.permission = permission
 	return s.canResult, nil
 }
+
+func Test_should_grant_entries_delete_when_deletion_is_on_and_user_can_approve(t *testing.T) {
+	// given
+	server := (&Server{}).WithEntryDeletion(true)
+	stored := []models.Permission{
+		{Key: models.PermissionKeyRevisionsApprove},
+		{Key: models.PermissionKeyRevisionsReject},
+	}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.approve", "revisions.reject", "entries.delete"}, keys)
+}
+
+func Test_should_not_grant_entries_delete_when_deletion_is_off(t *testing.T) {
+	// given
+	server := (&Server{}).WithEntryDeletion(false)
+	stored := []models.Permission{{Key: models.PermissionKeyRevisionsApprove}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.approve"}, keys)
+}
+
+func Test_should_not_grant_entries_delete_when_user_cannot_approve(t *testing.T) {
+	// given
+	server := (&Server{}).WithEntryDeletion(true)
+	stored := []models.Permission{{Key: models.PermissionKeyRevisionsReject}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.reject"}, keys)
+}
+
+func Test_should_grant_revisions_approve_own_when_self_approval_is_on_and_user_can_approve(t *testing.T) {
+	// given
+	server := (&Server{}).WithSelfApproval(true)
+	stored := []models.Permission{
+		{Key: models.PermissionKeyRevisionsApprove},
+		{Key: models.PermissionKeyRevisionsReject},
+	}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.approve", "revisions.reject", "revisions.approve_own"}, keys)
+}
+
+func Test_should_not_grant_revisions_approve_own_when_self_approval_is_off(t *testing.T) {
+	// given
+	server := (&Server{}).WithEntryDeletion(true).WithSelfApproval(false)
+	stored := []models.Permission{{Key: models.PermissionKeyRevisionsApprove}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.approve", "entries.delete"}, keys)
+}
+
+func Test_should_not_grant_revisions_approve_own_when_user_cannot_approve(t *testing.T) {
+	// given
+	server := (&Server{}).WithSelfApproval(true)
+	stored := []models.Permission{{Key: models.PermissionKeyRevisionsReject}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored)
+
+	// then
+	assert.Equal(t, []string{"revisions.reject"}, keys)
+}

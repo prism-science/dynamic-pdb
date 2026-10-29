@@ -534,3 +534,32 @@ func Test_should_turn_entry_deletion_on_only_in_dev_and_local_configs(t *testing
 		assert.Equal(t, enabled, cfg.Entries.DeleteEnabled, name)
 	}
 }
+
+func Test_should_leave_self_approval_off_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, cfg.Revisions.SelfApprovalEnabled)
+}
+
+func Test_should_turn_self_approval_on_only_in_dev_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
+	expected := map[string]bool{"local": false, "dev": true, "production": false}
+
+	for name, enabled := range expected {
+		// when
+		cfg, err := config.ReadFromFile(name)
+
+		// then
+		require.NoError(t, err, name)
+		assert.Equal(t, enabled, cfg.Revisions.SelfApprovalEnabled, name)
+	}
+}

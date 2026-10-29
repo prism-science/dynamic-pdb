@@ -500,7 +500,7 @@ export interface paths {
         head?: never;
         /**
          * Update entry revision
-         * @description Changes a revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it.
+         * @description Changes a revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it. Servers that allow self-approval (dev only) skip this check.
          */
         patch: operations["updateEntryRevisionState"];
         trace?: never;
@@ -552,7 +552,7 @@ export interface paths {
         head?: never;
         /**
          * Update model revision
-         * @description Changes a model revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it.
+         * @description Changes a model revision from `in_review` to active or rejected. Activating requires `revisions.approve`; rejecting requires `revisions.reject`. A reviewer cannot approve a revision they created (403 `SELF_REVIEW`); they can reject it. Servers that allow self-approval (dev only) skip this check.
          */
         patch: operations["updateModelRevisionState"];
         trace?: never;
@@ -945,6 +945,7 @@ export interface components {
             name: string;
             email: string;
             login: string;
+            /** @description Permission keys the user holds. Users with `revisions.approve` also get `entries.delete` where the server allows entry deletion, and `revisions.approve_own` where it allows self-approval (dev only). */
             permissions: string[];
         };
         EntryProperties: {

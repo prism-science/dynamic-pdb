@@ -69,10 +69,12 @@ function Changes({
     reviewPermissions && entryUnpublished
       ? "Approve the entry first — it has no published revision yet."
       : null;
-  // The backend refuses to let a reviewer approve their own revision, so the
-  // block says so up front instead of failing on click.
+  // The backend refuses to let a reviewer approve their own revision (except on
+  // dev), so the block says so up front instead of failing on click.
   const approveBlockedFor = (createdBy: string) =>
-    reviewPermissions?.canApprove ? ownRevisionReason(viewerId, createdBy) : null;
+    reviewPermissions
+      ? ownRevisionReason(reviewPermissions, viewerId, createdBy)
+      : null;
 
   return (
     <>

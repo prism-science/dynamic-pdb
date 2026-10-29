@@ -1,10 +1,13 @@
 export type ReviewPermissions = {
   canApprove: boolean;
   canReject: boolean;
+  /** True where the backend allows self-approval (dev only). */
+  canApproveOwn: boolean;
 };
 
 const revisionsApprove = "revisions.approve";
 const revisionsReject = "revisions.reject";
+const revisionsApproveOwn = "revisions.approve_own";
 const entriesDelete = "entries.delete";
 
 export function reviewPermissionsFor(
@@ -15,6 +18,7 @@ export function reviewPermissionsFor(
   return {
     canApprove: assigned.has(revisionsApprove),
     canReject: assigned.has(revisionsReject),
+    canApproveOwn: assigned.has(revisionsApproveOwn),
   };
 }
 
@@ -23,13 +27,19 @@ export const ownRevisionMessage =
   "You submitted this, so another reviewer must approve it.";
 
 /** Why the viewer may not approve a revision they created, or null when they
- *  may. The backend refuses such an approval (403 SELF_REVIEW) so that
- *  publishing a change always takes a second person; rejecting one's own
- *  revision stays allowed. */
+ *  may or cannot approve at all. The backend refuses such an approval
+ *  (403 SELF_REVIEW) so that publishing a change always takes a second person;
+ *  rejecting one's own revision stays allowed. Where the backend allows
+ *  self-approval (dev), it grants revisions.approve_own at sign-in and nothing
+ *  is held back. */
 export function ownRevisionReason(
+  reviewPermissions: ReviewPermissions,
   viewerId: string | null,
   createdBy: string,
 ): string | null {
+  if (!reviewPermissions.canApprove || reviewPermissions.canApproveOwn) {
+    return null;
+  }
   return viewerId !== null && viewerId === createdBy ? ownRevisionMessage : null;
 }
 

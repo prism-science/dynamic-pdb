@@ -26,6 +26,7 @@ type Config struct {
 	Validation validation.Config   `mapstructure:"validation"`
 	DataSync   jobs.DataSyncConfig `mapstructure:"data_sync"`
 	Entries    EntriesConfig       `mapstructure:"entries"`
+	Revisions  RevisionsConfig     `mapstructure:"revisions"`
 }
 
 type ServerConfig struct {
@@ -41,6 +42,14 @@ type EntriesConfig struct {
 	// DeleteEnabled lets reviewers soft-delete entries with DELETE /v1/entries/{entry_id}. It is
 	// on only on dev, so researchers can delete their test entries and retest the deposition forms.
 	DeleteEnabled bool `mapstructure:"delete_enabled"`
+}
+
+// RevisionsConfig holds the switches for reviewing revisions.
+type RevisionsConfig struct {
+	// SelfApprovalEnabled lets a reviewer approve entry and model revisions they created. It is on
+	// only on dev, so a researcher can publish their own test entries; elsewhere a second
+	// reviewer must approve them.
+	SelfApprovalEnabled bool `mapstructure:"self_approval_enabled"`
 }
 
 // RateLimitConfig caps how many requests one client may send per window on each server instance.
@@ -86,6 +95,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
 	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetDefault("entries::delete_enabled", false)
+	v.SetDefault("revisions::self_approval_enabled", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

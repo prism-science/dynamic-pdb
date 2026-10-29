@@ -49,6 +49,9 @@ var (
 	limitedExtractionServer *httptest.Server
 	// timeoutExtractionServer allows one extraction at a time and gives the parser no time at all.
 	timeoutExtractionServer *httptest.Server
+	// selfApprovalServer shares the database with testServer and lets reviewers approve
+	// revisions they created, as on dev.
+	selfApprovalServer *httptest.Server
 	// entryDeletionServer shares the database with testServer and has entry deletion turned on.
 	entryDeletionServer *httptest.Server
 	testDatabase        *db.DB
@@ -66,6 +69,8 @@ type testRouterOptions struct {
 	extractionTimeout time.Duration
 	// entryDeletion turns DELETE /v1/entries/{entry_id} on.
 	entryDeletion bool
+	// selfApproval lets reviewers approve revisions they created.
+	selfApproval bool
 }
 
 type MockGitHubClient struct {
@@ -173,7 +178,7 @@ func TestMain(m *testing.M) {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
 			options.validationMode,
-		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion)
+		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion).WithSelfApproval(options.selfApproval)
 		if options.limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
 		}
@@ -206,6 +211,10 @@ func TestMain(m *testing.M) {
 		validationMode: validation.ModeEnforce,
 		entryDeletion:  true,
 	}))
+	selfApprovalServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validationMode: validation.ModeEnforce,
+		selfApproval:   true,
+	}))
 
 	code := m.Run()
 
@@ -214,6 +223,7 @@ func TestMain(m *testing.M) {
 	limitedExtractionServer.Close()
 	timeoutExtractionServer.Close()
 	entryDeletionServer.Close()
+	selfApprovalServer.Close()
 	s3Stub.Close()
 	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {

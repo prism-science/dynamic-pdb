@@ -206,7 +206,7 @@ func (s *Server) UpdateEntryRevisionState(
 		writeError(w, http.StatusConflict, "CONFLICT", "entry revision is not in the required state")
 		return
 	}
-	if refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
+	if s.refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
 		return
 	}
 
@@ -577,7 +577,7 @@ func (s *Server) UpdateModelRevisionState(
 		writeError(w, http.StatusConflict, "CONFLICT", "model revision is not in the required state")
 		return
 	}
-	if refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
+	if s.refuseSelfApproval(w, state, target.CreatedBy, user.ID) {
 		return
 	}
 
@@ -807,16 +807,24 @@ func (s *Server) requirePermission(
 // selfReviewCode is the error code of a reviewer's attempt to approve a revision they created.
 const selfReviewCode = "SELF_REVIEW"
 
+// WithSelfApproval lets reviewers approve revisions they created (default off). It is on only on
+// dev, where a researcher publishes their own test entries without a second reviewer.
+func (s *Server) WithSelfApproval(enabled bool) *Server {
+	s.selfApprovalEnabled = enabled
+	return s
+}
+
 // refuseSelfApproval writes 403 and returns true when the caller asks to approve a revision they
 // created, so that publishing a change always takes a second person. Rejecting one's own revision
 // stays allowed: it publishes nothing, and it is how a reviewer withdraws their own test submission.
-func refuseSelfApproval(
+// Nothing is refused while self-approval is on; see WithSelfApproval.
+func (s *Server) refuseSelfApproval(
 	w http.ResponseWriter,
 	requested domainmodels.RevisionState,
 	createdBy uuid.UUID,
 	userID uuid.UUID,
 ) bool {
-	if requested != domainmodels.RevisionStateActive || createdBy != userID {
+	if s.selfApprovalEnabled || requested != domainmodels.RevisionStateActive || createdBy != userID {
 		return false
 	}
 	writeError(w, http.StatusForbidden, selfReviewCode, "a reviewer cannot approve a revision they created")
