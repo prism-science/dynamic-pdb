@@ -44,3 +44,6 @@ data_sync:
 entries:
   # Reviewers can soft-delete entries, so the delete button can be tested locally.
   delete_enabled: true
+revisions:
+  # As on production: a second reviewer approves each revision, so the guard can be tested locally.
+  self_approval_enabled: false

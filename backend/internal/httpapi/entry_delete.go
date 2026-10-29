@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -156,18 +155,4 @@ func deletionRevision(base domainmodels.EntryRevision, deletedBy uuid.UUID, now 
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-}
-
-// grantedPermissionKeys returns the permission keys the sign-in response reports: the stored
-// ones, plus entries.delete when entry deletion is on and the user can approve revisions. The
-// website shows its Delete entry button only to sessions that hold entries.delete.
-func (s *Server) grantedPermissionKeys(stored []domainmodels.Permission) []string {
-	keys := make([]string, 0, len(stored)+1)
-	for _, permission := range stored {
-		keys = append(keys, string(permission.Key))
-	}
-	if s.entryDeletionEnabled && slices.Contains(keys, string(domainmodels.PermissionKeyRevisionsApprove)) {
-		keys = append(keys, string(domainmodels.PermissionKeyEntriesDelete))
-	}
-	return keys
 }

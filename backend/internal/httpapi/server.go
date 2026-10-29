@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,8 @@ type Server struct {
 	rcsbFiles RCSBFiles
 	// entryDeletionEnabled turns DELETE /v1/entries/{entry_id} on; see WithEntryDeletion.
 	entryDeletionEnabled bool
+	// selfApprovalEnabled lets reviewers approve revisions they created; see WithSelfApproval.
+	selfApprovalEnabled bool
 }
 
 func NewServer(
@@ -200,6 +203,28 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 			},
 		},
 	})
+}
+
+// grantedPermissionKeys returns the permission keys the sign-in response reports: the stored
+// ones, plus keys that are never stored but follow from the server's switches, for users who can
+// approve revisions. The website reads them to decide what to offer:
+//   - entries.delete while entry deletion is on: the Delete entry button;
+//   - revisions.approve_own while self-approval is on: Approve on the reviewer's own revisions.
+func (s *Server) grantedPermissionKeys(stored []models.Permission) []string {
+	keys := make([]string, 0, len(stored)+2)
+	for _, permission := range stored {
+		keys = append(keys, string(permission.Key))
+	}
+	if !slices.Contains(keys, string(models.PermissionKeyRevisionsApprove)) {
+		return keys
+	}
+	if s.entryDeletionEnabled {
+		keys = append(keys, string(models.PermissionKeyEntriesDelete))
+	}
+	if s.selfApprovalEnabled {
+		keys = append(keys, string(models.PermissionKeyRevisionsApproveOwn))
+	}
+	return keys
 }
 
 func githubDisplayName(githubUser github.User) string {

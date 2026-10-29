@@ -50,3 +50,6 @@ data_sync:
 entries:
   # Reviewers can soft-delete entries, so researchers can delete test entries and retest the forms.
   delete_enabled: true
+revisions:
+  # Reviewers can approve their own revisions, so researchers can publish their test entries alone.
+  self_approval_enabled: true

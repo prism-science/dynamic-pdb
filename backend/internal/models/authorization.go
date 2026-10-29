@@ -23,6 +23,10 @@ const (
 	// PermissionKeyEntriesDelete is never stored. The sign-in response adds it for users who can
 	// approve revisions while entry deletion is turned on, so the website knows to offer it.
 	PermissionKeyEntriesDelete PermissionKey = "entries.delete"
+	// PermissionKeyRevisionsApproveOwn is never stored. The sign-in response adds it for users who
+	// can approve revisions while self-approval is turned on, so the website lets them approve
+	// their own revisions.
+	PermissionKeyRevisionsApproveOwn PermissionKey = "revisions.approve_own"
 )
 
 type Role struct {
