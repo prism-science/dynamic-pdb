@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,8 @@ var parityFiles = []string{
 	"9A8B.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
 	"parity/wrapped_rows.cif", "parity/ihm_probe.cif",
+	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb",
+	"parity/pdb_rules.pdb", "parity/pdb_no_metal_link.pdb",
 }
 
 // parityExcluded is the list name the golden gives a compound left out.
@@ -44,12 +47,51 @@ type parityEntry struct {
 	Glycans             []Glycan         `json:"glycans,omitempty"`
 }
 
+// parityExtraction reads a parity file: a .pdb file through PDBExtraction,
+// any other through Extract, as the CLI and the extract endpoint do.
+func parityExtraction(t *testing.T, name string) Result {
+	t.Helper()
+	text := readFixture(t, name)
+	if !strings.HasSuffix(name, ".pdb") {
+		result, err := Extract(Parse(text))
+		require.NoError(t, err)
+		return result
+	}
+	extraction, err := PDBExtraction(text, false)
+	require.NoError(t, err)
+	reference, err := DefaultReference()
+	require.NoError(t, err)
+	result := Result{CompoundSources: extraction.CompoundSources, ReferenceVersion: reference.Version}
+	if count, ok := extraction.Fields["atom_count"].(int); ok {
+		result.Atoms = &AtomStats{AtomCount: count}
+		result.Atoms.ModeledResidues, _ = extraction.Fields["modeled_residues"].(int)
+		result.Atoms.ProteinChains, _ = extraction.Fields["unique_protein_chains"].(int)
+	}
+	reviews := map[string]ReviewItem{}
+	for _, item := range extraction.Review {
+		reviews[item.List+":"+item.ID] = item
+	}
+	compounds := func(list string) []Compound {
+		ids, _ := extraction.Fields[list].([]string)
+		listed := []Compound{}
+		for _, id := range ids {
+			compound := Compound{ID: id}
+			if item, flagged := reviews[list+":"+id]; flagged {
+				compound.NeedsReview, compound.ReviewReason = true, item.Reason
+			}
+			listed = append(listed, compound)
+		}
+		return listed
+	}
+	result.Ligands, result.Cofactors = compounds(ListLigands), compounds(ListCofactors)
+	return result
+}
+
 func parityGolden(t *testing.T) map[string]parityEntry {
 	t.Helper()
 	golden := map[string]parityEntry{}
 	for _, name := range parityFiles {
-		result, err := Extract(Parse(readFixture(t, name)))
-		require.NoError(t, err)
+		result := parityExtraction(t, name)
 		entry := parityEntry{Compounds: []parityCompound{}}
 		if result.Atoms != nil {
 			entry.AtomCount = result.Atoms.AtomCount

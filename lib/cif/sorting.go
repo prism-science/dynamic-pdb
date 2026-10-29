@@ -113,9 +113,6 @@ type compoundSorter struct {
 	hasMetalc   bool
 	annotations fileAnnotations
 	reference   *Reference
-	// byCCDType is set for mmCIF files: an instance whose entity the file does
-	// not list is sorted by its CCD type. PDB-format files use the lists alone.
-	byCCDType bool
 	// warnedTypes holds the unknown _chem_comp.type values already warned about.
 	warnedTypes map[string]bool
 	warnings    []string
@@ -137,7 +134,6 @@ func classifyCompounds(
 	instances map[compoundInstance]instanceFacts,
 	links metalLinks,
 	annotations fileAnnotations,
-	byCCDType bool,
 	reference *Reference,
 ) (sortedCompounds, error) {
 	partners, err := readMetalPartners(links, reference)
@@ -150,7 +146,6 @@ func classifyCompounds(
 		hasMetalc:   links.hasRows,
 		annotations: annotations,
 		reference:   reference,
-		byCCDType:   byCCDType,
 		warnedTypes: map[string]bool{},
 	}
 	decisions := []decision{}
@@ -272,10 +267,13 @@ func (s *compoundSorter) placeByShape(instance compoundInstance, facts instanceF
 	}
 }
 
-// shapeOf reads the instance's entity type. An mmCIF instance whose entity the
-// file does not list goes by its CCD type: the file's own _chem_comp.type, then
-// the CCD table. A peptide or nucleotide residue with a label_seq_id is in a
-// chain; without one, it is outside any chain.
+// shapeOf reads the instance's entity type. An instance whose entity the file
+// does not list (a PDB-format file, or an mmCIF file without _entity) is
+// polymer when the file names it as a chain residue (SEQRES, MODRES);
+// otherwise its CCD type decides: the file's own _chem_comp.type, then the CCD
+// table. A peptide or nucleotide residue within a chain (an mmCIF label_seq_id,
+// or a PDB chain without SEQRES) counts as polymer too; one outside any chain
+// is a ligand to confirm.
 func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts) (compoundShape, string, error) {
 	kind := s.annotations.entityOf(facts.entityID)
 	switch kind {
@@ -290,25 +288,29 @@ func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts)
 	case entityMacrolide:
 		return shapeMacrolide, "", nil
 	case entityNotRead:
-		if !s.byCCDType {
-			return shapeListed, "", nil
-		}
-		category, review := s.categoryOf(instance.compoundID)
-		switch category {
-		case CCDPeptide, CCDNucleotide:
-			if facts.inChain {
-				return shapePolymer, "", nil
-			}
-			return shapeOutsideChain, review, nil
-		case CCDSaccharide:
-			return shapeBranched, review, nil
-		case CCDNonPolymer:
-			return shapeListed, review, nil
-		default:
-			return 0, "", fmt.Errorf("unknown CCD category %q for %s", category, instance.compoundID)
-		}
 	default:
 		return 0, "", fmt.Errorf("unknown entity type %d for %s", kind, instance.compoundID)
+	}
+	switch facts.chain {
+	case chainMember:
+		return shapePolymer, "", nil
+	case chainSpanOnly, chainNone:
+	default:
+		return 0, "", fmt.Errorf("unknown chain position %d for %s", facts.chain, instance.compoundID)
+	}
+	category, review := s.categoryOf(instance.compoundID)
+	switch category {
+	case CCDPeptide, CCDNucleotide:
+		if facts.chain == chainSpanOnly {
+			return shapePolymer, "", nil
+		}
+		return shapeOutsideChain, review, nil
+	case CCDSaccharide:
+		return shapeBranched, review, nil
+	case CCDNonPolymer:
+		return shapeListed, review, nil
+	default:
+		return 0, "", fmt.Errorf("unknown CCD category %q for %s", category, instance.compoundID)
 	}
 }
 

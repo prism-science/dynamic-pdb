@@ -26,6 +26,29 @@ type instanceAtoms struct {
 	multiple bool
 }
 
+// chainPosition is what a file says about a residue's place in a polymer chain.
+type chainPosition int
+
+const (
+	// chainNone: nothing places it in a chain.
+	chainNone chainPosition = iota
+	// chainMember: a PDB-format MODRES record, or a name in the chain's SEQRES
+	// at a position in its polymer block. Polymer whatever its CCD type.
+	chainMember
+	// chainSpanOnly: within a chain, but nothing names it as a chain residue:
+	// an mmCIF label_seq_id (writers set it unevenly for ligands), or a
+	// PDB-format chain without SEQRES records. Only a peptide or nucleotide
+	// counts as in the chain.
+	chainSpanOnly
+)
+
+func chainPositionOf(hasLabelSeqID bool) chainPosition {
+	if hasLabelSeqID {
+		return chainSpanOnly
+	}
+	return chainNone
+}
+
 // instanceFacts is what the coordinates say about one compound instance.
 type instanceFacts struct {
 	// atoms is the number of distinct atoms: 1, or 2 for several, replaced by
@@ -37,8 +60,10 @@ type instanceFacts struct {
 	element string
 	// entityID is the instance's label_entity_id, empty when unknown.
 	entityID string
-	// inChain is set when the instance's residue has a label_seq_id.
-	inChain bool
+	// chain is what the file says about the residue's place in a polymer
+	// chain: an mmCIF label_seq_id places it within one; a PDB-format file
+	// decides it after the read (pdbChains.position).
+	chain chainPosition
 	// laterModel is set when the instance appears only in models after the
 	// first; an integrative (IHM) file lists those compounds too.
 	laterModel bool
@@ -161,7 +186,7 @@ func (t *coordinateTally) instanceFacts(coordinatesComplete bool) map[compoundIn
 			atoms:      count,
 			element:    atoms.first.element,
 			entityID:   atoms.first.entityID,
-			inChain:    atoms.first.inChain,
+			chain:      chainPositionOf(atoms.first.inChain),
 			laterModel: atoms.first.laterModel,
 		}
 	}

@@ -1,8 +1,10 @@
 import { cifLoop, cifValue, loopColumn, loopValue, type CifLoop } from "./cif";
+import { PdbChains } from "./pdbChains";
 import {
   CompoundTally,
   NO_METALC_ROWS,
   WATER_COMPOUNDS,
+  isMetalIon,
   pdbAnnotations,
   readAnnotations,
   sortCompounds,
@@ -11,6 +13,7 @@ import {
   type CompoundSources,
   type FileAnnotations,
   type Glycan,
+  type InstanceFacts,
   type MetalcLinks,
 } from "./ligandRule";
 
@@ -112,7 +115,9 @@ function parsePdb(text: string): StructureFacts {
   let modelStarted = false;
   let firstModelDone = false;
 
-  for (const line of lines) {
+  const chains = new PdbChains();
+  for (const [index, line] of lines.entries()) {
+    const lineNumber = index + 1;
     const record = line.slice(0, 6);
 
     if (record === "HET   ") {
@@ -130,6 +135,25 @@ function parsePdb(text: string): StructureFacts {
         );
       }
       continue;
+    }
+    switch (record.trim()) {
+      case "SEQRES":
+        chains.addSeqres(line);
+        continue;
+      case "MODRES":
+        chains.addModres(line);
+        continue;
+      case "LINK":
+        chains.addLink(line);
+        continue;
+      case "TER":
+        if (!firstModelDone) {
+          chains.addTer(line, lineNumber);
+        }
+        continue;
+      default:
+        // Every other record is read below, or carries nothing the rule uses.
+        break;
     }
     if (record === "MODEL ") {
       if (modelStarted) {
@@ -150,16 +174,21 @@ function parsePdb(text: string): StructureFacts {
       const compound = line.slice(17, 20).trim().toUpperCase();
       const chain = line.slice(21, 22).trim();
       const element = line.slice(76, 78).trim().toUpperCase();
+      const instance = {
+        compound,
+        asym: chain,
+        seq: line.slice(22, 26).trim(),
+        ins: line.slice(26, 27).trim(),
+      };
+      chains.addCoordinate(record, line, lineNumber, instance);
       if (record === "HETATM" && compound) {
-        compounds.addAtom(
-          {
-            compound,
-            asym: chain,
-            seq: line.slice(22, 26).trim(),
-            ins: line.slice(26, 27).trim(),
-          },
-          { name: line.slice(12, 16).trim(), element, entityId: "", inChain: false, laterModel: false },
-        );
+        compounds.addAtom(instance, {
+          name: line.slice(12, 16).trim(),
+          element,
+          entityId: "",
+          inChain: false,
+          laterModel: false,
+        });
       }
       if (record === "HETATM" && WATER_COMPOUNDS.has(compound)) {
         continue;
@@ -245,7 +274,13 @@ function parsePdb(text: string): StructureFacts {
     .filter(Boolean)
     .map(pdbAuthorName);
 
-  applyCounts(facts, atomCount, residueTally, compounds, NO_METALC_ROWS, pdbAnnotations(), false);
+  const annotations = pdbAnnotations();
+  annotations.modifiedResidues = [...chains.modifiedNames];
+  const instances = compounds.facts();
+  for (const instance of instances.values()) {
+    instance.chain = chains.position(instance.instance);
+  }
+  applyCounts(facts, atomCount, residueTally, instances, chains.metalcLinks(isMetalIon), annotations);
   return facts;
 }
 
@@ -428,7 +463,7 @@ function parseMmcif(text: string): StructureFacts {
       compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0, entityId);
     }
     const annotations = readAnnotations(text, loopColumn(atomSite, "ihm_model_id") !== -1);
-    applyCounts(facts, atomCount, residueTally, compounds, readMetalcLinks(text), annotations, true);
+    applyCounts(facts, atomCount, residueTally, compounds.facts(), readMetalcLinks(text), annotations);
     facts.glycans = annotations.glycans;
   }
 
@@ -538,10 +573,9 @@ function applyCounts(
   facts: StructureFacts,
   atomCount: number,
   residueTally: ResidueTally,
-  compounds: CompoundTally,
+  instances: Map<string, InstanceFacts>,
   metalcLinks: MetalcLinks,
   annotations: FileAnnotations,
-  byCCDType: boolean,
 ): void {
   const residueCount = residueTally.residues.size;
   if (atomCount > 0) {
@@ -556,7 +590,7 @@ function applyCounts(
   if (residueCount > 0) {
     facts.metadata.altloc_fraction = residueTally.altlocResidueCount() / residueCount;
   }
-  const sorted = sortCompounds(compounds.facts(), metalcLinks, annotations, byCCDType);
+  const sorted = sortCompounds(instances, metalcLinks, annotations);
   if (sorted.ligands.length > 0) {
     facts.metadata.ligands = sorted.ligands;
   }

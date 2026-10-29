@@ -129,6 +129,11 @@ function compoundKind(compound: string): CompoundKind {
   return "ligand";
 }
 
+/** Whether a compound is on the metal ion list, for reading PDB LINK records. */
+export function isMetalIon(compound: string): boolean {
+  return compoundKind(compound) === "metal";
+}
+
 type ElementClass = "metal" | "nonmetal" | "unknown";
 
 // Mirrors Reference.elementClass in lib/cif/reference.go: a symbol on neither
@@ -206,20 +211,29 @@ export type HeteroAtom = {
   element: string;
   /** label_entity_id; "" in PDB-format files. */
   entityId: string;
-  /** Set when the row has a label_seq_id: the residue sits in a polymer chain. */
+  /** Set when an mmCIF row has a label_seq_id: the residue sits within a
+   *  chain. A PDB-format file decides chain positions after the read. */
   inChain: boolean;
   /** Set for a row of any model after the first. */
   laterModel: boolean;
 };
 
+/** Mirrors chainPosition in lib/cif/tally.go: what a file says about a
+ *  residue's place in a polymer chain. "member": a PDB-format MODRES record, or
+ *  a name in the chain's SEQRES at a position in its polymer block (polymer
+ *  whatever its CCD type). "spanOnly": within a chain, but nothing names it as
+ *  a chain residue (an mmCIF label_seq_id, or a PDB chain without SEQRES); only
+ *  a peptide or nucleotide counts as in the chain. */
+export type ChainPosition = "member" | "spanOnly" | "none";
+
 /** What the coordinates say about one instance: its atom count (0 when
  *  unknown) and the facts of its first atom. */
-type InstanceFacts = {
+export type InstanceFacts = {
   instance: CompoundInstance;
   atomCount: number;
   element: string;
   entityId: string;
-  inChain: boolean;
+  chain: ChainPosition;
   laterModel: boolean;
 };
 
@@ -258,7 +272,7 @@ export class CompoundTally {
         atomCount: entry.atoms.size,
         element: entry.first.element,
         entityId: entry.first.entityId,
-        inChain: entry.first.inChain,
+        chain: entry.first.inChain ? "spanOnly" : "none",
         laterModel: entry.first.laterModel,
       });
     }
@@ -277,7 +291,7 @@ export class CompoundTally {
 }
 
 function emptyFacts(instance: CompoundInstance, atomCount: number, entityId: string): InstanceFacts {
-  return { instance, atomCount, element: "", entityId, inChain: false, laterModel: false };
+  return { instance, atomCount, element: "", entityId, chain: "none", laterModel: false };
 }
 
 /** What the file's `metalc` connection rows say about metal ions. */
@@ -606,18 +620,16 @@ class MetalPartners {
  *
  * A modified residue that is a covalently bound cofactor (LLP) adds that
  * cofactor (PLP). An integrative file's compounds come from every model.
- * byCCDType is false for PDB-format files, which use the lists alone.
  */
 export function sortCompounds(
   instances: Map<string, InstanceFacts>,
   metalcLinks: MetalcLinks,
   annotations: FileAnnotations,
-  byCCDType: boolean,
 ): SortedCompounds {
   const partners = new MetalPartners(metalcLinks);
   const decisions: Decision[] = [];
   for (const facts of orderedInstances(instances, annotations.ihm)) {
-    const placed = decide(facts, partners, metalcLinks.hasRows, annotations, byCCDType);
+    const placed = decide(facts, partners, metalcLinks.hasRows, annotations);
     if (placed) {
       decisions.push(placed);
     }
@@ -657,14 +669,13 @@ function decide(
   partners: MetalPartners,
   hasMetalcRows: boolean,
   annotations: FileAnnotations,
-  byCCDType: boolean,
 ): Decision | null {
   const { instance } = facts;
   const id = instance.compound;
   if (WATER_COMPOUNDS.has(id)) {
     return null;
   }
-  const [shape, shapeReview] = shapeOf(facts, annotations, byCCDType);
+  const [shape, shapeReview] = shapeOf(facts, annotations);
   const review =
     annotations.compoundReview.get(id) ?? annotations.entityReview.get(facts.entityId) ?? shapeReview;
   if (shape === "water" || shape === "polymer") {
@@ -726,10 +737,13 @@ function placeByShape(
   }
 }
 
-/** Mirrors shapeOf: the entity type, or for an mmCIF instance whose entity the
- *  file does not list, its CCD type (the file's own `_chem_comp.type`, then the
- *  CCD table) and whether it has a label_seq_id. */
-function shapeOf(facts: InstanceFacts, annotations: FileAnnotations, byCCDType: boolean): [Shape, string | null] {
+/** Mirrors shapeOf: the entity type. An instance whose entity the file does
+ *  not list (a PDB-format file, or an mmCIF file without `_entity`) is polymer
+ *  when the file names it as a chain residue; otherwise its CCD type decides
+ *  (the file's own `_chem_comp.type`, then the CCD table). A peptide or
+ *  nucleotide within a chain counts as polymer too; one outside any chain is a
+ *  ligand to confirm. */
+function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, string | null] {
   const entity = annotations.entitiesRead && facts.entityId ? annotations.entityTypes.get(facts.entityId) : undefined;
   switch (entity) {
     case "water":
@@ -748,14 +762,20 @@ function shapeOf(facts: InstanceFacts, annotations: FileAnnotations, byCCDType: 
     default:
       throw new Error(`unknown entity type for ${facts.instance.compound}: ${String(entity satisfies never)}`);
   }
-  if (!byCCDType) {
-    return ["listed", null];
+  switch (facts.chain) {
+    case "member":
+      return ["polymer", null];
+    case "spanOnly":
+    case "none":
+      break;
+    default:
+      throw new Error(`unknown chain position for ${facts.instance.compound}: ${String(facts.chain satisfies never)}`);
   }
   const [category, review] = categoryOf(facts.instance.compound, annotations);
   switch (category) {
     case "peptide":
     case "nucleotide":
-      return [facts.inChain ? "polymer" : "outsideChain", review];
+      return [facts.chain === "spanOnly" ? "polymer" : "outsideChain", review];
     case "saccharide":
       return ["branched", review];
     case "nonPolymer":

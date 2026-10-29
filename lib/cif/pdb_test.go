@@ -124,3 +124,156 @@ func Test_should_flag_metal_for_review_when_pdb_has_no_connection_rows(t *testin
 	}, extraction.Review[0])
 	assert.Equal(t, extraction.Review, extraction.Fields[FieldCompoundReview])
 }
+
+// pdbRecord writes one ATOM or HETATM record in PDB columns.
+func pdbRecord(record string, serial int, atom string, residue string, chain string, number int, element string) string {
+	return fmt.Sprintf("%-6s%5d %-4s %3s %1s%4d    %8.3f%8.3f%8.3f%6.2f%6.2f          %2s\n",
+		record, serial, atom, residue, chain, number, 1.0, 2.0, 3.0, 1.0, 20.0, element)
+}
+
+func pdbSeqres(chain string, residues ...string) string {
+	return fmt.Sprintf("SEQRES   1 %1s %4d  %s\n", chain, len(residues), strings.Join(residues, " "))
+}
+
+func pdbModres(residue string, chain string, number int, standard string) string {
+	return fmt.Sprintf("MODRES XXXX %3s %1s %4d  %3s\n", residue, chain, number, standard)
+}
+
+func pdbLink(atom1 string, residue1 string, chain1 string, number1 int, atom2 string, residue2 string, chain2 string, number2 int) string {
+	return fmt.Sprintf("LINK        %-4s %3s %1s%4d                %-4s %3s %1s%4d\n",
+		atom1, residue1, chain1, number1, atom2, residue2, chain2, number2)
+}
+
+func pdbTer(serial int, residue string, chain string, number int) string {
+	return fmt.Sprintf("TER   %5d      %3s %1s%4d\n", serial, residue, chain, number)
+}
+
+func pdbSources(t *testing.T, text string) (Extraction, CompoundSources) {
+	t.Helper()
+	extraction, err := PDBExtraction(text, false)
+	require.NoError(t, err)
+	return extraction, extraction.CompoundSources
+}
+
+func Test_should_treat_seqres_residue_before_ter_as_polymer_and_one_after_as_ligand(t *testing.T) {
+	// given: MSE in chain A; a free glutamate after chain A's TER, as in 1II5.
+	text := pdbSeqres("A", "ALA", "MSE", "GLU") +
+		pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "SE", "MSE", "A", 2, "SE") +
+		pdbRecord("HETATM", 3, "CA", "MSE", "A", 2, "C") +
+		pdbRecord("ATOM", 4, "CA", "GLU", "A", 3, "C") +
+		pdbTer(5, "GLU", "A", 3) +
+		pdbRecord("HETATM", 6, "N", "GLU", "A", 999, "N") +
+		pdbRecord("HETATM", 7, "CA", "GLU", "A", 999, "C") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"GLU"}, extraction.Fields["ligands"])
+	assert.Equal(t, []ReviewItem{{List: ListLigands, ID: "GLU", Reason: outsideChainReason}}, extraction.Review)
+	assert.Equal(t, source(ruleCCDType), sources.Ligands["GLU"])
+}
+
+func Test_should_count_a_seqres_residue_of_any_ccd_type_as_polymer(t *testing.T) {
+	// given: HT0 is a "non-polymer" in the CCD but a residue of 7LTB's chain.
+	text := pdbSeqres("A", "HT0", "PHE") +
+		pdbRecord("HETATM", 1, "C1", "HT0", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "C2", "HT0", "A", 1, "C") +
+		pdbRecord("ATOM", 3, "CA", "PHE", "A", 2, "C") +
+		pdbTer(4, "PHE", "A", 2) + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.NotContains(t, extraction.Fields, "ligands")
+	assert.Empty(t, sources.Ligands)
+}
+
+func Test_should_keep_modres_residue_in_chain_and_add_its_bound_cofactor(t *testing.T) {
+	// given: LLP (PLP on a lysine), as MODRES lists it in 3CEB.
+	text := pdbModres("LLP", "A", 5, "LYS") +
+		pdbRecord("ATOM", 1, "CA", "ALA", "A", 4, "C") +
+		pdbRecord("HETATM", 2, "NZ", "LLP", "A", 5, "N") +
+		pdbRecord("HETATM", 3, "C4A", "LLP", "A", 5, "C") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.NotContains(t, extraction.Fields, "ligands")
+	assert.Equal(t, []string{"PLP"}, extraction.Fields["cofactors"])
+	assert.Equal(t, map[string]CompoundSource{"PLP": source(ruleCovalentMap)}, sources.Cofactors)
+}
+
+func Test_should_place_residues_by_numbers_when_chain_has_neither_seqres_nor_ter(t *testing.T) {
+	// given: a depositor file: MSE inside chain A's numbers, a glutamate and an
+	// ATP numbered inside them too, and a glutamate far outside.
+	text := pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "SE", "MSE", "A", 2, "SE") +
+		pdbRecord("HETATM", 3, "CA", "MSE", "A", 2, "C") +
+		pdbRecord("ATOM", 4, "CA", "ALA", "A", 9, "C") +
+		pdbRecord("HETATM", 5, "PG", "ATP", "A", 5, "P") +
+		pdbRecord("HETATM", 6, "PB", "ATP", "A", 5, "P") +
+		pdbRecord("HETATM", 7, "N", "GLU", "A", 900, "N") +
+		pdbRecord("HETATM", 8, "CA", "GLU", "A", 900, "C") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then: only a peptide counts as in the chain without SEQRES to name it.
+	assert.Equal(t, []string{"ATP", "GLU"}, extraction.Fields["ligands"])
+	assert.Equal(t, source(ruleList), sources.Ligands["ATP"])
+	assert.Equal(t, source(ruleCCDType), sources.Ligands["GLU"])
+}
+
+func Test_should_read_link_records_as_metal_links(t *testing.T) {
+	// given: zinc bound to a cysteine, magnesium only to water, calcium to nothing.
+	text := pdbLink("SG", "CYS", "A", 1, "ZN", "ZN", "B", 101) +
+		pdbLink("MG", "MG", "B", 102, "O", "HOH", "C", 201) +
+		pdbRecord("ATOM", 1, "CA", "CYS", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "ZN", "ZN", "B", 101, "ZN") +
+		pdbRecord("HETATM", 3, "MG", "MG", "B", 102, "MG") +
+		pdbRecord("HETATM", 4, "CA", "CA", "B", 103, "CA") +
+		pdbRecord("HETATM", 5, "O", "HOH", "C", 201, "O") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"MG", "ZN"}, extraction.Fields["cofactors"])
+	assert.Equal(t, []string{"CA"}, extraction.Fields["ligands"])
+	assert.ElementsMatch(t, []ReviewItem{
+		{List: ListCofactors, ID: "MG", Reason: waterOnlyMetalReason},
+		{List: ListLigands, ID: "CA", Reason: unlinkedMetalReason},
+	}, extraction.Review)
+	assert.Equal(t, source(ruleMetalc), sources.Cofactors["ZN"])
+}
+
+func Test_should_keep_metal_flagged_when_link_records_join_no_metal(t *testing.T) {
+	// given: the only LINK joins a sugar to an asparagine.
+	text := pdbLink("ND2", "ASN", "A", 1, "C1", "NAG", "B", 1) +
+		pdbRecord("ATOM", 1, "CA", "ASN", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "ZN", "ZN", "B", 101, "ZN") + "END\n"
+
+	// when
+	extraction, _ := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []ReviewItem{{List: ListCofactors, ID: "ZN", Reason: noMetalcRowsReason}}, extraction.Review)
+}
+
+func Test_should_place_a_sugar_outside_any_chain_as_a_glycan(t *testing.T) {
+	// given
+	text := pdbRecord("ATOM", 1, "CA", "ASN", "A", 1, "C") +
+		pdbRecord("HETATM", 2, "C1", "NAG", "B", 1, "C") +
+		pdbRecord("HETATM", 3, "C2", "NAG", "B", 1, "C") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"NAG"}, extraction.Fields["ligands"])
+	assert.Equal(t, source(ruleBranched), sources.Ligands["NAG"])
+}

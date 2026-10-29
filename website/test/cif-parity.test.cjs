@@ -25,7 +25,7 @@ for (const [name, expected] of Object.entries(golden)) {
     const { CIF_REFERENCE } = require("../src/lib/parse/cifReference.gen.ts");
 
     // when
-    const facts = parseStructureFacts(text, "mmcif");
+    const facts = parseStructureFacts(text, name.endsWith(".pdb") ? "pdb" : "mmcif");
 
     // then
     const reviewByKey = new Map(

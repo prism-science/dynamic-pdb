@@ -45,6 +45,12 @@
     "unique_protein_chains": 1,
     "compounds": []
   },
+  "1A62.pdb": {
+    "atom_count": 88,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": []
+  },
   "1AKE.cif": {
     "atom_count": 251,
     "modeled_residues": 17,
@@ -54,6 +60,20 @@
         "list": "ligands",
         "id": "AP5",
         "rule": "list"
+      }
+    ]
+  },
+  "1II5.pdb": {
+    "atom_count": 62,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "GLU",
+        "rule": "ccd_type",
+        "needs_review": true,
+        "reason": "residue outside the polymer chain: confirm it is a ligand"
       }
     ]
   },
@@ -98,7 +118,43 @@
       }
     ]
   },
+  "3CEB.pdb": {
+    "atom_count": 161,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "PLP",
+        "rule": "covalent_map"
+      },
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "SO4",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
   "3CLN.cif": {
+    "atom_count": 71,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "CA",
+        "rule": "metalc"
+      }
+    ]
+  },
+  "3CLN.pdb": {
     "atom_count": 71,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
@@ -236,6 +292,38 @@
       }
     ]
   },
+  "7LTB.pdb": {
+    "atom_count": 236,
+    "modeled_residues": 2,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "excluded",
+        "id": "FMT",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "BGC",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "MAN",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "YBJ",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "Z6G",
+        "rule": "branched"
+      }
+    ]
+  },
   "9A8B.cif": {
     "atom_count": 77,
     "modeled_residues": 4,
@@ -342,6 +430,63 @@
         "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
+  "parity/pdb_no_metal_link.pdb": {
+    "atom_count": 4,
+    "modeled_residues": 1,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "ZN",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal ion kept for review: the file has no metalc connection rows"
+      },
+      {
+        "list": "ligands",
+        "id": "NAG",
+        "rule": "branched"
+      }
+    ]
+  },
+  "parity/pdb_rules.pdb": {
+    "atom_count": 11,
+    "modeled_residues": 2,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal linked only to water: confirm the site"
+      },
+      {
+        "list": "cofactors",
+        "id": "ZN",
+        "rule": "metalc"
+      },
+      {
+        "list": "ligands",
+        "id": "ATP",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "CA",
+        "rule": "metalc",
+        "needs_review": true,
+        "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
+      },
+      {
+        "list": "ligands",
+        "id": "GLU",
+        "rule": "ccd_type",
+        "needs_review": true,
+        "reason": "residue outside the polymer chain: confirm it is a ligand"
       }
     ]
   },

@@ -124,7 +124,7 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 
 	annotations := readAnnotations(document, atomSiteHasIHMModels(document))
 	result.Warnings = append(result.Warnings, annotations.warnings...)
-	sorted, err := classifyCompounds(instances, links, annotations, true, reference)
+	sorted, err := classifyCompounds(instances, links, annotations, reference)
 	if err != nil {
 		return Result{}, fmt.Errorf("classify compounds: %w", err)
 	}

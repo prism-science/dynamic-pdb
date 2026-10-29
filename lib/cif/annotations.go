@@ -67,8 +67,8 @@ type fileAnnotations struct {
 	warnings       []string
 }
 
-// pdbAnnotations is what a PDB-format file says: nothing beyond its records,
-// so its compounds are sorted by the reference lists alone.
+// pdbAnnotations is the starting point for a PDB-format file: it has no
+// categories, so only its MODRES residues are added (see pdbExtraction).
 func pdbAnnotations() fileAnnotations {
 	return fileAnnotations{
 		entityTypes:    map[string]entityType{},
