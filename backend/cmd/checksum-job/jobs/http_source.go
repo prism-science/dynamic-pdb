@@ -1,10 +1,13 @@
 package jobs
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/netip"
@@ -131,7 +134,7 @@ func (s *HTTPSource) Open(ctx context.Context, uri string) (io.ReadCloser, error
 		return nil, fmt.Errorf("get %s: %w", parsed.Host, err)
 	}
 	if response.StatusCode == http.StatusOK {
-		return response.Body, nil
+		return refuseLandingPage(response)
 	}
 	closeErr := response.Body.Close()
 	statusErr := fmt.Errorf("http status %d", response.StatusCode)
@@ -139,6 +142,60 @@ func (s *HTTPSource) Open(ctx context.Context, uri string) (io.ReadCloser, error
 		statusErr = fmt.Errorf("%w: %w", statusErr, errNotRetryable)
 	}
 	return nil, errors.Join(statusErr, closeErr)
+}
+
+// sniffBytes is how much of a body is read ahead to tell an HTML page from a file.
+const sniffBytes = 512
+
+// htmlStarts are how an HTML page begins, lowercased. The files the job reads begin otherwise:
+// mmCIF with "data_", FASTA with ">" and XML with "<?xml".
+var htmlStarts = [][]byte{[]byte("<!doctype html"), []byte("<html")}
+
+// refuseLandingPage returns the body of an OK response unless it is an HTML page, such as the
+// landing page a DOI resolves to, which is not the file. A page is refused when its
+// Content-Type says HTML or its first bytes are HTML, so a page sent as text/plain or
+// application/octet-stream is refused too. The page will not become the file on a retry.
+func refuseLandingPage(response *http.Response) (io.ReadCloser, error) {
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err == nil && (mediaType == "text/html" || mediaType == "application/xhtml+xml") {
+		closeErr := response.Body.Close()
+		return nil, errors.Join(
+			fmt.Errorf("landing page, not a file (content type %s): %w", mediaType, errNotRetryable),
+			closeErr)
+	}
+	buffered := bufio.NewReaderSize(response.Body, sniffBytes)
+	start, err := buffered.Peek(sniffBytes)
+	if err != nil && !errors.Is(err, io.EOF) {
+		closeErr := response.Body.Close()
+		return nil, errors.Join(fmt.Errorf("read start of body: %w", err), closeErr)
+	}
+	if startsLikeHTML(start) {
+		closeErr := response.Body.Close()
+		return nil, errors.Join(
+			fmt.Errorf("landing page, not a file (body starts as HTML): %w", errNotRetryable),
+			closeErr)
+	}
+	return bufferedBody{Reader: buffered, Closer: response.Body}, nil
+}
+
+// startsLikeHTML is true when start, after a byte order mark and white space, begins like an
+// HTML page.
+func startsLikeHTML(start []byte) bool {
+	start = bytes.TrimPrefix(start, []byte("\xef\xbb\xbf"))
+	start = bytes.ToLower(bytes.TrimLeft(start, " \t\r\n"))
+	for _, htmlStart := range htmlStarts {
+		if bytes.HasPrefix(start, htmlStart) {
+			return true
+		}
+	}
+	return false
+}
+
+// bufferedBody reads a response body through the buffer that holds its first bytes and closes
+// the body itself.
+type bufferedBody struct {
+	io.Reader
+	io.Closer
 }
 
 func checkScheme(target *url.URL) error {

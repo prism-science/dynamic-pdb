@@ -65,6 +65,10 @@ spec:
                   value: {{ .Values.checksumJob.statementTimeout | quote }}
                 - name: DYNAMIC_PDB_CHECKSUM_MAX_FILES_PER_RUN
                   value: {{ .Values.checksumJob.maxFilesPerRun | quote }}
+                # int64 first: YAML numbers reach the template as floats, and quote alone would
+                # render 1073741824 as "1.073741824e+09", which the job cannot read.
+                - name: DYNAMIC_PDB_CHECKSUM_COPY_LIMIT_BYTES
+                  value: {{ .Values.checksumJob.copyLimitBytes | int64 | quote }}
               resources:
                 {{- toYaml .Values.checksumJob.resources | nindent 16 }}
 {{- end }}

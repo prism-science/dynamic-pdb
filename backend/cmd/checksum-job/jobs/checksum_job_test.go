@@ -130,11 +130,13 @@ func (q *fakeQueue) result(t *testing.T, artifactID uuid.UUID) models.ChecksumRe
 
 // fakeFiles is our bucket: URIs under ourFilesBaseURL are stored files.
 type fakeFiles struct {
-	mu          sync.Mutex
-	objects     map[string]string
-	writers     []*fakeWriter
-	completeErr error
-	abortErr    error
+	mu           sync.Mutex
+	objects      map[string]string
+	writers      []*fakeWriter
+	newWriterErr error
+	writeErr     error
+	completeErr  error
+	abortErr     error
 }
 
 func newFakeFiles() *fakeFiles {
@@ -168,7 +170,10 @@ func (f *fakeFiles) CopyKey(file cdn.FileUpload) (string, error) {
 func (f *fakeFiles) NewWriter(_ context.Context, key string) (cdn.ObjectWriter, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	writer := &fakeWriter{files: f, key: key, completeErr: f.completeErr, abortErr: f.abortErr}
+	if f.newWriterErr != nil {
+		return nil, f.newWriterErr
+	}
+	writer := &fakeWriter{files: f, key: key, writeErr: f.writeErr, completeErr: f.completeErr, abortErr: f.abortErr}
 	f.writers = append(f.writers, writer)
 	return writer, nil
 }
@@ -183,11 +188,15 @@ type fakeWriter struct {
 	buffer      bytes.Buffer
 	completed   bool
 	aborted     bool
+	writeErr    error
 	completeErr error
 	abortErr    error
 }
 
 func (w *fakeWriter) Write(data []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
 	return w.buffer.Write(data)
 }
 
@@ -327,6 +336,7 @@ func Test_should_record_verified_when_stored_file_matches_declared_hash_and_size
 	assert.Equal(t, ptr(sha256Hex("data_model\n")), result.SHA256)
 	assert.Equal(t, ptr(int64(11)), result.SizeBytes)
 	assert.Nil(t, result.StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusOwnStorage), result.CopyStatus)
 	assert.Equal(t, jobTestNow, result.CheckedAt)
 	assert.Empty(t, files.writers)
 	assert.Equal(t, []uuid.UUID{uuid.Nil}, queue.fillAfters)
@@ -413,6 +423,7 @@ func Test_should_record_mismatch_with_computed_values_when_declared_hash_differs
 	assert.Equal(t, models.ChecksumStatusMismatch, result.Status)
 	assert.Equal(t, ptr(sha256Hex("abc")), result.SHA256)
 	assert.Equal(t, ptr(int64(3)), result.SizeBytes)
+	assert.Equal(t, ptr(models.CopyStatusOwnStorage), result.CopyStatus, "a file in our bucket never needed a copy")
 }
 
 func Test_should_record_mismatch_when_declared_size_differs(t *testing.T) {
@@ -490,6 +501,7 @@ func Test_should_fail_at_once_when_stored_file_is_missing(t *testing.T) {
 	assert.Equal(t, models.ChecksumStatusFailed, result.Status)
 	require.NotNil(t, result.Error)
 	assert.Contains(t, *result.Error, "not found")
+	assert.Nil(t, result.CopyStatus)
 }
 
 func Test_should_fail_at_once_when_external_file_is_gone(t *testing.T) {
@@ -507,6 +519,7 @@ func Test_should_fail_at_once_when_external_file_is_gone(t *testing.T) {
 	result := queue.result(t, claim.ArtifactID)
 	assert.Equal(t, models.ChecksumStatusFailed, result.Status)
 	assert.Equal(t, ptr("open external file: http status 404: not retryable"), result.Error)
+	assert.Nil(t, result.CopyStatus)
 }
 
 func Test_should_fail_when_artifact_has_no_uri(t *testing.T) {
@@ -545,6 +558,7 @@ func Test_should_retry_later_with_growing_delay_when_server_errors(t *testing.T)
 			assert.Equal(t, models.ChecksumStatusPending, result.Status)
 			assert.Equal(t, ptr(jobTestNow.Add(delay)), result.NextAttemptAt)
 			assert.Equal(t, ptr("open external file: http status 503"), result.Error)
+			assert.Nil(t, result.CopyStatus)
 		})
 	}
 }
@@ -587,6 +601,7 @@ func Test_should_copy_external_file_into_artifact_folder_when_hash_verified(t *t
 	result := queue.result(t, claim.ArtifactID)
 	assert.Equal(t, models.ChecksumStatusVerified, result.Status)
 	assert.Equal(t, ptr(ourFilesBaseURL+copyKey), result.StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusCopied), result.CopyStatus)
 	assert.Equal(t, "data_1abc_sf\n", files.objects[copyKey])
 }
 
@@ -609,6 +624,7 @@ func Test_should_discard_copy_when_external_file_does_not_match_declared_hash(t 
 	assert.Equal(t, models.ChecksumStatusMismatch, result.Status)
 	assert.Equal(t, ptr(sha256Hex("remediated\n")), result.SHA256)
 	assert.Nil(t, result.StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusMismatch), result.CopyStatus)
 	require.Len(t, files.writers, 1)
 	assert.True(t, files.writers[0].aborted)
 	assert.False(t, files.writers[0].completed)
@@ -635,8 +651,30 @@ func Test_should_keep_link_only_when_external_file_is_over_copy_limit(t *testing
 	assert.Equal(t, models.ChecksumStatusVerified, result.Status)
 	assert.Equal(t, ptr(sha256Hex(strings.Repeat("x", 100))), result.SHA256)
 	assert.Nil(t, result.StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusOverLimit), result.CopyStatus)
 	require.Len(t, files.writers, 1)
 	assert.True(t, files.writers[0].aborted)
+}
+
+func Test_should_record_copy_status_mismatch_when_external_file_over_copy_limit_does_not_match(t *testing.T) {
+	// given
+	rcsb := newRCSBServer(t)
+	rcsb.files["/download/huge.cif"] = strings.Repeat("x", 100)
+	claim := claimFor(rcsb.uri("/download/huge.cif"), ptr(sha256Hex("original\n")), nil, 1)
+	queue := newFakeQueue(claim)
+	queue.locations[claim.ArtifactID] = models.ArtifactLocation{EntryID: "entry-1"}
+	cfg := testJobConfig()
+	cfg.CopyLimitBytes = 10
+	job := newTestJob(t, queue, newFakeFiles(), rcsb, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	result := queue.result(t, claim.ArtifactID)
+	assert.Equal(t, models.ChecksumStatusMismatch, result.Status)
+	assert.Equal(t, ptr(models.CopyStatusMismatch), result.CopyStatus, "a mismatched file is never copied, whatever its size")
 }
 
 func Test_should_read_shared_uri_once_and_record_every_artifact_when_rows_share_a_uri(t *testing.T) {
@@ -664,8 +702,11 @@ func Test_should_read_shared_uri_once_and_record_every_artifact_when_rows_share_
 	storedURI := queue.result(t, first.ArtifactID).StoredURI
 	require.NotNil(t, storedURI)
 	assert.Equal(t, storedURI, queue.result(t, second.ArtifactID).StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusCopied), queue.result(t, first.ArtifactID).CopyStatus)
+	assert.Equal(t, ptr(models.CopyStatusCopied), queue.result(t, second.ArtifactID).CopyStatus)
 	assert.Equal(t, models.ChecksumStatusMismatch, queue.result(t, third.ArtifactID).Status)
 	assert.Nil(t, queue.result(t, third.ArtifactID).StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusMismatch), queue.result(t, third.ArtifactID).CopyStatus)
 }
 
 func Test_should_not_copy_when_copying_external_files_is_off(t *testing.T) {
@@ -685,7 +726,9 @@ func Test_should_not_copy_when_copying_external_files_is_off(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, models.ChecksumStatusVerified, queue.result(t, claim.ArtifactID).Status)
+	result := queue.result(t, claim.ArtifactID)
+	assert.Equal(t, models.ChecksumStatusVerified, result.Status)
+	assert.Equal(t, ptr(models.CopyStatusCopyOff), result.CopyStatus)
 	assert.Empty(t, files.writers)
 }
 
@@ -808,7 +851,77 @@ func Test_should_keep_verified_hash_without_copy_when_storing_the_copy_fails(t *
 	assert.Equal(t, models.ChecksumStatusVerified, result.Status)
 	assert.Equal(t, ptr(sha256Hex("data_1abc_sf\n")), result.SHA256)
 	assert.Nil(t, result.StoredURI)
+	assert.Equal(t, ptr(models.CopyStatusCopyFailed), result.CopyStatus)
 	assert.Nil(t, result.NextAttemptAt)
+}
+
+func Test_should_record_copy_failed_when_copy_cannot_be_started_or_written(t *testing.T) {
+	cases := map[string]struct {
+		hasLocation bool
+		files       func() *fakeFiles
+	}{
+		"no artifact belongs to an entry": {hasLocation: false, files: newFakeFiles},
+		"upload does not start": {hasLocation: true, files: func() *fakeFiles {
+			files := newFakeFiles()
+			files.newWriterErr = errors.New("bucket unreachable")
+			return files
+		}},
+		"bucket refuses the bytes": {hasLocation: true, files: func() *fakeFiles {
+			files := newFakeFiles()
+			files.writeErr = errors.New("bucket refused the part")
+			return files
+		}},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			rcsb := newRCSBServer(t)
+			rcsb.files["/download/1ABC.cif"] = "data_1abc\n"
+			claim := claimFor(rcsb.uri("/download/1ABC.cif"), ptr(sha256Hex("data_1abc\n")), nil, 1)
+			queue := newFakeQueue(claim)
+			if testCase.hasLocation {
+				queue.locations[claim.ArtifactID] = models.ArtifactLocation{EntryID: "entry-1"}
+			}
+			job := newTestJob(t, queue, testCase.files(), rcsb, testJobConfig())
+
+			// when
+			err := job.Run(context.Background())
+
+			// then
+			require.NoError(t, err)
+			result := queue.result(t, claim.ArtifactID)
+			assert.Equal(t, models.ChecksumStatusVerified, result.Status)
+			assert.Equal(t, ptr(sha256Hex("data_1abc\n")), result.SHA256)
+			assert.Nil(t, result.StoredURI)
+			assert.Equal(t, ptr(models.CopyStatusCopyFailed), result.CopyStatus)
+		})
+	}
+}
+
+func Test_should_fail_at_once_without_copy_when_url_answers_with_landing_page(t *testing.T) {
+	// given
+	rcsb := newRCSBServer(t)
+	rcsb.files["/dataset/1303/"] = "<!DOCTYPE html>\n<html><head><title>SBGrid Data Bank</title></head></html>\n"
+	claim := claimFor(rcsb.uri("/dataset/1303/"), nil, nil, 1)
+	queue := newFakeQueue(claim)
+	queue.locations[claim.ArtifactID] = models.ArtifactLocation{EntryID: "entry-1"}
+	files := newFakeFiles()
+	job := newTestJob(t, queue, files, rcsb, testJobConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	result := queue.result(t, claim.ArtifactID)
+	assert.Equal(t, models.ChecksumStatusFailed, result.Status)
+	require.NotNil(t, result.Error)
+	assert.Contains(t, *result.Error, "landing page, not a file")
+	assert.Nil(t, result.NextAttemptAt, "a landing page is not retried")
+	assert.Nil(t, result.SHA256)
+	assert.Nil(t, result.StoredURI)
+	assert.Nil(t, result.CopyStatus)
+	assert.Empty(t, files.objects, "the page is not stored as a copy")
 }
 
 func Test_should_record_mismatch_when_discarding_the_copy_fails(t *testing.T) {

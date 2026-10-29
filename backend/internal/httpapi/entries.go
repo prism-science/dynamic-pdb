@@ -1667,7 +1667,8 @@ func artifactAttributesFromModel(artifact domainmodels.Artifact) (ArtifactAttrib
 
 func artifactChecksumFromModel(checksum domainmodels.ArtifactChecksum) ArtifactChecksum {
 	return ArtifactChecksum{Status: ArtifactChecksumStatus(checksum.Status), Sha256: checksum.SHA256,
-		SizeBytes: checksum.SizeBytes, StoredUri: checksum.StoredURI, CheckedAt: checksum.CheckedAt}
+		SizeBytes: checksum.SizeBytes, StoredUri: checksum.StoredURI,
+		CopyStatus: (*ArtifactChecksumCopyStatus)(checksum.CopyStatus), CheckedAt: checksum.CheckedAt}
 }
 
 type artifactAttachmentScope string

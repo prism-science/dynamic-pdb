@@ -187,6 +187,7 @@ func Test_should_add_rows_only_for_artifacts_without_one_when_missing_rows_added
 		Status:     models.ChecksumStatusVerified,
 		SHA256:     ptr("aa" + sha256Tail),
 		SizeBytes:  ptr(int64(10)),
+		CopyStatus: ptr(models.CopyStatusOwnStorage),
 		CheckedAt:  now,
 	}}))
 	missingID := fixture.insertArtifactWithoutChecksum(t, "https://files.example.com/old.cif")
@@ -316,6 +317,7 @@ func Test_should_store_each_outcome_when_results_recorded(t *testing.T) {
 	ctx := context.Background()
 	fixture := newChecksumTestDB(t)
 	verified := fixture.createArtifact(t, "https://files.rcsb.org/download/1abc.cif", nil, nil)
+	mismatched := fixture.createArtifact(t, "https://files.rcsb.org/download/2abc.cif", nil, nil)
 	failed := fixture.createArtifact(t, "https://files.rcsb.org/download/gone.cif", nil, nil)
 	retried := fixture.createArtifact(t, "https://files.rcsb.org/download/busy.cif", nil, nil)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -331,6 +333,15 @@ func Test_should_store_each_outcome_when_results_recorded(t *testing.T) {
 			SHA256:     &computedSHA,
 			SizeBytes:  ptr(int64(7)),
 			StoredURI:  &storedURI,
+			CopyStatus: ptr(models.CopyStatusCopied),
+			CheckedAt:  now,
+		},
+		{
+			ArtifactID: mismatched.ID,
+			Status:     models.ChecksumStatusMismatch,
+			SHA256:     &computedSHA,
+			SizeBytes:  ptr(int64(7)),
+			CopyStatus: ptr(models.CopyStatusMismatch),
 			CheckedAt:  now,
 		},
 		{ArtifactID: failed.ID, Status: models.ChecksumStatusFailed, Error: ptr("http status 404"), CheckedAt: now},
@@ -346,15 +357,24 @@ func Test_should_store_each_outcome_when_results_recorded(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, models.ArtifactChecksum{
-		Status:    models.ChecksumStatusVerified,
-		SHA256:    &computedSHA,
-		SizeBytes: ptr(int64(7)),
-		StoredURI: &storedURI,
-		CheckedAt: &now,
+		Status:     models.ChecksumStatusVerified,
+		SHA256:     &computedSHA,
+		SizeBytes:  ptr(int64(7)),
+		StoredURI:  &storedURI,
+		CopyStatus: ptr(models.CopyStatusCopied),
+		CheckedAt:  &now,
 	}, normalizeChecksumTime(fixture.listArtifact(t, verified.ID).Checksum))
+	assert.Equal(t, models.ArtifactChecksum{
+		Status:     models.ChecksumStatusMismatch,
+		SHA256:     &computedSHA,
+		SizeBytes:  ptr(int64(7)),
+		CopyStatus: ptr(models.CopyStatusMismatch),
+		CheckedAt:  &now,
+	}, normalizeChecksumTime(fixture.listArtifact(t, mismatched.ID).Checksum))
 	failedRow := fixture.checksumRow(t, failed.ID)
 	assert.Equal(t, "failed", failedRow.Status)
 	assert.Equal(t, ptr("http status 404"), failedRow.LastError)
+	assert.Nil(t, fixture.listArtifact(t, failed.ID).Checksum.CopyStatus)
 	retriedRow := fixture.checksumRow(t, retried.ID)
 	assert.Equal(t, "pending", retriedRow.Status)
 	assert.Equal(t, ptr("http status 503"), retriedRow.LastError)
@@ -363,13 +383,27 @@ func Test_should_store_each_outcome_when_results_recorded(t *testing.T) {
 }
 
 func Test_should_reject_result_when_fields_do_not_fit_its_status(t *testing.T) {
+	read := func(status models.ChecksumStatus, copyStatus models.CopyStatus, storedURI *string) models.ChecksumResult {
+		return models.ChecksumResult{Status: status, SHA256: ptr("dd" + sha256Tail), SizeBytes: ptr(int64(1)), StoredURI: storedURI, CopyStatus: &copyStatus}
+	}
+	copyURI := ptr("https://files.example.com/x")
 	cases := map[string]models.ChecksumResult{
-		"verified without sha256":  {Status: models.ChecksumStatusVerified, SizeBytes: ptr(int64(1))},
-		"mismatch without size":    {Status: models.ChecksumStatusMismatch, SHA256: ptr("dd" + sha256Tail)},
-		"mismatch with a copy":     {Status: models.ChecksumStatusMismatch, SHA256: ptr("dd" + sha256Tail), SizeBytes: ptr(int64(1)), StoredURI: ptr("https://files.example.com/x")},
-		"failed without error":     {Status: models.ChecksumStatusFailed},
-		"pending without retry at": {Status: models.ChecksumStatusPending, Error: ptr("timeout")},
-		"unknown status":           {Status: models.ChecksumStatus("done")},
+		"verified without sha256":              {Status: models.ChecksumStatusVerified, SizeBytes: ptr(int64(1)), CopyStatus: ptr(models.CopyStatusOwnStorage)},
+		"mismatch without size":                {Status: models.ChecksumStatusMismatch, SHA256: ptr("dd" + sha256Tail), CopyStatus: ptr(models.CopyStatusMismatch)},
+		"mismatch with a copy":                 read(models.ChecksumStatusMismatch, models.CopyStatusMismatch, copyURI),
+		"failed without error":                 {Status: models.ChecksumStatusFailed},
+		"pending without retry at":             {Status: models.ChecksumStatusPending, Error: ptr("timeout")},
+		"unknown status":                       {Status: models.ChecksumStatus("done")},
+		"verified without copy status":         {Status: models.ChecksumStatusVerified, SHA256: ptr("dd" + sha256Tail), SizeBytes: ptr(int64(1))},
+		"copied without the copy":              read(models.ChecksumStatusVerified, models.CopyStatusCopied, nil),
+		"own storage with a copy":              read(models.ChecksumStatusVerified, models.CopyStatusOwnStorage, copyURI),
+		"over limit with a copy":               read(models.ChecksumStatusVerified, models.CopyStatusOverLimit, copyURI),
+		"verified with copy status mismatch":   read(models.ChecksumStatusVerified, models.CopyStatusMismatch, nil),
+		"mismatch without copy status":         {Status: models.ChecksumStatusMismatch, SHA256: ptr("dd" + sha256Tail), SizeBytes: ptr(int64(1))},
+		"mismatch with copy status over limit": read(models.ChecksumStatusMismatch, models.CopyStatusOverLimit, nil),
+		"failed with a copy status":            {Status: models.ChecksumStatusFailed, Error: ptr("http status 404"), CopyStatus: ptr(models.CopyStatusCopyFailed)},
+		"pending with a copy status":           {Status: models.ChecksumStatusPending, Error: ptr("timeout"), NextAttemptAt: ptr(time.Now()), CopyStatus: ptr(models.CopyStatusCopyFailed)},
+		"unknown copy status":                  read(models.ChecksumStatusVerified, models.CopyStatus("archived"), nil),
 	}
 	for name, result := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -385,6 +419,41 @@ func Test_should_reject_result_when_fields_do_not_fit_its_status(t *testing.T) {
 			// then
 			require.Error(t, err)
 			assert.Equal(t, "pending", fixture.checksumRow(t, artifact.ID).Status)
+		})
+	}
+}
+
+// The CHECK guards the table against writers other than Record, such as a migration or a
+// hand-written fix, so it is tested with plain SQL.
+func Test_should_reject_row_when_copy_status_does_not_fit_status_or_copy(t *testing.T) {
+	checked := `status = $1, sha256 = '` + "dd" + sha256Tail + `', size_bytes = 1, checked_at = now()`
+	cases := map[string]struct {
+		set  string
+		args []any
+	}{
+		"verified without copy status":         {set: checked + `, copy_status = NULL`, args: []any{"verified"}},
+		"copied without stored uri":            {set: checked + `, copy_status = 'copied'`, args: []any{"verified"}},
+		"own storage with stored uri":          {set: checked + `, copy_status = 'own_storage', stored_uri = 'https://files.example.com/x'`, args: []any{"verified"}},
+		"verified with copy status mismatch":   {set: checked + `, copy_status = 'mismatch'`, args: []any{"verified"}},
+		"mismatch without copy status":         {set: checked + `, copy_status = NULL`, args: []any{"mismatch"}},
+		"mismatch with copy status copy_off":   {set: checked + `, copy_status = 'copy_off'`, args: []any{"mismatch"}},
+		"failed with a copy status":            {set: `status = $1, last_error = 'gone', copy_status = 'copy_failed'`, args: []any{"failed"}},
+		"pending with a copy status":           {set: `status = $1, copy_status = 'own_storage'`, args: []any{"pending"}},
+		"unknown copy status on verified file": {set: checked + `, copy_status = 'archived'`, args: []any{"verified"}},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			fixture := newChecksumTestDB(t)
+			artifact := fixture.createArtifact(t, "https://files.example.com/"+uuid.NewString(), nil, nil)
+
+			// when
+			_, err := fixture.sql.Exec(`update artifact_checksums set `+testCase.set+` where artifact_id = $2`,
+				append(testCase.args, artifact.ID)...)
+
+			// then
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "artifact_checksums_copy_status_check")
 		})
 	}
 }

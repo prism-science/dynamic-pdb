@@ -333,11 +333,13 @@ func (j *ChecksumJob) checkGroup(
 	return j.readResults(group, digest)
 }
 
-// fileDigest is what one read of a URI found.
+// fileDigest is what one read of a URI found. copyStatus says whether storedURI holds our copy
+// of the file, and if not, why.
 type fileDigest struct {
-	sha256    string
-	sizeBytes int64
-	storedURI *string
+	sha256     string
+	sizeBytes  int64
+	storedURI  *string
+	copyStatus models.CopyStatus
 }
 
 func (j *ChecksumJob) readGroup(
@@ -358,7 +360,7 @@ func (j *ChecksumJob) readGroup(
 			if err != nil {
 				return fileDigest{}, fmt.Errorf("open stored file: %w", err)
 			}
-			return j.hashAndCopy(group, reader, nil)
+			return j.hashAndCopy(group, reader, skippedCopy(models.CopyStatusOwnStorage))
 		})
 	}
 
@@ -391,22 +393,36 @@ func (j *ChecksumJob) timedRead(
 	return digest, err
 }
 
-// fileCopy is an external file being stored in our bucket while it is hashed.
+// fileCopy is the copy of a file into our bucket, written while the file is hashed. While
+// writer is set the copy is in progress; once it is nil the copy is not made, and skipped says
+// why.
 type fileCopy struct {
-	key    string
-	writer cdn.ObjectWriter
+	key     string
+	writer  cdn.ObjectWriter
+	skipped models.CopyStatus
+}
+
+// skippedCopy is a copy that is not made, for reason; the file is only hashed.
+func skippedCopy(reason models.CopyStatus) *fileCopy {
+	return &fileCopy{skipped: reason}
+}
+
+// skip gives up the copy in progress for reason. The caller aborts the writer first.
+func (c *fileCopy) skip(reason models.CopyStatus) {
+	c.writer = nil
+	c.skipped = reason
 }
 
 // startCopy opens the copy of an external file in the folder of the group's first artifact
-// that has a location. It returns nil, and the file is only hashed, when copies are off or
-// no copy can be started.
+// that has a location. The copy is skipped, and the file is only hashed, when copies are off
+// or no copy can be started.
 func (j *ChecksumJob) startCopy(
 	ctx context.Context,
 	group uriGroup,
 	locations map[uuid.UUID]models.ArtifactLocation,
 ) *fileCopy {
 	if !j.cfg.CopyExternal {
-		return nil
+		return skippedCopy(models.CopyStatusCopyOff)
 	}
 	claims := slices.Clone(group.claims)
 	slices.SortFunc(claims, func(a, b models.ChecksumClaim) int {
@@ -429,21 +445,22 @@ func (j *ChecksumJob) startCopy(
 		})
 		if err != nil {
 			j.logger.Warn("external file not copied: no copy key", "artifact_id", claim.ArtifactID, "err", err)
-			return nil
+			return skippedCopy(models.CopyStatusCopyFailed)
 		}
 		writer, err := j.files.NewWriter(ctx, key)
 		if err != nil {
 			j.logger.Warn("external file not copied: upload did not start", "artifact_id", claim.ArtifactID, "err", err)
-			return nil
+			return skippedCopy(models.CopyStatusCopyFailed)
 		}
 		return &fileCopy{key: key, writer: writer}
 	}
 	j.logger.Warn("external file not copied: none of its artifacts belongs to an entry", "uri", *group.uri)
-	return nil
+	return skippedCopy(models.CopyStatusCopyFailed)
 }
 
 // hashAndCopy streams the file through sha256 and, while it stays within CopyLimitBytes, into
-// the copy. Only a failed read is an error; a copy that cannot be kept leaves storedURI empty.
+// the copy. Only a failed read is an error; a copy that cannot be kept leaves storedURI empty,
+// and copyStatus says why.
 func (j *ChecksumJob) hashAndCopy(group uriGroup, reader io.ReadCloser, target *fileCopy) (fileDigest, error) {
 	hasher := sha256.New()
 	var size int64
@@ -456,8 +473,8 @@ func (j *ChecksumJob) hashAndCopy(group uriGroup, reader io.ReadCloser, target *
 					return fmt.Errorf("hash file: %w", hashErr)
 				}
 				size += int64(count)
-				if target != nil {
-					target = j.writeCopy(target, buffer[:count], size, *group.uri)
+				if target.writer != nil {
+					j.writeCopy(target, buffer[:count], size, *group.uri)
 				}
 			}
 			if errors.Is(err, io.EOF) {
@@ -470,7 +487,7 @@ func (j *ChecksumJob) hashAndCopy(group uriGroup, reader io.ReadCloser, target *
 	}()
 	readErr = errors.Join(readErr, reader.Close())
 	if readErr != nil {
-		if target != nil {
+		if target.writer != nil {
 			if abortErr := target.writer.Abort(); abortErr != nil {
 				j.logger.Warn("discard copy of unread file", "uri", *group.uri, "err", abortErr)
 			}
@@ -479,51 +496,53 @@ func (j *ChecksumJob) hashAndCopy(group uriGroup, reader io.ReadCloser, target *
 	}
 
 	digest := fileDigest{sha256: hex.EncodeToString(hasher.Sum(nil)), sizeBytes: size}
-	if target != nil {
-		digest.storedURI = j.finishCopy(target, anyMatches(group.claims, digest), *group.uri)
-	}
+	digest.storedURI, digest.copyStatus = j.finishCopy(target, anyMatches(group.claims, digest), *group.uri)
 	return digest, nil
 }
 
-// finishCopy stores the copy when keep is set and returns its URL. It returns nil, and the
-// copy is discarded, when keep is not set or storing fails.
-func (j *ChecksumJob) finishCopy(target *fileCopy, keep bool, uri string) *string {
+// finishCopy stores the copy when keep is set and returns its URL with copy status copied.
+// Otherwise it returns no URL and why: the reason the copy was skipped, mismatch when keep is
+// not set, or copy_failed when storing fails.
+func (j *ChecksumJob) finishCopy(target *fileCopy, keep bool, uri string) (*string, models.CopyStatus) {
+	if target.writer == nil {
+		return nil, target.skipped
+	}
 	if !keep {
 		if err := target.writer.Abort(); err != nil {
 			j.logger.Warn("discard copy of mismatched file", "uri", uri, "err", err)
 		}
-		return nil
+		return nil, models.CopyStatusMismatch
 	}
 	if err := target.writer.Complete(); err != nil {
 		j.logger.Warn("copy of external file not stored, keeping only its link", "uri", uri, "err", err)
-		return nil
+		return nil, models.CopyStatusCopyFailed
 	}
 	storedURI, err := j.files.URL(target.key)
 	if err != nil {
 		j.logger.Warn("copy stored but its url cannot be built", "uri", uri, "key", target.key, "err", err)
-		return nil
+		return nil, models.CopyStatusCopyFailed
 	}
-	return &storedURI
+	return &storedURI, models.CopyStatusCopied
 }
 
-// writeCopy adds data to the copy and returns the copy, or nil once the copy was given up:
-// the file passed CopyLimitBytes or the bucket refused the bytes. The hash is unaffected.
-func (j *ChecksumJob) writeCopy(target *fileCopy, data []byte, sizeSoFar int64, uri string) *fileCopy {
+// writeCopy adds data to the copy, or skips the copy once the file passed CopyLimitBytes or the
+// bucket refused the bytes. The hash is unaffected.
+func (j *ChecksumJob) writeCopy(target *fileCopy, data []byte, sizeSoFar int64, uri string) {
 	if sizeSoFar > j.cfg.CopyLimitBytes {
 		if err := target.writer.Abort(); err != nil {
 			j.logger.Warn("abort copy over the copy limit", "uri", uri, "err", err)
 		}
 		j.logger.Info("external file over the copy limit keeps only its link", "uri", uri, "limit_bytes", j.cfg.CopyLimitBytes)
-		return nil
+		target.skip(models.CopyStatusOverLimit)
+		return
 	}
 	if _, err := target.writer.Write(data); err != nil {
-		j.logger.Warn("copy of external file failed, keeping only its link this time", "uri", uri, "err", err)
+		j.logger.Warn("copy of external file failed, keeping only its link", "uri", uri, "err", err)
 		if abortErr := target.writer.Abort(); abortErr != nil {
 			j.logger.Warn("abort failed copy", "uri", uri, "err", abortErr)
 		}
-		return nil
+		target.skip(models.CopyStatusCopyFailed)
 	}
-	return target
 }
 
 func anyMatches(claims []models.ChecksumClaim, digest fileDigest) bool {
@@ -560,6 +579,7 @@ func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.Ch
 	checkedAt := j.now()
 	results := make([]models.ChecksumResult, 0, len(group.claims))
 	for _, claim := range group.claims {
+		copyStatus := digest.copyStatus
 		result := models.ChecksumResult{
 			ArtifactID: claim.ArtifactID,
 			Status:     models.ChecksumStatusVerified,
@@ -571,6 +591,11 @@ func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.Ch
 		if !matchesDeclared(claim, digest) {
 			result.Status = models.ChecksumStatusMismatch
 			result.StoredURI = nil
+			// A mismatched file is never copied, whatever its size or the bucket did. A file in
+			// our bucket needs no copy in the first place, so it keeps own_storage.
+			if copyStatus != models.CopyStatusOwnStorage {
+				copyStatus = models.CopyStatusMismatch
+			}
 			j.logger.Warn("artifact bytes differ from the declared values",
 				"artifact_id", claim.ArtifactID,
 				"uri", *group.uri,
@@ -579,6 +604,7 @@ func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.Ch
 				"declared_size_bytes", declaredValue(claim.SizeBytes),
 				"computed_size_bytes", digest.sizeBytes)
 		}
+		result.CopyStatus = &copyStatus
 		results = append(results, result)
 	}
 	return results

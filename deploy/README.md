@@ -122,9 +122,38 @@ curl -fsSL https://dynamicpdb.com/install.sh | bash
 
 The checksum job computes the sha256 and size of every artifact's bytes and records the
 result in `artifact_checksums`: `verified`, `mismatch` or `failed`. It keeps a copy of each
-verified external file (such as an RCSB file) of up to 1 GiB in the data bucket. It runs
+verified external file (such as an RCSB file) up to `copyLimitBytes` in the data bucket. It runs
 `/app/checksum-job` from the backend image, so it needs no image of its own, and it uses the
 backend's database and `-s3-data` secrets.
+
+Each verified or mismatch row also records its copy status, which the API returns as
+`checksum.copy_status`. Pending and failed rows have none.
+
+| Copy status | Meaning |
+|---|---|
+| `copied` | Our copy of the external file is at `stored_uri`. |
+| `own_storage` | The file is in our bucket already, so it needs no copy. |
+| `over_limit` | The external file is larger than `copyLimitBytes`. It is still hashed; only its link is kept. |
+| `mismatch` | The bytes differ from the declared sha256 or size, so the copy was discarded. |
+| `copy_failed` | The copy could not be started or stored. The reason is in the job's log; the row is not checked again. |
+| `copy_off` | Copying external files is turned off (`checksum::copy_external: false`). |
+
+A URL that answers with an HTML page, such as the landing page a DOI resolves to, is `failed`
+at once with "landing page, not a file". The job takes a response as a page when its
+Content-Type is `text/html` or `application/xhtml+xml`, or when its body starts with
+`<!doctype html` or `<html`. The real files send other types: `chemical/x-cif` from
+`files.rcsb.org/download`, `text/x-fasta` from `www.rcsb.org/fasta`. Files in our own bucket
+are read from S3, not over HTTP.
+
+The copy limit is `checksumJob.copyLimitBytes`, 1 GiB (`1073741824`), the same as the upload
+limit. The researchers asked for 2 GB on 2026-10-29 and have not yet said whether they mean it
+(question A). Their answer changes only this value: 1 GB is `1000000000`, 2 GB is `2000000000`
+and 2 GiB is `2147483648`. A new limit applies to files checked from then on; files already
+recorded as `over_limit` keep that status.
+
+The migration that added the copy status (2026-10-29) filled it in for the rows already checked.
+Verified external files without a copy, whose reason was never stored (a few hundred on prod),
+went back to pending, so the next run reads them again and records why.
 
 Each run first adds a pending row for every artifact that has none, 2000 artifacts per
 statement, and after each statement pauses as long as it took, so the database is at most

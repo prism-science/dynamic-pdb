@@ -267,6 +267,7 @@ func artifactListQuery(filters ArtifactFilters) (string, map[string]any, error) 
 			         artifact_checksums.sha256 as checksum_sha256,
 			         artifact_checksums.size_bytes as checksum_size_bytes,
 			         artifact_checksums.stored_uri as checksum_stored_uri,
+			         artifact_checksums.copy_status as checksum_copy_status,
 			         artifact_checksums.checked_at as checksum_checked_at
 			  from artifacts
 			  left join artifact_checksums on artifact_checksums.artifact_id = artifacts.id`
@@ -344,13 +345,22 @@ func artifactFromRow(row *artifactRow) (*models.Artifact, error) {
 		CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt,
 		Checksum: models.ArtifactChecksum{
-			Status:    models.ChecksumStatus(row.ChecksumStatus),
-			SHA256:    stringPtrFromSQL(row.ChecksumSHA256),
-			SizeBytes: int64PtrFromSQL(row.ChecksumSizeBytes),
-			StoredURI: stringPtrFromSQL(row.ChecksumStoredURI),
-			CheckedAt: timePtrFromSQL(row.ChecksumCheckedAt),
+			Status:     models.ChecksumStatus(row.ChecksumStatus),
+			SHA256:     stringPtrFromSQL(row.ChecksumSHA256),
+			SizeBytes:  int64PtrFromSQL(row.ChecksumSizeBytes),
+			StoredURI:  stringPtrFromSQL(row.ChecksumStoredURI),
+			CopyStatus: copyStatusFromSQL(row.ChecksumCopyStatus),
+			CheckedAt:  timePtrFromSQL(row.ChecksumCheckedAt),
 		},
 	}, nil
+}
+
+func copyStatusFromSQL(value sql.NullString) *models.CopyStatus {
+	if !value.Valid {
+		return nil
+	}
+	status := models.CopyStatus(value.String)
+	return &status
 }
 
 func artifactMetadataFromStorage(format *string, data []byte) (any, error) {
@@ -398,9 +408,10 @@ type artifactRow struct {
 	CreatedBy uuid.UUID      `db:"created_by"`
 	CreatedAt time.Time      `db:"created_at"`
 
-	ChecksumStatus    string         `db:"checksum_status"`
-	ChecksumSHA256    sql.NullString `db:"checksum_sha256"`
-	ChecksumSizeBytes sql.NullInt64  `db:"checksum_size_bytes"`
-	ChecksumStoredURI sql.NullString `db:"checksum_stored_uri"`
-	ChecksumCheckedAt sql.NullTime   `db:"checksum_checked_at"`
+	ChecksumStatus     string         `db:"checksum_status"`
+	ChecksumSHA256     sql.NullString `db:"checksum_sha256"`
+	ChecksumSizeBytes  sql.NullInt64  `db:"checksum_size_bytes"`
+	ChecksumStoredURI  sql.NullString `db:"checksum_stored_uri"`
+	ChecksumCopyStatus sql.NullString `db:"checksum_copy_status"`
+	ChecksumCheckedAt  sql.NullTime   `db:"checksum_checked_at"`
 }
