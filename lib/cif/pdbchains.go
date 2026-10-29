@@ -140,6 +140,17 @@ func (c *pdbChains) addLink(line string) {
 	c.linkPairs = append(c.linkPairs, pair)
 }
 
+// sequenceNames returns the residue names of every chain's SEQRES records.
+func (c *pdbChains) sequenceNames() map[string]bool {
+	names := map[string]bool{}
+	for _, chainNames := range c.seqres {
+		for name := range chainNames {
+			names[name] = true
+		}
+	}
+	return names
+}
+
 // metalLinks returns the LINK records as the metal rule reads metalc rows. A
 // file with a LINK record that involves a metal ion is treated like an mmCIF
 // file with metalc rows; LINK records between other residues do not count.

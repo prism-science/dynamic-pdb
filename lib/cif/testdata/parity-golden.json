@@ -243,6 +243,28 @@
       }
     ]
   },
+  "6OIM.pdb": {
+    "atom_count": 134,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "MG",
+        "rule": "metalc"
+      },
+      {
+        "list": "ligands",
+        "id": "GDP",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "MOV",
+        "rule": "list"
+      }
+    ]
+  },
   "7LTB.cif": {
     "atom_count": 236,
     "modeled_residues": 2,
@@ -484,9 +506,7 @@
       {
         "list": "ligands",
         "id": "GLU",
-        "rule": "ccd_type",
-        "needs_review": true,
-        "reason": "residue outside the polymer chain: confirm it is a ligand"
+        "rule": "list"
       }
     ]
   },

@@ -276,6 +276,7 @@ function parsePdb(text: string): StructureFacts {
 
   const annotations = pdbAnnotations();
   annotations.modifiedResidues = [...chains.modifiedNames];
+  annotations.sequenceNames = chains.sequenceNames();
   const instances = compounds.facts();
   for (const instance of instances.values()) {
     instance.chain = chains.position(instance.instance);

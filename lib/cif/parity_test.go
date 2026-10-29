@@ -22,7 +22,7 @@ var parityFiles = []string{
 	"9A8B.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
 	"parity/wrapped_rows.cif", "parity/ihm_probe.cif",
-	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb",
+	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb", "6OIM.pdb",
 	"parity/pdb_rules.pdb", "parity/pdb_no_metal_link.pdb",
 }
 

@@ -97,6 +97,17 @@ export class PdbChains {
     }
   }
 
+  /** The residue names of every chain's SEQRES records. */
+  sequenceNames(): Set<string> {
+    const names = new Set<string>();
+    for (const chainNames of this.seqres.values()) {
+      for (const name of chainNames) {
+        names.add(name);
+      }
+    }
+    return names;
+  }
+
   /** The LINK records as the metal rule reads metalc rows. A file with a LINK
    *  record that involves a metal ion is treated like an mmCIF file with metalc
    *  rows; LINK records between other residues do not count. */

@@ -222,10 +222,31 @@ func Test_should_place_residues_by_numbers_when_chain_has_neither_seqres_nor_ter
 	// when
 	extraction, sources := pdbSources(t, text)
 
-	// then: only a peptide counts as in the chain without SEQRES to name it.
+	// then: only a peptide counts as in the chain without SEQRES to name it,
+	// and without SEQRES the glutamate outside it is an ordinary ligand.
 	assert.Equal(t, []string{"ATP", "GLU"}, extraction.Fields["ligands"])
+	assert.Empty(t, extraction.Review)
 	assert.Equal(t, source(ruleList), sources.Ligands["ATP"])
-	assert.Equal(t, source(ruleCCDType), sources.Ligands["GLU"])
+	assert.Equal(t, source(ruleList), sources.Ligands["GLU"])
+}
+
+func Test_should_not_flag_a_nucleotide_ligand_whose_name_no_seqres_uses(t *testing.T) {
+	// given: GDP, which the CCD types as "RNA linking", bound to a protein
+	// chain, as in 6OIM.
+	text := pdbSeqres("A", "ALA", "GLY") +
+		pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
+		pdbRecord("ATOM", 2, "CA", "GLY", "A", 2, "C") +
+		pdbTer(3, "GLY", "A", 2) +
+		pdbRecord("HETATM", 4, "PB", "GDP", "A", 201, "P") +
+		pdbRecord("HETATM", 5, "PA", "GDP", "A", 201, "P") + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"GDP"}, extraction.Fields["ligands"])
+	assert.Empty(t, extraction.Review)
+	assert.Equal(t, source(ruleList), sources.Ligands["GDP"])
 }
 
 func Test_should_read_link_records_as_metal_links(t *testing.T) {

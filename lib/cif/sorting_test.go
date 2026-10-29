@@ -117,14 +117,11 @@ func Test_should_sort_by_ccd_type_and_chain_position_when_file_has_no_entity(t *
 	// when
 	result := extractTextResult(t, text, false)
 
-	// then
-	assert.Equal(t, []Compound{
-		{ID: "ATP"},
-		{ID: "MSE", NeedsReview: true, ReviewReason: outsideChainReason},
-		{ID: "NAG"},
-	}, result.Ligands)
+	// then: the free MSE is not in a chain, and with no SEQRES to show the
+	// polymer uses it, it is an ordinary ligand.
+	assert.Equal(t, []Compound{{ID: "ATP"}, {ID: "MSE"}, {ID: "NAG"}}, result.Ligands)
 	assert.Equal(t, map[string]CompoundSource{
-		"ATP": source(ruleList), "MSE": source(ruleCCDType), "NAG": source(ruleBranched),
+		"ATP": source(ruleList), "MSE": source(ruleList), "NAG": source(ruleBranched),
 	}, result.CompoundSources.Ligands)
 }
 

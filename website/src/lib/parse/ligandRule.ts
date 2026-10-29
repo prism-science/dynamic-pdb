@@ -318,6 +318,9 @@ export type FileAnnotations = {
   chemCompTypes: Map<string, string>;
   flags: DepositorFlag[];
   modifiedResidues: string[];
+  /** Residue names of every chain's SEQRES records (PDB format): only a
+   *  peptide or nucleotide named there is suspicious outside a chain. */
+  sequenceNames: Set<string>;
   glycans: Glycan[];
   ihm: boolean;
   probeEntities: Set<string>;
@@ -333,6 +336,7 @@ export function pdbAnnotations(): FileAnnotations {
     chemCompTypes: new Map(),
     flags: [],
     modifiedResidues: [],
+    sequenceNames: new Set(),
     glycans: [],
     ihm: false,
     probeEntities: new Set(),
@@ -741,8 +745,9 @@ function placeByShape(
  *  not list (a PDB-format file, or an mmCIF file without `_entity`) is polymer
  *  when the file names it as a chain residue; otherwise its CCD type decides
  *  (the file's own `_chem_comp.type`, then the CCD table). A peptide or
- *  nucleotide within a chain counts as polymer too; one outside any chain is a
- *  ligand to confirm. */
+ *  nucleotide within a chain counts as polymer too. Outside any chain, it is a
+ *  ligand to confirm when its name is in the file's SEQRES records; otherwise
+ *  the lists sort it (GDP, typed "RNA linking" in the CCD). */
 function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, string | null] {
   const entity = annotations.entitiesRead && facts.entityId ? annotations.entityTypes.get(facts.entityId) : undefined;
   switch (entity) {
@@ -775,7 +780,10 @@ function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, st
   switch (category) {
     case "peptide":
     case "nucleotide":
-      return [facts.chain === "spanOnly" ? "polymer" : "outsideChain", review];
+      if (facts.chain === "spanOnly") {
+        return ["polymer", null];
+      }
+      return [annotations.sequenceNames.has(facts.instance.compound) ? "outsideChain" : "listed", review];
     case "saccharide":
       return ["branched", review];
     case "nonPolymer":

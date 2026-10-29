@@ -56,7 +56,11 @@ type fileAnnotations struct {
 	flags         []depositorFlag
 	// modifiedResidues are the label_comp_id values of _pdbx_struct_mod_residue.
 	modifiedResidues []string
-	glycans          []Glycan
+	// sequenceNames are the residue names of every chain's SEQRES records (PDB
+	// format). Only a peptide or nucleotide named there is suspicious outside a
+	// chain; GDP, typed "RNA linking" in the CCD, is not.
+	sequenceNames map[string]bool
+	glycans       []Glycan
 	// ihm is set for an integrative file: its compounds come from every model.
 	ihm           bool
 	probeEntities map[string]bool
@@ -73,6 +77,7 @@ func pdbAnnotations() fileAnnotations {
 	return fileAnnotations{
 		entityTypes:    map[string]entityType{},
 		chemCompTypes:  map[string]string{},
+		sequenceNames:  map[string]bool{},
 		probeEntities:  map[string]bool{},
 		entityReview:   map[string]string{},
 		compoundReview: map[string]string{},

@@ -173,6 +173,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	}
 	annotations := pdbAnnotations()
 	annotations.modifiedResidues = chains.modifiedNames
+	annotations.sequenceNames = chains.sequenceNames()
 	sorted, err := classifyCompounds(instances, links, annotations, reference)
 	if err != nil {
 		return Extraction{}, fmt.Errorf("classify PDB compounds: %w", err)

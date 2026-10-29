@@ -31,7 +31,8 @@ const (
 	// ruleBranched: a sugar of a branched entity (a glycan), or a saccharide by CCD type.
 	ruleBranched  compoundRule = "branched"
 	ruleMacrolide compoundRule = "macrolide"
-	// ruleCCDType: a peptide or nucleotide residue outside any polymer chain.
+	// ruleCCDType: a peptide or nucleotide residue outside any polymer chain
+	// whose name the file's SEQRES records use (a free glutamate).
 	ruleCCDType compoundRule = "ccd_type"
 	// ruleDepositorFlag: the depositor's _pdbx_entity_instance_feature flag.
 	ruleDepositorFlag compoundRule = "depositor_flag"
@@ -272,8 +273,10 @@ func (s *compoundSorter) placeByShape(instance compoundInstance, facts instanceF
 // polymer when the file names it as a chain residue (SEQRES, MODRES);
 // otherwise its CCD type decides: the file's own _chem_comp.type, then the CCD
 // table. A peptide or nucleotide residue within a chain (an mmCIF label_seq_id,
-// or a PDB chain without SEQRES) counts as polymer too; one outside any chain
-// is a ligand to confirm.
+// or a PDB chain without SEQRES) counts as polymer too. Outside any chain, it is
+// a ligand to confirm when its name is in the file's SEQRES records (a free
+// glutamate next to a chain of glutamates); otherwise the lists sort it like any
+// non-polymer (GDP, which the CCD types as "RNA linking").
 func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts) (compoundShape, string, error) {
 	kind := s.annotations.entityOf(facts.entityID)
 	switch kind {
@@ -301,10 +304,14 @@ func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts)
 	category, review := s.categoryOf(instance.compoundID)
 	switch category {
 	case CCDPeptide, CCDNucleotide:
-		if facts.chain == chainSpanOnly {
+		switch {
+		case facts.chain == chainSpanOnly:
 			return shapePolymer, "", nil
+		case s.annotations.sequenceNames[instance.compoundID]:
+			return shapeOutsideChain, review, nil
+		default:
+			return shapeListed, review, nil
 		}
-		return shapeOutsideChain, review, nil
 	case CCDSaccharide:
 		return shapeBranched, review, nil
 	case CCDNonPolymer:

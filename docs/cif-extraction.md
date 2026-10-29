@@ -1,9 +1,10 @@
 # mmCIF extraction
 
-One parser, `lib/cif`, reads structure files for the CLI upload and for
-`POST /v1/artifacts/{id}/extract`. The website preview
-(`website/src/lib/parse/structure.ts`) applies the same ligand rule with the same
-reference lists (generated from the JSON files, see "Website preview" below).
+One parser, `lib/cif`, reads structure files (mmCIF and PDB format) for the CLI
+upload and for `POST /v1/artifacts/{id}/extract`. The website preview
+(`website/src/lib/parse/structure.ts` and `ligandRule.ts`) applies the same
+ligand rule with the same reference lists (generated from the JSON files, see
+"Website preview" below).
 
 ## What it extracts
 
@@ -14,6 +15,8 @@ reference lists (generated from the JSON files, see "Website preview" below).
 | `unique_protein_chains` | Distinct chains of `ATOM` records. |
 | `altloc_fraction` | Residues with at least two alternate positions that each have occupancy >= 0.1, divided by modeled residues. Residues are counted, not atoms. |
 | `ligands`, `cofactors` | The ligand rule below. |
+| `compound_sources` | The decision record: the rule that placed each compound, including the ones left out (see "Decision record"). |
+| `glycans` | One record per branched entity (a glycan): its sugars and its WURCS descriptors. |
 | `mutations` | See below. |
 | connections | Every `_struct_conn` row, for interaction-set storage. |
 
@@ -99,24 +102,141 @@ which come before the coordinates. When only the head of a file is read, a
 partial last line is dropped, and unless an `ENDMDL`, `CONECT`, `MASTER` or `END`
 record shows that the coordinates ended, `atom_count`, `modeled_residues`,
 `unique_protein_chains` and `altloc_fraction` are left out (with a warning),
-exactly as for mmCIF. PDB files have no `metalc` rows, so every metal is a
-cofactor flagged for review. The number of atoms of a `HET` compound comes from
-its `HET` record when that has one; a compound whose atoms were cut off by the
-read limit is not called single-atom, it is flagged with the reason "atom count
+exactly as for mmCIF. The number of atoms of a `HET` compound comes from its
+`HET` record when that has one; a compound whose atoms were cut off by the read
+limit is not called single-atom, it is flagged with the reason "atom count
 unknown" (the same applies to mmCIF).
+
+A PDB-format file has no entity types, so the parser reads its chains instead
+(`lib/cif/pdbchains.go`, mirrored in `website/src/lib/parse/pdbChains.ts`):
+
+- **Chain residues.** A `HETATM` residue is part of a polymer chain (and so not a
+  compound) when `MODRES` lists it, or when its name is in its chain's `SEQRES`
+  and it sits in the chain's polymer block: before the chain's `TER` record, or,
+  for a chain without one, within the residue numbers of the chain's `ATOM`
+  records. Selenomethionine (MSE) in a chain is therefore not a ligand, and a
+  free glutamate after the chain's `TER` record is. A residue named in `SEQRES`
+  counts whatever its CCD type (the antibiotic residues of 7LTB are
+  "non-polymer" in the CCD).
+- **Chains without `SEQRES`** (common in depositor-made files): a residue in the
+  polymer block counts as part of the chain only when its CCD type is a peptide
+  or nucleotide type, so a ligand numbered inside the protein's range is never
+  dropped.
+- **Everything else goes by its CCD type** (`lib/cif/ccd_types.json`): a sugar
+  is a glycan (Ligands, rule `branched`); a non-polymer goes by the reference
+  lists. A peptide or nucleotide residue outside any chain is a ligand flagged
+  "residue outside the polymer chain: confirm it is a ligand" (rule `ccd_type`)
+  when the file's `SEQRES` records use its name (a free glutamate next to a
+  chain of glutamates); otherwise it goes by the lists like any non-polymer.
+  This keeps GDP, which the CCD types as "RNA linking", an ordinary ligand.
+- **`LINK` records are the metal links.** A `LINK` that joins a metal ion to
+  another residue counts like an mmCIF `metalc` row, and a file with at least one
+  such record is treated like an mmCIF file with `metalc` rows. `LINK` records
+  between other residues (glycosidic or peptide bonds) do not count. A file
+  without metal `LINK` records keeps its metals as cofactors flagged for review.
+- **`MODRES`** lists the modified residues, so a covalently bound cofactor (LLP)
+  adds its cofactor (PLP), as `_pdbx_struct_mod_residue` does in mmCIF.
+
+`SEQRES`, `MODRES` and `LINK` are header records, so a 4 MiB head always holds
+them. A chain whose `TER` record falls after the cut uses the residue-number
+rule.
 
 ## The ligand rule
 
-Every non-polymer compound (`_pdbx_entity_nonpoly` and `HETATM` rows) is sorted once:
+Every compound instance (`_pdbx_entity_nonpoly` rows and `HETATM` residues) is
+sorted once (`classifyCompounds` in `lib/cif/sorting.go`):
 
-1. **Water** (`HOH`, `DOD`, `WAT`, `H2O`): always dropped. **Other solvents, buffers and cryoprotectants** (glycerol, sulfate, ...): dropped only once both reference lists are approved (see below). Until then they are kept as ligands flagged **needs review**. Nothing else is ever dropped.
-2. **Metal ion**, decided **per instance** (one placed copy, identified by chain and residue number): an instance is kept as a *cofactor* when a `_struct_conn` row with `conn_type_id = metalc` joins that instance to a protein residue or a ligand (coordination to water does not count).
-   - If the file has **no `metalc` rows at all**, its metals are kept as cofactors flagged **needs review**.
-   - If the file has `metalc` rows but none involves a given metal instance, that instance is listed as a *ligand* flagged **needs review**. It is never dropped and never listed unflagged. A compound with a linked and an unlinked instance therefore appears in both lists, the unlinked one flagged.
-3. **Listed cofactor** (heme, NAD, FAD, ...): kept as a cofactor.
-4. Anything else: a ligand. A single-atom instance of an unlisted compound (a metal missing from `metal_ions`, such as Pd or Ru) is a ligand flagged **needs review**.
+1. **Water and polymer residues are not compounds.** In mmCIF the instance's
+   `_entity.type` decides: `water` is dropped, a `polymer` residue (MSE in a
+   chain) is skipped. An mmCIF file without `_entity` uses its own
+   `_chem_comp.type`, then the CCD table (`ccd_types.json`), as a PDB-format file
+   does (see above); there a peptide or nucleotide residue with a
+   `label_seq_id` counts as part of a chain, and one without is an ordinary
+   ligand (such a file has no `SEQRES` to show the polymer uses it). Water and
+   polymer residues are never recorded.
+2. **The depositor's flag** (`_pdbx_entity_instance_feature`) overrides the
+   lists: SUBJECT OF INVESTIGATION keeps the instance as a ligand (even a listed
+   cofactor such as biotin, or a buffer), NO FUNCTIONAL ROLE leaves it out, OTHER
+   changes nothing. A flag without a location applies to every instance of the
+   compound; one with `asym_id` and `auth_seq_num` to that instance.
+3. **IHM probes** (`_ihm_ligand_probe` entities of an integrative file) are left
+   out.
+4. **Glycans** (`branched` entities) and **macrolides** are ligands.
+5. **Everything else goes by the reference lists:**
+   - **Solvents, buffers and cryoprotectants** (glycerol, ethylene glycol, Tris,
+     ...) are left out. **Imidazole** is the exception: kept as a ligand when a
+     `metalc` connection binds it to a metal (a His-tag nickel), left out
+     otherwise.
+   - **Ambiguous compounds** (sulfate, phosphate, citrate, fluoride, chloride,
+     bromide, iodide) are kept as ligands flagged "often from the buffer: confirm
+     it is part of the sample". Only the depositor's NO FUNCTIONAL ROLE flag
+     leaves them out.
+   - **Metal ions**, decided per instance (one placed copy, by chain and residue
+     number): a cofactor when a `metalc` connection joins the instance to a kept
+     partner (a protein residue, a ligand, a cofactor, another metal, or the
+     imidazole it keeps). Water does not count as a partner, and neither does a
+     compound left out (glycerol).
+     - Joined only to water: a cofactor flagged "metal linked only to water:
+       confirm the site".
+     - The file has **no `metalc` rows at all**: a cofactor flagged for review.
+     - The file has `metalc` rows but none involves this instance: a ligand
+       flagged for review. It is never dropped and never listed unflagged. A
+       compound with a linked and an unlinked instance therefore appears in both
+       lists, the unlinked one flagged.
+   - **Listed cofactors** (heme, NAD, FAD, ...): cofactors.
+   - **Anything else** is a ligand. A single-atom instance of an unlisted
+     compound is flagged when its element (`type_symbol`) is a metal (a metal
+     missing from `metal_ions`) or unknown (no element, or X for UNX); a single
+     non-metal atom (xenon) is not.
 
-There is no separate metals list; kept metals are in `cofactors`.
+A modified residue that is a covalently bound cofactor (`_pdbx_struct_mod_residue`
+in mmCIF, `MODRES` in PDB format) adds that cofactor: LLP (PLP on a lysine) adds
+PLP, LYR (retinal on a lysine) adds RET.
+
+An integrative (IHM) file (one with `_ihm_model_list`, or an `ihm_model_id`
+column in `_atom_site`) lists the compounds of every model, not only the first;
+atom counts stay first-model only.
+
+There is no separate metals list; kept metals are in `cofactors`. A value the
+parser does not know in a category it reads (an entity type, a depositor flag, a
+glycan descriptor type, a `_chem_comp.type`) never fails the extraction: the
+compound is sorted as above and flagged for review, and a warning names the
+value.
+
+## Decision record
+
+Every extraction also returns `compound_sources`: per group (`ligands`,
+`cofactors`, `excluded`), each CCD ID with the rule that put it there and the
+reference version in force (`list_version`, the same string as
+`reference_version`). One ID can be in two groups, such as a zinc linked to the
+protein (cofactor) and one linked to nothing (ligand), or a glycerol the
+depositor flagged (ligand) next to plain ones (excluded).
+
+| Rule | Meaning |
+| --- | --- |
+| `list` | The reference lists placed it, including "on no list, so a ligand" and the solvents left out. |
+| `metalc` | The metal rule placed a metal ion, or the imidazole bound to one. |
+| `branched` | A sugar of a branched entity, or a saccharide by CCD type in a file without entity types. |
+| `macrolide` | A macrolide entity. |
+| `ccd_type` | A peptide or nucleotide residue outside any polymer chain whose name the file's `SEQRES` records use (flagged). |
+| `depositor_flag` | The depositor's SUBJECT OF INVESTIGATION or NO FUNCTIONAL ROLE flag. |
+| `covalent_map` | A cofactor bound in a modified residue (PLP from LLP). |
+| `ihm_probe` | An experimental probe of an integrative model (left out). |
+
+When one ID is placed in the same group by two rules (a NAG in a glycan and a
+lone NAG), the record keeps the more specific rule, in this order:
+`depositor_flag`, `ihm_probe`, `covalent_map`, `branched`, `macrolide`,
+`ccd_type`, `metalc`, `list`.
+
+Glycans also get their WURCS descriptors (`glycans` in `Result`,
+`glycan_descriptors` on the extract endpoint): one record per branched entity
+with `entity_id`, `compound_ids` (from `_pdbx_entity_branch_list`) and the WURCS
+rows of `_pdbx_entity_branch_descriptor` (`descriptor`, `type`, `program`,
+`program_version`). LINUCS and Glycam rows are not kept; a descriptor type the
+parser does not know flags the glycan's compounds.
+
+Nothing stores the record yet: the extract endpoint returns it, and the entry
+revision column comes with the archive backfill (T1-C2).
 
 ## Mutations
 
@@ -129,36 +249,93 @@ accession, nonstandard residue, no entity) are never guessed: they are listed as
 `unmapped` and the entity is flagged **needs review**, as is an entity whose
 mutation text has no matching rows.
 
-## Reference lists (need researcher approval)
+## Reference lists
 
-Two versioned data sets, each with its own `version` and `approved` flag:
+Five versioned files in `lib/cif`, each with `version`, `approved` and
+`ccd_checked` (the date the refresh tool last checked it against the chemical
+component dictionary, CCD). Researchers approved them on 2026-10-28 and
+2026-10-29 (version `2026.10.0`):
 
-- `lib/cif/cofactors.json`: CCD IDs for cofactors and metal ions.
-- `lib/cif/solvents.json` (`solvent-buffer-cryoprotectant-list`): CCD IDs dropped as water, solvents, buffers, cryoprotectants and crystallization salts.
+| File | Holds | Edited by |
+| --- | --- | --- |
+| `cofactors.json` | 57 cofactors (heme, NAD, FAD, ubiquinones, ...), and the element lists the metal rule uses (`metal_elements`, `nonmetal_elements`; the metalloids B, Si, Ge, As, Sb, Te count as metals) | people, after researcher review |
+| `metal_ions.json` | every released single-atom non-polymer of the CCD whose element is a metal (83 IDs: the 60 the researchers reviewed and 23 the rule adds) | the refresh tool |
+| `solvents.json` | `solvents`: the drop list (36 IDs and 4 water IDs); `ambiguous`: kept and flagged (8 IDs); `keep_when_metal_linked`: imidazole | people, after researcher review |
+| `covalent_cofactors.json` | modified residue → bound cofactor (LLP → PLP, LYR → RET) | people, after researcher review |
+| `ccd_types.json` | the CCD IDs whose type is a peptide, nucleotide or saccharide type, by category (about 4,200 IDs); every other ID is a non-polymer | the refresh tool |
 
-Both are drafts. **Researchers must approve them once**: review the lists, then set `"approved": true` and bump `version`. Every extraction reports a `reference_version` naming both file versions (`cofactors:<v>+solvents:<v>`), so values can be re-derived after a change.
+Every extraction reports `reference_version`, naming every file version
+(`cofactors:<v>+metals:<v>+solvents:<v>+covalent:<v>+ccd-types:<v>`), so values
+can be re-derived after a change. Paired IDs get the same decision (CIT/FLC,
+ACT/ACY, MPD/MRD); a test checks it, and that every ID sits in exactly one group.
 
-**What the code does while the lists are drafts.** `Reference.Approved` is true only when *both* files say `"approved": true`. When it is false:
+**Researchers decide what is on the lists.** It is a science decision, not an
+engineering one: a wrong drop-list entry silently removes a ligand from the
+record. Engineers do not add, remove or move an ID without researcher sign-off,
+and never add IDs by pattern (UQ3, MQ4 and MQ6 are not quinones).
 
-- only water is dropped; every other compound on the draft solvent list (sulfate, phosphate, citrate, chloride, glycerol, ...) is kept in `ligands` and flagged `needs_review` with the reason "compound is on the draft solvent list ...";
-- every extraction carries the warning `cif.DraftWarning` ("reference lists are draft and not yet approved by researchers ..."): the extract endpoint returns it in `warnings`, the CLI logs it once per structure file;
-- the cofactor and metal list is applied as before (it only decides what goes into the new `cofactors` field).
+**A future list version starts as a draft.** `Reference.Approved` is true only
+when every file says `"approved": true`. While any file is a draft:
 
-Once both flags are true the full lists apply and the warning disappears. The website preview parser reads the same lists and the same gate from `website/src/lib/parse/cifReference.gen.ts`, which `npm run gen:cif-reference` generates from the two JSON files: flipping the flags in the JSON and regenerating is the whole change. CI regenerates the file and fails on a diff, and a website test fails when it is stale. Tests use injectable reference data (`parseReference`), so approving the lists does not need test edits beyond the expectations that follow the JSON files.
+- only water is dropped; every other compound on the drop list is kept in
+  `ligands` and flagged "compound is on the draft solvent list ...";
+- every extraction carries the warning `cif.DraftWarning`: the extract endpoint
+  returns it in `warnings`, the CLI logs it once per run.
 
-**Researchers must confirm the solvent list in particular.** It is a science decision, not an engineering one. It classes citrate (CIT), sulfate (SO4), phosphate (PO4), chloride, bromide and iodide as solvents. Those compounds are often real ligands, so a wrong entry silently removes a ligand from the record. Engineers do not change this list without researcher sign-off.
+Tests use injectable reference data (`parseReference`), so the draft path stays
+tested while the lists are approved.
+
+## Refreshing the lists
+
+`lib/cif/cmd/refresh-reference` checks every list against the CCD on RCSB and
+regenerates the two files made by rule. It needs the network, so it runs by
+hand, never in CI:
+
+```bash
+go run ./lib/cif/cmd/refresh-reference --check
+```
+
+`--check` reports drift and writes nothing (exit 1 on drift or a problem).
+Without it the tool rewrites `metal_ions.json`, `ccd_types.json` and the
+`ccd_checked` date of every file. It stops, and writes nothing, when:
+
+- a listed ID is not in the CCD, is not released, or has a `pdbx_replaced_by`:
+  a reviewed ID is never rewritten silently; the report names the replacement
+  for the researchers to approve;
+- a list ID is not a non-polymer, or a covalent-map residue is not a peptide
+  residue;
+- the metal rule would drop a metal that is on `metal_ions.json` now;
+- the CCD has a type the parser does not know (the known types no longer cover
+  every ID with a type): add it to `cif.CCDTypeCategory` and the tool's
+  `knownCCDTypes`.
+
+IDs the metal rule adds are listed as notes, for the researchers to see in the
+PR. BIRD molecule IDs (`PRD_...`) the search returns are not CCD IDs and are
+skipped. After a change, bump the version of every file that changed, then run
+`npm run gen:cif-reference` in `website/` (CI fails on a stale generated file).
 
 ## Website preview
 
-`website/src/lib/parse/structure.ts` implements the same rule (per instance,
-organic cofactors, metal links, single-atom flag, draft gate, first model only,
-altloc by occupancy) and uses the generated reference lists. The Go parser's
-answers for the fixtures and for three small files in `lib/cif/testdata/parity/`
-are committed as `lib/cif/testdata/parity-golden.json` (refresh with
-`UPDATE_PARITY_GOLDEN=1 go test ./lib/cif -run parity_golden`); `website/test/cif-parity.test.cjs`
-checks that the preview gives the same ligands, cofactors, review flags (with
-reasons) and counts. The preview sends the flags as `extensions.compound_review`
-on the model metadata, like the CLI.
+The preview applies the same rule in TypeScript: `website/src/lib/parse/ligandRule.ts`
+(the categories and the rule), `pdbChains.ts` (PDB-format chains) and
+`structure.ts` (reading the file), with the review texts in `reviewReasons.ts`.
+`npm run gen:cif-reference` writes the lists into `cifReference.gen.ts` and the
+CCD categories into `ccdCategories.gen.ts`; the second is a module of its own
+so the entry form, which only needs the lists, does not load the 4,000-ID table.
+The parser is imported only when a structure file is dropped.
+
+The Go parser's answers for the fixtures and for small synthetic files in
+`lib/cif/testdata/parity/` are committed as `lib/cif/testdata/parity-golden.json`
+(refresh with `UPDATE_PARITY_GOLDEN=1 go test ./lib/cif -run parity_golden`);
+`website/test/cif-parity.test.cjs` checks that the preview gives the same
+ligands, cofactors, review flags (with reasons), rules (including the compounds
+left out), glycans and counts, for mmCIF and PDB-format files. The preview sends
+the flags as `extensions.compound_review` on the model metadata, like the CLI;
+it does not send the decision record or the glycans yet.
+
+The preview reads the first 4 MiB of a file, like the CLI, but does not know when
+it was cut: it applies what it read, where the Go parser skips a rule whose
+category may have been cut off.
 
 ## CLI upload
 
@@ -166,7 +343,7 @@ The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the fir
 
 Scalar fields read from a data-folder file (for example R-free from `models/5amf_model.cif`) are streamed with `cif.ScalarValueFromReader`; the file is never loaded whole.
 
-**Review flags.** A compound the parser flags (a metal in a PDB-format file, a compound on the draft solvent list, a metal with no `metalc` link) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
+**Review flags.** A compound the parser flags (an ambiguous compound such as sulfate, a metal with no `metalc` link, a residue outside the polymer chain) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
 
 ```json
 "extensions": {"compound_review": [
@@ -183,11 +360,19 @@ A manifest field that names a PDB or mmCIF rule on an artifact of another format
 ## Extract endpoint limits
 
 `POST /v1/artifacts/{id}/extract` reads only the first **4 MiB** of the uploaded
-object with a ranged S3 GET. Archive files list entities, connections and
-mutations before the coordinates, so those are read in full. If the coordinates
-run past the limit, atom counts, residue counts and altloc fraction are left out
-with a warning. The object must sit in the artifact's own upload folder, and the
-caller must be the artifact's creator or a reviewer.
+object with a ranged S3 GET. If the coordinates run past the limit, atom counts,
+residue counts and altloc fraction are left out with a warning. The object must
+sit in the artifact's own upload folder, and the caller must be the artifact's
+creator or a reviewer.
+
+Archive files do not write their categories in a fixed order: the depositor
+flags (`_pdbx_entity_instance_feature`, after `_atom_site` in 5ZCK), the glycan
+descriptors (1C0R) and the modified residues (3CEB) can all come after the
+coordinates. A category that is missing, or open at the end, in a cut-off read is
+never guessed: the rule it feeds is not applied, and one warning names each such
+category, for example "the read limit may have cut these categories, so the rules
+they feed were not applied: _pdbx_entity_instance_feature (depositor flags),
+_pdbx_struct_mod_residue (covalently bound cofactors)".
 
 ### Time budget
 
@@ -207,4 +392,4 @@ global per-IP limit (`GlobalRateLimitMiddleware`, `httprate`):
 
 With N pods the effective per-user budget is up to 10 x N per minute, because the counter is not shared. Change the defaults with `Server.WithExtractionLimits`; they are constants in `backend/internal/httpapi/artifact_extraction_limits.go`.
 
-The endpoint warns (`warnings`) while the reference lists are drafts; see above.
+The endpoint warns (`warnings`) while a reference list is a draft; see "Reference lists".
