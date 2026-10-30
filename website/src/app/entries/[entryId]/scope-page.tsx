@@ -9,6 +9,7 @@ import {
   type ListPage,
   listSimilarEntries,
   type Model,
+  type ModeledCompounds,
   type ResidueData,
   type SimilarEntry,
 } from "@/lib/api/entries";
@@ -31,6 +32,7 @@ import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { entryModels } from "@/lib/entry-models";
 import { hetstarDpdbConfig } from "@/lib/hetstar";
 import { hetstarCanRender } from "@/lib/hetstar-support";
+import { modeledCompoundsView } from "@/lib/modeled-compounds";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import GuidedTour from "@/app/components/GuidedTour";
@@ -131,7 +133,14 @@ export default async function ScopePage({
     data.entry.thumbnail_image_url,
   );
 
-  const residueData = await loadResidueData(session?.token, entryId, model);
+  const { residueData, modeledCompounds } = await loadModelDetail(session?.token, entryId, model);
+  // The file's compounds, tagged from the entry's own lists. Until the file is
+  // read, and for a model without a file of ours, the typed lists stay among
+  // its facts.
+  const compounds = modeledCompoundsView(modeledCompounds, {
+    ligands: data.entry.ligands ?? [],
+    cofactors: data.entry.cofactors ?? [],
+  });
   const entities = polymerEntityViews(
     data.entry.polymer_entities ?? [],
     data.entry.protein_sequences ?? [],
@@ -178,7 +187,9 @@ export default async function ScopePage({
           facts: summaryModelFacts(
             metadata,
             modelEntity ? provenance.programOf(modelEntity.id) : null,
+            { typedCompounds: compounds.state !== "read" },
           ),
+          compounds,
           metrics: modelEntity
             ? metricColumns(mergedModelMetrics(modelEntity, provenance))
             : [],
@@ -416,22 +427,23 @@ async function loadEntry(
   }
 }
 
-// Model lists leave out per-residue data, so it comes from the selected
-// model's detail. Like similarity, the page still renders without it.
-async function loadResidueData(
+// What only the model detail endpoint returns: the per-residue data and the
+// compounds the server read from the model's file. Both are bonus blocks: if the
+// request fails the page still renders, without them.
+async function loadModelDetail(
   token: string | undefined,
   entryId: string,
   model: Model | null,
-): Promise<ResidueData[]> {
+): Promise<{ residueData: ResidueData[]; modeledCompounds: ModeledCompounds | undefined }> {
   if (model === null) {
-    return [];
+    return { residueData: [], modeledCompounds: undefined };
   }
   try {
     const detail = await getModel(token, entryId, model.id);
-    return detail.residue_data ?? [];
+    return { residueData: detail.residue_data ?? [], modeledCompounds: detail.modeled_compounds };
   } catch (error) {
-    console.error("get model residue data failed", error);
-    return [];
+    console.error("get model detail failed", error);
+    return { residueData: [], modeledCompounds: undefined };
   }
 }
 

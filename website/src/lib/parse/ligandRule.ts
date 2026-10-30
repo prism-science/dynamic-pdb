@@ -7,6 +7,7 @@ import {
   NO_METALC_ROWS_REASON,
   OUTSIDE_CHAIN_REASON,
   SINGLE_ATOM_REASON,
+  UNDECLARED_CHAIN_REASON,
   UNLINKED_METAL_REASON,
   WATER_ONLY_METAL_REASON,
 } from "./reviewReasons";
@@ -241,8 +242,9 @@ export type HeteroAtom = {
  *  residue's place in a polymer chain. "member": a PDB-format MODRES record, or
  *  a name in the chain's SEQRES at a position in its polymer block (polymer
  *  whatever its CCD type). "spanOnly": within a chain, but nothing names it as
- *  a chain residue (an mmCIF label_seq_id, or a PDB chain without SEQRES); only
- *  a peptide or nucleotide counts as in the chain. */
+ *  a chain residue (an mmCIF label_seq_id, or a PDB chain without SEQRES). When
+ *  the file says what its chains hold, only a peptide or nucleotide counts as
+ *  in the chain; when it does not (`chainsUndeclared`), the residue is flagged. */
 export type ChainPosition = "member" | "spanOnly" | "none";
 
 /** What the coordinates say about one instance: its atom count (0 when
@@ -253,6 +255,11 @@ export type InstanceFacts = {
   element: string;
   entityId: string;
   chain: ChainPosition;
+  /** Mirrors instanceFacts.chainsUndeclared: the file does not say which
+   *  residues the instance's polymer chain holds (an mmCIF file without
+   *  `_entity`, a PDB-format file without SEQRES, or a PDB-format chain with
+   *  ATOM records but no SEQRES). */
+  chainsUndeclared: boolean;
   laterModel: boolean;
 };
 
@@ -292,6 +299,7 @@ export class CompoundTally {
         element: entry.first.element,
         entityId: entry.first.entityId,
         chain: entry.first.inChain ? "spanOnly" : "none",
+        chainsUndeclared: false,
         laterModel: entry.first.laterModel,
       });
     }
@@ -310,7 +318,7 @@ export class CompoundTally {
 }
 
 function emptyFacts(instance: CompoundInstance, atomCount: number, entityId: string): InstanceFacts {
-  return { instance, atomCount, element: "", entityId, chain: "none", laterModel: false };
+  return { instance, atomCount, element: "", entityId, chain: "none", chainsUndeclared: false, laterModel: false };
 }
 
 /** What the file's `metalc` connection rows say about metal ions. */
@@ -913,10 +921,11 @@ function placeByShape(
 /** Mirrors shapeOf: the entity type. An instance whose entity the file does
  *  not list (a PDB-format file, or an mmCIF file without `_entity`) is polymer
  *  when the file names it as a chain residue; otherwise its CCD type decides
- *  (the file's own `_chem_comp.type`, then the CCD table). A peptide or
- *  nucleotide within a chain counts as polymer too. Outside any chain, it is a
- *  ligand to confirm when its name is in the file's SEQRES records; otherwise
- *  the lists sort it (GDP, typed "RNA linking" in the CCD). */
+ *  (the file's own `_chem_comp.type`, then the CCD table). When the file does
+ *  not say what its chains hold, undeclaredShape decides instead. Otherwise a
+ *  peptide or nucleotide within a chain's span counts as polymer. Outside any
+ *  chain, it is a ligand to confirm when its name is in the file's SEQRES
+ *  records; otherwise the lists sort it (GDP, typed "RNA linking" in the CCD). */
 function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, string | null] {
   const entity = annotations.entitiesRead && facts.entityId ? annotations.entityTypes.get(facts.entityId) : undefined;
   switch (entity) {
@@ -946,6 +955,9 @@ function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, st
       throw new Error(`unknown chain position for ${facts.instance.compound}: ${String(facts.chain satisfies never)}`);
   }
   const [category, review] = categoryOf(facts.instance.compound, annotations);
+  if (facts.chainsUndeclared) {
+    return undeclaredShape(facts.instance.compound, facts.chain, category, review);
+  }
   switch (category) {
     case "peptide":
     case "nucleotide":
@@ -960,6 +972,37 @@ function shapeOf(facts: InstanceFacts, annotations: FileAnnotations): [Shape, st
     default:
       throw new Error(`unknown CCD category for ${facts.instance.compound}: ${String(category satisfies never)}`);
   }
+}
+
+/** Mirrors undeclaredShape: in a file that does not say what its chains hold,
+ *  a residue that could be a chain residue (a peptide or nucleotide anywhere,
+ *  any residue within a chain's span) is sorted as a compound and flagged, and
+ *  decide keeps it even when the lists would leave it out. A review reason the
+ *  CCD type already gives wins. */
+function undeclaredShape(
+  id: string,
+  chain: ChainPosition,
+  category: CcdCategory,
+  review: string | null,
+): [Shape, string | null] {
+  let couldBeChainResidue = chain === "spanOnly";
+  let shape: Shape;
+  switch (category) {
+    case "peptide":
+    case "nucleotide":
+      shape = "listed";
+      couldBeChainResidue = true;
+      break;
+    case "saccharide":
+      shape = "branched";
+      break;
+    case "nonPolymer":
+      shape = "listed";
+      break;
+    default:
+      throw new Error(`unknown CCD category for ${id}: ${String(category satisfies never)}`);
+  }
+  return [shape, couldBeChainResidue && review === null ? UNDECLARED_CHAIN_REASON : review];
 }
 
 /** Mirrors categoryOf: the file's own `_chem_comp.type` when it has one, else

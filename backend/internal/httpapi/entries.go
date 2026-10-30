@@ -1230,7 +1230,13 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
-	model, err := modelDetailAttributesFromRevision(*revision, metrics)
+	compounds, err := s.modeledCompoundsForRevision(r.Context(), *revision)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get model compounds failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
+		return
+	}
+	model, err := modelDetailAttributesFromRevision(*revision, metrics, compounds)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "build model response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
@@ -1246,10 +1252,11 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 }
 
 // modelDetailAttributesFromRevision is modelAttributesFromRevision plus what only the model
-// detail endpoint returns: the residue data and the field sources.
+// detail endpoint returns: the residue data, the field sources and the compounds the file models.
 func modelDetailAttributesFromRevision(
 	revision domainmodels.ModelRevision,
 	metrics []domainmodels.Metric,
+	compounds ModeledCompounds,
 ) (ModelDetailAttributes, error) {
 	model, err := modelAttributesFromRevision(revision, metrics)
 	if err != nil {
@@ -1274,6 +1281,7 @@ func modelDetailAttributesFromRevision(
 		UpdatedAt:         model.UpdatedAt,
 		Metrics:           model.Metrics,
 		FieldSources:      fieldSources,
+		ModeledCompounds:  compounds,
 	}, nil
 }
 

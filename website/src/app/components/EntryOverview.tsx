@@ -4,6 +4,7 @@ import type { Entity, Entry } from "@/lib/api/entries";
 import { obsoleteNotice, type ObsoleteNotice } from "@/lib/archive-status";
 import { dataTableEntities } from "@/lib/entities";
 import type { MetricScale } from "@/lib/model-comparison";
+import type { ModeledCompoundsView } from "@/lib/modeled-compounds";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
 import {
   ImagePlaceholderIcon,
@@ -14,6 +15,7 @@ import {
 } from "@/app/entries/[entryId]/entry-view";
 import DataTable from "./DataTable";
 import MetricScales from "./MetricScales";
+import ModeledCompoundList from "./ModeledCompoundList";
 import PolymerEntities from "./PolymerEntities";
 
 import styles from "./EntryOverview.module.css";
@@ -27,6 +29,8 @@ export type SummaryModel = {
   /** Program, model type, counts -- as ordinary labelled fields. */
   facts: MetadataFact[];
   metrics: MetricColumn[];
+  /** What the server read from the model's file; "typed" when it holds none. */
+  compounds: ModeledCompoundsView;
 };
 
 /**
@@ -130,6 +134,20 @@ export default function EntryOverview({
         <section className={styles.section} data-tour="evaluations">
           <h2 className={styles.heading}>Evaluations</h2>
           <MetricTiles metrics={model.metrics} />
+        </section>
+      ) : null}
+
+      {/* Every compound the model's file holds, buffers included: a record of
+          the coordinates. The tags are where the entry's own judgments come in.
+          A model without a file of ours shows its typed lists among its facts. */}
+      {model && model.compounds.state !== "typed" ? (
+        <section className={styles.section}>
+          <h2 className={styles.heading}>Compounds in this file</h2>
+          <p className={styles.sectionHint}>
+            Every compound the model file holds outside its polymer chains, except water. Tags
+            come from this entry&apos;s Ligands and Cofactors lists.
+          </p>
+          <ModeledCompoundList view={model.compounds} />
         </section>
       ) : null}
 

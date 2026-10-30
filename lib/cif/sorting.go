@@ -17,6 +17,9 @@ const (
 	unlinkedMetalReason  = "metal ion instance has no metalc connection to a protein residue or ligand"
 	waterOnlyMetalReason = "metal linked only to water: confirm the site"
 	outsideChainReason   = "residue outside the polymer chain: confirm it is a ligand"
+	// undeclaredChainReason flags a residue that could be a chain residue in a
+	// file that does not say what its chains hold (no SEQRES, no _entity).
+	undeclaredChainReason = "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
 )
 
 // compoundRule names the rule that placed a compound, as the decision record
@@ -287,11 +290,12 @@ func (s *compoundSorter) placeByShape(instance compoundInstance, facts instanceF
 // does not list (a PDB-format file, or an mmCIF file without _entity) is
 // polymer when the file names it as a chain residue (SEQRES, MODRES);
 // otherwise its CCD type decides: the file's own _chem_comp.type, then the CCD
-// table. A peptide or nucleotide residue within a chain (an mmCIF label_seq_id,
-// or a PDB chain without SEQRES) counts as polymer too. Outside any chain, it is
-// a ligand to confirm when its name is in the file's SEQRES records (a free
-// glutamate next to a chain of glutamates); otherwise the lists sort it like any
-// non-polymer (GDP, which the CCD types as "RNA linking").
+// table. When the file does not say what its chains hold, undeclaredShape
+// decides instead. Otherwise a peptide or nucleotide residue within a chain's
+// span (a HETATM-only chain of an archive file) counts as polymer. Outside any
+// chain, it is a ligand to confirm when its name is in the file's SEQRES
+// records (a free glutamate next to a chain of glutamates); otherwise the lists
+// sort it like any non-polymer (GDP, which the CCD types as "RNA linking").
 func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts) (compoundShape, string, error) {
 	kind := s.annotations.entityOf(facts.entityID)
 	switch kind {
@@ -317,6 +321,9 @@ func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts)
 		return 0, "", fmt.Errorf("unknown chain position %d for %s", facts.chain, instance.compoundID)
 	}
 	category, review := s.categoryOf(instance.compoundID)
+	if facts.chainsUndeclared {
+		return undeclaredShape(instance.compoundID, facts.chain, category, review)
+	}
 	switch category {
 	case CCDPeptide, CCDNucleotide:
 		switch {
@@ -334,6 +341,31 @@ func (s *compoundSorter) shapeOf(instance compoundInstance, facts instanceFacts)
 	default:
 		return 0, "", fmt.Errorf("unknown CCD category %q for %s", category, instance.compoundID)
 	}
+}
+
+// undeclaredShape sorts a residue of a file that does not say what its chains
+// hold (no SEQRES records, or no _entity). A residue that could be a chain
+// residue is not guessed: a peptide or nucleotide anywhere, and any residue
+// within a chain's span, is sorted as a compound and flagged, and decide keeps
+// it even when the lists would leave it out. Other residues outside the chains
+// are sorted as usual. A review reason the CCD type already gives wins.
+func undeclaredShape(compoundID string, chain chainPosition, category CCDCategory, review string) (compoundShape, string, error) {
+	couldBeChainResidue := chain == chainSpanOnly
+	var shape compoundShape
+	switch category {
+	case CCDPeptide, CCDNucleotide:
+		shape, couldBeChainResidue = shapeListed, true
+	case CCDSaccharide:
+		shape = shapeBranched
+	case CCDNonPolymer:
+		shape = shapeListed
+	default:
+		return 0, "", fmt.Errorf("unknown CCD category %q for %s", category, compoundID)
+	}
+	if couldBeChainResidue && review == "" {
+		review = undeclaredChainReason
+	}
+	return shape, review, nil
 }
 
 // categoryOf returns a compound's CCD category: from the file's _chem_comp.type

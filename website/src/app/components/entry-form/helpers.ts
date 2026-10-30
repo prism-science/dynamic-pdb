@@ -157,7 +157,9 @@ export function buildCreateModelInput(
  * The model metadata the depositor states. It is merged over what the
  * coordinate file says, so the composition lists are always set, even to
  * undefined: the form's lists, prefilled from the file and then edited, are
- * the ones to keep.
+ * the ones to keep. For an uploaded file they are set to undefined, so neither
+ * the form's lists nor the browser parser's are sent: the server reads the
+ * file's compounds itself.
  */
 function modelMetadataInput(modelDraft: ModelDraft): Record<string, unknown> {
   const metadata: Record<string, unknown> = {};
@@ -176,6 +178,12 @@ function modelMetadataInput(modelDraft: ModelDraft): Record<string, unknown> {
   }
   if (modelDraft.affiliation.trim()) {
     metadata.affiliation = modelDraft.affiliation.trim();
+  }
+  if (modelFileIsStored(modelDraft.files)) {
+    metadata.ligands = undefined;
+    metadata.cofactors = undefined;
+    metadata.extensions = { compound_review: undefined };
+    return metadata;
   }
   const review = compoundReviewRequest(modelDraft.compounds);
   metadata.ligands = compoundListRequest(modelDraft.compounds.ligands);
@@ -319,6 +327,15 @@ export function fileEntityType(file: ParsedFile): "data" | "model" {
 
 export function isModelFile(file: ParsedFile): boolean {
   return fileEntityType(file) === "model";
+}
+
+/**
+ * Whether the model's coordinate file is uploaded to our bucket, where the
+ * server reads every compound it models. The form then neither asks for
+ * nor sends the model's compound lists. A linked or external file is not read.
+ */
+export function modelFileIsStored(files: ParsedFile[]): boolean {
+  return files.some((file) => isModelFile(file) && file.source === "upload");
 }
 
 export function canAddModelFiles(

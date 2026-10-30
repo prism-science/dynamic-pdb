@@ -52,16 +52,26 @@ func (r *EntrySearchIndexRepository) IndexEntryRevision(
 	})
 }
 
+// IndexModelRevision saves a model revision's search row. Besides its metadata, the row holds
+// the compounds its model file models, once the model-compounds job has read the file.
 func (r *EntrySearchIndexRepository) IndexModelRevision(
 	ctx context.Context,
 	revision models.ModelRevision,
 ) error {
+	parts := modelRevisionSearchParts(revision)
+	if revision.PrimaryArtifactID != nil {
+		compoundIDs, err := NewModeledCompoundsRepository(r.db, r.queriers).CompoundIDs(ctx, *revision.PrimaryArtifactID)
+		if err != nil {
+			return fmt.Errorf("read the compounds of the model file: %w", err)
+		}
+		parts = append(parts, strings.Join(compoundIDs, " "))
+	}
 	return r.saveSearchRow(ctx, entrySearchIndexRow{
 		EntryID:    revision.EntryID,
 		ModelType:  entrySearchModelTypeModelRevision,
 		ModelID:    revision.ID.String(),
 		UpdatedAt:  time.Now().UTC(),
-		SearchText: searchTextFromParts(modelRevisionSearchParts(revision)...),
+		SearchText: searchTextFromParts(parts...),
 	})
 }
 

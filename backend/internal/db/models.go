@@ -29,16 +29,18 @@ type ModelRevisionFilters struct {
 	ID      *uuid.UUID
 	EntryID *string
 	// EntryIDs matches revisions of models in any of these entries. An empty slice is no filter.
-	EntryIDs       []string
-	ModelID        *string
-	State          *models.RevisionState
-	States         []models.RevisionState
-	ModelState     *models.ModelState
-	EntryState     *models.EntryState
-	CreatedBy      *uuid.UUID
-	IdempotencyKey *string
-	Limit          *int
-	Offset         *int
+	EntryIDs []string
+	ModelID  *string
+	// PrimaryArtifactID matches revisions whose model file is this artifact.
+	PrimaryArtifactID *uuid.UUID
+	State             *models.RevisionState
+	States            []models.RevisionState
+	ModelState        *models.ModelState
+	EntryState        *models.EntryState
+	CreatedBy         *uuid.UUID
+	IdempotencyKey    *string
+	Limit             *int
+	Offset            *int
 	// After continues the list (ordered by created_at asc, id asc) past this position.
 	// It cannot be combined with Offset.
 	After *ListPosition
@@ -481,6 +483,10 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	if filters.ModelID != nil {
 		conditions = append(conditions, "model_revisions.model_id = :model_id")
 		args["model_id"] = *filters.ModelID
+	}
+	if filters.PrimaryArtifactID != nil {
+		conditions = append(conditions, "model_revisions.primary_artifact_id = :primary_artifact_id")
+		args["primary_artifact_id"] = *filters.PrimaryArtifactID
 	}
 	if filters.State != nil {
 		conditions = append(conditions, "model_revisions.state = :state")

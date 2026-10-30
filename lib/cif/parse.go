@@ -20,6 +20,10 @@ type Document struct {
 	// timedOut is set when the time budget ended the read before the input did.
 	timedOut bool
 	notes    limitNotes
+	// keptBytes counts the bytes of the values kept under keptValueBudget;
+	// valueBudgetHit is set once a value was dropped for it.
+	keptBytes      int
+	valueBudgetHit bool
 }
 
 // Table is one category: a loop, or the items of a category written as pairs.
@@ -58,13 +62,45 @@ type parseOptions struct {
 	// streamStructConn feeds _struct_conn rows to a reader that keeps only the
 	// metal coordination partners; Result.Connections stays empty.
 	streamStructConn bool
+	// rowSinks feeds the rows of the named loop categories to a sink made from
+	// the loop's columns instead of storing them; the table keeps its columns
+	// and completeness only, as for streamAtomSite.
+	rowSinks map[string]func(columns []string) rowSink
 	// onlyTables, when set, lists the categories whose rows are kept; the
 	// rows of every other loop are skipped.
 	onlyTables map[string]struct{}
+	// keptValueBudget, when positive, bounds the bytes of the values the
+	// document keeps, in kept tables and non-looped items; past it the rest
+	// are dropped with a note. Non-looped items are then kept only for the
+	// categories of onlyTables and rowSinks. A whole streamed file needs both;
+	// extraction reads a 4 MiB head and uses neither.
+	keptValueBudget int
+}
+
+// rowSink takes the rows of one loop as they are read. A row slice is reused
+// for the next row, so a sink copies what it keeps.
+type rowSink interface {
+	add(row []string)
+}
+
+// tokenSource yields the tokens of an mmCIF text one at a time: tokenizer
+// over a string, lineTokenizer over a stream.
+type tokenSource interface {
+	next() (token, bool)
+	// separatorFollows reports that a line starting with "#" followed the last
+	// token. It is final once next has returned false.
+	separatorFollows() bool
+	// contextErr is the context error that ended the read before the input
+	// did, or nil.
+	contextErr() error
 }
 
 func parse(ctx context.Context, text string, truncated bool, options parseOptions) *Document {
-	reader := &tokenReader{tokens: newTokenizer(ctx, text, truncated)}
+	return parseTokens(newTokenizer(ctx, text, truncated), truncated, options)
+}
+
+func parseTokens(source tokenSource, truncated bool, options parseOptions) *Document {
+	reader := &tokenReader{tokens: source}
 	document := &Document{
 		scalars:   map[string]string{},
 		tables:    map[string]*Table{},
@@ -101,6 +137,9 @@ func parse(ctx context.Context, text string, truncated bool, options parseOption
 				document.notes.add("more than %d non-looped items: the rest were ignored", maxScalarItems)
 				continue
 			}
+			if options.keptValueBudget > 0 && (!options.keeps(openPairCategory) || !document.keepValue(value.text, options.keptValueBudget)) {
+				continue
+			}
 			scalarItems++
 			document.addScalar(current.text, value.text, pairColumns)
 		}
@@ -108,9 +147,30 @@ func parse(ctx context.Context, text string, truncated bool, options parseOption
 	return document.finish(pairColumns, reader, openPairCategory)
 }
 
-// tokenReader adds one token of pushback to the tokenizer.
+// keeps reports whether the non-looped items of a category are kept under a
+// value budget: those of the tables the caller reads, or streams.
+func (options parseOptions) keeps(category string) bool {
+	if _, kept := options.onlyTables[category]; kept {
+		return true
+	}
+	return options.rowSinks[category] != nil
+}
+
+// keepValue counts a value against the budget, or reports false and notes the
+// budget once it would be passed.
+func (d *Document) keepValue(value string, budget int) bool {
+	if d.keptBytes+len(value) > budget {
+		d.valueBudgetHit = true
+		d.notes.add("kept values passed %d bytes: the rest were ignored", budget)
+		return false
+	}
+	d.keptBytes += len(value)
+	return true
+}
+
+// tokenReader adds one token of pushback to a token source.
 type tokenReader struct {
-	tokens  *tokenizer
+	tokens  tokenSource
 	pending token
 	hasHeld bool
 }
@@ -133,11 +193,11 @@ func (r *tokenReader) unread(held token) {
 // read): it is incomplete when the read was cut off before a "#" line closed it,
 // or when the time budget ended it.
 func (d *Document) finish(pairColumns map[string]*Table, reader *tokenReader, openCategory string) *Document {
-	if reader.tokens.check.err != nil {
+	if reader.tokens.contextErr() != nil {
 		d.timedOut = true
 		d.notes.add(timeBudgetNote)
 	}
-	cutOff := d.timedOut || (d.truncated && !reader.tokens.endsWithSeparator)
+	cutOff := d.timedOut || (d.truncated && !reader.tokens.separatorFollows())
 	for category, table := range pairColumns {
 		if _, exists := d.tables[category]; !exists {
 			table.Rows = [][]string{rowFromPairs(table)}
@@ -213,27 +273,32 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 	}
 	width := len(columns)
 	_, exists := d.tables[category]
-	var sink *atomSiteReader
-	var linkSink *metalLinkReader
 	keepRows := !exists && !tooWide
 	if keepRows && options.onlyTables != nil {
 		_, keepRows = options.onlyTables[category]
 	}
-	if !exists && !tooWide && options.streamAtomSite && category == "_atom_site" {
-		sink = newAtomSiteReader(columns)
-		d.atomSite = sink
-		keepRows = false
+	var sink rowSink
+	switch newSink := options.rowSinks[category]; {
+	case exists || tooWide:
+	case options.streamAtomSite && category == "_atom_site":
+		atomSite := newAtomSiteReader(columns)
+		d.atomSite = atomSite
+		sink = atomSite
+	case options.streamStructConn && category == "_struct_conn":
+		links := newMetalLinkReader(columns)
+		d.metalLinks = links
+		sink = links
+	case newSink != nil:
+		sink = newSink(columns)
 	}
-	if !exists && !tooWide && options.streamStructConn && category == "_struct_conn" {
-		linkSink = newMetalLinkReader(columns)
-		d.metalLinks = linkSink
+	if sink != nil {
 		keepRows = false
 	}
 	cellLimit := min(maxTableCells, maxTableRows*max(width, 1))
 	cellLimit -= cellLimit % max(width, 1)
 	var values []string
 	var row []string
-	if sink != nil || linkSink != nil {
+	if sink != nil {
 		row = make([]string, 0, width)
 	}
 	count := 0
@@ -257,22 +322,20 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 				sink.add(row)
 				row = row[:0]
 			}
-		case linkSink != nil:
-			row = append(row, current.text)
-			if len(row) == width {
-				linkSink.add(row)
-				row = row[:0]
-			}
 		case keepRows:
-			if len(values) < cellLimit {
-				values = append(values, current.text)
-			} else if !capped {
+			switch {
+			case capped:
+			case len(values) >= cellLimit:
 				capped = true
 				d.notes.add("table %s has more than %d rows or %d values: the rest were ignored", category, maxTableRows, maxTableCells)
+			case options.keptValueBudget > 0 && !d.keepValue(current.text, options.keptValueBudget):
+				capped = true
+			default:
+				values = append(values, current.text)
 			}
 		}
 	}
-	if exists || tooWide || (!keepRows && sink == nil && linkSink == nil) {
+	if exists || tooWide || (!keepRows && sink == nil) {
 		return
 	}
 	table := &Table{Columns: columns}
@@ -282,7 +345,7 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 	// The loop is open at the end when the input stopped before a "#" line
 	// closed it, or the time budget stopped the read inside it (even at a row
 	// boundary).
-	openAtEnd := (truncated && !reader.tokens.endsWithSeparator) || reader.tokens.check.err != nil
+	openAtEnd := (truncated && !reader.tokens.separatorFollows()) || reader.tokens.contextErr() != nil
 	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0 && !capped
 	d.tables[category] = table
 }
@@ -362,6 +425,14 @@ func newTokenizer(ctx context.Context, text string, truncated bool) *tokenizer {
 		truncated: truncated,
 		check:     timeCheck{ctx: ctx},
 	}
+}
+
+func (t *tokenizer) separatorFollows() bool {
+	return t.endsWithSeparator
+}
+
+func (t *tokenizer) contextErr() error {
+	return t.check.err
 }
 
 // next returns the next token. When the time budget runs out it behaves like the

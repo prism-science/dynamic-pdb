@@ -52,6 +52,7 @@ export default function ModelOverviewFields({
   thumbnail,
   onThumbnail,
   compoundsSource = null,
+  compoundsFromFile = false,
   locks = NO_LOCKS,
   messages,
 }: {
@@ -66,6 +67,9 @@ export default function ModelOverviewFields({
   onThumbnail: (file: File) => void;
   /** Where the composition was read from, such as the coordinate file. */
   compoundsSource?: string | null;
+  /** The model file is in our bucket, so the server reads its compounds and
+   *  the form asks for none. */
+  compoundsFromFile?: boolean;
   locks?: ModelOverviewLocks;
   messages: readonly FieldMessage[];
 }) {
@@ -255,7 +259,13 @@ export default function ModelOverviewFields({
         </Field>
       </div>
 
-      {compoundsLock ? (
+      {compoundsFromFile ? (
+        <p className={styles.sectionNote}>
+          The compounds this model contains are read from its file after you save, and appear on
+          the model&apos;s page a few minutes later. The entry&apos;s Ligands and Cofactors lists
+          say which of them matter.
+        </p>
+      ) : compoundsLock ? (
         <CompoundListsReadOnly
           compounds={values.compounds}
           fields={MODEL_COMPOUND_FIELDS}

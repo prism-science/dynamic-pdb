@@ -54,7 +54,10 @@ warning, and the parse still succeeds:
 | distinct chain and residue name pairs in PDB `SEQRES` (and distinct `MODRES` residues) | 100,000 (100,000) | a real chain uses under 30 residue names |
 | distinct compounds per list | 2,000 | real entries have well under 200 |
 | REMARK fields (PDB) | 5,000 | |
-| one line in the streaming scalar scan | 8 MiB | a longer line is an error, not a buffer |
+| one line in the streaming scalar scan, or one line or `;` text field in `cif.ReadModeledCompounds` | 8 MiB | a longer line is an error, not a buffer |
+| compound copies listed by `cif.ReadModeledCompounds` | 100,000 | 6VXX, a glycosylated spike trimer, has 63; 5HAU has 1,945; past the cap the list is marked incomplete with a warning |
+| category values `cif.ReadModeledCompounds` keeps (`_entity`, `_chem_comp`, single-row scheme categories) | 64 MiB | real files keep under 1 MB; items of other categories are not kept at all |
+| one field of a compound copy (CCD ID, chain, residue number, insertion code, entity) | 64 bytes, plain UTF-8 text | a longer field, invalid UTF-8 or a control character (PostgreSQL rejects a NUL) skips the copy with a warning |
 | time for one extraction (`cif.TimeBudget`) | 5 s | a 4 MiB head parses in under 0.2 s even when hostile; the budget only stops a slow machine or an input nobody anticipated |
 
 If `_atom_site` runs past a cap, atom counts, residue counts and altloc fraction
@@ -120,10 +123,20 @@ A PDB-format file has no entity types, so the parser reads its chains instead
   free glutamate after the chain's `TER` record is. A residue named in `SEQRES`
   counts whatever its CCD type (the antibiotic residues of 7LTB are
   "non-polymer" in the CCD).
-- **Chains without `SEQRES`** (common in depositor-made files): a residue in the
-  polymer block counts as part of the chain only when its CCD type is a peptide
-  or nucleotide type, so a ligand numbered inside the protein's range is never
-  dropped.
+- **Chains without `SEQRES`** (common in depositor-made files): when the file
+  has no `SEQRES` records at all, or the residue's chain has `ATOM` records but
+  no `SEQRES`, nothing says which residues the chain holds, so the parser does
+  not guess. A residue that could be a chain residue is kept and flagged "the
+  file does not say which residues belong to its polymer chains: confirm this
+  residue is not part of one": a peptide or nucleotide residue anywhere (MSE in
+  the chain, a free glutamate), and any other residue in the chain's polymer
+  block that `MODRES` does not list (an ATP numbered inside the protein's
+  range). It goes to the list the reference lists choose (rule `list`, or
+  `branched` for a sugar), and it is kept even when the lists would leave it
+  out. Other residues outside the chains are sorted as usual. A chain with
+  neither `SEQRES` nor `ATOM` records (the glycan and ligand chains of an
+  archive file such as 7LTB) is not a polymer chain, so this does not apply to
+  it.
 - **Everything else goes by its CCD type** (`lib/cif/ccd_types.json`): a sugar
   is a glycan (Ligands, rule `branched`); a non-polymer goes by the reference
   lists. A peptide or nucleotide residue outside any chain is a ligand flagged
@@ -152,9 +165,12 @@ sorted once (`classifyCompounds` in `lib/cif/sorting.go`):
    `_entity.type` decides: `water` is dropped, a `polymer` residue (MSE in a
    chain) is skipped. An mmCIF file without `_entity` uses its own
    `_chem_comp.type`, then the CCD table (`ccd_types.json`), as a PDB-format file
-   does (see above); there a peptide or nucleotide residue with a
-   `label_seq_id` counts as part of a chain, and one without is an ordinary
-   ligand (such a file has no `SEQRES` to show the polymer uses it). Water and
+   does (see above). Nothing in such a file says which residues its chains
+   hold, so it follows the rule for PDB chains without `SEQRES`: a peptide or
+   nucleotide residue anywhere, and any residue with a `label_seq_id`, is kept
+   and flagged instead of guessed. `_pdbx_struct_mod_residue` still adds a
+   covalently bound cofactor (PLP for LLP) but, unlike `MODRES`, does not make
+   a residue a chain member. Water and
    polymer residues are never recorded.
 2. **The depositor's flag** (`_pdbx_entity_instance_feature`) overrides the
    lists: SUBJECT OF INVESTIGATION keeps the instance as a ligand (even a listed
@@ -251,6 +267,54 @@ parser does not know flags the glycan's compounds.
 
 Nothing stores the record yet: the extract endpoint returns it, and the entry
 revision column comes with the archive backfill (T1-C2).
+
+## Compounds modeled in the file
+
+`cif.ReadModeledCompounds` (`lib/cif/modeled.go`) lists every copy of every
+compound a file models outside its polymer chains, water (`HOH`, `DOD`, `WAT`,
+`H2O`) excepted. It is a record of the coordinates, not a judgment: the
+reference lists are not applied, so buffers, ions and an integrative model's
+probes are listed, and nothing is split into ligands and cofactors. The entry's
+Ligands and Cofactors lists carry those judgments. Go only; the website does not
+read it.
+
+Each copy has its CCD ID, the chain, residue number and insertion code viewers
+show (`_atom_site.auth_*`, the schemes' `pdb_*` items, PDB columns 22 to 27),
+the mmCIF label chain and entity, and where it was read:
+
+- **`nonpoly_scheme`, `branch_scheme`.** An mmCIF file's
+  `_pdbx_nonpoly_scheme` and `_pdbx_branch_scheme` rows (glycans of two or more
+  sugars are only in the branch scheme). The schemes' own `auth_*` items are the
+  depositor's original numbering and are not used.
+- **`atom_site`.** A `HETATM` residue whose entity is not a polymer (or water),
+  when the file has no schemes or they leave it out. A copy the schemes leave out
+  adds the warning "N compound copies in the coordinates are missing from the
+  scheme categories".
+- **`pdb_hetatm`.** The `HETATM` residues of a PDB-format file that `SEQRES`
+  and `MODRES` do not make chain residues, as for the ligand rule.
+
+A file that does not say what its chains hold (no `_entity`, or a PDB-format
+file or chain without `SEQRES`) gets the ligand rule's treatment: a residue
+that could be a chain residue is listed and marked for review, never left out by
+a guess. A copy whose entity type, or chemical component type in a file without
+`_entity`, is unknown is marked for review too.
+
+Copies are de-duplicated by position across models, so an ensemble lists a
+compound that only a later model holds. The chain positions of a PDB-format
+file come from its first model.
+
+**Whole file, bounded memory.** Unlike extraction, the read is not limited to
+the 4 MiB head: program outputs often have no schemes and write their `HETATM`
+rows at the end of `_atom_site`. The stream is read line by line through a
+64 KiB buffer (`lib/cif/stream.go`, the same tokens as the text tokenizer; a test
+checks them on every fixture), and only the keys of distinct copies are kept, up
+to 100,000. On a laptop a 315 MB mmCIF file took 2.3 s and a 315 MB PDB file
+0.4 s, both with a 13 MB peak (2026-10-30). There is no fixed time budget: the
+caller's context bounds the read, and a done context or a stream that cannot be
+read is an error, not a partial list. A list stopped by the copy cap or the 64 MiB
+budget on kept values, a loop that ends inside a row, or a copy skipped because a
+field is not plain text has `Complete` false and a warning. A review reason that
+quotes a file's value is cut to 240 bytes.
 
 ## Mutations
 
@@ -363,7 +427,7 @@ The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the fir
 
 Scalar fields read from a data-folder file (for example R-free from `models/5amf_model.cif`) are streamed with `cif.ScalarValueFromReader`; the file is never loaded whole.
 
-**Review flags.** A compound the parser flags (an ambiguous compound such as sulfate, a metal with no `metalc` link, a residue outside the polymer chain) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
+**Review flags.** A compound the parser flags (an ambiguous compound such as sulfate, a metal with no `metalc` link, a residue outside the polymer chain, a residue that could be a chain residue in a file without `SEQRES` or `_entity`) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
 
 ```json
 "extensions": {"compound_review": [

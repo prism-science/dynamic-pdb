@@ -11,7 +11,9 @@ import {
   structureMaps,
 } from "@/lib/entities";
 import { formatEntryLabel } from "@/lib/entry-label";
+import { type EntryCompoundLists, modeledCompoundsView } from "@/lib/modeled-compounds";
 import DataTable from "@/app/components/DataTable";
+import ModeledCompoundList from "@/app/components/ModeledCompoundList";
 import FileTable from "@/app/components/FileTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
@@ -136,8 +138,12 @@ export function EntryRevisionPreview({
 
 export function ModelRevisionPreview({
   revision,
+  entryLists,
 }: {
   revision: ModelRevision;
+  /** The entry's Ligands and Cofactors lists, for the compound tags; null when
+   *  the entry could not be read, so the compounds carry no tags. */
+  entryLists: EntryCompoundLists | null;
 }) {
   const { entities, relations } = modelRevisionGraph(revision);
   const provenance = buildProvenance(entities, relations);
@@ -148,9 +154,11 @@ export function ModelRevisionPreview({
   const metadata = modelMetadata(model, revision.metadata);
   const previewURL = modelPreviewURL(model, revision.thumbnail_image_url);
   const vitals = modelVitals(metadata);
+  const compounds = modeledCompoundsView(revision.modeled_compounds, entryLists);
   const infoFacts = modelInfoFacts(
     metadata,
     model ? provenance.programOf(model.id) : null,
+    { typedCompounds: compounds.state !== "read" },
   );
   const hasEvaluations = model
     ? hasModelEvaluations(model, provenance)
@@ -207,6 +215,13 @@ export function ModelRevisionPreview({
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
             <InfoGrid facts={infoFacts} />
+          </section>
+        ) : null}
+
+        {compounds.state !== "typed" ? (
+          <section className={styles.contentSection}>
+            <h2 className={styles.contentHeading}>Compounds in this file</h2>
+            <ModeledCompoundList view={compounds} />
           </section>
         ) : null}
 

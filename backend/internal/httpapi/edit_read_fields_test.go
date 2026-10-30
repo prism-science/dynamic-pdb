@@ -61,7 +61,7 @@ func Test_should_return_null_field_sources_when_model_detail_predates_sources(t 
 	revision := domainmodels.ModelRevision{ID: uuid.New(), ModelID: "e_m_001", EntryID: "e"}
 
 	// when
-	response, err := modelDetailAttributesFromRevision(revision, nil)
+	response, err := modelDetailAttributesFromRevision(revision, nil, notStoredCompounds())
 	encoded, marshalErr := json.Marshal(response)
 
 	// then
@@ -89,7 +89,7 @@ func Test_should_return_sources_and_residue_data_when_model_detail_is_built(t *t
 	}
 
 	// when
-	response, err := modelDetailAttributesFromRevision(revision, nil)
+	response, err := modelDetailAttributesFromRevision(revision, nil, notStoredCompounds())
 
 	// then
 	require.NoError(t, err)
