@@ -1440,7 +1440,7 @@ func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_revie
 	reviewJSON, err := json.Marshal(extensions["compound_review"])
 	require.NoError(t, err)
 	assert.JSONEq(t, `[
-		{"list": "ligands", "id": "SO4", "reason": "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped"},
+		{"list": "ligands", "id": "SO4", "reason": "often from the buffer: confirm it is part of the sample"},
 		{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
 	]`, string(reviewJSON))
 }

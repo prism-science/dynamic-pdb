@@ -1,5 +1,6 @@
 import { CIF_REFERENCE } from "@/lib/parse/cifReference.gen";
-import type { CompoundReview } from "@/lib/parse/structure";
+import type { CompoundReview } from "@/lib/parse/ligandRule";
+import { AMBIGUOUS_COMPOUND_REASON } from "@/lib/parse/reviewReasons";
 
 import type {
   CompoundList,
@@ -19,9 +20,20 @@ const WATER_COMPOUNDS = new Set(["HOH", "DOD", "WAT", "H2O"]);
 const COFACTOR_COMPOUNDS = new Set<string>(CIF_REFERENCE.cofactors);
 const METAL_IONS = new Set<string>(CIF_REFERENCE.metalIons);
 const SOLVENT_COMPOUNDS = new Set<string>(CIF_REFERENCE.solvents);
+const AMBIGUOUS_COMPOUNDS = new Set<string>(CIF_REFERENCE.ambiguous);
 
 const SOLVENT_REVIEW =
   "usually a solvent or buffer, which the sample composition leaves out";
+
+/** The hint a typed ID gets: the parsers' reason for an ambiguous compound
+ *  (sulfate, phosphate, citrate, halides), the solvent hint for a compound the
+ *  parsers drop, none otherwise. */
+function typedCompoundReview(id: string): string | null {
+  if (AMBIGUOUS_COMPOUNDS.has(id)) {
+    return AMBIGUOUS_COMPOUND_REASON;
+  }
+  return SOLVENT_COMPOUNDS.has(id) ? SOLVENT_REVIEW : null;
+}
 
 export const COMPOUND_LIST_NAMES: CompoundListName[] = ["ligands", "cofactors"];
 
@@ -91,7 +103,7 @@ export function addCompound(
   if (!list) {
     return { compounds, error: "water is not part of the sample composition" };
   }
-  const review = SOLVENT_COMPOUNDS.has(id) ? SOLVENT_REVIEW : null;
+  const review = typedCompoundReview(id);
   return {
     compounds: {
       ...compounds,

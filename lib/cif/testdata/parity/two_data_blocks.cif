@@ -1,0 +1,36 @@
+data_TWOB
+# Synthetic: a second data block follows the structure, as a restraint
+# dictionary a refinement program appends would. lib/cif reads the first block
+# only, so the second block's flag on ATP is not applied and ATP stays a ligand.
+_entry.id TWOB
+#
+loop_
+_entity.id
+_entity.type
+1 polymer
+2 non-polymer
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+_atom_site.occupancy
+_atom_site.pdbx_PDB_model_num
+ATOM 1 C CA . ALA A 1 1 ? 1 A 1.00 1
+HETATM 2 P PG . ATP B 2 . ? 101 B 1.00 1
+HETATM 3 P PB . ATP B 2 . ? 101 B 1.00 1
+#
+data_comp_ATP
+#
+_pdbx_entity_instance_feature.comp_id ATP
+_pdbx_entity_instance_feature.feature_type 'NO FUNCTIONAL ROLE'
+#

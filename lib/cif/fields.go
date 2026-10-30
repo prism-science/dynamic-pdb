@@ -20,6 +20,9 @@ type Extraction struct {
 	Warnings []string
 	// Review lists the flagged compounds, the same data as FieldCompoundReview.
 	Review []ReviewItem
+	// CompoundSources is the decision record: the rule that placed each
+	// compound, including the ones left out (see Result.CompoundSources).
+	CompoundSources CompoundSources
 }
 
 // ReviewItem is one compound flagged for review.
@@ -93,7 +96,7 @@ func mmcifExtraction(ctx context.Context, text string, truncated bool, reference
 		}
 	}
 	review := addCompoundFields(fields, result.Ligands, result.Cofactors, result.Atoms != nil)
-	return Extraction{Fields: fields, Warnings: result.Warnings, Review: review}, nil
+	return Extraction{Fields: fields, Warnings: result.Warnings, Review: review, CompoundSources: result.CompoundSources}, nil
 }
 
 // FieldValue looks a field up by its exact key, then by its normalized key.

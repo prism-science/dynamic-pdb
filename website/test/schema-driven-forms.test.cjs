@@ -267,6 +267,23 @@ test("should_sort_typed_compounds_by_the_reference_lists", () => {
   );
 });
 
+test("should_give_the_matching_hint_when_an_ambiguous_compound_or_a_buffer_is_typed", () => {
+  // given
+  let compounds = emptyCompounds();
+
+  // when
+  for (const id of ["SO4", "cl", "GOL"]) {
+    compounds = addCompound(compounds, id).compounds;
+  }
+
+  // then
+  assert.deepEqual(compoundReviewRequest(compounds), [
+    { list: "ligands", id: "SO4", reason: "often from the buffer: confirm it is part of the sample" },
+    { list: "ligands", id: "CL", reason: "often from the buffer: confirm it is part of the sample" },
+    { list: "ligands", id: "GOL", reason: "usually a solvent or buffer, which the sample composition leaves out" },
+  ]);
+});
+
 test("should_refuse_water_duplicates_and_text_that_is_not_a_ccd_id", () => {
   // given
   const compounds = addCompound(emptyCompounds(), "ATP").compounds;

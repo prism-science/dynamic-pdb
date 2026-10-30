@@ -6,9 +6,67 @@ import "strconv"
 // because the input ended inside its coordinates.
 const unknownAtomCount = -1
 
+// heteroAtom is one HETATM row as the compound rules need it.
+type heteroAtom struct {
+	name string
+	// element is the upper-case element symbol.
+	element string
+	// entityID is the row's label_entity_id; empty in PDB-format files.
+	entityID string
+	// inChain is set when the row has a label_seq_id: the residue sits in a
+	// polymer chain.
+	inChain bool
+	// laterModel is set for a row of any model after the first.
+	laterModel bool
+}
+
 type instanceAtoms struct {
-	firstAtom string
-	multiple  bool
+	// first is the instance's first atom; its facts stand for the instance.
+	first    heteroAtom
+	multiple bool
+}
+
+// chainPosition is what a file says about a residue's place in a polymer chain.
+type chainPosition int
+
+const (
+	// chainNone: nothing places it in a chain.
+	chainNone chainPosition = iota
+	// chainMember: a PDB-format MODRES record, or a name in the chain's SEQRES
+	// at a position in its polymer block. Polymer whatever its CCD type.
+	chainMember
+	// chainSpanOnly: within a chain, but nothing names it as a chain residue:
+	// an mmCIF label_seq_id (writers set it unevenly for ligands), or a
+	// PDB-format chain without SEQRES records. Only a peptide or nucleotide
+	// counts as in the chain.
+	chainSpanOnly
+)
+
+func chainPositionOf(hasLabelSeqID bool) chainPosition {
+	if hasLabelSeqID {
+		return chainSpanOnly
+	}
+	return chainNone
+}
+
+// instanceFacts is what the coordinates say about one compound instance.
+type instanceFacts struct {
+	// atoms is the number of distinct atoms: 1, or 2 for several, replaced by
+	// the HET record's count when it has one; 0 when unknown, unknownAtomCount
+	// when the coordinates were cut off inside the instance.
+	atoms int
+	// element is the upper-case element symbol of the first atom read, empty
+	// when no atom of the instance was read.
+	element string
+	// entityID is the instance's label_entity_id, empty when unknown.
+	entityID string
+	// chain is what the file says about the residue's place in a polymer
+	// chain: an mmCIF label_seq_id places it within one; a PDB-format file
+	// decides it after the read (pdbChains.position).
+	chain chainPosition
+	// laterModel is set when the instance appears only in models after the
+	// first; an integrative (IHM) file lists those compounds too.
+	laterModel bool
 }
 
 // coordinateTally reduces coordinate rows to counts as they arrive, with every
@@ -36,9 +94,10 @@ func newCoordinateTally() *coordinateTally {
 	}
 }
 
-// addHetero records one atom of a non-polymer instance. Only whether the
-// instance has one atom or several is kept.
-func (t *coordinateTally) addHetero(instance compoundInstance, atomName string) {
+// addHetero records one HETATM row of an instance. Only whether the instance
+// has one atom or several, and the facts of its first atom, are kept. Rows of a
+// later model add an instance the first model lacks, never atoms to one it has.
+func (t *coordinateTally) addHetero(instance compoundInstance, atom heteroAtom) {
 	if t.overflow != "" {
 		return
 	}
@@ -50,8 +109,10 @@ func (t *coordinateTally) addHetero(instance compoundInstance, atomName string) 
 			t.overflow = "compound instances"
 			return
 		}
-		t.hetero[instance] = instanceAtoms{firstAtom: atomName}
-	case !atoms.multiple && atoms.firstAtom != atomName:
+		t.hetero[instance] = instanceAtoms{first: atom}
+	case atom.laterModel && !atoms.first.laterModel:
+		return
+	case !atoms.multiple && atoms.first.name != atom.name:
 		atoms.multiple = true
 		t.hetero[instance] = atoms
 	}
@@ -106,12 +167,13 @@ func (t *coordinateTally) addResidue(chain string, residue residueKey, altID str
 	byAltID[altID] = max(byAltID[altID], occupancy())
 }
 
-// instanceCounts returns the number of distinct atoms per instance: 1 or 2 for
-// "one" or "several" from the coordinates, replaced by the HET record's count
-// when it has one. When the coordinates were cut off, the instance being read at
-// the cut may be missing atoms, so a single atom seen there is unknown.
-func (t *coordinateTally) instanceCounts(coordinatesComplete bool) map[compoundInstance]int {
-	counts := make(map[compoundInstance]int, len(t.hetero)+len(t.declared))
+// instanceFacts returns, per instance, the number of distinct atoms (1 or 2
+// for "one" or "several" from the coordinates, replaced by the HET record's
+// count when it has one) and the first atom's element. When the coordinates
+// were cut off, the instance being read at the cut may be missing atoms, so a
+// single atom seen there is unknown.
+func (t *coordinateTally) instanceFacts(coordinatesComplete bool) map[compoundInstance]instanceFacts {
+	facts := make(map[compoundInstance]instanceFacts, len(t.hetero)+len(t.declared))
 	for instance, atoms := range t.hetero {
 		count := 1
 		if atoms.multiple {
@@ -120,18 +182,25 @@ func (t *coordinateTally) instanceCounts(coordinatesComplete bool) map[compoundI
 		if !coordinatesComplete && count == 1 && t.hasHetero && instance == t.lastHetero {
 			count = unknownAtomCount
 		}
-		counts[instance] = count
-	}
-	for instance, declared := range t.declared {
-		_, observed := counts[instance]
-		switch {
-		case declared > 0:
-			counts[instance] = declared
-		case !observed:
-			counts[instance] = 0
+		facts[instance] = instanceFacts{
+			atoms:      count,
+			element:    atoms.first.element,
+			entityID:   atoms.first.entityID,
+			chain:      chainPositionOf(atoms.first.inChain),
+			laterModel: atoms.first.laterModel,
 		}
 	}
-	return counts
+	for instance, declared := range t.declared {
+		observed, seen := facts[instance]
+		switch {
+		case declared > 0:
+			observed.atoms = declared
+			facts[instance] = observed
+		case !seen:
+			facts[instance] = instanceFacts{}
+		}
+	}
+	return facts
 }
 
 // parseOccupancy reads an occupancy; a missing or unreadable value counts as 1.

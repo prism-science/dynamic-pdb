@@ -1,0 +1,17 @@
+REMARK   1 SYNTHETIC: CHAIN A HAS NEITHER SEQRES NOR TER; LINK RECORDS BIND
+REMARK   1 ZN TO A CYSTEINE AND MG ONLY TO WATER; CA HAS NO LINK.
+LINK        SG   CYS A   1                ZN    ZN B 101
+LINK        MG    MG B 102                O    HOH C 201
+ATOM      1 CA   CYS A   1       1.000   2.000   3.000  1.00 20.00           C
+HETATM    2 SE   MSE A   2       1.000   2.000   3.000  1.00 20.00          SE
+HETATM    3 CA   MSE A   2       1.000   2.000   3.000  1.00 20.00           C
+ATOM      4 CA   ALA A   9       1.000   2.000   3.000  1.00 20.00           C
+HETATM    5 PG   ATP A   5       1.000   2.000   3.000  1.00 20.00           P
+HETATM    6 PB   ATP A   5       1.000   2.000   3.000  1.00 20.00           P
+HETATM    7 N    GLU A 900       1.000   2.000   3.000  1.00 20.00           N
+HETATM    8 CA   GLU A 900       1.000   2.000   3.000  1.00 20.00           C
+HETATM    9 ZN    ZN B 101       1.000   2.000   3.000  1.00 20.00          ZN
+HETATM   10 MG    MG B 102       1.000   2.000   3.000  1.00 20.00          MG
+HETATM   11 CA    CA B 103       1.000   2.000   3.000  1.00 20.00          CA
+HETATM   12 O    HOH C 201       1.000   2.000   3.000  1.00 20.00           O
+END

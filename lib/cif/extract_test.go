@@ -1,9 +1,12 @@
 package cif
 
 import (
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,7 +36,7 @@ func idsOf(compounds []Compound) []string {
 	return ids
 }
 
-func Test_should_keep_heme_as_cofactor_and_drop_buffer_when_file_has_several_entities(t *testing.T) {
+func Test_should_keep_heme_as_cofactor_and_flag_phosphate_when_file_has_several_entities(t *testing.T) {
 	// given
 	text := readFixture(t, "4HHB.cif")
 
@@ -46,7 +49,7 @@ func Test_should_keep_heme_as_cofactor_and_drop_buffer_when_file_has_several_ent
 	assert.Equal(t, 420, result.Atoms.AtomCount)
 	assert.Equal(t, 32, result.Atoms.ModeledResidues)
 	assert.Equal(t, 4, result.Atoms.ProteinChains)
-	assert.Empty(t, result.Ligands)
+	assert.Equal(t, []Compound{{ID: "PO4", NeedsReview: true, ReviewReason: ambiguousReason}}, result.Ligands)
 	assert.Equal(t, []string{"HEM"}, idsOf(result.Cofactors))
 	assert.False(t, result.Cofactors[0].NeedsReview)
 	assert.Len(t, result.Connections, 4)
@@ -94,24 +97,146 @@ func Test_should_flag_metal_for_review_when_file_has_no_metalc_rows(t *testing.T
 	assert.Empty(t, result.Ligands)
 }
 
-func Test_should_not_count_water_coordination_as_link_when_metal_only_binds_water(t *testing.T) {
+// metalcText is a file of compounds without coordinates and metalc rows
+// between the given partner pairs.
+func metalcText(compounds []string, pairs [][2]string) string {
+	var builder strings.Builder
+	builder.WriteString("data_X\nloop_\n_struct_conn.id\n_struct_conn.conn_type_id\n" +
+		"_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr2_label_comp_id\n")
+	for index, pair := range pairs {
+		builder.WriteString("metalc" + strconv.Itoa(index+1) + " metalc " + pair[0] + " " + pair[1] + "\n")
+	}
+	builder.WriteString("loop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n")
+	for index, compound := range compounds {
+		builder.WriteString(strconv.Itoa(index+2) + " " + compound + "\n")
+	}
+	return builder.String()
+}
+
+func Test_should_flag_metal_as_cofactor_when_metal_only_binds_water(t *testing.T) {
 	// given
-	text := "data_X\n" +
-		"loop_\n_struct_conn.id\n_struct_conn.conn_type_id\n" +
-		"_struct_conn.ptnr1_label_comp_id\n_struct_conn.ptnr2_label_comp_id\n" +
-		"metalc1 metalc ZN HOH\nmetalc2 metalc MG ASP\n" +
-		"loop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.name\n_pdbx_entity_nonpoly.comp_id\n" +
-		"2 'zinc ion' ZN\n3 'magnesium ion' MG\n4 water HOH\n"
+	text := metalcText([]string{"ZN", "MG", "HOH"}, [][2]string{{"ZN", "HOH"}, {"MG", "ASP"}})
 
 	// when
 	result, err := Extract(Parse(text))
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, []string{"MG"}, idsOf(result.Cofactors))
-	require.Len(t, result.Ligands, 1)
-	assert.Equal(t, "ZN", result.Ligands[0].ID)
-	assert.True(t, result.Ligands[0].NeedsReview)
+	assert.Equal(t, []Compound{
+		{ID: "MG"},
+		{ID: "ZN", NeedsReview: true, ReviewReason: waterOnlyMetalReason},
+	}, result.Cofactors)
+	assert.Empty(t, result.Ligands)
+}
+
+func Test_should_keep_metal_unflagged_when_it_binds_water_and_protein(t *testing.T) {
+	// given
+	text := metalcText([]string{"ZN", "HOH"}, [][2]string{{"ZN", "HOH"}, {"CYS", "ZN"}})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []Compound{{ID: "ZN"}}, result.Cofactors)
+}
+
+func Test_should_keep_imidazole_and_link_its_metal_when_metalc_joins_them(t *testing.T) {
+	// given
+	text := metalcText([]string{"NI", "IMD"}, [][2]string{{"NI", "IMD"}})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []Compound{{ID: "IMD"}}, result.Ligands)
+	assert.Equal(t, []Compound{{ID: "NI"}}, result.Cofactors)
+}
+
+func Test_should_drop_imidazole_when_no_metalc_row_binds_it(t *testing.T) {
+	// given
+	text := metalcText([]string{"NI", "IMD"}, [][2]string{{"NI", "HIS"}})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, result.Ligands)
+	assert.Equal(t, []Compound{{ID: "NI"}}, result.Cofactors)
+}
+
+func Test_should_not_count_a_dropped_buffer_as_metal_link_when_metal_binds_only_glycerol(t *testing.T) {
+	// given
+	text := metalcText([]string{"ZN", "GOL"}, [][2]string{{"ZN", "GOL"}})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []Compound{{ID: "ZN", NeedsReview: true, ReviewReason: unlinkedMetalReason}}, result.Ligands)
+	assert.Empty(t, result.Cofactors)
+}
+
+func Test_should_keep_ambiguous_compounds_flagged_when_lists_are_approved(t *testing.T) {
+	// given
+	text := metalcText([]string{"SO4", "PO4", "CIT", "FLC", "F", "CL", "BR", "IOD"}, nil)
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, result.Cofactors)
+	assert.Equal(t, []string{"BR", "CIT", "CL", "F", "FLC", "IOD", "PO4", "SO4"}, idsOf(result.Ligands))
+	for _, ligand := range result.Ligands {
+		assert.Equal(t, ambiguousReason, ligand.ReviewReason, ligand.ID)
+	}
+}
+
+// singleAtomText is a file with one single-atom instance of each compound, with
+// the given element.
+func singleAtomText(atoms map[string]string) string {
+	var builder strings.Builder
+	builder.WriteString("data_X\nloop_\n_atom_site.group_PDB\n_atom_site.type_symbol\n_atom_site.label_atom_id\n" +
+		"_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.auth_seq_id\n")
+	builder.WriteString("ATOM C CA ALA A 1\n")
+	for index, compound := range slices.Sorted(maps.Keys(atoms)) {
+		element := atoms[compound]
+		fmt.Fprintf(&builder, "HETATM %s %s %s B %d\n", element, element, compound, 100+index)
+	}
+	return builder.String()
+}
+
+func Test_should_flag_single_atom_only_when_its_element_is_a_metal_or_unknown(t *testing.T) {
+	// given: no list names XE, ZZ1, UNX or ZZ2.
+	text := singleAtomText(map[string]string{"XE": "XE", "ZZ1": "PT", "UNX": "X", "ZZ2": "."})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []Compound{
+		{ID: "UNX", NeedsReview: true, ReviewReason: singleAtomReason},
+		{ID: "XE"},
+		{ID: "ZZ1", NeedsReview: true, ReviewReason: singleAtomReason},
+		{ID: "ZZ2", NeedsReview: true, ReviewReason: singleAtomReason},
+	}, result.Ligands)
+}
+
+func Test_should_flag_halide_as_ambiguous_not_as_possible_metal_when_lists_are_approved(t *testing.T) {
+	// given
+	text := singleAtomText(map[string]string{"CL": "CL"})
+
+	// when
+	result, err := Extract(Parse(text))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []Compound{{ID: "CL", NeedsReview: true, ReviewReason: ambiguousReason}}, result.Ligands)
 }
 
 func Test_should_sort_cofactors_ligands_and_covalent_inhibitors_when_file_has_gdp_and_magnesium(t *testing.T) {

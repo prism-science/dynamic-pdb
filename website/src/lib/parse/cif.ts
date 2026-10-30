@@ -221,6 +221,87 @@ export function cifLoop(text: string, category: string): CifLoop | null {
   return null;
 }
 
+/**
+ * A category as a loop, whether the file writes it as a loop or, for a single
+ * row, as `_category.tag value` items (lib/cif reads both the same way). Null
+ * when the file has neither. The items are read as tokens, as lib/cif reads
+ * them: indented tags, quoted values and `#` comments are all allowed.
+ */
+export function cifCategory(text: string, category: string): CifLoop | null {
+  const prefix = `${category.toLowerCase()}.`;
+  if (!text.toLowerCase().includes(prefix)) {
+    return null;
+  }
+  const loop = cifLoop(text, category);
+  if (loop) {
+    return loop;
+  }
+  const columns: string[] = [];
+  const row: string[] = [];
+  walkFirstBlock(text, (tag, value) => {
+    const lower = tag.toLowerCase();
+    if (lower.startsWith(prefix)) {
+      columns.push(lower.slice(prefix.length));
+      row.push(value);
+    }
+  });
+  return columns.length > 0 ? { columns, rows: [row] } : null;
+}
+
+/**
+ * The first data block of a file: lib/cif stops reading at the second
+ * `data_` header, so the preview does too.
+ */
+export function firstDataBlock(text: string): string {
+  return text.slice(0, walkFirstBlock(text));
+}
+
+/**
+ * Reads the first data block the way lib/cif's parse does: each `_tag` outside
+ * a loop takes the next token as its value (passed to onItem), loops are
+ * stepped over, and a second `data_` header ends the block. Returns where the
+ * block ends.
+ */
+function walkFirstBlock(text: string, onItem?: (tag: string, value: string) => void): number {
+  const tokens = new CifTokens(text);
+  let seenHeader = false;
+  while (tokens.next()) {
+    if (tokens.quoted) {
+      continue;
+    }
+    const lower = tokens.value.toLowerCase();
+    if (lower.startsWith("data_")) {
+      if (seenHeader) {
+        return tokens.position - tokens.value.length;
+      }
+      seenHeader = true;
+    } else if (lower === "loop_") {
+      skipLoop(tokens);
+    } else if (tokens.value.startsWith("_")) {
+      const tag = tokens.value;
+      if (tokens.next()) {
+        onItem?.(tag, tokens.value);
+      }
+    }
+  }
+  return text.length;
+}
+
+/** Steps over a loop's tags and values, leaving the token that ends it unread. */
+function skipLoop(tokens: CifTokens): void {
+  let readingTags = true;
+  while (tokens.next()) {
+    if (readingTags && !tokens.quoted && tokens.value.startsWith("_")) {
+      continue;
+    }
+    readingTags = false;
+    if (!tokens.quoted && endsLoop(tokens.value)) {
+      tokens.unreadBare();
+      return;
+    }
+  }
+}
+
 export function loopColumn(loop: CifLoop, name: string): number {
   return loop.columns.indexOf(name.toLowerCase());
 }

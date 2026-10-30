@@ -6,9 +6,14 @@ type Result struct {
 	Atoms *AtomStats `json:"atoms,omitempty"`
 	// AtomsCutOff is true when Atoms is nil because the read limit ended inside
 	// the coordinate loop, as opposed to a file without coordinates.
-	AtomsCutOff         bool                 `json:"atoms_cut_off,omitempty"`
-	Ligands             []Compound           `json:"ligands"`
-	Cofactors           []Compound           `json:"cofactors"`
+	AtomsCutOff bool       `json:"atoms_cut_off,omitempty"`
+	Ligands     []Compound `json:"ligands"`
+	Cofactors   []Compound `json:"cofactors"`
+	// CompoundSources records the rule that placed each compound, including
+	// the compounds left out. Water and polymer residues are never recorded.
+	CompoundSources CompoundSources `json:"compound_sources"`
+	// Glycans holds one record per branched entity, with its WURCS descriptors.
+	Glycans             []Glycan             `json:"glycans"`
 	Mutations           []MutationSet        `json:"mutations"`
 	SequenceDifferences []SequenceDifference `json:"sequence_differences"`
 	Connections         []Connection         `json:"connections"`
@@ -29,6 +34,38 @@ type Compound struct {
 	ID           string `json:"id"`
 	NeedsReview  bool   `json:"needs_review,omitempty"`
 	ReviewReason string `json:"review_reason,omitempty"`
+}
+
+// CompoundSources is the decision record: per placement, the rule that put
+// each CCD ID there. One ID can be in two groups, such as a zinc linked to the
+// protein (a cofactor) and one linked to nothing (a ligand).
+type CompoundSources struct {
+	Ligands   map[string]CompoundSource `json:"ligands"`
+	Cofactors map[string]CompoundSource `json:"cofactors"`
+	Excluded  map[string]CompoundSource `json:"excluded"`
+}
+
+// CompoundSource is one entry of the decision record. ListVersion is the
+// reference version in force (Result.ReferenceVersion).
+type CompoundSource struct {
+	Rule        string `json:"rule"`
+	ListVersion string `json:"list_version"`
+}
+
+// Glycan is one branched entity: its sugars and the WURCS descriptors of
+// _pdbx_entity_branch_descriptor, which keep the branching a list of IDs loses.
+type Glycan struct {
+	EntityID    string             `json:"entity_id"`
+	CompoundIDs []string           `json:"compound_ids"`
+	Descriptors []GlycanDescriptor `json:"descriptors"`
+}
+
+// GlycanDescriptor is one descriptor row of a branched entity.
+type GlycanDescriptor struct {
+	Descriptor     string `json:"descriptor"`
+	Type           string `json:"type"`
+	Program        string `json:"program,omitempty"`
+	ProgramVersion string `json:"program_version,omitempty"`
 }
 
 type Program struct {

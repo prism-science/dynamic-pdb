@@ -17,9 +17,12 @@ func PDBFields(text string) (map[string]any, error) {
 	return extraction.Fields, nil
 }
 
-// PDBExtraction reads a legacy PDB file. PDB files carry no metalc connection
-// rows here, so metal ions are always flagged for review. Only the first model
-// is counted, as for mmCIF. Set truncated when text is only the head of a larger
+// PDBExtraction reads a legacy PDB file. Compounds are sorted by the same rule
+// as mmCIF: SEQRES, MODRES and TER records tell which HETATM residues belong to
+// a polymer chain, the CCD types sort the rest before the reference lists, LINK
+// records that involve a metal ion count as its metal links, and a MODRES
+// residue that is a covalently bound cofactor (LLP) adds that cofactor (PLP).
+// Only the first model is counted, as for mmCIF. Set truncated when text is only the head of a larger
 // file: a line cut off at the end is dropped, and when the coordinates were not
 // seen to end (no ENDMDL, CONECT, MASTER or END record) the counts that need all
 // of them are omitted.
@@ -50,10 +53,12 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	}
 	tally := newCoordinateTally()
 	notes := limitNotes{}
+	chains := newPDBChains(&notes)
 	modelStarted := false
 	firstModelDone := false
 	coordinatesEnded := false
 	check := timeCheck{ctx: ctx}
+	lineNumber := 0
 	for rest := text; rest != ""; {
 		if check.expired() {
 			notes.add(timeBudgetNote)
@@ -61,6 +66,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		}
 		var line string
 		line, rest, _ = strings.Cut(rest, "\n")
+		lineNumber++
 		record := recordName(line)
 		switch record {
 		case "REMARK":
@@ -73,6 +79,20 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		case "HET":
 			if instance, count := hetInstance(line); instance.compoundID != "" {
 				tally.declare(instance, count)
+			}
+			continue
+		case "SEQRES":
+			chains.addSeqres(line)
+			continue
+		case "MODRES":
+			chains.addModres(line)
+			continue
+		case "LINK":
+			chains.addLink(line)
+			continue
+		case "TER":
+			if !firstModelDone {
+				chains.addTer(line, lineNumber)
 			}
 			continue
 		case "MODEL":
@@ -90,25 +110,28 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 			continue
 		case "ATOM", "HETATM":
 		default:
-			// Every other record (TER, SEQRES, CRYST1, ...) carries nothing we read.
+			// Every other record (CRYST1, HELIX, ...) carries nothing we read.
 			continue
 		}
 		if firstModelDone {
 			continue
 		}
 		compound := upperSlice(line, 17, 20)
+		element := upperSlice(line, 76, 78)
+		instance := compoundInstance{
+			compoundID: compound,
+			asymID:     slice(line, 21, 22),
+			authSeqID:  slice(line, 22, 26),
+			insCode:    slice(line, 26, 27),
+		}
+		chains.addCoordinate(record, line, lineNumber, instance)
 		if record == "HETATM" && compound != "" {
-			tally.addHetero(compoundInstance{
-				compoundID: compound,
-				asymID:     slice(line, 21, 22),
-				authSeqID:  slice(line, 22, 26),
-				insCode:    slice(line, 26, 27),
-			}, slice(line, 12, 16))
+			tally.addHetero(instance, heteroAtom{name: slice(line, 12, 16), element: element})
 		}
 		if record == "HETATM" && isWater(compound) {
 			continue
 		}
-		if element := upperSlice(line, 76, 78); element == "H" || element == "D" {
+		if element == "H" || element == "D" {
 			continue
 		}
 		tally.atomCount++
@@ -122,7 +145,11 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		})
 	}
 	coordinatesRead := (!truncated || coordinatesEnded) && check.err == nil
-	instances := tally.instanceCounts(coordinatesRead)
+	instances := tally.instanceFacts(coordinatesRead)
+	for instance, facts := range instances {
+		facts.chain = chains.position(instance)
+		instances[instance] = facts
+	}
 	switch {
 	case tally.overflow != "":
 		coordinatesRead = false
@@ -140,15 +167,23 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	for _, note := range notes.messages {
 		warnings = append(warnings, "parser limit: "+note)
 	}
-	ligands, cofactors, tooMany, err := classifyCompounds(instances, metalLinks{}, reference)
+	links := chains.metalLinks(reference)
+	if links.overflow {
+		warnings = append(warnings, fmt.Sprintf("more than %d distinct LINK records: the rest were ignored, so a metal ion may be classified without its link", maxMetalLinks))
+	}
+	annotations := pdbAnnotations()
+	annotations.modifiedResidues = chains.modifiedNames
+	annotations.sequenceNames = chains.sequenceNames()
+	sorted, err := classifyCompounds(instances, links, annotations, reference)
 	if err != nil {
 		return Extraction{}, fmt.Errorf("classify PDB compounds: %w", err)
 	}
-	if tooMany {
+	warnings = append(warnings, sorted.warnings...)
+	if sorted.tooMany {
 		warnings = append(warnings, tooManyCompoundsWarning)
 	}
-	review := addCompoundFields(fields, ligands, cofactors, coordinatesRead && tally.atomCount > 0)
-	return Extraction{Fields: fields, Warnings: warnings, Review: review}, nil
+	review := addCompoundFields(fields, sorted.ligands, sorted.cofactors, coordinatesRead && tally.atomCount > 0)
+	return Extraction{Fields: fields, Warnings: warnings, Review: review, CompoundSources: sorted.sources}, nil
 }
 
 // hetInstance reads a HET record: compound, chain, number and insertion code,

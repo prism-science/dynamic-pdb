@@ -40,8 +40,9 @@ func Test_should_build_field_map_from_pdb_contents(t *testing.T) {
 	assert.Equal(t, 2, fields["modeled_residues"])
 	assert.Equal(t, 1, fields["unique_protein_chains"])
 	assert.Equal(t, 0.5, fields["altloc_fraction"])
-	assert.Equal(t, []string{"ATP"}, fields["ligands"])
+	assert.Equal(t, []string{"ATP", "SO4"}, fields["ligands"])
 	assert.Equal(t, []string{"ZN"}, fields["cofactors"])
+	assert.Contains(t, extraction.Review, ReviewItem{List: ListLigands, ID: "SO4", Reason: ambiguousReason})
 }
 
 func Test_should_parse_phenix_component_program_version_from_pdb_contents(t *testing.T) {
@@ -154,7 +155,8 @@ func Test_should_keep_heme_and_metal_in_cofactors_not_ligands_when_building_fiel
 	require.NoError(t, hemeErr)
 	require.NoError(t, calciumErr)
 	assert.Equal(t, []string{"HEM"}, hemeFields["cofactors"])
-	assert.NotContains(t, hemeFields, "ligands")
+	assert.Equal(t, []string{"PO4"}, hemeFields["ligands"], "phosphate is ambiguous: kept as a ligand, flagged")
+	assert.Equal(t, []ReviewItem{{List: ListLigands, ID: "PO4", Reason: ambiguousReason}}, hemeExtraction.Review)
 	assert.Equal(t, []string{"CA"}, calciumFields["cofactors"])
 	assert.NotContains(t, calciumFields, "ligands")
 }

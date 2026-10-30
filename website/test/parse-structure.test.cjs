@@ -429,6 +429,60 @@ test("a metal with a metalc row is kept as a cofactor and nothing is dropped but
   assert.deepEqual(reviewed(facts), ["ligands:SO4", "ligands:ZN"]);
 });
 
+// Two depositor flags that both match ATP at B 101; the first in the file decides.
+const MMCIF_WITH_TWO_FLAGS = (flags) =>
+  [
+    "data_X",
+    "loop_",
+    "_entity.id",
+    "_entity.type",
+    "1 polymer",
+    "2 non-polymer",
+    "#",
+    "loop_",
+    "_pdbx_entity_instance_feature.comp_id",
+    "_pdbx_entity_instance_feature.asym_id",
+    "_pdbx_entity_instance_feature.auth_seq_num",
+    "_pdbx_entity_instance_feature.feature_type",
+    ...flags,
+    "#",
+    "loop_",
+    "_atom_site.group_PDB",
+    "_atom_site.type_symbol",
+    "_atom_site.label_atom_id",
+    "_atom_site.label_comp_id",
+    "_atom_site.label_asym_id",
+    "_atom_site.label_entity_id",
+    "_atom_site.auth_seq_id",
+    "HETATM P PG ATP B 2 101",
+    "HETATM P PB ATP B 2 101",
+    "#",
+  ].join("\n");
+
+test("should_exclude_ATP_when_the_flag_for_every_ATP_comes_first", () => {
+  // given
+  const text = MMCIF_WITH_TWO_FLAGS(["ATP ? ? 'NO FUNCTIONAL ROLE'", "ATP B 101 'SUBJECT OF INVESTIGATION'"]);
+
+  // when
+  const facts = parseStructureFacts(text, "mmcif");
+
+  // then
+  assert.deepEqual(Object.keys(facts.compoundSources.ligands), []);
+  assert.equal(facts.compoundSources.excluded.ATP.rule, "depositor_flag");
+});
+
+test("should_keep_ATP_when_the_flag_for_that_instance_comes_first", () => {
+  // given
+  const text = MMCIF_WITH_TWO_FLAGS(["ATP B 101 'SUBJECT OF INVESTIGATION'", "ATP ? ? 'NO FUNCTIONAL ROLE'"]);
+
+  // when
+  const facts = parseStructureFacts(text, "mmcif");
+
+  // then
+  assert.equal(facts.compoundSources.ligands.ATP.rule, "depositor_flag");
+  assert.deepEqual(Object.keys(facts.compoundSources.excluded), []);
+});
+
 test("metals are kept and flagged when the file has no metalc rows", () => {
   const facts = parseStructureFacts(MMCIF_WITH_CALCIUM(false), "mmcif");
 

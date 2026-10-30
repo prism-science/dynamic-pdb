@@ -113,8 +113,8 @@ func (s *ArtifactExtractSuite) Test_should_return_values_tagged_with_file_source
 	s.EqualValues(134, names["atom_count"].Value)
 	s.Contains(names, "mutations")
 	s.Contains(names, "cofactors")
-	s.Len(attributes.Warnings, 1)
-	s.Contains(attributes.Warnings[0].Detail, "reference lists are draft")
+	s.Contains(names, "compound_sources")
+	s.Empty(attributes.Warnings, "the approved reference lists add no warning")
 }
 
 func (s *ArtifactExtractSuite) Test_should_return_403_when_user_is_neither_creator_nor_reviewer() {

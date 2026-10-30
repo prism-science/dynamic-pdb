@@ -359,12 +359,46 @@ func (h *recordingHandler) Handle(_ context.Context, record slog.Record) error {
 func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-func Test_should_log_draft_warning_once_when_several_artifacts_are_read(t *testing.T) {
-	// given
+func recordLogs(t *testing.T) *recordingHandler {
+	t.Helper()
 	handler := &recordingHandler{}
 	previous := slog.Default()
 	slog.SetDefault(slog.New(handler))
 	t.Cleanup(func() { slog.SetDefault(previous) })
+	return handler
+}
+
+func (h *recordingHandler) draftWarningLines() int {
+	lines := 0
+	for _, record := range h.records {
+		record.Attrs(func(attribute slog.Attr) bool {
+			if attribute.Key == "warning" && attribute.Value.String() == cif.DraftWarning {
+				lines++
+			}
+			return true
+		})
+	}
+	return lines
+}
+
+func Test_should_log_draft_warning_once_when_several_extractions_carry_it(t *testing.T) {
+	// given: while a reference list is a draft, every extraction carries the warning.
+	handler := recordLogs(t)
+	cache := NewFieldCache()
+	extraction := cif.Extraction{Warnings: []string{cif.DraftWarning}}
+
+	// when
+	for _, name := range []string{"first.cif", "second.cif", "third.cif"} {
+		cache.logExtraction(extractors.Artifact{Filename: name}, extraction)
+	}
+
+	// then
+	assert.Equal(t, 1, handler.draftWarningLines())
+}
+
+func Test_should_not_log_draft_warning_when_reference_lists_are_approved(t *testing.T) {
+	// given
+	handler := recordLogs(t)
 	cache := NewFieldCache()
 	artifacts := map[string]extractors.Artifact{
 		"first":  {Filename: "first.cif", Contents: readLibraryFixture(t, "3CLN.cif")},
@@ -383,16 +417,7 @@ func Test_should_log_draft_warning_once_when_several_artifacts_are_read(t *testi
 	}
 
 	// then
-	draftLines := 0
-	for _, record := range handler.records {
-		record.Attrs(func(attribute slog.Attr) bool {
-			if attribute.Key == "warning" && attribute.Value.String() == cif.DraftWarning {
-				draftLines++
-			}
-			return true
-		})
-	}
-	assert.Equal(t, 1, draftLines)
+	assert.Zero(t, handler.draftWarningLines())
 }
 
 func Test_should_finish_quickly_when_a_four_mebibyte_artifact_is_one_line_of_quoted_tokens(t *testing.T) {

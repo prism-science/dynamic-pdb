@@ -1,0 +1,8 @@
+REMARK   1 SYNTHETIC: THE ONLY LINK JOINS A SUGAR TO AN ASPARAGINE, SO THE
+REMARK   1 ZINC IS TREATED AS IN A FILE WITHOUT METAL LINKS.
+LINK        ND2  ASN A   1                C1   NAG B   1
+ATOM      1 CA   ASN A   1       1.000   2.000   3.000  1.00 20.00           C
+HETATM    2 C1   NAG B   1       1.000   2.000   3.000  1.00 20.00           C
+HETATM    3 C2   NAG B   1       1.000   2.000   3.000  1.00 20.00           C
+HETATM    4 ZN    ZN B 101       1.000   2.000   3.000  1.00 20.00          ZN
+END

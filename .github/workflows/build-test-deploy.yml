@@ -189,7 +189,7 @@ jobs:
         working-directory: website
         run: |
           npm run gen:cif-reference
-          git diff --exit-code -- src/lib/parse/cifReference.gen.ts
+          git diff --exit-code -- src/lib/parse/cifReference.gen.ts src/lib/parse/ccdCategories.gen.ts
 
       - name: Check generated API types are current
         working-directory: website

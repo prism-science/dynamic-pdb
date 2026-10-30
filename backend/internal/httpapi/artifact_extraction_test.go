@@ -55,7 +55,10 @@ func Test_should_tag_every_value_with_file_source_when_extracting_mmcif(t *testi
 	mutations, ok := extractedValueByName(attributes.Values, "mutations")
 	require.True(t, ok)
 	assert.False(t, mutations.NeedsReview)
-	assert.Equal(t, []string{cif.DraftWarning}, warningDetails(attributes), "only the draft reference warning is expected")
+	assert.Empty(t, warningDetails(attributes), "the approved reference lists add no warning")
+	reference, err := cif.DefaultReference()
+	require.NoError(t, err)
+	assert.Equal(t, reference.Version, attributes.ReferenceVersion)
 }
 
 func warningDetails(attributes ArtifactExtractionAttributes) []string {
@@ -95,7 +98,7 @@ func Test_should_warn_instead_of_fail_when_head_is_truncated_inside_coordinates(
 	_, hasAtoms := extractedValueByName(attributes.Values, "atom_count")
 	assert.False(t, hasAtoms)
 	assert.Contains(t, strings.Join(warningDetails(attributes), "\n"), "atom_site")
-	assert.Contains(t, warningDetails(attributes), cif.DraftWarning)
+	assert.NotContains(t, warningDetails(attributes), cif.DraftWarning)
 	_, hasMutations := extractedValueByName(attributes.Values, "mutations")
 	assert.True(t, hasMutations)
 }
@@ -109,12 +112,11 @@ func Test_should_warn_when_file_has_no_coordinates(t *testing.T) {
 
 	// then
 	require.NoError(t, err)
-	require.Len(t, attributes.Warnings, 2)
-	assert.Equal(t, cif.DraftWarning, attributes.Warnings[0].Detail)
-	assert.Contains(t, attributes.Warnings[1].Detail, "no atom_site records found")
+	require.Len(t, attributes.Warnings, 1)
+	assert.Contains(t, attributes.Warnings[0].Detail, "no atom_site records found")
 }
 
-func Test_should_keep_sulfate_flagged_for_review_and_warn_when_reference_lists_are_draft(t *testing.T) {
+func Test_should_keep_sulfate_flagged_and_drop_water_when_reference_lists_are_approved(t *testing.T) {
 	// given
 	data := []byte("data_X\nloop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.comp_id\n2 SO4\n3 HOH\n")
 
@@ -128,10 +130,60 @@ func Test_should_keep_sulfate_flagged_for_review_and_warn_when_reference_lists_a
 	assert.Equal(t, []cif.Compound{{
 		ID:           "SO4",
 		NeedsReview:  true,
-		ReviewReason: "compound is on the draft solvent list, which researchers have not approved: kept as a ligand instead of dropped",
+		ReviewReason: "often from the buffer: confirm it is part of the sample",
 	}}, ligands.Value)
 	assert.True(t, ligands.NeedsReview)
-	assert.Contains(t, warningDetails(attributes), cif.DraftWarning)
+	assert.NotContains(t, warningDetails(attributes), cif.DraftWarning)
+}
+
+func Test_should_return_the_rule_behind_each_compound_when_extracting_mmcif(t *testing.T) {
+	// given: 3CEB has LLP (PLP on a lysine), sulfate and glycerol.
+	data := readCIFFixture(t, "3CEB.cif")
+	reference, err := cif.DefaultReference()
+	require.NoError(t, err)
+	record := func(rule string) cif.CompoundSource {
+		return cif.CompoundSource{Rule: rule, ListVersion: reference.Version}
+	}
+
+	// when
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	sources, ok := extractedValueByName(attributes.Values, "compound_sources")
+	require.True(t, ok)
+	assert.Equal(t, testArtifactSource, sources.Source)
+	assert.False(t, sources.NeedsReview)
+	assert.Equal(t, cif.CompoundSources{
+		Ligands:   map[string]cif.CompoundSource{"SO4": record("list")},
+		Cofactors: map[string]cif.CompoundSource{"PLP": record("covalent_map")},
+		Excluded:  map[string]cif.CompoundSource{"GOL": record("list")},
+	}, sources.Value)
+	_, hasGlycans := extractedValueByName(attributes.Values, "glycan_descriptors")
+	assert.False(t, hasGlycans, "a file without branched entities has no glycan descriptors")
+}
+
+func Test_should_return_glycan_descriptors_when_file_has_a_branched_entity(t *testing.T) {
+	// given
+	data := readCIFFixture(t, "7LTB.cif")
+
+	// when
+	attributes, err := buildArtifactExtraction(context.Background(), data, int64(len(data)), testArtifactSource)
+
+	// then
+	require.NoError(t, err)
+	glycans, ok := extractedValueByName(attributes.Values, "glycan_descriptors")
+	require.True(t, ok)
+	assert.Equal(t, []cif.Glycan{{
+		EntityID:    "2",
+		CompoundIDs: []string{"BGC", "Z6G"},
+		Descriptors: []cif.GlycanDescriptor{{
+			Descriptor:     "WURCS=2.0/2,2,1/[a2122h-1b_1-5][ad211m-1a_1-5_3*N]/1-2/a2-b1",
+			Type:           "WURCS",
+			Program:        "PDB2Glycan",
+			ProgramVersion: "1.1.0",
+		}},
+	}}, glycans.Value)
 }
 
 func Test_should_drop_value_and_warn_when_it_breaks_schema_rules(t *testing.T) {

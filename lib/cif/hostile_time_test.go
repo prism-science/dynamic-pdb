@@ -1,6 +1,8 @@
 package cif
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +72,29 @@ func hostileTimeCases() map[string]func(size int) string {
 		"mixed lines with quotes and CRLF":          repeated("data_X\r\nloop_\r\n_entity.id\r\n", "'a b' c'd \"e\" ;\r\n;x\r\n;\r\n"),
 		"metalc rows with quoted values":            repeated("data_X\nloop_\n_struct_conn.id\n_struct_conn.conn_type_id\n_struct_conn.ptnr1_label_comp_id\n", "'a' metalc \"ZN\" "),
 		"atom_site rows with quoted values":         repeated("data_X\nloop_\n_atom_site.group_PDB\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n", "ATOM 'O5\\'' \"G\" "),
+		"depositor flags and many compound instances": func(size int) string {
+			return "data_X\nloop_\n_pdbx_entity_instance_feature.comp_id\n_pdbx_entity_instance_feature.feature_type\n" +
+				repeatToSizeCounted("Z%d OTHER\n", size/4) + "#\n" + hostileHetatmLoop(size*3/4)
+		},
+		"located depositor flags on one compound": func(size int) string {
+			return "data_X\nloop_\n_pdbx_entity_instance_feature.comp_id\n_pdbx_entity_instance_feature.feature_type\n" +
+				"_pdbx_entity_instance_feature.asym_id\n_pdbx_entity_instance_feature.auth_seq_num\n" +
+				repeatToSizeCounted("ATP OTHER B %d\n", size/4) + "#\n" + hostileHetatmLoop(size*3/4)
+		},
+		"distinct modified residues": func(size int) string {
+			return "data_X\nloop_\n_pdbx_struct_mod_residue.label_comp_id\n" + repeatToSizeCounted("M%d\n", size)
+		},
+		"distinct glycan members": func(size int) string {
+			return "data_X\n_entity.id 1\n_entity.type branched\n#\nloop_\n_pdbx_entity_branch_list.entity_id\n_pdbx_entity_branch_list.comp_id\n" +
+				repeatToSizeCounted("1 S%d\n", size)
+		},
 	}
+}
+
+// hostileHetatmLoop is about size bytes of ATP instances, each at its own residue number.
+func hostileHetatmLoop(size int) string {
+	return "loop_\n_atom_site.group_PDB\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.auth_seq_id\n" +
+		repeatToSizeCounted("HETATM ATP A %d\n", size)
 }
 
 func hostilePDBTimeCases() map[string]func(size int) string {
@@ -83,7 +107,38 @@ func hostilePDBTimeCases() map[string]func(size int) string {
 		"PDB with distinct REMARK labels": func(size int) string { return repeatToSizeCounted("REMARK   3   L%d : v\n", size) },
 		"PDB with HET records":            repeated("", "HET    LIG  A   1      12\n"),
 		"PDB with quotes and no newlines": func(size int) string { return repeatToSize("'a' ", size) },
+		"PDB with one SEQRES line of distinct names": func(size int) string {
+			return "SEQRES   1 A 9999  " + repeatToSizeCounted("N%d ", size) + "\n"
+		},
+		"PDB with distinct SEQRES names": hostileSeqresLines,
+		"PDB with distinct MODRES residues": func(size int) string {
+			var builder strings.Builder
+			for counter := 0; builder.Len() < size; counter++ {
+				fmt.Fprintf(&builder, "MODRES 1ABC %3s A %4d  ALA\n", base36Name(counter), counter%10000)
+			}
+			return builder.String()
+		},
 	}
+}
+
+// base36Name is a residue name of up to three characters, distinct for the
+// first 46,656 counters.
+func base36Name(counter int) string {
+	return strings.ToUpper(strconv.FormatInt(int64(counter%46656), 36))
+}
+
+// hostileSeqresLines is about size bytes of SEQRES records whose 13 residue
+// names are new to their chain.
+func hostileSeqresLines(size int) string {
+	var builder strings.Builder
+	for counter := 0; builder.Len() < size; counter++ {
+		names := make([]string, 13)
+		for slot := range names {
+			names[slot] = fmt.Sprintf("%3s", base36Name(counter*13+slot))
+		}
+		fmt.Fprintf(&builder, "SEQRES %3d %c 9999  %s\n", counter%1000, 'A'+rune(counter/3589%26), strings.Join(names, " "))
+	}
+	return builder.String()
 }
 
 const hostileScalarTag = "_refine.ls_R_factor_R_free"

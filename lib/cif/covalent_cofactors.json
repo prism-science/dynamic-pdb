@@ -1,0 +1,10 @@
+{
+  "version": "2026.10.0",
+  "approved": true,
+  "ccd_checked": "2026-10-29",
+  "description": "Modified residues that are a cofactor bound covalently to the protein, mapped to that cofactor's CCD ID. A residue listed in _pdbx_struct_mod_residue (mmCIF) or MODRES (PDB format) adds its cofactor to the cofactors. Proposed by researchers on 2026-10-28 and approved on 2026-10-29; a new pair needs their approval. See docs/cif-extraction.md.",
+  "covalent_cofactors": [
+    {"residue": "LLP", "cofactor": "PLP", "name": "pyridoxal 5'-phosphate bound to lysine"},
+    {"residue": "LYR", "cofactor": "RET", "name": "retinal bound to lysine"}
+  ]
+}

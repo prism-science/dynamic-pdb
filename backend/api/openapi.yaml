@@ -230,13 +230,17 @@ paths:
         Reads the start of the artifact's uploaded mmCIF file and returns the
         values Dynamic PDB would store for it: atom count, modeled residues,
         protein chains, altloc fraction, ligands, cofactors, engineered
-        mutations and the refinement program. Nothing is stored.
+        mutations and the refinement program. It also returns the rule that
+        placed each compound (`compound_sources`, including the compounds left
+        out) and the WURCS descriptor of each glycan (`glycan_descriptors`).
+        Nothing is stored.
 
-        Only the first 4 MiB of the object is read (a ranged S3 GET). The
-        connection, entity and mutation tables sit before the coordinates in
-        archive files, so they are read in full; when the coordinates run past
-        the limit, the values that need every atom are left out and a warning
-        says so.
+        Only the first 4 MiB of the object is read (a ranged S3 GET). When the
+        coordinates run past the limit, the values that need every atom are left
+        out and a warning says so. Archive files do not write their categories in
+        a fixed order, so the depositor flags, modified residues or glycan
+        descriptors of a larger file can also fall past the limit: the rules they
+        feed are then not applied, and one warning names each such category.
 
         Every value carries `source: file:<sha256>` of the artifact. Values
         that cannot be extracted, or fail the schema rules, come back as
@@ -244,9 +248,10 @@ paths:
         parser is unsure about, such as metal ions in a file without `metalc`
         rows, are returned with `needs_review: true`.
 
-        While the reference lists in `lib/cif` are drafts (not approved by
-        researchers), only water is dropped from `ligands`; other solvents and
-        buffers are kept and flagged `needs_review`, and every response carries a
+        The reference lists in `lib/cif` are approved by researchers: solvents
+        and buffers are left out of `ligands`, and sulfate, phosphate, citrate
+        and halides are kept and flagged `needs_review`. While a future list
+        version is a draft, only water is left out and every response carries a
         warning saying so.
 
         Parsing has a time budget of 5 seconds per request. If it runs out, the
@@ -277,6 +282,48 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/ArtifactExtractionDocument"
+              example:
+                data:
+                  type: artifact_extractions
+                  id: 6f1c2a9e-3b4d-4c5e-8f7a-1b2c3d4e5f60
+                  attributes:
+                    source: "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"
+                    reference_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+                    bytes_read: 100352
+                    object_size: 100352
+                    truncated: false
+                    values:
+                      - name: ligands
+                        value:
+                          - {id: BMA}
+                          - {id: NAG}
+                          - {id: SO4, needs_review: true, review_reason: "often from the buffer: confirm it is part of the sample"}
+                        source: "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"
+                        needs_review: true
+                        review_reason: "often from the buffer: confirm it is part of the sample"
+                      - name: compound_sources
+                        value:
+                          ligands:
+                            BMA: {rule: branched, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+                            NAG: {rule: branched, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+                            SO4: {rule: list, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+                          cofactors: {}
+                          excluded:
+                            GOL: {rule: list, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+                        source: "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"
+                        needs_review: false
+                      - name: glycan_descriptors
+                        value:
+                          - entity_id: "2"
+                            compound_ids: [BMA, NAG]
+                            descriptors:
+                              - descriptor: "WURCS=2.0/2,3,2/[a2122h-1b_1-5_2*NCC/3=O][a1122h-1b_1-5]/1-1-2/a4-b1_b4-c1"
+                                type: WURCS
+                                program: PDB2Glycan
+                                program_version: "1.1.0"
+                        source: "file:3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"
+                        needs_review: false
+                    warnings: []
         "401":
           description: Missing or invalid bearer token.
           content:
@@ -3098,7 +3145,7 @@ components:
           description: "`file:<sha256>` of the artifact; every value carries the same source."
         reference_version:
           type: string
-          description: Version of the cofactor reference list that sorted compounds into cofactors and ligands.
+          description: Versions of the reference lists that sorted compounds into cofactors and ligands, one per list (cofactors, metal ions, solvents, covalent cofactors, CCD types), for example `cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0`.
         bytes_read:
           type: integer
           format: int64
@@ -3125,12 +3172,27 @@ components:
           type: string
           description: >
             One of `atom_count`, `modeled_residues`, `unique_protein_chains`,
-            `altloc_fraction`, `ligands`, `cofactors`, `mutations`,
-            `program_name`, `program_version`.
+            `altloc_fraction`, `ligands`, `cofactors`, `compound_sources`,
+            `glycan_descriptors`, `mutations`, `program_name`, `program_version`.
         value:
           description: >
-            A number for the counts and fraction, a string for the program, and
-            a list of compounds or mutation sets for the others.
+            A number for the counts and fraction, a string for the program, a
+            list of compounds or mutation sets for `ligands`, `cofactors` and
+            `mutations`. `compound_sources` is the decision record: the groups
+            `ligands`, `cofactors` and `excluded`, each mapping a CCD ID to the
+            `rule` that placed it (`list`, `metalc`, `branched`, `macrolide`,
+            `ccd_type`, `depositor_flag`, `covalent_map` or `ihm_probe`) and the
+            reference `list_version`; water and polymer residues are never in it.
+            `glycan_descriptors` lists one glycan per branched entity:
+            `entity_id`, `compound_ids` and its WURCS `descriptors` (`descriptor`,
+            `type`, `program`, `program_version`).
+          example:
+            ligands:
+              NAG: {rule: branched, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+            cofactors:
+              ZN: {rule: metalc, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
+            excluded:
+              GOL: {rule: list, list_version: "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"}
         source:
           type: string
           description: "`file:<sha256>`."
