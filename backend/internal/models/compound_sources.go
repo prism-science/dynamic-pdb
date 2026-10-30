@@ -71,6 +71,33 @@ func editedCompoundGroup(group map[string]CompoundSource, list *[]string) map[st
 	return edited
 }
 
+// EntryComposition is an entry revision's composition: its ligand and cofactor lists, their
+// decision record and its glycans. Nil means unset.
+type EntryComposition struct {
+	Ligands           *[]string        `json:"ligands"`
+	Cofactors         *[]string        `json:"cofactors"`
+	CompoundSources   *CompoundSources `json:"compound_sources"`
+	GlycanDescriptors *[]Glycan        `json:"glycan_descriptors"`
+}
+
+// Composition returns the revision's composition.
+func (revision EntryRevision) Composition() EntryComposition {
+	return EntryComposition{
+		Ligands:           revision.Metadata.Ligands,
+		Cofactors:         revision.Metadata.Cofactors,
+		CompoundSources:   revision.CompoundSources,
+		GlycanDescriptors: revision.GlycanDescriptors,
+	}
+}
+
+// SetComposition replaces the revision's composition with composition.
+func (revision *EntryRevision) SetComposition(composition EntryComposition) {
+	revision.Metadata.Ligands = composition.Ligands
+	revision.Metadata.Cofactors = composition.Cofactors
+	revision.CompoundSources = composition.CompoundSources
+	revision.GlycanDescriptors = composition.GlycanDescriptors
+}
+
 // Glycan is one branched entity of an entry: its sugars and the WURCS descriptors that keep
 // the branching a list of IDs loses.
 type Glycan struct {

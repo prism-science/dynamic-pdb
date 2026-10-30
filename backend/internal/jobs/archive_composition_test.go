@@ -12,33 +12,39 @@ import (
 	"dynamic-pdb/lib/cif"
 )
 
-// compositionOfFixture derives the composition of one of the parser's test files, read whole.
-func compositionOfFixture(t *testing.T, name string) archiveComposition {
+// fixtureResult is what the parser reads from one of its test files, read whole.
+func fixtureResult(t *testing.T, name string) cif.Result {
 	t.Helper()
 	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "lib", "cif", "testdata", name))
 	require.NoError(t, err)
 	_, result, err := cif.ExtractText(string(contents), false)
 	require.NoError(t, err)
-	composition, err := compositionFromResult(result)
-	require.NoError(t, err)
-	return composition
+	return result
 }
 
 func Test_should_leave_polymer_residue_out_of_lists_when_composition_is_derived(t *testing.T) {
+	// given
+	result := fixtureResult(t, "1A62.cif")
+
 	// when
-	composition := compositionOfFixture(t, "1A62.cif")
+	composition, err := compositionFromResult(result)
 
 	// then
+	require.NoError(t, err)
 	assert.NotContains(t, composition.ligands, "MSE")
 	assert.NotContains(t, composition.sources.Ligands, "MSE")
 	assert.NotContains(t, composition.sources.Excluded, "MSE")
 }
 
 func Test_should_list_glycan_sugars_with_rule_branched_and_keep_wurcs_when_composition_is_derived(t *testing.T) {
+	// given
+	result := fixtureResult(t, "2VSD.cif")
+
 	// when
-	composition := compositionOfFixture(t, "2VSD.cif")
+	composition, err := compositionFromResult(result)
 
 	// then
+	require.NoError(t, err)
 	assert.Contains(t, composition.ligands, "NAG")
 	assert.Equal(t, models.CompoundRuleBranched, composition.sources.Ligands["NAG"].Rule)
 	assert.NotEmpty(t, composition.sources.Ligands["NAG"].ListVersion)
@@ -49,20 +55,28 @@ func Test_should_list_glycan_sugars_with_rule_branched_and_keep_wurcs_when_compo
 }
 
 func Test_should_place_metal_linked_by_metalc_as_cofactor_when_composition_is_derived(t *testing.T) {
+	// given
+	result := fixtureResult(t, "3CLN.cif")
+
 	// when
-	composition := compositionOfFixture(t, "3CLN.cif")
+	composition, err := compositionFromResult(result)
 
 	// then
+	require.NoError(t, err)
 	assert.Contains(t, composition.cofactors, "CA")
 	assert.Equal(t, models.CompoundSource{Rule: models.CompoundRuleMetalc, ListVersion: composition.sources.Cofactors["CA"].ListVersion},
 		composition.sources.Cofactors["CA"])
 }
 
 func Test_should_keep_review_reason_in_record_when_parser_flags_compound(t *testing.T) {
+	// given
+	result := fixtureResult(t, filepath.Join("parity", "no_metalc.cif"))
+
 	// when
-	composition := compositionOfFixture(t, filepath.Join("parity", "no_metalc.cif"))
+	composition, err := compositionFromResult(result)
 
 	// then
+	require.NoError(t, err)
 	require.NotEmpty(t, composition.cofactors)
 	for _, id := range composition.cofactors {
 		assert.NotEmpty(t, composition.sources.Cofactors[id].ReviewReason, id)
@@ -72,10 +86,14 @@ func Test_should_keep_review_reason_in_record_when_parser_flags_compound(t *test
 }
 
 func Test_should_record_ihm_probe_as_excluded_when_composition_is_derived(t *testing.T) {
+	// given
+	result := fixtureResult(t, filepath.Join("parity", "ihm_probe.cif"))
+
 	// when
-	composition := compositionOfFixture(t, filepath.Join("parity", "ihm_probe.cif"))
+	composition, err := compositionFromResult(result)
 
 	// then
+	require.NoError(t, err)
 	var probes []string
 	for id, source := range composition.sources.Excluded {
 		if source.Rule == models.CompoundRuleIHMProbe {
@@ -131,7 +149,7 @@ func Test_should_fail_when_parser_gives_rule_backend_does_not_know(t *testing.T)
 
 	// then
 	require.ErrorContains(t, unknownErr, "excluded compounds: compound GOL: unknown compound rule from the parser: guess")
-	require.ErrorContains(t, depositorErr, "ligands: compound LIG: the parser gave rule depositor")
+	require.ErrorContains(t, depositorErr, "ligands: convert the record: compound LIG: the parser gave rule depositor")
 }
 
 func Test_should_fail_when_listed_compound_has_no_record(t *testing.T) {
@@ -143,4 +161,21 @@ func Test_should_fail_when_listed_compound_has_no_record(t *testing.T) {
 
 	// then
 	require.ErrorContains(t, err, "cofactors: compound ZN has no record")
+}
+
+func Test_should_keep_sulfate_for_review_and_leave_glycerol_out_when_composition_is_derived(t *testing.T) {
+	// given
+	result := fixtureResult(t, "3CEB.cif")
+
+	// when
+	composition, err := compositionFromResult(result)
+
+	// then
+	require.NoError(t, err)
+	assert.Contains(t, composition.ligands, "SO4")
+	assert.Equal(t, models.CompoundRuleList, composition.sources.Ligands["SO4"].Rule)
+	assert.NotEmpty(t, composition.sources.Ligands["SO4"].ReviewReason)
+	assert.Contains(t, composition.sources.Excluded, "GOL")
+	assert.NotContains(t, composition.ligands, "GOL")
+	assert.NotContains(t, composition.ligands, "MSE")
 }

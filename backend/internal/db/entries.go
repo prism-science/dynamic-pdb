@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -625,4 +626,51 @@ type entryRevisionRow struct {
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`
+}
+
+// UpdateComposition sets the composition of an active entry revision in place, for the archive
+// re-derivation job. It changes only those values: the
+// other metadata keys and updated_at stay as they are.
+func (r *EntriesRepository) UpdateComposition(
+	ctx context.Context,
+	revisionID uuid.UUID,
+	composition models.EntryComposition,
+) error {
+	ligands, err := json.Marshal(composition.Ligands)
+	if err != nil {
+		return fmt.Errorf("prepare ligands: %w", err)
+	}
+	cofactors, err := json.Marshal(composition.Cofactors)
+	if err != nil {
+		return fmt.Errorf("prepare cofactors: %w", err)
+	}
+	compoundSources, err := optionalJSONToSQL(composition.CompoundSources)
+	if err != nil {
+		return fmt.Errorf("prepare compound sources: %w", err)
+	}
+	glycanDescriptors, err := optionalJSONToSQL(composition.GlycanDescriptors)
+	if err != nil {
+		return fmt.Errorf("prepare glycan descriptors: %w", err)
+	}
+	// A nil list is unset, so its key is removed rather than set to JSON null.
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
+		`update entry_revisions
+		 set metadata = (metadata - 'ligands' - 'cofactors')
+		       || jsonb_strip_nulls(jsonb_build_object('ligands', cast($2 as jsonb), 'cofactors', cast($3 as jsonb))),
+		     compound_sources = cast($4 as jsonb),
+		     glycan_descriptors = cast($5 as jsonb)
+		 where id = $1 and state = 'active'`,
+		revisionID, string(ligands), string(cofactors), compoundSources, glycanDescriptors,
+	)
+	if err != nil {
+		return fmt.Errorf("update composition of entry revision %s: %w", revisionID, err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count updated entry revisions: %w", err)
+	}
+	if updated != 1 {
+		return ErrEntryRevisionNotFound
+	}
+	return nil
 }

@@ -340,24 +340,46 @@ func Test_should_skip_and_retry_later_when_entry_has_revision_in_review(t *testi
 	assert.Equal(t, 2, fixture.rcsb.requestsFor("1ABC"), "the second run tried again")
 }
 
-func Test_should_skip_revision_that_stops_being_active_during_the_run(t *testing.T) {
-	// given
+func Test_should_skip_revision_when_it_stops_being_active_during_the_run(t *testing.T) {
+	// given: while the file is downloaded, a new revision of the entry is activated
 	fixture := newRederiveFixture(t)
 	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
 	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	read := fixture.revision(t, entry.revisionID)
+	var successorID uuid.UUID
+	var activateOnce sync.Once
 	fixture.rcsb.onServe = func(string) {
-		_, err := fixture.raw.Exec(`update entry_revisions set state = 'archived' where id = $1`, entry.revisionID)
-		assert.NoError(t, err)
+		activateOnce.Do(func() {
+			successor := read
+			successor.ID = uuid.New()
+			successor.ParentRevisionID = &read.ID
+			successor.RevisionNumber = nil
+			successor.PublishedAt = nil
+			successor.State = models.RevisionStateInReview
+			created, err := fixture.database.Entries.Create(context.Background(), successor)
+			if !assert.NoError(t, err) {
+				return
+			}
+			_, err = fixture.database.Entries.ActivateRevision(context.Background(), entry.entryID, created.ID)
+			assert.NoError(t, err)
+			successorID = created.ID
+		})
 	}
 
 	// when
 	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+	afterFirstRun := fixture.revision(t, entry.revisionID)
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
 
 	// then
-	assert.Nil(t, fixture.revision(t, entry.revisionID).Metadata.Ligands)
+	assert.Nil(t, afterFirstRun.Metadata.Ligands)
 	assert.Equal(t, []string{"C4T"}, fixture.entity(t, entry.entityID).Metadata.Mutations)
 	outcome, _, _ := fixture.logRow(t, entry.revisionID)
 	assert.Equal(t, "skipped_not_active", outcome)
+	require.NotEqual(t, uuid.Nil, successorID)
+	assert.Equal(t, &[]string{"SO4"}, fixture.revision(t, successorID).Metadata.Ligands, "the next run derives the new active revision")
+	successorOutcome, _, _ := fixture.logRow(t, successorID)
+	assert.Equal(t, "derived", successorOutcome)
 }
 
 func Test_should_log_failure_and_stop_after_three_runs_when_file_cannot_be_downloaded(t *testing.T) {
@@ -460,7 +482,7 @@ func Test_should_log_unchanged_when_derived_values_are_already_stored(t *testing
 	assert.Nil(t, before)
 }
 
-func Test_should_keep_lists_a_person_changed_after_they_were_derived(t *testing.T) {
+func Test_should_keep_lists_when_person_changed_them_after_they_were_derived(t *testing.T) {
 	// given
 	fixture := newRederiveFixture(t)
 	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
@@ -483,7 +505,7 @@ func Test_should_keep_lists_a_person_changed_after_they_were_derived(t *testing.
 	assert.Equal(t, "skipped_person_set", outcome)
 }
 
-func Test_should_stop_at_the_cap_and_continue_on_the_next_run(t *testing.T) {
+func Test_should_stop_at_the_cap_and_continue_when_next_run_starts(t *testing.T) {
 	// given
 	fixture := newRederiveFixture(t)
 	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
@@ -506,22 +528,22 @@ func Test_should_stop_at_the_cap_and_continue_on_the_next_run(t *testing.T) {
 	assert.Equal(t, 2, logged())
 }
 
-func Test_should_reject_config_that_cannot_run(t *testing.T) {
+func Test_should_reject_config_when_it_cannot_run(t *testing.T) {
 	// given
 	valid := ArchiveRederiveConfig{PageSize: 200, DownloadConcurrency: 4, RunFor: time.Minute}
 	cases := map[string]func(*ArchiveRederiveConfig){
-		"negative cap":     func(c *ArchiveRederiveConfig) { c.MaxEntriesPerRun = -1 },
-		"no page size":     func(c *ArchiveRederiveConfig) { c.PageSize = 0 },
-		"no download slot": func(c *ArchiveRederiveConfig) { c.DownloadConcurrency = 0 },
-		"no time to run":   func(c *ArchiveRederiveConfig) { c.RunFor = 0 },
+		"negative cap":     func(config *ArchiveRederiveConfig) { config.MaxEntriesPerRun = -1 },
+		"no page size":     func(config *ArchiveRederiveConfig) { config.PageSize = 0 },
+		"no download slot": func(config *ArchiveRederiveConfig) { config.DownloadConcurrency = 0 },
+		"no time to run":   func(config *ArchiveRederiveConfig) { config.RunFor = 0 },
 	}
 
 	for name, change := range cases {
-		cfg := valid
-		change(&cfg)
+		config := valid
+		change(&config)
 
 		// when
-		err := cfg.validate()
+		err := config.validate()
 
 		// then
 		assert.Error(t, err, name)
@@ -588,4 +610,99 @@ func Test_should_keep_revision_changed_since_when_revert_script_runs(t *testing.
 		"the revision is reverted as a whole or not at all")
 	outcome, _, _ := fixture.logRow(t, entry.revisionID)
 	assert.Equal(t, "derived", outcome)
+}
+
+func Test_should_resolve_entry_review_row_when_job_finds_lists_already_derived(t *testing.T) {
+	// given: the sync derived the lists after the migration flagged the entry
+	fixture := newRederiveFixture(t)
+	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+	_, err := fixture.raw.Exec(`delete from archive_rederivations`)
+	require.NoError(t, err)
+	_, err = fixture.raw.Exec(`insert into schema_migration_review(object_type, object_id, issue)
+		values ('entry', $1, 'ligands_cofactors_rederive_from_archive')`, entry.entryID)
+	require.NoError(t, err)
+
+	// when
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+
+	// then
+	outcome, _, _ := fixture.logRow(t, entry.revisionID)
+	assert.Equal(t, "unchanged", outcome)
+	var resolvedBy *string
+	require.NoError(t, fixture.raw.Get(&resolvedBy, `select resolved_by from schema_migration_review where object_id = $1`, entry.entryID))
+	assert.Equal(t, new("archive-rederive-job"), resolvedBy)
+}
+
+func Test_should_leave_entry_review_row_open_when_person_set_the_lists(t *testing.T) {
+	// given
+	fixture := newRederiveFixture(t)
+	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{Ligands: &[]string{"LIG"}})
+	_, err := fixture.raw.Exec(`insert into schema_migration_review(object_type, object_id, issue)
+		values ('entry', $1, 'ligands_cofactors_rederive_from_archive')`, entry.entryID)
+	require.NoError(t, err)
+
+	// when
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+
+	// then
+	var resolvedBy *string
+	require.NoError(t, fixture.raw.Get(&resolvedBy, `select resolved_by from schema_migration_review where object_id = $1`, entry.entryID))
+	assert.Nil(t, resolvedBy)
+}
+
+func Test_should_log_the_skip_a_real_run_would_make_when_job_runs_dry_on_entry_in_review(t *testing.T) {
+	// given
+	fixture := newRederiveFixture(t)
+	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	_, err := fixture.database.Entries.Create(context.Background(), models.EntryRevision{
+		ID:               uuid.New(),
+		EntryID:          entry.entryID,
+		ParentRevisionID: &entry.revisionID,
+		State:            models.RevisionStateInReview,
+		EntryState:       models.EntryStateActive,
+		Title:            new("draft"),
+		CreatedBy:        fixture.userID,
+		CreatedAt:        time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
+	})
+	require.NoError(t, err)
+
+	// when
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{DryRun: true}).Run(context.Background()))
+
+	// then
+	outcome, dryRun, _ := fixture.logRow(t, entry.revisionID)
+	assert.Equal(t, "skipped_in_review", outcome)
+	assert.True(t, dryRun)
+}
+
+func Test_should_keep_entry_review_row_resolved_when_revert_script_puts_back_only_mutations(t *testing.T) {
+	// given: a run that changed only an entity's mutations, the lists being derived already
+	fixture := newRederiveFixture(t)
+	fixture.rcsb.files["1ABC"] = mmCIFWithMutationAndSulfate
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+	_, err := fixture.raw.Exec(`delete from archive_rederivations`)
+	require.NoError(t, err)
+	require.NoError(t, fixture.database.PolymerEntities.UpdateMutations(context.Background(), models.ArchivePolymerEntityMutations{
+		ID: entry.entityID, Mutations: []string{"C4T"}, MutationsRaw: new("C4T"), MutationsStatus: new(models.MutationsStatusParsed),
+	}))
+	_, err = fixture.raw.Exec(`insert into schema_migration_review(object_type, object_id, issue)
+		values ('entry', $1, 'ligands_cofactors_rederive_from_archive')`, entry.entryID)
+	require.NoError(t, err)
+	require.NoError(t, fixture.job(t, ArchiveRederiveConfig{}).Run(context.Background()))
+
+	// when
+	fixture.runRevertScript(t)
+
+	// then
+	assert.Equal(t, []string{"C4T"}, fixture.entity(t, entry.entityID).Metadata.Mutations)
+	assert.Equal(t, &[]string{"SO4"}, fixture.revision(t, entry.revisionID).Metadata.Ligands)
+	var resolvedBy *string
+	require.NoError(t, fixture.raw.Get(&resolvedBy, `select resolved_by from schema_migration_review where object_id = $1`, entry.entryID))
+	assert.Equal(t, new("archive-rederive-job"), resolvedBy)
 }

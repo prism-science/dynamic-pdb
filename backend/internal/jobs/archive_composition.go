@@ -19,7 +19,7 @@ type archiveComposition struct {
 }
 
 // compositionFromResult turns what the parser read from an entry's mmCIF into its composition.
-// A compound the parser flagged for review keeps the reason in its record (T1-C2 decision D2).
+// A compound the parser flagged for review keeps the reason in its record.
 // A rule the backend does not know is an error, so a parser change cannot store a record the
 // API cannot return.
 func compositionFromResult(result cif.Result) (archiveComposition, error) {
@@ -43,29 +43,21 @@ func compositionFromResult(result cif.Result) (archiveComposition, error) {
 	}, nil
 }
 
-// applyArchiveComposition puts into desired the composition the entry sync takes from the entry's
-// mmCIF, and reports whether it took it from the file. Lists a person set, and the stored values
-// when the file could not be read completely, are kept as current holds them, with the decision
-// record and glycans that go with them.
-func applyArchiveComposition(current models.EntryRevision, desired *models.EntryRevision, file archiveFile) bool {
+// applyArchiveComposition sets the lists, decision record and glycans of desired, and reports
+// whether it took them from the entry's mmCIF. When the lists are a person's, or the file could
+// not be read completely, it keeps current's values instead.
+func applyArchiveComposition(current models.EntryRevision, desired *models.EntryRevision, file archiveFileValues) bool {
 	if entryListsPersonSet(current) || file.composition == nil {
-		desired.Metadata.Ligands = current.Metadata.Ligands
-		desired.Metadata.Cofactors = current.Metadata.Cofactors
-		desired.CompoundSources = current.CompoundSources
-		desired.GlycanDescriptors = current.GlycanDescriptors
+		desired.SetComposition(current.Composition())
 		return false
 	}
-	values := compoundValuesFromComposition(*file.composition)
-	desired.Metadata.Ligands = values.Ligands
-	desired.Metadata.Cofactors = values.Cofactors
-	desired.CompoundSources = values.CompoundSources
-	desired.GlycanDescriptors = values.GlycanDescriptors
+	desired.SetComposition(file.composition.entryComposition())
 	return true
 }
 
 // entryListsPersonSet reports whether a person set the revision's composition lists, so they are
 // kept. Lists a person changed carry depositor sources. Lists without a decision record were not
-// derived from the file by these rules, so a person typed them; the C1 migrations set no lists
+// derived from the file by these rules, so a person typed them; the schema migrations set no lists
 // on archive entries.
 func entryListsPersonSet(revision models.EntryRevision) bool {
 	if revision.FieldSources.IsDepositor(models.EntryFieldLigands) ||
@@ -76,8 +68,9 @@ func entryListsPersonSet(revision models.EntryRevision) bool {
 	return listsSet && revision.CompoundSources == nil
 }
 
-func compoundValuesFromComposition(composition archiveComposition) models.ArchiveCompoundValues {
-	return models.ArchiveCompoundValues{
+// entryComposition is the composition as an entry revision stores it.
+func (composition archiveComposition) entryComposition() models.EntryComposition {
+	return models.EntryComposition{
 		Ligands:           new(composition.ligands),
 		Cofactors:         new(composition.cofactors),
 		CompoundSources:   new(composition.sources),
@@ -108,7 +101,7 @@ func compoundGroupFromResult(
 	}
 	record, err := compoundSourcesFromResult(sources, reviewReasons)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("convert the record: %w", err)
 	}
 	return ids, record, nil
 }

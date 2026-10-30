@@ -153,9 +153,10 @@ derives the entry lists, `compound_sources` and `glycan_descriptors` of archive 
 UniProt-numbered mutations of their polymer entities, from the head of each RCSB mmCIF. It changes
 the active revision in place and logs each revision it looked at in `archive_rederivations`: the
 outcome (described in `V20261030150100__archive_rederivations.sql`), and for a change the old values
-in `before` and the new ones in `after`. When it fills an entry's lists it resolves the entry's
-`ligands_cofactors_rederive_from_archive` row; when an entity's mutations become all parsed it
-resolves the entity's `mutations_need_review` row (`resolved_by = 'archive-rederive-job'`).
+in `before` and the new ones in `after`. When an entry's lists are derived from the file, filled by
+this run or by the sync before it, it resolves the entry's `ligands_cofactors_rederive_from_archive`
+row; when an entity's mutations become all parsed it resolves the entity's `mutations_need_review`
+row (`resolved_by = 'archive-rederive-job'`). A dry run logs the same outcomes, skips included.
 
 Polymer entities are shared by the revisions of an entry, so a mutation the job fixes also shows on
 the entry's archived revisions, as with the C1 migrations.
@@ -182,7 +183,8 @@ DYNAMIC_PDB_ARCHIVE_REDERIVE_DRY_RUN=true DYNAMIC_PDB_ARCHIVE_REDERIVE_MAX_ENTRI
 `revert_archive_rederivation.sql` puts the `before` values back, with the job switched off. It reverts a
 revision only as a whole, and only while the revision is still active and every value the job changed
 still holds what the job wrote; it lists the revisions it skipped. It reopens the review rows the job
-resolved for them and deletes their log rows, so the job would derive them again on its next run.
+resolved for them (an entry's row only when its lists are put back) and deletes their log rows, so
+the job would derive them again on its next run.
 Beyond that, RDS point-in-time restore covers 7 days.
 
 ```sh

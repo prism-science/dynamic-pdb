@@ -62,6 +62,10 @@ spec:
                   value: {{ .Values.archiveRederiveJob.statementTimeout | quote }}
                 - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_MAX_ENTRIES_PER_RUN
                   value: {{ .Values.archiveRederiveJob.maxEntriesPerRun | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_PAGE_SIZE
+                  value: {{ .Values.archiveRederiveJob.pageSize | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_DOWNLOAD_CONCURRENCY
+                  value: {{ .Values.archiveRederiveJob.downloadConcurrency | quote }}
                 - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_DRY_RUN
                   value: {{ .Values.archiveRederiveJob.dryRun | quote }}
               resources:

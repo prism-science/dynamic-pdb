@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,9 @@ func (s *Server) createEntryRevisionGraph(
 	}
 
 	err := s.database.Do(ctx, func(ctx context.Context) error {
+		if err := s.lockEntry(ctx, entryID); err != nil {
+			return fmt.Errorf("lock before reading the active revision: %w", err)
+		}
 		activeState := domainmodels.RevisionStateActive
 		activeEntryState := domainmodels.EntryStateActive
 		base, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{
@@ -225,6 +229,22 @@ func (s *Server) UpdateEntryRevisionState(
 		return
 	}
 	s.writeEntryRevision(w, r, entryID, revisionID, nil)
+}
+
+// lockEntry takes the entry's row lock for the rest of the transaction. A revision built from the
+// active revision takes it before reading that revision, because the archive re-derivation job
+// changes the active revision in place under the same lock: otherwise the new revision could copy
+// the values from before the job's change, and drop them when it is activated. A missing entry
+// is ErrEntryRevisionNotFound, as reading its revision would be.
+func (s *Server) lockEntry(ctx context.Context, entryID string) error {
+	err := s.database.Entries.Lock(ctx, entryID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("entry %s: %w", entryID, db.ErrEntryRevisionNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("entry %s: %w", entryID, err)
+	}
+	return nil
 }
 
 // activateEntryRevision approves an in-review entry revision inside the caller's transaction:

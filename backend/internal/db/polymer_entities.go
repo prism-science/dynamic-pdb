@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -223,4 +224,38 @@ type polymerEntityRow struct {
 	ProteinSequenceID uuid.UUID `db:"protein_sequence_id"`
 	Metadata          []byte    `db:"metadata"`
 	CreatedAt         time.Time `db:"created_at"`
+}
+
+// UpdateMutations sets the mutation fields of a polymer entity in place, for the archive
+// re-derivation job; its other metadata keys stay as they are. Empty values leave their key
+// out, as the polymer entity metadata is written everywhere else.
+func (r *PolymerEntitiesRepository) UpdateMutations(
+	ctx context.Context,
+	mutations models.ArchivePolymerEntityMutations,
+) error {
+	patch, err := json.Marshal(struct {
+		Mutations       []string                `json:"mutations,omitempty"`
+		MutationsRaw    *string                 `json:"mutations_raw,omitempty"`
+		MutationsStatus *models.MutationsStatus `json:"mutations_status,omitempty"`
+	}{mutations.Mutations, mutations.MutationsRaw, mutations.MutationsStatus})
+	if err != nil {
+		return fmt.Errorf("prepare mutations: %w", err)
+	}
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
+		`update polymer_entities
+		 set metadata = (metadata - 'mutations' - 'mutations_raw' - 'mutations_status') || cast($2 as jsonb)
+		 where id = $1`,
+		mutations.ID, string(patch),
+	)
+	if err != nil {
+		return fmt.Errorf("update mutations of polymer entity %s: %w", mutations.ID, err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count updated polymer entities: %w", err)
+	}
+	if updated != 1 {
+		return ErrPolymerEntityNotFound
+	}
+	return nil
 }

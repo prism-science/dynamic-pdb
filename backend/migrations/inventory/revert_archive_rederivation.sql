@@ -7,7 +7,8 @@
 -- job changed (its lists, decision record and glycans, and the mutations of its polymer entities)
 -- still holds what the job wrote. Anything changed since is kept, and the revision is listed as
 -- skipped. For each reverted revision the script also reopens the review rows the job resolved and
--- deletes the log row, so a later run of the job would derive it again.
+-- deletes the log row, so a later run of the job would derive it again. An entry's review row is
+-- reopened only when the revision's lists are put back.
 --
 -- Dry-run rows changed nothing and are left alone. The script prints the number of reverted
 -- revisions, then the skipped ones.
@@ -52,10 +53,10 @@ CREATE TEMP TABLE revert_decisions ON COMMIT DROP AS
 SELECT logged.entry_revision_id,
        logged.entry_id,
        coalesce(revision.state = 'active', false)
-       AND NOT EXISTS (SELECT 1 FROM revert_compounds c
-                       WHERE c.entry_revision_id = logged.entry_revision_id AND NOT c.unchanged_since)
-       AND NOT EXISTS (SELECT 1 FROM revert_entities e
-                       WHERE e.entry_revision_id = logged.entry_revision_id AND NOT e.unchanged_since)
+       AND NOT EXISTS (SELECT 1 FROM revert_compounds compounds
+                       WHERE compounds.entry_revision_id = logged.entry_revision_id AND NOT compounds.unchanged_since)
+       AND NOT EXISTS (SELECT 1 FROM revert_entities entities
+                       WHERE entities.entry_revision_id = logged.entry_revision_id AND NOT entities.unchanged_since)
          AS revert,
        CASE
          WHEN revision.state IS DISTINCT FROM 'active' THEN 'revision is no longer active'
@@ -85,15 +86,19 @@ FROM revert_entities entities
 JOIN revert_decisions decision USING (entry_revision_id)
 WHERE entity.id = entities.polymer_entity_id AND decision.revert;
 
+-- An entry's review row is reopened only when its lists are put back; a revision whose run
+-- changed only mutations keeps the lists that settled the row.
 UPDATE schema_migration_review review
 SET resolved_at = NULL, resolved_by = NULL
 FROM revert_decisions decision
 WHERE decision.revert
   AND review.resolved_by = 'archive-rederive-job'
-  AND ((review.object_type = 'entry' AND review.object_id = decision.entry_id)
+  AND ((review.object_type = 'entry' AND review.object_id = decision.entry_id
+        AND EXISTS (SELECT 1 FROM revert_compounds compounds
+                    WHERE compounds.entry_revision_id = decision.entry_revision_id))
        OR (review.object_type = 'polymer_entity'
-           AND review.object_id IN (SELECT polymer_entity_id::text FROM revert_entities e
-                                    WHERE e.entry_revision_id = decision.entry_revision_id)));
+           AND review.object_id IN (SELECT entities.polymer_entity_id::text FROM revert_entities entities
+                                    WHERE entities.entry_revision_id = decision.entry_revision_id)));
 
 DELETE FROM archive_rederivations logged
 USING revert_decisions decision

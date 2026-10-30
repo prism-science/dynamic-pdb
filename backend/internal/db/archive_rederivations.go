@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -113,111 +112,22 @@ func (r *ArchiveRederivationsRepository) Record(ctx context.Context, row models.
 	return nil
 }
 
-// ResolveMigrationReviews marks the open schema_migration_review rows with issue for the given
-// objects as resolved by resolvedBy, and returns how many it marked.
+// ResolveMigrationReviews marks the open schema_migration_review rows resolution names as resolved
+// by resolution.ResolvedBy. Rows that are resolved already keep when and by whom.
 func (r *ArchiveRederivationsRepository) ResolveMigrationReviews(
 	ctx context.Context,
-	objectType string,
-	issue string,
-	objectIDs []string,
-	resolvedBy string,
-) (int64, error) {
-	if len(objectIDs) == 0 {
-		return 0, nil
+	resolution models.MigrationReviewResolution,
+) error {
+	if len(resolution.ObjectIDs) == 0 {
+		return nil
 	}
-	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
 		`update schema_migration_review
 		 set resolved_at = now(), resolved_by = $4
 		 where object_type = $1 and issue = $2 and object_id = any($3) and resolved_at is null`,
-		objectType, issue, pq.Array(objectIDs), resolvedBy,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("resolve %s review rows: %w", issue, err)
-	}
-	resolved, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("count resolved %s review rows: %w", issue, err)
-	}
-	return resolved, nil
-}
-
-// UpdateComposition sets the composition lists, decision record and glycans of an active entry
-// revision in place, for the archive re-derivation job. It changes only those values: the
-// other metadata keys and updated_at stay as they are.
-func (r *EntriesRepository) UpdateComposition(
-	ctx context.Context,
-	revisionID uuid.UUID,
-	values models.ArchiveCompoundValues,
-) error {
-	ligands, err := json.Marshal(values.Ligands)
-	if err != nil {
-		return fmt.Errorf("prepare ligands: %w", err)
-	}
-	cofactors, err := json.Marshal(values.Cofactors)
-	if err != nil {
-		return fmt.Errorf("prepare cofactors: %w", err)
-	}
-	compoundSources, err := optionalJSONToSQL(values.CompoundSources)
-	if err != nil {
-		return fmt.Errorf("prepare compound sources: %w", err)
-	}
-	glycanDescriptors, err := optionalJSONToSQL(values.GlycanDescriptors)
-	if err != nil {
-		return fmt.Errorf("prepare glycan descriptors: %w", err)
-	}
-	// A nil list is unset, so its key is removed rather than set to JSON null.
-	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
-		`update entry_revisions
-		 set metadata = (metadata - 'ligands' - 'cofactors')
-		       || jsonb_strip_nulls(jsonb_build_object('ligands', cast($2 as jsonb), 'cofactors', cast($3 as jsonb))),
-		     compound_sources = cast($4 as jsonb),
-		     glycan_descriptors = cast($5 as jsonb)
-		 where id = $1 and state = 'active'`,
-		revisionID, string(ligands), string(cofactors), compoundSources, glycanDescriptors,
-	)
-	if err != nil {
-		return fmt.Errorf("update composition of entry revision %s: %w", revisionID, err)
-	}
-	updated, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("count updated entry revisions: %w", err)
-	}
-	if updated != 1 {
-		return ErrEntryRevisionNotFound
-	}
-	return nil
-}
-
-// UpdateMutations sets the mutation fields of a polymer entity in place, for the archive
-// re-derivation job; its other metadata keys stay as they are. Empty values leave their key
-// out, as the polymer entity metadata is written everywhere else.
-func (r *PolymerEntitiesRepository) UpdateMutations(
-	ctx context.Context,
-	mutations models.ArchivePolymerEntityMutations,
-) error {
-	patch, err := json.Marshal(struct {
-		Mutations       []string                `json:"mutations,omitempty"`
-		MutationsRaw    *string                 `json:"mutations_raw,omitempty"`
-		MutationsStatus *models.MutationsStatus `json:"mutations_status,omitempty"`
-	}{mutations.Mutations, mutations.MutationsRaw, mutations.MutationsStatus})
-	if err != nil {
-		return fmt.Errorf("prepare mutations: %w", err)
-	}
-	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
-		`update polymer_entities
-		 set metadata = (metadata - 'mutations' - 'mutations_raw' - 'mutations_status') || cast($2 as jsonb)
-		 where id = $1`,
-		mutations.ID, string(patch),
-	)
-	if err != nil {
-		return fmt.Errorf("update mutations of polymer entity %s: %w", mutations.ID, err)
-	}
-	updated, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("count updated polymer entities: %w", err)
-	}
-	if updated != 1 {
-		return ErrPolymerEntityNotFound
+		resolution.ObjectType, resolution.Issue, pq.Array(resolution.ObjectIDs), resolution.ResolvedBy,
+	); err != nil {
+		return fmt.Errorf("resolve %s review rows: %w", resolution.Issue, err)
 	}
 	return nil
 }

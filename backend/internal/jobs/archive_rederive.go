@@ -21,14 +21,14 @@ const (
 	archiveRederiveResolver = "archive-rederive-job"
 	// archiveRederiveMaxAttempts is how many real runs try a revision whose file keeps failing.
 	archiveRederiveMaxAttempts = 3
-	// Review rows the C1 migrations wrote that the job can resolve.
+	// Review rows the schema migrations wrote that the job can resolve.
 	entryListsReviewIssue         = "ligands_cofactors_rederive_from_archive"
 	polymerEntityMutationsIssue   = "mutations_need_review"
 	entryReviewObjectType         = "entry"
 	polymerEntityReviewObjectType = "polymer_entity"
 )
 
-// ArchiveRederiveConfig configures the archive re-derivation job (T1-C2).
+// ArchiveRederiveConfig configures the archive re-derivation job.
 type ArchiveRederiveConfig struct {
 	// MaxEntriesPerRun caps the revisions one run looks at; 0 means no cap.
 	MaxEntriesPerRun int `mapstructure:"max_entries_per_run"`
@@ -115,13 +115,16 @@ func sleepContext(ctx context.Context, pause time.Duration) error {
 // run writes.
 type entryDerivation struct {
 	row       models.ArchiveRederivation
-	compounds *models.ArchiveCompoundValues
+	compounds *models.EntryComposition
 	entities  []models.ArchivePolymerEntityMutations
 	// parsedEntities are the changed polymer entities whose mutations are now all parsed.
 	parsedEntities []string
+	// listsDerived is true when the revision's lists are, or become, the ones derived from the
+	// file, which settles the entry's review row.
+	listsDerived bool
 }
 
-func (d entryDerivation) changes() bool {
+func (d entryDerivation) hasChanges() bool {
 	return d.compounds != nil || len(d.entities) > 0
 }
 
@@ -134,12 +137,12 @@ func (j *ArchiveRederiveJob) Run(ctx context.Context) error {
 	runUntil := started.Add(j.cfg.RunFor)
 	j.logger.Info("archive re-derivation started", "dry_run", j.cfg.DryRun)
 	counts := map[models.ArchiveRederivationOutcome]int{}
-	revisions := 0
+	revisionCount := 0
 	after := uuid.Nil
 	for {
 		limit := j.cfg.PageSize
 		if j.cfg.MaxEntriesPerRun > 0 {
-			limit = min(limit, j.cfg.MaxEntriesPerRun-revisions)
+			limit = min(limit, j.cfg.MaxEntriesPerRun-revisionCount)
 		}
 		if limit <= 0 || !j.now().Before(runUntil) {
 			break
@@ -163,7 +166,7 @@ func (j *ArchiveRederiveJob) Run(ctx context.Context) error {
 			}
 			counts[outcome]++
 		}
-		revisions += len(candidates)
+		revisionCount += len(candidates)
 		after = candidates[len(candidates)-1].EntryRevisionID
 		if err := j.sleep(ctx, j.now().Sub(writesStarted)); err != nil {
 			return fmt.Errorf("pause after revision %s: %w", after, err)
@@ -171,7 +174,7 @@ func (j *ArchiveRederiveJob) Run(ctx context.Context) error {
 	}
 	j.logger.Info("archive re-derivation finished",
 		"dry_run", j.cfg.DryRun,
-		"revisions", revisions,
+		"revisions", revisionCount,
 		"derived", counts[models.ArchiveRederivationDerived],
 		"unchanged", counts[models.ArchiveRederivationUnchanged],
 		"skipped_person_set", counts[models.ArchiveRederivationSkippedPersonSet],
@@ -204,7 +207,7 @@ func (j *ArchiveRederiveJob) deriveAll(
 	}
 	wait.Wait()
 	if err := errors.Join(errs...); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("derive revisions: %w", err)
 	}
 	return derivations, nil
 }
@@ -215,12 +218,7 @@ func (j *ArchiveRederiveJob) derive(
 	ctx context.Context,
 	candidate models.ArchiveRederivationCandidate,
 ) (entryDerivation, error) {
-	row := models.ArchiveRederivation{
-		EntryRevisionID: candidate.EntryRevisionID,
-		EntryID:         candidate.EntryID,
-		PDBID:           candidate.PDBID,
-		DryRun:          j.cfg.DryRun,
-	}
+	row := models.ArchiveRederivation{ArchiveRederivationCandidate: candidate, DryRun: j.cfg.DryRun}
 	revision, err := j.database.Entries.Get(ctx, db.EntryRevisionFilters{ID: &candidate.EntryRevisionID})
 	if err != nil {
 		return entryDerivation{}, fmt.Errorf("get revision %s: %w", candidate.EntryRevisionID, err)
@@ -249,9 +247,10 @@ func (j *ArchiveRederiveJob) derive(
 	derivation := entryDerivation{}
 	before, after := models.ArchiveRederivationValues{}, models.ArchiveRederivationValues{}
 	personSet := entryListsPersonSet(*revision)
+	derivation.listsDerived = !personSet
 	if !personSet {
-		current := compoundValuesOf(*revision)
-		derived := compoundValuesFromComposition(*file.composition)
+		current := revision.Composition()
+		derived := file.composition.entryComposition()
 		if !reflect.DeepEqual(current, derived) {
 			before.Compounds, after.Compounds = &current, &derived
 			derivation.compounds = &derived
@@ -275,68 +274,123 @@ func (j *ArchiveRederiveJob) derive(
 	switch {
 	case personSet:
 		row.Outcome = models.ArchiveRederivationSkippedPersonSet
-	case derivation.changes():
+	case derivation.hasChanges():
 		row.Outcome = models.ArchiveRederivationDerived
 	default:
 		row.Outcome = models.ArchiveRederivationUnchanged
 	}
-	if derivation.changes() {
+	if derivation.hasChanges() {
 		row.Before, row.After = &before, &after
 	}
 	derivation.row = row
 	return derivation, nil
 }
 
-// write logs one derivation and, in a real run, applies its changes, in one transaction that
-// holds the entry's lock. Changes are applied only while the derived revision is still the
-// active one and no revision of the entry is in review: a draft made before the change would
-// drop it when it is activated. It returns the outcome it logged.
+// write logs one derivation and, in a real run, applies its changes, in one transaction. Changes
+// are applied under the entry's lock, and only while the derived revision is still the active one
+// and no revision of the entry is in review: a draft made before the change would drop it when
+// it is activated. It returns the outcome it logged.
 func (j *ArchiveRederiveJob) write(ctx context.Context, derivation entryDerivation) (models.ArchiveRederivationOutcome, error) {
-	row := derivation.row
-	if j.cfg.DryRun || !derivation.changes() {
-		if err := j.database.ArchiveRederivations.Record(ctx, row); err != nil {
-			return "", fmt.Errorf("record: %w", err)
-		}
-		return row.Outcome, nil
+	if j.cfg.DryRun {
+		return j.writeDryRun(ctx, derivation)
 	}
+	row := derivation.row
 	err := j.database.Do(ctx, func(ctx context.Context) error {
-		if err := j.database.Entries.Lock(ctx, row.EntryID); err != nil {
-			return fmt.Errorf("lock entry: %w", err)
-		}
-		skipped, err := j.skipReason(ctx, row)
-		if err != nil {
-			return err
-		}
-		if skipped != "" {
-			row.Outcome, row.Before, row.After = skipped, nil, nil
-			return j.database.ArchiveRederivations.Record(ctx, row)
-		}
-		if derivation.compounds != nil {
-			if err := j.database.Entries.UpdateComposition(ctx, row.EntryRevisionID, *derivation.compounds); err != nil {
-				return fmt.Errorf("update composition: %w", err)
+		if derivation.hasChanges() {
+			skipped, err := j.applyChanges(ctx, derivation)
+			if err != nil {
+				return fmt.Errorf("apply changes: %w", err)
 			}
-			if _, err := j.database.ArchiveRederivations.ResolveMigrationReviews(ctx,
-				entryReviewObjectType, entryListsReviewIssue, []string{row.EntryID}, archiveRederiveResolver,
-			); err != nil {
+			if skipped != "" {
+				row.Outcome, row.Before, row.After = skipped, nil, nil
+				if err := j.record(ctx, row); err != nil {
+					return fmt.Errorf("log the skip: %w", err)
+				}
+				return nil
+			}
+		}
+		if derivation.listsDerived {
+			if err := j.resolveReviews(ctx, entryReviewObjectType, entryListsReviewIssue, []string{row.EntryID}); err != nil {
 				return fmt.Errorf("resolve entry review rows: %w", err)
 			}
 		}
-		for _, mutations := range derivation.entities {
-			if err := j.database.PolymerEntities.UpdateMutations(ctx, mutations); err != nil {
-				return fmt.Errorf("update mutations: %w", err)
-			}
-		}
-		if _, err := j.database.ArchiveRederivations.ResolveMigrationReviews(ctx,
-			polymerEntityReviewObjectType, polymerEntityMutationsIssue, derivation.parsedEntities, archiveRederiveResolver,
-		); err != nil {
+		if err := j.resolveReviews(ctx, polymerEntityReviewObjectType, polymerEntityMutationsIssue, derivation.parsedEntities); err != nil {
 			return fmt.Errorf("resolve polymer entity review rows: %w", err)
 		}
-		return j.database.ArchiveRederivations.Record(ctx, row)
+		if err := j.record(ctx, row); err != nil {
+			return fmt.Errorf("log the derivation: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("apply changes: %w", err)
+		return "", fmt.Errorf("write in one transaction: %w", err)
 	}
 	return row.Outcome, nil
+}
+
+// applyChanges locks the entry and writes the derivation's changes, unless the revision may not
+// be changed now; then it writes nothing and returns the outcome that says why.
+func (j *ArchiveRederiveJob) applyChanges(ctx context.Context, derivation entryDerivation) (models.ArchiveRederivationOutcome, error) {
+	row := derivation.row
+	if err := j.database.Entries.Lock(ctx, row.EntryID); err != nil {
+		return "", fmt.Errorf("lock entry: %w", err)
+	}
+	skipped, err := j.skipReason(ctx, row)
+	if err != nil {
+		return "", fmt.Errorf("check whether the revision may change: %w", err)
+	}
+	if skipped != "" {
+		return skipped, nil
+	}
+	if derivation.compounds != nil {
+		if err := j.database.Entries.UpdateComposition(ctx, row.EntryRevisionID, *derivation.compounds); err != nil {
+			return "", fmt.Errorf("update composition: %w", err)
+		}
+	}
+	for _, mutations := range derivation.entities {
+		if err := j.database.PolymerEntities.UpdateMutations(ctx, mutations); err != nil {
+			return "", fmt.Errorf("update mutations: %w", err)
+		}
+	}
+	return "", nil
+}
+
+// writeDryRun logs what a real run would do, including the skips it would make, and changes
+// nothing else. It takes no lock, so a revision may still change before the real run.
+func (j *ArchiveRederiveJob) writeDryRun(ctx context.Context, derivation entryDerivation) (models.ArchiveRederivationOutcome, error) {
+	row := derivation.row
+	if derivation.hasChanges() {
+		skipped, err := j.skipReason(ctx, row)
+		if err != nil {
+			return "", fmt.Errorf("check whether the revision may change: %w", err)
+		}
+		if skipped != "" {
+			row.Outcome, row.Before, row.After = skipped, nil, nil
+		}
+	}
+	if err := j.record(ctx, row); err != nil {
+		return "", fmt.Errorf("log the dry run: %w", err)
+	}
+	return row.Outcome, nil
+}
+
+func (j *ArchiveRederiveJob) record(ctx context.Context, row models.ArchiveRederivation) error {
+	if err := j.database.ArchiveRederivations.Record(ctx, row); err != nil {
+		return fmt.Errorf("record outcome %s: %w", row.Outcome, err)
+	}
+	return nil
+}
+
+func (j *ArchiveRederiveJob) resolveReviews(ctx context.Context, objectType string, issue string, objectIDs []string) error {
+	if err := j.database.ArchiveRederivations.ResolveMigrationReviews(ctx, models.MigrationReviewResolution{
+		ObjectType: objectType,
+		Issue:      issue,
+		ObjectIDs:  objectIDs,
+		ResolvedBy: archiveRederiveResolver,
+	}); err != nil {
+		return fmt.Errorf("resolve %s rows: %w", issue, err)
+	}
+	return nil
 }
 
 // skipReason returns the outcome that keeps the job from changing row's revision now, or "" when
@@ -367,15 +421,6 @@ func (j *ArchiveRederiveJob) skipReason(ctx context.Context, row models.ArchiveR
 		return models.ArchiveRederivationSkippedInReview, nil
 	}
 	return "", nil
-}
-
-func compoundValuesOf(revision models.EntryRevision) models.ArchiveCompoundValues {
-	return models.ArchiveCompoundValues{
-		Ligands:           revision.Metadata.Ligands,
-		Cofactors:         revision.Metadata.Cofactors,
-		CompoundSources:   revision.CompoundSources,
-		GlycanDescriptors: revision.GlycanDescriptors,
-	}
 }
 
 // entityMutationsOf returns an entity's mutation fields. An empty list is nil, as stored: the

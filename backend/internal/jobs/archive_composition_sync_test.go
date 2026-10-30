@@ -2,17 +2,19 @@ package jobs
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
 )
 
-func derivedArchiveFile() archiveFile {
-	return archiveFile{
+func derivedArchiveFile() archiveFileValues {
+	return archiveFileValues{
 		mutations: archiveMutations{complete: true},
 		composition: &archiveComposition{
 			ligands:   []string{"SO4"},
@@ -63,10 +65,10 @@ func Test_should_keep_stored_compounds_when_sync_must_not_take_them_from_file(t 
 	depositor := storedComposition()
 	depositor.FieldSources = models.FieldSources{models.EntryFieldLigands: {Source: models.FieldSourceDepositor}}
 	typedWithoutRecord := models.EntryRevision{Metadata: models.EntryMetadata{Ligands: &[]string{"LIG"}}}
-	incomplete := archiveFile{incompleteReason: "the head of the RCSB mmCIF ends before its coordinates"}
+	incomplete := archiveFileValues{incompleteReason: "the head of the RCSB mmCIF ends before its coordinates"}
 	cases := map[string]struct {
 		current models.EntryRevision
-		file    archiveFile
+		file    archiveFileValues
 	}{
 		"person changed the lists":   {current: depositor, file: derivedArchiveFile()},
 		"lists typed without record": {current: typedWithoutRecord, file: derivedArchiveFile()},
@@ -109,7 +111,7 @@ func Test_should_report_change_when_only_compound_record_differs(t *testing.T) {
 	assert.False(t, sameChanged)
 }
 
-func Test_should_keep_list_sources_unless_sync_took_lists_from_file(t *testing.T) {
+func Test_should_keep_list_sources_when_sync_does_not_take_lists_from_file(t *testing.T) {
 	// given
 	retrievedAt := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	listsSource := models.FieldSource{Source: models.FieldSourceRCSB, Accession: new("1ABC"), Release: new("1.0")}
@@ -148,4 +150,39 @@ func Test_should_find_no_change_when_sync_reads_the_file_the_backfill_derived_fr
 	// then
 	assert.True(t, synced)
 	assert.False(t, entryChanged)
+}
+
+func Test_should_refuse_sync_revision_when_parent_was_changed_in_place_after_it_was_read(t *testing.T) {
+	// given: the sync read the active revision, then the backfill filled its lists in place
+	fixture := newRederiveFixture(t)
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	strategy := &entrySyncStrategy{database: fixture.database, logger: slog.New(slog.DiscardHandler), now: time.Now}
+	read := fixture.revision(t, entry.revisionID)
+	require.NoError(t, fixture.database.Entries.UpdateComposition(context.Background(), entry.revisionID,
+		models.EntryComposition{Ligands: &[]string{"SO4"}, Cofactors: &[]string{}}))
+
+	// when
+	err := strategy.saveSyncEntryRevision(context.Background(), read,
+		newSyncEntryRevision(read, "RCSB version 1.1", time.Now()), nil, false)
+
+	// then
+	require.ErrorIs(t, err, db.ErrEntryRevisionConflict)
+	assert.Equal(t, 1, fixture.revisionCount(t, entry.entryID))
+	assert.Equal(t, &[]string{"SO4"}, fixture.revision(t, entry.revisionID).Metadata.Ligands)
+}
+
+func Test_should_activate_sync_revision_when_parent_is_unchanged_since_it_was_read(t *testing.T) {
+	// given
+	fixture := newRederiveFixture(t)
+	entry := fixture.seedArchiveEntry(t, "1ABC", models.EntryMetadata{})
+	strategy := &entrySyncStrategy{database: fixture.database, logger: slog.New(slog.DiscardHandler), now: time.Now}
+	read := fixture.revision(t, entry.revisionID)
+
+	// when
+	err := strategy.saveSyncEntryRevision(context.Background(), read,
+		newSyncEntryRevision(read, "RCSB version 1.1", time.Now()), nil, false)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 2, fixture.revisionCount(t, entry.entryID))
 }

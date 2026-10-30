@@ -152,6 +152,9 @@ archiveRederiveJob:
   activeDeadlineSeconds: 3300
   # Caps the revisions one run looks at; 0 means no cap.
   maxEntriesPerRun: 5000
+  # Revisions one page derives before writing them, and RCSB downloads in flight.
+  pageSize: 200
+  downloadConcurrency: 4
   # true logs what the job would change, in rows marked dry_run, and changes nothing else.
   dryRun: false
   # Replaces the backend's 10s statement_timeout for the job only.

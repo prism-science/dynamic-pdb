@@ -50,6 +50,8 @@ db:
 `)
 	t.Setenv("DYNAMIC_PDB_ARCHIVE_REDERIVE_MAX_ENTRIES_PER_RUN", "5000")
 	t.Setenv("DYNAMIC_PDB_ARCHIVE_REDERIVE_DRY_RUN", "true")
+	t.Setenv("DYNAMIC_PDB_ARCHIVE_REDERIVE_PAGE_SIZE", "100")
+	t.Setenv("DYNAMIC_PDB_ARCHIVE_REDERIVE_DOWNLOAD_CONCURRENCY", "2")
 	t.Setenv("DYNAMIC_PDB_DB_STATEMENT_TIMEOUT", "30s")
 
 	// when
@@ -59,10 +61,12 @@ db:
 	require.NoError(t, err)
 	assert.Equal(t, 5000, cfg.ArchiveRederive.MaxEntriesPerRun)
 	assert.True(t, cfg.ArchiveRederive.DryRun)
+	assert.Equal(t, 100, cfg.ArchiveRederive.PageSize)
+	assert.Equal(t, 2, cfg.ArchiveRederive.DownloadConcurrency)
 	assert.Equal(t, 30*time.Second, cfg.DB.StatementTimeout)
 }
 
-func Test_should_read_production_config(t *testing.T) {
+func Test_should_read_archive_rederive_settings_when_production_config_is_read(t *testing.T) {
 	// given
 	t.Chdir(filepath.Join("..", ".."))
 

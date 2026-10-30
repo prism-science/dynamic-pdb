@@ -83,6 +83,9 @@ type entryDeletion struct {
 func (s *Server) deleteEntry(ctx context.Context, entryID string, deletedBy uuid.UUID) (entryDeletion, error) {
 	activeState := domainmodels.RevisionStateActive
 	activeEntryState := domainmodels.EntryStateActive
+	if err := s.lockEntry(ctx, entryID); err != nil {
+		return entryDeletion{}, fmt.Errorf("lock before reading the active revision: %w", err)
+	}
 	base, err := s.database.Entries.Get(ctx, db.EntryRevisionFilters{
 		EntryID:    &entryID,
 		State:      &activeState,
@@ -90,9 +93,6 @@ func (s *Server) deleteEntry(ctx context.Context, entryID string, deletedBy uuid
 	})
 	if err != nil {
 		return entryDeletion{}, fmt.Errorf("get active entry revision: %w", err)
-	}
-	if err := s.database.Entries.Lock(ctx, entryID); err != nil {
-		return entryDeletion{}, fmt.Errorf("lock entry: %w", err)
 	}
 
 	// Open revisions could never be approved once the entry is deleted, so they would stay in

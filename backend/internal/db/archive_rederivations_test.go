@@ -15,17 +15,19 @@ import (
 
 func fixturePDBRederivation(outcome models.ArchiveRederivationOutcome, dryRun bool) models.ArchiveRederivation {
 	row := models.ArchiveRederivation{
-		EntryRevisionID:  uuid.MustParse(fixturePDBRevision),
-		EntryID:          "e_pdb",
-		PDBID:            "1ABC",
+		ArchiveRederivationCandidate: models.ArchiveRederivationCandidate{
+			EntryRevisionID: uuid.MustParse(fixturePDBRevision),
+			EntryID:         "e_pdb",
+			PDBID:           "1ABC",
+		},
 		Outcome:          outcome,
 		DryRun:           dryRun,
 		ReferenceVersion: ptr(fixtureReferenceVersion),
 	}
 	switch outcome {
 	case models.ArchiveRederivationDerived:
-		row.Before = &models.ArchiveRederivationValues{Compounds: &models.ArchiveCompoundValues{}}
-		row.After = &models.ArchiveRederivationValues{Compounds: &models.ArchiveCompoundValues{Ligands: &[]string{"HEM"}}}
+		row.Before = &models.ArchiveRederivationValues{Compounds: &models.EntryComposition{}}
+		row.After = &models.ArchiveRederivationValues{Compounds: &models.EntryComposition{Ligands: &[]string{"HEM"}}}
 	case models.ArchiveRederivationFailed:
 		row.Error = ptr("download RCSB mmCIF of 1ABC: not found")
 	case models.ArchiveRederivationUnchanged, models.ArchiveRederivationSkippedInReview:
@@ -154,7 +156,7 @@ func Test_should_list_only_unfinished_active_archive_revisions_when_candidates_a
 	}
 }
 
-func Test_should_page_candidates_after_the_given_revision(t *testing.T) {
+func Test_should_list_only_later_revisions_when_candidates_are_paged(t *testing.T) {
 	// given
 	fixture := newMigratedFixture(t)
 	fixture.activateEntries(t)
@@ -168,28 +170,42 @@ func Test_should_page_candidates_after_the_given_revision(t *testing.T) {
 	assert.Empty(t, candidates)
 }
 
-func Test_should_resolve_only_open_review_rows_of_the_given_objects(t *testing.T) {
+func Test_should_resolve_only_open_rows_of_given_objects_when_review_rows_are_resolved(t *testing.T) {
 	// given
 	fixture := newMigratedFixture(t)
 	repository := fixture.appDatabase(t).ArchiveRederivations
 	ctx := context.Background()
+	resolution := models.MigrationReviewResolution{
+		ObjectType: "entry",
+		Issue:      "ligands_cofactors_rederive_from_archive",
+		ObjectIDs:  []string{"e_pdb", "e_missing"},
+		ResolvedBy: "archive-rederive-job",
+	}
+	resolvedAt := func() *time.Time {
+		var at *time.Time
+		require.NoError(t, fixture.database.Get(&at,
+			`select resolved_at from schema_migration_review
+			 where object_type = 'entry' and object_id = 'e_pdb' and issue = 'ligands_cofactors_rederive_from_archive'`))
+		return at
+	}
 
 	// when
-	resolved, err := repository.ResolveMigrationReviews(ctx,
-		"entry", "ligands_cofactors_rederive_from_archive", []string{"e_pdb", "e_missing"}, "archive-rederive-job")
-	require.NoError(t, err)
-	resolvedAgain, err := repository.ResolveMigrationReviews(ctx,
-		"entry", "ligands_cofactors_rederive_from_archive", []string{"e_pdb"}, "archive-rederive-job")
-	require.NoError(t, err)
+	require.NoError(t, repository.ResolveMigrationReviews(ctx, resolution))
+	first := resolvedAt()
+	require.NoError(t, repository.ResolveMigrationReviews(ctx, resolution))
 
 	// then
-	assert.Equal(t, int64(1), resolved)
-	assert.Zero(t, resolvedAgain)
+	require.NotNil(t, first)
+	assert.Equal(t, first, resolvedAt(), "a resolved row keeps when it was resolved")
 	var resolvedBy string
 	require.NoError(t, fixture.database.Get(&resolvedBy,
 		`select resolved_by from schema_migration_review
 		 where object_type = 'entry' and object_id = 'e_pdb' and issue = 'ligands_cofactors_rederive_from_archive'`))
 	assert.Equal(t, "archive-rederive-job", resolvedBy)
+	var otherResolved int
+	require.NoError(t, fixture.database.Get(&otherResolved,
+		`select count(*) from schema_migration_review where resolved_at is not null and object_id <> 'e_pdb'`))
+	assert.Zero(t, otherResolved)
 }
 
 func Test_should_set_composition_in_place_and_keep_other_metadata_when_composition_is_updated(t *testing.T) {
@@ -211,7 +227,7 @@ func Test_should_set_composition_in_place_and_keep_other_metadata_when_compositi
 	glycans := &[]models.Glycan{{EntityID: "2", CompoundIDs: []string{"NAG"}, Descriptors: []models.GlycanDescriptor{}}}
 
 	// when
-	err = testDB.Entries.UpdateComposition(ctx, active.ID, models.ArchiveCompoundValues{
+	err = testDB.Entries.UpdateComposition(ctx, active.ID, models.EntryComposition{
 		Ligands: &[]string{"NAG"}, Cofactors: &[]string{}, CompoundSources: record, GlycanDescriptors: glycans,
 	})
 	require.NoError(t, err)
@@ -233,7 +249,7 @@ func Test_should_refuse_composition_update_when_revision_is_not_active(t *testin
 	revision := createDBTestEntryRevisionWithPDBID(t, "pending composition", "1ABC", models.RevisionStatePending, time.Now().UTC())
 
 	// when
-	err := testDB.Entries.UpdateComposition(context.Background(), revision.ID, models.ArchiveCompoundValues{
+	err := testDB.Entries.UpdateComposition(context.Background(), revision.ID, models.EntryComposition{
 		Ligands: &[]string{}, Cofactors: &[]string{},
 	})
 

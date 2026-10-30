@@ -29,9 +29,7 @@ type ArchiveRederivationCandidate struct {
 // both are nil when it changed nothing. Error says why the job failed or found the file
 // incomplete.
 type ArchiveRederivation struct {
-	EntryRevisionID  uuid.UUID
-	EntryID          string
-	PDBID            string
+	ArchiveRederivationCandidate
 	Outcome          ArchiveRederivationOutcome
 	DryRun           bool
 	ReferenceVersion *string
@@ -44,17 +42,8 @@ type ArchiveRederivation struct {
 // the change. Compounds is nil when the compounds did not change; PolymerEntities lists only the
 // entities whose mutations changed.
 type ArchiveRederivationValues struct {
-	Compounds       *ArchiveCompoundValues          `json:"compounds,omitempty"`
+	Compounds       *EntryComposition               `json:"compounds,omitempty"`
 	PolymerEntities []ArchivePolymerEntityMutations `json:"polymer_entities,omitempty"`
-}
-
-// ArchiveCompoundValues are an entry revision's composition lists, their decision record and
-// its glycans. Nil means unset.
-type ArchiveCompoundValues struct {
-	Ligands           *[]string        `json:"ligands"`
-	Cofactors         *[]string        `json:"cofactors"`
-	CompoundSources   *CompoundSources `json:"compound_sources"`
-	GlycanDescriptors *[]Glycan        `json:"glycan_descriptors"`
 }
 
 // ArchivePolymerEntityMutations are the mutation fields of one polymer entity.
@@ -63,4 +52,13 @@ type ArchivePolymerEntityMutations struct {
 	Mutations       []string         `json:"mutations"`
 	MutationsRaw    *string          `json:"mutations_raw"`
 	MutationsStatus *MutationsStatus `json:"mutations_status"`
+}
+
+// MigrationReviewResolution names the open schema_migration_review rows a job settled: the rows
+// of ObjectType with Issue for each of ObjectIDs. ResolvedBy names the job.
+type MigrationReviewResolution struct {
+	ObjectType string
+	Issue      string
+	ObjectIDs  []string
+	ResolvedBy string
 }
