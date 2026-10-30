@@ -327,10 +327,15 @@ function buildColumns(
  * `details` is not here either. It is a paragraph the depositor wrote, and the
  * value track in this grid is around 140px wide; it is read with modelDetails
  * and set beside the entry's own description instead.
+ *
+ * The typed Ligands and Cofactors lists are left out when the server read the
+ * model's file (`typedCompounds` false): the page shows the file's compounds
+ * instead, and two lists of one model would disagree.
  */
 export function summaryModelFacts(
   metadata: Record<string, unknown>,
   program: Entity | null,
+  { typedCompounds = true }: { typedCompounds?: boolean } = {},
 ): MetadataFact[] {
   const facts: MetadataFact[] = [];
   const modelType = stringValue(metadata.model_type);
@@ -341,8 +346,8 @@ export function summaryModelFacts(
   const chains = numberValue(metadata.unique_protein_chains);
   const altLocFraction = numberValue(metadata.altloc_fraction);
   const unmodeledFraction = numberValue(metadata.unmodeled_fraction);
-  const ligands = stringArrayValue(metadata.ligands);
-  const cofactors = stringArrayValue(metadata.cofactors);
+  const ligands = typedCompounds ? stringArrayValue(metadata.ligands) : [];
+  const cofactors = typedCompounds ? stringArrayValue(metadata.cofactors) : [];
 
   if (program) {
     facts.push({ label: "Program", value: formatProgram(program) });
@@ -561,16 +566,19 @@ export function modelVitals(metadata: Record<string, unknown>): string[] {
 }
 
 // Where the model came from: prose-length values that need a label beside them.
+// The typed Ligands and Cofactors lists are left out when the server read the
+// model's file, as in summaryModelFacts.
 export function modelInfoFacts(
   metadata: Record<string, unknown>,
   program: Entity | null,
+  { typedCompounds = true }: { typedCompounds?: boolean } = {},
 ): MetadataFact[] {
   const facts: MetadataFact[] = [];
   const purpose = stringValue(metadata.purpose);
   const modelType = stringValue(metadata.model_type);
   const details = stringValue(metadata.details);
-  const ligands = stringArrayValue(metadata.ligands);
-  const cofactors = stringArrayValue(metadata.cofactors);
+  const ligands = typedCompounds ? stringArrayValue(metadata.ligands) : [];
+  const cofactors = typedCompounds ? stringArrayValue(metadata.cofactors) : [];
   const authors = stringArrayValue(metadata.authors);
   const altLocFraction = numberValue(metadata.altloc_fraction);
   const unmodeledFraction = numberValue(metadata.unmodeled_fraction);

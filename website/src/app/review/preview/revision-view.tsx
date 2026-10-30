@@ -11,7 +11,9 @@ import {
   structureMaps,
 } from "@/lib/entities";
 import { formatEntryLabel } from "@/lib/entry-label";
+import { modeledCompoundsView } from "@/lib/modeled-compounds";
 import DataTable from "@/app/components/DataTable";
+import ModeledCompoundList from "@/app/components/ModeledCompoundList";
 import FileTable from "@/app/components/FileTable";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
@@ -148,9 +150,12 @@ export function ModelRevisionPreview({
   const metadata = modelMetadata(model, revision.metadata);
   const previewURL = modelPreviewURL(model, revision.thumbnail_image_url);
   const vitals = modelVitals(metadata);
+  // The preview does not load the entry, so its compounds carry no tags.
+  const compounds = modeledCompoundsView(revision.modeled_compounds, null);
   const infoFacts = modelInfoFacts(
     metadata,
     model ? provenance.programOf(model.id) : null,
+    { typedCompounds: compounds.state === "typed" },
   );
   const hasEvaluations = model
     ? hasModelEvaluations(model, provenance)
@@ -207,6 +212,13 @@ export function ModelRevisionPreview({
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Info</h2>
             <InfoGrid facts={infoFacts} />
+          </section>
+        ) : null}
+
+        {compounds.state !== "typed" ? (
+          <section className={styles.contentSection}>
+            <h2 className={styles.contentHeading}>Compounds in this file</h2>
+            <ModeledCompoundList view={compounds} />
           </section>
         ) : null}
 

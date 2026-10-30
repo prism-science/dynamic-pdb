@@ -126,6 +126,7 @@ export default function EditModelForm({
         thumbnail={thumbnail}
         onThumbnail={thumbnail.choose}
         locks={locks}
+        compoundsFromFile={modelCompoundsFromFile(model)}
         messages={messages}
       />
 
@@ -172,4 +173,24 @@ export default function EditModelForm({
       </div>
     </form>
   );
+}
+
+/**
+ * Whether the server reads this model's compounds from its stored file (any
+ * status but not_stored). Its typed lists then stay as they are: the form
+ * neither shows nor sends them.
+ */
+function modelCompoundsFromFile(model: ModelDetail): boolean {
+  const status = model.modeled_compounds?.status;
+  switch (status) {
+    case undefined:
+    case "not_stored":
+      return false;
+    case "pending":
+    case "done":
+    case "failed":
+      return true;
+    default:
+      throw new Error(`unknown modeled compounds status: ${String(status satisfies never)}`);
+  }
 }

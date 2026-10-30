@@ -675,12 +675,13 @@ test("should_send_run_command_and_parameters_and_let_the_form_override_file_comp
   assert.equal(wire.model.metadata.extensions, undefined);
 });
 
-test("should_put_model_attribution_and_composition_in_the_model_metadata", () => {
-  // given
+test("should_put_model_attribution_and_composition_in_the_model_metadata_when_the_model_file_is_linked", () => {
+  // given: a linked file, which the server does not read, so the typed lists are sent.
   const draft = modelDraft({
     details: " Built with qFit ",
     authors: ["Keedy, D.", " "],
     affiliation: " CUNY ",
+    files: [uploadedFile({ id: "model-file-1", source: "url" })],
     compounds: compoundsFromParsed({ ligands: ["GOL"], cofactors: [] }, [
       { list: "ligands", id: "GOL", reason: "solvent" },
     ]),
@@ -698,6 +699,23 @@ test("should_put_model_attribution_and_composition_in_the_model_metadata", () =>
     cofactors: [],
     extensions: { compound_review: [{ list: "ligands", id: "GOL", reason: "solvent" }] },
   });
+});
+
+test("should_send_no_model_compound_lists_when_the_model_file_is_uploaded", () => {
+  // given: an uploaded file, whose compounds the server reads itself, with
+  // lists the browser parser prefilled.
+  const draft = modelDraft({
+    details: " Built with qFit ",
+    compounds: compoundsFromParsed({ ligands: ["GOL"], cofactors: ["HEM"] }, [
+      { list: "ligands", id: "GOL", reason: "solvent" },
+    ]),
+  });
+
+  // when
+  const metadata = JSON.parse(JSON.stringify(buildCreateModelInput(draft).metadata));
+
+  // then
+  assert.deepEqual(metadata, { details: "Built with qFit", extensions: {} });
 });
 
 // ---------------------------------------------------------- validation --
