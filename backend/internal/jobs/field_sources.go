@@ -31,6 +31,12 @@ func keepDepositorEntryFields(current models.EntryRevision, desired *models.Entr
 	if sources.IsDepositor(models.EntryFieldCrystallography) {
 		desired.Metadata.Crystallography = current.Metadata.Crystallography
 	}
+	if sources.IsDepositor(models.EntryFieldLigands) {
+		desired.Metadata.Ligands = current.Metadata.Ligands
+	}
+	if sources.IsDepositor(models.EntryFieldCofactors) {
+		desired.Metadata.Cofactors = current.Metadata.Cofactors
+	}
 }
 
 // keepDepositorModelFields is keepDepositorEntryFields for model revisions. Archive metrics are

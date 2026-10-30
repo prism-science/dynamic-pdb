@@ -61,7 +61,7 @@ func (r *EntriesRepository) SetRevisionState(
 			    and entry_id = $1
 			    and state = any($3::text[])
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			            published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID, pq.Array(fromStates), string(to))
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -99,7 +99,7 @@ func (r *EntriesRepository) ActivateRevision(
 			    and entry_id = $1
 			    and state = 'in_review'
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			            published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID)
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -131,7 +131,7 @@ func (r *EntriesRepository) RejectRevision(
 			    and entry_id = $1
 			    and state = 'in_review'
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			            published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			            created_at, updated_at`
 	updated, err := r.getRevisionWithArgs(ctx, query, entryID, revisionID)
 	if errors.Is(err, ErrEntryRevisionNotFound) {
@@ -188,6 +188,14 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 	if err != nil {
 		return nil, fmt.Errorf("prepare entry revision field sources: %w", err)
 	}
+	compoundSources, err := optionalJSONToSQL(revision.CompoundSources)
+	if err != nil {
+		return nil, fmt.Errorf("prepare entry revision compound sources: %w", err)
+	}
+	glycanDescriptors, err := optionalJSONToSQL(revision.GlycanDescriptors)
+	if err != nil {
+		return nil, fmt.Errorf("prepare entry revision glycan descriptors: %w", err)
+	}
 	entryState := revision.EntryState
 	if entryState == "" {
 		entryState = models.EntryStateActive
@@ -212,6 +220,8 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    thumbnail_image_url,
 			    metadata,
 			    field_sources,
+			    compound_sources,
+			    glycan_descriptors,
 			    created_by,
 			    created_at,
 			    updated_at
@@ -229,12 +239,14 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 			    :thumbnail_image_url,
 			    cast(:metadata as jsonb),
 			    cast(:field_sources as jsonb),
+			    cast(:compound_sources as jsonb),
+			    cast(:glycan_descriptors as jsonb),
 			    :created_by,
 			    :created_at,
 			    :updated_at
 			  )
 			  returning id, entry_id, parent_revision_id, revision_number, state, entry_state, change_summary,
-			            published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			            published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			            created_at, updated_at`
 
 	var row entryRevisionRow
@@ -251,6 +263,8 @@ func (r *EntriesRepository) Create(ctx context.Context, revision models.EntryRev
 		"thumbnail_image_url": revision.ThumbnailImageURL,
 		"metadata":            metadata,
 		"field_sources":       fieldSources,
+		"compound_sources":    compoundSources,
+		"glycan_descriptors":  glycanDescriptors,
 		"created_by":          revision.CreatedBy,
 		"created_at":          revision.CreatedAt,
 		"updated_at":          revision.UpdatedAt,
@@ -365,7 +379,7 @@ func (r *EntriesRepository) SaveDraft(ctx context.Context, revision models.Entry
 			  where id = :id
 			    and state in ('pending', 'rejected')
 			  returning id, entry_id, parent_revision_id, revision_number, state, change_summary,
-			            published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			            published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			            created_at, updated_at`
 
 	updated, err := r.getRevision(ctx, query, map[string]any{
@@ -517,7 +531,7 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	query := `select id, entry_id, parent_revision_id, revision_number, state,
 			         entry_state,
 			         change_summary,
-			         published_at, title, thumbnail_image_url, metadata, field_sources, created_by,
+			         published_at, title, thumbnail_image_url, metadata, field_sources, compound_sources, glycan_descriptors, created_by,
 			         created_at, updated_at
 			  from entry_revisions`
 	if len(conditions) > 0 {
@@ -563,6 +577,14 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 	if err != nil {
 		return nil, fmt.Errorf("decode field sources: %w", err)
 	}
+	compoundSources, err := optionalJSONFromSQL[models.CompoundSources](row.CompoundSources)
+	if err != nil {
+		return nil, fmt.Errorf("decode compound sources: %w", err)
+	}
+	glycanDescriptors, err := optionalJSONFromSQL[[]models.Glycan](row.GlycanDescriptors)
+	if err != nil {
+		return nil, fmt.Errorf("decode glycan descriptors: %w", err)
+	}
 
 	return &models.EntryRevision{
 		ID:                row.ID,
@@ -577,6 +599,8 @@ func entryRevisionFromRow(row *entryRevisionRow) (*models.EntryRevision, error) 
 		ThumbnailImageURL: stringPtrFromSQL(row.ThumbnailImageURL),
 		Metadata:          metadata,
 		FieldSources:      fieldSources,
+		CompoundSources:   compoundSources,
+		GlycanDescriptors: glycanDescriptors,
 		CreatedBy:         row.CreatedBy,
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
@@ -596,6 +620,8 @@ type entryRevisionRow struct {
 	ThumbnailImageURL sql.NullString `db:"thumbnail_image_url"`
 	Metadata          []byte         `db:"metadata"`
 	FieldSources      []byte         `db:"field_sources"`
+	CompoundSources   []byte         `db:"compound_sources"`
+	GlycanDescriptors []byte         `db:"glycan_descriptors"`
 	CreatedBy         uuid.UUID      `db:"created_by"`
 	CreatedAt         time.Time      `db:"created_at"`
 	UpdatedAt         time.Time      `db:"updated_at"`

@@ -83,7 +83,7 @@ func Test_should_record_no_sources_when_user_revision_of_imported_parent_changes
 	// given
 	parent := EntryRevision{Title: new("Archive title")}
 	revision := parent
-	revision.Metadata.Ligands = &[]string{"ATP"}
+	revision.ThumbnailImageURL = new("https://example.org/thumbnail.png")
 
 	// when
 	sources := EntryRevisionFieldSources(&parent, revision)
@@ -201,4 +201,24 @@ func Test_should_mark_nothing_rcsb_when_entry_leaves_a_value_out_that_the_archiv
 
 	// then
 	assert.Equal(t, FieldSources{EntryFieldTitle: {Source: FieldSourceDepositor}}, sources)
+}
+
+func Test_should_mark_changed_lists_depositor_when_user_creates_entry_revision(t *testing.T) {
+	// given
+	ligands := []string{"NAG"}
+	parent := EntryRevision{
+		Metadata:     EntryMetadata{Ligands: &ligands},
+		FieldSources: FieldSources{EntryFieldLigands: archiveSource("1ABC")},
+	}
+	changedCofactors := []string{"ZN"}
+	revision := EntryRevision{Metadata: EntryMetadata{Ligands: &ligands, Cofactors: &changedCofactors}}
+
+	// when
+	sources := EntryRevisionFieldSources(&parent, revision)
+
+	// then
+	assert.Equal(t, FieldSources{
+		EntryFieldLigands:   archiveSource("1ABC"),
+		EntryFieldCofactors: {Source: FieldSourceDepositor},
+	}, sources)
 }

@@ -1780,6 +1780,8 @@ export interface components {
             protein_sequences: components["schemas"]["ProteinSequence"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
             field_sources?: components["schemas"]["FieldSources"];
+            compound_sources?: components["schemas"]["CompoundSources"];
+            glycan_descriptors?: components["schemas"]["GlycanDescriptors"];
         };
         ModelRevisionAttributes: components["schemas"]["ModelRevisionSummaryAttributes"] & {
             thumbnail_image_url?: string | null;
@@ -1790,6 +1792,89 @@ export interface components {
             metrics: components["schemas"]["Metric"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
             field_sources?: components["schemas"]["FieldSources"];
+        };
+        /**
+         * @description The decision record of the revision's ligands and cofactors, as the mmCIF extraction derived them: the groups ligands, cofactors and excluded (compounds left out of both lists), each mapping a CCD ID to the rule that placed it. Water and polymer residues are never recorded. A compound a person added to a list has rule depositor; one they removed is no longer in its group. Null when the lists were not derived from a file. Read-only.
+         * @example {
+         *       "ligands": {
+         *         "NAG": {
+         *           "rule": "branched",
+         *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+         *         },
+         *         "SO4": {
+         *           "rule": "list",
+         *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0",
+         *           "review_reason": "often from the buffer: confirm it is part of the sample"
+         *         },
+         *         "LIG": {
+         *           "rule": "depositor"
+         *         }
+         *       },
+         *       "cofactors": {
+         *         "ZN": {
+         *           "rule": "metalc",
+         *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+         *         }
+         *       },
+         *       "excluded": {
+         *         "GOL": {
+         *           "rule": "list",
+         *           "list_version": "cofactors:2026.10.0+metals:2026.10.0+solvents:2026.10.0+covalent:2026.10.0+ccd-types:2026.10.0"
+         *         }
+         *       }
+         *     }
+         */
+        CompoundSources: {
+            ligands: {
+                [key: string]: components["schemas"]["CompoundSource"];
+            };
+            cofactors: {
+                [key: string]: components["schemas"]["CompoundSource"];
+            };
+            excluded: {
+                [key: string]: components["schemas"]["CompoundSource"];
+            };
+        } | null;
+        CompoundSource: {
+            /**
+             * @description The rule that placed the compound (see docs/cif-extraction.md), or depositor for a compound a person added.
+             * @enum {string}
+             */
+            rule: "list" | "metalc" | "branched" | "macrolide" | "ccd_type" | "depositor_flag" | "covalent_map" | "ihm_probe" | "depositor";
+            /** @description The reference list version the parser applied. Absent for rule depositor. */
+            list_version?: string;
+            /** @description Why the parser flagged the compound for review, such as a metal ion in a file without metalc rows. Absent when nothing was flagged. */
+            review_reason?: string;
+        };
+        /** @description One glycan per branched entity of the entry's mmCIF, with the WURCS descriptors that keep the branching a list of CCD IDs loses. Empty when the file has no branched entity; null when it was not read. Read-only. */
+        GlycanDescriptors: components["schemas"]["Glycan"][] | null;
+        /**
+         * @example {
+         *       "entity_id": "2",
+         *       "compound_ids": [
+         *         "BMA",
+         *         "NAG"
+         *       ],
+         *       "descriptors": [
+         *         {
+         *           "descriptor": "WURCS=2.0/2,3,2/[a2122h-1b_1-5_2*NCC/3=O][a1122h-1b_1-5]/1-1-2/a4-b1_b4-c1",
+         *           "type": "WURCS",
+         *           "program": "PDB2Glycan",
+         *           "program_version": "1.1.0"
+         *         }
+         *       ]
+         *     }
+         */
+        Glycan: {
+            entity_id: string;
+            compound_ids: string[];
+            descriptors: components["schemas"]["GlycanDescriptor"][];
+        };
+        GlycanDescriptor: {
+            descriptor: string;
+            type: string;
+            program?: string;
+            program_version?: string;
         };
         /** @description Where the values of the revision's archive-synced fields came from, keyed by JSON pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free for an archive metric). A field without a key was not typed by a depositor, so the archive sync may update it. Null for revisions stored before sources were recorded; those were imported from the archive. Read-only. */
         FieldSources: {

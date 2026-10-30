@@ -191,3 +191,24 @@ func Test_should_record_rcsb_title_source_without_release_when_title_comes_from_
 	}, sources)
 	assert.NotContains(t, current, models.EntryFieldTitle)
 }
+
+func Test_should_keep_depositor_lists_when_archive_lists_change(t *testing.T) {
+	// given
+	depositorLigands := []string{"LIG"}
+	archiveLigands := []string{"NAG"}
+	archiveCofactors := []string{"ZN"}
+	current := models.EntryRevision{
+		Metadata:     models.EntryMetadata{Ligands: &depositorLigands},
+		FieldSources: models.FieldSources{models.EntryFieldLigands: {Source: models.FieldSourceDepositor}},
+	}
+	desired := models.EntryRevision{
+		Metadata: models.EntryMetadata{Ligands: &archiveLigands, Cofactors: &archiveCofactors},
+	}
+
+	// when
+	keepDepositorEntryFields(current, &desired)
+
+	// then
+	assert.Equal(t, &depositorLigands, desired.Metadata.Ligands)
+	assert.Equal(t, &archiveCofactors, desired.Metadata.Cofactors)
+}

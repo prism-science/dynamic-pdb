@@ -35,6 +35,30 @@ func fieldSourcesFromSQL(data []byte) (models.FieldSources, error) {
 	return sources, nil
 }
 
+// optionalJSONToSQL encodes a revision value that may not be recorded. Nil is SQL NULL.
+func optionalJSONToSQL[T any](value *T) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal json: %w", err)
+	}
+	return new(string(data)), nil
+}
+
+// optionalJSONFromSQL decodes a revision value that may not be recorded. SQL NULL decodes to nil.
+func optionalJSONFromSQL[T any](data []byte) (*T, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("unmarshal json: %w", err)
+	}
+	return &value, nil
+}
+
 func marshalJSON(value any) (string, error) {
 	if value == nil {
 		return "{}", nil

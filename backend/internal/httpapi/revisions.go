@@ -90,6 +90,8 @@ func (s *Server) createEntryRevisionGraph(
 			return fmt.Errorf("apply entry changes: %w", err)
 		}
 		revision.FieldSources = domainmodels.EntryRevisionFieldSources(base, revision)
+		revision.CompoundSources = domainmodels.EditedCompoundSources(base.CompoundSources, revision.Metadata)
+		revision.GlycanDescriptors = base.GlycanDescriptors
 		if err := s.ensurePDBReferenceAvailable(ctx, revision.Metadata, &entryID); err != nil {
 			return fmt.Errorf("validate entry PDB reference: %w", err)
 		}
@@ -1182,6 +1184,10 @@ func (s *Server) entryRevisionAttributesFromModel(
 	if err != nil {
 		return EntryRevisionAttributes{}, fmt.Errorf("build entry revision field sources: %w", err)
 	}
+	compoundSources, err := compoundSourcesFromModel(revision.CompoundSources)
+	if err != nil {
+		return EntryRevisionAttributes{}, fmt.Errorf("build entry revision compound sources: %w", err)
+	}
 	listItem := entryRevisionSummaryAttributesFromModel(revision)
 	return EntryRevisionAttributes{
 		Id:                listItem.Id,
@@ -1207,6 +1213,8 @@ func (s *Server) entryRevisionAttributesFromModel(
 		ProteinSequences:  proteinSequencesFromModels(sequences),
 		Artifacts:         artifactAttributes,
 		FieldSources:      fieldSources,
+		CompoundSources:   compoundSources,
+		GlycanDescriptors: glycanDescriptorsFromModel(revision.GlycanDescriptors),
 	}, nil
 }
 

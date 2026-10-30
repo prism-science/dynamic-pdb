@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -113,7 +114,15 @@ func Test_should_mark_every_value_copied_from_the_lookup_rcsb_when_entry_is_crea
 
 	// then
 	require.True(t, found)
-	for _, pointer := range domainmodels.EntryArchiveFields {
+	for _, pointer := range archiveLookupFields() {
 		assert.Equal(t, domainmodels.FieldSourceRCSB, sources[pointer].Source, pointer)
 	}
+}
+
+// archiveLookupFields are the archive fields the lookup proposes. It proposes no composition
+// lists: the entry sync derives those from the entry's mmCIF.
+func archiveLookupFields() []domainmodels.FieldPointer {
+	return slices.DeleteFunc(slices.Clone(domainmodels.EntryArchiveFields), func(pointer domainmodels.FieldPointer) bool {
+		return pointer == domainmodels.EntryFieldLigands || pointer == domainmodels.EntryFieldCofactors
+	})
 }

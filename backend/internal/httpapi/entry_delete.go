@@ -150,9 +150,11 @@ func deletionRevision(base domainmodels.EntryRevision, deletedBy uuid.UUID, now 
 		ThumbnailImageURL: base.ThumbnailImageURL,
 		Metadata:          metadata,
 		// The deletion is not a depositor's edit, so the sources stay as they were.
-		FieldSources: base.FieldSources,
-		CreatedBy:    deletedBy,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		FieldSources:      base.FieldSources,
+		CompoundSources:   base.CompoundSources,
+		GlycanDescriptors: base.GlycanDescriptors,
+		CreatedBy:         deletedBy,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
