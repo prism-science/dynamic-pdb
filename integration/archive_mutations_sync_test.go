@@ -107,3 +107,69 @@ func mmCIFWithMutationRows(pdbID string, differenceRows string) string {
 		"_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n" +
 		"ATOM N CYS A 4\n#\n"
 }
+
+func Test_should_store_compounds_and_their_record_when_sync_applies_new_archive_version(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given: an entry at version 1.0 without lists, and RCSB version 1.1 whose mmCIF has a sulfate
+	root := repoRoot(t)
+	backendBinaryPath := buildBackend(t, root)
+	database := setupDB(t)
+	auth := seedUserAndIssueToken(t, database)
+	pdbID := integrationPDBID()
+	fixture := seedScheduledDataSyncEntry(t, database, auth.UserID, pdbID)
+	rcsb := newRCSBStub(t, pdbID)
+	rcsb.coordinateFile = mmCIFWithMutationRows(pdbID, "1 THR UNP P11111 CYS 54 'engineered mutation'\n") +
+		"loop_\n_pdbx_entity_nonpoly.entity_id\n_pdbx_entity_nonpoly.name\n_pdbx_entity_nonpoly.comp_id\n2 'SULFATE ION' SO4\n#\n"
+	defer rcsb.Close()
+	setRCSBURLs(t, rcsb.URL())
+	s3 := newS3Stub(t)
+	defer s3.Close()
+
+	// when
+	startBackend(t, root, backendBinaryPath, s3.URL())
+	var activeRevisionID uuid.UUID
+	require.Eventually(t, func() bool {
+		err := database.Conn.QueryRowContext(t.Context(),
+			`select id from entry_revisions where entry_id = $1 and state = 'active'`, fixture.EntryID,
+		).Scan(&activeRevisionID)
+		return err == nil && activeRevisionID != fixture.RevisionID
+	}, 20*time.Second, 100*time.Millisecond)
+
+	// then
+	var rawMetadata, rawSources, rawFieldSources []byte
+	var rawGlycans []byte
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select metadata, compound_sources, glycan_descriptors, field_sources from entry_revisions where id = $1`,
+		activeRevisionID,
+	).Scan(&rawMetadata, &rawSources, &rawGlycans, &rawFieldSources))
+	var metadata struct {
+		Ligands   []string `json:"ligands"`
+		Cofactors []string `json:"cofactors"`
+	}
+	require.NoError(t, json.Unmarshal(rawMetadata, &metadata))
+	assert.Equal(t, []string{"SO4"}, metadata.Ligands)
+	assert.Equal(t, []string{}, metadata.Cofactors)
+	var sources struct {
+		Ligands map[string]struct {
+			Rule         string `json:"rule"`
+			ReviewReason string `json:"review_reason"`
+		} `json:"ligands"`
+	}
+	require.NoError(t, json.Unmarshal(rawSources, &sources))
+	assert.Equal(t, "list", sources.Ligands["SO4"].Rule)
+	assert.NotEmpty(t, sources.Ligands["SO4"].ReviewReason)
+	assert.JSONEq(t, `[]`, string(rawGlycans))
+	var fieldSources map[string]struct {
+		Source  string `json:"source"`
+		Release string `json:"release"`
+	}
+	require.NoError(t, json.Unmarshal(rawFieldSources, &fieldSources))
+	assert.Equal(t, "rcsb", fieldSources["/metadata/ligands"].Source)
+	assert.Equal(t, "1.1", fieldSources["/metadata/ligands"].Release)
+}

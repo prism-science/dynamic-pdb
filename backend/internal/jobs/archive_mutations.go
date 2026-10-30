@@ -1,7 +1,6 @@
 package jobs
 
 import (
-	"context"
 	"slices"
 
 	"dynamic-pdb/backend/internal/models"
@@ -15,17 +14,6 @@ type archiveMutations struct {
 	// complete is false when the file could not be parsed or was not read to its coordinates;
 	// then sets is empty and the entities keep their stored mutations.
 	complete bool
-}
-
-// readArchiveMutations reads the mutation sets from the head of the entry's RCSB mmCIF. A failed
-// download is an error, so the job retries; a file that cannot be read completely leaves the
-// mutations as they are.
-func (s *entrySyncStrategy) readArchiveMutations(ctx context.Context, pdbID string) (archiveMutations, error) {
-	file, err := readArchiveFile(ctx, s.rcsbClient, s.logger, pdbID)
-	if err != nil {
-		return archiveMutations{}, err
-	}
-	return file.mutations, nil
 }
 
 // applyArchiveMutations returns desired with each polymer entity's mutations taken from the

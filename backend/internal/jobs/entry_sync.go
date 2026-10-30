@@ -101,7 +101,8 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, job models.DataSyncJo
 }
 
 // applyArchiveVersion activates a sync revision with the archive's values when they differ from
-// the active revision's. Values a depositor typed stay as they are.
+// the active revision's: the RCSB entry's values, and the mutations and compounds of the head of
+// its mmCIF. Values a depositor typed stay as they are.
 func (s *entrySyncStrategy) applyArchiveVersion(
 	ctx context.Context,
 	currentRevision models.EntryRevision,
@@ -125,16 +126,17 @@ func (s *entrySyncStrategy) applyArchiveVersion(
 	if err != nil {
 		return fmt.Errorf("build entry update: %w", err)
 	}
-	mutations, err := s.readArchiveMutations(ctx, source.pdbID)
+	file, err := readArchiveFile(ctx, s.rcsbClient, s.logger, source.pdbID)
 	if err != nil {
-		return fmt.Errorf("read archive mutations: %w", err)
+		return fmt.Errorf("read archive mmCIF: %w", err)
 	}
-	desiredPolymerEntities = applyArchiveMutations(desiredPolymerEntities, currentPolymerEntities, mutations)
+	desiredPolymerEntities = applyArchiveMutations(desiredPolymerEntities, currentPolymerEntities, file.mutations)
 	desiredPolymerEntities = applyDepositorPolymerEntities(
 		desiredPolymerEntities,
 		currentRevision.Metadata.DepositorPolymerEntities,
 	)
 	keepDepositorEntryFields(currentRevision, &desiredRevision)
+	compositionSynced := applyArchiveComposition(currentRevision, &desiredRevision, file)
 
 	entryRevisionChanged, polymerEntitiesChanged := compareEntryUpdate(
 		currentRevision,
@@ -157,6 +159,7 @@ func (s *entrySyncStrategy) applyArchiveVersion(
 		desiredRevision,
 		desiredPolymerEntities,
 		polymerEntitiesChanged,
+		compositionSynced,
 		source,
 	); err != nil {
 		return fmt.Errorf("save entry update: %w", err)

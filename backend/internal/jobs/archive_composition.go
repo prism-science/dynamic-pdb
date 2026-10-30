@@ -43,6 +43,48 @@ func compositionFromResult(result cif.Result) (archiveComposition, error) {
 	}, nil
 }
 
+// applyArchiveComposition puts into desired the composition the entry sync takes from the entry's
+// mmCIF, and reports whether it took it from the file. Lists a person set, and the stored values
+// when the file could not be read completely, are kept as current holds them, with the decision
+// record and glycans that go with them.
+func applyArchiveComposition(current models.EntryRevision, desired *models.EntryRevision, file archiveFile) bool {
+	if entryListsPersonSet(current) || file.composition == nil {
+		desired.Metadata.Ligands = current.Metadata.Ligands
+		desired.Metadata.Cofactors = current.Metadata.Cofactors
+		desired.CompoundSources = current.CompoundSources
+		desired.GlycanDescriptors = current.GlycanDescriptors
+		return false
+	}
+	values := compoundValuesFromComposition(*file.composition)
+	desired.Metadata.Ligands = values.Ligands
+	desired.Metadata.Cofactors = values.Cofactors
+	desired.CompoundSources = values.CompoundSources
+	desired.GlycanDescriptors = values.GlycanDescriptors
+	return true
+}
+
+// entryListsPersonSet reports whether a person set the revision's composition lists, so they are
+// kept. Lists a person changed carry depositor sources. Lists without a decision record were not
+// derived from the file by these rules, so a person typed them; the C1 migrations set no lists
+// on archive entries.
+func entryListsPersonSet(revision models.EntryRevision) bool {
+	if revision.FieldSources.IsDepositor(models.EntryFieldLigands) ||
+		revision.FieldSources.IsDepositor(models.EntryFieldCofactors) {
+		return true
+	}
+	listsSet := revision.Metadata.Ligands != nil || revision.Metadata.Cofactors != nil
+	return listsSet && revision.CompoundSources == nil
+}
+
+func compoundValuesFromComposition(composition archiveComposition) models.ArchiveCompoundValues {
+	return models.ArchiveCompoundValues{
+		Ligands:           new(composition.ligands),
+		Cofactors:         new(composition.cofactors),
+		CompoundSources:   new(composition.sources),
+		GlycanDescriptors: new(composition.glycans),
+	}
+}
+
 // compoundGroupFromResult returns the CCD IDs of one list, in the parser's order, and their
 // record. Every compound in the list must have a record.
 func compoundGroupFromResult(

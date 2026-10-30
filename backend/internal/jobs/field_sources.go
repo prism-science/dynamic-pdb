@@ -102,6 +102,29 @@ func archiveEntryFieldSources(
 	return archiveFieldSources(current, models.EntryArchiveFields, source, retrievedAt)
 }
 
+// syncEntryFieldSources returns the sources of an entry revision the sync creates when it applies
+// a new archive version. When the sync kept the stored lists instead of taking them from the
+// entry's mmCIF (applyArchiveComposition), the lists keep the sources they had.
+func syncEntryFieldSources(
+	current models.FieldSources,
+	source archiveRevisionSource,
+	retrievedAt time.Time,
+	compositionSynced bool,
+) models.FieldSources {
+	sources := archiveEntryFieldSources(current, source, retrievedAt)
+	if compositionSynced {
+		return sources
+	}
+	for _, pointer := range []models.FieldPointer{models.EntryFieldLigands, models.EntryFieldCofactors} {
+		if previous, ok := current[pointer]; ok {
+			sources[pointer] = previous
+		} else {
+			delete(sources, pointer)
+		}
+	}
+	return sources
+}
+
 // removalTitleFieldSources returns the sources of a sync revision that takes its title from
 // RCSB's removal record. NULL sources stay NULL: they mean every field came from the archive
 // import (decision D1), which still holds. The removal record has no archive version, so the

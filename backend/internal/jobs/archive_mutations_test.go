@@ -146,7 +146,8 @@ func Test_should_read_mutation_sets_when_rcsb_mmcif_is_complete(t *testing.T) {
 	strategy, logs := entryStrategyServing(t, mmCIFWithMutation+"loop_\n_atom_site.group_PDB\nATOM\n#\n")
 
 	// when
-	mutations, err := strategy.readArchiveMutations(context.Background(), "1ABC")
+	file, err := readArchiveFile(context.Background(), strategy.rcsbClient, strategy.logger, "1ABC")
+	mutations := file.mutations
 
 	// then
 	require.NoError(t, err)
@@ -161,7 +162,8 @@ func Test_should_warn_and_keep_stored_mutations_when_rcsb_mmcif_ends_before_coor
 	strategy, logs := entryStrategyServing(t, mmCIFWithMutation+"#"+string(bytes.Repeat([]byte(" "), int(cif.HeadReadLimit))))
 
 	// when
-	mutations, err := strategy.readArchiveMutations(context.Background(), "1ABC")
+	file, err := readArchiveFile(context.Background(), strategy.rcsbClient, strategy.logger, "1ABC")
+	mutations := file.mutations
 
 	// then
 	require.NoError(t, err)
@@ -180,7 +182,7 @@ func Test_should_return_error_when_rcsb_serves_no_mmcif(t *testing.T) {
 	}
 
 	// when
-	_, err := strategy.readArchiveMutations(context.Background(), "1ABC")
+	_, err := readArchiveFile(context.Background(), strategy.rcsbClient, strategy.logger, "1ABC")
 
 	// then
 	require.ErrorIs(t, err, rcsb.ErrNotFound)

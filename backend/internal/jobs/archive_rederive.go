@@ -369,34 +369,12 @@ func (j *ArchiveRederiveJob) skipReason(ctx context.Context, row models.ArchiveR
 	return "", nil
 }
 
-// entryListsPersonSet reports whether a person set the revision's composition lists, so they are
-// kept. Lists a person changed carry depositor sources. Lists without a decision record were not
-// derived from the file by these rules, so a person typed them; the C1 migrations set no lists
-// on archive entries.
-func entryListsPersonSet(revision models.EntryRevision) bool {
-	if revision.FieldSources.IsDepositor(models.EntryFieldLigands) ||
-		revision.FieldSources.IsDepositor(models.EntryFieldCofactors) {
-		return true
-	}
-	listsSet := revision.Metadata.Ligands != nil || revision.Metadata.Cofactors != nil
-	return listsSet && revision.CompoundSources == nil
-}
-
 func compoundValuesOf(revision models.EntryRevision) models.ArchiveCompoundValues {
 	return models.ArchiveCompoundValues{
 		Ligands:           revision.Metadata.Ligands,
 		Cofactors:         revision.Metadata.Cofactors,
 		CompoundSources:   revision.CompoundSources,
 		GlycanDescriptors: revision.GlycanDescriptors,
-	}
-}
-
-func compoundValuesFromComposition(composition archiveComposition) models.ArchiveCompoundValues {
-	return models.ArchiveCompoundValues{
-		Ligands:           new(composition.ligands),
-		Cofactors:         new(composition.cofactors),
-		CompoundSources:   new(composition.sources),
-		GlycanDescriptors: new(composition.glycans),
 	}
 }
 

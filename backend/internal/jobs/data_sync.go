@@ -207,7 +207,11 @@ func compareEntryUpdate(
 		!reflect.DeepEqual(currentRevision.Metadata.Resolution, desiredRevision.Metadata.Resolution) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Method, desiredRevision.Metadata.Method) ||
 		!reflect.DeepEqual(currentRevision.Metadata.SpaceGroup, desiredRevision.Metadata.SpaceGroup) ||
-		!reflect.DeepEqual(currentRevision.Metadata.Crystallography, desiredRevision.Metadata.Crystallography)
+		!reflect.DeepEqual(currentRevision.Metadata.Crystallography, desiredRevision.Metadata.Crystallography) ||
+		!reflect.DeepEqual(currentRevision.Metadata.Ligands, desiredRevision.Metadata.Ligands) ||
+		!reflect.DeepEqual(currentRevision.Metadata.Cofactors, desiredRevision.Metadata.Cofactors) ||
+		!reflect.DeepEqual(currentRevision.CompoundSources, desiredRevision.CompoundSources) ||
+		!reflect.DeepEqual(currentRevision.GlycanDescriptors, desiredRevision.GlycanDescriptors)
 	polymerEntitiesChanged := !polymerEntitiesHaveSameData(
 		currentPolymerEntities,
 		desiredPolymerEntities,
@@ -229,6 +233,7 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	desiredRevision models.EntryRevision,
 	desiredPolymerEntities []models.PolymerEntity,
 	polymerEntitiesChanged bool,
+	compositionSynced bool,
 	source archiveRevisionSource,
 ) error {
 	now := j.now()
@@ -239,7 +244,11 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
 	revision.Metadata.Crystallography = desiredRevision.Metadata.Crystallography
-	revision.FieldSources = archiveEntryFieldSources(currentRevision.FieldSources, source, now)
+	revision.Metadata.Ligands = desiredRevision.Metadata.Ligands
+	revision.Metadata.Cofactors = desiredRevision.Metadata.Cofactors
+	revision.CompoundSources = desiredRevision.CompoundSources
+	revision.GlycanDescriptors = desiredRevision.GlycanDescriptors
+	revision.FieldSources = syncEntryFieldSources(currentRevision.FieldSources, source, now, compositionSynced)
 	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, desiredPolymerEntities, polymerEntitiesChanged)
 }
 
