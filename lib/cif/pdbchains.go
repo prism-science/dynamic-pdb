@@ -207,6 +207,20 @@ func (c *pdbChains) position(instance compoundInstance) chainPosition {
 	}
 }
 
+// chainsUndeclared reports whether the file leaves open which residues the
+// instance's chain holds: the file has no SEQRES records at all, or the
+// instance's chain has ATOM records but no SEQRES. A chain with neither (the
+// glycan and ligand chains of an archive file) is not a polymer chain, so
+// nothing is left open about it.
+func (c *pdbChains) chainsUndeclared(instance compoundInstance) bool {
+	if len(c.seqres) == 0 {
+		return true
+	}
+	_, hasSeqres := c.seqres[instance.asymID]
+	_, hasAtoms := c.atomRange[instance.asymID]
+	return hasAtoms && !hasSeqres
+}
+
 func (c *pdbChains) inPolymerBlock(instance compoundInstance) bool {
 	terLine, hasTer := c.terLine[instance.asymID]
 	firstLine, seen := c.firstLine[instance]

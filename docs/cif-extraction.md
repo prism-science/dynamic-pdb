@@ -120,10 +120,20 @@ A PDB-format file has no entity types, so the parser reads its chains instead
   free glutamate after the chain's `TER` record is. A residue named in `SEQRES`
   counts whatever its CCD type (the antibiotic residues of 7LTB are
   "non-polymer" in the CCD).
-- **Chains without `SEQRES`** (common in depositor-made files): a residue in the
-  polymer block counts as part of the chain only when its CCD type is a peptide
-  or nucleotide type, so a ligand numbered inside the protein's range is never
-  dropped.
+- **Chains without `SEQRES`** (common in depositor-made files): when the file
+  has no `SEQRES` records at all, or the residue's chain has `ATOM` records but
+  no `SEQRES`, nothing says which residues the chain holds, so the parser does
+  not guess. A residue that could be a chain residue is kept and flagged "the
+  file does not say which residues belong to its polymer chains: confirm this
+  residue is not part of one": a peptide or nucleotide residue anywhere (MSE in
+  the chain, a free glutamate), and any other residue in the chain's polymer
+  block that `MODRES` does not list (an ATP numbered inside the protein's
+  range). It goes to the list the reference lists choose (rule `list`, or
+  `branched` for a sugar), and it is kept even when the lists would leave it
+  out. Other residues outside the chains are sorted as usual. A chain with
+  neither `SEQRES` nor `ATOM` records (the glycan and ligand chains of an
+  archive file such as 7LTB) is not a polymer chain, so this does not apply to
+  it.
 - **Everything else goes by its CCD type** (`lib/cif/ccd_types.json`): a sugar
   is a glycan (Ligands, rule `branched`); a non-polymer goes by the reference
   lists. A peptide or nucleotide residue outside any chain is a ligand flagged
@@ -152,9 +162,12 @@ sorted once (`classifyCompounds` in `lib/cif/sorting.go`):
    `_entity.type` decides: `water` is dropped, a `polymer` residue (MSE in a
    chain) is skipped. An mmCIF file without `_entity` uses its own
    `_chem_comp.type`, then the CCD table (`ccd_types.json`), as a PDB-format file
-   does (see above); there a peptide or nucleotide residue with a
-   `label_seq_id` counts as part of a chain, and one without is an ordinary
-   ligand (such a file has no `SEQRES` to show the polymer uses it). Water and
+   does (see above). Nothing in such a file says which residues its chains
+   hold, so it follows the rule for PDB chains without `SEQRES`: a peptide or
+   nucleotide residue anywhere, and any residue with a `label_seq_id`, is kept
+   and flagged instead of guessed. `_pdbx_struct_mod_residue` still adds a
+   covalently bound cofactor (PLP for LLP) but, unlike `MODRES`, does not make
+   a residue a chain member. Water and
    polymer residues are never recorded.
 2. **The depositor's flag** (`_pdbx_entity_instance_feature`) overrides the
    lists: SUBJECT OF INVESTIGATION keeps the instance as a ligand (even a listed
@@ -363,7 +376,7 @@ The CLI uploads `ligands` and `cofactors` for coordinate files. It reads the fir
 
 Scalar fields read from a data-folder file (for example R-free from `models/5amf_model.cif`) are streamed with `cif.ScalarValueFromReader`; the file is never loaded whole.
 
-**Review flags.** A compound the parser flags (an ambiguous compound such as sulfate, a metal with no `metalc` link, a residue outside the polymer chain) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
+**Review flags.** A compound the parser flags (an ambiguous compound such as sulfate, a metal with no `metalc` link, a residue outside the polymer chain, a residue that could be a chain residue in a file without `SEQRES` or `_entity`) is uploaded in the model's `extensions` object, which the backend declares as open data on `ModelMetadata`:
 
 ```json
 "extensions": {"compound_review": [

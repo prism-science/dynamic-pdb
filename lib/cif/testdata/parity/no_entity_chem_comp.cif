@@ -1,8 +1,8 @@
 data_NOENT
 # Synthetic: a depositor-made file without _entity. Its own _chem_comp calls
 # NAG a non-polymer (so the lists sort it) and gives QQQ an unknown type
-# (flagged). MSE with a label_seq_id is in the chain; the free MSE is not and,
-# with no SEQRES to name it, is an ordinary ligand. BGC is not in _chem_comp,
+# (flagged). Without _entity nothing says what the chains hold, so MSE, with a
+# label_seq_id or free, is kept and flagged. BGC is not in _chem_comp,
 # so the CCD table makes it a sugar (branched).
 _entry.id NOENT
 #

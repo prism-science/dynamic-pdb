@@ -152,13 +152,16 @@ func Test_should_leave_a_compound_out_when_the_depositor_says_so_even_if_its_ent
 	assert.Equal(t, map[string]CompoundSource{"GOL": source(ruleDepositorFlag)}, result.CompoundSources.Excluded)
 }
 
-func Test_should_sort_by_ccd_type_and_chain_position_when_file_has_no_entity(t *testing.T) {
-	// given: MSE in a chain (label_seq_id set) and a free MSE, a sugar, a ligand.
+func Test_should_flag_residues_that_could_be_chain_residues_when_file_has_no_entity(t *testing.T) {
+	// given: MSE in a chain (label_seq_id set) and a free MSE, glycerol in a
+	// chain, and a free sugar and ligand.
 	text := mmcifFile(hetatmLoop(
 		"HETATM MSE A . 2 2 SE SE 1",
 		"HETATM MSE A . 2 2 CA C 1",
 		"HETATM MSE B . . 301 SE SE 1",
 		"HETATM MSE B . . 301 CA C 1",
+		"HETATM GOL A . 3 3 C1 C 1",
+		"HETATM GOL A . 3 3 C2 C 1",
 		"HETATM NAG C . . 401 C1 C 1",
 		"HETATM NAG C . . 401 C2 C 1",
 		"HETATM ATP D . . 501 PG P 1",
@@ -168,11 +171,17 @@ func Test_should_sort_by_ccd_type_and_chain_position_when_file_has_no_entity(t *
 	// when
 	result := extractTextResult(t, text, false)
 
-	// then: the free MSE is not in a chain, and with no SEQRES to show the
-	// polymer uses it, it is an ordinary ligand.
-	assert.Equal(t, []Compound{{ID: "ATP"}, {ID: "MSE"}, {ID: "NAG"}}, result.Ligands)
+	// then: without _entity nothing says what the chains hold, so both MSE
+	// and the glycerol in a chain are kept and flagged (the glycerol although
+	// the lists leave glycerol out); the free sugar and ligand are not.
+	assert.Equal(t, []Compound{
+		{ID: "ATP"},
+		{ID: "GOL", NeedsReview: true, ReviewReason: undeclaredChainReason},
+		{ID: "MSE", NeedsReview: true, ReviewReason: undeclaredChainReason},
+		{ID: "NAG"},
+	}, result.Ligands)
 	assert.Equal(t, map[string]CompoundSource{
-		"ATP": source(ruleList), "MSE": source(ruleList), "NAG": source(ruleBranched),
+		"ATP": source(ruleList), "GOL": source(ruleList), "MSE": source(ruleList), "NAG": source(ruleBranched),
 	}, result.CompoundSources.Ligands)
 }
 

@@ -630,6 +630,44 @@
       }
     ]
   },
+  "parity/no_entity_3CEB.cif": {
+    "atom_count": 161,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "cofactors",
+        "id": "PLP",
+        "rule": "covalent_map"
+      },
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "LLP",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
+      },
+      {
+        "list": "ligands",
+        "id": "MSE",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
+      },
+      {
+        "list": "ligands",
+        "id": "SO4",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
   "parity/no_entity_chem_comp.cif": {
     "atom_count": 11,
     "modeled_residues": 1,
@@ -643,7 +681,9 @@
       {
         "list": "ligands",
         "id": "MSE",
-        "rule": "list"
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
       },
       {
         "list": "ligands",
@@ -693,6 +733,39 @@
       {
         "list": "ligands",
         "id": "PO4",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "often from the buffer: confirm it is part of the sample"
+      }
+    ]
+  },
+  "parity/no_seqres_3CEB.pdb": {
+    "atom_count": 161,
+    "modeled_residues": 8,
+    "unique_protein_chains": 1,
+    "compounds": [
+      {
+        "list": "excluded",
+        "id": "GOL",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "LLP",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
+      },
+      {
+        "list": "ligands",
+        "id": "MSE",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
+      },
+      {
+        "list": "ligands",
+        "id": "SO4",
         "rule": "list",
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
@@ -769,7 +842,9 @@
       {
         "list": "ligands",
         "id": "ATP",
-        "rule": "list"
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
       },
       {
         "list": "ligands",
@@ -781,7 +856,16 @@
       {
         "list": "ligands",
         "id": "GLU",
-        "rule": "list"
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
+      },
+      {
+        "list": "ligands",
+        "id": "MSE",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one"
       }
     ]
   },

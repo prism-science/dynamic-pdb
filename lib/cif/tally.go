@@ -37,8 +37,9 @@ const (
 	chainMember
 	// chainSpanOnly: within a chain, but nothing names it as a chain residue:
 	// an mmCIF label_seq_id (writers set it unevenly for ligands), or a
-	// PDB-format chain without SEQRES records. Only a peptide or nucleotide
-	// counts as in the chain.
+	// PDB-format chain without SEQRES records. When the file says what its
+	// chains hold, only a peptide or nucleotide counts as in the chain; when it
+	// does not (instanceFacts.chainsUndeclared), the residue is flagged.
 	chainSpanOnly
 )
 
@@ -64,6 +65,12 @@ type instanceFacts struct {
 	// chain: an mmCIF label_seq_id places it within one; a PDB-format file
 	// decides it after the read (pdbChains.position).
 	chain chainPosition
+	// chainsUndeclared is set when the file does not say which residues the
+	// instance's polymer chain holds: an mmCIF file without _entity, a
+	// PDB-format file without SEQRES records, or a PDB-format chain with ATOM
+	// records but no SEQRES. A residue that could be a chain residue is then
+	// flagged instead of guessed.
+	chainsUndeclared bool
 	// laterModel is set when the instance appears only in models after the
 	// first; an integrative (IHM) file lists those compounds too.
 	laterModel bool

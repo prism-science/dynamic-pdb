@@ -148,6 +148,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	instances := tally.instanceFacts(coordinatesRead)
 	for instance, facts := range instances {
 		facts.chain = chains.position(instance)
+		facts.chainsUndeclared = chains.chainsUndeclared(instance)
 		instances[instance] = facts
 	}
 	switch {

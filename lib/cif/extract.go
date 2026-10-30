@@ -124,6 +124,13 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 
 	annotations := readAnnotations(document, atomSiteHasIHMModels(document))
 	result.Warnings = append(result.Warnings, annotations.warnings...)
+	if !annotations.entitiesRead {
+		// Without _entity, nothing says which residues the chains hold.
+		for instance, facts := range instances {
+			facts.chainsUndeclared = true
+			instances[instance] = facts
+		}
+	}
 	sorted, err := classifyCompounds(instances, links, annotations, reference)
 	if err != nil {
 		return Result{}, fmt.Errorf("classify compounds: %w", err)

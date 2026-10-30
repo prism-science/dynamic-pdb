@@ -24,9 +24,10 @@ var parityFiles = []string{
 	"parity/wrapped_rows.cif", "parity/ihm_probe.cif", "parity/entity_rules.cif",
 	"parity/no_entity_chem_comp.cif", "parity/metal_partner_flags.cif", "parity/pair_form_layout.cif",
 	"parity/two_data_blocks.cif", "parity/no_atom_site.cif", "parity/unlocated_metalc.cif",
+	"parity/no_entity_3CEB.cif",
 	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb", "6OIM.pdb", "2HQZ.pdb",
 	"parity/pdb_rules.pdb", "parity/pdb_no_metal_link.pdb", "parity/pdb_seqres_columns.pdb",
-	"parity/pdb_blank_chain.pdb",
+	"parity/pdb_blank_chain.pdb", "parity/no_seqres_3CEB.pdb",
 }
 
 // parityExcluded is the list name the golden gives a compound left out.
