@@ -771,9 +771,42 @@ export interface components {
             id: string;
             attributes: components["schemas"]["ModelDetailAttributes"];
         };
-        /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from. */
+        /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from, and the compounds its file models. */
         ModelDetailAttributes: components["schemas"]["ModelAttributes"] & {
             field_sources: components["schemas"]["FieldSources"];
+            modeled_compounds: components["schemas"]["ModeledCompounds"];
+        };
+        /** @description Every copy of every compound the model's file models outside its polymer chains, water excepted, read by the server from the stored file. Read-only: buffers are kept and no reference-list rule is applied; the entry's ligands and cofactors carry those judgments. status: not_stored (the model has no file in our bucket, so nothing is read and the typed metadata ligands and cofactors stand), pending (not read yet, or waiting for a retry), done, failed (last_error says why). copies is empty unless status is done. */
+        ModeledCompounds: {
+            /** @enum {string} */
+            status: "not_stored" | "pending" | "done" | "failed";
+            /** @description The version of the parser that read the file, when status is done. */
+            parser_version?: string | null;
+            /** @description False when a limit stopped the list, so copies may be missing. */
+            complete?: boolean | null;
+            warnings: string[];
+            last_error?: string | null;
+            /** Format: date-time */
+            read_at?: string | null;
+            /** @description In CCD ID order, then by chain and residue number. */
+            copies: components["schemas"]["ModeledCompoundCopy"][];
+        };
+        /** @description One copy of a compound in the model's file. auth_asym_id, auth_seq_id and pdb_ins_code are the chain, residue number and insertion code viewers show; label_asym_id and entity_id are null for a PDB-format file. */
+        ModeledCompoundCopy: {
+            ccd_id: string;
+            label_asym_id?: string | null;
+            auth_asym_id?: string | null;
+            auth_seq_id?: string | null;
+            pdb_ins_code?: string | null;
+            entity_id?: string | null;
+            /**
+             * @description Where the copy was read: an mmCIF scheme category, the mmCIF coordinates, or the HETATM records of a PDB-format file.
+             * @enum {string}
+             */
+            source: "nonpoly_scheme" | "branch_scheme" | "atom_site" | "pdb_hetatm";
+            /** @description Set when the file cannot tell whether the residue is a compound at all, for example a file without SEQRES or _entity, where it could be a chain residue. */
+            needs_review: boolean;
+            review_reason?: string | null;
         };
         ModelData: {
             type: string;
@@ -1419,7 +1452,15 @@ export interface components {
             altloc_fraction?: number;
             /** Format: double */
             unmodeled_fraction?: number;
+            /**
+             * @deprecated
+             * @description Typed list of the model's ligands. Kept for models whose file is not in our bucket; for an uploaded file, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
+             */
             ligands?: string[] | null;
+            /**
+             * @deprecated
+             * @description Typed list of the model's cofactors. Kept for models whose file is not in our bucket; for an uploaded file, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
+             */
             cofactors?: string[] | null;
             residue_data?: components["schemas"]["ResidueData"][];
             extensions?: components["schemas"]["Extensions"];
@@ -1790,6 +1831,7 @@ export interface components {
             metrics: components["schemas"]["Metric"][];
             artifacts: components["schemas"]["ArtifactAttributes"][];
             field_sources?: components["schemas"]["FieldSources"];
+            modeled_compounds: components["schemas"]["ModeledCompounds"];
         };
         /** @description Where the values of the revision's archive-synced fields came from, keyed by JSON pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free for an archive metric). A field without a key was not typed by a depositor, so the archive sync may update it. Null for revisions stored before sources were recorded; those were imported from the archive. Read-only. */
         FieldSources: {

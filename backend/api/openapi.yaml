@@ -2445,14 +2445,95 @@ components:
     ModelDetailAttributes:
       description: >
         A model as the model detail endpoint returns it: the list attributes plus where the
-        values of its archive-synced fields came from.
+        values of its archive-synced fields came from, and the compounds its file models.
       allOf:
         - $ref: "#/components/schemas/ModelAttributes"
         - type: object
-          required: [field_sources]
+          required: [field_sources, modeled_compounds]
           properties:
             field_sources:
               $ref: "#/components/schemas/FieldSources"
+            modeled_compounds:
+              $ref: "#/components/schemas/ModeledCompounds"
+
+    ModeledCompounds:
+      type: object
+      description: >
+        Every copy of every compound the model's file models outside its polymer chains, water
+        excepted, read by the server from the stored file. Read-only: buffers are kept and no
+        reference-list rule is applied; the entry's ligands and cofactors carry those judgments.
+        status: not_stored (the model has no file in our bucket, so nothing is read and the
+        typed metadata ligands and cofactors stand), pending (not read yet, or waiting for a
+        retry), done, failed (last_error says why). copies is empty unless status is done.
+      required: [status, warnings, copies]
+      properties:
+        status:
+          type: string
+          enum: [not_stored, pending, done, failed]
+        parser_version:
+          type: string
+          nullable: true
+          description: The version of the parser that read the file, when status is done.
+        complete:
+          type: boolean
+          nullable: true
+          description: False when a limit stopped the list, so copies may be missing.
+        warnings:
+          type: array
+          items:
+            type: string
+        last_error:
+          type: string
+          nullable: true
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        copies:
+          type: array
+          description: In CCD ID order, then by chain and residue number.
+          items:
+            $ref: "#/components/schemas/ModeledCompoundCopy"
+
+    ModeledCompoundCopy:
+      type: object
+      description: >
+        One copy of a compound in the model's file. auth_asym_id, auth_seq_id and pdb_ins_code
+        are the chain, residue number and insertion code viewers show; label_asym_id and
+        entity_id are null for a PDB-format file.
+      required: [ccd_id, source, needs_review]
+      properties:
+        ccd_id:
+          type: string
+        label_asym_id:
+          type: string
+          nullable: true
+        auth_asym_id:
+          type: string
+          nullable: true
+        auth_seq_id:
+          type: string
+          nullable: true
+        pdb_ins_code:
+          type: string
+          nullable: true
+        entity_id:
+          type: string
+          nullable: true
+        source:
+          type: string
+          enum: [nonpoly_scheme, branch_scheme, atom_site, pdb_hetatm]
+          description: >
+            Where the copy was read: an mmCIF scheme category, the mmCIF coordinates, or the
+            HETATM records of a PDB-format file.
+        needs_review:
+          type: boolean
+          description: >
+            Set when the file cannot tell whether the residue is a compound at all, for example
+            a file without SEQRES or _entity, where it could be a chain residue.
+        review_reason:
+          type: string
+          nullable: true
 
     ModelData:
       type: object
@@ -3795,11 +3876,21 @@ components:
         ligands:
           type: array
           nullable: true
+          deprecated: true
+          description: >
+            Typed list of the model's ligands. Kept for models whose file is not in our bucket;
+            for an uploaded file, modeled_compounds (read from the file) is the record. Still
+            accepted, so released CLIs keep working.
           items:
             type: string
         cofactors:
           type: array
           nullable: true
+          deprecated: true
+          description: >
+            Typed list of the model's cofactors. Kept for models whose file is not in our
+            bucket; for an uploaded file, modeled_compounds (read from the file) is the record.
+            Still accepted, so released CLIs keep working.
           items:
             type: string
         residue_data:
@@ -4604,7 +4695,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/ModelRevisionSummaryAttributes"
         - type: object
-          required: [metadata, residue_data, metrics, artifacts]
+          required: [metadata, residue_data, metrics, artifacts, modeled_compounds]
           properties:
             thumbnail_image_url:
               type: string
@@ -4629,6 +4720,8 @@ components:
                 $ref: "#/components/schemas/ArtifactAttributes"
             field_sources:
               $ref: "#/components/schemas/FieldSources"
+            modeled_compounds:
+              $ref: "#/components/schemas/ModeledCompounds"
 
     FieldSources:
       type: object
