@@ -26,6 +26,8 @@ Records the migrations could not resolve themselves are in `schema_migration_rev
 (`object_type, object_id, issue, details`): PDB-backed entries whose ligand/cofactor lists wait for
 the archive re-derivation (C2), entries merged from models, mutation texts (strings or lists) holding a token that is not a plain substitution, and
 duplicate metric keys. Original model lists are kept in `model_revisions.metadata` and copied there.
+A row a later job settled has `resolved_at` and `resolved_by` (see "Archive re-derivation" below);
+open rows have both NULL.
 
 Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run_artifacts_direction_chk`,
 `run_artifacts_position_chk`, `entry_revisions_composition_lists_chk`) once its violations are repaired:
@@ -143,3 +145,57 @@ ALTER TABLE polymer_entities VALIDATE CONSTRAINT polymer_entities_uniprot_mappin
 
 Also map a `23514` (check violation) to a 4xx in `writeMutationError` in the same change, so a client
 that bypasses validation gets an error it can act on instead of a 500.
+
+## Archive re-derivation (T1-C2)
+
+The archive re-derivation job (`backend/cmd/archive-rederive-job`, CronJob in `deploy/README.md`)
+derives the entry lists, `compound_sources` and `glycan_descriptors` of archive entries, and the
+UniProt-numbered mutations of their polymer entities, from the head of each RCSB mmCIF. It changes
+the active revision in place and logs each revision it looked at in `archive_rederivations`: the
+outcome (described in `V20261030150100__archive_rederivations.sql`), and for a change the old values
+in `before` and the new ones in `after`. When it fills an entry's lists it resolves the entry's
+`ligands_cofactors_rederive_from_archive` row; when an entity's mutations become all parsed it
+resolves the entity's `mutations_need_review` row (`resolved_by = 'archive-rederive-job'`).
+
+Polymer entities are shared by the revisions of an entry, so a mutation the job fixes also shows on
+the entry's archived revisions, as with the C1 migrations.
+
+```sh
+# outcomes so far (dry-run rows apart)
+psql "$DATABASE_URL" -At -c \
+  "select dry_run, outcome, count(*) from archive_rederivations group by 1, 2 order by 1, 2"
+
+# why files failed or were incomplete
+psql "$DATABASE_URL" -At -c \
+  "select outcome, error, count(*) from archive_rederivations
+   where outcome in ('failed', 'skipped_incomplete_file') group by 1, 2 order by 3 desc"
+
+# review rows still open after the job, for the researchers
+psql "$DATABASE_URL" -At -c \
+  "select issue, count(*) from schema_migration_review where resolved_at is null group by 1 order by 1"
+
+# a local dry run of 1000 revisions (from backend/, against the local config's database)
+DYNAMIC_PDB_ARCHIVE_REDERIVE_DRY_RUN=true DYNAMIC_PDB_ARCHIVE_REDERIVE_MAX_ENTRIES_PER_RUN=1000 \
+  go run ./cmd/archive-rederive-job
+```
+
+`revert_archive_rederivation.sql` puts the `before` values back, with the job switched off. It reverts a
+revision only as a whole, and only while the revision is still active and every value the job changed
+still holds what the job wrote; it lists the revisions it skipped. It reopens the review rows the job
+resolved for them and deletes their log rows, so the job would derive them again on its next run.
+Beyond that, RDS point-in-time restore covers 7 days.
+
+```sh
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/inventory/revert_archive_rederivation.sql
+```
+
+Prod run, after the merge with the job off:
+
+1. Dev: switch the job on, let one run finish, check the outcomes.
+2. Prod: one dry run of 1000 (`dryRun: true`, `maxEntriesPerRun: 1000`), then real runs of 5000 per
+   hour off-peak (22:00 to 05:00 UTC), about 15 runs for the ~73,000 archive entries. Watch the API
+   p95 per minute and RDS; switch the job off if p95 doubles.
+3. After the last run: the outcome counts, and the open review rows for the researchers.
+4. Once `entry_revision_malformed_composition_lists` is empty in `schema_inventory.sql`, a follow-up
+   migration validates the composition check:
+   `ALTER TABLE entry_revisions VALIDATE CONSTRAINT entry_revisions_composition_lists_chk;`

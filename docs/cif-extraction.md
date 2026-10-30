@@ -236,6 +236,7 @@ depositor flagged (ligand) next to plain ones (excluded).
 | `depositor_flag` | The depositor's SUBJECT OF INVESTIGATION or NO FUNCTIONAL ROLE flag. |
 | `covalent_map` | A cofactor bound in a modified residue (PLP from LLP). |
 | `ihm_probe` | An experimental probe of an integrative model (left out). |
+| `depositor` | Only in a stored record: a compound a person added to an entry's list (see below). The parser never gives it. |
 
 When one ID is placed in the same group by two rules (a NAG in a glycan and a
 lone NAG), the record keeps the more specific rule, in this order:
@@ -249,8 +250,36 @@ rows of `_pdbx_entity_branch_descriptor` (`descriptor`, `type`, `program`,
 `program_version`). LINUCS and Glycam rows are not kept; a descriptor type the
 parser does not know flags the glycan's compounds.
 
-Nothing stores the record yet: the extract endpoint returns it, and the entry
-revision column comes with the archive backfill (T1-C2).
+### Stored on entry revisions
+
+Entry revisions keep the record in `compound_sources` and the glycans in
+`glycan_descriptors`, next to the `ligands` and `cofactors` lists in the
+metadata. Both are null when the lists were not derived from a file, and entry
+revision responses return them read-only. The stored record has one optional
+field more than the extract endpoint's: `review_reason`, the reason the parser
+flagged the compound (the extract endpoint returns it on the compound in
+`ligands` or `cofactors`). It is left out when nothing was flagged.
+
+Archive entries get both from the first 4 MiB of their RCSB mmCIF, read by
+`readArchiveFile` (`backend/internal/jobs/archive_file.go`), the same head the
+extract endpoint reads:
+
+- The archive re-derivation job (`deploy/README.md`) fills them once, in place,
+  for entries whose lists are unknown.
+- The entry sync takes them from the file again when it applies a new archive
+  version, so they follow the archive.
+
+Both keep the lists, record and glycans as stored when the lists are a person's,
+or when the head could not be parsed or ends before the coordinates. Lists are a
+person's when `field_sources` marks `/metadata/ligands` or `/metadata/cofactors`
+as `depositor`, or when they are set without a record: lists the job or the sync
+derived always carry one.
+
+When a person changes a list in a new revision, the server keeps the record in
+step with it: a compound they add gets rule `depositor` (with no `list_version`),
+one they remove leaves its group, and the others, the excluded group and the
+glycans stay as they were. A revision whose lists were never derived keeps a
+null record.
 
 ## Mutations
 
