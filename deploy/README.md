@@ -194,17 +194,28 @@ about half busy with this. The first run does this for all of prod's ~568,000 ar
 one statement it ran over 5 minutes on prod and slowed the API, so it must stay in pages.
 The job's statements may run for `statementTimeout` (30 seconds) instead of the backend's 10.
 
-It is paused: on 2026-10-27 at 22:04 UTC prod's database stalled on WAL writes after a day of
-heavy checksum writes, and the job stays off until the RDS metrics are understood. Each hourly
-run stops claiming files after 50 minutes and is
-stopped after 55; `maxFilesPerRun` caps the files one run checks (`0` means no cap). The
-rollout starts with a cap of 1000; set it to `0` once the first runs and the S3 bill look
-right:
+On 2026-10-27 at 22:04 UTC prod's database stalled on WAL writes, and the job was paused. The
+RDS metrics showed why: the instance, then a db.t4g.micro, had used up its EBS burst balance
+(`EBSByteBalance%` and `EBSIOBalance%` fell from about 65% to 0 during that evening's fills).
+Prod has run on a db.t4g.small since 22:58 UTC that day, with both balances at 100%, and the
+first fill is done, so later runs only read `artifacts` to find missing rows.
+
+Each hourly run stops claiming files after 50 minutes and is stopped after 55;
+`maxFilesPerRun` caps the files one run checks (`0` means no cap). The job came back on
+2026-10-30 with a cap of 5000: 1000 files took about 2 minutes on prod, so a run spends about
+10 minutes on files, and the ~300,000 files left take about 2.5 days. If either EBS balance
+falls below 50% during a run, lower the cap again:
 
 ```yaml
 checksumJob:
   enabled: true
-  maxFilesPerRun: 1000
+  maxFilesPerRun: 5000
+```
+
+To stop it at once, before a chart change reaches the cluster:
+
+```sh
+kubectl -n dynamicpdb patch cronjob dynamic-pdb-checksum-job -p '{"spec":{"suspend":true}}'
 ```
 
 To run it manually:
