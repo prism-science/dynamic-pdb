@@ -8,12 +8,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
-
-// The compounds a structure file models: every copy of every compound outside
-// the polymer chains, water excepted, as a record of the coordinates. No entry
-// rule applies here: buffers are kept and nothing is split into ligands and
-// cofactors; the entry's lists carry those judgments.
 
 // StructureFormat is the format of a structure file.
 type StructureFormat int
@@ -73,7 +70,33 @@ const (
 	noGroupColumnWarning = "the coordinates have no group_PDB column, so compounds could not be told from polymer residues in them: copies come from the scheme categories only"
 	unfinishedRowWarning = "the %s loop ended inside a row: copies may be missing"
 	extraCopiesWarning   = "%d compound copies in the coordinates are missing from the scheme categories: they were added from the coordinates"
+	skippedCopiesWarning = "%d compound copies were skipped: a compound, chain or residue field is not plain text of at most %d bytes"
 )
+
+// plainCopyText reports whether every field of a copy can be stored and shown
+// as it is: valid UTF-8 of at most maxCopyFieldBytes, without control
+// characters (PostgreSQL rejects a NUL in text).
+func plainCopyText(fields ...string) bool {
+	for _, field := range fields {
+		if len(field) > maxCopyFieldBytes || !utf8.ValidString(field) || strings.ContainsFunc(field, unicode.IsControl) {
+			return false
+		}
+	}
+	return true
+}
+
+// shortReason bounds a review reason that quotes a file's value, on a rune
+// boundary.
+func shortReason(reason string) string {
+	if len(reason) <= maxReviewReasonBytes {
+		return reason
+	}
+	cut := maxReviewReasonBytes
+	for cut > 0 && !utf8.RuneStart(reason[cut]) {
+		cut--
+	}
+	return reason[:cut] + "…"
+}
 
 // ReadModeledCompounds reads every copy of every compound a structure file
 // models outside its polymer chains, water excepted.
@@ -114,9 +137,11 @@ func (c CompoundCopy) key() copyKey {
 }
 
 // copySet keeps the first copy read at each position, up to maxModeledCopies.
+// skipped counts the copies whose fields are not plain text.
 type copySet struct {
-	copies map[copyKey]CompoundCopy
-	full   bool
+	copies  map[copyKey]CompoundCopy
+	full    bool
+	skipped int
 }
 
 func newCopySet() *copySet {
@@ -126,6 +151,10 @@ func newCopySet() *copySet {
 // add keeps a copy unless one is already kept at its position; past the limit
 // it keeps nothing and marks the set full.
 func (s *copySet) add(copied CompoundCopy) {
+	if !plainCopyText(copied.CCDID, copied.LabelAsymID, copied.AuthAsymID, copied.AuthSeqID, copied.InsCode, copied.EntityID) {
+		s.skipped++
+		return
+	}
 	key := copied.key()
 	if _, seen := s.copies[key]; seen {
 		return
@@ -249,6 +278,8 @@ type modeledAtomSite struct {
 	}
 	residues map[copyKey]modeledAtom
 	full     bool
+	// skipped counts the rows whose fields are not plain text.
+	skipped int
 }
 
 func newModeledAtomSite(columns []string) *modeledAtomSite {
@@ -280,6 +311,11 @@ func (s *modeledAtomSite) add(row []string) {
 		authSeqID:   firstNonEmpty(cell(row, s.columns.authSeqID), cell(row, s.columns.labelSeqID)),
 		insCode:     cell(row, s.columns.insCode),
 	}
+	entityID := cell(row, s.columns.entityID)
+	if !plainCopyText(key.ccdID, key.labelAsymID, key.authAsymID, key.authSeqID, key.insCode, entityID) {
+		s.skipped++
+		return
+	}
 	if _, seen := s.residues[key]; seen {
 		return
 	}
@@ -288,7 +324,7 @@ func (s *modeledAtomSite) add(row []string) {
 		return
 	}
 	s.residues[key] = modeledAtom{
-		entityID: cell(row, s.columns.entityID),
+		entityID: entityID,
 		inChain:  cell(row, s.columns.labelSeqID) != "",
 	}
 }
@@ -349,7 +385,7 @@ func (c *modeledCategories) feedPairForm(document *Document, sinks map[string]fu
 func readModeledMMCIF(ctx context.Context, source io.Reader, reference *Reference) (ModeledCompounds, error) {
 	categories := &modeledCategories{schemes: newCopySet(), started: map[string]bool{}}
 	sinks := categories.sinks()
-	document, err := parseStream(ctx, source, parseOptions{onlyTables: modeledTables, rowSinks: sinks})
+	document, err := parseStream(ctx, source, parseOptions{onlyTables: modeledTables, rowSinks: sinks, keptValueBudget: maxKeptValueBytes})
 	if err != nil {
 		return ModeledCompounds{}, fmt.Errorf("read mmCIF: %w", err)
 	}
@@ -357,7 +393,7 @@ func readModeledMMCIF(ctx context.Context, source io.Reader, reference *Referenc
 	if categories.buildErr != nil {
 		return ModeledCompounds{}, fmt.Errorf("read scheme categories: %w", categories.buildErr)
 	}
-	result := ModeledCompounds{Complete: true, Warnings: []string{}}
+	result := ModeledCompounds{Complete: !document.valueBudgetHit, Warnings: []string{}}
 	for _, note := range document.notes.messages {
 		result.Warnings = append(result.Warnings, "parser limit: "+note)
 	}
@@ -408,6 +444,14 @@ func readModeledMMCIF(ctx context.Context, source io.Reader, reference *Referenc
 		result.Complete = false
 		result.Warnings = append(result.Warnings, fmt.Sprintf(tooManyCopiesWarning, maxModeledCopies))
 	}
+	skipped := copies.skipped
+	if site != nil {
+		skipped += site.skipped
+	}
+	if skipped > 0 {
+		result.Complete = false
+		result.Warnings = append(result.Warnings, fmt.Sprintf(skippedCopiesWarning, skipped, maxCopyFieldBytes))
+	}
 	result.Copies = copies.sorted()
 	return result, nil
 }
@@ -451,6 +495,7 @@ func modeledCopy(sorter *compoundSorter, key copyKey, facts instanceFacts, sourc
 	if entityReview := sorter.annotations.entityReview[facts.entityID]; entityReview != "" {
 		review = entityReview
 	}
+	review = shortReason(review)
 	return CompoundCopy{
 		CCDID:        key.ccdID,
 		LabelAsymID:  key.labelAsymID,
@@ -470,6 +515,7 @@ func readModeledPDB(ctx context.Context, source io.Reader, reference *Reference)
 	chains := newPDBChains(&notes)
 	residues := map[copyKey]struct{}{}
 	full := false
+	skipped := 0
 	modelStarted := false
 	firstModelDone := false
 	lineNumber := 0
@@ -523,6 +569,10 @@ func readModeledPDB(ctx context.Context, source io.Reader, reference *Reference)
 			continue
 		}
 		key := copyKey{ccdID: compound, authAsymID: instance.asymID, authSeqID: instance.authSeqID, insCode: instance.insCode}
+		if !plainCopyText(key.ccdID, key.authAsymID, key.authSeqID, key.insCode) {
+			skipped++
+			continue
+		}
 		if _, seen := residues[key]; seen {
 			continue
 		}
@@ -553,12 +603,15 @@ func readModeledPDB(ctx context.Context, source io.Reader, reference *Reference)
 			copies.add(copied)
 		}
 	}
-	result := ModeledCompounds{Complete: !full, Warnings: []string{}}
+	result := ModeledCompounds{Complete: !full && skipped == 0, Warnings: []string{}}
 	for _, note := range notes.messages {
 		result.Warnings = append(result.Warnings, "parser limit: "+note)
 	}
 	if full {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(tooManyCopiesWarning, maxModeledCopies))
+	}
+	if skipped > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(skippedCopiesWarning, skipped, maxCopyFieldBytes))
 	}
 	result.Copies = copies.sorted()
 	return result, nil

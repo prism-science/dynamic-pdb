@@ -132,9 +132,9 @@ func Test_should_claim_a_due_set_once_when_a_second_claim_comes_within_the_lease
 	now := time.Now().UTC().Add(time.Second)
 
 	// when
-	first, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), now, 10, time.Hour)
+	first, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), now, 10, time.Hour, 3)
 	require.NoError(t, err)
-	second, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), now, 10, time.Hour)
+	second, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), now, 10, time.Hour, 3)
 	require.NoError(t, err)
 
 	// then
@@ -234,7 +234,7 @@ func Test_should_retry_and_then_fail_when_reads_fail(t *testing.T) {
 	require.NoError(t, err)
 	retried, err := fixture.database.ModeledCompounds.Get(context.Background(), artifact.ID)
 	require.NoError(t, err)
-	claims, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), time.Now().UTC(), 10, time.Hour)
+	claims, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), time.Now().UTC(), 10, time.Hour, 3)
 	require.NoError(t, err)
 	err = fixture.database.ModeledCompounds.RecordFailure(context.Background(), artifact.ID, "not a structure file", nil)
 	require.NoError(t, err)
@@ -286,4 +286,101 @@ func Test_should_find_the_entry_by_a_file_compound_when_its_active_model_uses_th
 	revisions, err := fixture.database.Entries.List(ctx, db.EntryRevisionFilters{Query: "ZZ7"})
 	require.NoError(t, err)
 	assert.True(t, entryRevisionListContainsEntryID(revisions, entry.EntryID))
+}
+
+// insertArtifactLikeOlderCode adds an artifact the way code from before the sets did: no set.
+func (f *modeledCompoundsTestDB) insertArtifactLikeOlderCode(t *testing.T, artifactType string, stored bool, createdAt time.Time) uuid.UUID {
+	t.Helper()
+
+	id := uuid.New()
+	uri := "https://files.rcsb.org/download/1ABC.cif"
+	if stored {
+		uri = fmt.Sprintf("https://bucket.example.org/entry-1/models/model-1/artifacts/%s/model.cif", id)
+	}
+	_, err := f.sql.Exec(`insert into artifacts(id, name, level, type, uri, format, metadata, created_by, created_at)
+		values ($1, 'model.cif', 'L1', $2, $3, 'mmcif', '{}', $4, $5)`, id, artifactType, uri, f.userID, createdAt)
+	require.NoError(t, err)
+	return id
+}
+
+func (f *modeledCompoundsTestDB) hasSet(t *testing.T, artifactID uuid.UUID) bool {
+	t.Helper()
+
+	var count int
+	require.NoError(t, f.sql.Get(&count, `select count(*) from modeled_compound_sets where artifact_id = $1`, artifactID))
+	return count == 1
+}
+
+func Test_should_fail_a_set_instead_of_claiming_it_when_its_reads_never_came_back(t *testing.T) {
+	// given: a set claimed three times, each claim lapsing because the job's run ended.
+	fixture := newModeledCompoundsTestDB(t)
+	artifact := fixture.createArtifact(t, models.ArtifactTypeModel, true)
+	start := time.Now().UTC().Add(time.Second)
+	for attempt := range 3 {
+		claims, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), start.Add(time.Duration(attempt)*2*time.Hour), 10, time.Hour, 3)
+		require.NoError(t, err)
+		require.Len(t, claims, 1)
+	}
+
+	// when: the third lease has lapsed too.
+	claims, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), start.Add(6*time.Hour), 10, time.Hour, 3)
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, claims)
+	set, err := fixture.database.ModeledCompounds.Get(context.Background(), artifact.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.ModeledCompoundStatusFailed, set.Status)
+	assert.Equal(t, ptr("the read stopped without a result 3 times: the job ran out of memory or time"), set.LastError)
+}
+
+func Test_should_give_only_recent_model_files_in_our_bucket_a_set_when_older_code_stored_them(t *testing.T) {
+	// given
+	fixture := newModeledCompoundsTestDB(t)
+	now := time.Now().UTC()
+	recent := fixture.insertArtifactLikeOlderCode(t, "model", true, now.Add(-time.Hour))
+	old := fixture.insertArtifactLikeOlderCode(t, "model", true, now.Add(-72*time.Hour))
+	archive := fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-time.Hour))
+	maps := fixture.insertArtifactLikeOlderCode(t, "structure_factors", true, now.Add(-time.Hour))
+
+	// when
+	added, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-48*time.Hour))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), added)
+	assert.True(t, fixture.hasSet(t, recent))
+	assert.False(t, fixture.hasSet(t, old))
+	assert.False(t, fixture.hasSet(t, archive))
+	assert.False(t, fixture.hasSet(t, maps))
+}
+
+func Test_should_give_every_stored_model_file_a_set_once_when_the_historical_fill_pages_through_artifacts(t *testing.T) {
+	// given
+	fixture := newModeledCompoundsTestDB(t)
+	long := time.Now().UTC().Add(-365 * 24 * time.Hour)
+	stored := fixture.insertArtifactLikeOlderCode(t, "model", true, long)
+	archive := fixture.insertArtifactLikeOlderCode(t, "model", false, long)
+	maps := fixture.insertArtifactLikeOlderCode(t, "structure_factors", true, long)
+
+	// when: pages of two artifacts, then the whole fill again.
+	added := int64(0)
+	for _, pass := range []string{"first", "again"} {
+		after := uuid.Nil
+		for {
+			page, err := fixture.database.ModeledCompounds.AddMissingAfter(context.Background(), after, 2)
+			require.NoError(t, err, pass)
+			added += page.Added
+			if page.Scanned < 2 {
+				break
+			}
+			after = page.LastArtifactID
+		}
+	}
+
+	// then
+	assert.Equal(t, int64(1), added, "the second pass adds nothing")
+	assert.True(t, fixture.hasSet(t, stored))
+	assert.False(t, fixture.hasSet(t, archive))
+	assert.False(t, fixture.hasSet(t, maps))
 }

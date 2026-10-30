@@ -114,14 +114,15 @@ func (t *lineTokenizer) separatorFollows() bool {
 	return t.endsWithSeparator
 }
 
-// stopErr reports the context error alone, as tokenizer does; err also
-// reports a read failure.
-func (t *lineTokenizer) stopErr() error {
+// contextErr reports the context error alone, as tokenizer does; readFailure
+// also reports a stream that could not be read.
+func (t *lineTokenizer) contextErr() error {
 	return t.lines.check.err
 }
 
-// err returns what ended the read before the stream did.
-func (t *lineTokenizer) err() error {
+// readFailure returns what ended the read before the stream did: a read
+// failure, a line or text field over its limit, or the context.
+func (t *lineTokenizer) readFailure() error {
 	return t.lines.stopErr()
 }
 
@@ -151,7 +152,7 @@ func (t *lineTokenizer) readLine() bool {
 // is first. The value runs to the line before the closing ";" line, and rest is
 // what follows that ";". A field the stream ends inside takes the rest of the
 // stream (closed is false), as tokenizer does for a complete text.
-func (t *lineTokenizer) readTextField(first []byte, firstHadNewline bool) (string, []byte, bool, bool) {
+func (t *lineTokenizer) readTextField(first []byte, firstHadNewline bool) (field string, rest []byte, closed bool, ok bool) {
 	content := append([]byte(nil), first...)
 	pendingNewline := firstHadNewline
 	for {
@@ -211,8 +212,8 @@ func (t *lineTokenizer) scanLine(line []byte, atLineStart bool) {
 func parseStream(ctx context.Context, source io.Reader, options parseOptions) (*Document, error) {
 	tokens := newLineTokenizer(ctx, source)
 	document := parseTokens(tokens, false, options)
-	if err := tokens.err(); err != nil {
-		return nil, err
+	if err := tokens.readFailure(); err != nil {
+		return nil, fmt.Errorf("parse the stream: %w", err)
 	}
 	return document, nil
 }

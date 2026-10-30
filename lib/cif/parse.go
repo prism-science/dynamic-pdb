@@ -20,6 +20,10 @@ type Document struct {
 	// timedOut is set when the time budget ended the read before the input did.
 	timedOut bool
 	notes    limitNotes
+	// keptBytes counts the bytes of the values kept under keptValueBudget;
+	// valueBudgetHit is set once a value was dropped for it.
+	keptBytes      int
+	valueBudgetHit bool
 }
 
 // Table is one category: a loop, or the items of a category written as pairs.
@@ -65,6 +69,12 @@ type parseOptions struct {
 	// onlyTables, when set, lists the categories whose rows are kept; the
 	// rows of every other loop are skipped.
 	onlyTables map[string]struct{}
+	// keptValueBudget, when positive, bounds the bytes of the values the
+	// document keeps, in kept tables and non-looped items; past it the rest
+	// are dropped with a note. Non-looped items are then kept only for the
+	// categories of onlyTables and rowSinks. A whole streamed file needs both;
+	// extraction reads a 4 MiB head and uses neither.
+	keptValueBudget int
 }
 
 // rowSink takes the rows of one loop as they are read. A row slice is reused
@@ -80,9 +90,9 @@ type tokenSource interface {
 	// separatorFollows reports that a line starting with "#" followed the last
 	// token. It is final once next has returned false.
 	separatorFollows() bool
-	// stopErr is the context error that ended the read before the input did,
-	// or nil.
-	stopErr() error
+	// contextErr is the context error that ended the read before the input
+	// did, or nil.
+	contextErr() error
 }
 
 func parse(ctx context.Context, text string, truncated bool, options parseOptions) *Document {
@@ -127,11 +137,35 @@ func parseTokens(source tokenSource, truncated bool, options parseOptions) *Docu
 				document.notes.add("more than %d non-looped items: the rest were ignored", maxScalarItems)
 				continue
 			}
+			if options.keptValueBudget > 0 && (!options.keeps(openPairCategory) || !document.keepValue(value.text, options.keptValueBudget)) {
+				continue
+			}
 			scalarItems++
 			document.addScalar(current.text, value.text, pairColumns)
 		}
 	}
 	return document.finish(pairColumns, reader, openPairCategory)
+}
+
+// keeps reports whether the non-looped items of a category are kept under a
+// value budget: those of the tables the caller reads, or streams.
+func (options parseOptions) keeps(category string) bool {
+	if _, kept := options.onlyTables[category]; kept {
+		return true
+	}
+	return options.rowSinks[category] != nil
+}
+
+// keepValue counts a value against the budget, or reports false and notes the
+// budget once it would be passed.
+func (d *Document) keepValue(value string, budget int) bool {
+	if d.keptBytes+len(value) > budget {
+		d.valueBudgetHit = true
+		d.notes.add("kept values passed %d bytes: the rest were ignored", budget)
+		return false
+	}
+	d.keptBytes += len(value)
+	return true
 }
 
 // tokenReader adds one token of pushback to a token source.
@@ -159,7 +193,7 @@ func (r *tokenReader) unread(held token) {
 // read): it is incomplete when the read was cut off before a "#" line closed it,
 // or when the time budget ended it.
 func (d *Document) finish(pairColumns map[string]*Table, reader *tokenReader, openCategory string) *Document {
-	if reader.tokens.stopErr() != nil {
+	if reader.tokens.contextErr() != nil {
 		d.timedOut = true
 		d.notes.add(timeBudgetNote)
 	}
@@ -289,11 +323,15 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 				row = row[:0]
 			}
 		case keepRows:
-			if len(values) < cellLimit {
-				values = append(values, current.text)
-			} else if !capped {
+			switch {
+			case capped:
+			case len(values) >= cellLimit:
 				capped = true
 				d.notes.add("table %s has more than %d rows or %d values: the rest were ignored", category, maxTableRows, maxTableCells)
+			case options.keptValueBudget > 0 && !d.keepValue(current.text, options.keptValueBudget):
+				capped = true
+			default:
+				values = append(values, current.text)
 			}
 		}
 	}
@@ -307,7 +345,7 @@ func (d *Document) readLoop(reader *tokenReader, truncated bool, options parseOp
 	// The loop is open at the end when the input stopped before a "#" line
 	// closed it, or the time budget stopped the read inside it (even at a row
 	// boundary).
-	openAtEnd := (truncated && !reader.tokens.separatorFollows()) || reader.tokens.stopErr() != nil
+	openAtEnd := (truncated && !reader.tokens.separatorFollows()) || reader.tokens.contextErr() != nil
 	table.Complete = (!openAtEnd || endedByTerminator) && count%width == 0 && !capped
 	d.tables[category] = table
 }
@@ -393,7 +431,7 @@ func (t *tokenizer) separatorFollows() bool {
 	return t.endsWithSeparator
 }
 
-func (t *tokenizer) stopErr() error {
+func (t *tokenizer) contextErr() error {
 	return t.check.err
 }
 

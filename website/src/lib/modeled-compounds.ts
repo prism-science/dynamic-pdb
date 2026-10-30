@@ -2,7 +2,7 @@ import type { ModeledCompounds } from "@/lib/api/entries";
 import { CIF_REFERENCE } from "@/lib/parse/cifReference.gen";
 
 /**
- * The compounds a model's file models, as the pages show them (T3-M): one row
+ * The compounds a model's file models, as the pages show them: one row
  * per compound with how many copies the file holds, each tagged from the
  * entry's own lists. The file's record keeps buffers and applies no rule; the
  * tags are where the entry's judgments come in.
@@ -33,7 +33,8 @@ export type CompoundGroup = {
 export type ModeledCompoundsView =
   /** Nothing was read from a file: the model's typed lists stand. */
   | { state: "typed" }
-  | { state: "reading" }
+  /** Not read yet; lastError is set when an earlier attempt failed. */
+  | { state: "reading"; lastError: string | null }
   | { state: "failed"; reason: string }
   | { state: "read"; groups: CompoundGroup[]; complete: boolean; warnings: string[] };
 
@@ -58,7 +59,7 @@ export function modeledCompoundsView(
     case "not_stored":
       return { state: "typed" };
     case "pending":
-      return { state: "reading" };
+      return { state: "reading", lastError: compounds.last_error ?? null };
     case "failed":
       return { state: "failed", reason: compounds.last_error ?? "no reason was recorded" };
     case "done":

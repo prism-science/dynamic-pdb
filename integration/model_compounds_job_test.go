@@ -67,7 +67,7 @@ func Test_should_store_the_compounds_of_uploaded_model_files_when_the_model_comp
 	var lastError string
 	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
 		`select last_error from modeled_compound_sets where artifact_id = $1`, unreadable).Scan(&lastError))
-	assert.Equal(t, `unknown model file format "ccp4"`, lastError)
+	assert.Equal(t, `open the structure: declared format: unknown model file format "ccp4"`, lastError)
 	assert.Contains(t, output, "model compounds job finished")
 }
 

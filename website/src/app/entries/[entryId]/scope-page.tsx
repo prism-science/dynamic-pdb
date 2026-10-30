@@ -134,8 +134,9 @@ export default async function ScopePage({
   );
 
   const { residueData, modeledCompounds } = await loadModelDetail(session?.token, entryId, model);
-  // The file's compounds, tagged from the entry's own lists. A model without a
-  // file of ours keeps its typed lists among its facts instead.
+  // The file's compounds, tagged from the entry's own lists. Until the file is
+  // read, and for a model without a file of ours, the typed lists stay among
+  // its facts.
   const compounds = modeledCompoundsView(modeledCompounds, {
     ligands: data.entry.ligands ?? [],
     cofactors: data.entry.cofactors ?? [],
@@ -186,7 +187,7 @@ export default async function ScopePage({
           facts: summaryModelFacts(
             metadata,
             modelEntity ? provenance.programOf(modelEntity.id) : null,
-            { typedCompounds: compounds.state === "typed" },
+            { typedCompounds: compounds.state !== "read" },
           ),
           compounds,
           metrics: modelEntity
@@ -426,8 +427,6 @@ async function loadEntry(
   }
 }
 
-// Model lists leave out per-residue data, so it comes from the selected
-// model's detail. Like similarity, the page still renders without it.
 // What only the model detail endpoint returns: the per-residue data and the
 // compounds the server read from the model's file. Both are bonus blocks: if the
 // request fails the page still renders, without them.

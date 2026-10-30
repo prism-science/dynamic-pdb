@@ -34,7 +34,12 @@ const (
 
 // Queue is the modeled_compound_sets table as the job uses it.
 type Queue interface {
-	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration) ([]models.ModeledCompoundClaim, error)
+	// AddMissingSince and AddMissingAfter give pending sets to model files in our bucket that
+	// have none: those created since a time, or the next page of all artifacts in id order.
+	AddMissingSince(ctx context.Context, since time.Time) (int64, error)
+	AddMissingAfter(ctx context.Context, after uuid.UUID, limit int) (models.MissingSetsPage, error)
+	// ClaimDue fails, instead of claiming, a set already claimed maxAttempts times.
+	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration, maxAttempts int) ([]models.ModeledCompoundClaim, error)
 	// RecordFailure keeps the set pending until retryAt, or fails it for good when retryAt is nil.
 	RecordFailure(ctx context.Context, artifactID uuid.UUID, message string, retryAt *time.Time) error
 	// Save stores the copies, finishes the set and re-indexes the revisions with the file; it
@@ -55,6 +60,14 @@ type Config struct {
 	ClaimFor time.Duration `mapstructure:"claim_for"`
 	// FileTimeout bounds the read of one file, from opening it to its last line.
 	FileTimeout time.Duration `mapstructure:"file_timeout"`
+	// RecentWindow is how far back each run looks for new model files without a set: an
+	// upload an older backend stored while a deploy was rolling out.
+	RecentWindow time.Duration `mapstructure:"recent_window"`
+	// HistoricalFill turns on the paced fill over every artifact, which gives the model
+	// files stored before this job existed their sets. Off until the rollout is watched.
+	HistoricalFill bool `mapstructure:"historical_fill"`
+	// FillBatchSize is how many artifacts one statement of the historical fill looks at.
+	FillBatchSize int `mapstructure:"fill_batch_size"`
 }
 
 func (c Config) validate() error {
@@ -65,6 +78,10 @@ func (c Config) validate() error {
 		return errors.New("claim_for must be positive")
 	case c.FileTimeout <= 0:
 		return errors.New("file_timeout must be positive")
+	case c.RecentWindow <= 0:
+		return errors.New("recent_window must be positive")
+	case c.FillBatchSize <= 0:
+		return errors.New("fill_batch_size must be positive")
 	}
 	return nil
 }
@@ -77,6 +94,7 @@ type ModelCompoundsJob struct {
 	cfg    Config
 	logger *slog.Logger
 	now    func() time.Time
+	sleep  func(ctx context.Context, pause time.Duration) error
 }
 
 func NewModelCompoundsJob(queue Queue, files StoredFiles, cfg Config, logger *slog.Logger) (*ModelCompoundsJob, error) {
@@ -92,7 +110,20 @@ func NewModelCompoundsJob(queue Queue, files StoredFiles, cfg Config, logger *sl
 		cfg:    cfg,
 		logger: logger,
 		now:    func() time.Time { return time.Now().UTC() },
+		sleep:  sleepContext,
 	}, nil
+}
+
+// sleepContext waits for pause, or returns the context's error if it ends first.
+func sleepContext(ctx context.Context, pause time.Duration) error {
+	timer := time.NewTimer(pause)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("pause interrupted: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
 }
 
 // outcome is what one claimed file came to.
@@ -111,14 +142,27 @@ type runSummary struct {
 	outcomes map[outcome]int
 }
 
-// Run claims and reads due files until nothing is due, the run's claiming time is over, or
-// MaxFilesPerRun is reached. It stops with an error only when the database fails or ctx ends.
+// Run gives pending sets to the model files that lack one, then claims and reads due files
+// until nothing is due, the run's claiming time is over, or MaxFilesPerRun is reached. It
+// stops with an error only when the database fails or ctx ends.
 func (j *ModelCompoundsJob) Run(ctx context.Context) error {
 	started := j.now()
 	claimUntil := started.Add(j.cfg.ClaimFor)
+	recent, err := j.queue.AddMissingSince(ctx, started.Add(-j.cfg.RecentWindow))
+	if err != nil {
+		return fmt.Errorf("add sets for recent model files: %w", err)
+	}
+	historical := int64(0)
+	if j.cfg.HistoricalFill {
+		historical, err = j.fillHistorical(ctx)
+		if err != nil {
+			return fmt.Errorf("add sets for stored model files: %w", err)
+		}
+	}
+	j.logger.Info("model compounds job started", "recent_sets_added", recent, "historical_sets_added", historical)
 	summary := runSummary{outcomes: map[outcome]int{}}
 	for (j.cfg.MaxFilesPerRun == 0 || summary.files < j.cfg.MaxFilesPerRun) && j.now().Before(claimUntil) {
-		claims, err := j.queue.ClaimDue(ctx, j.now(), 1, j.cfg.FileTimeout+leaseMargin)
+		claims, err := j.queue.ClaimDue(ctx, j.now(), 1, j.cfg.FileTimeout+leaseMargin, maxAttempts)
 		if err != nil {
 			return fmt.Errorf("claim a due model file: %w", err)
 		}
@@ -147,6 +191,31 @@ func (j *ModelCompoundsJob) Run(ctx context.Context) error {
 	return nil
 }
 
+// fillHistorical gives a pending set to every model file in our bucket that has none,
+// FillBatchSize artifacts per statement, and returns how many it added. After each full page
+// it pauses as long as that page took, so the fill keeps the database at most about half
+// busy, as the checksum job does. Each page commits on its own.
+func (j *ModelCompoundsJob) fillHistorical(ctx context.Context) (int64, error) {
+	var added int64
+	// uuid.Nil sorts before every real artifact id, so the first page starts at the beginning.
+	after := uuid.Nil
+	for {
+		pageStarted := j.now()
+		page, err := j.queue.AddMissingAfter(ctx, after, j.cfg.FillBatchSize)
+		if err != nil {
+			return added, fmt.Errorf("page after artifact %s: %w", after, err)
+		}
+		added += page.Added
+		if page.Scanned < j.cfg.FillBatchSize {
+			return added, nil
+		}
+		after = page.LastArtifactID
+		if err := j.sleep(ctx, j.now().Sub(pageStarted)); err != nil {
+			return added, fmt.Errorf("pause after artifact %s: %w", after, err)
+		}
+	}
+}
+
 // permanentError is a reason no retry can change: the file is not ours, or not a structure file.
 type permanentError struct {
 	reason string
@@ -173,7 +242,12 @@ func (j *ModelCompoundsJob) readClaim(ctx context.Context, claim models.ModeledC
 	}
 	reindexed, err := j.queue.Save(ctx, claim.ArtifactID, result, j.now())
 	if err != nil {
-		return outcomeDone, fmt.Errorf("save the compounds: %w", err)
+		if ctx.Err() != nil {
+			return outcomeStopped, nil
+		}
+		// A save the database refuses counts as a failed attempt, so it is retried and then
+		// failed rather than claimed forever; only a failure to record that stops the run.
+		return j.recordFailure(ctx, claim, fmt.Errorf("save the compounds: %w", err))
 	}
 	review := 0
 	for _, copied := range result.Copies {
@@ -234,7 +308,7 @@ func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompou
 	}()
 	body, format, err := openStructure(file, claim.Format)
 	if err != nil {
-		return cif.ModeledCompounds{}, err
+		return cif.ModeledCompounds{}, fmt.Errorf("open the structure: %w", err)
 	}
 	result, err := cif.ReadModeledCompounds(fileCtx, body, format)
 	if err != nil {
@@ -259,7 +333,7 @@ func openStructure(file io.Reader, declared *string) (io.Reader, cif.StructureFo
 	if declared != nil && strings.TrimSpace(*declared) != "" {
 		format, err := declaredFormat(*declared)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("declared format: %w", err)
 		}
 		return body, format, nil
 	}
@@ -273,7 +347,7 @@ func openStructure(file io.Reader, declared *string) (io.Reader, cif.StructureFo
 	}
 	format, err := sniffFormat(head)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("first bytes: %w", err)
 	}
 	return body, format, nil
 }

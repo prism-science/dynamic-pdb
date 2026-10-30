@@ -11,7 +11,7 @@ import {
   structureMaps,
 } from "@/lib/entities";
 import { formatEntryLabel } from "@/lib/entry-label";
-import { modeledCompoundsView } from "@/lib/modeled-compounds";
+import { type EntryCompoundLists, modeledCompoundsView } from "@/lib/modeled-compounds";
 import DataTable from "@/app/components/DataTable";
 import ModeledCompoundList from "@/app/components/ModeledCompoundList";
 import FileTable from "@/app/components/FileTable";
@@ -138,8 +138,12 @@ export function EntryRevisionPreview({
 
 export function ModelRevisionPreview({
   revision,
+  entryLists,
 }: {
   revision: ModelRevision;
+  /** The entry's Ligands and Cofactors lists, for the compound tags; null when
+   *  the entry could not be read, so the compounds carry no tags. */
+  entryLists: EntryCompoundLists | null;
 }) {
   const { entities, relations } = modelRevisionGraph(revision);
   const provenance = buildProvenance(entities, relations);
@@ -150,12 +154,11 @@ export function ModelRevisionPreview({
   const metadata = modelMetadata(model, revision.metadata);
   const previewURL = modelPreviewURL(model, revision.thumbnail_image_url);
   const vitals = modelVitals(metadata);
-  // The preview does not load the entry, so its compounds carry no tags.
-  const compounds = modeledCompoundsView(revision.modeled_compounds, null);
+  const compounds = modeledCompoundsView(revision.modeled_compounds, entryLists);
   const infoFacts = modelInfoFacts(
     metadata,
     model ? provenance.programOf(model.id) : null,
-    { typedCompounds: compounds.state === "typed" },
+    { typedCompounds: compounds.state !== "read" },
   );
   const hasEvaluations = model
     ? hasModelEvaluations(model, provenance)

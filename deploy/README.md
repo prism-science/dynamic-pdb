@@ -187,11 +187,24 @@ it models (every copy outside the polymer chains, water excepted) in
 `modeled_compound_records`, one set per artifact in `modeled_compound_sets`
 (`lib/cif` `ReadModeledCompounds`, T3-M). It runs `/app/model-compounds-job` from the backend
 image every 5 minutes and reads one file at a time, so a large file never takes CPU from the
-API pods. A new upload gets a pending set when its artifact is created; archive models, whose
-files are on files.rcsb.org, get none.
+API pods. A new upload gets a pending set when its artifact is created; each run also gives
+one to any model file of the last 48 hours that has none (an upload an older backend stored
+during a deploy). Archive models, whose files are on files.rcsb.org, get none.
+
+Model files stored before the job existed (on prod about 152,000 qFit and ensemble-refinement
+models, 1.6 TB, from the August 2026 bulk import) get their sets only when
+`modelCompoundsJob.historicalFill` is on. Each run then pages through every artifact, 2,000 per
+statement, pausing as long as each page took, as the checksum job does. Turn it on after a quiet
+day with a cap, then raise the cap once RDS metrics and the job's logs look right:
+
+```yaml
+modelCompoundsJob:
+  historicalFill: true
+  maxFilesPerRun: 100
+```
 
 A file is retried after 10 and 20 minutes, then marked `failed` with the reason in
-`last_error`. Job alerts are muted for this namespace, so check failures with:
+`last_error`; so is a file whose read ended the job three times (out of memory or time). Job alerts are muted for this namespace, so check failures with:
 
 ```sql
 select artifact_id, attempts, last_error from modeled_compound_sets where status = 'failed';

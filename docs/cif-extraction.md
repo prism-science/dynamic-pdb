@@ -55,7 +55,9 @@ warning, and the parse still succeeds:
 | distinct compounds per list | 2,000 | real entries have well under 200 |
 | REMARK fields (PDB) | 5,000 | |
 | one line in the streaming scalar scan, or one line or `;` text field in `cif.ReadModeledCompounds` | 8 MiB | a longer line is an error, not a buffer |
-| compound copies listed by `cif.ReadModeledCompounds` | 100,000 | 6VXX, a glycosylated spike trimer, has 63; past the cap the list is marked incomplete with a warning |
+| compound copies listed by `cif.ReadModeledCompounds` | 100,000 | 6VXX, a glycosylated spike trimer, has 63; 5HAU has 1,945; past the cap the list is marked incomplete with a warning |
+| category values `cif.ReadModeledCompounds` keeps (`_entity`, `_chem_comp`, single-row scheme categories) | 64 MiB | real files keep under 1 MB; items of other categories are not kept at all |
+| one field of a compound copy (CCD ID, chain, residue number, insertion code, entity) | 64 bytes, plain UTF-8 text | a longer field, invalid UTF-8 or a control character (PostgreSQL rejects a NUL) skips the copy with a warning |
 | time for one extraction (`cif.TimeBudget`) | 5 s | a 4 MiB head parses in under 0.2 s even when hostile; the budget only stops a slow machine or an input nobody anticipated |
 
 If `_atom_site` runs past a cap, atom counts, residue counts and altloc fraction
@@ -309,8 +311,10 @@ checks them on every fixture), and only the keys of distinct copies are kept, up
 to 100,000. On a laptop a 315 MB mmCIF file took 2.3 s and a 315 MB PDB file
 0.4 s, both with a 13 MB peak (2026-10-30). There is no fixed time budget: the
 caller's context bounds the read, and a done context or a stream that cannot be
-read is an error, not a partial list. A list stopped by the copy cap, or a loop
-that ends inside a row, has `Complete` false and a warning.
+read is an error, not a partial list. A list stopped by the copy cap or the 64 MiB
+budget on kept values, a loop that ends inside a row, or a copy skipped because a
+field is not plain text has `Complete` false and a warning. A review reason that
+quotes a file's value is cut to 240 bytes.
 
 ## Mutations
 

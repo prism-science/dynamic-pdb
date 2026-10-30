@@ -28,6 +28,9 @@ func readConfig(filename string) (config, error) {
 	v.SetDefault("compounds::claim_for", 4*time.Minute)
 	// A 1 GiB upload streams in well under a minute; this stops one that hangs.
 	v.SetDefault("compounds::file_timeout", 10*time.Minute)
+	v.SetDefault("compounds::recent_window", 48*time.Hour)
+	v.SetDefault("compounds::historical_fill", false)
+	v.SetDefault("compounds::fill_batch_size", 2000)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

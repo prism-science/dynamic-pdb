@@ -27,6 +27,7 @@ func Test_should_hide_the_old_copies_when_a_file_is_being_read_again(t *testing.
 }
 
 func Test_should_fail_when_a_set_has_an_unknown_status_or_source(t *testing.T) {
+	// given
 	cases := map[string]domainmodels.ModeledCompoundSet{
 		"status": {Status: "lost"},
 		"source": {

@@ -16,7 +16,12 @@ export default function ModeledCompoundList({ view }: { view: ModeledCompoundsVi
     case "typed":
       return null;
     case "reading":
-      return (
+      return view.lastError ? (
+        <p className={styles.status} data-tone="warning">
+          The last attempt to read the model file failed ({view.lastError}); it is tried again
+          shortly.
+        </p>
+      ) : (
         <p className={styles.status}>
           Reading the model file. Its compounds appear here a few minutes after it was uploaded.
         </p>

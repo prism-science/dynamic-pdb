@@ -38,9 +38,18 @@ const (
 	// line or text field read by ReadModeledCompounds.
 	maxScanLineBytes = 8 << 20
 	// maxModeledCopies bounds the compound copies ReadModeledCompounds lists
-	// from a whole file (6VXX, a glycosylated spike trimer, has under 200; the
-	// largest archive entries have a few thousand).
+	// from a whole file (6VXX, a glycosylated spike trimer, has 63; 5HAU has
+	// 1,945).
 	maxModeledCopies = 100_000
+	// maxKeptValueBytes bounds the bytes of the category values
+	// ReadModeledCompounds keeps from a whole file (_entity, _chem_comp and
+	// single-row scheme categories; real files keep under 1 MB).
+	maxKeptValueBytes = 64 << 20
+	// maxCopyFieldBytes bounds each text field of a compound copy: CCD IDs have
+	// up to 5 characters, chain IDs and residue numbers under 10.
+	maxCopyFieldBytes = 64
+	// maxReviewReasonBytes bounds a review reason that quotes a file's value.
+	maxReviewReasonBytes = 240
 )
 
 // limitNotes collects each limit that was hit, once per reason.

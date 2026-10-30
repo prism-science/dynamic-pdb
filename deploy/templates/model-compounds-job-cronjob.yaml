@@ -67,6 +67,8 @@ spec:
                   value: {{ .Values.modelCompoundsJob.maxFilesPerRun | quote }}
                 - name: DYNAMIC_PDB_COMPOUNDS_FILE_TIMEOUT
                   value: {{ .Values.modelCompoundsJob.fileTimeout | quote }}
+                - name: DYNAMIC_PDB_COMPOUNDS_HISTORICAL_FILL
+                  value: {{ .Values.modelCompoundsJob.historicalFill | quote }}
               resources:
                 {{- toYaml .Values.modelCompoundsJob.resources | nindent 16 }}
 {{- end }}

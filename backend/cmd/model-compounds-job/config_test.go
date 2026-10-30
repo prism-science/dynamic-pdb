@@ -37,6 +37,9 @@ cdn:
 	assert.Equal(t, 0, cfg.Compounds.MaxFilesPerRun)
 	assert.Equal(t, 4*time.Minute, cfg.Compounds.ClaimFor)
 	assert.Equal(t, 10*time.Minute, cfg.Compounds.FileTimeout)
+	assert.Equal(t, 48*time.Hour, cfg.Compounds.RecentWindow)
+	assert.False(t, cfg.Compounds.HistoricalFill)
+	assert.Equal(t, 2000, cfg.Compounds.FillBatchSize)
 	assert.Equal(t, "localhost", cfg.DB.Host)
 }
 

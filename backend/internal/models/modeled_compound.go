@@ -94,6 +94,16 @@ type ModeledCompoundCopy struct {
 	ReviewReason string
 }
 
+// MissingSetsPage is one page of artifacts, in id order, that the model-compounds job gave a
+// pending set where a model file in our bucket had none. Scanned counts the artifacts in the
+// page, Added the sets it added, and LastArtifactID is where the next page starts; it is
+// uuid.Nil for an empty page.
+type MissingSetsPage struct {
+	Scanned        int
+	Added          int64
+	LastArtifactID uuid.UUID
+}
+
 // ModeledCompoundClaim is a pending set the job took, with what it needs to read the file.
 type ModeledCompoundClaim struct {
 	ArtifactID uuid.UUID

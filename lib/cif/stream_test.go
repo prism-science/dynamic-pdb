@@ -31,7 +31,7 @@ func streamedTokens(t *testing.T, text string) ([]token, bool) {
 	for {
 		current, ok := tokens.next()
 		if !ok {
-			require.NoError(t, tokens.err())
+			require.NoError(t, tokens.readFailure())
 			return read, tokens.separatorFollows()
 		}
 		read = append(read, current)
@@ -61,6 +61,7 @@ func Test_should_yield_the_tokens_of_the_text_tokenizer_when_fixtures_are_stream
 }
 
 func Test_should_yield_the_tokens_of_the_text_tokenizer_when_lines_are_unusual(t *testing.T) {
+	// given
 	cases := map[string]string{
 		"crlf line endings":             "data_X\r\nloop_\r\n_a.b\r\n_a.c\r\n1 'x y'\r\n;text\r\nfield\r\n;\r\n#\r\n",
 		"no newline at the end":         "data_X\n_a.b value",
@@ -118,8 +119,11 @@ func (failingReader) Read([]byte) (int, error) {
 }
 
 func Test_should_fail_when_the_stream_cannot_be_read(t *testing.T) {
+	// given: a stream that fails after its first line.
+	source := io.MultiReader(strings.NewReader("data_X\n_a.b 1\n"), failingReader{})
+
 	// when
-	_, err := parseStream(context.Background(), io.MultiReader(strings.NewReader("data_X\n_a.b 1\n"), failingReader{}), parseOptions{})
+	_, err := parseStream(context.Background(), source, parseOptions{})
 
 	// then
 	require.Error(t, err)
@@ -136,4 +140,23 @@ func Test_should_fail_when_the_context_is_done_before_the_stream_ends(t *testing
 
 	// then
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func Test_should_keep_only_the_read_categories_and_stop_at_the_value_budget_when_a_file_is_streamed(t *testing.T) {
+	// given: an unrelated item, and an entity table larger than a 40-byte budget.
+	text := "data_X\n_unused.item " + strings.Repeat("u", 1000) + "\n#\n" +
+		"loop_\n_entity.id\n_entity.type\n1 polymer\n2 non-polymer\n3 " + strings.Repeat("w", 50) + "\n#\n"
+	options := parseOptions{onlyTables: map[string]struct{}{"_entity": {}}, keptValueBudget: 40}
+
+	// when
+	document, err := parseStream(context.Background(), strings.NewReader(text), options)
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, document.Scalars(), "an unrelated item is not kept")
+	assert.True(t, document.valueBudgetHit)
+	entities := document.Table("_entity")
+	require.NotNil(t, entities)
+	assert.False(t, entities.Complete)
+	assert.Len(t, entities.Rows, 2)
 }

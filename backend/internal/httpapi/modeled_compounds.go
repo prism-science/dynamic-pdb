@@ -23,7 +23,11 @@ func (s *Server) modeledCompoundsForRevision(ctx context.Context, revision domai
 	if err != nil {
 		return ModeledCompounds{}, fmt.Errorf("get the compounds of the model file: %w", err)
 	}
-	return modeledCompoundsFromModel(*set)
+	compounds, err := modeledCompoundsFromModel(*set)
+	if err != nil {
+		return ModeledCompounds{}, fmt.Errorf("build the compounds of the model file: %w", err)
+	}
+	return compounds, nil
 }
 
 func notStoredCompounds() ModeledCompounds {
@@ -33,7 +37,7 @@ func notStoredCompounds() ModeledCompounds {
 func modeledCompoundsFromModel(set domainmodels.ModeledCompoundSet) (ModeledCompounds, error) {
 	status, err := modeledCompoundsStatusFromModel(set.Status)
 	if err != nil {
-		return ModeledCompounds{}, err
+		return ModeledCompounds{}, fmt.Errorf("read the status: %w", err)
 	}
 	compounds := ModeledCompounds{
 		Status:        status,
@@ -52,7 +56,7 @@ func modeledCompoundsFromModel(set domainmodels.ModeledCompoundSet) (ModeledComp
 	for _, copied := range set.Copies {
 		source, err := modeledCompoundSourceFromModel(copied.Source)
 		if err != nil {
-			return ModeledCompounds{}, err
+			return ModeledCompounds{}, fmt.Errorf("read the source of %s: %w", copied.CCDID, err)
 		}
 		compounds.Copies = append(compounds.Copies, ModeledCompoundCopy{
 			CcdId:        copied.CCDID,

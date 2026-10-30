@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,8 +28,11 @@ func copyPositions(result ModeledCompounds) []string {
 }
 
 func Test_should_list_every_scheme_copy_when_the_file_has_scheme_categories(t *testing.T) {
-	// when: 4HHB, deoxyhemoglobin: a heme in each chain, phosphate in B and D.
-	result := readModeled(t, readFixture(t, "4HHB.cif"), FormatMMCIF)
+	// given: 4HHB, deoxyhemoglobin: a heme in each chain, phosphate in B and D.
+	text := readFixture(t, "4HHB.cif")
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
 
 	// then
 	assert.True(t, result.Complete)
@@ -40,8 +44,11 @@ func Test_should_list_every_scheme_copy_when_the_file_has_scheme_categories(t *t
 }
 
 func Test_should_list_each_sugar_when_the_file_has_a_branch_scheme(t *testing.T) {
-	// when: 2VSD, an NAG-NAG-BMA glycan on an asparagine.
-	result := readModeled(t, readFixture(t, "2VSD.cif"), FormatMMCIF)
+	// given: 2VSD, an NAG-NAG-BMA glycan on an asparagine.
+	text := readFixture(t, "2VSD.cif")
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
 
 	// then
 	assert.Equal(t, []string{"BMA B 3", "NAG B 1", "NAG B 2"}, copyPositions(result))
@@ -52,9 +59,12 @@ func Test_should_list_each_sugar_when_the_file_has_a_branch_scheme(t *testing.T)
 }
 
 func Test_should_read_the_schemes_when_they_come_after_the_coordinates(t *testing.T) {
-	// when: 1C0R writes _atom_site before both scheme categories. RCSB's
+	// given: 1C0R writes _atom_site before both scheme categories. RCSB's
 	// "bound components" leave all of these out.
-	result := readModeled(t, readFixture(t, "1C0R.cif"), FormatMMCIF)
+	text := readFixture(t, "1C0R.cif")
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
 
 	// then
 	assert.True(t, result.Complete)
@@ -63,9 +73,12 @@ func Test_should_read_the_schemes_when_they_come_after_the_coordinates(t *testin
 
 func Test_should_keep_buffers_and_list_the_same_copies_when_the_entry_is_in_either_format(t *testing.T) {
 	for _, entry := range []string{"3CEB", "7LTB"} {
+		// given
+		mmcifText, pdbText := readFixture(t, entry+".cif"), readFixture(t, entry+".pdb")
+
 		// when
-		mmcif := readModeled(t, readFixture(t, entry+".cif"), FormatMMCIF)
-		pdb := readModeled(t, readFixture(t, entry+".pdb"), FormatPDB)
+		mmcif := readModeled(t, mmcifText, FormatMMCIF)
+		pdb := readModeled(t, pdbText, FormatPDB)
 
 		// then: chain residues (MSE, LLP, 7LTB's antibiotic) are not copies;
 		// glycerol, which the entry lists leave out, is.
@@ -80,8 +93,11 @@ func Test_should_keep_buffers_and_list_the_same_copies_when_the_entry_is_in_eith
 }
 
 func Test_should_mark_possible_chain_residues_for_review_when_the_file_has_no_entity(t *testing.T) {
-	// when: 3CEB.cif without _entity; its schemes still list sulfate and glycerol.
-	result := readModeled(t, readFixture(t, "parity/no_entity_3CEB.cif"), FormatMMCIF)
+	// given: 3CEB.cif without _entity; its schemes still list sulfate and glycerol.
+	text := readFixture(t, "parity/no_entity_3CEB.cif")
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
 
 	// then
 	flagged := []string{}
@@ -97,8 +113,11 @@ func Test_should_mark_possible_chain_residues_for_review_when_the_file_has_no_en
 }
 
 func Test_should_mark_possible_chain_residues_for_review_when_the_pdb_file_has_no_seqres(t *testing.T) {
+	// given
+	text := readFixture(t, "parity/no_seqres_3CEB.pdb")
+
 	// when
-	result := readModeled(t, readFixture(t, "parity/no_seqres_3CEB.pdb"), FormatPDB)
+	result := readModeled(t, text, FormatPDB)
 
 	// then
 	flagged := []string{}
@@ -296,9 +315,137 @@ func Test_should_fail_when_the_context_is_done_before_the_file_is_read(t *testin
 }
 
 func Test_should_fail_when_the_format_is_unknown(t *testing.T) {
+	// given
+	format := StructureFormat(99)
+
 	// when
-	_, err := ReadModeledCompounds(context.Background(), strings.NewReader(""), StructureFormat(99))
+	_, err := ReadModeledCompounds(context.Background(), strings.NewReader(""), format)
 
 	// then
 	require.EqualError(t, err, "unknown structure format 99")
+}
+
+// withoutCategories drops the categories whose tags start with one of the
+// prefixes, looped or written as pairs, up to the "#" line that ends each.
+func withoutCategories(text string, prefixes ...string) string {
+	startsCategory := func(line string) bool {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(line, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	skipping := false
+	for index, line := range lines {
+		switch {
+		case skipping:
+			if strings.HasPrefix(line, "#") {
+				skipping = false
+				kept = append(kept, line)
+			}
+		case strings.TrimSpace(line) == "loop_" && index+1 < len(lines) && startsCategory(lines[index+1]):
+			skipping = true
+		case startsCategory(line):
+			skipping = true
+		default:
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+func Test_should_read_the_coordinates_and_mark_possible_chain_residues_when_a_real_file_has_neither_schemes_nor_entity(t *testing.T) {
+	// given: 3CEB.cif without _entity and without both scheme categories, the
+	// shape of a refinement program's output.
+	text := withoutCategories(readFixture(t, "parity/no_entity_3CEB.cif"), "_pdbx_nonpoly_scheme.", "_pdbx_branch_scheme.")
+	require.NotContains(t, text, "_pdbx_nonpoly_scheme.")
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
+
+	// then
+	assert.True(t, result.Complete)
+	assert.Empty(t, result.Warnings)
+	flagged := []string{}
+	for _, copied := range result.Copies {
+		assert.Equal(t, SourceAtomSite, copied.Source)
+		if copied.NeedsReview {
+			flagged = append(flagged, copied.CCDID+" "+copied.AuthSeqID)
+		}
+	}
+	assert.Equal(t, []string{"LLP 102", "MSE 1", "MSE 38", "MSE 123", "MSE 190"}, flagged)
+	assert.Len(t, result.Copies, 11)
+}
+
+func Test_should_mark_the_list_partial_when_the_coordinate_loop_ends_inside_a_row(t *testing.T) {
+	// given: the last coordinate row lacks its model number.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer"),
+		hetatmLoop(
+			"HETATM GOL B 2 . 301 C1 C 1",
+			"HETATM ATP C 2 . 401 PG P",
+		),
+	)
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
+
+	// then
+	assert.False(t, result.Complete)
+	assert.Contains(t, result.Warnings, fmt.Sprintf(unfinishedRowWarning, "_atom_site"))
+}
+
+func Test_should_skip_a_copy_when_its_fields_are_not_plain_text(t *testing.T) {
+	// given: a chain ID with a NUL byte, which PostgreSQL cannot store, and a
+	// 70-character compound ID, beside an ordinary glycerol.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 non-polymer"),
+		hetatmLoop(
+			"HETATM GOL B 2 . 301 C1 C 1",
+			"HETATM ATP B\x00C 2 . 401 PG P 1",
+			"HETATM "+strings.Repeat("X", 70)+" D 2 . 501 C1 C 1",
+		),
+	)
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
+
+	// then
+	assert.Equal(t, []string{"GOL B 301"}, copyPositions(result))
+	assert.False(t, result.Complete)
+	assert.Contains(t, result.Warnings, fmt.Sprintf(skippedCopiesWarning, 2, maxCopyFieldBytes))
+}
+
+func Test_should_skip_a_pdb_copy_when_its_chain_is_a_control_character(t *testing.T) {
+	// given
+	text := pdbRecord("HETATM", 1, "ZN", "ZN", "A", 101, "ZN") +
+		pdbRecord("HETATM", 2, "ZN", "ZN", "\x01", 102, "ZN") + "END\n"
+
+	// when
+	result := readModeled(t, text, FormatPDB)
+
+	// then
+	assert.Equal(t, []string{"ZN A 101"}, copyPositions(result))
+	assert.False(t, result.Complete)
+}
+
+func Test_should_shorten_a_review_reason_when_it_quotes_a_long_file_value(t *testing.T) {
+	// given: an entity type of 300 characters.
+	text := mmcifFile(
+		entityLoop("1 polymer", "2 '"+strings.Repeat("é", 300)+"'"),
+		hetatmLoop("HETATM QQQ B 2 . 101 C1 C 1"),
+	)
+
+	// when
+	result := readModeled(t, text, FormatMMCIF)
+
+	// then
+	require.Len(t, result.Copies, 1)
+	reason := result.Copies[0].ReviewReason
+	assert.LessOrEqual(t, len(reason), maxReviewReasonBytes+len("…"))
+	assert.True(t, strings.HasSuffix(reason, "…"))
+	assert.True(t, utf8.ValidString(reason))
 }

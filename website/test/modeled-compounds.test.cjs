@@ -116,7 +116,11 @@ test("should_keep_the_typed_lists_when_the_file_is_not_ours_or_the_record_is_mis
 
 test("should_say_the_file_is_being_read_or_why_it_failed_when_it_has_no_copies_yet", () => {
   // then
-  assert.deepEqual(modeledCompoundsView(done([], { status: "pending" }), ENTRY_LISTS), { state: "reading" });
+  assert.deepEqual(modeledCompoundsView(done([], { status: "pending" }), ENTRY_LISTS), { state: "reading", lastError: null });
+  assert.deepEqual(
+    modeledCompoundsView(done([], { status: "pending", last_error: "open the file: connection reset" }), ENTRY_LISTS),
+    { state: "reading", lastError: "open the file: connection reset" },
+  );
   assert.deepEqual(
     modeledCompoundsView(done([], { status: "failed", last_error: 'unknown model file format "ccp4"' }), ENTRY_LISTS),
     { state: "failed", reason: 'unknown model file format "ccp4"' },

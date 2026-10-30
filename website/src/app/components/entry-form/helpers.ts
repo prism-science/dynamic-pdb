@@ -331,7 +331,7 @@ export function isModelFile(file: ParsedFile): boolean {
 
 /**
  * Whether the model's coordinate file is uploaded to our bucket, where the
- * server reads every compound it models (T3-M). The form then neither asks for
+ * server reads every compound it models. The form then neither asks for
  * nor sends the model's compound lists. A linked or external file is not read.
  */
 export function modelFileIsStored(files: ParsedFile[]): boolean {
