@@ -1,0 +1,72 @@
+{{- if .Values.modelCompoundsJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dynamic-pdb.modelCompoundsJobName" . }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.modelCompoundsJob.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.modelCompoundsJob.schedule | quote }}
+  {{- if .Values.modelCompoundsJob.timeZone }}
+  timeZone: {{ .Values.modelCompoundsJob.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.modelCompoundsJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.modelCompoundsJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.modelCompoundsJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.modelCompoundsJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.modelCompoundsJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "dynamic-pdb.labels" . | nindent 12 }}
+            {{- include "dynamic-pdb.modelCompoundsJob.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: model-compounds-job
+              image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+              imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+              command: ["/app/model-compounds-job"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "dynamic-pdb.s3SecretName" . }}
+              env:
+                - name: DYNAMIC_PDB_ENV
+                  value: {{ .Values.backend.configProfile | quote }}
+                - name: DYNAMIC_PDB_DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: host
+                - name: DYNAMIC_PDB_DB_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: port
+                - name: DYNAMIC_PDB_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: database
+                - name: DYNAMIC_PDB_DB_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: username
+                - name: DYNAMIC_PDB_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: password
+                - name: DYNAMIC_PDB_DB_STATEMENT_TIMEOUT
+                  value: {{ .Values.modelCompoundsJob.statementTimeout | quote }}
+                - name: DYNAMIC_PDB_COMPOUNDS_MAX_FILES_PER_RUN
+                  value: {{ .Values.modelCompoundsJob.maxFilesPerRun | quote }}
+                - name: DYNAMIC_PDB_COMPOUNDS_FILE_TIMEOUT
+                  value: {{ .Values.modelCompoundsJob.fileTimeout | quote }}
+              resources:
+                {{- toYaml .Values.modelCompoundsJob.resources | nindent 16 }}
+{{- end }}

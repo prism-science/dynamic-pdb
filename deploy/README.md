@@ -1,8 +1,8 @@
 # dynamic-pdb deployment
 
 This chart deploys the Dynamic PDB backend, website, Flyway migrations, the S3
-proxy that serves CLI release artifacts, the MMseqs similarity job, and the
-artifact checksum job.
+proxy that serves CLI release artifacts, the MMseqs similarity job, the
+artifact checksum job, and the model compounds job.
 
 ## Environments and secrets
 
@@ -178,4 +178,34 @@ To run it manually:
 
 ```sh
 kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-checksum-job dynamic-pdb-checksum-job-manual-$(date +%s)
+```
+
+## Model compounds job
+
+The model compounds job reads every model file uploaded to our bucket and stores the compounds
+it models (every copy outside the polymer chains, water excepted) in
+`modeled_compound_records`, one set per artifact in `modeled_compound_sets`
+(`lib/cif` `ReadModeledCompounds`, T3-M). It runs `/app/model-compounds-job` from the backend
+image every 5 minutes and reads one file at a time, so a large file never takes CPU from the
+API pods. A new upload gets a pending set when its artifact is created; archive models, whose
+files are on files.rcsb.org, get none.
+
+A file is retried after 10 and 20 minutes, then marked `failed` with the reason in
+`last_error`. Job alerts are muted for this namespace, so check failures with:
+
+```sql
+select artifact_id, attempts, last_error from modeled_compound_sets where status = 'failed';
+```
+
+To read a file again (for example after a parser change), set its set back to pending:
+
+```sql
+update modeled_compound_sets set status = 'pending', attempts = 0, next_attempt_at = now()
+where artifact_id = '<artifact id>';
+```
+
+To run it manually:
+
+```sh
+kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-model-compounds-job dynamic-pdb-model-compounds-job-manual-$(date +%s)
 ```
