@@ -207,7 +207,8 @@ func compareEntryUpdate(
 		!reflect.DeepEqual(currentRevision.Metadata.Resolution, desiredRevision.Metadata.Resolution) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Method, desiredRevision.Metadata.Method) ||
 		!reflect.DeepEqual(currentRevision.Metadata.SpaceGroup, desiredRevision.Metadata.SpaceGroup) ||
-		!reflect.DeepEqual(currentRevision.Metadata.Crystallography, desiredRevision.Metadata.Crystallography)
+		!reflect.DeepEqual(currentRevision.Metadata.Crystallography, desiredRevision.Metadata.Crystallography) ||
+		!reflect.DeepEqual(currentRevision.Composition(), desiredRevision.Composition())
 	polymerEntitiesChanged := !polymerEntitiesHaveSameData(
 		currentPolymerEntities,
 		desiredPolymerEntities,
@@ -229,6 +230,7 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	desiredRevision models.EntryRevision,
 	desiredPolymerEntities []models.PolymerEntity,
 	polymerEntitiesChanged bool,
+	compositionSynced bool,
 	source archiveRevisionSource,
 ) error {
 	now := j.now()
@@ -239,8 +241,9 @@ func (j *entrySyncStrategy) saveEntryUpdate(
 	revision.Metadata.Method = desiredRevision.Metadata.Method
 	revision.Metadata.SpaceGroup = desiredRevision.Metadata.SpaceGroup
 	revision.Metadata.Crystallography = desiredRevision.Metadata.Crystallography
-	revision.FieldSources = archiveEntryFieldSources(currentRevision.FieldSources, source, now)
-	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, desiredPolymerEntities, polymerEntitiesChanged)
+	revision.SetComposition(desiredRevision.Composition())
+	revision.FieldSources = syncEntryFieldSources(currentRevision.FieldSources, source, now, compositionSynced)
+	return j.saveSyncEntryRevision(ctx, currentRevision, revision, desiredPolymerEntities, polymerEntitiesChanged)
 }
 
 // saveObsoleteEntry activates a sync revision that marks the entry obsolete and, when the entry
@@ -258,7 +261,7 @@ func (j *entrySyncStrategy) saveObsoleteEntry(
 		revision.Title = update.title
 		revision.FieldSources = removalTitleFieldSources(currentRevision.FieldSources, pdbID, now)
 	}
-	return j.saveSyncEntryRevision(ctx, currentRevision.ID, revision, nil, false)
+	return j.saveSyncEntryRevision(ctx, currentRevision, revision, nil, false)
 }
 
 // newSyncEntryRevision starts a sync revision as a copy of the active one.
@@ -277,10 +280,11 @@ func newSyncEntryRevision(currentRevision models.EntryRevision, summary string, 
 }
 
 // saveSyncEntryRevision creates revision, gives it the parent's data, and activates it, unless the
-// parent stopped being the active revision meanwhile.
+// parent stopped being the active revision meanwhile, or was changed in place since the sync read
+// it (the archive re-derivation job keeps the revision's ID): the revision was built from parent.
 func (j *entrySyncStrategy) saveSyncEntryRevision(
 	ctx context.Context,
-	parentRevisionID uuid.UUID,
+	parent models.EntryRevision,
 	revision models.EntryRevision,
 	desiredPolymerEntities []models.PolymerEntity,
 	polymerEntitiesChanged bool,
@@ -298,8 +302,11 @@ func (j *entrySyncStrategy) saveSyncEntryRevision(
 		if err != nil {
 			return fmt.Errorf("get active parent revision: %w", err)
 		}
-		if activeRevision.ID != parentRevisionID {
+		if activeRevision.ID != parent.ID {
 			return fmt.Errorf("entry revision parent is no longer active: %w", db.ErrEntryRevisionConflict)
+		}
+		if !activeRevision.HasSameData(parent) {
+			return fmt.Errorf("entry revision parent was changed since it was read: %w", db.ErrEntryRevisionConflict)
 		}
 
 		createdRevision, err := j.database.Entries.Create(ctx, revision)
@@ -308,7 +315,7 @@ func (j *entrySyncStrategy) saveSyncEntryRevision(
 		}
 		if err := j.saveEntryRevisionData(
 			ctx,
-			parentRevisionID,
+			parent.ID,
 			createdRevision.ID,
 			desiredPolymerEntities,
 			polymerEntitiesChanged,

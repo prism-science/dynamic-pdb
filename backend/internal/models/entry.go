@@ -61,6 +61,10 @@ type EntryRevision struct {
 	ThumbnailImageURL *string
 	Metadata          EntryMetadata
 	FieldSources      FieldSources
+	// CompoundSources and GlycanDescriptors record how the composition lists were derived from
+	// the entry's mmCIF. Nil means not derived; an empty glycan list means known to have none.
+	CompoundSources   *CompoundSources
+	GlycanDescriptors *[]Glycan
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -131,7 +135,9 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		reflect.DeepEqual(revision.Metadata.Ligands, other.Metadata.Ligands) &&
 		reflect.DeepEqual(revision.Metadata.Cofactors, other.Metadata.Cofactors) &&
 		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities) &&
-		reflect.DeepEqual(revision.Metadata.ArchiveStatus, other.Metadata.ArchiveStatus)
+		reflect.DeepEqual(revision.Metadata.ArchiveStatus, other.Metadata.ArchiveStatus) &&
+		reflect.DeepEqual(revision.CompoundSources, other.CompoundSources) &&
+		reflect.DeepEqual(revision.GlycanDescriptors, other.GlycanDescriptors)
 }
 
 func pointersEqual[T comparable](left *T, right *T) bool {

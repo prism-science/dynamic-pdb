@@ -30,6 +30,12 @@ func Test_should_drop_only_pdb_id_when_building_deletion_revision(t *testing.T) 
 			},
 		},
 		FieldSources: domainmodels.FieldSources{"title": {Source: domainmodels.FieldSourceRCSB}},
+		CompoundSources: &domainmodels.CompoundSources{
+			Ligands:   map[string]domainmodels.CompoundSource{"NAG": {Rule: domainmodels.CompoundRuleBranched, ListVersion: "2026.10.0"}},
+			Cofactors: map[string]domainmodels.CompoundSource{},
+			Excluded:  map[string]domainmodels.CompoundSource{},
+		},
+		GlycanDescriptors: &[]domainmodels.Glycan{{EntityID: "2", CompoundIDs: []string{"NAG"}}},
 	}
 
 	// when
@@ -44,6 +50,8 @@ func Test_should_drop_only_pdb_id_when_building_deletion_revision(t *testing.T) 
 	assert.Equal(t, &title, revision.Title)
 	assert.Equal(t, map[domainmodels.EntrySource]string{"uniprot": "P69905"}, revision.Metadata.ExternalRefs)
 	assert.Equal(t, base.FieldSources, revision.FieldSources)
+	assert.Equal(t, base.CompoundSources, revision.CompoundSources)
+	assert.Equal(t, base.GlycanDescriptors, revision.GlycanDescriptors)
 	assert.Equal(t, deletedBy, revision.CreatedBy)
 	assert.Equal(t, now, revision.CreatedAt)
 	require.NotNil(t, revision.ChangeSummary)

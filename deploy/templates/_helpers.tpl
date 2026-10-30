@@ -26,6 +26,10 @@
 {{- printf "%s-checksum-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "dynamic-pdb.archiveRederiveJobName" -}}
+{{- printf "%s-archive-rederive-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "dynamic-pdb.modelCompoundsJobName" -}}
 {{- printf "%s-model-compounds-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -82,6 +86,11 @@ app.kubernetes.io/component: mmseqs-job
 {{- define "dynamic-pdb.checksumJob.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "dynamic-pdb.checksumJobName" . }}
 app.kubernetes.io/component: checksum-job
+{{- end -}}
+
+{{- define "dynamic-pdb.archiveRederiveJob.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "dynamic-pdb.archiveRederiveJobName" . }}
+app.kubernetes.io/component: archive-rederive-job
 {{- end -}}
 
 {{- define "dynamic-pdb.modelCompoundsJob.selectorLabels" -}}

@@ -50,6 +50,8 @@ const (
 	EntryFieldMethod          FieldPointer = "/metadata/method"
 	EntryFieldSpaceGroup      FieldPointer = "/metadata/space_group"
 	EntryFieldCrystallography FieldPointer = "/metadata/crystallography"
+	EntryFieldLigands         FieldPointer = "/metadata/ligands"
+	EntryFieldCofactors       FieldPointer = "/metadata/cofactors"
 )
 
 // Model revision fields the archive sync writes, apart from the archive metrics.
@@ -73,6 +75,8 @@ var EntryArchiveFields = []FieldPointer{
 	EntryFieldMethod,
 	EntryFieldSpaceGroup,
 	EntryFieldCrystallography,
+	EntryFieldLigands,
+	EntryFieldCofactors,
 }
 
 // ModelArchiveFields are the model revision fields the archive sync writes, apart from the
@@ -185,6 +189,8 @@ func entryFieldValues(revision EntryRevision) map[FieldPointer]any {
 		EntryFieldMethod:          revision.Metadata.Method,
 		EntryFieldSpaceGroup:      revision.Metadata.SpaceGroup,
 		EntryFieldCrystallography: revision.Metadata.Crystallography,
+		EntryFieldLigands:         revision.Metadata.Ligands,
+		EntryFieldCofactors:       revision.Metadata.Cofactors,
 	}
 }
 

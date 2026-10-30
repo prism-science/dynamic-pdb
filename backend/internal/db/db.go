@@ -28,6 +28,7 @@ type DB struct {
 	PolymerEntities             *PolymerEntitiesRepository
 	ProteinSequenceSimilarities *ProteinSequenceSimilaritiesRepository
 	InteractionSets             *InteractionSetsRepository
+	ArchiveRederivations        *ArchiveRederivationsRepository
 	ModeledCompounds            *ModeledCompoundsRepository
 
 	sqlx *sqlx.DB
@@ -97,6 +98,7 @@ func NewDB(cfg Config) (*DB, error) {
 		PolymerEntities:             NewPolymerEntitiesRepository(sqlxDB, queriers),
 		ProteinSequenceSimilarities: NewProteinSequenceSimilaritiesRepository(sqlxDB, queriers),
 		InteractionSets:             NewInteractionSetsRepository(sqlxDB, queriers),
+		ArchiveRederivations:        NewArchiveRederivationsRepository(sqlxDB, queriers),
 		ModeledCompounds:            NewModeledCompoundsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		probe:                       probe,

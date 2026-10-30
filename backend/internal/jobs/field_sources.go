@@ -31,6 +31,12 @@ func keepDepositorEntryFields(current models.EntryRevision, desired *models.Entr
 	if sources.IsDepositor(models.EntryFieldCrystallography) {
 		desired.Metadata.Crystallography = current.Metadata.Crystallography
 	}
+	if sources.IsDepositor(models.EntryFieldLigands) {
+		desired.Metadata.Ligands = current.Metadata.Ligands
+	}
+	if sources.IsDepositor(models.EntryFieldCofactors) {
+		desired.Metadata.Cofactors = current.Metadata.Cofactors
+	}
 }
 
 // keepDepositorModelFields is keepDepositorEntryFields for model revisions. Archive metrics are
@@ -94,6 +100,29 @@ func archiveEntryFieldSources(
 	retrievedAt time.Time,
 ) models.FieldSources {
 	return archiveFieldSources(current, models.EntryArchiveFields, source, retrievedAt)
+}
+
+// syncEntryFieldSources returns the sources of an entry revision the sync creates when it applies
+// a new archive version. When the sync kept the stored lists instead of taking them from the
+// entry's mmCIF (applyArchiveComposition), the lists keep the sources they had.
+func syncEntryFieldSources(
+	current models.FieldSources,
+	source archiveRevisionSource,
+	retrievedAt time.Time,
+	compositionSynced bool,
+) models.FieldSources {
+	sources := archiveEntryFieldSources(current, source, retrievedAt)
+	if compositionSynced {
+		return sources
+	}
+	for _, pointer := range []models.FieldPointer{models.EntryFieldLigands, models.EntryFieldCofactors} {
+		if previous, ok := current[pointer]; ok {
+			sources[pointer] = previous
+		} else {
+			delete(sources, pointer)
+		}
+	}
+	return sources
 }
 
 // removalTitleFieldSources returns the sources of a sync revision that takes its title from

@@ -1,0 +1,73 @@
+{{- if .Values.archiveRederiveJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dynamic-pdb.archiveRederiveJobName" . }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.archiveRederiveJob.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.archiveRederiveJob.schedule | quote }}
+  {{- if .Values.archiveRederiveJob.timeZone }}
+  timeZone: {{ .Values.archiveRederiveJob.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.archiveRederiveJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.archiveRederiveJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.archiveRederiveJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.archiveRederiveJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.archiveRederiveJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "dynamic-pdb.labels" . | nindent 12 }}
+            {{- include "dynamic-pdb.archiveRederiveJob.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: archive-rederive-job
+              image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+              imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+              command: ["/app/archive-rederive-job"]
+              env:
+                - name: DYNAMIC_PDB_ENV
+                  value: {{ .Values.backend.configProfile | quote }}
+                - name: DYNAMIC_PDB_DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: host
+                - name: DYNAMIC_PDB_DB_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: port
+                - name: DYNAMIC_PDB_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: database
+                - name: DYNAMIC_PDB_DB_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: username
+                - name: DYNAMIC_PDB_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: password
+                - name: DYNAMIC_PDB_DB_STATEMENT_TIMEOUT
+                  value: {{ .Values.archiveRederiveJob.statementTimeout | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_MAX_ENTRIES_PER_RUN
+                  value: {{ .Values.archiveRederiveJob.maxEntriesPerRun | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_PAGE_SIZE
+                  value: {{ .Values.archiveRederiveJob.pageSize | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_DOWNLOAD_CONCURRENCY
+                  value: {{ .Values.archiveRederiveJob.downloadConcurrency | quote }}
+                - name: DYNAMIC_PDB_ARCHIVE_REDERIVE_DRY_RUN
+                  value: {{ .Values.archiveRederiveJob.dryRun | quote }}
+              resources:
+                {{- toYaml .Values.archiveRederiveJob.resources | nindent 16 }}
+{{- end }}
