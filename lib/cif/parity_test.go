@@ -19,7 +19,7 @@ const parityGoldenPath = "testdata/parity-golden.json"
 var parityFiles = []string{
 	"4HHB.cif", "3CLN.cif", "6OIM.cif", "193L.cif", "1AKE.cif",
 	"184D.cif", "4UG1.cif", "1W53.cif", "4HB1.cif", "1A62.cif", "7LTB.cif", "3CEB.cif",
-	"9A8B.cif", "2VSD.cif", "6TQP.cif",
+	"9A8B.cif", "2VSD.cif", "6TQP.cif", "1C0R.cif",
 	"parity/instances.cif", "parity/no_metalc.cif", "parity/two_models.cif",
 	"parity/wrapped_rows.cif", "parity/ihm_probe.cif", "parity/entity_rules.cif",
 	"parity/no_entity_chem_comp.cif", "parity/metal_partner_flags.cif", "parity/pair_form_layout.cif",

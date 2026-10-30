@@ -34,8 +34,13 @@ const (
 	maxSequenceNames = 100_000
 	// maxPDBFields bounds the REMARK fields kept from a PDB file.
 	maxPDBFields = 5_000
-	// maxScanLineBytes bounds one line read by the streaming scalar scan.
+	// maxScanLineBytes bounds one line read by the streaming scalar scan, and one
+	// line or text field read by ReadModeledCompounds.
 	maxScanLineBytes = 8 << 20
+	// maxModeledCopies bounds the compound copies ReadModeledCompounds lists
+	// from a whole file (6VXX, a glycosylated spike trimer, has under 200; the
+	// largest archive entries have a few thousand).
+	maxModeledCopies = 100_000
 )
 
 // limitNotes collects each limit that was hit, once per reason.

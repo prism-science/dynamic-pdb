@@ -63,6 +63,52 @@
       }
     ]
   },
+  "1C0R.cif": {
+    "atom_count": 223,
+    "modeled_residues": 2,
+    "unique_protein_chains": 2,
+    "compounds": [
+      {
+        "list": "ligands",
+        "id": "BGC",
+        "rule": "branched"
+      },
+      {
+        "list": "ligands",
+        "id": "CL",
+        "rule": "list",
+        "needs_review": true,
+        "reason": "often from the buffer: confirm it is part of the sample"
+      },
+      {
+        "list": "ligands",
+        "id": "LAC",
+        "rule": "list"
+      },
+      {
+        "list": "ligands",
+        "id": "RER",
+        "rule": "branched"
+      }
+    ],
+    "glycans": [
+      {
+        "entity_id": "2",
+        "compound_ids": [
+          "BGC",
+          "RER"
+        ],
+        "descriptors": [
+          {
+            "descriptor": "WURCS=2.0/2,2,1/[a2122h-1b_1-5][ad621m-1a_1-5_3*C_3*N]/1-2/a2-b1",
+            "type": "WURCS",
+            "program": "PDB2Glycan",
+            "program_version": "1.1.0"
+          }
+        ]
+      }
+    ]
+  },
   "1II5.pdb": {
     "atom_count": 62,
     "modeled_residues": 8,

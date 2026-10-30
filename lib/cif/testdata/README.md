@@ -29,6 +29,7 @@ Counts in the tests are for these cut files.
 | 9A8B | an integrative (IHM) entry whose `HETATM` residues all belong to a `POLYMER` entity |
 | 2VSD | an N-glycoprotein: an NAG-NAG-BMA glycan on an asparagine, with a WURCS descriptor and no depositor flags (rule `branched`) |
 | 6TQP | a single connection, so `_struct_conn` is written as `_struct_conn.tag value` items, not a loop: a sodium bound to a glutamate (a cofactor) |
+| 1C0R | the whole file (77 KB, not cut): `_atom_site` comes before `_pdbx_nonpoly_scheme` and `_pdbx_branch_scheme`, and `_pdbx_entity_nonpoly` comes last. Its two disaccharides, lactate and three chlorides are all modeled compounds, although RCSB's "bound components" for the entry list none of them |
 
 ## Real PDB-format files
 

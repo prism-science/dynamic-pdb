@@ -54,7 +54,8 @@ warning, and the parse still succeeds:
 | distinct chain and residue name pairs in PDB `SEQRES` (and distinct `MODRES` residues) | 100,000 (100,000) | a real chain uses under 30 residue names |
 | distinct compounds per list | 2,000 | real entries have well under 200 |
 | REMARK fields (PDB) | 5,000 | |
-| one line in the streaming scalar scan | 8 MiB | a longer line is an error, not a buffer |
+| one line in the streaming scalar scan, or one line or `;` text field in `cif.ReadModeledCompounds` | 8 MiB | a longer line is an error, not a buffer |
+| compound copies listed by `cif.ReadModeledCompounds` | 100,000 | 6VXX, a glycosylated spike trimer, has 63; past the cap the list is marked incomplete with a warning |
 | time for one extraction (`cif.TimeBudget`) | 5 s | a 4 MiB head parses in under 0.2 s even when hostile; the budget only stops a slow machine or an input nobody anticipated |
 
 If `_atom_site` runs past a cap, atom counts, residue counts and altloc fraction
@@ -264,6 +265,52 @@ parser does not know flags the glycan's compounds.
 
 Nothing stores the record yet: the extract endpoint returns it, and the entry
 revision column comes with the archive backfill (T1-C2).
+
+## Compounds modeled in the file
+
+`cif.ReadModeledCompounds` (`lib/cif/modeled.go`) lists every copy of every
+compound a file models outside its polymer chains, water (`HOH`, `DOD`, `WAT`,
+`H2O`) excepted. It is a record of the coordinates, not a judgment: the
+reference lists are not applied, so buffers, ions and an integrative model's
+probes are listed, and nothing is split into ligands and cofactors. The entry's
+Ligands and Cofactors lists carry those judgments. Go only; the website does not
+read it.
+
+Each copy has its CCD ID, the chain, residue number and insertion code viewers
+show (`_atom_site.auth_*`, the schemes' `pdb_*` items, PDB columns 22 to 27),
+the mmCIF label chain and entity, and where it was read:
+
+- **`nonpoly_scheme`, `branch_scheme`.** An mmCIF file's
+  `_pdbx_nonpoly_scheme` and `_pdbx_branch_scheme` rows (glycans of two or more
+  sugars are only in the branch scheme). The schemes' own `auth_*` items are the
+  depositor's original numbering and are not used.
+- **`atom_site`.** A `HETATM` residue whose entity is not a polymer (or water),
+  when the file has no schemes or they leave it out. A copy the schemes leave out
+  adds the warning "N compound copies in the coordinates are missing from the
+  scheme categories".
+- **`pdb_hetatm`.** The `HETATM` residues of a PDB-format file that `SEQRES`
+  and `MODRES` do not make chain residues, as for the ligand rule.
+
+A file that does not say what its chains hold (no `_entity`, or a PDB-format
+file or chain without `SEQRES`) gets the ligand rule's treatment: a residue
+that could be a chain residue is listed and marked for review, never left out by
+a guess. A copy whose entity type, or chemical component type in a file without
+`_entity`, is unknown is marked for review too.
+
+Copies are de-duplicated by position across models, so an ensemble lists a
+compound that only a later model holds. The chain positions of a PDB-format
+file come from its first model.
+
+**Whole file, bounded memory.** Unlike extraction, the read is not limited to
+the 4 MiB head: program outputs often have no schemes and write their `HETATM`
+rows at the end of `_atom_site`. The stream is read line by line through a
+64 KiB buffer (`lib/cif/stream.go`, the same tokens as the text tokenizer; a test
+checks them on every fixture), and only the keys of distinct copies are kept, up
+to 100,000. On a laptop a 315 MB mmCIF file took 2.3 s and a 315 MB PDB file
+0.4 s, both with a 13 MB peak (2026-10-30). There is no fixed time budget: the
+caller's context bounds the read, and a done context or a stream that cannot be
+read is an error, not a partial list. A list stopped by the copy cap, or a loop
+that ends inside a row, has `Complete` false and a warning.
 
 ## Mutations
 
