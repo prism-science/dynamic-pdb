@@ -1,8 +1,8 @@
 # dynamic-pdb deployment
 
 This chart deploys the Dynamic PDB backend, website, Flyway migrations, the S3
-proxy that serves CLI release artifacts, the MMseqs similarity job, and the
-artifact checksum job.
+proxy that serves CLI release artifacts, the MMseqs similarity job, the
+artifact checksum job, and the archive re-derivation job.
 
 ## Environments and secrets
 
@@ -116,6 +116,39 @@ bucket and read-only credentials. Users can install with:
 
 ```sh
 curl -fsSL https://dynamicpdb.com/install.sh | bash
+```
+
+## Archive re-derivation job
+
+The archive re-derivation job (T1-C2) fills in what the C1 migrations could not for archive
+entries. From the first 4 MiB of each entry's RCSB mmCIF, the same bytes the entry sync reads,
+it derives the entry's ligands, cofactors, their decision record (`compound_sources`) and the
+glycan descriptors, and its polymer entities' mutations in UniProt numbering. It changes the
+active revision in place, without a new revision, and logs the old and new values in
+`archive_rederivations`, so `backend/migrations/inventory/revert_archive_rederivation.sql` can
+put them back. It runs `/app/archive-rederive-job` from the backend image and uses only the
+backend's database secret.
+
+Lists a person set are kept: lists without a decision record, or marked `depositor` in
+`field_sources`. Mutations a person typed are kept too. An entry with a revision in review is
+skipped and tried again on the next run, since a draft made before the change would drop it when
+it is activated. A file that cannot be downloaded is tried on three runs, then left `failed`. A
+head that ends before the coordinates gives `skipped_incomplete_file` and is not tried again.
+
+Each run takes pages of 200 revisions, downloads 4 files at a time, and writes each entry in its
+own transaction. After each page it pauses as long as the page's writes took, so the database is
+at most about half busy with this. Runs stop taking pages after 50 minutes and are stopped after
+55; `maxEntriesPerRun` caps the revisions one run looks at (`0` means no cap). The job's
+statements may run for `statementTimeout` (30 seconds) instead of the backend's 10.
+
+It is off on every environment. The prod run starts with a dry run, which logs what would change
+in rows marked `dry_run` and changes nothing else:
+
+```yaml
+archiveRederiveJob:
+  enabled: true
+  dryRun: true
+  maxEntriesPerRun: 1000
 ```
 
 ## Checksum job

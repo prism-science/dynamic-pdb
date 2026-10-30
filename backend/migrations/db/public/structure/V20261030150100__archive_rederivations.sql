@@ -13,11 +13,17 @@
 --   skipped_in_review   the entry has a revision in review; the next run tries again.
 --   skipped_not_active  the revision stopped being active during the run; its successor gets
 --                       its own row.
---   failed              the file could not be read or derived (error says why); the next run
---                       tries again until attempts reaches 3.
+--   skipped_incomplete_file
+--                       the head of the file could not be parsed or ends before the
+--                       coordinates (error says which), so nothing was derived; the entry sync
+--                       keeps the stored values for the same file.
+--   failed              the file could not be downloaded or derived (error says why); the next
+--                       run tries again until attempts reaches 3.
 --
--- dry_run rows record what a dry run would change; nothing else was written, and a real run
--- replaces them.
+-- attempts counts the real runs that wrote the row.
+--
+-- dry_run rows record what a dry run would change; nothing else was written. A dry run writes
+-- rows only for revisions that have none, and a real run replaces them.
 --
 -- The table starts empty. The foreign keys take SHARE ROW EXCLUSIVE on entry_revisions and
 -- entries for milliseconds; lock_timeout makes the migration fail cleanly (nothing applied,
@@ -38,9 +44,12 @@ CREATE TABLE archive_rederivations (
     created_at         timestamptz NOT NULL DEFAULT now(),
     updated_at         timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT archive_rederivations_outcome_check CHECK (outcome IN (
-        'derived', 'unchanged', 'skipped_person_set', 'skipped_in_review', 'skipped_not_active', 'failed'
+        'derived', 'unchanged', 'skipped_person_set', 'skipped_in_review', 'skipped_not_active',
+        'skipped_incomplete_file', 'failed'
     )),
-    CONSTRAINT archive_rederivations_error_check CHECK ((outcome = 'failed') = (error IS NOT NULL)),
+    CONSTRAINT archive_rederivations_error_check CHECK (
+        (outcome IN ('failed', 'skipped_incomplete_file')) = (error IS NOT NULL)
+    ),
     -- A change has both sides; only derived and skipped_person_set rows record one, and a
     -- derived row always does.
     CONSTRAINT archive_rederivations_change_check CHECK (

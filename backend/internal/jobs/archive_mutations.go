@@ -2,12 +2,10 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/lib/cif"
-	"dynamic-pdb/lib/rcsb"
 )
 
 // archiveMutations is what the entry sync read from the archive's mmCIF (researcher answer Q3):
@@ -20,38 +18,14 @@ type archiveMutations struct {
 }
 
 // readArchiveMutations reads the mutation sets from the head of the entry's RCSB mmCIF. A failed
-// download is an error, so the job retries; a file that cannot be read completely is logged and
-// leaves the mutations as they are.
+// download is an error, so the job retries; a file that cannot be read completely leaves the
+// mutations as they are.
 func (s *entrySyncStrategy) readArchiveMutations(ctx context.Context, pdbID string) (archiveMutations, error) {
-	head, err := s.rcsbClient.DownloadFileHead(ctx, pdbID, rcsb.CoordinateFile(pdbID), cif.HeadReadLimit)
+	file, err := readArchiveFile(ctx, s.rcsbClient, s.logger, pdbID)
 	if err != nil {
-		return archiveMutations{}, fmt.Errorf("download RCSB mmCIF of %s: %w", pdbID, err)
+		return archiveMutations{}, err
 	}
-	parseCtx, cancel := context.WithTimeout(ctx, cif.TimeBudget)
-	defer cancel()
-	document, result, err := cif.ExtractTextContext(parseCtx, string(head.Contents), head.Truncated)
-	if err != nil {
-		s.logger.Warn("data sync kept stored mutations: RCSB mmCIF could not be parsed", "pdb_id", pdbID, "err", err)
-		return archiveMutations{}, nil
-	}
-	if !document.MutationsComplete() {
-		s.logger.Warn(
-			"data sync kept stored mutations: RCSB mmCIF was not read up to its coordinates",
-			"pdb_id", pdbID,
-			"warnings", result.Warnings,
-		)
-		return archiveMutations{}, nil
-	}
-	for _, set := range result.Mutations {
-		if set.EntityID == "" {
-			s.logger.Warn(
-				"data sync ignored RCSB engineered mutation rows that name no entity",
-				"pdb_id", pdbID,
-				"unmapped", set.Unmapped,
-			)
-		}
-	}
-	return archiveMutations{sets: result.Mutations, complete: true}, nil
+	return file.mutations, nil
 }
 
 // applyArchiveMutations returns desired with each polymer entity's mutations taken from the

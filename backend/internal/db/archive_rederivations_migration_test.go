@@ -55,6 +55,7 @@ func Test_should_reject_inconsistent_log_rows_when_archive_rederivation_is_logge
 	}{
 		"unknown outcome":            {outcome: "skipped", constraint: "archive_rederivations_outcome_check"},
 		"failed without error":       {outcome: "failed", constraint: "archive_rederivations_error_check"},
+		"incomplete without reason":  {outcome: "skipped_incomplete_file", constraint: "archive_rederivations_error_check"},
 		"error on a success":         {outcome: "unchanged", error: "boom", constraint: "archive_rederivations_error_check"},
 		"before without after":       {outcome: "derived", before: `{}`, constraint: "archive_rederivations_change_check"},
 		"derived without change":     {outcome: "derived", constraint: "archive_rederivations_change_check"},
@@ -80,12 +81,13 @@ func Test_should_accept_every_outcome_the_job_writes_when_archive_rederivation_i
 		after  any
 		error  any
 	}{
-		"derived":            {before: `{}`, after: `{"metadata":{"ligands":[]}}`},
-		"unchanged":          {},
-		"skipped_person_set": {before: `{}`, after: `{"polymer_entities":[]}`},
-		"skipped_in_review":  {},
-		"skipped_not_active": {},
-		"failed":             {error: "download 1ABC: 404"},
+		"derived":                 {before: `{}`, after: `{"metadata":{"ligands":[]}}`},
+		"unchanged":               {},
+		"skipped_person_set":      {before: `{}`, after: `{"polymer_entities":[]}`},
+		"skipped_in_review":       {},
+		"skipped_not_active":      {},
+		"skipped_incomplete_file": {error: "the head of the RCSB mmCIF ends before its coordinates"},
+		"failed":                  {error: "download 1ABC: 404"},
 	}
 
 	for outcome, row := range rows {

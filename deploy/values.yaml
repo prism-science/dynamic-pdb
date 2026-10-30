@@ -136,6 +136,34 @@ checksumJob:
       cpu: "1"
       memory: 512Mi
 
+# The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
+# glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
+# mmCIF, in place on the active revision. Off until its prod run is planned; see the README.
+archiveRederiveJob:
+  enabled: false
+  # Off-peak on prod: hourly from 22:00 to 05:00 UTC.
+  schedule: "0 22-23,0-5 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  backoffLimit: 0
+  # The job stops taking pages after 50 minutes; this ends a run before the next one starts.
+  activeDeadlineSeconds: 3300
+  # Caps the revisions one run looks at; 0 means no cap.
+  maxEntriesPerRun: 5000
+  # true logs what the job would change, in rows marked dry_run, and changes nothing else.
+  dryRun: false
+  # Replaces the backend's 10s statement_timeout for the job only.
+  statementTimeout: 30s
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
 ingress:
   className: traefik
   annotations:
