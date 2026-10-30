@@ -156,6 +156,17 @@ export class PdbChains {
     return names.has(instance.compound) ? "member" : "none";
   }
 
+  /** Mirrors pdbChains.chainsUndeclared: the file leaves open which residues
+   *  the instance's chain holds when it has no SEQRES records at all, or the
+   *  instance's chain has ATOM records but no SEQRES. A chain with neither (the
+   *  glycan and ligand chains of an archive file) is not a polymer chain. */
+  chainsUndeclared(instance: CompoundInstance): boolean {
+    if (this.seqres.size === 0) {
+      return true;
+    }
+    return this.atomRange.has(instance.asym) && !this.seqres.has(instance.asym);
+  }
+
   private inPolymerBlock(instance: CompoundInstance): boolean {
     const terLine = this.terLine.get(instance.asym);
     const firstLine = this.firstLine.get(instanceKey(instance));

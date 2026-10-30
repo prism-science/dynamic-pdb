@@ -13,6 +13,10 @@ export const UNLINKED_METAL_REASON =
   "metal ion instance has no metalc connection to a protein residue or ligand";
 export const WATER_ONLY_METAL_REASON = "metal linked only to water: confirm the site";
 export const OUTSIDE_CHAIN_REASON = "residue outside the polymer chain: confirm it is a ligand";
+/** A residue that could be a chain residue, in a file that does not say what
+ *  its chains hold (no SEQRES, no `_entity`). */
+export const UNDECLARED_CHAIN_REASON =
+  "the file does not say which residues belong to its polymer chains: confirm this residue is not part of one";
 /** Also the hint the entry form gives a typed ambiguous ID. */
 export const AMBIGUOUS_COMPOUND_REASON =
   "often from the buffer: confirm it is part of the sample";

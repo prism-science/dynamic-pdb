@@ -280,6 +280,7 @@ function parsePdb(text: string): StructureFacts {
   const instances = compounds.facts();
   for (const instanceFacts of instances.values()) {
     instanceFacts.chain = chains.position(instanceFacts.instance);
+    instanceFacts.chainsUndeclared = chains.chainsUndeclared(instanceFacts.instance);
   }
   applyCounts(facts, atomCount, residueTally, instances, chains.metalcLinks(isMetalIon), annotations);
   return facts;
@@ -470,7 +471,14 @@ function parseMmcif(fileText: string): StructureFacts {
     compounds.declare({ compound, asym: "", seq: "", ins: "" }, 0, entityId);
   }
   const annotations = readAnnotations(text, atomSite !== null && loopColumn(atomSite, "ihm_model_id") !== -1);
-  applyCounts(facts, atomCount, residueTally, compounds.facts(), readMetalcLinks(text), annotations);
+  const instances = compounds.facts();
+  if (!annotations.entitiesRead) {
+    // Without _entity, nothing says which residues the chains hold.
+    for (const instanceFacts of instances.values()) {
+      instanceFacts.chainsUndeclared = true;
+    }
+  }
+  applyCounts(facts, atomCount, residueTally, instances, readMetalcLinks(text), annotations);
   facts.glycans = annotations.glycans;
 
   return facts;

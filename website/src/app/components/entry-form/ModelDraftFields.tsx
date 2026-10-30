@@ -21,6 +21,7 @@ import {
   assignCanonicalArtifactTypes,
   canAddModelFiles,
   isModelFile,
+  modelFileIsStored,
   extFileKeys,
   extFileToParsed,
   parseModelFile,
@@ -171,6 +172,7 @@ export default function ModelDraftFields({
           compoundsSource={
             draft.compoundsSource ? `from ${draft.compoundsSource}` : null
           }
+          compoundsFromFile={modelFileIsStored(draft.files)}
           messages={messages}
         />
 

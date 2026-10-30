@@ -45,9 +45,16 @@ export type Model = Omit<Schemas["ModelAttributes"], "metadata" | "metrics" | "i
   metrics?: Metric[];
 };
 
-/** A model as its own request returns it: a list item plus its field sources. */
+/** What the server read from a model's stored file: every compound copy outside
+ *  the polymer chains, water excepted. Optional on the types because a response
+ *  from a backend older than the field has none; read it as unknown. */
+export type ModeledCompounds = Schemas["ModeledCompounds"];
+
+/** A model as its own request returns it: a list item plus its field sources
+ *  and the compounds its file models. */
 export type ModelDetail = Model & {
   field_sources: FieldSources;
+  modeled_compounds?: ModeledCompounds;
 };
 
 export type EntityType = "data" | "metrics" | "model" | "program";
@@ -667,6 +674,7 @@ export type ModelRevision = ModelRevisionSummary & {
   residue_data: ResidueData[];
   metrics: Metric[];
   artifacts: Artifact[];
+  modeled_compounds?: ModeledCompounds;
 };
 
 export type ReviewEntry = EntryRevision;

@@ -1262,6 +1262,10 @@ func (s *Server) modelRevisionAttributesFromModel(
 	if err != nil {
 		return ModelRevisionAttributes{}, fmt.Errorf("build model revision field sources: %w", err)
 	}
+	compounds, err := s.modeledCompoundsForRevision(ctx, revision)
+	if err != nil {
+		return ModelRevisionAttributes{}, fmt.Errorf("build model revision compounds: %w", err)
+	}
 	listItem := modelRevisionSummaryAttributesFromModel(revision)
 	return ModelRevisionAttributes{
 		Id:                listItem.Id,
@@ -1284,6 +1288,7 @@ func (s *Server) modelRevisionAttributesFromModel(
 		Metrics:           metricsFromModels(metrics),
 		Artifacts:         artifactAttributes,
 		FieldSources:      fieldSources,
+		ModeledCompounds:  compounds,
 	}, nil
 }
 

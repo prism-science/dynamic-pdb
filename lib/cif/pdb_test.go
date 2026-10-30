@@ -207,9 +207,9 @@ func Test_should_add_the_bound_cofactor_when_modres_lists_a_covalent_cofactor_re
 	assert.Equal(t, map[string]CompoundSource{"PLP": source(ruleCovalentMap)}, sources.Cofactors)
 }
 
-func Test_should_place_residues_by_numbers_when_chain_has_neither_seqres_nor_ter(t *testing.T) {
-	// given: a depositor file: MSE inside chain A's numbers, a glutamate and an
-	// ATP numbered inside them too, and a glutamate far outside.
+func Test_should_flag_residues_that_could_be_chain_residues_when_chain_has_neither_seqres_nor_ter(t *testing.T) {
+	// given: a depositor file without SEQRES: MSE and an ATP numbered inside
+	// chain A's ATOM numbers, a glutamate far outside them, and a heme outside.
 	text := pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
 		pdbRecord("HETATM", 2, "SE", "MSE", "A", 2, "SE") +
 		pdbRecord("HETATM", 3, "CA", "MSE", "A", 2, "C") +
@@ -217,17 +217,67 @@ func Test_should_place_residues_by_numbers_when_chain_has_neither_seqres_nor_ter
 		pdbRecord("HETATM", 5, "PG", "ATP", "A", 5, "P") +
 		pdbRecord("HETATM", 6, "PB", "ATP", "A", 5, "P") +
 		pdbRecord("HETATM", 7, "N", "GLU", "A", 900, "N") +
-		pdbRecord("HETATM", 8, "CA", "GLU", "A", 900, "C") + "END\n"
+		pdbRecord("HETATM", 8, "CA", "GLU", "A", 900, "C") +
+		pdbRecord("HETATM", 9, "FE", "HEM", "A", 950, "FE") +
+		pdbRecord("HETATM", 10, "NA", "HEM", "A", 950, "N") + "END\n"
 
 	// when
 	extraction, sources := pdbSources(t, text)
 
-	// then: only a peptide counts as in the chain without SEQRES to name it,
-	// and without SEQRES the glutamate outside it is an ordinary ligand.
-	assert.Equal(t, []string{"ATP", "GLU"}, extraction.Fields["ligands"])
+	// then: residues inside the chain's numbers, and a peptide anywhere, are
+	// kept and flagged instead of guessed; the heme outside is sorted as usual.
+	assert.Equal(t, []string{"ATP", "GLU", "MSE"}, extraction.Fields["ligands"])
+	assert.Equal(t, []string{"HEM"}, extraction.Fields["cofactors"])
+	assert.Equal(t, []ReviewItem{
+		{List: ListLigands, ID: "ATP", Reason: undeclaredChainReason},
+		{List: ListLigands, ID: "GLU", Reason: undeclaredChainReason},
+		{List: ListLigands, ID: "MSE", Reason: undeclaredChainReason},
+	}, extraction.Review)
+	assert.Equal(t, map[string]CompoundSource{
+		"ATP": source(ruleList), "GLU": source(ruleList), "MSE": source(ruleList),
+	}, sources.Ligands)
+}
+
+func Test_should_flag_a_residue_in_a_chain_without_seqres_when_other_chains_have_it(t *testing.T) {
+	// given: chain A has SEQRES; chain B has ATOM records but none.
+	text := pdbSeqres("A", "ALA", "GLY") +
+		pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
+		pdbRecord("ATOM", 2, "CA", "GLY", "A", 2, "C") +
+		pdbTer(3, "GLY", "A", 2) +
+		pdbRecord("ATOM", 4, "CA", "ALA", "B", 1, "C") +
+		pdbRecord("HETATM", 5, "SE", "MSE", "B", 2, "SE") +
+		pdbRecord("HETATM", 6, "CA", "MSE", "B", 2, "C") +
+		pdbRecord("ATOM", 7, "CA", "ALA", "B", 3, "C") +
+		pdbTer(8, "ALA", "B", 3) + "END\n"
+
+	// when
+	extraction, _ := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"MSE"}, extraction.Fields["ligands"])
+	assert.Equal(t, []ReviewItem{{List: ListLigands, ID: "MSE", Reason: undeclaredChainReason}}, extraction.Review)
+}
+
+func Test_should_not_flag_a_glycan_chain_when_the_file_has_seqres_for_its_polymer_chains(t *testing.T) {
+	// given: an archive file: chain A has SEQRES; the glycan is chain C, with
+	// no SEQRES and no ATOM records, ended by a TER record, as in 7LTB.
+	text := pdbSeqres("A", "ALA", "ASN") +
+		pdbRecord("ATOM", 1, "CA", "ALA", "A", 1, "C") +
+		pdbRecord("ATOM", 2, "CA", "ASN", "A", 2, "C") +
+		pdbTer(3, "ASN", "A", 2) +
+		pdbRecord("HETATM", 4, "C1", "NAG", "C", 1, "C") +
+		pdbRecord("HETATM", 5, "C2", "NAG", "C", 1, "C") +
+		pdbRecord("HETATM", 6, "C1", "NAG", "C", 2, "C") +
+		pdbRecord("HETATM", 7, "C2", "NAG", "C", 2, "C") +
+		pdbTer(8, "NAG", "C", 2) + "END\n"
+
+	// when
+	extraction, sources := pdbSources(t, text)
+
+	// then
+	assert.Equal(t, []string{"NAG"}, extraction.Fields["ligands"])
 	assert.Empty(t, extraction.Review)
-	assert.Equal(t, source(ruleList), sources.Ligands["ATP"])
-	assert.Equal(t, source(ruleList), sources.Ligands["GLU"])
+	assert.Equal(t, source(ruleBranched), sources.Ligands["NAG"])
 }
 
 func Test_should_not_flag_a_nucleotide_ligand_when_no_seqres_uses_its_name(t *testing.T) {

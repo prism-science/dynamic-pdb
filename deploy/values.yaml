@@ -136,6 +136,44 @@ checksumJob:
       cpu: "1"
       memory: 512Mi
 
+# Reads every model file uploaded to our bucket and stores the compounds it models (T3-M), one
+# file at a time, outside the API pods. A new upload is read at the next run, within about
+# 5 minutes. A file that fails is retried after 10 and 20 minutes, then marked failed with the
+# reason; failed runs alert nobody (job alerts are muted for this namespace), so the entry page
+# shows the reason.
+modelCompoundsJob:
+  enabled: true
+  schedule: "*/5 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  backoffLimit: 0
+  # The job claims files for 4 minutes and gives each at most fileTimeout; this ends a run that
+  # hangs after both.
+  activeDeadlineSeconds: 900
+  # Caps the files one run reads; 0 means no cap.
+  maxFilesPerRun: 0
+  fileTimeout: 10m
+  # Gives the model files stored before the job existed their sets: on prod about 152,000
+  # qFit and ensemble-refinement models (1.6 TB) from the August 2026 bulk import. Off at
+  # first; turn it on after a quiet day with maxFilesPerRun: 100 (about 1,200 files an hour,
+  # about 5 days), and raise the cap once RDS metrics and the job's logs look right. While it
+  # is on, each run also pages through every artifact, 2,000 per statement, pausing as long
+  # as each page took.
+  historicalFill: false
+  # The largest statement stores 2,000 copies of one file.
+  statementTimeout: 30s
+  # A 315 MB file read with a 13 MB peak on 2026-10-30; the limit leaves room for a decompressed
+  # gzip stream and the database client.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
 # The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
 # glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
 # mmCIF, in place on the active revision. Off until its prod run is planned; see the README.
