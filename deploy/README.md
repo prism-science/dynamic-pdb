@@ -202,9 +202,10 @@ first fill is done, so later runs only read `artifacts` to find missing rows.
 
 Each hourly run stops claiming files after 50 minutes and is stopped after 55;
 `maxFilesPerRun` caps the files one run checks (`0` means no cap). The job came back on
-2026-10-30 with a cap of 5000: 1000 files took about 2 minutes on prod, so a run spends about
-10 minutes on files, and the ~300,000 files left take about 2.5 days. If either EBS balance
-falls below 50% during a run, lower the cap again:
+2026-10-30 with a cap of 5000. That first run took 9.5 minutes (about 530 files a minute),
+found nothing missing in 7 seconds and raised the API's p95 from about 29 to 37 ms, so the cap
+is now 15000: about 28 minutes a run, and the ~290,000 files left take about 20 runs. If
+either EBS balance falls below 50% during a run, or the API slows down, lower the cap again:
 
 ```yaml
 checksumJob:

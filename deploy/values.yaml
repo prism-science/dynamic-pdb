@@ -118,9 +118,10 @@ checksumJob:
   backoffLimit: 0
   # The job stops claiming files after 50 minutes; this ends a run before the next one starts.
   activeDeadlineSeconds: 3300
-  # Caps the files one run checks; 0 means no cap. 1000 files took about 2 minutes on prod, so
-  # 5000 fit well inside the 50 minutes and the ~300,000 files left take about 2.5 days.
-  maxFilesPerRun: 5000
+  # Caps the files one run checks; 0 means no cap. The first 5000-file run on 2026-10-30 took
+  # 9.5 minutes (about 530 files a minute), so 15000 take about 28 of the 50 minutes and the
+  # ~290,000 files left take about 20 runs.
+  maxFilesPerRun: 15000
   # The largest external file the job copies into the bucket; a larger one is still hashed and
   # keeps only its link (copy status over_limit). 1 GiB, the same as the upload limit, from the
   # researchers' round-1 answer. They asked for 2 GB on 2026-10-29; their answer to question A
