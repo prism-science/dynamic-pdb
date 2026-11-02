@@ -1,8 +1,8 @@
 # Dynamic PDB Schema v0.2.0
 
-> Draft dated 2026-10-16. `backend/api/openapi.yaml` is the enforced API contract; this document is the scientific specification it is reviewed against.
+> `backend/api/openapi.yaml` is the enforced API contract; this document is the scientific specification it is reviewed against. `docs/cif-extraction.md` holds the detailed file-reading rules.
 
-> Requirements below describe the intended schema. Implementation gaps come from the previous audit (API commit fc1f6ee, migrations through V20260907120000__polymer_entities.sql), not a fresh production check.
+> Requirements below describe the intended schema. Where a requirement is not implemented yet or a question is still open, the text says so; "Schema backlog" lists the fields agreed for later.
 
 ## Purpose and scientific limits
 
@@ -55,6 +55,7 @@ Extract metadata from files and archives where possible. Depositors supply title
 | resolution | Optional positive number in ångströms, describing highest measured resolution. Omit when undefined for the method. |
 | space_group | Optional crystallographic symmetry in Hermann–Mauguin notation, such as P 21 21 21. |
 | crystallography.crystals[] | Per-crystal growth.ph, growth.temperature_kelvin, and diffractions[].temperature_kelvin. Keep growth and collection conditions separate; do not flatten multiple crystals into one value. |
+| related_datasets[] | Optional datasets held elsewhere that relate to this entry, as mmCIF _pdbx_related_exp_data_set records them: required doi and data_type, optional repository and details. References, not artifacts: no copy and no checksum. Set by people only; archive synchronisation never changes them. They do not record which data a model was refined against. |
 
 A polymer entity is a distinct sequence or construct; multiple chains may share it. Preserve registry id and source label_entity_id; link entities to entry revisions.
 
@@ -67,9 +68,17 @@ A polymer entity is a distinct sequence or construct; multiple chains may share 
 
 UniProt positions resolve on residue records through uniprot_position, for example P00720:42. Separate mapping-segment arrays are not required.
 
-Ligand and cofactor lists belong on the entry revision, describing sample composition rather than binding partners. Move these lists off models. Store CCD chemical-component identifiers. Exclude solvent, buffer and cryoprotectants; retain catalytic and structural metals. Empty arrays mean known absent; omitted arrays mean unknown. An empty cofactor list alone does not establish an apo sample.
+Ligand and cofactor lists belong on the entry revision, describing sample composition rather than binding partners. Store CCD chemical-component identifiers. Empty arrays mean known absent; omitted arrays mean unknown. An empty cofactor list alone does not establish an apo sample.
 
-Specific ligand instances and their residue contacts belong to model revisions, as defined below. Different models of the same experiment may show different interactions.
+When the lists are derived from a coordinate file:
+- Exclude solvents, buffers and cryoprotectants; retain catalytic and structural metals.
+- Keep ambiguous compounds (sulfate, phosphate, citrate, fluoride, chloride, bromide, iodide) as ligands flagged for review, since they often come from the buffer.
+- Follow the depositor's _pdbx_entity_instance_feature flag: SUBJECT OF INVESTIGATION keeps any compound as a ligand; NO FUNCTIONAL ROLE leaves it out, ambiguous compounds included.
+- Keep glycans in the ligand list. Record each branched entity's _pdbx_entity_branch_descriptor rows (WURCS descriptor, program and version): a list of sugar identifiers loses the branching.
+- Leave integrative-model probes (_ihm_ligand_probe) out of both lists. An integrative entry's lists are the union across its models, since each model can have its own assembly.
+- Record why each compound was placed or left out: the rule and the reference-list version. The record includes compounds left out of both lists; water and polymer residues are never in it.
+
+Specific ligand instances belong to model revisions: modeled compounds and residue contacts, as defined below. Different models of the same experiment may contain different compounds and show different interactions.
 
 ## Model and residue metadata
 
@@ -94,6 +103,13 @@ Residue data are optional and embedded on the model revision:
 - Use label_alt_id for conformer-specific values. A residue key alone cannot distinguish alternate conformers.
 - Supported values: rscc, b_iso (mean atomic displacement parameter), occupancy (of the identified conformer), conformer_count, rmsf (ensemble positional spread), and uniprot_position.
 - Do not infer local measurements from global averages. Ensemble-member identity and aggregation rules remain to be specified.
+
+Modeled compounds record what the coordinate file contains, as mmCIF keeps _pdbx_nonpoly_scheme complete and records roles elsewhere:
+- List every compound the file models outside its polymer chains, in any of its models, buffers included. Exclude only water (HOH, DOD, and the WAT and H2O some programs write). Apply none of the entry-list rules.
+- Store one record per copy: CCD identifier, chain (label_asym_id, auth_asym_id), residue number (auth_seq_id, pdbx_pdb_ins_code), entity, and where it was read: _pdbx_nonpoly_scheme, _pdbx_branch_scheme (glycans of two or more sugars), _atom_site with _entity for a residue those categories leave out or a file without them, or the HETATM records of a PDB-format file.
+- The registry reads the record from its stored copy of the coordinate file; nobody edits it. A model whose file the registry does not hold keeps the depositor's typed ligand and cofactor lists.
+- Roles stay on the entry lists. A display may tag each compound Ligand or Cofactor when the entry's lists name it, otherwise Buffer when the reference lists do; a compound on none of them has no tag.
+- Mark a copy "needs review" when the file cannot tell whether it is a compound at all: in a PDB-format chain without SEQRES or an mmCIF file without _entity, a peptide or nucleotide residue, or another residue inside a chain's polymer range. Other compounds in such files are recorded as usual.
 
 ## Residue–ligand interactions
 
@@ -131,7 +147,7 @@ Each artifact requires name, level, type, and a registry-computed sha256 of its 
 
 Optional fields are lowercase format, nonnegative size_bytes, and format-specific metadata. Format is an open vocabulary: examples include mmcif, mtz, mrc, fasta, and structure_factors_cif. Record unfamiliar formats rather than rejecting them. FASTA metadata contains records[] with header and sequence. Metadata keys beginning with __ are reserved.
 
-Require a stored/external URI or accession resolving to the exact file. Whether the registry stores its own copy or relies on an external archive remains an open preservation policy; either approach must retain access to the unchanged original.
+Require a stored/external URI or accession resolving to the exact file. The registry reads each external file to compute its sha256 and keeps its own copy of files up to 1 GiB. A larger file is checked but only linked, and the record states why no copy was kept. Datasets linked by DOI on the entry revision (related_datasets) are not artifacts and are neither checked nor copied.
 
 Every computed model needs at least one run recording software_name, software_version, and explicit input/output artifact links (direction: input or output). Separate model building, refinement and later processing into their actual executions. Record the verbatim command and structured JSON parameters where available. An unchanged archive import may use its source accession as provenance.
 
@@ -151,3 +167,10 @@ Metrics attach to model revisions. Record each metric's key, numeric value and p
 Do not rank models by alternate-conformer fraction, completeness or conformer count alone. More conformers do not establish better fit or greater physical motion.
 
 For scientific review, expose exact files, residue numbering, processing history and validation limitations. R-free comparisons require matching held-out reflections and compatible settings. Preserve these details in parameters or reports; structured fields remain to be specified.
+
+## Schema backlog
+
+Agreed for later; not part of the schema yet:
+- Glycans: a field of their own. Until then glycans stay in the ligand list with their branch descriptors.
+- Integrative-model probes: a field of their own. Until then probes are left out of both compound lists and kept in the placement record.
+- Linked datasets: if a model is ever refined against one, store the dataset's checksum manifest (for example SBGrid's files.sha) as an artifact, which pins the checksum of every file in the dataset.
