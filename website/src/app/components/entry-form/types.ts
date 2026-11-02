@@ -101,6 +101,16 @@ export type CrystalDraft = {
   diffractions: DiffractionDraft[];
 };
 
+/** A dataset kept elsewhere, by DOI, as mmCIF _pdbx_related_exp_data_set
+ *  records it. We store no copy and no checksum of it. */
+export type RelatedDatasetDraft = {
+  key: string;
+  doi: string;
+  dataType: string;
+  repository: string;
+  details: string;
+};
+
 /**
  * One polymer entity of the PDB entry. The archive* values come from the PDB
  * lookup and are shown read-only; the rest is what the depositor typed, and
@@ -136,6 +146,7 @@ export type EntryMetadataDraft = {
   compounds: CompoundsDraft;
   crystals: CrystalDraft[];
   polymerEntities: PolymerEntityDraft[];
+  relatedDatasets: RelatedDatasetDraft[];
 };
 
 export const METHODS = ["X-ray crystallography", "CryoEM"] as const;
@@ -185,6 +196,7 @@ export function emptyEntryMetadataDraft(): EntryMetadataDraft {
     compounds: emptyCompounds(),
     crystals: [],
     polymerEntities: [],
+    relatedDatasets: [],
   };
 }
 

@@ -15,6 +15,7 @@ import { type EntryCompoundLists, modeledCompoundsView } from "@/lib/modeled-com
 import DataTable from "@/app/components/DataTable";
 import ModeledCompoundList from "@/app/components/ModeledCompoundList";
 import FileTable from "@/app/components/FileTable";
+import RelatedDatasets from "@/app/components/RelatedDatasets";
 import ResolvedFileLink from "@/app/components/ResolvedFileLink";
 import {
   buildProvenance,
@@ -105,6 +106,13 @@ export function EntryRevisionPreview({
           <section className={styles.contentSection}>
             <h2 className={styles.contentHeading}>Files</h2>
             <FileTable items={files} />
+          </section>
+        ) : null}
+
+        {revision.related_datasets?.length ? (
+          <section className={styles.contentSection}>
+            <h2 className={styles.contentHeading}>Related datasets</h2>
+            <RelatedDatasets datasets={revision.related_datasets} />
           </section>
         ) : null}
 

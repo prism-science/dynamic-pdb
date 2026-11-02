@@ -152,6 +152,10 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
+	relatedErr := checkRelatedDatasets(validation.Root.Field("entry").Field("related_datasets"), req.Entry.RelatedDatasets)
+	if s.writeMutationError(r.Context(), w, relatedErr, "create entry") {
+		return
+	}
 	schemaErr := s.checkSchema(r, createEntryRequestErrors(req))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create entry") {
 		return
@@ -394,6 +398,9 @@ func applyEntryRevisionChange(
 	}
 	if _, present := fields["cofactors"]; present {
 		revision.Metadata.Cofactors = metadata.Cofactors
+	}
+	if _, present := fields["related_datasets"]; present {
+		revision.Metadata.RelatedDatasets = metadata.RelatedDatasets
 	}
 	if raw, present := fields["change_summary"]; present {
 		revision.ChangeSummary = nil
@@ -1015,6 +1022,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 				Crystallography:   properties.Crystallography,
 				Ligands:           properties.Ligands,
 				Cofactors:         properties.Cofactors,
+				RelatedDatasets:   properties.RelatedDatasets,
 				PublishedAt:       revision.PublishedAt,
 				CreatedAt:         revision.CreatedAt,
 				UpdatedAt:         revision.UpdatedAt,
@@ -1636,7 +1644,7 @@ func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (Entry
 		ThumbnailImageUrl: revision.ThumbnailImageURL, ExternalRefs: properties.ExternalRefs,
 		Details: properties.Details, Resolution: properties.Resolution, Method: properties.Method,
 		SpaceGroup: properties.SpaceGroup, Crystallography: properties.Crystallography,
-		Ligands: properties.Ligands, Cofactors: properties.Cofactors,
+		Ligands: properties.Ligands, Cofactors: properties.Cofactors, RelatedDatasets: properties.RelatedDatasets,
 		PublishedAt: revision.PublishedAt, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt}, nil
 }
 
@@ -2055,6 +2063,7 @@ func entryMetadataFromAPIFields(fields any) (domainmodels.EntryMetadata, error) 
 	if err := json.Unmarshal(data, &result); err != nil {
 		return domainmodels.EntryMetadata{}, invalidPayloadRequest("decode entry fields", err)
 	}
+	result.RelatedDatasets = domainmodels.NormalizeRelatedDatasets(result.RelatedDatasets)
 	return result, nil
 }
 
@@ -2209,7 +2218,7 @@ func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPaylo
 var entryRevisionFields = map[string]struct{}{
 	"title": {}, "thumbnail_image_url": {}, "external_refs": {}, "details": {},
 	"resolution": {}, "method": {}, "space_group": {}, "crystallography": {},
-	"ligands": {}, "cofactors": {}, "change_summary": {}, "polymer_entities": {},
+	"ligands": {}, "cofactors": {}, "related_datasets": {}, "change_summary": {}, "polymer_entities": {},
 }
 
 var modelRevisionFields = map[string]struct{}{

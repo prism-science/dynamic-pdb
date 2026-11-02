@@ -2929,6 +2929,48 @@ components:
             Cofactor component IDs of the sample. Absent means unknown; an empty list means none.
           items:
             type: string
+        related_datasets:
+          type: array
+          maxItems: 20
+          description: >
+            Datasets kept elsewhere that relate to this entry, by DOI, as mmCIF
+            _pdbx_related_exp_data_set records them. Set only by people; the archive sync never
+            changes them. We store no copy and no checksum of these datasets. Absent when none
+            are given; a change that sends null or an empty list removes them. A malformed
+            dataset is refused with 422 in every validation mode.
+          items:
+            $ref: "#/components/schemas/RelatedDataset"
+
+    RelatedDataset:
+      type: object
+      required: [doi, data_type]
+      example:
+        doi: 10.15785/SBGRID/1303
+        data_type: diffraction image data
+        repository: SBGrid Data Bank
+        details: Similar crystals, collected in October 2025.
+      properties:
+        doi:
+          type: string
+          description: >
+            mmCIF data_reference. A DOI such as 10.15785/SBGRID/1303. A resolver URL
+            (https://doi.org/…) or a "doi:" prefix is accepted and stored as the bare DOI.
+            DOIs are case-insensitive, so an entry cannot list the same one twice.
+        data_type:
+          type: string
+          maxLength: 256
+          description: >
+            mmCIF data_set_type: what the dataset holds, for example "diffraction image data" or
+            "NMR free induction decay data".
+        repository:
+          type: string
+          maxLength: 256
+          description: mmCIF db_source, for example "SBGrid Data Bank" or "Zenodo".
+        details:
+          type: string
+          maxLength: 2000
+          description: >
+            mmCIF details: what the dataset contains and how it relates to this entry.
 
     EntryCrystallography:
       type: object

@@ -348,6 +348,32 @@ func entryMetadataErrors(at validation.Pointer, fields any, requireMethod bool) 
 	return fieldErrors
 }
 
+// checkRelatedDatasets refuses malformed related datasets in every validation mode, not only
+// in enforce mode: no client sent them before their rules existed, so enforcing them breaks
+// no one, and prod never stores a DOI that does not resolve.
+func checkRelatedDatasets(at validation.Pointer, datasets *[]RelatedDataset) error {
+	fieldErrors := validation.RelatedDatasets(at, relatedDatasetsFromRequest(datasets))
+	if len(fieldErrors) == 0 {
+		return nil
+	}
+	return &validation.Error{Fields: fieldErrors}
+}
+
+// relatedDatasetsFromRequest maps and normalizes related datasets the way
+// entryMetadataFromAPIFields does, so the check sees the values that are stored.
+func relatedDatasetsFromRequest(datasets *[]RelatedDataset) []domainmodels.RelatedDataset {
+	if datasets == nil {
+		return nil
+	}
+	result := make([]domainmodels.RelatedDataset, 0, len(*datasets))
+	for _, dataset := range *datasets {
+		result = append(result, domainmodels.RelatedDataset{
+			DOI: dataset.Doi, DataType: dataset.DataType, Repository: dataset.Repository, Details: dataset.Details,
+		})
+	}
+	return domainmodels.NormalizeRelatedDatasets(result)
+}
+
 // modelMetadataRequestErrors checks request model metadata and returns the fields that
 // decoded, for rules that depend on them such as the model type.
 func modelMetadataRequestErrors(

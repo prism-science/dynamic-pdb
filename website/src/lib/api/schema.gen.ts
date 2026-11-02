@@ -1001,6 +1001,26 @@ export interface components {
             ligands?: string[];
             /** @description Cofactor component IDs of the sample. Absent means unknown; an empty list means none. */
             cofactors?: string[];
+            /** @description Datasets kept elsewhere that relate to this entry, by DOI, as mmCIF _pdbx_related_exp_data_set records them. Set only by people; the archive sync never changes them. We store no copy and no checksum of these datasets. Absent when none are given; a change that sends null or an empty list removes them. A malformed dataset is refused with 422 in every validation mode. */
+            related_datasets?: components["schemas"]["RelatedDataset"][];
+        };
+        /**
+         * @example {
+         *       "doi": "10.15785/SBGRID/1303",
+         *       "data_type": "diffraction image data",
+         *       "repository": "SBGrid Data Bank",
+         *       "details": "Similar crystals, collected in October 2025."
+         *     }
+         */
+        RelatedDataset: {
+            /** @description mmCIF data_reference. A DOI such as 10.15785/SBGRID/1303. A resolver URL (https://doi.org/…) or a "doi:" prefix is accepted and stored as the bare DOI. DOIs are case-insensitive, so an entry cannot list the same one twice. */
+            doi: string;
+            /** @description mmCIF data_set_type: what the dataset holds, for example "diffraction image data" or "NMR free induction decay data". */
+            data_type: string;
+            /** @description mmCIF db_source, for example "SBGrid Data Bank" or "Zenodo". */
+            repository?: string;
+            /** @description mmCIF details: what the dataset contains and how it relates to this entry. */
+            details?: string;
         };
         /** @description Crystals and diffraction datasets reported for this entry. */
         EntryCrystallography: {

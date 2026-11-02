@@ -106,7 +106,8 @@ export function entryMetadataHasContent(metadata: EntryMetadataDraft): boolean {
       metadata.spaceGroup,
     ].some((value) => value.trim().length > 0) ||
     !compoundsAreUntouched(metadata.compounds) ||
-    metadata.crystals.length > 0
+    metadata.crystals.length > 0 ||
+    metadata.relatedDatasets.length > 0
   );
 }
 

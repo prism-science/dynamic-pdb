@@ -15,6 +15,7 @@ import {
 import { compoundListRequest, compoundReviewRequest } from "./compounds";
 import { crystallographyRequest, optionalNumber } from "./crystals";
 import { polymerEntitiesRequest } from "./polymerEntities";
+import { relatedDatasetsRequest } from "./relatedDatasets";
 import { METRIC_FIELDS } from "./types";
 import type {
   EntryMetadataDraft,
@@ -212,6 +213,7 @@ export function buildCreateEntryInput(
     crystallography: crystallographyRequest(metadata.crystals),
     ligands: compoundListRequest(metadata.compounds.ligands),
     cofactors: compoundListRequest(metadata.compounds.cofactors),
+    related_datasets: relatedDatasetsRequest(metadata.relatedDatasets),
     // Typed polymer-entity values only take effect on entities the PDB
     // lookup found, so they are sent only with a PDB ID.
     polymer_entities: pdb

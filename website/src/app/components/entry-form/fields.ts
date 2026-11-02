@@ -32,7 +32,7 @@ export const SECTIONS: Record<SectionId, { title: string; hint: string }> = {
   },
   data: {
     title: "Data",
-    hint: "The files. Each one gets a level: L0 raw measurements, L1 processed data, L2 models, L3 evaluations.",
+    hint: "The files, and datasets kept elsewhere. Each file gets a level: L0 raw measurements, L1 processed data, L2 models, L3 evaluations.",
   },
   evaluations: {
     title: "Evaluations",
@@ -72,6 +72,8 @@ const crystalGrowthPointer = (key: Key<Schemas["EntryCrystalGrowth"]>) =>
   `/entry/crystallography/crystals/*/growth/${key}`;
 const diffractionPointer = (key: Key<Schemas["EntryDiffraction"]>) =>
   `/entry/crystallography/crystals/*/diffractions/*/${key}`;
+const relatedDatasetPointer = (key: Key<Schemas["RelatedDataset"]>) =>
+  `/entry/related_datasets/*/${key}`;
 const modelPointer = (key: Key<Schemas["CreateModelData"]>) => `/model/${key}`;
 const modelMetadataPointer = (key: Key<Schemas["ModelMetadata"]>) =>
   `/model/metadata/${key}`;
@@ -257,6 +259,51 @@ export const FIELDS = {
     unknownAllowed: false,
     autofill: null,
     pointers: [diffractionPointer("temperature_kelvin"), diffractionPointer("id")],
+  },
+  "entry.relatedDatasets": {
+    section: "data",
+    label: "Related datasets",
+    help: "Data kept in another repository, such as raw diffraction images, linked by DOI. Dynamic PDB stores the link only: no copy and no checksum.",
+    required: false,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [entryPointer("related_datasets")],
+  },
+  "relatedDataset.doi": {
+    section: "data",
+    label: "DOI",
+    help: "For example 10.15785/SBGRID/1303. A https://doi.org/ link works too.",
+    required: true,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [relatedDatasetPointer("doi")],
+  },
+  "relatedDataset.dataType": {
+    section: "data",
+    label: "Data type",
+    help: "What the dataset holds, for example diffraction image data.",
+    required: true,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [relatedDatasetPointer("data_type")],
+  },
+  "relatedDataset.repository": {
+    section: "data",
+    label: "Repository",
+    help: "Where the dataset is kept, for example SBGrid Data Bank or Zenodo.",
+    required: false,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [relatedDatasetPointer("repository")],
+  },
+  "relatedDataset.details": {
+    section: "data",
+    label: "Details",
+    help: "What the dataset contains and how it relates to this entry, for example collected from similar crystals.",
+    required: false,
+    unknownAllowed: false,
+    autofill: null,
+    pointers: [relatedDatasetPointer("details")],
   },
   "entry.files": {
     section: "data",

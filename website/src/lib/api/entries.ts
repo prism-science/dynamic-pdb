@@ -21,6 +21,7 @@ export type EntryCrystalGrowth = Schemas["EntryCrystalGrowth"];
 export type EntryDiffraction = Schemas["EntryDiffraction"];
 export type EntryCrystal = Schemas["EntryCrystal"];
 export type EntryCrystallography = Schemas["EntryCrystallography"];
+export type RelatedDataset = Schemas["RelatedDataset"];
 export type EntryProperties = Schemas["EntryProperties"];
 
 /** Where the values of a revision's archive-synced fields came from, keyed by
@@ -1277,6 +1278,9 @@ function definedEntryProperties(properties: EntryProperties): EntryProperties {
     ...(properties.cofactors !== undefined
       ? { cofactors: properties.cofactors }
       : {}),
+    ...(properties.related_datasets !== undefined
+      ? { related_datasets: properties.related_datasets }
+      : {}),
   };
 }
 
@@ -1308,6 +1312,7 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
       crystallography: input.crystallography,
       ligands: input.ligands,
       cofactors: input.cofactors,
+      related_datasets: input.related_datasets,
       polymer_entities: input.polymer_entities,
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
     },

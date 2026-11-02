@@ -28,6 +28,14 @@ import {
   mutationError,
   organismIsEditable,
 } from "./polymerEntities";
+import {
+  DOI_PATTERN,
+  MAX_RELATED_DATASETS,
+  MAX_RELATED_DATASET_DETAILS_CHARS,
+  MAX_RELATED_DATASET_LABEL_CHARS,
+  normalizeDoi,
+  relatedDatasetItem,
+} from "./relatedDatasets";
 import type { ModelEditDraft, ModelLocks } from "./revisionChanges";
 import { METRIC_FIELDS, MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type {
@@ -37,6 +45,7 @@ import type {
   MetricDraft,
   ModelDraft,
   PolymerEntityDraft,
+  RelatedDatasetDraft,
 } from "./types";
 
 // The checks a form runs before it lets the depositor submit. They repeat
@@ -44,7 +53,8 @@ import type {
 // mutation format, organism name, allowed purposes and model types) so a
 // mistake shows beside its field instead of coming back as a 422, and add
 // the format checks the API leaves to the client: PDB ID, CCD ID, pH and
-// temperatures. A space group that does not look like Hermann–Mauguin
+// temperatures. Related datasets repeat the API's rules exactly, because the
+// API refuses a malformed one in every validation mode. A space group that does not look like Hermann–Mauguin
 // notation is only flagged, because the API stores any text; so is a
 // temperature outside the wwPDB's usual ranges.
 
@@ -89,6 +99,56 @@ export function entryFormMessages(
     );
   }
   messages.push(...crystalMessages(metadata.crystals));
+  messages.push(...relatedDatasetMessages(metadata.relatedDatasets));
+  return messages;
+}
+
+function relatedDatasetMessages(datasets: RelatedDatasetDraft[]): FieldMessage[] {
+  const messages: FieldMessage[] = [];
+  if (datasets.length > MAX_RELATED_DATASETS) {
+    messages.push(
+      invalid("entry.relatedDatasets", `list at most ${MAX_RELATED_DATASETS} datasets`),
+    );
+  }
+  // DOIs are case-insensitive, so 10.15785/sbgrid/1303 is the same dataset.
+  const seenDois = new Set<string>();
+  datasets.forEach((dataset, index) => {
+    const item = relatedDatasetItem(index);
+    const itemLabel = `dataset ${item}`;
+    const doi = normalizeDoi(dataset.doi);
+    if (!doi) {
+      messages.push(required("relatedDataset.doi", item, itemLabel));
+    } else if (!DOI_PATTERN.test(doi)) {
+      messages.push(
+        invalid(
+          "relatedDataset.doi",
+          "use a DOI such as 10.15785/SBGRID/1303",
+          item,
+          itemLabel,
+        ),
+      );
+    } else if (seenDois.has(doi.toLowerCase())) {
+      messages.push(
+        invalid("relatedDataset.doi", "this dataset is already listed", item, itemLabel),
+      );
+    } else {
+      seenDois.add(doi.toLowerCase());
+    }
+    if (!dataset.dataType.trim()) {
+      messages.push(required("relatedDataset.dataType", item, itemLabel));
+    }
+    const limits: [FieldId, string, number][] = [
+      ["relatedDataset.dataType", dataset.dataType, MAX_RELATED_DATASET_LABEL_CHARS],
+      ["relatedDataset.repository", dataset.repository, MAX_RELATED_DATASET_LABEL_CHARS],
+      ["relatedDataset.details", dataset.details, MAX_RELATED_DATASET_DETAILS_CHARS],
+    ];
+    for (const [field, text, limit] of limits) {
+      // Counted in characters (code points), as the API counts them.
+      if ([...text.trim()].length > limit) {
+        messages.push(invalid(field, `use at most ${limit} characters`, item, itemLabel));
+      }
+    }
+  });
   return messages;
 }
 

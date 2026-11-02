@@ -38,7 +38,8 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 	}
 
 	// given: an archive entry, imported before sources existed, whose title a depositor then
-	// changed through the API and a reviewer approved.
+	// changed through the API and a reviewer approved. The depositor also added a related
+	// dataset, a field the sync never writes.
 	root := repoRoot(t)
 	backendBinaryPath := buildBackend(t, root)
 	database := setupDB(t)
@@ -62,7 +63,12 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 	t.Run("depositor edit", func(t *testing.T) {
 		backend := startBackend(t, root, backendBinaryPath, s3.URL())
 		revisionID := createEntryRevisionThroughAPI(t, backend.URL, auth.AccessToken, fixture.EntryID,
-			map[string]any{"entry": map[string]any{"title": "Depositor title"}})
+			map[string]any{"entry": map[string]any{
+				"title": "Depositor title",
+				"related_datasets": []map[string]any{
+					{"doi": "10.15785/SBGRID/1303", "data_type": "diffraction image data"},
+				},
+			}})
 		revisionURL := fmt.Sprintf("%s/v1/entries/%s/revisions/%s", backend.URL, fixture.EntryID, revisionID)
 		patchJSON(t, revisionURL, reviewer.AccessToken, map[string]any{"state": "active"}, http.StatusOK)
 		depositorRevision = getJSON[entryRevisionSourcesDocument](t, revisionURL, auth.AccessToken)
@@ -95,6 +101,8 @@ func Test_should_keep_depositor_title_and_update_other_fields_when_entry_is_sync
 	assert.Equal(t, "Depositor title", *entry.Title)
 	assert.Equal(t, "X-ray crystallography", entry.Metadata["method"])
 	assert.Equal(t, 1.4, entry.Metadata["resolution"])
+	assert.Equal(t, []any{map[string]any{"doi": "10.15785/SBGRID/1303", "data_type": "diffraction image data"}},
+		entry.Metadata["related_datasets"])
 	sources := syncedRevision.Data.Attributes.FieldSources
 	assert.Equal(t, fieldSourceBody{Source: "depositor"}, sources["/title"])
 	assert.Equal(t, "rcsb", sources["/metadata/method"].Source)

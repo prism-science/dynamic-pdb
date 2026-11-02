@@ -8,6 +8,7 @@ import { ProgressBar } from "./FilesEditor";
 import { Field, FormSection } from "./FormFields";
 import PolymerEntitiesEditor, { type ArchiveLookupState } from "./PolymerEntitiesEditor";
 import { CrystalsReadOnly, ReadOnlyText } from "./ReadOnlyFields";
+import RelatedDatasetsEditor from "./RelatedDatasetsEditor";
 import { UploadIcon } from "./icons";
 import { ENTRY_COMPOUND_FIELDS, FIELDS, type FieldId, type SectionId } from "./fields";
 import { sanitizeNumeric, uploadStatusText } from "./helpers";
@@ -81,7 +82,8 @@ export default function EntryFormSections({
   onRetryLookup: () => void;
   locks: EntryLocks;
   messages: readonly FieldMessage[];
-  /** The Data section's content: an editor on the New form, a list on Edit. */
+  /** The Data section's files: an editor on the New form, a list on Edit.
+   *  The related datasets editor follows them on both. */
   data: ReactNode;
 }) {
   const inline = (field: FieldId, item: string | null = null) =>
@@ -344,7 +346,16 @@ export default function EntryFormSections({
         )}
       </FormSection>
 
-      <FormSection id="data">{data}</FormSection>
+      <FormSection id="data">
+        {data}
+        <RelatedDatasetsEditor
+          datasets={metadata.relatedDatasets}
+          onChange={(relatedDatasets) =>
+            onEdit("data", (current) => ({ ...current, relatedDatasets }))
+          }
+          messages={messages}
+        />
+      </FormSection>
     </>
   );
 }

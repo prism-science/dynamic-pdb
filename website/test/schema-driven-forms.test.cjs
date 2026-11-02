@@ -82,9 +82,18 @@ test("should_place_every_field_in_a_section_the_pages_use", () => {
 });
 
 test("should_mark_required_exactly_the_values_the_api_or_the_model_rule_requires", () => {
-  // given: CreateEntryData requires title and method, CreateModelData title,
-  // CreateRunRequest name; the form adds the one-model-file rule.
-  const expected = ["entry.title", "entry.method", "model.title", "model.files", "run.name"];
+  // given: CreateEntryData requires title and method, RelatedDataset doi and
+  // data_type, CreateModelData title, CreateRunRequest name; the form adds
+  // the one-model-file rule.
+  const expected = [
+    "entry.title",
+    "entry.method",
+    "relatedDataset.doi",
+    "relatedDataset.dataType",
+    "model.title",
+    "model.files",
+    "run.name",
+  ];
 
   // when
   const required = Object.entries(FIELDS)

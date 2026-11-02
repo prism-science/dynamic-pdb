@@ -82,6 +82,9 @@ type EntryMetadata struct {
 	Ligands   *[]string `json:"ligands,omitempty"`
 	Cofactors *[]string `json:"cofactors,omitempty"`
 
+	// RelatedDatasets are set only by people; the archive sync carries them over unchanged.
+	RelatedDatasets []RelatedDataset `json:"related_datasets,omitempty"`
+
 	DepositorPolymerEntities []DepositorPolymerEntity `json:"depositor_polymer_entities,omitempty"`
 
 	// ArchiveStatus is set only by the archive sync, when the archive stops serving the entry.
@@ -134,6 +137,7 @@ func (revision EntryRevision) HasSameData(other EntryRevision) bool {
 		reflect.DeepEqual(revision.Metadata.Crystallography, other.Metadata.Crystallography) &&
 		reflect.DeepEqual(revision.Metadata.Ligands, other.Metadata.Ligands) &&
 		reflect.DeepEqual(revision.Metadata.Cofactors, other.Metadata.Cofactors) &&
+		reflect.DeepEqual(revision.Metadata.RelatedDatasets, other.Metadata.RelatedDatasets) &&
 		reflect.DeepEqual(revision.Metadata.DepositorPolymerEntities, other.Metadata.DepositorPolymerEntities) &&
 		reflect.DeepEqual(revision.Metadata.ArchiveStatus, other.Metadata.ArchiveStatus) &&
 		reflect.DeepEqual(revision.CompoundSources, other.CompoundSources) &&
