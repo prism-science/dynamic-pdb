@@ -139,9 +139,57 @@ Repository lint:
 make lint
 ```
 
+### Browser tests
+
+Playwright drives the deposition forms (new and edit entry, new model) in Chromium
+against a real stack: Postgres with the Flyway migrations, the backend with
+`validation.mode: enforce`, a production build of the website, and
+[S3Mock](https://github.com/adobe/S3Mock) in place of S3 for uploads. The stack is
+its own compose project (`website/e2e/stack/compose.yml`, ports in
+`website/e2e/stack/stack.env`), so it leaves the shared `dynamic_pdb_local`
+database alone. Tests sign in by setting the website's auth cookies with a token
+signed by the test-only secret in `stack.env`; GitHub OAuth never runs.
+
+One-time setup, after `npm ci` and `make -C backend install-tools generate`:
+
+```bash
+cd website
+npx playwright install chromium
+```
+
+Prepare the stack (containers, migrations, test users, backend binary, website
+build). Run it again after changing backend or website code:
+
+```bash
+make -C website browser-stack
+```
+
+Run the tests. Playwright starts the backend and `next start` itself:
+
+```bash
+cd website
+npm run test:browser
+```
+
+Add `-- --headed` to watch the browser, or `-- e2e/model-create.spec.ts` to run one file.
+Stop the containers and drop the test database:
+
+```bash
+make -C website browser-stack-down
+```
+
+When a test fails:
+
+- `npx playwright show-report` opens the HTML report.
+- `npx playwright show-trace test-results/<test>/trace.zip` replays the failed test
+  step by step, with the DOM, network and console at each step.
+- `website/browser-test-logs/` holds the backend and website server logs.
+- In CI, the `browser-test-report` artifact of the "Browser tests" job holds the
+  same report, traces and logs, plus the container logs.
+
 CI runs backend generation, linting, database migrations, Go tests with coverage,
-website typechecking, Node tests with coverage, and production image builds for
-`main`.
+website typechecking, Node tests with coverage, the browser tests, and production
+image builds for `main`. A failed browser-test job stops the deploy.
 
 ## Where to Look First
 

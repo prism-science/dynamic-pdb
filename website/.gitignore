@@ -6,3 +6,9 @@ out/
 next-env.d.ts
 .vercel
 *.tsbuildinfo
+
+# Browser tests (npm run test:browser)
+test-results/
+playwright-report/
+blob-report/
+browser-test-logs/

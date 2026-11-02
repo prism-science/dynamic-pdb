@@ -160,6 +160,7 @@ export default function FileLinkField({
             }
           }}
           placeholder={chosen.length === 0 ? "add…" : ""}
+          aria-label={label}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"

@@ -17,3 +17,11 @@ credentials/
 id_rsa*
 id_ecdsa*
 id_ed25519*
+
+# Browser tests are not part of the image
+e2e
+playwright.config.ts
+test-results
+playwright-report
+blob-report
+browser-test-logs

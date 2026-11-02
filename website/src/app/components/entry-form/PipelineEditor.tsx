@@ -58,7 +58,12 @@ export default function PipelineEditor({
   return (
     <div className={styles.filesEditor}>
       {programs.map((program, index) => (
-        <div key={program.id} className={styles.metricCard}>
+        <div
+          key={program.id}
+          className={styles.metricCard}
+          role="group"
+          aria-label={`Step ${index + 1}`}
+        >
           <div className={styles.metricTop}>
             <span className={styles.programTag}>Step {index + 1}</span>
             {program.origin === "parsed" && program.originFile ? (

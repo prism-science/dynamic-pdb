@@ -1,0 +1,51 @@
+# Throwaway stack for the browser tests. Start it with `make -C website browser-stack`.
+# It is a separate compose project from backend/docker-compose.yml, so the shared
+# dynamic_pdb_local database is never touched.
+name: dynamic-pdb-browser
+
+services:
+  postgres:
+    # Same version as backend/docker-compose.yml and the CI backend job.
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${BROWSER_DB_NAME}
+      POSTGRES_USER: ${BROWSER_DB_USER}
+      POSTGRES_PASSWORD: ${BROWSER_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${BROWSER_DB_PORT}:5432"
+    # The data lives in memory: `make browser-stack-down` leaves nothing behind.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${BROWSER_DB_USER}", "-d", "${BROWSER_DB_NAME}"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # S3 stand-in for presigned multipart uploads. It allows browser PUTs from any
+  # origin and exposes ETag, which website/src/lib/api/uploads.ts needs.
+  s3:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ${BROWSER_S3_BUCKET}
+    ports:
+      - "127.0.0.1:${BROWSER_S3_PORT}:9090"
+
+  # One-shot Flyway run, the same image and locations as backend/migrations
+  # (Dockerfile and Makefile), with the local data folder.
+  migrate:
+    image: flyway/flyway:11
+    profiles: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../../backend/migrations/db:/flyway/sql/db:ro
+      - ../../../backend/migrations/conf:/flyway/conf:ro
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${BROWSER_DB_NAME}?sslmode=disable&timezone=UTC
+      FLYWAY_USER: ${BROWSER_DB_USER}
+      FLYWAY_PASSWORD: ${BROWSER_DB_PASSWORD}
+      FLYWAY_SCHEMAS: public
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql/db/public/structure,filesystem:/flyway/sql/db/public/functions,filesystem:/flyway/sql/db/public/data/common,filesystem:/flyway/sql/db/public/data/local
+    command: ["migrate"]

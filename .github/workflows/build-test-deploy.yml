@@ -215,6 +215,92 @@ jobs:
         working-directory: website
         run: npm run build
 
+  # Drives the deposition forms in Chromium against the real backend (validation
+  # in enforce mode), Postgres and an S3 stand-in. See "Browser tests" in README.md.
+  browser:
+    name: Browser tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # website/vendor/hetstar is a submodule the build compiles from source.
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            backend/tools/go.sum
+            lib/go.sum
+
+      - name: Install codegen tools
+        run: make -C backend install-tools
+
+      - name: Generate backend code
+        run: PATH="$(go env GOPATH)/bin:${PATH}" make -C backend generate
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Read Playwright version
+        id: playwright
+        working-directory: website
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: website
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Install Chromium system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: website
+        # install-deps has no --only-shell; it takes the headless shell's browser name instead.
+        run: npx playwright install-deps chromium-headless-shell
+
+      - name: Start the browser-test stack
+        run: make -C website browser-stack
+
+      - name: Run browser tests
+        working-directory: website
+        run: npm run test:browser
+
+      - name: Collect container logs
+        if: failure()
+        run: |
+          mkdir -p website/browser-test-logs
+          docker compose --env-file website/e2e/stack/stack.env -f website/e2e/stack/compose.yml logs --no-color \
+            > website/browser-test-logs/containers.log 2>&1 || true
+
+      - name: Upload browser-test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-report
+          path: |
+            website/playwright-report/
+            website/test-results/
+            website/browser-test-logs/
+          retention-days: 7
+
   deploy-images:
     name: Build and push deploy images
     needs:
@@ -222,6 +308,7 @@ jobs:
       - backend
       - cli
       - website
+      - browser
     if: |
       always() &&
       github.event_name == 'push' &&
@@ -229,7 +316,8 @@ jobs:
       needs.changes.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.cli.result == 'success' || needs.cli.result == 'skipped') &&
-      (needs.website.result == 'success' || needs.website.result == 'skipped')
+      (needs.website.result == 'success' || needs.website.result == 'skipped') &&
+      (needs.browser.result == 'success' || needs.browser.result == 'skipped')
     runs-on: diffuse-sh-builder
     timeout-minutes: 60
     steps:
