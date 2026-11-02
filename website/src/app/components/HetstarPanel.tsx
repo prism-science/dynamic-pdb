@@ -123,6 +123,17 @@ export default function HetstarPanel({
   // that the fallback does not flash past while the viewer is still mounting.
   const [trayMissing, setTrayMissing] = useState(false);
 
+  // hetstar sizes its lanes strip to the enabled lanes. The frame's CSS height
+  // already holds the strip at its default (hetstar's DEFAULT_LANES_HEIGHT,
+  // 260px); whatever the strip takes beyond that is added here, so the canvas
+  // keeps its height instead of giving way. Full screen fills the viewport and
+  // the canvas gives way there.
+  const [lanesExtra, setLanesExtra] = useState(0);
+  const onLanesHeight = useCallback(
+    (px: number) => setLanesExtra(Math.max(0, px - 260)),
+    [],
+  );
+
   // The panel only mounts when the Structure tab is open, so mounting is the open.
   useEffect(() => {
     track("viewer-open", { viewer: "hetstar", entry: entryId });
@@ -241,8 +252,21 @@ export default function HetstarPanel({
           </button>
         </div>
       )}
-      <div ref={frameRef} className={styles.frame}>
-        <HetstarViewer entryId={entryId} modelId={modelId} dpdb={dpdb} />
+      <div
+        ref={frameRef}
+        className={styles.frame}
+        style={
+          expanded || lanesExtra === 0
+            ? undefined
+            : { height: `calc(min(78vh, 780px) + ${lanesExtra}px)` }
+        }
+      >
+        <HetstarViewer
+          entryId={entryId}
+          modelId={modelId}
+          dpdb={dpdb}
+          onLanesHeight={onLanesHeight}
+        />
       </div>
       {tray !== null && createPortal(trayButton, tray)}
     </div>
