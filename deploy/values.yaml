@@ -161,12 +161,11 @@ modelCompoundsJob:
   maxFilesPerRun: 100
   fileTimeout: 10m
   # Gives the model files stored before the job existed their sets: on prod about 152,000
-  # qFit and ensemble-refinement models (1.6 TB) from the August 2026 bulk import. On from
-  # 2026-11-02, after the checksum job finished with RDS calm. It only queues the files: each
-  # run pages through every artifact, 2,000 per statement, pausing as long as each page took,
-  # even when nothing is left to add. Turn it off once a run logs historical_sets_added=0; the
-  # job keeps reading the queue without it.
-  historicalFill: true
+  # qFit and ensemble-refinement models (1.6 TB) from the August 2026 bulk import. It ran on
+  # 2026-11-02 until a run found nothing left to queue; the job reads the queue without it.
+  # While it is on, each run pages through every artifact, 2,000 per statement, pausing as
+  # long as each page took, even when nothing is left to add.
+  historicalFill: false
   # The largest statement stores 2,000 copies of one file.
   statementTimeout: 30s
   # A 315 MB file read with a 13 MB peak on 2026-10-30; the limit leaves room for a decompressed
