@@ -273,7 +273,8 @@ jobs:
       - name: Install Chromium system dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         working-directory: website
-        run: npx playwright install-deps --only-shell chromium
+        # install-deps has no --only-shell; it takes the headless shell's browser name instead.
+        run: npx playwright install-deps chromium-headless-shell
 
       - name: Start the browser-test stack
         run: make -C website browser-stack
