@@ -240,18 +240,18 @@ Model files stored before the job existed (on prod about 152,000 qFit and ensemb
 models, 1.6 TB, from the August 2026 bulk import) get their sets only when
 `modelCompoundsJob.historicalFill` is on. It only queues them: each run pages through every
 artifact, 2,000 per statement, pausing as long as each page took, as the checksum job does, and
-it repeats that scan on every run while it is on. It has been on since 2026-11-02, with a cap
-of 100 files a run, about 1,200 an hour, so the queue takes about 5 days:
+it repeats that scan on every run while it is on. It ran on 2026-11-02: the first run with it
+(10:35 UTC) queued all 152,442 files in about 40 seconds, and it was turned off again. The cap
+of 100 files a run, about 1,200 an hour, reads that queue in about 5 days. To queue files
+again, for example after another bulk import:
 
 ```yaml
 modelCompoundsJob:
   historicalFill: true
-  maxFilesPerRun: 100
 ```
 
-The first run's `model compounds job started` line shows `historical_sets_added` of about
-152,000, or two runs share it if the 15-minute deadline stops the first. Turn `historicalFill`
-off as soon as a run shows 0; reading goes on from the queue. A run's log is gone once the next
+A run's `model compounds job started` line shows `historical_sets_added`. Turn
+`historicalFill` off as soon as a run shows 0; reading goes on from the queue. A run's log is gone once the next
 run finishes (`successfulJobsHistoryLimit: 1`), so read it within 5 minutes or in Loki. Follow
 the reading with:
 
