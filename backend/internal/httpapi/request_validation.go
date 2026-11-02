@@ -228,18 +228,22 @@ func modelRunsFromRequests(requests *[]CreateRunRequest) []validation.ModelRun {
 	}
 	runs := make([]validation.ModelRun, 0, len(*requests))
 	for _, request := range *requests {
-		run := validation.ModelRun{Run: runFromRequest(request)}
-		if request.Artifacts != nil {
-			for _, link := range *request.Artifacts {
-				run.Artifacts = append(run.Artifacts, validation.RunArtifactLink{
-					ArtifactID: link.ArtifactId,
-					Direction:  domainmodels.RunArtifactDirection(link.Direction),
-				})
-			}
-		}
-		runs = append(runs, run)
+		runs = append(runs, modelRunFromRequest(request))
 	}
 	return runs
+}
+
+func modelRunFromRequest(request CreateRunRequest) validation.ModelRun {
+	run := validation.ModelRun{Run: runFromRequest(request)}
+	if request.Artifacts != nil {
+		for _, link := range *request.Artifacts {
+			run.Artifacts = append(run.Artifacts, validation.RunArtifactLink{
+				ArtifactID: link.ArtifactId,
+				Direction:  domainmodels.RunArtifactDirection(link.Direction),
+			})
+		}
+	}
+	return run
 }
 
 // entryRevisionChangeErrors checks only the fields the change sets; the rest are

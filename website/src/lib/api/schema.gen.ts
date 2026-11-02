@@ -1721,11 +1721,11 @@ export interface components {
             metadata?: components["schemas"]["ModelMetadata"];
             /** Format: uuid */
             primary_artifact_id?: string | null;
-            /** @description Replaces the model revision's artifact set when present. */
+            /** @description Replaces the model revision's artifact set when present. To keep a stored artifact, send it back with its id and the values the API returned; it is linked as stored. Stored artifacts cannot change: a stored id sent with other values, or the id of an artifact the active revision does not have, is a 409. */
             artifacts?: components["schemas"]["CreateArtifactRequest"][];
-            /** @description Replaces the model revision's run set when present. */
+            /** @description Replaces the model revision's run set when present. To keep a stored run, send it back with its id, the values the API returned and its artifact links; it is linked as stored. Stored runs cannot change: a stored id sent with other values, or the id of a run the active revision does not have, is a 409. */
             runs?: components["schemas"]["CreateRunRequest"][];
-            /** @description Replaces the model revision's metric set when present. */
+            /** @description Replaces the model revision's metric set when present. To keep a stored metric, send it back with its id and the values the API returned; it is linked as stored. Stored metrics cannot change: a stored id sent with other values, or the id of a metric the active revision does not have, is a 409. */
             metrics?: components["schemas"]["CreateMetricRequest"][];
         };
         SubmitRevisionRequest: {
@@ -2857,7 +2857,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Entry with the same active PDB reference already exists. */
+            /** @description Entry with the same active PDB reference already exists, or the request sends the id of an artifact, run or metric that is already stored. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3060,7 +3060,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Model ID already exists. */
+            /** @description Model ID already exists, or the request sends the id of an artifact, run or metric that is already stored. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3651,7 +3651,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Revision conflicts with the current active model revision. */
+            /** @description Revision conflicts with the current active model revision, or it sends the id of a stored artifact, run or metric that it cannot keep (see ModelRevisionChange). */
             409: {
                 headers: {
                     [name: string]: unknown;

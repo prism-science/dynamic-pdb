@@ -28,8 +28,9 @@ import styles from "./entry-form/form.module.css";
 
 /**
  * Edits a published model. Saving sends only what the depositor changed, as
- * a revision a reviewer approves. Files and runs are read-only: re-sending
- * their stored ids fails until T2-G.
+ * a revision a reviewer approves. Files and runs are read-only here. The API
+ * keeps stored files and runs sent back unchanged with their ids, so editing
+ * them in this form is a later task.
  */
 export default function EditModelForm({
   entryId,
