@@ -51,17 +51,6 @@ export function buildModelMetrics(
   return byModelId;
 }
 
-/**
- * The model the entry leads with: the deposited one, or the first the backend
- * returned.
- *
- * Matched on the title because nothing marks a model as the deposit. The names
- * already vary -- "Deposited model", "Deposited coordinate model" -- so this is
- * a substring test rather than an equality one, and it still misses a deposit
- * whose depositor named it something else. A `role` or `is_default` field on the
- * model would replace this outright and turn "first returned" back into a
- * fallback instead of the common path.
- */
 /** What to call a model. A model with no title of its own is rare -- the
  *  depositor names them -- and "Model" is what the rail has always shown, so
  *  the heading and the rail row agree whatever the data holds. */
@@ -69,11 +58,40 @@ export function modelTitle(model: { title: string | null }): string {
   return model.title?.trim() || "Model";
 }
 
-export function defaultModel(models: Model[]): Model | null {
-  const deposited = models.find((model) =>
-    (model.title ?? "").toLowerCase().includes("deposited"),
-  );
-  return deposited ?? models[0] ?? null;
+/**
+ * The model the entry leads with: the one that best explains the data, which
+ * is the lowest R-free among the models that have a coordinate file. A tie
+ * goes to the deposited model, then to list order. With no R-free anywhere,
+ * the deposited model, or the first the backend returned.
+ *
+ * The deposit is matched on the title because nothing marks a model as the
+ * deposit. The names already vary -- "Deposited model", "Deposited coordinate
+ * model" -- so this is a substring test rather than an equality one, and it
+ * still misses a deposit whose depositor named it something else. A `role`
+ * field on the model would replace this outright.
+ */
+export function defaultModel(
+  models: Model[],
+  metricsByModelId: Map<string, MetricsPayload> = new Map(),
+  hasCoordinates: (model: Model) => boolean = () => true,
+): Model | null {
+  const deposited =
+    models.find((model) =>
+      (model.title ?? "").toLowerCase().includes("deposited"),
+    ) ?? null;
+  let best: Model | null = null;
+  let bestRFree = Infinity;
+  for (const model of models) {
+    const rFree = metricsByModelId.get(model.id)?.r_free;
+    if (typeof rFree !== "number" || !hasCoordinates(model)) {
+      continue;
+    }
+    if (rFree < bestRFree || (rFree === bestRFree && model === deposited)) {
+      best = model;
+      bestRFree = rFree;
+    }
+  }
+  return best ?? deposited ?? models[0] ?? null;
 }
 
 /**

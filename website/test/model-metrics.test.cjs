@@ -24,6 +24,59 @@ test("should lead with the deposited model whatever it was named", () => {
   assert.equal(defaultModel(long).id, "m2");
 });
 
+test("should lead with the lowest R-free model when the models carry one", () => {
+  // given -- 4N0X's figures: qFit explains the data best
+  const models = [
+    model("m1", "Deposited model"),
+    model("m2", "Rerefined model"),
+    model("m3", "Ensemble refinement model"),
+    model("m4", "qFit model"),
+  ];
+  const metrics = new Map([
+    ["m1", { r_free: 0.1743 }],
+    ["m2", { r_free: 0.1761 }],
+    ["m3", { r_free: 0.2095 }],
+    ["m4", { r_free: 0.1481 }],
+  ]);
+
+  // then
+  assert.equal(defaultModel(models, metrics).id, "m4");
+});
+
+test("should give a tie on R-free to the deposited model", () => {
+  // given
+  const models = [model("m1", "qFit model"), model("m2", "Deposited model")];
+  const metrics = new Map([
+    ["m1", { r_free: 0.17 }],
+    ["m2", { r_free: 0.17 }],
+  ]);
+
+  // then
+  assert.equal(defaultModel(models, metrics).id, "m2");
+});
+
+test("should skip a model without a coordinate file, however low its R-free", () => {
+  // given
+  const models = [model("m1", "Deposited model"), model("m2", "qFit model")];
+  const metrics = new Map([
+    ["m1", { r_free: 0.18 }],
+    ["m2", { r_free: 0.15 }],
+  ]);
+  const hasCoordinates = (item) => item.id !== "m2";
+
+  // then
+  assert.equal(defaultModel(models, metrics, hasCoordinates).id, "m1");
+});
+
+test("should lead with the deposited model when no model reports R-free", () => {
+  // given
+  const models = [model("m1", "qFit model"), model("m2", "Deposited model")];
+  const metrics = new Map([["m1", { r_work: 0.16 }]]);
+
+  // then
+  assert.equal(defaultModel(models, metrics).id, "m2");
+});
+
 test("should fall back to the first model when none is a deposit", () => {
   // given
   const models = [model("m1", "qFit model"), model("m2", "Ensemble refinement")];
