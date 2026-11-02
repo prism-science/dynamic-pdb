@@ -238,14 +238,33 @@ during a deploy). Archive models, whose files are on files.rcsb.org, get none.
 
 Model files stored before the job existed (on prod about 152,000 qFit and ensemble-refinement
 models, 1.6 TB, from the August 2026 bulk import) get their sets only when
-`modelCompoundsJob.historicalFill` is on. Each run then pages through every artifact, 2,000 per
-statement, pausing as long as each page took, as the checksum job does. Turn it on after a quiet
-day with a cap, then raise the cap once RDS metrics and the job's logs look right:
+`modelCompoundsJob.historicalFill` is on. It only queues them: each run pages through every
+artifact, 2,000 per statement, pausing as long as each page took, as the checksum job does, and
+it repeats that scan on every run while it is on. It has been on since 2026-11-02, with a cap
+of 100 files a run, about 1,200 an hour, so the queue takes about 5 days:
 
 ```yaml
 modelCompoundsJob:
   historicalFill: true
   maxFilesPerRun: 100
+```
+
+The first run's `model compounds job started` line shows `historical_sets_added` of about
+152,000, or two runs share it if the 15-minute deadline stops the first. Turn `historicalFill`
+off as soon as a run shows 0; reading goes on from the queue. A run's log is gone once the next
+run finishes (`successfulJobsHistoryLimit: 1`), so read it within 5 minutes or in Loki. Follow
+the reading with:
+
+```sql
+select status, count(*) from modeled_compound_sets group by 1;
+```
+
+Prod's RDS has 20 GB of storage and does not grow by itself. If either RDS EBS balance falls
+below 50% or free storage below 5 GB, stop the job with `modelCompoundsJob.enabled: false`,
+and until that deploys:
+
+```sh
+kubectl -n dynamicpdb patch cronjob dynamic-pdb-model-compounds-job -p '{"spec":{"suspend":true}}'
 ```
 
 A file is retried after 10 and 20 minutes, then marked `failed` with the reason in
