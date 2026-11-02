@@ -1,6 +1,7 @@
 import type {
   Artifact,
   Metric,
+  RelatedDataset,
   ReviewEntry,
   ReviewModel,
 } from "@/lib/api/entries";
@@ -31,6 +32,10 @@ export function diffEntry(
 ): DiffSection[] {
   return withRows([
     { title: "Fields", rows: entryFieldRows(active, proposed) },
+    {
+      title: "Related datasets",
+      rows: relatedDatasetRows(active?.related_datasets, proposed.related_datasets),
+    },
     { title: "Files", rows: fileRows(active?.artifacts, proposed.artifacts) },
   ]);
 }
@@ -87,6 +92,39 @@ function entryProperties(entry: ReviewEntry | null): Record<string, unknown> {
       ["crystallography", entry.crystallography],
     ].filter((property) => property[1] !== undefined),
   );
+}
+
+/** One row per dataset, labelled by its DOI. DOIs are case-insensitive, so
+ *  a DOI whose case changed is the same dataset. */
+function relatedDatasetRows(
+  before: RelatedDataset[] | undefined,
+  after: RelatedDataset[] | undefined,
+): DiffRow[] {
+  const beforeByDoi = byDoi(before);
+  const afterByDoi = byDoi(after);
+  const keys = new Set([...beforeByDoi.keys(), ...afterByDoi.keys()]);
+  return [...keys].sort().map((key) => {
+    const beforeDataset = beforeByDoi.get(key);
+    const afterDataset = afterByDoi.get(key);
+    const label = (afterDataset ?? beforeDataset)?.doi ?? key;
+    return scalarRow(
+      label,
+      beforeDataset ? describeRelatedDataset(beforeDataset) : null,
+      afterDataset ? describeRelatedDataset(afterDataset) : null,
+    );
+  });
+}
+
+function byDoi(datasets: RelatedDataset[] | undefined): Map<string, RelatedDataset> {
+  const result = new Map<string, RelatedDataset>();
+  for (const dataset of datasets ?? []) result.set(dataset.doi.toLowerCase(), dataset);
+  return result;
+}
+
+function describeRelatedDataset(dataset: RelatedDataset): string {
+  return [dataset.doi, dataset.data_type, dataset.repository, dataset.details]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
 }
 
 function modelFieldRows(

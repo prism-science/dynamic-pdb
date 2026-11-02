@@ -798,6 +798,7 @@ func (r *entryAttributesResponse) UnmarshalJSON(data []byte) error {
 		"method",
 		"space_group",
 		"crystallography",
+		"related_datasets",
 	} {
 		if value, ok := fields[key]; ok {
 			r.Metadata[key] = value

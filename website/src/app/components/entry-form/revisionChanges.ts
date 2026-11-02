@@ -25,6 +25,10 @@ import {
 import { optionalNumber } from "./crystals";
 import { organismLabel, polymerEntitiesRequest } from "./polymerEntities";
 import {
+  relatedDatasetDraftsFromStored,
+  relatedDatasetsRequest,
+} from "./relatedDatasets";
+import {
   METRIC_FIELDS,
   MODEL_PURPOSES,
   MODEL_TYPES,
@@ -189,6 +193,7 @@ export function entryDraftFromEntry(entry: Entry): EntryEditDraft {
         entry.polymer_entities ?? [],
         entry.depositor_polymer_entities ?? [],
       ),
+      relatedDatasets: relatedDatasetDraftsFromStored(entry.related_datasets),
     },
   };
 }
@@ -258,6 +263,7 @@ function entryRevisionValues(entry: Entry, draft: EntryEditDraft): EntryRevision
     crystallography: crystallographyValue(entry.crystallography, metadata.crystals),
     ligands: compoundListRequest(metadata.compounds.ligands) ?? null,
     cofactors: compoundListRequest(metadata.compounds.cofactors) ?? null,
+    related_datasets: relatedDatasetsRequest(metadata.relatedDatasets) ?? null,
     polymer_entities: polymerEntitiesValue(
       entry.depositor_polymer_entities ?? [],
       metadata.polymerEntities,

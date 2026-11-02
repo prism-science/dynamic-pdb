@@ -14,6 +14,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 )
 
 func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, entryID string) {
@@ -25,6 +26,12 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
+		return
+	}
+	relatedErr := checkRelatedDatasets(
+		validation.Root.Field("entry").Field("related_datasets"), payload.Request.Entry.RelatedDatasets,
+	)
+	if s.writeMutationError(r.Context(), w, relatedErr, "create entry revision") {
 		return
 	}
 	schemaErr := s.checkSchema(r, entryRevisionChangeErrors(payload))
@@ -1230,6 +1237,7 @@ func (s *Server) entryRevisionAttributesFromModel(
 		Crystallography:   properties.Crystallography,
 		Ligands:           properties.Ligands,
 		Cofactors:         properties.Cofactors,
+		RelatedDatasets:   properties.RelatedDatasets,
 		ProteinSequences:  proteinSequencesFromModels(sequences),
 		Artifacts:         artifactAttributes,
 		FieldSources:      fieldSources,

@@ -17,6 +17,7 @@ import DataTable from "./DataTable";
 import MetricScales from "./MetricScales";
 import ModeledCompoundList from "./ModeledCompoundList";
 import PolymerEntities from "./PolymerEntities";
+import RelatedDatasets from "./RelatedDatasets";
 
 import styles from "./EntryOverview.module.css";
 
@@ -75,6 +76,8 @@ export default function EntryOverview({
   const details = entry.details?.trim() ?? null;
   const heading = model?.title ?? title;
   const obsolete = obsoleteNotice(entry.archive_status);
+  const hasFiles = dataTableEntities(dataEntities).length > 0;
+  const relatedDatasets = entry.related_datasets ?? [];
 
   return (
     <div className={styles.overview}>
@@ -165,11 +168,15 @@ export default function EntryOverview({
 
       {/* What this model was made from and what came out of it, by level. It
           had a tab of its own, which cost a click to answer "what files are
-          here" -- a question a summary should already answer. */}
-      {dataTableEntities(dataEntities).length > 0 ? (
+          here" -- a question a summary should already answer. Datasets kept
+          elsewhere come first: they are links out, not files we hold. */}
+      {hasFiles || relatedDatasets.length > 0 ? (
         <section className={styles.section}>
           <h2 className={styles.heading}>Data</h2>
-          <DataTable entities={dataEntities} />
+          {relatedDatasets.length > 0 ? (
+            <RelatedDatasets datasets={relatedDatasets} />
+          ) : null}
+          {hasFiles ? <DataTable entities={dataEntities} /> : null}
         </section>
       ) : null}
     </div>

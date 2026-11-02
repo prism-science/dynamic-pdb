@@ -111,7 +111,7 @@ func EntryMetadata(at Pointer, metadata models.EntryMetadata) []FieldError {
 			Detail:  "must be greater than 0",
 		})
 	}
-	return fieldErrors
+	return append(fieldErrors, RelatedDatasets(at.Field("related_datasets"), metadata.RelatedDatasets)...)
 }
 
 func ModelMetadata(at Pointer, metadata models.ModelMetadata) []FieldError {
