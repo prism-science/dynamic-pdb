@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"net/http"
+	"testing"
 
 	"github.com/google/uuid"
 
@@ -20,15 +21,15 @@ type computedModelFixture struct {
 	runID       uuid.UUID
 }
 
-func (s *SchemaValidationSuite) createComputedModelFixture(githubID int64, name string) computedModelFixture {
-	s.T().Helper()
+func createComputedModelFixtureForTest(t *testing.T, githubID int64, name string) computedModelFixture {
+	t.Helper()
 	fixture := computedModelFixture{
-		ownerToken:  issueEntryTokenForGitHubIDForTest(s.T(), name+"-owner", githubID),
+		ownerToken:  issueEntryTokenForGitHubIDForTest(t, name+"-owner", githubID),
 		entryFileID: uuid.New(),
 		modelFileID: uuid.New(),
 		runID:       uuid.New(),
 	}
-	entry := createAndActivateEntryForTest(s.T(), fixture.ownerToken, map[string]any{
+	entry := createAndActivateEntryForTest(t, fixture.ownerToken, map[string]any{
 		"entry": map[string]any{
 			"title": name + " entry",
 			"artifacts": []map[string]any{
@@ -37,7 +38,7 @@ func (s *SchemaValidationSuite) createComputedModelFixture(githubID int64, name 
 		},
 	})
 	fixture.entryID = entry.EntryId
-	model := createAndActivateModelForTest(s.T(), fixture.ownerToken, fixture.entryID, map[string]any{
+	model := createAndActivateModelForTest(t, fixture.ownerToken, fixture.entryID, map[string]any{
 		"model": map[string]any{
 			"title":     name + " model",
 			"metadata":  map[string]any{"model_type": "Multiconformer"},
@@ -61,7 +62,7 @@ func refinementRunForTest(runID, inputID, outputID uuid.UUID) map[string]any {
 
 func (s *SchemaValidationSuite) Test_should_accept_run_input_from_entry_file_when_computed_model_is_created() {
 	// given
-	fixture := s.createComputedModelFixture(8430, "provenance entry input")
+	fixture := createComputedModelFixtureForTest(s.T(), 8430, "provenance entry input")
 	path := "/v1/entries/" + fixture.entryID + "/models/" + fixture.modelID + "/artifacts"
 
 	// when
@@ -108,7 +109,7 @@ func (s *SchemaValidationSuite) Test_should_reject_run_output_and_write_nothing_
 
 func (s *SchemaValidationSuite) Test_should_check_runs_against_active_revision_when_revision_change_sets_runs() {
 	// given
-	fixture := s.createComputedModelFixture(8432, "provenance revision runs")
+	fixture := createComputedModelFixtureForTest(s.T(), 8432, "provenance revision runs")
 
 	// when
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
@@ -137,7 +138,7 @@ func (s *SchemaValidationSuite) Test_should_check_runs_against_active_revision_w
 
 func (s *SchemaValidationSuite) Test_should_reject_revision_metric_when_it_names_no_software_or_run() {
 	// given
-	fixture := s.createComputedModelFixture(8433, "provenance metric without software")
+	fixture := createComputedModelFixtureForTest(s.T(), 8433, "provenance metric without software")
 
 	// when
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
@@ -156,7 +157,7 @@ func (s *SchemaValidationSuite) Test_should_reject_revision_metric_when_it_names
 
 func (s *SchemaValidationSuite) Test_should_accept_revision_metric_when_run_id_names_a_run_it_inherits() {
 	// given
-	fixture := s.createComputedModelFixture(8436, "provenance inherited run")
+	fixture := createComputedModelFixtureForTest(s.T(), 8436, "provenance inherited run")
 
 	// when
 	linked := createAndActivateModelRevisionForTest(s.T(), fixture.ownerToken, fixture.entryID, fixture.modelID,
@@ -197,7 +198,7 @@ func (s *SchemaValidationSuite) Test_should_require_runs_when_revision_change_tu
 
 func (s *SchemaValidationSuite) Test_should_reject_run_replacement_when_kept_metric_names_a_dropped_run() {
 	// given
-	fixture := s.createComputedModelFixture(8438, "provenance dropped run")
+	fixture := createComputedModelFixtureForTest(s.T(), 8438, "provenance dropped run")
 	createAndActivateModelRevisionForTest(s.T(), fixture.ownerToken, fixture.entryID, fixture.modelID,
 		map[string]any{"model": map[string]any{
 			"metrics": []map[string]any{{"id": uuid.New(), "key": "r_free", "value": 0.2, "run_id": fixture.runID}},

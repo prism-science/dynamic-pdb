@@ -25,7 +25,14 @@ import (
 var (
 	errInvalidRequest = errors.New("invalid request")
 	errConflict       = errors.New("conflict")
+	// errIDInUse marks a request that sends the ID of a stored artifact, run or metric
+	// in a way the write cannot keep.
+	errIDInUse = errors.New("id in use")
 )
+
+// storedIDPrimaryKeys are the primary keys a request hits when it sends the ID of a stored
+// artifact, run or metric that the write does not keep.
+var storedIDPrimaryKeys = []string{"artifacts_pkey", "runs_pkey", "metrics_pkey"}
 
 const (
 	defaultListLimit              = 50
@@ -526,7 +533,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 		} else if !errors.Is(err, db.ErrModelRevisionNotFound) {
 			return fmt.Errorf("check model id: %w", err)
 		}
-		artifacts, err := s.createArtifacts(ctx, data.Artifacts, createdBy, now)
+		artifacts, err := s.createArtifacts(ctx, data.Artifacts, nil, createdBy, now)
 		if err != nil {
 			return fmt.Errorf("create model artifacts: %w", err)
 		}
@@ -557,12 +564,12 @@ func (s *Server) createInitialModelRevisionForEntry(
 		}
 		// Runs first: a metric may name the run that produced it.
 		if data.Runs != nil {
-			if err := s.createModelRuns(ctx, revision.ID, *data.Runs, createdBy, now); err != nil {
+			if err := s.createModelRuns(ctx, revision.ID, *data.Runs, nil, createdBy, now); err != nil {
 				return fmt.Errorf("create model runs: %w", err)
 			}
 		}
 		if data.Metrics != nil {
-			if err := s.createModelMetrics(ctx, revision.ID, *data.Metrics, now); err != nil {
+			if err := s.createModelMetrics(ctx, revision.ID, *data.Metrics, nil, now); err != nil {
 				return fmt.Errorf("create model metrics: %w", err)
 			}
 		}
@@ -578,9 +585,12 @@ func createModelDataFromAddOperation(data AddModelData) CreateModelData {
 	return CreateModelData(data)
 }
 
+// createArtifacts creates the requested artifacts, except those whose ID is in stored: they
+// are returned as stored, to be linked again.
 func (s *Server) createArtifacts(
 	ctx context.Context,
 	requests *[]CreateArtifactRequest,
+	stored map[uuid.UUID]domainmodels.Artifact,
 	createdBy uuid.UUID,
 	now time.Time,
 ) ([]domainmodels.Artifact, error) {
@@ -589,6 +599,13 @@ func (s *Server) createArtifacts(
 	}
 	artifacts := make([]domainmodels.Artifact, 0, len(*requests))
 	for _, request := range *requests {
+		if storedArtifact, found := stored[request.Id]; found {
+			if err := checkStoredArtifactUnchanged(storedArtifact, request); err != nil {
+				return nil, fmt.Errorf("keep stored model artifact: %w", err)
+			}
+			artifacts = append(artifacts, storedArtifact)
+			continue
+		}
 		artifact, err := s.createArtifact(ctx, request, createdBy, now)
 		if err != nil {
 			return nil, fmt.Errorf("create model artifact: %w", err)
@@ -693,7 +710,11 @@ func (s *Server) createModelRevisionGraph(
 		if err := s.checkModelRevisionChangeProvenance(ctx, check, entryID, payload, *base); err != nil {
 			return fmt.Errorf("check model revision provenance: %w", err)
 		}
-		artifacts, err := s.createArtifacts(ctx, data.Artifacts, createdBy, now)
+		stored, err := s.loadStoredModelContents(ctx, base.ID, data)
+		if err != nil {
+			return fmt.Errorf("read stored model contents: %w", err)
+		}
+		artifacts, err := s.createArtifacts(ctx, data.Artifacts, stored.artifacts, createdBy, now)
 		if err != nil {
 			return fmt.Errorf("create model artifacts: %w", err)
 		}
@@ -776,6 +797,7 @@ func (s *Server) createModelRevisionGraph(
 			artifacts,
 			data.Metrics,
 			data.Runs,
+			stored,
 			createdBy,
 			now,
 		); err != nil {
@@ -833,6 +855,7 @@ func (s *Server) copyOrAttachModelRevisionContents(
 	artifacts []domainmodels.Artifact,
 	metrics *[]CreateMetricRequest,
 	runs *[]CreateRunRequest,
+	stored storedModelContents,
 	createdBy uuid.UUID,
 	now time.Time,
 ) error {
@@ -848,45 +871,68 @@ func (s *Server) copyOrAttachModelRevisionContents(
 		if err := s.database.Runs.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
 			return fmt.Errorf("copy model revision runs: %w", err)
 		}
-	} else if err := s.createModelRuns(ctx, toRevisionID, *runs, createdBy, now); err != nil {
+	} else if err := s.createModelRuns(ctx, toRevisionID, *runs, stored.runs, createdBy, now); err != nil {
 		return fmt.Errorf("create replacement model runs: %w", err)
 	}
 	if metrics == nil {
 		if err := s.database.Metrics.CopyModelRevisionLinks(ctx, fromRevisionID, toRevisionID); err != nil {
 			return fmt.Errorf("copy model revision metrics: %w", err)
 		}
-	} else if err := s.createModelMetrics(ctx, toRevisionID, *metrics, now); err != nil {
+	} else if err := s.createModelMetrics(ctx, toRevisionID, *metrics, stored.metrics, now); err != nil {
 		return fmt.Errorf("create replacement model metrics: %w", err)
 	}
 	return nil
 }
 
+// createModelMetrics creates the requested metrics and links them to the model revision. A
+// metric whose ID is in stored is linked as stored.
 func (s *Server) createModelMetrics(
 	ctx context.Context,
 	modelRevisionID uuid.UUID,
 	requests []CreateMetricRequest,
+	stored map[uuid.UUID]domainmodels.Metric,
 	now time.Time,
 ) error {
 	for _, request := range requests {
-		metric, err := s.createMetric(ctx, request, now)
-		if err != nil {
-			return fmt.Errorf("create model metric: %w", err)
+		metricID := request.Id
+		if storedMetric, found := stored[request.Id]; found {
+			if err := checkStoredMetricUnchanged(storedMetric, request); err != nil {
+				return fmt.Errorf("keep stored model metric: %w", err)
+			}
+		} else {
+			metric, err := s.createMetric(ctx, request, now)
+			if err != nil {
+				return fmt.Errorf("create model metric: %w", err)
+			}
+			metricID = metric.ID
 		}
-		if err := s.database.Metrics.AttachToModelRevision(ctx, modelRevisionID, metric.ID); err != nil {
+		if err := s.database.Metrics.AttachToModelRevision(ctx, modelRevisionID, metricID); err != nil {
 			return fmt.Errorf("attach metric to model revision: %w", err)
 		}
 	}
 	return nil
 }
 
+// createModelRuns creates the requested runs with their artifact links and links them to the
+// model revision. A run whose ID is in stored is linked as stored, with the links it has.
 func (s *Server) createModelRuns(
 	ctx context.Context,
 	modelRevisionID uuid.UUID,
 	requests []CreateRunRequest,
+	stored map[uuid.UUID]validation.ModelRun,
 	createdBy uuid.UUID,
 	now time.Time,
 ) error {
 	for _, request := range requests {
+		if storedRun, found := stored[request.Id]; found {
+			if err := checkStoredRunUnchanged(storedRun, request); err != nil {
+				return fmt.Errorf("keep stored model run: %w", err)
+			}
+			if err := s.database.Runs.AttachToModelRevision(ctx, modelRevisionID, request.Id); err != nil {
+				return fmt.Errorf("attach stored run to model revision: %w", err)
+			}
+			continue
+		}
 		run, err := s.createRun(ctx, request, createdBy, now)
 		if err != nil {
 			return fmt.Errorf("create model run: %w", err)
@@ -2239,12 +2285,22 @@ func invalidPayloadRequest(description string, err error) error {
 	return fmt.Errorf("%s: %w", description, invalidRequest("%v", err))
 }
 
+func idInUse(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errIDInUse, fmt.Sprintf(format, args...))
+}
+
 // modelRevisionMetricKeyIndex is the unique index on (model revision, metric key).
 const modelRevisionMetricKeyIndex = "model_revision_metrics_revision_key_idx"
 
 func isUniqueConstraint(err error, constraint string) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == constraint
+}
+
+func isStoredIDPrimaryKey(err error) bool {
+	return slices.ContainsFunc(storedIDPrimaryKeys, func(constraint string) bool {
+		return isUniqueConstraint(err, constraint)
+	})
 }
 
 func isForeignKeyViolation(err error, constraint string) bool {
@@ -2268,6 +2324,11 @@ func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, 
 		writeError(w, http.StatusConflict, "CONFLICT", "revision conflicts with the current active state")
 	case isUniqueConstraint(err, modelRevisionMetricKeyIndex):
 		writeError(w, http.StatusConflict, "CONFLICT", "a model revision can have only one metric per key")
+	case errors.Is(err, errIDInUse):
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+	case isStoredIDPrimaryKey(err):
+		writeError(w, http.StatusConflict, "CONFLICT",
+			"an artifact, run or metric with this id is already stored and is not part of the revision this request changes; send a new id")
 	default:
 		slog.ErrorContext(ctx, action+" failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)
