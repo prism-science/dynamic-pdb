@@ -19,8 +19,13 @@ and after and diff the outputs to show no data was lost. `old_shape_fixture.sql`
 old-shape data for trying the migrations on a scratch database (the Go test uses the same file).
 
 Columns: `check_name`, `object_type`, `object_id`, `details` (jsonb), `check_count`.
-`metric_missing_software` is always reported as `n/a until Phase D` (no provenance column yet).
-Records with missing information (omitted `model_type`, NULL `sha256`) are not violations and stay public.
+Records with missing information stay public. An omitted `model_type` or a NULL `sha256` is not
+malformed data. The three provenance checks follow the Go write rules
+(`backend/internal/validation/provenance.go`), where an omitted `model_type` counts as computed:
+`metric_missing_software` (a metric of a computed model with no software and no `run_id`),
+`run_missing_software_version` (a run of a computed model with no version) and
+`computed_model_without_run`. Their rows are the repair list for the records the website labels
+"information missing" (the model detail GET returns them as `missing_info`).
 
 Records the migrations could not resolve themselves are in `schema_migration_review`
 (`object_type, object_id, issue, details`): PDB-backed entries whose ligand/cofactor lists wait for

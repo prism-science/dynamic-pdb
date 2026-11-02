@@ -51,11 +51,17 @@ export type Model = Omit<Schemas["ModelAttributes"], "metadata" | "metrics" | "i
  *  from a backend older than the field has none; read it as unknown. */
 export type ModeledCompounds = Schemas["ModeledCompounds"];
 
-/** A model as its own request returns it: a list item plus its field sources
- *  and the compounds its file models. */
+/** One piece of information a model's record lacks that a write would now be
+ *  rejected for. The backend works it out with the write rules themselves. */
+export type MissingInfo = Schemas["MissingInfo"];
+
+/** A model as its own request returns it: a list item plus its field sources,
+ *  the compounds its file models and what its record lacks. missing_info is
+ *  absent when the backend could not work it out. */
 export type ModelDetail = Model & {
   field_sources: FieldSources;
   modeled_compounds?: ModeledCompounds;
+  missing_info?: MissingInfo[];
 };
 
 export type EntityType = "data" | "metrics" | "model" | "program";
