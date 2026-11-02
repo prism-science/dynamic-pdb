@@ -63,6 +63,7 @@ export default function EntryOverview({
   dataEntities,
   model,
   scales,
+  structureHref = null,
 }: {
   entry: Entry;
   entities: PolymerEntityView[];
@@ -74,6 +75,9 @@ export default function EntryOverview({
   model: SummaryModel | null;
   /** One track per figure. Empty when no model of the entry carries any. */
   scales: MetricScale[];
+  /** Where the model's picture leads: its Structure tab, or null when the
+   *  entry has nothing to show there, in which case it is only a picture. */
+  structureHref?: string | null;
 }) {
   const title = entry.title?.trim() ?? null;
   const details = entry.details?.trim() ?? null;
@@ -90,17 +94,24 @@ export default function EntryOverview({
 
       <div className={styles.head} data-solo={model ? undefined : "true"}>
         {model ? (
-          <div
-            className={styles.shot}
-            data-empty={model.previewURL ? undefined : "true"}
-          >
-            {model.previewURL ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={model.previewURL} alt="" />
-            ) : (
-              <ImagePlaceholderIcon size={40} />
-            )}
-          </div>
+          structureHref ? (
+            <Link
+              href={structureHref}
+              className={styles.shot}
+              data-empty={model.previewURL ? undefined : "true"}
+              aria-label="Open the structure"
+              title="Open the structure"
+            >
+              {shot(model)}
+            </Link>
+          ) : (
+            <div
+              className={styles.shot}
+              data-empty={model.previewURL ? undefined : "true"}
+            >
+              {shot(model)}
+            </div>
+          )
         ) : null}
 
         <div className={styles.about}>
@@ -220,4 +231,13 @@ function firstHalf(facts: MetadataFact[]): MetadataFact[] {
 
 function secondHalf(facts: MetadataFact[]): MetadataFact[] {
   return facts.slice(Math.ceil(facts.length / 2));
+}
+
+function shot(model: SummaryModel) {
+  return model.previewURL ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={model.previewURL} alt="" />
+  ) : (
+    <ImagePlaceholderIcon size={40} />
+  );
 }

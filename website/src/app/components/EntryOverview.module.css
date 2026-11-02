@@ -51,6 +51,18 @@
   color: var(--text-muted);
 }
 
+a.shot {
+  cursor: pointer;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+
+a.shot:hover,
+a.shot:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
 .shot img {
   width: 100%;
   height: 100%;

@@ -65,6 +65,11 @@ function coordinateEntity(model: Model, entities: Entity[]): Entity | null {
   );
 }
 
+/** Whether the model has a coordinate file at all, in any format. */
+export function hasCoordinates(model: Model, entities: Entity[]): boolean {
+  return coordinateKind(model, entities) !== null;
+}
+
 function coordinateKind(
   model: Model,
   entities: Entity[],

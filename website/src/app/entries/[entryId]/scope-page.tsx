@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
@@ -27,14 +28,18 @@ import { entryIdentity, formatEntryLabel } from "@/lib/entry-label";
 import { crystallographyView } from "@/lib/crystallography";
 import { hasExperimentRecord } from "@/lib/experiment";
 import { downloadGroups } from "@/lib/download-files";
-import { defaultModel, modelTitle } from "@/lib/model-metrics";
+import {
+  buildModelMetrics,
+  defaultModel,
+  modelTitle,
+} from "@/lib/model-metrics";
 import { metricScales } from "@/lib/model-comparison";
 import { modelOverlays } from "@/lib/model-overlays";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { entryModels } from "@/lib/entry-models";
 import { hetstarDpdbConfig } from "@/lib/hetstar";
-import { hetstarCanRender } from "@/lib/hetstar-support";
+import { hasCoordinates, hetstarCanRender } from "@/lib/hetstar-support";
 import { modeledCompoundsView } from "@/lib/modeled-compounds";
 import { missingInfoLinesForPage, type MissingInfoRun } from "@/lib/missing-info";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
@@ -108,7 +113,11 @@ export default async function ScopePage({
   const model =
     modelId !== null
       ? (data.models.find((item) => item.id === modelId) ?? null)
-      : defaultModel(data.models);
+      : defaultModel(
+          data.models,
+          buildModelMetrics(data.entities, data.relations),
+          (item) => hasCoordinates(item, data.entities),
+        );
   if (modelId !== null && model === null) {
     notFound();
   }
@@ -239,6 +248,14 @@ export default async function ScopePage({
 
   const hrefFor = (id: string) =>
     tabs.some((item) => item.id === id) ? `${base}?tab=${id}` : null;
+  // Both pictures of the model open its structure, when there is one to open.
+  const structureHref = hrefFor("structure");
+  const identityImage = data.entry.thumbnail_image_url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={data.entry.thumbnail_image_url} alt="" />
+  ) : (
+    <ImagePlaceholderIcon size={26} />
+  );
 
   const entryBase = `/entries/${encodeURIComponent(data.entry.id)}`;
 
@@ -258,17 +275,24 @@ export default async function ScopePage({
             the record scrolls under them. */}
         <div className={styles.scopeHead}>
           <div className={styles.identityBar}>
-            <div
-              className={styles.identityThumb}
-              data-empty={data.entry.thumbnail_image_url ? undefined : "true"}
-            >
-              {data.entry.thumbnail_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={data.entry.thumbnail_image_url} alt="" />
-              ) : (
-                <ImagePlaceholderIcon size={26} />
-              )}
-            </div>
+            {structureHref ? (
+              <Link
+                href={structureHref}
+                className={styles.identityThumb}
+                data-empty={data.entry.thumbnail_image_url ? undefined : "true"}
+                aria-label="Open the structure"
+                title="Open the structure"
+              >
+                {identityImage}
+              </Link>
+            ) : (
+              <div
+                className={styles.identityThumb}
+                data-empty={data.entry.thumbnail_image_url ? undefined : "true"}
+              >
+                {identityImage}
+              </div>
+            )}
             <div className={styles.identityNames} data-tour="identity">
               {/* Kept to one line, with the whole of it in the tooltip: the
                   head is sticky and a fixed height, and the rail truncates
@@ -336,6 +360,7 @@ export default async function ScopePage({
               dataEntities={modelEntities}
               model={summaryModel}
               scales={scales}
+              structureHref={structureHref}
             />
           ) : null}
 

@@ -180,6 +180,17 @@
   color: var(--text-muted);
 }
 
+a.identityThumb {
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+a.identityThumb:hover,
+a.identityThumb:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 .identityThumb img {
   width: 100%;
   height: 100%;
