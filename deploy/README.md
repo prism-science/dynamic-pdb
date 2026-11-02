@@ -241,8 +241,10 @@ models, 1.6 TB, from the August 2026 bulk import) get their sets only when
 `modelCompoundsJob.historicalFill` is on. It only queues them: each run pages through every
 artifact, 2,000 per statement, pausing as long as each page took, as the checksum job does, and
 it repeats that scan on every run while it is on. It ran on 2026-11-02: the first run with it
-(10:35 UTC) queued all 152,442 files in about 40 seconds, and it was turned off again. The cap
-of 100 files a run, about 1,200 an hour, reads that queue in about 5 days. To queue files
+(10:35 UTC) queued all 152,442 files in about 40 seconds, and it was turned off again. Runs
+read 100 files each at first, in 26 to 31 seconds with no failures; on 2026-11-02 the cap went
+to 500 files a run, about 6,000 an hour, so the ~145,000 files still queued take about a day.
+A run stops claiming files after 4 minutes, so a run of large files reads fewer. To queue files
 again, for example after another bulk import:
 
 ```yaml
