@@ -8,8 +8,11 @@ import {
   getModel,
   type ListPage,
   listSimilarEntries,
+  type Metric,
+  type MissingInfo,
   type Model,
   type ModeledCompounds,
+  type ProgramPayload,
   type ResidueData,
   type SimilarEntry,
 } from "@/lib/api/entries";
@@ -33,6 +36,7 @@ import { entryModels } from "@/lib/entry-models";
 import { hetstarDpdbConfig } from "@/lib/hetstar";
 import { hetstarCanRender } from "@/lib/hetstar-support";
 import { modeledCompoundsView } from "@/lib/modeled-compounds";
+import { missingInfoLinesForPage, type MissingInfoRun } from "@/lib/missing-info";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import GuidedTour from "@/app/components/GuidedTour";
@@ -133,7 +137,11 @@ export default async function ScopePage({
     data.entry.thumbnail_image_url,
   );
 
-  const { residueData, modeledCompounds } = await loadModelDetail(session?.token, entryId, model);
+  const { residueData, modeledCompounds, missingInfo, detailMetrics } = await loadModelDetail(
+    session?.token,
+    entryId,
+    model,
+  );
   // The file's compounds, tagged from the entry's own lists. Until the file is
   // read, and for a model without a file of ours, the typed lists stay among
   // its facts.
@@ -193,6 +201,10 @@ export default async function ScopePage({
           metrics: modelEntity
             ? metricColumns(mergedModelMetrics(modelEntity, provenance))
             : [],
+          missingInfo: missingInfoLinesForPage(missingInfo, {
+            metrics: detailMetrics,
+            runs: modelRuns(data.entities, model.id),
+          }),
         };
 
   // Both routes render the same page, so the tab links have to hang off the
@@ -427,24 +439,58 @@ async function loadEntry(
   }
 }
 
-// What only the model detail endpoint returns: the per-residue data and the
-// compounds the server read from the model's file. Both are bonus blocks: if the
-// request fails the page still renders, without them.
+type ModelDetailBlocks = {
+  residueData: ResidueData[];
+  modeledCompounds: ModeledCompounds | undefined;
+  missingInfo: MissingInfo[] | undefined;
+  /** The metrics the missing info names, from the same response. */
+  detailMetrics: Metric[];
+};
+
+const NO_MODEL_DETAIL: ModelDetailBlocks = {
+  residueData: [],
+  modeledCompounds: undefined,
+  missingInfo: undefined,
+  detailMetrics: [],
+};
+
+// What only the model detail endpoint returns: the per-residue data, the
+// compounds the server read from the model's file and what the record lacks.
+// All are bonus blocks: if the request fails the page still renders, without them.
 async function loadModelDetail(
   token: string | undefined,
   entryId: string,
   model: Model | null,
-): Promise<{ residueData: ResidueData[]; modeledCompounds: ModeledCompounds | undefined }> {
+): Promise<ModelDetailBlocks> {
   if (model === null) {
-    return { residueData: [], modeledCompounds: undefined };
+    return NO_MODEL_DETAIL;
   }
   try {
     const detail = await getModel(token, entryId, model.id);
-    return { residueData: detail.residue_data ?? [], modeledCompounds: detail.modeled_compounds };
+    return {
+      residueData: detail.residue_data ?? [],
+      modeledCompounds: detail.modeled_compounds,
+      missingInfo: detail.missing_info,
+      detailMetrics: detail.metrics ?? [],
+    };
   } catch (error) {
     console.error("get model detail failed", error);
-    return { residueData: [], modeledCompounds: undefined };
+    return NO_MODEL_DETAIL;
   }
+}
+
+// The model's runs by ID, for the missing-info lines. The graph puts a run's
+// software name in its payload, or the run's own name when it has none.
+function modelRuns(entities: Entity[], modelId: string): Map<string, MissingInfoRun> {
+  const runs = new Map<string, MissingInfoRun>();
+  for (const entity of entities) {
+    if (entity.type !== "program" || entity.model_id !== modelId) {
+      continue;
+    }
+    const software = (entity.payload as ProgramPayload).name;
+    runs.set(entity.id, { name: entity.name, software: software !== entity.name ? software : null });
+  }
+  return runs;
 }
 
 // Similarity is a bonus block on the page: if listing it fails the record still

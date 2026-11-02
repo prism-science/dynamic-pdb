@@ -15,6 +15,7 @@ import {
 } from "@/app/entries/[entryId]/entry-view";
 import DataTable from "./DataTable";
 import MetricScales from "./MetricScales";
+import MissingInfoNotice from "./MissingInfoNotice";
 import ModeledCompoundList from "./ModeledCompoundList";
 import PolymerEntities from "./PolymerEntities";
 import RelatedDatasets from "./RelatedDatasets";
@@ -32,6 +33,8 @@ export type SummaryModel = {
   metrics: MetricColumn[];
   /** What the server read from the model's file; "typed" when it holds none. */
   compounds: ModeledCompoundsView;
+  /** What its record lacks that a write would now ask for, one line each. */
+  missingInfo: string[];
 };
 
 /**
@@ -122,6 +125,7 @@ export default function EntryOverview({
               <InfoGrid facts={secondHalf(model.facts)} columns={1} />
             </div>
           ) : null}
+          {model ? <MissingInfoNotice lines={model.missingInfo} /> : null}
         </div>
       </div>
 

@@ -2449,7 +2449,8 @@ components:
     ModelDetailAttributes:
       description: >
         A model as the model detail endpoint returns it: the list attributes plus where the
-        values of its archive-synced fields came from, and the compounds its file models.
+        values of its archive-synced fields came from, the compounds its file models, and the
+        information it lacks.
       allOf:
         - $ref: "#/components/schemas/ModelAttributes"
         - type: object
@@ -2459,6 +2460,37 @@ components:
               $ref: "#/components/schemas/FieldSources"
             modeled_compounds:
               $ref: "#/components/schemas/ModeledCompounds"
+            missing_info:
+              description: >
+                What this record lacks that a write would now be rejected for. Such records
+                stay public; the website labels them "information missing". Empty when nothing
+                is missing; omitted when it could not be worked out.
+              type: array
+              items:
+                $ref: "#/components/schemas/MissingInfo"
+
+    MissingInfo:
+      type: object
+      required: [kind]
+      description: >
+        One piece of information a model lacks. metric_software: a metric of a computed model
+        names neither its software nor the run that produced it (metric_id is set).
+        run_software_version: a run of a computed model has no software version (run_id is
+        set). model_run: a computed model has no run.
+      properties:
+        kind:
+          $ref: "#/components/schemas/MissingInfoKind"
+        metric_id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+
+    MissingInfoKind:
+      type: string
+      enum: [metric_software, run_software_version, model_run]
+      x-enum-varnames: [MissingInfoKindMetricSoftware, MissingInfoKindRunSoftwareVersion, MissingInfoKindModelRun]
 
     ModeledCompounds:
       type: object

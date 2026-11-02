@@ -1,0 +1,46 @@
+/* The "information missing" label: a warning like the "Needs review" badge,
+   because the record is still valid, only incomplete. */
+.notice {
+  margin-top: 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.badge {
+  padding: 1px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.toggle {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lead,
+.note {
+  margin: 8px 0 0;
+}
+
+.lines {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  color: var(--warning-fg);
+}
+
+.note {
+  color: var(--text-muted);
+}
