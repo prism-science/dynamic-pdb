@@ -771,11 +771,23 @@ export interface components {
             id: string;
             attributes: components["schemas"]["ModelDetailAttributes"];
         };
-        /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from, and the compounds its file models. */
+        /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from, the compounds its file models, and the information it lacks. */
         ModelDetailAttributes: components["schemas"]["ModelAttributes"] & {
             field_sources: components["schemas"]["FieldSources"];
             modeled_compounds: components["schemas"]["ModeledCompounds"];
+            /** @description What this record lacks that a write would now be rejected for. Such records stay public; the website labels them "information missing". Empty when nothing is missing; omitted when it could not be worked out. */
+            missing_info?: components["schemas"]["MissingInfo"][];
         };
+        /** @description One piece of information a model lacks. metric_software: a metric of a computed model names neither its software nor the run that produced it (metric_id is set). run_software_version: a run of a computed model has no software version (run_id is set). model_run: a computed model has no run. */
+        MissingInfo: {
+            kind: components["schemas"]["MissingInfoKind"];
+            /** Format: uuid */
+            metric_id?: string;
+            /** Format: uuid */
+            run_id?: string;
+        };
+        /** @enum {string} */
+        MissingInfoKind: "metric_software" | "run_software_version" | "model_run";
         /** @description Every copy of every compound the model's file models outside its polymer chains, water excepted, read by the server from the stored file. Read-only: buffers are kept and no reference-list rule is applied; the entry's ligands and cofactors carry those judgments. status: not_stored (the model has no file in our bucket, so nothing is read and the typed metadata ligands and cofactors stand), pending (not read yet, or waiting for a retry), done, failed (last_error says why). copies is empty unless status is done. */
         ModeledCompounds: {
             /** @enum {string} */

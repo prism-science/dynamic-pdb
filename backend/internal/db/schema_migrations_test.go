@@ -754,12 +754,11 @@ func Test_should_list_every_violation_in_read_only_transaction_when_inventory_ru
 	}
 	assert.Equal(t, map[string]int64{
 		"metric_unknown_key":                           1,
-		"metric_missing_software":                      0,
+		"metric_missing_software":                      4,
 		"metric_duplicate_key":                         1,
 		"model_invalid_type":                           1,
 		"model_invalid_purpose":                        1,
-		"run_missing_software_version":                 1,
-		"computed_model_without_run":                   2,
+		"computed_model_without_run":                   5,
 		"artifact_malformed_sha256":                    1,
 		"artifact_negative_size":                       1,
 		"model_revision_has_composition_lists":         6,
@@ -775,27 +774,92 @@ func Test_should_list_every_violation_in_read_only_transaction_when_inventory_ru
 	assert.Equal(t, []string{fixtureModelRevBase + "02"}, idsByCheck["metric_duplicate_key"])
 	assert.Equal(t, []string{fixtureModelRevBase + "03"}, idsByCheck["model_invalid_purpose"])
 	assert.Equal(t, []string{fixtureModelRevBase + "02"}, idsByCheck["model_invalid_type"], "Refinement is a purpose, not a model type")
-	assert.Equal(t, []string{fixtureRunNoVersion}, idsByCheck["run_missing_software_version"])
+	assert.Equal(t, []string{
+		fixtureMetricBase + "01", fixtureMetricBase + "02", fixtureMetricBase + "03", fixtureMetricBase + "04",
+	}, idsByCheck["metric_missing_software"], "old metrics name no software; their models are not Deposited")
+	assert.Equal(t, []string{
+		fixtureModelRevBase + "02", fixtureModelRevBase + "03", fixtureModelRevBase + "05",
+		fixtureModelRevBase + "06", fixtureModelRevBase + "07",
+	}, idsByCheck["computed_model_without_run"], "an invalid or omitted model_type counts as computed, as in Go")
+	assert.Empty(t, idsByCheck["run_missing_software_version"], "the run without a version belongs to no model")
 	assert.Equal(t, []string{"e_mixed", "e_pdb", "e_string"}, idsByCheck["entry_composition_lists_unresolved"],
 		"the PDB entry waits for the archive, the two others for review of unmergeable lists")
 	assert.Equal(t, []string{fixtureModelRevBase + "06", fixtureModelRevBase + "07"},
 		idsByCheck["model_revision_composition_lists_unmergeable"])
 	assert.Equal(t, []string{fixtureRunNoVersion}, idsByCheck["run_artifact_invalid_direction"])
-	assert.Equal(t, "n/a until Phase D", metricSoftwareStatus(t, rows))
 }
 
-func metricSoftwareStatus(t *testing.T, rows []inventoryRow) string {
-	t.Helper()
-	for _, row := range rows {
-		if row.CheckName != "metric_missing_software" {
-			continue
+// provenanceSeedSQL stores, after the migrations, one model per provenance case so the
+// inventory's provenance checks can be compared with the Go write rules.
+const provenanceSeedSQL = `
+insert into entries(id, created_by) values ('e_provenance', '00000000-0000-0000-0000-0000000000a1');
+insert into models(id, entry_id, created_by) values
+    ('m_prov_computed', 'e_provenance', '00000000-0000-0000-0000-0000000000a1'),
+    ('m_prov_untyped', 'e_provenance', '00000000-0000-0000-0000-0000000000a1'),
+    ('m_prov_deposited', 'e_provenance', '00000000-0000-0000-0000-0000000000a1');
+insert into model_revisions(id, model_id, state, title, metadata, created_by) values
+    ('00000000-0000-0000-0000-000000e2e001', 'm_prov_computed', 'active', 'm', '{"model_type":"Multiconformer"}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e002', 'm_prov_untyped', 'active', 'm', '{}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e003', 'm_prov_deposited', 'active', 'm', '{"model_type":"Deposited"}', '00000000-0000-0000-0000-0000000000a1');
+insert into runs(id, name, software_name, software_version, created_by) values
+    ('00000000-0000-0000-0000-000000e2e101', 'no version', 'PHENIX', null, '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e102', 'blank version', 'PHENIX', ' ', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e103', 'with version', 'PHENIX', '1.21', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e104', 'deposited, no version', 'REFMAC', null, '00000000-0000-0000-0000-0000000000a1');
+insert into model_revision_runs(model_revision_id, run_id) values
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e101'),
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e102'),
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e103'),
+    ('00000000-0000-0000-0000-000000e2e003', '00000000-0000-0000-0000-000000e2e104');
+insert into metrics(id, key, value, software_name, run_id) values
+    ('00000000-0000-0000-0000-000000e2e201', 'r_free', 0.21, null, null),
+    ('00000000-0000-0000-0000-000000e2e202', 'r_work', 0.18, '  ', null),
+    ('00000000-0000-0000-0000-000000e2e203', 'clashscore', 3.1, 'MolProbity', null),
+    ('00000000-0000-0000-0000-000000e2e204', 'rscc', 0.9, null, '00000000-0000-0000-0000-000000e2e103'),
+    ('00000000-0000-0000-0000-000000e2e205', 'r_free', 0.25, null, null),
+    ('00000000-0000-0000-0000-000000e2e206', 'r_free', 0.19, null, null);
+insert into model_revision_metrics(model_revision_id, metric_id) values
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e201'),
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e202'),
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e203'),
+    ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e204'),
+    ('00000000-0000-0000-0000-000000e2e002', '00000000-0000-0000-0000-000000e2e205'),
+    ('00000000-0000-0000-0000-000000e2e003', '00000000-0000-0000-0000-000000e2e206');
+`
+
+func Test_should_list_provenance_gaps_like_the_write_rules_when_inventory_runs(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	_, err := fixture.database.Exec(provenanceSeedSQL)
+	require.NoError(t, err)
+	inventorySQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "schema_inventory.sql"))
+	require.NoError(t, err)
+
+	// when
+	var rows []inventoryRow
+	require.NoError(t, fixture.database.Select(&rows, string(inventorySQL)))
+
+	// then
+	seeded := func(checkName string) []string {
+		var ids []string
+		for _, row := range rows {
+			if row.CheckName == checkName && strings.Contains(row.ObjectID.String, "-000000e2e") {
+				ids = append(ids, row.ObjectID.String)
+			}
 		}
-		var details map[string]string
-		require.NoError(t, json.Unmarshal(row.Details, &details))
-		return details["status"]
+		return ids
 	}
-	require.Fail(t, "metric_missing_software row missing")
-	return ""
+	assert.Equal(t, []string{
+		"00000000-0000-0000-0000-000000e2e201", // no software, no run
+		"00000000-0000-0000-0000-000000e2e202", // blank software
+		"00000000-0000-0000-0000-000000e2e205", // model without a model_type counts as computed
+	}, seeded("metric_missing_software"), "named software, a run link and a Deposited model are not gaps")
+	assert.Equal(t, []string{
+		"00000000-0000-0000-0000-000000e2e101",
+		"00000000-0000-0000-0000-000000e2e102",
+	}, seeded("run_missing_software_version"), "a Deposited model's run needs no version")
+	assert.Equal(t, []string{"00000000-0000-0000-0000-000000e2e002"}, seeded("computed_model_without_run"),
+		"a model without a model_type counts as computed; a Deposited model needs no run")
 }
 
 type listShape struct {

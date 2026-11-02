@@ -7,8 +7,12 @@
 --
 -- Columns: check_name, object_type, object_id, details (jsonb), check_count (number of
 -- records failing that check; NULL when the check cannot run yet). A check with no
--- violations produces no rows. Missing information (an omitted model_type, a NULL sha256)
--- is not a violation: those records stay public.
+-- violations produces no rows. Records with missing information stay public. An omitted
+-- model_type is not an invalid type, but the provenance checks (metric_missing_software,
+-- run_missing_software_version, computed_model_without_run) count it as computed, like the
+-- Go write rules in backend/internal/validation/provenance.go; their rows are the records the
+-- website labels "information missing". Blank text means NULL or only whitespace, as in
+-- validation.RequiredText.
 
 SELECT findings.check_name,
        findings.object_type,
@@ -27,9 +31,19 @@ FROM (
                               'side_chain_outliers', 'molprobity_score', 'wilson_b', 'rmsf')
 
     UNION ALL
-    -- metrics have no producing-software column until Phase D
-    SELECT 'metric_missing_software', 'metric', NULL,
-           jsonb_build_object('status', 'n/a until Phase D')
+    -- validation.MetricProvenance: a metric of a computed model names its software unless
+    -- run_id links the run that produced it.
+    SELECT 'metric_missing_software', 'metric', metrics.id::text,
+           jsonb_build_object('key', metrics.key,
+                              'model_revisions', jsonb_agg(jsonb_build_object('id', computed.id, 'state', computed.state)
+                                                           ORDER BY computed.id))
+    FROM metrics
+    JOIN model_revision_metrics link ON link.metric_id = metrics.id
+    JOIN model_revisions computed ON computed.id = link.model_revision_id
+                                 AND computed.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
+    WHERE metrics.run_id IS NULL
+      AND (metrics.software_name IS NULL OR metrics.software_name !~ '\S')
+    GROUP BY metrics.id, metrics.key
 
     UNION ALL
     SELECT 'metric_duplicate_key', 'model_revision', link.model_revision_id::text,
@@ -54,18 +68,27 @@ FROM (
       AND model_revisions.metadata ->> 'purpose' NOT IN ('Model Building', 'Refinement', 'Reference')
 
     UNION ALL
+    -- validation.ModelRuns: a run of a computed model names its software version. Runs of
+    -- Deposited models only are exempt.
     SELECT 'run_missing_software_version', 'run', runs.id::text,
-           jsonb_build_object('name', runs.name, 'software_name', runs.software_name)
+           jsonb_build_object('name', runs.name, 'software_name', runs.software_name,
+                              'model_revisions', jsonb_agg(jsonb_build_object('id', computed.id, 'state', computed.state)
+                                                           ORDER BY computed.id))
     FROM runs
-    WHERE runs.software_version IS NULL OR btrim(runs.software_version) = ''
+    JOIN model_revision_runs link ON link.run_id = runs.id
+    JOIN model_revisions computed ON computed.id = link.model_revision_id
+                                 AND computed.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
+    WHERE runs.software_version IS NULL OR runs.software_version !~ '\S'
+    GROUP BY runs.id, runs.name, runs.software_name
 
     UNION ALL
+    -- validation.ModelRuns: a computed model has at least one run.
     SELECT 'computed_model_without_run', 'model_revision', model_revisions.id::text,
            jsonb_build_object('model_id', model_revisions.model_id,
                               'model_type', model_revisions.metadata ->> 'model_type',
                               'state', model_revisions.state)
     FROM model_revisions
-    WHERE model_revisions.metadata ->> 'model_type' <> 'Deposited'
+    WHERE model_revisions.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
       AND NOT EXISTS (SELECT 1 FROM model_revision_runs WHERE model_revision_runs.model_revision_id = model_revisions.id)
 
     UNION ALL

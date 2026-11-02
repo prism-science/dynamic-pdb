@@ -1296,6 +1296,7 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model")
 		return
 	}
+	model.MissingInfo = s.missingInfoForRevision(r.Context(), *revision, metrics)
 	writeJSON(w, http.StatusOK, ModelDocument{
 		Data: ModelDetailData{
 			Type:       jsonAPITypeModels,
