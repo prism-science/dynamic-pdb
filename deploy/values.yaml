@@ -155,14 +155,12 @@ modelCompoundsJob:
   # The job claims files for 4 minutes and gives each at most fileTimeout; this ends a run that
   # hangs after both.
   activeDeadlineSeconds: 900
-  # Caps the files one run reads; 0 means no cap. 1500 during the archive model fill (T3-M2,
-  # backend/config/<env>.yml), which needs a cap: a run claims files for 4 minutes, about 1,150
-  # archive files, so 1,500 reads as many as a run can, about 14,000 an hour, and leaves few files
-  # waiting between runs. Back to 500 once that fill is done, for new uploads and the next bulk
-  # import: a run of 500 uploads takes about 2.5 of the 4 claim minutes. The historical fill read
-  # its last ~20,000 files with no cap, about 880 a run, and its queue was empty on 2026-11-03 at
-  # 16:01 UTC.
-  maxFilesPerRun: 1500
+  # Caps the files one run reads; 0 means no cap. 500, for new uploads and the next bulk import:
+  # a run of 500 uploads takes about 2.5 of the 4 claim minutes. The historical fill read its last
+  # ~20,000 files with no cap, about 880 a run, and its queue was empty on 2026-11-03 at 16:01 UTC.
+  # The archive model fill (T3-M2, backend/config/<env>.yml) needs a cap and ran at 1500 from
+  # 2026-11-03: a run claims files for 4 minutes, about 1,300 archive files.
+  maxFilesPerRun: 500
   fileTimeout: 10m
   # Gives the model files stored before the job existed their sets: on prod about 152,000
   # qFit and ensemble-refinement models (1.6 TB) from the August 2026 bulk import. It ran on
