@@ -824,7 +824,7 @@ test("should_restore_a_version_3_entry_draft_with_an_empty_metadata_block", () =
     const draft = drafts.readStoredDraft();
 
     // then
-    assert.equal(draft.version, 4);
+    assert.equal(draft.version, 5);
     assert.equal(draft.title, "Old");
     assert.deepEqual(draft.metadata, emptyEntryMetadataDraft());
   });

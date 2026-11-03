@@ -45,12 +45,17 @@ export default function CompoundListsEditor({
   fields,
   messages,
   source = null,
+  listSources = {},
 }: {
   compounds: CompoundsDraft;
   onChange: (next: CompoundsDraft) => void;
   fields: CompoundListFields;
   messages: readonly FieldMessage[];
+  /** Where both lists came from, such as "from model.cif". */
   source?: string | null;
+  /** Where each list came from when they differ, such as "set by the
+   *  depositor"; a list named here shows this instead of source. */
+  listSources?: Partial<Record<CompoundListName, string>>;
 }) {
   const inputId = useId();
   const [draft, setDraft] = useState("");
@@ -111,7 +116,7 @@ export default function CompoundListsEditor({
             key={list}
             id={fields[list]}
             messages={inlineMessages(messages, fields[list])}
-            source={source}
+            source={listSources[list] ?? source}
           >
             <ModeChoice
               list={list}

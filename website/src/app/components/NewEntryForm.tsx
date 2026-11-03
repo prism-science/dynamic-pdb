@@ -11,7 +11,7 @@ import {
 import DraftRestorePrompt, {
   draftSummary,
 } from "./entry-form/DraftRestorePrompt";
-import EntryFormSections, { lockedFieldIds } from "./entry-form/EntryFormSections";
+import EntryFormSections from "./entry-form/EntryFormSections";
 import FilesEditor from "./entry-form/FilesEditor";
 import { Field, SubmitBlockers } from "./entry-form/FormFields";
 import type { ArchiveLookupState } from "./entry-form/PolymerEntitiesEditor";
@@ -31,6 +31,19 @@ import {
   autofilledTitle,
   withAutofilledRequest,
 } from "./entry-form/autofill";
+import {
+  archiveFieldSection,
+  archiveFieldValues,
+  archiveFieldsView,
+  archiveValuesFromAutofill,
+  lockedFieldIds,
+  newTakenOverFields,
+  takeOver,
+  takenOverNotice,
+  withOwnField,
+  withoutOwnFields,
+} from "./entry-form/archiveChoices";
+import type { EntryArchiveField } from "./entry-form/revisionChanges";
 import { entryFormMessages } from "./entry-form/validation";
 import { DRAFT_VERSION, emptyEntryMetadataDraft } from "./entry-form/types";
 import type { EntryMetadataDraft, ParsedFile } from "./entry-form/types";
@@ -85,6 +98,9 @@ export default function NewEntryForm() {
     pdbId: string;
     proposal: ArchiveEntryProposal;
   } | null>(null);
+  // The archive fields the depositor took over: their typed values are shown
+  // and sent instead of the archive's. A refetch never changes this list.
+  const [ownFields, setOwnFields] = useState<EntryArchiveField[]>([]);
 
   // Draft persistence: restore prompt + gate so we never overwrite a saved
   // draft before the user decides whether to continue or discard it.
@@ -113,6 +129,7 @@ export default function NewEntryForm() {
       thumbPreview: httpOnly(thumbnail.preview),
       thumbUploadStatus: thumbnail.url ? "uploaded" : "idle",
       files: files.filter(isPersistable).map(fileToDraft),
+      ownFields,
     };
     if (draftHasContent(draft)) {
       writeStoredDraft(draft);
@@ -135,6 +152,7 @@ export default function NewEntryForm() {
     thumbnail.url,
     thumbnail.preview,
     files,
+    ownFields,
   ]);
 
   // The polymer entities come from the PDB entry: without their
@@ -195,6 +213,7 @@ export default function NewEntryForm() {
     setEntryId(draft.entryId);
     setTitle(draft.title);
     setMetadata(draft.metadata ?? emptyEntryMetadataDraft());
+    setOwnFields(draft.ownFields);
     thumbnail.restore(draft.thumbUrl, draft.thumbPreview ?? null);
     setFiles(
       assignCanonicalArtifactTypes(
@@ -219,6 +238,7 @@ export default function NewEntryForm() {
     setEntryId(crypto.randomUUID());
     setTitle("");
     setMetadata(emptyEntryMetadataDraft());
+    setOwnFields([]);
     thumbnail.reset();
     setFiles([]);
     setError(null);
@@ -281,14 +301,33 @@ export default function NewEntryForm() {
 
   // The archive's values fill the fields it has, read-only, once the lookup
   // for the current PDB ID has finished. What the depositor typed stays
-  // underneath, and shows again when the PDB ID is cleared or changed.
-  const autofill =
+  // underneath, and shows again when the PDB ID is cleared or changed, or
+  // when they take the field over with "Use my own value".
+  const archiveFill =
     lookup.status === "ready" && archiveEntry?.pdbId === lookup.pdbId
       ? archiveAutofill(lookup.pdbId, archiveEntry.proposal)
       : null;
-  const locks = autofill?.locks ?? {};
+  const autofill = archiveFill ? withoutOwnFields(archiveFill, ownFields) : null;
+  const archiveFields = archiveFieldsView(
+    archiveFill?.locks ?? {},
+    archiveValuesFromAutofill(archiveFill),
+    archiveFieldValues({ title, metadata }),
+    ownFields,
+    true,
+  );
   const shownTitle = autofilledTitle(title, autofill);
   const shownMetadata = autofilledMetadata(metadata, autofill);
+
+  const chooseOwn = (field: EntryArchiveField, own: boolean) => {
+    if (own) {
+      const taken = takeOver({ title, metadata }, field, archiveFields.archive);
+      setTitle(taken.title);
+      setMetadata(taken.metadata);
+    }
+    setOwnFields((current) => withOwnField(current, field, own));
+    dropApiMessages(archiveFieldSection(field));
+  };
+  const notice = takenOverNotice(newTakenOverFields(archiveFields));
 
   // Entities from an earlier PDB ID, or from a lookup that has not finished,
   // are neither checked nor sent.
@@ -297,7 +336,7 @@ export default function NewEntryForm() {
       ? shownMetadata
       : { ...shownMetadata, polymerEntities: [] };
   // A filled-in value cannot be fixed here, so its messages never block.
-  const locked = lockedFieldIds(locks);
+  const locked = lockedFieldIds(archiveFields.states);
   const validationMessages = entryFormMessages(shownTitle, submittedMetadata).filter(
     (message) => !locked.has(message.field),
   );
@@ -395,7 +434,8 @@ export default function NewEntryForm() {
         }
         lookup={lookup}
         onRetryLookup={() => setLookupAttempt((attempt) => attempt + 1)}
-        locks={locks}
+        archiveFields={archiveFields}
+        onOwn={chooseOwn}
         messages={messages}
         data={
           <Field id="entry.files" messages={inline("entry.files")}>
@@ -419,6 +459,7 @@ export default function NewEntryForm() {
         }
       />
 
+      {notice ? <p className={styles.takenOverNotice}>{notice}</p> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
       {submitting ? null : (
         <SubmitBlockers action="create the entry" lines={blockers} />

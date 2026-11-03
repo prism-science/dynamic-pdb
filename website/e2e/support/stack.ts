@@ -15,12 +15,15 @@ function required(name: string): string {
 
 const backendPort = required("BROWSER_BACKEND_PORT");
 const websitePort = required("BROWSER_WEBSITE_PORT");
+const rcsbPort = required("BROWSER_RCSB_PORT");
 
 export const stack = {
   backendPort,
   websitePort,
+  rcsbPort,
   backendURL: `http://127.0.0.1:${backendPort}`,
   websiteURL: `http://127.0.0.1:${websitePort}`,
+  rcsbURL: `http://127.0.0.1:${rcsbPort}`,
   s3URL: `http://127.0.0.1:${required("BROWSER_S3_PORT")}`,
   s3Bucket: required("BROWSER_S3_BUCKET"),
   dbPort: required("BROWSER_DB_PORT"),
@@ -34,8 +37,7 @@ export const stack = {
 } as const;
 
 // Nothing the test backend calls may leave this machine: RCSB and SIFTS point at
-// a closed port. Entries in these tests have no PDB ID, so nothing should call them.
-const unreachable = "http://127.0.0.1:9";
+// the fake RCSB that Playwright starts (e2e/stack/fake-rcsb.mjs).
 
 /**
  * Overrides for backend/config/local.yml (DYNAMIC_PDB_* variables, read by
@@ -66,11 +68,11 @@ export function backendEnvironment(): Record<string, string> {
     DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID: "browser-tests",
     DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY: "browser-tests",
     AWS_EC2_METADATA_DISABLED: "true",
-    DYNAMIC_PDB_RCSB_DATA_URL: unreachable,
-    DYNAMIC_PDB_RCSB_FILES_URL: unreachable,
-    DYNAMIC_PDB_RCSB_WWW_URL: unreachable,
-    DYNAMIC_PDB_RCSB_CDN_URL: unreachable,
-    DYNAMIC_PDB_SIFTS_URL: unreachable,
+    DYNAMIC_PDB_RCSB_DATA_URL: stack.rcsbURL,
+    DYNAMIC_PDB_RCSB_FILES_URL: stack.rcsbURL,
+    DYNAMIC_PDB_RCSB_WWW_URL: stack.rcsbURL,
+    DYNAMIC_PDB_RCSB_CDN_URL: stack.rcsbURL,
+    DYNAMIC_PDB_SIFTS_URL: stack.rcsbURL,
   };
 }
 

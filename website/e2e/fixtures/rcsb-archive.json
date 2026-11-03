@@ -1,0 +1,46 @@
+{
+  "entry": {
+    "struct": {
+      "title": "Archive structure of __PDB_ID__",
+      "pdbx_details": "Read from the fake RCSB."
+    },
+    "exptl": [{ "method": "X-RAY DIFFRACTION" }],
+    "exptl_crystal": [{ "id": "1" }],
+    "exptl_crystal_grow": [{ "crystal_id": "1", "pH": 7.5, "temp": 293 }],
+    "diffrn": [{ "id": "1", "crystal_id": "1", "ambient_temp": 100 }],
+    "rcsb_entry_info": {
+      "resolution_combined": [1.5],
+      "deposited_atom_count": 1383,
+      "deposited_polymer_monomer_count": 171,
+      "deposited_modeled_polymer_monomer_count": 164,
+      "deposited_unmodeled_polymer_monomer_count": 7,
+      "deposited_polymer_entity_instance_count": 1,
+      "nonpolymer_bound_components": ["HOH"]
+    },
+    "symmetry": { "space_group_name_H_M": "P 21 21 21" },
+    "rcsb_entry_container_identifiers": { "polymer_entity_ids": ["1"] },
+    "rcsb_accession_info": {
+      "status_code": "REL",
+      "initial_release_date": "2020-01-15T00:00:00.000+00:00",
+      "revision_date": "2026-08-12T00:00:00.000+00:00",
+      "major_revision": 1,
+      "minor_revision": 1
+    },
+    "pdbx_audit_revision_history": [
+      { "ordinal": 1, "major_revision": 1, "minor_revision": 0, "revision_date": "2020-01-15T00:00:00.000+00:00" },
+      { "ordinal": 2, "major_revision": 1, "minor_revision": 1, "revision_date": "2026-08-12T00:00:00.000+00:00" }
+    ]
+  },
+  "polymer_entities": {
+    "1": {
+      "entity_poly": {
+        "pdbx_seq_one_letter_code": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+        "pdbx_seq_one_letter_code_can": "KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL",
+        "type": "polypeptide(L)"
+      },
+      "rcsb_polymer_entity": { "pdbx_description": "Lysozyme C" },
+      "rcsb_polymer_entity_container_identifiers": { "entity_id": "1", "asym_ids": ["A"], "auth_asym_ids": ["A"] },
+      "rcsb_entity_source_organism": [{ "ncbi_scientific_name": "Gallus gallus", "ncbi_taxonomy_id": 9031 }]
+    }
+  }
+}

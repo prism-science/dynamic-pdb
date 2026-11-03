@@ -1891,6 +1891,42 @@
   font-size: 12px;
 }
 
+/* The choice between the PDB archive's value of a field and the depositor's own */
+.archiveChoice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.archiveChoiceBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-hover);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.archiveChoiceBtn:hover {
+  color: var(--accent);
+}
+
+/* Above the submit button: the fields the weekly archive update stops changing */
+.takenOverNotice {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
 /* Ligands and cofactors */
 .compoundEditor {
   display: flex;
