@@ -196,9 +196,10 @@ archiveRederiveJob:
   backoffLimit: 0
   # The job stops taking pages after 50 minutes; this ends a run before the next one starts.
   activeDeadlineSeconds: 3300
-  # Caps the revisions one run looks at; 0 means no cap. The prod dry run took 67 s per 1,000, so
-  # a run of 10000 takes about 11 minutes, and ~73,000 archive entries take about 8 runs.
-  maxEntriesPerRun: 10000
+  # Caps the revisions one run looks at; 0 means no cap. The first prod run took 76 s per 1,000,
+  # so a run of 30000 takes about 38 minutes, inside the 50 minutes a run takes pages; a slower
+  # run stops taking pages at 50 minutes and the next run goes on from there.
+  maxEntriesPerRun: 30000
   # Revisions one page derives before writing them, and RCSB downloads in flight.
   pageSize: 200
   downloadConcurrency: 4
