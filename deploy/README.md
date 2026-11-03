@@ -245,8 +245,8 @@ it repeats that scan on every run while it is on. It ran on 2026-11-02: the firs
 read 100 files each at first, in 26 to 31 seconds with no failures; on 2026-11-02 the cap went
 to 500 files a run, about 6,000 an hour, so the ~145,000 files still queued take about a day.
 On 2026-11-03, with about 20,000 left, the cap was removed (`maxFilesPerRun: 0`): a run then
-reads for all 4 claim minutes, about 900 files, about 10,700 an hour. It goes back to 500 once
-the queue is empty. A run stops claiming files after 4 minutes, so a run of large files reads
+read for all 4 claim minutes, about 880 files, and the queue was empty at 16:01 UTC. The cap is
+back at 500. A run stops claiming files after 4 minutes, so a run of large files reads
 fewer. To queue files
 again, for example after another bulk import:
 
