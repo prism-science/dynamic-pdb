@@ -24,12 +24,28 @@ func NewDatabaseQueue(database *db.DB) *DatabaseQueue {
 	return &DatabaseQueue{database: database}
 }
 
-func (q *DatabaseQueue) AddMissingSince(ctx context.Context, since time.Time) (int64, error) {
-	added, err := q.database.ModeledCompounds.AddMissingSince(ctx, since)
+func (q *DatabaseQueue) AddMissingSince(ctx context.Context, since time.Time, archiveFiles bool) (int64, error) {
+	added, err := q.database.ModeledCompounds.AddMissingSince(ctx, since, archiveFiles)
 	if err != nil {
 		return 0, fmt.Errorf("model compounds queue: %w", err)
 	}
 	return added, nil
+}
+
+func (q *DatabaseQueue) AddCopiedAfter(ctx context.Context, after uuid.UUID, limit int, room int64) (models.MissingSetsPage, error) {
+	page, err := q.database.ModeledCompounds.AddCopiedAfter(ctx, after, limit, room)
+	if err != nil {
+		return models.MissingSetsPage{}, fmt.Errorf("model compounds queue: %w", err)
+	}
+	return page, nil
+}
+
+func (q *DatabaseQueue) PendingCount(ctx context.Context) (int64, error) {
+	count, err := q.database.ModeledCompounds.PendingCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("model compounds queue: %w", err)
+	}
+	return count, nil
 }
 
 func (q *DatabaseQueue) AddMissingAfter(ctx context.Context, after uuid.UUID, limit int) (models.MissingSetsPage, error) {

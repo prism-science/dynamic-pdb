@@ -47,3 +47,9 @@ entries:
 revisions:
   # As on production: a second reviewer approves each revision, so the guard can be tested locally.
   self_approval_enabled: false
+compounds:
+  # The model-compounds job also reads archive model files, from the checksum job's copies: new
+  # copies through its recent window (archive_files), and older ones through a fill that tops
+  # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
+  archive_files: false
+  archive_fill: false

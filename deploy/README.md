@@ -234,7 +234,8 @@ it models (every copy outside the polymer chains, water excepted) in
 image every 5 minutes and reads one file at a time, so a large file never takes CPU from the
 API pods. A new upload gets a pending set when its artifact is created; each run also gives
 one to any model file of the last 48 hours that has none (an upload an older backend stored
-during a deploy). Archive models, whose files are on files.rcsb.org, get none.
+during a deploy). Archive models, whose files are on files.rcsb.org, get none until the archive
+switches below are on; then the job reads the checksum job's copy of each file.
 
 Model files stored before the job existed (on prod about 152,000 qFit and ensemble-refinement
 models, 1.6 TB, from the August 2026 bulk import) get their sets only when
@@ -291,3 +292,51 @@ To run it manually:
 ```sh
 kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-model-compounds-job dynamic-pdb-model-compounds-job-manual-$(date +%s)
 ```
+
+### Archive model files
+
+Archive models keep their file's URI on files.rcsb.org, but the checksum job copies each file
+into our bucket. Two switches let the job read those copies, with the same reader as uploads
+(T3-M2). They are in `backend/config/<env>.yml`, not in `values.yaml`, so dev can go first:
+dev and prod share this chart's values.
+
+```yaml
+compounds:
+  archive_files: true # each run's 48-hour window also takes archive files once they are copied
+  archive_fill: true  # each run tops the queue up to maxFilesPerRun with older copies
+```
+
+- `archive_files` stays on. New archive files (a new entry, a weekly sync, a T3-C coordinate
+  file) are queued by the first run after the hourly checksum job has copied them.
+- `archive_fill` catches up on files copied before `archive_files` was on (about 73,000 on prod).
+  It needs `archive_files` and a `maxFilesPerRun`. Each run tops the queue up to
+  `maxFilesPerRun`, never more, so an upload saved during the fill waits about one run. Like the
+  historical fill, each run pages through every artifact from the start, 2,000 per statement,
+  pausing as long as each page took. At 500 files a run the fill takes about 12 to 13 hours.
+  Turn it off once a run's `started` line shows `archive_sets_added=0` and nothing is pending.
+- A file the checksum job kept no copy of (`over_limit`, `mismatch`, `copy_failed`,
+  `copy_off`) gets no set: the API reports `not_stored`, as before.
+- A run's `model file read` lines say `read_from=checksum_copy` for archive files.
+- The job never changes a model revision. The page shows the file's compounds once a set is
+  done, and keeps RCSB's `nonpolymer_bound_components` (the model's `ligands`) until then.
+
+The stop rules above apply. Switching `archive_files` and `archive_fill` off stops new archive
+sets; the few already queued are still read. To take the archive sets out again (the API answers
+`not_stored` at once; search keeps the file's compound IDs until each entry is indexed again):
+
+```sql
+begin;
+create temp table archive_sets on commit drop as
+  select sets.artifact_id
+  from modeled_compound_sets sets
+  join artifacts on artifacts.id = sets.artifact_id
+  where artifacts.uri like 'https://files.rcsb.org/%';
+delete from modeled_compound_records where artifact_id in (select artifact_id from archive_sets);
+delete from modeled_compound_sets where artifact_id in (select artifact_id from archive_sets);
+commit;
+```
+
+One transaction is enough: 1,000 sets took 0.05 s on the prod copy, so all ~73,000 take seconds.
+The parser runs (`runs` named `modeled compound read`) stay. Nothing points at them once their
+sets are gone, and deleting them is slow: `metrics.run_id` and `model_revision_runs.run_id` have
+no index, so each deleted run scans both tables (1,000 runs took 49 s on the prod copy).

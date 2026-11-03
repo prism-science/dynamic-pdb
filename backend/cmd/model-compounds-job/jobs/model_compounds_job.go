@@ -36,8 +36,15 @@ const (
 type Queue interface {
 	// AddMissingSince and AddMissingAfter give pending sets to model files in our bucket that
 	// have none: those created since a time, or the next page of all artifacts in id order.
-	AddMissingSince(ctx context.Context, since time.Time) (int64, error)
+	// With archiveFiles, AddMissingSince also takes recent external model files the checksum
+	// job copied into our bucket.
+	AddMissingSince(ctx context.Context, since time.Time, archiveFiles bool) (int64, error)
 	AddMissingAfter(ctx context.Context, after uuid.UUID, limit int) (models.MissingSetsPage, error)
+	// AddCopiedAfter gives pending sets to at most room copied external model files without
+	// one in the next page of artifacts in id order.
+	AddCopiedAfter(ctx context.Context, after uuid.UUID, limit int, room int64) (models.MissingSetsPage, error)
+	// PendingCount is how many sets are pending.
+	PendingCount(ctx context.Context) (int64, error)
 	// ClaimDue fails, instead of claiming, a set already claimed maxAttempts times.
 	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration, maxAttempts int) ([]models.ModeledCompoundClaim, error)
 	// RecordFailure keeps the set pending until retryAt, or fails it for good when retryAt is nil.
@@ -66,8 +73,14 @@ type Config struct {
 	// HistoricalFill turns on the paced fill over every artifact, which gives the model
 	// files stored before this job existed their sets. Off until the rollout is watched.
 	HistoricalFill bool `mapstructure:"historical_fill"`
-	// FillBatchSize is how many artifacts one statement of the historical fill looks at.
+	// FillBatchSize is how many artifacts one statement of a fill looks at.
 	FillBatchSize int `mapstructure:"fill_batch_size"`
+	// ArchiveFiles lets the recent window take archive model files (on RCSB) once the checksum
+	// job has copied them into our bucket; the job reads the copy.
+	ArchiveFiles bool `mapstructure:"archive_files"`
+	// ArchiveFill gives the archive model files copied before ArchiveFiles was on their sets: each
+	// run tops the queue up to MaxFilesPerRun with them. On only until a run adds none.
+	ArchiveFill bool `mapstructure:"archive_fill"`
 }
 
 func (c Config) validate() error {
@@ -82,6 +95,10 @@ func (c Config) validate() error {
 		return errors.New("recent_window must be positive")
 	case c.FillBatchSize <= 0:
 		return errors.New("fill_batch_size must be positive")
+	case c.ArchiveFill && !c.ArchiveFiles:
+		return errors.New("archive_fill needs archive_files: without it, archive files copied after the fill would get no set")
+	case c.ArchiveFill && c.MaxFilesPerRun == 0:
+		return errors.New("archive_fill needs a max_files_per_run: it tops the queue up to that many files")
 	}
 	return nil
 }
@@ -148,7 +165,7 @@ type runSummary struct {
 func (j *ModelCompoundsJob) Run(ctx context.Context) error {
 	started := j.now()
 	claimUntil := started.Add(j.cfg.ClaimFor)
-	recent, err := j.queue.AddMissingSince(ctx, started.Add(-j.cfg.RecentWindow))
+	recent, err := j.queue.AddMissingSince(ctx, started.Add(-j.cfg.RecentWindow), j.cfg.ArchiveFiles)
 	if err != nil {
 		return fmt.Errorf("add sets for recent model files: %w", err)
 	}
@@ -159,7 +176,17 @@ func (j *ModelCompoundsJob) Run(ctx context.Context) error {
 			return fmt.Errorf("add sets for stored model files: %w", err)
 		}
 	}
-	j.logger.Info("model compounds job started", "recent_sets_added", recent, "historical_sets_added", historical)
+	archive := int64(0)
+	if j.cfg.ArchiveFill {
+		archive, err = j.fillArchive(ctx)
+		if err != nil {
+			return fmt.Errorf("add sets for copied archive model files: %w", err)
+		}
+	}
+	j.logger.Info("model compounds job started",
+		"recent_sets_added", recent,
+		"historical_sets_added", historical,
+		"archive_sets_added", archive)
 	summary := runSummary{outcomes: map[outcome]int{}}
 	for (j.cfg.MaxFilesPerRun == 0 || summary.files < j.cfg.MaxFilesPerRun) && j.now().Before(claimUntil) {
 		claims, err := j.queue.ClaimDue(ctx, j.now(), 1, j.cfg.FileTimeout+leaseMargin, maxAttempts)
@@ -191,22 +218,59 @@ func (j *ModelCompoundsJob) Run(ctx context.Context) error {
 	return nil
 }
 
-// fillHistorical gives a pending set to every model file in our bucket that has none,
-// FillBatchSize artifacts per statement, and returns how many it added. After each full page
-// it pauses as long as that page took, so the fill keeps the database at most about half
-// busy, as the checksum job does. Each page commits on its own.
+// fillHistorical gives a pending set to every model file in our bucket that has none and
+// returns how many it added.
 func (j *ModelCompoundsJob) fillHistorical(ctx context.Context) (int64, error) {
+	addPage := func(after uuid.UUID, _ int64) (models.MissingSetsPage, error) {
+		return j.queue.AddMissingAfter(ctx, after, j.cfg.FillBatchSize)
+	}
+	return j.fillPages(ctx, addPage, noLimit)
+}
+
+// fillArchive tops the queue up to MaxFilesPerRun with archive model files the checksum job
+// copied into our bucket and that have no set, and returns how many it added. The queue
+// never holds much more than one run's reading, so an upload saved during the fill waits
+// about one run at most, and an archive page shows "reading" for about as long. Each run
+// starts again from the first artifact; pages already filled add nothing.
+func (j *ModelCompoundsJob) fillArchive(ctx context.Context) (int64, error) {
+	pending, err := j.queue.PendingCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count pending sets: %w", err)
+	}
+	room := int64(j.cfg.MaxFilesPerRun) - pending
+	if room <= 0 {
+		return 0, nil
+	}
+	addPage := func(after uuid.UUID, roomLeft int64) (models.MissingSetsPage, error) {
+		return j.queue.AddCopiedAfter(ctx, after, j.cfg.FillBatchSize, roomLeft)
+	}
+	return j.fillPages(ctx, addPage, room)
+}
+
+// noLimit is the room of a fill that adds every set it finds.
+const noLimit int64 = -1
+
+// fillPages calls addPage on pages of FillBatchSize artifacts in id order, from the first,
+// until a page is short or room sets were added (noLimit: never), and returns how many sets
+// it added. addPage gets the room left, which noLimit fills ignore. After each full page it
+// pauses as long as that page took, so a fill keeps the database at most about half busy, as
+// the checksum job does. Each page commits on its own.
+func (j *ModelCompoundsJob) fillPages(
+	ctx context.Context,
+	addPage func(after uuid.UUID, roomLeft int64) (models.MissingSetsPage, error),
+	room int64,
+) (int64, error) {
 	var added int64
 	// uuid.Nil sorts before every real artifact id, so the first page starts at the beginning.
 	after := uuid.Nil
 	for {
 		pageStarted := j.now()
-		page, err := j.queue.AddMissingAfter(ctx, after, j.cfg.FillBatchSize)
+		page, err := addPage(after, room-added)
 		if err != nil {
 			return added, fmt.Errorf("page after artifact %s: %w", after, err)
 		}
 		added += page.Added
-		if page.Scanned < j.cfg.FillBatchSize {
+		if page.Scanned < j.cfg.FillBatchSize || (room != noLimit && added >= room) {
 			return added, nil
 		}
 		after = page.LastArtifactID
@@ -233,7 +297,7 @@ func permanent(format string, arguments ...any) error {
 // recording fails.
 func (j *ModelCompoundsJob) readClaim(ctx context.Context, claim models.ModeledCompoundClaim) (outcome, error) {
 	started := j.now()
-	result, readErr := j.read(ctx, claim)
+	result, from, readErr := j.read(ctx, claim)
 	if ctx.Err() != nil {
 		return outcomeStopped, nil
 	}
@@ -257,6 +321,7 @@ func (j *ModelCompoundsJob) readClaim(ctx context.Context, claim models.ModeledC
 	}
 	j.logger.Info("model file read",
 		"artifact_id", claim.ArtifactID,
+		"read_from", from,
 		"copies", len(result.Copies),
 		"needs_review", review,
 		"complete", result.Complete,
@@ -286,20 +351,61 @@ func (j *ModelCompoundsJob) recordFailure(ctx context.Context, claim models.Mode
 	return result, nil
 }
 
-// read opens a claimed file in our bucket and reads the compounds it models.
-func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompoundClaim) (cif.ModeledCompounds, error) {
+// readFrom names the object a file was read from: the artifact's own file in our bucket, or
+// the checksum job's copy of an external file (an archive model file on RCSB).
+type readFrom string
+
+const (
+	readFromOwnFile      readFrom = "own_file"
+	readFromChecksumCopy readFrom = "checksum_copy"
+)
+
+// storedObject returns the bucket key a claimed file is read from: the artifact's own file
+// when it is in our bucket, otherwise the checksum job's copy of the external file.
+func (j *ModelCompoundsJob) storedObject(claim models.ModeledCompoundClaim) (string, readFrom, error) {
 	if claim.URI == nil || strings.TrimSpace(*claim.URI) == "" {
-		return cif.ModeledCompounds{}, permanent("artifact has no uri")
+		return "", "", permanent("artifact has no uri")
 	}
-	key, stored := j.files.StoredKey(*claim.URI)
-	if !stored {
-		return cif.ModeledCompounds{}, permanent("the file is not in our bucket")
+	if key, stored := j.files.StoredKey(*claim.URI); stored {
+		return key, readFromOwnFile, nil
+	}
+	if claim.CopyStatus == nil {
+		return "", "", permanent("the file is not in our bucket, and the checksum job has not copied it")
+	}
+	switch *claim.CopyStatus {
+	case models.CopyStatusCopied:
+		if claim.StoredURI == nil {
+			return "", "", permanent("the checksum job copied the file but recorded no uri for the copy")
+		}
+		key, stored := j.files.StoredKey(*claim.StoredURI)
+		if !stored {
+			return "", "", permanent("the checksum job's copy of the file is not in our bucket")
+		}
+		return key, readFromChecksumCopy, nil
+	case models.CopyStatusOwnStorage,
+		models.CopyStatusOverLimit,
+		models.CopyStatusMismatch,
+		models.CopyStatusCopyFailed,
+		models.CopyStatusCopyOff:
+		return "", "", permanent("the file is not in our bucket, and the checksum job kept no copy of it (copy status %s)",
+			*claim.CopyStatus)
+	default:
+		return "", "", fmt.Errorf("unknown copy status %q", *claim.CopyStatus)
+	}
+}
+
+// read opens a claimed file in our bucket, or our copy of it, and reads the compounds it
+// models.
+func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompoundClaim) (cif.ModeledCompounds, readFrom, error) {
+	key, from, err := j.storedObject(claim)
+	if err != nil {
+		return cif.ModeledCompounds{}, "", fmt.Errorf("locate the file: %w", err)
 	}
 	fileCtx, cancel := context.WithTimeout(ctx, j.cfg.FileTimeout)
 	defer cancel()
 	file, err := j.files.Open(fileCtx, key)
 	if err != nil {
-		return cif.ModeledCompounds{}, fmt.Errorf("open the file: %w", err)
+		return cif.ModeledCompounds{}, from, fmt.Errorf("open the file: %w", err)
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
@@ -308,13 +414,13 @@ func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompou
 	}()
 	body, format, err := openStructure(file, claim.Format)
 	if err != nil {
-		return cif.ModeledCompounds{}, fmt.Errorf("open the structure: %w", err)
+		return cif.ModeledCompounds{}, from, fmt.Errorf("open the structure: %w", err)
 	}
 	result, err := cif.ReadModeledCompounds(fileCtx, body, format)
 	if err != nil {
-		return cif.ModeledCompounds{}, fmt.Errorf("read the file: %w", err)
+		return cif.ModeledCompounds{}, from, fmt.Errorf("read the file: %w", err)
 	}
-	return result, nil
+	return result, from, nil
 }
 
 // openStructure returns the structure text of a file, gunzipped when its first bytes are a

@@ -57,3 +57,9 @@ entries:
 revisions:
   # Publishing a change always takes a second reviewer; self-approval is for testing on dev only.
   self_approval_enabled: false
+compounds:
+  # The model-compounds job also reads archive model files, from the checksum job's copies: new
+  # copies through its recent window (archive_files), and older ones through a fill that tops
+  # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
+  archive_files: false
+  archive_fill: false

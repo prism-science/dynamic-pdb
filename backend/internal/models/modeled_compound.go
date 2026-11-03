@@ -108,8 +108,14 @@ type MissingSetsPage struct {
 type ModeledCompoundClaim struct {
 	ArtifactID uuid.UUID
 	Name       string
-	URI        *string
-	Format     *string
+	// URI is the artifact's own file.
+	URI    *string
+	Format *string
+	// CopyStatus and StoredURI are the checksum job's copy of an external file (an archive model
+	// file on RCSB): the file is read from StoredURI when CopyStatus is copied. CopyStatus is nil
+	// until the checksum job has read the file.
+	CopyStatus *CopyStatus
+	StoredURI  *string
 	// Attempts counts this claim.
 	Attempts int
 }

@@ -49,19 +49,7 @@ func Test_should_store_the_compounds_of_uploaded_model_files_when_the_model_comp
 
 	// then
 	assert.Equal(t, "done", modeledCompoundStatus(t, database, readable), output)
-	rows, err := database.Conn.QueryContext(t.Context(),
-		`select ccd_id || ' ' || auth_asym_id || ' ' || auth_seq_id || ' ' || source
-		 from modeled_compound_records where artifact_id = $1 order by ordinal`, readable)
-	require.NoError(t, err)
-	defer func() { assert.NoError(t, rows.Close()) }()
-	copies := []string{}
-	for rows.Next() {
-		var copied string
-		require.NoError(t, rows.Scan(&copied))
-		copies = append(copies, copied)
-	}
-	require.NoError(t, rows.Err())
-	assert.Equal(t, []string{"GOL A 301 atom_site"}, copies)
+	assert.Equal(t, []string{"GOL A 301 atom_site"}, modeledCompoundCopies(t, database, readable))
 
 	assert.Equal(t, "failed", modeledCompoundStatus(t, database, unreadable), output)
 	var lastError string

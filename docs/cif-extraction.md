@@ -345,6 +345,18 @@ budget on kept values, a loop that ends inside a row, or a copy skipped because 
 field is not plain text has `Complete` false and a warning. A review reason that
 quotes a file's value is cut to 240 bytes.
 
+**Which files are read.** The model compounds job (`backend/cmd/model-compounds-job`,
+see `deploy/README.md`) reads every model file uploaded to our bucket. An archive
+model's file stays on files.rcsb.org, so the job reads the checksum job's copy of it
+instead, with the same reader and rules (T3-M2). Two switches in
+`backend/config/<env>.yml` turn this on: `compounds.archive_files` queues archive files
+as the checksum job copies them, and `compounds.archive_fill` catches up on files copied
+before. An archive file without a copy (copy status `over_limit`, `mismatch`,
+`copy_failed` or `copy_off`) is not read: the API reports `not_stored` and the model
+keeps RCSB's `nonpolymer_bound_components` as its typed ligands. On 36 archive files (2026-11-03) the reader's copies matched the RCSB
+Data API's `nonpolymer_entity_instances` and `branched_entity_instances` exactly,
+while `nonpolymer_bound_components` left out compounds the file models in 24 of them.
+
 ## Mutations
 
 Each entity keeps its original `_entity.pdbx_mutation` text. Mutations come from

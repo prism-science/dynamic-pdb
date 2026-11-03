@@ -788,7 +788,7 @@ export interface components {
         };
         /** @enum {string} */
         MissingInfoKind: "metric_software" | "run_software_version" | "model_run";
-        /** @description Every copy of every compound the model's file models outside its polymer chains, water excepted, read by the server from the stored file. Read-only: buffers are kept and no reference-list rule is applied; the entry's ligands and cofactors carry those judgments. status: not_stored (the model has no file in our bucket, so nothing is read and the typed metadata ligands and cofactors stand), pending (not read yet, or waiting for a retry), done, failed (last_error says why). copies is empty unless status is done. */
+        /** @description Every copy of every compound the model's file models outside its polymer chains, water excepted, read by the server from the stored file (for an archive model, from its copy of the RCSB file). Read-only: buffers are kept and no reference-list rule is applied; the entry's ligands and cofactors carry those judgments. status: not_stored (the server reads nothing from the model's file: it is not in our bucket and no copy of it was taken for reading, so the typed metadata ligands and cofactors stand), pending (not read yet, or waiting for a retry), done, failed (last_error says why). copies is empty unless status is done. */
         ModeledCompounds: {
             /** @enum {string} */
             status: "not_stored" | "pending" | "done" | "failed";
@@ -1486,12 +1486,12 @@ export interface components {
             unmodeled_fraction?: number;
             /**
              * @deprecated
-             * @description Typed list of the model's ligands. Kept for models whose file is not in our bucket; for an uploaded file, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
+             * @description Typed list of the model's ligands; for an archive model, RCSB's nonpolymer_bound_components. Kept for models whose file the server does not read (modeled_compounds not_stored); for any other, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
              */
             ligands?: string[] | null;
             /**
              * @deprecated
-             * @description Typed list of the model's cofactors. Kept for models whose file is not in our bucket; for an uploaded file, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
+             * @description Typed list of the model's cofactors. Kept for models whose file the server does not read (modeled_compounds not_stored); for any other, modeled_compounds (read from the file) is the record. Still accepted, so released CLIs keep working.
              */
             cofactors?: string[] | null;
             residue_data?: components["schemas"]["ResidueData"][];
