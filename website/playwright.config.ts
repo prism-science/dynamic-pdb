@@ -32,6 +32,15 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
+      // Stands in for RCSB and SIFTS; the backend below reads the archive from it.
+      name: "fake-rcsb",
+      command: `exec node e2e/stack/fake-rcsb.mjs > ${logFile("fake-rcsb.log")} 2>&1`,
+      env: { BROWSER_RCSB_PORT: stack.rcsbPort },
+      url: `${stack.rcsbURL}/healthz`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
       name: "backend",
       command: `exec ./bin/server > ${logFile("backend.log")} 2>&1`,
       cwd: path.join(__dirname, "../backend"),

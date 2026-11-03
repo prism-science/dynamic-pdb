@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, ReactNode } from "react";
 
+import ArchiveChoice, { typedText } from "./ArchiveChoice";
 import CompoundListsEditor from "./CompoundListsEditor";
 import CrystalsEditor from "./CrystalsEditor";
 import { ProgressBar } from "./FilesEditor";
@@ -10,41 +11,18 @@ import PolymerEntitiesEditor, { type ArchiveLookupState } from "./PolymerEntitie
 import { CrystalsReadOnly, ReadOnlyText } from "./ReadOnlyFields";
 import RelatedDatasetsEditor from "./RelatedDatasetsEditor";
 import { UploadIcon } from "./icons";
+import {
+  archiveFieldBadge,
+  type ArchiveFieldsView,
+  type EntrySyncedField,
+} from "./archiveChoices";
 import { ENTRY_COMPOUND_FIELDS, FIELDS, type FieldId, type SectionId } from "./fields";
 import { sanitizeNumeric, uploadStatusText } from "./helpers";
 import { inlineMessages, type FieldMessage } from "./messages";
-import {
-  archiveLockLabel,
-  type EntryArchiveField,
-  type EntryLocks,
-} from "./revisionChanges";
+import type { EntryArchiveField } from "./revisionChanges";
 import { METHODS, type EntryMetadataDraft } from "./types";
 import type { ThumbnailUpload } from "./useThumbnailUpload";
 import styles from "./form.module.css";
-
-/** The form fields that show each locked value: their messages cannot be
- *  acted on, so they do not block a submit. */
-const LOCKED_FIELD_IDS: Record<EntryArchiveField, FieldId[]> = {
-  title: ["entry.title"],
-  details: ["entry.details"],
-  method: ["entry.method"],
-  resolution: ["entry.resolution"],
-  space_group: ["entry.spaceGroup"],
-  crystallography: [
-    "crystal.block",
-    "crystal.ph",
-    "crystal.growthTemperature",
-    "diffraction.temperature",
-  ],
-};
-
-export function lockedFieldIds(locks: EntryLocks): Set<FieldId> {
-  return new Set(
-    (Object.keys(locks) as EntryArchiveField[]).flatMap(
-      (field) => LOCKED_FIELD_IDS[field],
-    ),
-  );
-}
 
 export type EditMetadata = (
   section: SectionId,
@@ -52,8 +30,9 @@ export type EditMetadata = (
 ) => void;
 
 /**
- * The sections of the New entry and Edit entry forms. A field in locks is
- * shown read-only with its source badge; every other field is an input.
+ * The sections of the New entry and Edit entry forms. A field the PDB archive
+ * filled is shown read-only with its source badge until the depositor takes
+ * it over (ArchiveChoice); every other field is an input.
  */
 export default function EntryFormSections({
   title,
@@ -65,7 +44,9 @@ export default function EntryFormSections({
   pdbReadOnly = false,
   lookup,
   onRetryLookup,
-  locks,
+  archiveFields,
+  onOwn,
+  badges = {},
   messages,
   data,
 }: {
@@ -80,7 +61,13 @@ export default function EntryFormSections({
   pdbReadOnly?: boolean;
   lookup: ArchiveLookupState;
   onRetryLookup: () => void;
-  locks: EntryLocks;
+  /** The fields the archive filled, and whether the depositor took each over. */
+  archiveFields: ArchiveFieldsView;
+  /** "Use my own value" (true) and "Use the PDB value" (false). */
+  onOwn: (field: EntryArchiveField, own: boolean) => void;
+  /** Badges of the fields the archive did not fill, such as "set by the
+   *  depositor" on the Edit form. */
+  badges?: Partial<Record<EntrySyncedField, string>>;
   messages: readonly FieldMessage[];
   /** The Data section's files: an editor on the New form, a list on Edit.
    *  The related datasets editor follows them on both. */
@@ -88,10 +75,29 @@ export default function EntryFormSections({
 }) {
   const inline = (field: FieldId, item: string | null = null) =>
     inlineMessages(messages, field, item);
-  const badge = (field: EntryArchiveField) => {
-    const lock = locks[field];
-    return lock ? archiveLockLabel(lock) : null;
+  const { states, archive, form } = archiveFields;
+  const locked = (field: EntryArchiveField) => {
+    const state = states[field];
+    return state !== undefined && !state.own;
   };
+  const badge = (field: EntryArchiveField) => {
+    const state = states[field];
+    return state ? archiveFieldBadge(state) : (badges[field] ?? null);
+  };
+  const choice = (
+    field: EntryArchiveField,
+    fieldLabel: string,
+    archiveValue: ReactNode,
+    typedValue: ReactNode,
+  ) => (
+    <ArchiveChoice
+      state={states[field]}
+      fieldLabel={fieldLabel}
+      archiveValue={archiveValue}
+      typedValue={typedValue}
+      onOwn={(own) => onOwn(field, own)}
+    />
+  );
 
   const onThumb = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -110,11 +116,11 @@ export default function EntryFormSections({
           <div className={styles.identityMain}>
             <Field
               id="entry.title"
-              htmlFor={locks.title ? undefined : "entry-title"}
+              htmlFor={locked("title") ? undefined : "entry-title"}
               messages={inline("entry.title")}
               source={badge("title")}
             >
-              {locks.title ? (
+              {locked("title") ? (
                 <ReadOnlyText value={title} />
               ) : (
                 <input
@@ -129,14 +135,20 @@ export default function EntryFormSections({
                   data-form-type="other"
                 />
               )}
+              {choice(
+                "title",
+                FIELDS["entry.title"].label,
+                archive.title,
+                typedText(form.title),
+              )}
             </Field>
             <Field
               id="entry.details"
-              htmlFor={locks.details ? undefined : "entry-details"}
+              htmlFor={locked("details") ? undefined : "entry-details"}
               messages={inline("entry.details")}
               source={badge("details")}
             >
-              {locks.details ? (
+              {locked("details") ? (
                 <ReadOnlyText value={metadata.details} />
               ) : (
                 <textarea
@@ -152,6 +164,12 @@ export default function EntryFormSections({
                   }
                   placeholder="e.g. Room-temperature structure collected to compare with the cryo structure 5GY3."
                 />
+              )}
+              {choice(
+                "details",
+                FIELDS["entry.details"].label,
+                archive.details,
+                typedText(form.details),
               )}
             </Field>
           </div>
@@ -221,6 +239,7 @@ export default function EntryFormSections({
           }
           fields={ENTRY_COMPOUND_FIELDS}
           messages={messages}
+          listSources={{ ligands: badges.ligands, cofactors: badges.cofactors }}
         />
       </FormSection>
 
@@ -243,11 +262,11 @@ export default function EntryFormSections({
         <div className={styles.fieldGrid}>
           <Field
             id="entry.method"
-            htmlFor={locks.method ? undefined : "entry-method"}
+            htmlFor={locked("method") ? undefined : "entry-method"}
             messages={inline("entry.method")}
             source={badge("method")}
           >
-            {locks.method ? (
+            {locked("method") ? (
               <ReadOnlyText value={metadata.method} />
             ) : (
               <>
@@ -272,14 +291,20 @@ export default function EntryFormSections({
                 </datalist>
               </>
             )}
+            {choice(
+              "method",
+              FIELDS["entry.method"].label,
+              archive.method,
+              typedText(form.method),
+            )}
           </Field>
           <Field
             id="entry.resolution"
-            htmlFor={locks.resolution ? undefined : "entry-resolution"}
+            htmlFor={locked("resolution") ? undefined : "entry-resolution"}
             messages={inline("entry.resolution")}
             source={badge("resolution")}
           >
-            {locks.resolution ? (
+            {locked("resolution") ? (
               <ReadOnlyText value={metadata.resolution} />
             ) : (
               <input
@@ -297,14 +322,20 @@ export default function EntryFormSections({
                 autoComplete="off"
               />
             )}
+            {choice(
+              "resolution",
+              FIELDS["entry.resolution"].label,
+              archive.resolution,
+              typedText(form.resolution),
+            )}
           </Field>
           <Field
             id="entry.spaceGroup"
-            htmlFor={locks.space_group ? undefined : "entry-space-group"}
+            htmlFor={locked("space_group") ? undefined : "entry-space-group"}
             messages={inline("entry.spaceGroup")}
             source={badge("space_group")}
           >
-            {locks.space_group ? (
+            {locked("space_group") ? (
               <ReadOnlyText value={metadata.spaceGroup} />
             ) : (
               <input
@@ -321,10 +352,16 @@ export default function EntryFormSections({
                 autoComplete="off"
               />
             )}
+            {choice(
+              "space_group",
+              FIELDS["entry.spaceGroup"].label,
+              archive.space_group,
+              typedText(form.space_group),
+            )}
           </Field>
         </div>
 
-        {locks.crystallography ? (
+        {badge("crystallography") ? (
           <div className={styles.fieldHead}>
             <span className={styles.subLabel}>Crystals</span>
             <span className={styles.sourceBadge}>{badge("crystallography")}</span>
@@ -333,7 +370,7 @@ export default function EntryFormSections({
           <span className={styles.subLabel}>Crystals</span>
         )}
         <p className={styles.fieldHelp}>{FIELDS["crystal.block"].help}</p>
-        {locks.crystallography ? (
+        {locked("crystallography") ? (
           <CrystalsReadOnly crystals={metadata.crystals} />
         ) : (
           <CrystalsEditor
@@ -343,6 +380,12 @@ export default function EntryFormSections({
             }
             messages={messages}
           />
+        )}
+        {choice(
+          "crystallography",
+          "Crystals",
+          <CrystalsReadOnly crystals={archive.crystallography} />,
+          "You typed different crystals.",
         )}
       </FormSection>
 

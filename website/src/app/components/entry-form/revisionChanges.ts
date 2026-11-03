@@ -273,12 +273,15 @@ function entryRevisionValues(entry: Entry, draft: EntryEditDraft): EntryRevision
 
 /**
  * The change an entry edit sends: only the keys the depositor changed, and
- * never a read-only one. An empty object means nothing changed.
+ * never a read-only one. own are the archive fields the depositor took over:
+ * those are sent when changed, and the server then records them as theirs.
+ * An empty object means nothing changed.
  */
 export function buildEntryRevisionChange(
   entry: Entry,
   initial: EntryEditDraft,
   current: EntryEditDraft,
+  own: readonly EntryArchiveField[] = [],
 ): EntryRevisionChange {
   const locks = entryArchiveLocks(entry);
   const change = changedValues(
@@ -286,7 +289,9 @@ export function buildEntryRevisionChange(
     entryRevisionValues(entry, current),
   );
   for (const field of Object.keys(locks) as EntryArchiveField[]) {
-    delete change[field];
+    if (!own.includes(field)) {
+      delete change[field];
+    }
   }
   return change;
 }

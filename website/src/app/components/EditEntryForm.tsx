@@ -6,21 +6,30 @@ import type { Entity, Entry } from "@/lib/api/entries";
 import { updateEntryAction } from "@/app/entries/[entryId]/edit/actions";
 
 import ChangeSummaryField from "./entry-form/ChangeSummaryField";
-import EntryFormSections, {
-  lockedFieldIds,
-  type EditMetadata,
-} from "./entry-form/EntryFormSections";
+import EntryFormSections, { type EditMetadata } from "./entry-form/EntryFormSections";
 import { SubmitBlockers } from "./entry-form/FormFields";
 import type { ArchiveLookupState } from "./entry-form/PolymerEntitiesEditor";
 import { FilesReadOnly } from "./entry-form/ReadOnlyFields";
 import { FIELDS, type SectionId } from "./entry-form/fields";
 import { blockerLines, type FieldMessage } from "./entry-form/messages";
 import {
+  archiveFieldSection,
+  archiveFieldValues,
+  archiveFieldsView,
+  editTakenOverFields,
+  entrySourceBadges,
+  lockedFieldIds,
+  takenOverNotice,
+  withOwnField,
+  withValueFrom,
+} from "./entry-form/archiveChoices";
+import {
   buildEntryRevisionChange,
   entryArchiveLocks,
   entryDraftFromEntry,
   entryPdbId,
   hasChanges,
+  type EntryArchiveField,
 } from "./entry-form/revisionChanges";
 import type { EntryMetadataDraft } from "./entry-form/types";
 import { useThumbnailUpload } from "./entry-form/useThumbnailUpload";
@@ -30,7 +39,9 @@ import styles from "./entry-form/form.module.css";
 /**
  * Edits a published entry. Saving sends only the fields the depositor
  * changed, as a revision a reviewer approves. Values the PDB archive keeps
- * up to date are read-only, and files cannot change yet.
+ * up to date are read-only until the depositor takes one over; a changed
+ * value is then theirs, and the archive sync stops updating it. Files cannot
+ * change yet.
  */
 export default function EditEntryForm({
   entry,
@@ -51,8 +62,18 @@ export default function EditEntryForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiMessages, setApiMessages] = useState<FieldMessage[]>([]);
+  // The archive fields the depositor took over with "Use my own value".
+  const [ownFields, setOwnFields] = useState<EntryArchiveField[]>([]);
 
-  const locks = entryArchiveLocks(entry);
+  // The archive value beside a field taken over is the stored one.
+  const storedValues = archiveFieldValues(initial);
+  const archiveFields = archiveFieldsView(
+    entryArchiveLocks(entry),
+    storedValues,
+    archiveFieldValues({ title, metadata }),
+    ownFields,
+    false,
+  );
   const storedPdb = entryPdbId(entry);
   // The entities shown are the entry's stored ones, read from its PDB entry.
   const lookup: ArchiveLookupState = storedPdb
@@ -68,15 +89,28 @@ export default function EditEntryForm({
     dropApiMessages(section);
   };
 
-  const change = buildEntryRevisionChange(entry, initial, {
-    title,
-    thumbUrl: thumbnail.url,
-    metadata,
-  });
+  // "Use the PDB value" puts the stored value back, so nothing is sent for it.
+  const chooseOwn = (field: EntryArchiveField, own: boolean) => {
+    if (!own) {
+      const stored = withValueFrom({ title, metadata }, field, storedValues);
+      setTitle(stored.title);
+      setMetadata(stored.metadata);
+    }
+    setOwnFields((current) => withOwnField(current, field, own));
+    dropApiMessages(archiveFieldSection(field));
+  };
+
+  const change = buildEntryRevisionChange(
+    entry,
+    initial,
+    { title, thumbUrl: thumbnail.url, metadata },
+    ownFields,
+  );
   const changed = hasChanges(change);
+  const notice = takenOverNotice(editTakenOverFields(entry, change));
 
   // A read-only value cannot be fixed here, so its messages never block.
-  const locked = lockedFieldIds(locks);
+  const locked = lockedFieldIds(archiveFields.states);
   const validationMessages = entryFormMessages(title, metadata).filter(
     (message) => !locked.has(message.field),
   );
@@ -130,7 +164,9 @@ export default function EditEntryForm({
         pdbReadOnly={storedPdb !== null}
         lookup={lookup}
         onRetryLookup={() => undefined}
-        locks={locks}
+        archiveFields={archiveFields}
+        onOwn={chooseOwn}
+        badges={entrySourceBadges(entry)}
         messages={messages}
         data={
           <FilesReadOnly
@@ -142,6 +178,7 @@ export default function EditEntryForm({
 
       <ChangeSummaryField value={changeSummary} onChange={setChangeSummary} />
 
+      {notice ? <p className={styles.takenOverNotice}>{notice}</p> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
       {submitting ? null : <SubmitBlockers action="save" lines={blockers} />}
 

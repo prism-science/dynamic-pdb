@@ -31,6 +31,14 @@ export type InReviewGroup = {
   modelRevisions: RevisionGroups["data"][number]["attributes"]["model_revisions"];
 };
 
+/** Where one archive-synced field's value came from (FieldSource in openapi.yaml). */
+export type FieldSource = {
+  source: "rcsb" | "depositor";
+  accession?: string;
+  release?: string;
+  retrieved_at?: string;
+};
+
 export type EntryRevision = {
   id: string;
   state: RevisionState;
@@ -39,6 +47,8 @@ export type EntryRevision = {
   method: string | null;
   details?: string | null;
   resolution: number | null;
+  /** Keyed by JSON pointer, such as /title; null for revisions stored before sources. */
+  field_sources?: Record<string, FieldSource> | null;
 };
 
 export type ModelRevision = {
@@ -81,7 +91,13 @@ export class BackendClient {
     });
   }
 
-  async createEntry(entry: { title: string; method: string; details: string }) {
+  async createEntry(entry: {
+    title: string;
+    method: string;
+    details?: string;
+    resolution?: number;
+    external_refs?: Record<string, string>;
+  }) {
     const response = await this.post("/v1/entries", {
       entry: { ...entry, artifacts: [] },
       model_operations: [],

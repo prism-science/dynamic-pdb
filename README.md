@@ -143,8 +143,10 @@ make lint
 
 Playwright drives the deposition forms (new and edit entry, new model) in Chromium
 against a real stack: Postgres with the Flyway migrations, the backend with
-`validation.mode: enforce`, a production build of the website, and
-[S3Mock](https://github.com/adobe/S3Mock) in place of S3 for uploads. The stack is
+`validation.mode: enforce`, a production build of the website,
+[S3Mock](https://github.com/adobe/S3Mock) in place of S3 for uploads, and a fake
+RCSB (`website/e2e/stack/fake-rcsb.mjs`) in place of RCSB and SIFTS, which serves
+one archive entry for any PDB ID. The stack is
 its own compose project (`website/e2e/stack/compose.yml`, ports in
 `website/e2e/stack/stack.env`), so it leaves the shared `dynamic_pdb_local`
 database alone. Tests sign in by setting the website's auth cookies with a token
@@ -164,7 +166,9 @@ build). Run it again after changing backend or website code:
 make -C website browser-stack
 ```
 
-Run the tests. Playwright starts the backend and `next start` itself:
+Run the tests. Playwright starts the fake RCSB, the backend and `next start` itself.
+Locally it reuses a server already listening on one of their ports, so stop any
+backend you started on port 18890 by hand: it would not read the fake RCSB.
 
 ```bash
 cd website

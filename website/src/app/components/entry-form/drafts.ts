@@ -1,13 +1,15 @@
 import type { ArtifactType, EntityLevel } from "@/lib/api/entries";
 import type { ExtFileReference } from "@/lib/api/ext";
 
+import { ownFieldsFromStored } from "./archiveChoices";
 import { compoundsAreUntouched } from "./compounds";
+import type { EntryArchiveField } from "./revisionChanges";
 import {
   DRAFT_STORAGE_KEY,
   DRAFT_VERSION,
   MODEL_DRAFT_STORAGE_PREFIX,
   MODEL_DRAFT_VERSION,
-  PREVIOUS_DRAFT_VERSION,
+  PREVIOUS_DRAFT_VERSIONS,
   emptyCompounds,
   emptyEntryMetadataDraft,
 } from "./types";
@@ -47,6 +49,9 @@ export type StoredDraft = {
   thumbPreview?: string;
   thumbUploadStatus: UploadStatus;
   files: StoredFile[];
+  /** The archive fields the depositor took over; their values are in title
+   *  and metadata. */
+  ownFields: EntryArchiveField[];
 };
 
 export function isPersistable(file: ParsedFile): boolean {
@@ -121,15 +126,16 @@ export function draftHasContent(draft: StoredDraft): boolean {
 }
 
 /**
- * Reads the saved entry draft. A version 3 draft predates the saved metadata
- * block and is read with an empty one rather than thrown away.
+ * Reads the saved entry draft. Older versions are read rather than thrown
+ * away: a version 3 draft with an empty metadata block, and versions 3 and 4
+ * with no archive field taken over.
  */
 export function readStoredDraft(): StoredDraft | null {
   const parsed = readStoredJSON(DRAFT_STORAGE_KEY) as StoredDraft | null;
   if (
     !parsed ||
     (parsed.version !== DRAFT_VERSION &&
-      parsed.version !== PREVIOUS_DRAFT_VERSION) ||
+      !PREVIOUS_DRAFT_VERSIONS.includes(parsed.version)) ||
     !parsed.entryId
   ) {
     return null;
@@ -140,6 +146,7 @@ export function readStoredDraft(): StoredDraft | null {
     title: typeof parsed.title === "string" ? parsed.title : "",
     files: Array.isArray(parsed.files) ? parsed.files : [],
     metadata: { ...emptyEntryMetadataDraft(), ...(parsed.metadata ?? {}) },
+    ownFields: ownFieldsFromStored(parsed.ownFields),
   };
 }
 

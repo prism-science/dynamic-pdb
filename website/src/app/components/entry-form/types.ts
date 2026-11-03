@@ -262,8 +262,10 @@ export const DRAFT_STORAGE_KEY = "dpdb:new-entry-draft";
 // 3: entry and model identity changed from name/description to title.
 // 4: the metadata block (description, experiment, composition, crystals,
 //    macromolecules) is saved too. A version 3 draft is read with an empty one.
-export const DRAFT_VERSION = 4;
-export const PREVIOUS_DRAFT_VERSION = 3;
+// 5: the archive fields the depositor took over are saved too. Versions 3 and
+//    4 are read with none taken over.
+export const DRAFT_VERSION = 5;
+export const PREVIOUS_DRAFT_VERSIONS: readonly number[] = [4, 3];
 
 export const MODEL_DRAFT_STORAGE_PREFIX = "dpdb:new-model-draft:";
 export const MODEL_DRAFT_VERSION = 1;
