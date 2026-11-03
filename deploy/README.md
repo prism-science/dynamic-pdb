@@ -141,8 +141,9 @@ at most about half busy with this. Runs stop taking pages after 50 minutes and a
 55; `maxEntriesPerRun` caps the revisions one run looks at (`0` means no cap). The job's
 statements may run for `statementTimeout` (30 seconds) instead of the backend's 10.
 
-It is on only for a planned run, and off otherwise. A prod run starts with a dry run, which logs
-what would change in rows marked `dry_run` and changes nothing else:
+It is on only for a planned run, and off otherwise. Prod's run went through all 73,074 archive
+revisions on 2026-11-03, in four hourly runs, and the job is off again. A prod run starts with a
+dry run, which logs what would change in rows marked `dry_run` and changes nothing else:
 
 ```yaml
 archiveRederiveJob:

@@ -184,9 +184,10 @@ modelCompoundsJob:
 
 # The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
 # glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
-# mmCIF, in place on the active revision. On for its prod run only; see the README.
+# mmCIF, in place on the active revision. On for a planned run only; see the README. Prod's run
+# went through all 73,074 archive revisions on 2026-11-03.
 archiveRederiveJob:
-  enabled: true
+  enabled: false
   # Hourly at :30, away from the checksum job (every hour at :00) and the mmseqs job (00:00).
   schedule: "30 * * * *"
   timeZone: Etc/UTC
