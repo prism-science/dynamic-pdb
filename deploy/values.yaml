@@ -155,11 +155,12 @@ modelCompoundsJob:
   # The job claims files for 4 minutes and gives each at most fileTimeout; this ends a run that
   # hangs after both.
   activeDeadlineSeconds: 900
-  # Caps the files one run reads; 0 means no cap. 500 since 2026-11-02: runs of 100 took 26-31 s
-  # with no failures, so 500 take about 2.5 of the 4 claim minutes, about 6,000 files an hour.
-  # The ~145,000 historical files still queued then take about a day. Kept at 500 afterwards, for
-  # new uploads and the next bulk import.
-  maxFilesPerRun: 500
+  # Caps the files one run reads; 0 means no cap. 0 since 2026-11-03, for the end of the
+  # historical fill: runs of 500 took 122-148 s with no failures, so with no cap a run reads for
+  # all 4 claim minutes, about 900 files, about 10,700 an hour, and the last ~20,000 queued files
+  # take about 2 hours. Back to 500 once the queue is empty, for new uploads and the next bulk
+  # import.
+  maxFilesPerRun: 0
   fileTimeout: 10m
   # Gives the model files stored before the job existed their sets: on prod about 152,000
   # qFit and ensemble-refinement models (1.6 TB) from the August 2026 bulk import. It ran on
