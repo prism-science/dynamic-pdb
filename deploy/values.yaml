@@ -184,11 +184,11 @@ modelCompoundsJob:
 
 # The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
 # glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
-# mmCIF, in place on the active revision. Off until its prod run is planned; see the README.
+# mmCIF, in place on the active revision. On for its prod run only; see the README.
 archiveRederiveJob:
-  enabled: false
-  # Off-peak on prod: hourly from 22:00 to 05:00 UTC.
-  schedule: "0 22-23,0-5 * * *"
+  enabled: true
+  # Hourly at :30, away from the checksum job (every hour at :00) and the mmseqs job (00:00).
+  schedule: "30 * * * *"
   timeZone: Etc/UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
@@ -196,8 +196,9 @@ archiveRederiveJob:
   backoffLimit: 0
   # The job stops taking pages after 50 minutes; this ends a run before the next one starts.
   activeDeadlineSeconds: 3300
-  # Caps the revisions one run looks at; 0 means no cap.
-  maxEntriesPerRun: 5000
+  # Caps the revisions one run looks at; 0 means no cap. The prod dry run took 67 s per 1,000, so
+  # a run of 10000 takes about 11 minutes, and ~73,000 archive entries take about 8 runs.
+  maxEntriesPerRun: 10000
   # Revisions one page derives before writing them, and RCSB downloads in flight.
   pageSize: 200
   downloadConcurrency: 4
