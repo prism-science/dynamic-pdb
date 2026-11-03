@@ -299,13 +299,13 @@ Archive models keep their file's URI on files.rcsb.org, but the checksum job cop
 into our bucket. Two switches let the job read those copies, with the same reader as uploads
 (T3-M2). They are in `backend/config/<env>.yml`, not in `values.yaml`, so dev can go first:
 dev and prod share this chart's values.
-Both are on for dev and prod since 2026-11-03; `archive_fill` goes off again once its fill is
-done.
+Both went on for dev and prod on 2026-11-03. `archive_fill` is off again since its fill finished;
+`archive_files` stays on.
 
 ```yaml
 compounds:
-  archive_files: true # each run's 48-hour window also takes archive files once they are copied
-  archive_fill: true  # each run tops the queue up to maxFilesPerRun with older copies
+  archive_files: true  # each run's 48-hour window also takes archive files once they are copied
+  archive_fill: false  # when on, each run tops the queue up to maxFilesPerRun with older copies
 ```
 
 - `archive_files` stays on. New archive files (a new entry, a weekly sync, a T3-C coordinate
@@ -317,7 +317,8 @@ compounds:
   pausing as long as each page took. At 500 files a run the fill takes about 12 to 13 hours;
   at `maxFilesPerRun: 1500` a run reads as many as its 4 claim minutes allow (about 1,150
   archive files), about 5 hours for prod's ~73,000.
-  Turn it off once a run's `started` line shows `archive_sets_added=0` and nothing is pending.
+  Turn it off, and `maxFilesPerRun` back to 500, once a run's `started` line shows
+  `archive_sets_added=0` and nothing is pending.
 - A file the checksum job kept no copy of (`over_limit`, `mismatch`, `copy_failed`,
   `copy_off`) gets no set: the API reports `not_stored`, as before.
 - A run's `model file read` lines say `read_from=checksum_copy` for archive files.

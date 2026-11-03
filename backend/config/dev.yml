@@ -58,4 +58,4 @@ compounds:
   # copies through its recent window (archive_files), and older ones through a fill that tops
   # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
   archive_files: true
-  archive_fill: true
+  archive_fill: false
