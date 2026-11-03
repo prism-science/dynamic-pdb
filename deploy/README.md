@@ -299,6 +299,8 @@ Archive models keep their file's URI on files.rcsb.org, but the checksum job cop
 into our bucket. Two switches let the job read those copies, with the same reader as uploads
 (T3-M2). They are in `backend/config/<env>.yml`, not in `values.yaml`, so dev can go first:
 dev and prod share this chart's values.
+Both are on for dev and prod since 2026-11-03; `archive_fill` goes off again once its fill is
+done.
 
 ```yaml
 compounds:
