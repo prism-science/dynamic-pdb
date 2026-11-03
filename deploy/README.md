@@ -314,7 +314,9 @@ compounds:
   It needs `archive_files` and a `maxFilesPerRun`. Each run tops the queue up to
   `maxFilesPerRun`, never more, so an upload saved during the fill waits about one run. Like the
   historical fill, each run pages through every artifact from the start, 2,000 per statement,
-  pausing as long as each page took. At 500 files a run the fill takes about 12 to 13 hours.
+  pausing as long as each page took. At 500 files a run the fill takes about 12 to 13 hours;
+  at `maxFilesPerRun: 1500` a run reads as many as its 4 claim minutes allow (about 1,150
+  archive files), about 5 hours for prod's ~73,000.
   Turn it off once a run's `started` line shows `archive_sets_added=0` and nothing is pending.
 - A file the checksum job kept no copy of (`over_limit`, `mismatch`, `copy_failed`,
   `copy_off`) gets no set: the API reports `not_stored`, as before.
