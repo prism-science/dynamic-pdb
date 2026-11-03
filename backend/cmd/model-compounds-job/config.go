@@ -31,6 +31,9 @@ func readConfig(filename string) (config, error) {
 	v.SetDefault("compounds::recent_window", 48*time.Hour)
 	v.SetDefault("compounds::historical_fill", false)
 	v.SetDefault("compounds::fill_batch_size", 2000)
+	// Archive model files are read only where config/<env>.yml turns them on.
+	v.SetDefault("compounds::archive_files", false)
+	v.SetDefault("compounds::archive_fill", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

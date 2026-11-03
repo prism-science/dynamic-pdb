@@ -40,7 +40,56 @@ cdn:
 	assert.Equal(t, 48*time.Hour, cfg.Compounds.RecentWindow)
 	assert.False(t, cfg.Compounds.HistoricalFill)
 	assert.Equal(t, 2000, cfg.Compounds.FillBatchSize)
+	assert.False(t, cfg.Compounds.ArchiveFiles)
+	assert.False(t, cfg.Compounds.ArchiveFill)
 	assert.Equal(t, "localhost", cfg.DB.Host)
+}
+
+func Test_should_read_the_archive_switches_from_the_compounds_section_when_the_config_sets_them(t *testing.T) {
+	// given
+	writeTestConfig(t, `
+db:
+  host: localhost
+compounds:
+  archive_files: true
+  archive_fill: true
+`)
+
+	// when
+	cfg, err := readConfig("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.Compounds.ArchiveFiles)
+	assert.True(t, cfg.Compounds.ArchiveFill)
+}
+
+func Test_should_parse_the_compounds_section_when_the_repository_configs_are_read(t *testing.T) {
+	for _, env := range []string{"local", "dev", "production"} {
+		t.Run(env, func(t *testing.T) {
+			// given: the config files the job image carries.
+			t.Chdir(filepath.Join("..", ".."))
+
+			// when
+			_, err := readConfig(env)
+
+			// then
+			require.NoError(t, err)
+		})
+	}
+}
+
+func Test_should_keep_the_archive_switches_off_when_the_local_config_is_read(t *testing.T) {
+	// given: the config local runs and the tests use, which reads uploads only.
+	t.Chdir(filepath.Join("..", ".."))
+
+	// when
+	cfg, err := readConfig("local")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, cfg.Compounds.ArchiveFiles)
+	assert.False(t, cfg.Compounds.ArchiveFill)
 }
 
 func Test_should_read_compound_settings_from_the_environment_when_they_are_set(t *testing.T) {

@@ -44,16 +44,19 @@ type modeledCompoundClaimRow struct {
 	Name       string         `db:"name"`
 	URI        sql.NullString `db:"uri"`
 	Format     sql.NullString `db:"format"`
+	CopyStatus sql.NullString `db:"copy_status"`
+	StoredURI  sql.NullString `db:"stored_uri"`
 }
 
 // lostReadsReason is the error of a set whose reads never came back: the job's run ended
 // (out of memory, over its time limit) before it recorded a result.
 const lostReadsReason = "the read stopped without a result %d times: the job ran out of memory or time"
 
-// ClaimDue takes up to limit pending sets that are due at now, oldest first. A claim moves
-// next_attempt_at to now+lease and counts the attempt; a claim that is never recorded
-// becomes due again when the lease ends. A due set already claimed maxAttempts times is
-// failed instead: its reads ended the job each time, so another would too.
+// ClaimDue takes up to limit pending sets that are due at now, oldest first, each with the
+// checksum job's copy of its file when there is one. A claim moves next_attempt_at to
+// now+lease and counts the attempt; a claim that is never recorded becomes due again when
+// the lease ends. A due set already claimed maxAttempts times is failed instead: its reads
+// ended the job each time, so another would too.
 func (r *ModeledCompoundsRepository) ClaimDue(
 	ctx context.Context,
 	now time.Time,
@@ -87,9 +90,11 @@ func (r *ModeledCompoundsRepository) ClaimDue(
 			    where artifact_id in (select artifact_id from picked)
 			    returning artifact_id, attempts
 			  )
-			  select claimed.artifact_id, claimed.attempts, artifacts.name, artifacts.uri, artifacts.format
+			  select claimed.artifact_id, claimed.attempts, artifacts.name, artifacts.uri, artifacts.format,
+			         artifact_checksums.copy_status, artifact_checksums.stored_uri
 			  from claimed
 			  join artifacts on artifacts.id = claimed.artifact_id
+			  left join artifact_checksums on artifact_checksums.artifact_id = claimed.artifact_id
 			  order by claimed.artifact_id`
 
 	rows := make([]modeledCompoundClaimRow, 0)
@@ -99,23 +104,44 @@ func (r *ModeledCompoundsRepository) ClaimDue(
 	}
 	claims := make([]models.ModeledCompoundClaim, 0, len(rows))
 	for _, row := range rows {
-		claims = append(claims, models.ModeledCompoundClaim{
+		claim := models.ModeledCompoundClaim{
 			ArtifactID: row.ArtifactID,
 			Name:       row.Name,
 			URI:        stringPtrFromSQL(row.URI),
 			Format:     stringPtrFromSQL(row.Format),
+			StoredURI:  stringPtrFromSQL(row.StoredURI),
 			Attempts:   row.Attempts,
-		})
+		}
+		if row.CopyStatus.Valid {
+			copyStatus := models.CopyStatus(row.CopyStatus.String)
+			if err := copyStatus.Validate(); err != nil {
+				return nil, fmt.Errorf("claim of artifact %s: %w", row.ArtifactID, err)
+			}
+			claim.CopyStatus = &copyStatus
+		}
+		claims = append(claims, claim)
 	}
 	return claims, nil
 }
 
+// PendingCount returns how many sets are pending: due now, claimed, or waiting for a retry.
+func (r *ModeledCompoundsRepository) PendingCount(ctx context.Context) (int64, error) {
+	var count int64
+	query := `select count(*) from modeled_compound_sets where status = 'pending'`
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &count, query); err != nil {
+		return 0, fmt.Errorf("count pending modeled compound sets: %w", err)
+	}
+	return count, nil
+}
+
 // AddMissingSince gives a pending set to every model file in our bucket created since the
 // given time that has none: uploads the API stored while an older backend, which made no
-// sets, was still serving. It reads each user's recent artifacts through the
+// sets, was still serving. With archiveFiles it also takes the external model files (archive
+// files on RCSB) that the checksum job has copied into our bucket by now; the checksum job
+// copies hourly, well inside the window. It reads each user's recent artifacts through the
 // (created_by, created_at) index, so it never scans the whole table. It returns how many
 // sets it added.
-func (r *ModeledCompoundsRepository) AddMissingSince(ctx context.Context, since time.Time) (int64, error) {
+func (r *ModeledCompoundsRepository) AddMissingSince(ctx context.Context, since time.Time, archiveFiles bool) (int64, error) {
 	query := `insert into modeled_compound_sets (artifact_id)
 			  select recent.id
 			  from users
@@ -124,9 +150,14 @@ func (r *ModeledCompoundsRepository) AddMissingSince(ctx context.Context, since 
 			    from artifacts
 			    where artifacts.created_by = users.id and artifacts.created_at >= $1
 			  ) recent on true
-			  where recent.type = 'model' and strpos(recent.uri, '/artifacts/' || cast(recent.id as text) || '/') > 0
+			  where recent.type = 'model'
+			    and (strpos(recent.uri, '/artifacts/' || cast(recent.id as text) || '/') > 0
+			         or ($2 and exists (
+			           select 1 from artifact_checksums
+			           where artifact_checksums.artifact_id = recent.id
+			             and artifact_checksums.copy_status = 'copied')))
 			  on conflict (artifact_id) do nothing`
-	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, since)
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, since, archiveFiles)
 	if err != nil {
 		return 0, fmt.Errorf("add missing modeled compound sets since %s: %w", since.Format(time.RFC3339), err)
 	}
@@ -169,6 +200,52 @@ func (r *ModeledCompoundsRepository) AddMissingAfter(
 	}
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, after, limit, uuid.Nil); err != nil {
 		return models.MissingSetsPage{}, fmt.Errorf("add missing modeled compound sets after %s: %w", after, err)
+	}
+	return models.MissingSetsPage{Scanned: row.Scanned, Added: row.Added, LastArtifactID: row.LastArtifactID}, nil
+}
+
+// AddCopiedAfter takes the next limit artifacts in id order after the given id and gives a
+// pending set to at most room of the external model files among them (archive files on RCSB)
+// that the checksum job copied into our bucket and that have none, lowest id first. When room
+// ends the page early, the rest of it waits for a later fill, which starts from the first
+// artifact again. Like AddMissingAfter, one page is one short statement and it only inserts.
+func (r *ModeledCompoundsRepository) AddCopiedAfter(
+	ctx context.Context,
+	after uuid.UUID,
+	limit int,
+	room int64,
+) (models.MissingSetsPage, error) {
+	if limit <= 0 {
+		return models.MissingSetsPage{}, errors.New("page limit must be positive")
+	}
+	if room <= 0 {
+		return models.MissingSetsPage{}, errors.New("room must be positive")
+	}
+	query := `with page as (
+			    select id, type from artifacts where id > $1 order by id limit $2
+			  ), added as (
+			    insert into modeled_compound_sets (artifact_id)
+			    select page.id
+			    from page
+			    join artifact_checksums on artifact_checksums.artifact_id = page.id
+			    where page.type = 'model'
+			      and artifact_checksums.copy_status = 'copied'
+			      and not exists (select 1 from modeled_compound_sets sets where sets.artifact_id = page.id)
+			    order by page.id
+			    limit $3
+			    on conflict (artifact_id) do nothing
+			    returning artifact_id
+			  )
+			  select (select count(*) from page) as scanned,
+			         (select count(*) from added) as added,
+			         coalesce((select id from page order by id desc limit 1), $4) as last_artifact_id`
+	var row struct {
+		Scanned        int       `db:"scanned"`
+		Added          int64     `db:"added"`
+		LastArtifactID uuid.UUID `db:"last_artifact_id"`
+	}
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, after, limit, room, uuid.Nil); err != nil {
+		return models.MissingSetsPage{}, fmt.Errorf("add sets for copied model files after %s: %w", after, err)
 	}
 	return models.MissingSetsPage{Scanned: row.Scanned, Added: row.Added, LastArtifactID: row.LastArtifactID}, nil
 }

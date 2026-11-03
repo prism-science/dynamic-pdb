@@ -1,8 +1,11 @@
 package db_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -344,7 +347,7 @@ func Test_should_give_only_recent_model_files_in_our_bucket_a_set_when_older_cod
 	maps := fixture.insertArtifactLikeOlderCode(t, "structure_factors", true, now.Add(-time.Hour))
 
 	// when
-	added, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-48*time.Hour))
+	added, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-48*time.Hour), false)
 
 	// then
 	require.NoError(t, err)
@@ -383,4 +386,169 @@ func Test_should_give_every_stored_model_file_a_set_once_when_the_historical_fil
 	assert.True(t, fixture.hasSet(t, stored))
 	assert.False(t, fixture.hasSet(t, archive))
 	assert.False(t, fixture.hasSet(t, maps))
+}
+
+// recordCopy records the checksum job's result for an artifact, adding its checksum row first
+// when code from before the checksum table made none: verified with the given copy status, a
+// copy URI when copied, or a mismatch.
+func (f *modeledCompoundsTestDB) recordCopy(t *testing.T, artifactID uuid.UUID, copyStatus models.CopyStatus) {
+	t.Helper()
+
+	_, err := f.sql.Exec(`insert into artifact_checksums(artifact_id) values ($1) on conflict (artifact_id) do nothing`, artifactID)
+	require.NoError(t, err)
+	result := models.ChecksumResult{
+		ArtifactID: artifactID,
+		Status:     models.ChecksumStatusVerified,
+		SHA256:     ptr(strings.Repeat("a", 64)),
+		SizeBytes:  ptr(int64(100)),
+		CopyStatus: &copyStatus,
+		CheckedAt:  time.Now().UTC(),
+	}
+	switch copyStatus {
+	case models.CopyStatusCopied:
+		result.StoredURI = ptr(fmt.Sprintf("https://bucket.example.org/entry-1/models/model-1/artifacts/%s/1ABC.cif", artifactID))
+	case models.CopyStatusMismatch:
+		result.Status = models.ChecksumStatusMismatch
+	case models.CopyStatusOwnStorage, models.CopyStatusOverLimit, models.CopyStatusCopyFailed, models.CopyStatusCopyOff:
+	default:
+		require.FailNow(t, "unknown copy status", string(copyStatus))
+	}
+	require.NoError(t, f.database.RecordChecksums(context.Background(), []models.ChecksumResult{result}))
+}
+
+func Test_should_give_recent_copied_archive_files_a_set_only_when_archive_files_is_on(t *testing.T) {
+	// given: archive model files on RCSB, created an hour ago or three days ago.
+	fixture := newModeledCompoundsTestDB(t)
+	now := time.Now().UTC()
+	copied := fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-time.Hour))
+	fixture.recordCopy(t, copied, models.CopyStatusCopied)
+	notCopied := map[models.CopyStatus]uuid.UUID{}
+	for _, copyStatus := range []models.CopyStatus{
+		models.CopyStatusOverLimit, models.CopyStatusMismatch, models.CopyStatusCopyFailed, models.CopyStatusCopyOff,
+	} {
+		notCopied[copyStatus] = fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-time.Hour))
+		fixture.recordCopy(t, notCopied[copyStatus], copyStatus)
+	}
+	notChecked := fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-time.Hour))
+	old := fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-72*time.Hour))
+	fixture.recordCopy(t, old, models.CopyStatusCopied)
+	maps := fixture.insertArtifactLikeOlderCode(t, "structure_factors", false, now.Add(-time.Hour))
+	fixture.recordCopy(t, maps, models.CopyStatusCopied)
+
+	// when: once with archive_files off, then with it on.
+	addedOff, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-48*time.Hour), false)
+	require.NoError(t, err)
+	hadSetWhenOff := fixture.hasSet(t, copied)
+	addedOn, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-48*time.Hour), true)
+	require.NoError(t, err)
+
+	// then
+	assert.Zero(t, addedOff)
+	assert.False(t, hadSetWhenOff)
+	assert.Equal(t, int64(1), addedOn)
+	assert.Equal(t, "pending", fixture.setStatus(t, copied))
+	for copyStatus, artifactID := range notCopied {
+		assert.False(t, fixture.hasSet(t, artifactID), copyStatus)
+	}
+	assert.False(t, fixture.hasSet(t, notChecked), "no copy yet")
+	assert.False(t, fixture.hasSet(t, old), "outside the window: the archive fill's")
+	assert.False(t, fixture.hasSet(t, maps), "not a model file")
+}
+
+func Test_should_give_at_most_room_copied_archive_files_a_set_when_the_archive_fill_pages_through_artifacts(t *testing.T) {
+	// given: three copied archive model files, and files the fill must leave alone.
+	fixture := newModeledCompoundsTestDB(t)
+	long := time.Now().UTC().Add(-365 * 24 * time.Hour)
+	copied := make([]uuid.UUID, 0, 3)
+	for range 3 {
+		artifactID := fixture.insertArtifactLikeOlderCode(t, "model", false, long)
+		fixture.recordCopy(t, artifactID, models.CopyStatusCopied)
+		copied = append(copied, artifactID)
+	}
+	slices.SortFunc(copied, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	mismatch := fixture.insertArtifactLikeOlderCode(t, "model", false, long)
+	fixture.recordCopy(t, mismatch, models.CopyStatusMismatch)
+	upload := fixture.insertArtifactLikeOlderCode(t, "model", true, long)
+	maps := fixture.insertArtifactLikeOlderCode(t, "structure_factors", false, long)
+	fixture.recordCopy(t, maps, models.CopyStatusCopied)
+	every := append([]uuid.UUID{mismatch, upload, maps}, copied...)
+	slices.SortFunc(every, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+
+	// when: a fill with room for two, then fills with room to spare.
+	first, err := fixture.database.ModeledCompounds.AddCopiedAfter(context.Background(), uuid.Nil, 100, 2)
+	require.NoError(t, err)
+	queuedFirst := []bool{fixture.hasSet(t, copied[0]), fixture.hasSet(t, copied[1]), fixture.hasSet(t, copied[2])}
+	second, err := fixture.database.ModeledCompounds.AddCopiedAfter(context.Background(), uuid.Nil, 100, 5)
+	require.NoError(t, err)
+	third, err := fixture.database.ModeledCompounds.AddCopiedAfter(context.Background(), uuid.Nil, 100, 5)
+	require.NoError(t, err)
+
+	// then
+	assert.Equal(t, 6, first.Scanned)
+	assert.Equal(t, every[len(every)-1], first.LastArtifactID, "the next page starts after the whole page, not after the last set added")
+	assert.Equal(t, int64(2), first.Added)
+	assert.Equal(t, []bool{true, true, false}, queuedFirst, "lowest ids first")
+	assert.Equal(t, int64(1), second.Added)
+	assert.Equal(t, int64(0), third.Added, "a fill again adds nothing")
+	for _, artifactID := range copied {
+		assert.Equal(t, "pending", fixture.setStatus(t, artifactID))
+	}
+	assert.False(t, fixture.hasSet(t, mismatch), "no copy")
+	assert.False(t, fixture.hasSet(t, upload), "uploads are the historical fill's")
+	assert.False(t, fixture.hasSet(t, maps), "not a model file")
+}
+
+func Test_should_refuse_an_archive_fill_page_when_it_has_no_room(t *testing.T) {
+	// given
+	fixture := newModeledCompoundsTestDB(t)
+
+	// when
+	_, err := fixture.database.ModeledCompounds.AddCopiedAfter(context.Background(), uuid.Nil, 100, 0)
+
+	// then
+	require.Error(t, err)
+}
+
+func Test_should_claim_an_archive_file_with_its_copy_when_the_checksum_job_copied_it(t *testing.T) {
+	// given: a copied archive file with a set, and an upload whose checksum is still pending.
+	fixture := newModeledCompoundsTestDB(t)
+	now := time.Now().UTC()
+	archive := fixture.insertArtifactLikeOlderCode(t, "model", false, now.Add(-time.Hour))
+	fixture.recordCopy(t, archive, models.CopyStatusCopied)
+	_, err := fixture.database.ModeledCompounds.AddMissingSince(context.Background(), now.Add(-2*time.Hour), true)
+	require.NoError(t, err)
+	upload := fixture.createArtifact(t, models.ArtifactTypeModel, true)
+
+	// when
+	claims, err := fixture.database.ModeledCompounds.ClaimDue(context.Background(), time.Now().UTC().Add(time.Second), 10, time.Hour, 3)
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, claims, 2)
+	byArtifact := map[uuid.UUID]models.ModeledCompoundClaim{claims[0].ArtifactID: claims[0], claims[1].ArtifactID: claims[1]}
+	require.Contains(t, byArtifact, archive)
+	assert.Equal(t, ptr("https://files.rcsb.org/download/1ABC.cif"), byArtifact[archive].URI)
+	assert.Equal(t, ptr(models.CopyStatusCopied), byArtifact[archive].CopyStatus)
+	assert.Equal(t,
+		ptr(fmt.Sprintf("https://bucket.example.org/entry-1/models/model-1/artifacts/%s/1ABC.cif", archive)),
+		byArtifact[archive].StoredURI)
+	require.Contains(t, byArtifact, upload.ID)
+	assert.Nil(t, byArtifact[upload.ID].CopyStatus, "the checksum job has not read the upload yet")
+	assert.Nil(t, byArtifact[upload.ID].StoredURI)
+}
+
+func Test_should_count_only_pending_sets_when_some_sets_are_done(t *testing.T) {
+	// given: two pending sets and a done one.
+	fixture := newModeledCompoundsTestDB(t)
+	fixture.createArtifact(t, models.ArtifactTypeModel, true)
+	fixture.createArtifact(t, models.ArtifactTypeModel, true)
+	done := fixture.createArtifact(t, models.ArtifactTypeModel, true)
+	fixture.save(t, done.ID, cif.ModeledCompounds{Complete: true})
+
+	// when
+	pending, err := fixture.database.ModeledCompounds.PendingCount(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), pending)
 }

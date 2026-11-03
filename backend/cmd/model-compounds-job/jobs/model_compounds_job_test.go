@@ -45,18 +45,44 @@ type fakeQueue struct {
 	saved    map[uuid.UUID]cif.ModeledCompounds
 	saveErr  error
 	failures []failure
-	// recentSince is the time AddMissingSince was asked about.
-	recentSince time.Time
+	// recentSince and recentArchive are what AddMissingSince was asked.
+	recentSince   time.Time
+	recentArchive bool
 	// pages are the historical fill's pages, served in order; pageAfter records the
 	// artifact each request started after.
-	pages       []models.MissingSetsPage
-	pageAfter   []uuid.UUID
-	maxAttempts int
+	pages     []models.MissingSetsPage
+	pageAfter []uuid.UUID
+	// copiedPages are the archive fill's pages, served in order; copiedAfter and copiedRoom
+	// record what each request asked.
+	copiedPages []models.MissingSetsPage
+	copiedAfter []uuid.UUID
+	copiedRoom  []int64
+	// pending is what PendingCount answers; pendingAsked counts the questions.
+	pending      int64
+	pendingAsked int
+	maxAttempts  int
 }
 
-func (q *fakeQueue) AddMissingSince(_ context.Context, since time.Time) (int64, error) {
+func (q *fakeQueue) AddMissingSince(_ context.Context, since time.Time, archiveFiles bool) (int64, error) {
 	q.recentSince = since
+	q.recentArchive = archiveFiles
 	return 0, nil
+}
+
+func (q *fakeQueue) AddCopiedAfter(_ context.Context, after uuid.UUID, _ int, room int64) (models.MissingSetsPage, error) {
+	q.copiedAfter = append(q.copiedAfter, after)
+	q.copiedRoom = append(q.copiedRoom, room)
+	if len(q.copiedPages) == 0 {
+		return models.MissingSetsPage{}, nil
+	}
+	page := q.copiedPages[0]
+	q.copiedPages = q.copiedPages[1:]
+	return page, nil
+}
+
+func (q *fakeQueue) PendingCount(context.Context) (int64, error) {
+	q.pendingAsked++
+	return q.pending, nil
 }
 
 func (q *fakeQueue) AddMissingAfter(_ context.Context, after uuid.UUID, _ int) (models.MissingSetsPage, error) {
@@ -136,6 +162,23 @@ func storedClaim(key string, format *string, attempts int) models.ModeledCompoun
 	return models.ModeledCompoundClaim{ArtifactID: uuid.New(), Name: key, URI: &uri, Format: format, Attempts: attempts}
 }
 
+// archiveClaim is a claimed archive model file on RCSB with the checksum job's result: a copy
+// in our bucket at copyKey when copyStatus is copied.
+func archiveClaim(copyStatus *models.CopyStatus, copyKey string) models.ModeledCompoundClaim {
+	claim := models.ModeledCompoundClaim{
+		ArtifactID: uuid.New(),
+		Name:       "1ABC.cif",
+		URI:        ptr("https://files.rcsb.org/download/1ABC.cif"),
+		Format:     ptr("cif"),
+		CopyStatus: copyStatus,
+		Attempts:   1,
+	}
+	if copyKey != "" {
+		claim.StoredURI = ptr(bucketPrefix + copyKey)
+	}
+	return claim
+}
+
 func ptr[T any](value T) *T {
 	return &value
 }
@@ -201,13 +244,25 @@ func Test_should_fail_for_good_when_no_retry_can_change_the_outcome(t *testing.T
 			claim: storedClaim("k", ptr("mtz"), 1), contents: []byte(mmcifWithGlycerol),
 			message: `open the structure: declared format: unknown model file format "mtz"`,
 		},
-		"not in our bucket": {
-			claim:   models.ModeledCompoundClaim{ArtifactID: uuid.New(), URI: ptr("https://files.rcsb.org/download/1ABC.cif"), Attempts: 1},
-			message: "the file is not in our bucket",
+		"not in our bucket, not copied yet": {
+			claim:   archiveClaim(nil, ""),
+			message: "locate the file: the file is not in our bucket, and the checksum job has not copied it",
+		},
+		"copied, but no uri for the copy": {
+			claim:   archiveClaim(ptr(models.CopyStatusCopied), ""),
+			message: "locate the file: the checksum job copied the file but recorded no uri for the copy",
+		},
+		"copied, but the copy is not in our bucket": {
+			claim: func() models.ModeledCompoundClaim {
+				claim := archiveClaim(ptr(models.CopyStatusCopied), "")
+				claim.StoredURI = ptr("https://elsewhere.example.org/1ABC.cif")
+				return claim
+			}(),
+			message: "locate the file: the checksum job's copy of the file is not in our bucket",
 		},
 		"no uri": {
 			claim:   models.ModeledCompoundClaim{ArtifactID: uuid.New(), Attempts: 1},
-			message: "artifact has no uri",
+			message: "locate the file: artifact has no uri",
 		},
 		"neither mmCIF nor PDB": {
 			claim: storedClaim("k", nil, 1), contents: []byte("hello, this is a map file\n"),
@@ -234,6 +289,67 @@ func Test_should_fail_for_good_when_no_retry_can_change_the_outcome(t *testing.T
 			assert.Empty(t, queue.saved)
 		})
 	}
+}
+
+func Test_should_read_the_checksum_copy_when_an_archive_file_was_copied_into_our_bucket(t *testing.T) {
+	// given
+	claim := archiveClaim(ptr(models.CopyStatusCopied), "e1/models/m1/artifacts/a1/1ABC.cif")
+	queue := &fakeQueue{claims: []models.ModeledCompoundClaim{claim}}
+	files := &fakeFiles{contents: map[string][]byte{"e1/models/m1/artifacts/a1/1ABC.cif": []byte(mmcifWithGlycerol)}}
+	job := newTestJob(t, queue, files, testConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, queue.failures)
+	require.Contains(t, queue.saved, claim.ArtifactID)
+	assert.Equal(t, []string{"GOL A 301"}, copyIDs(queue.saved[claim.ArtifactID]))
+}
+
+func Test_should_fail_for_good_when_the_checksum_job_kept_no_copy_of_an_archive_file(t *testing.T) {
+	for _, copyStatus := range []models.CopyStatus{
+		models.CopyStatusOwnStorage,
+		models.CopyStatusOverLimit,
+		models.CopyStatusMismatch,
+		models.CopyStatusCopyFailed,
+		models.CopyStatusCopyOff,
+	} {
+		t.Run(string(copyStatus), func(t *testing.T) {
+			// given
+			claim := archiveClaim(ptr(copyStatus), "")
+			queue := &fakeQueue{claims: []models.ModeledCompoundClaim{claim}}
+			job := newTestJob(t, queue, &fakeFiles{}, testConfig())
+
+			// when
+			err := job.Run(context.Background())
+
+			// then
+			require.NoError(t, err)
+			assert.Equal(t, []failure{{
+				artifactID: claim.ArtifactID,
+				message:    "locate the file: the file is not in our bucket, and the checksum job kept no copy of it (copy status " + string(copyStatus) + ")",
+			}}, queue.failures)
+			assert.Empty(t, queue.saved)
+		})
+	}
+}
+
+func Test_should_retry_when_a_claim_has_a_copy_status_the_job_does_not_know(t *testing.T) {
+	// given
+	claim := archiveClaim(ptr(models.CopyStatus("archived_elsewhere")), "")
+	queue := &fakeQueue{claims: []models.ModeledCompoundClaim{claim}}
+	job := newTestJob(t, queue, &fakeFiles{}, testConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: a code bug, not a fact about the file, so the set is not failed for good at once.
+	require.NoError(t, err)
+	require.Len(t, queue.failures, 1)
+	assert.Equal(t, `locate the file: unknown copy status "archived_elsewhere"`, queue.failures[0].message)
+	assert.Equal(t, ptr(testNow.Add(10*time.Minute)), queue.failures[0].retryAt)
 }
 
 func Test_should_retry_after_a_doubling_delay_and_then_fail_when_the_file_cannot_be_opened(t *testing.T) {
@@ -312,6 +428,14 @@ func Test_should_refuse_a_config_when_a_setting_is_out_of_range(t *testing.T) {
 		"negative claim time": withChange(func(cfg *Config) { cfg.ClaimFor = -time.Minute }),
 		"no recent window":    withChange(func(cfg *Config) { cfg.RecentWindow = 0 }),
 		"no fill batch":       withChange(func(cfg *Config) { cfg.FillBatchSize = 0 }),
+		"archive fill without archive files": withChange(func(cfg *Config) {
+			cfg.ArchiveFill = true
+			cfg.MaxFilesPerRun = 500
+		}),
+		"archive fill without a file cap": withChange(func(cfg *Config) {
+			cfg.ArchiveFiles = true
+			cfg.ArchiveFill = true
+		}),
 	}
 	for name, cfg := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -337,6 +461,103 @@ func Test_should_give_recent_uploads_sets_and_leave_older_files_alone_when_the_h
 	assert.Equal(t, testNow.Add(-48*time.Hour), queue.recentSince)
 	assert.Empty(t, queue.pageAfter, "no historical fill")
 	assert.Equal(t, maxAttempts, queue.maxAttempts)
+}
+
+func Test_should_queue_no_archive_file_when_both_archive_switches_are_off(t *testing.T) {
+	// given: both archive switches off.
+	queue := &fakeQueue{}
+	job := newTestJob(t, queue, &fakeFiles{}, testConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, queue.recentArchive, "the recent window takes uploads only")
+	assert.Empty(t, queue.copiedAfter, "no archive fill")
+	assert.Zero(t, queue.pendingAsked)
+}
+
+func Test_should_let_the_recent_window_take_copied_archive_files_when_archive_files_is_on(t *testing.T) {
+	// given
+	queue := &fakeQueue{}
+	cfg := testConfig()
+	cfg.ArchiveFiles = true
+	job := newTestJob(t, queue, &fakeFiles{}, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, queue.recentArchive)
+	assert.Empty(t, queue.copiedAfter, "the fill is a switch of its own")
+}
+
+func archiveFillConfig(maxFilesPerRun int) Config {
+	cfg := testConfig()
+	cfg.ArchiveFiles = true
+	cfg.ArchiveFill = true
+	cfg.MaxFilesPerRun = maxFilesPerRun
+	return cfg
+}
+
+func Test_should_top_the_queue_up_to_the_file_cap_when_the_archive_fill_is_on(t *testing.T) {
+	// given: 3 sets pending, a cap of 5, and pages of two artifacts with one copied archive
+	// file each.
+	first, second := uuid.New(), uuid.New()
+	queue := &fakeQueue{pending: 3, copiedPages: []models.MissingSetsPage{
+		{Scanned: 2, Added: 1, LastArtifactID: first},
+		{Scanned: 2, Added: 1, LastArtifactID: second},
+		{Scanned: 2, Added: 1, LastArtifactID: uuid.New()},
+	}}
+	job := newTestJob(t, queue, &fakeFiles{}, archiveFillConfig(5))
+	pauses := 0
+	job.sleep = func(context.Context, time.Duration) error {
+		pauses++
+		return nil
+	}
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: two pages fill the room of two; the third is never asked for.
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{uuid.Nil, first}, queue.copiedAfter)
+	assert.Equal(t, []int64{2, 1}, queue.copiedRoom, "each page gets the room left")
+	assert.Equal(t, 1, pauses, "a pause between the two pages")
+}
+
+func Test_should_stop_the_archive_fill_at_a_short_page_when_fewer_files_are_left_than_the_room(t *testing.T) {
+	// given
+	first := uuid.New()
+	queue := &fakeQueue{copiedPages: []models.MissingSetsPage{
+		{Scanned: 2, Added: 1, LastArtifactID: first},
+		{Scanned: 1, Added: 0, LastArtifactID: uuid.New()},
+	}}
+	job := newTestJob(t, queue, &fakeFiles{}, archiveFillConfig(10))
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{uuid.Nil, first}, queue.copiedAfter)
+	assert.Equal(t, []int64{10, 9}, queue.copiedRoom)
+}
+
+func Test_should_add_no_archive_file_when_the_queue_already_holds_a_run_of_files(t *testing.T) {
+	// given
+	queue := &fakeQueue{pending: 5}
+	job := newTestJob(t, queue, &fakeFiles{}, archiveFillConfig(5))
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 1, queue.pendingAsked)
+	assert.Empty(t, queue.copiedAfter)
 }
 
 func Test_should_page_through_every_artifact_and_pause_between_pages_when_the_historical_fill_is_on(t *testing.T) {
