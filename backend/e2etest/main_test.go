@@ -45,6 +45,10 @@ var (
 	testServer *httptest.Server
 	// logOnlyTestServer shares the database with testServer but only logs schema violations.
 	logOnlyTestServer *httptest.Server
+	// requestKeysLogOnlyServer shares the database with testServer, enforces the schema rules,
+	// and only logs request keys outside the request type, as production does while that rule
+	// rolls out.
+	requestKeysLogOnlyServer *httptest.Server
 	// limitedExtractionServer allows one extraction at a time and three per user per minute.
 	limitedExtractionServer *httptest.Server
 	// timeoutExtractionServer allows one extraction at a time and gives the parser no time at all.
@@ -60,9 +64,12 @@ var (
 	adminToken          string
 )
 
+// enforceAllValidation enforces every validation rule, as dev and local configs do.
+var enforceAllValidation = validation.Config{Mode: validation.ModeEnforce, RequestKeys: validation.ModeEnforce}
+
 // testRouterOptions configures one of the test servers that TestMain starts.
 type testRouterOptions struct {
-	validationMode validation.Mode
+	validation validation.Config
 	// limitExtraction allows one extraction at a time and three per user per minute.
 	limitExtraction bool
 	// extractionTimeout, when set, replaces the time one extraction may spend parsing.
@@ -177,7 +184,7 @@ func TestMain(m *testing.M) {
 	newTestRouter := func(options testRouterOptions) http.Handler {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
-			options.validationMode,
+			options.validation,
 		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion).WithSelfApproval(options.selfApproval)
 		if options.limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
@@ -197,29 +204,37 @@ func TestMain(m *testing.M) {
 		})
 		return router
 	}
-	testServer = httptest.NewServer(newTestRouter(testRouterOptions{validationMode: validation.ModeEnforce}))
-	logOnlyTestServer = httptest.NewServer(newTestRouter(testRouterOptions{validationMode: validation.ModeLogOnly}))
+	testServer = httptest.NewServer(newTestRouter(testRouterOptions{validation: enforceAllValidation}))
+	logOnlyTestServer = httptest.NewServer(newTestRouter(testRouterOptions{validation: validation.Config{
+		Mode:        validation.ModeLogOnly,
+		RequestKeys: validation.ModeLogOnly,
+	}}))
+	requestKeysLogOnlyServer = httptest.NewServer(newTestRouter(testRouterOptions{validation: validation.Config{
+		Mode:        validation.ModeEnforce,
+		RequestKeys: validation.ModeLogOnly,
+	}}))
 	limitedExtractionServer = httptest.NewServer(newTestRouter(testRouterOptions{
-		validationMode:  validation.ModeEnforce,
+		validation:      enforceAllValidation,
 		limitExtraction: true,
 	}))
 	timeoutExtractionServer = httptest.NewServer(newTestRouter(testRouterOptions{
-		validationMode:    validation.ModeEnforce,
+		validation:        enforceAllValidation,
 		extractionTimeout: time.Nanosecond,
 	}))
 	entryDeletionServer = httptest.NewServer(newTestRouter(testRouterOptions{
-		validationMode: validation.ModeEnforce,
-		entryDeletion:  true,
+		validation:    enforceAllValidation,
+		entryDeletion: true,
 	}))
 	selfApprovalServer = httptest.NewServer(newTestRouter(testRouterOptions{
-		validationMode: validation.ModeEnforce,
-		selfApproval:   true,
+		validation:   enforceAllValidation,
+		selfApproval: true,
 	}))
 
 	code := m.Run()
 
 	testServer.Close()
 	logOnlyTestServer.Close()
+	requestKeysLogOnlyServer.Close()
 	limitedExtractionServer.Close()
 	timeoutExtractionServer.Close()
 	entryDeletionServer.Close()

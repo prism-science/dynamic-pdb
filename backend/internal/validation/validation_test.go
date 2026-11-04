@@ -501,6 +501,48 @@ func Test_should_reject_reserved_key_when_it_starts_with_double_underscore_at_an
 	}, fieldErrors)
 }
 
+func Test_should_not_point_to_extensions_when_object_has_no_extensions_field(t *testing.T) {
+	// given
+	raw := map[string]any{"value": 1, "colour": "blue"}
+
+	// when
+	fieldErrors := ObjectKeys(Root.Field("nested"), raw, objectKeysNested{})
+
+	// then
+	assert.Equal(t, []FieldError{
+		{Pointer: "/nested/colour", Code: CodeUnknownField, Detail: "is not a field of this object"},
+	}, fieldErrors)
+}
+
+type requestKeysShape struct {
+	Title    string            `json:"title"`
+	Metadata map[string]any    `json:"metadata"`
+	Items    []requestKeysItem `json:"items"`
+}
+
+type requestKeysItem struct {
+	Name string `json:"name"`
+}
+
+func Test_should_leave_field_to_its_own_rule_when_request_keys_are_checked(t *testing.T) {
+	// given
+	raw := map[string]any{
+		"title":    "kept",
+		"metadata": map[string]any{"__internal": 1, "free": 2},
+		"items":    []any{map[string]any{"name": "a", "metadata": map[string]any{}}},
+	}
+
+	// when
+	requestErrors := RequestKeys(Root, raw, requestKeysShape{}, "metadata")
+	objectErrors := ObjectKeys(Root, raw, requestKeysShape{})
+
+	// then
+	assert.Equal(t, []FieldError{
+		{Pointer: "/items/0/metadata", Code: CodeUnknownField, Detail: "is not a field of this object"},
+	}, requestErrors, "an undeclared key is reported even when a declared field elsewhere has that name")
+	assert.Equal(t, []Pointer{"/items/0/metadata", "/metadata/__internal"}, pointersOf(objectErrors))
+}
+
 func Test_should_report_mutation_when_it_is_not_a_substitution(t *testing.T) {
 	// given
 	entities := []models.DepositorPolymerEntity{{

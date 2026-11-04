@@ -896,20 +896,64 @@ func Test_should_allow_artifact_as_input_and_output_when_run_artifacts_migrated(
 	require.Error(t, duplicateErr)
 }
 
-func Test_should_keep_one_active_revision_index_when_migrations_applied(t *testing.T) {
+// The old-shape fixture's e_plain entry and m_plain model each have one active revision.
+// e_plain has no PDB reference, so entry_revisions_active_pdb_ref_idx cannot be the index that
+// refuses a second one.
+const (
+	fixturePlainEntry = "e_plain"
+	fixturePlainModel = "m_plain"
+)
+
+func Test_should_refuse_second_active_entry_revision_when_entry_has_one(t *testing.T) {
 	// given
 	fixture := newMigratedFixture(t)
 
 	// when
-	var indexes []string
-	require.NoError(t, fixture.database.Select(&indexes, `
-		select indexname from pg_indexes
-		where schemaname = current_schema() and indexdef like '%UNIQUE%' and indexdef like '%state = ''active''%'
-		  and tablename in ('entry_revisions', 'model_revisions') and indexname like '%\_active\_idx'
-		order by indexname`))
+	_, err := fixture.database.Exec(`
+		insert into entry_revisions (id, entry_id, state, created_by) values ($1, $2, 'active', $3)`,
+		uuid.New(), fixturePlainEntry, fixtureUser)
 
 	// then
-	assert.Equal(t, []string{"entry_revisions_active_idx", "model_revisions_active_idx"}, indexes)
+	requireUniqueViolation(t, err, "entry_revisions_active_idx")
+}
+
+func Test_should_refuse_second_active_model_revision_when_model_has_one(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+
+	// when
+	_, err := fixture.database.Exec(`
+		insert into model_revisions (id, model_id, state, title, created_by) values ($1, $2, 'active', 'second', $3)`,
+		uuid.New(), fixturePlainModel, fixtureUser)
+
+	// then
+	requireUniqueViolation(t, err, "model_revisions_active_idx")
+}
+
+func Test_should_accept_in_review_revisions_when_entry_and_model_have_an_active_one(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+
+	// when
+	_, entryErr := fixture.database.Exec(`
+		insert into entry_revisions (id, entry_id, state, created_by) values ($1, $2, 'in_review', $3)`,
+		uuid.New(), fixturePlainEntry, fixtureUser)
+	_, modelErr := fixture.database.Exec(`
+		insert into model_revisions (id, model_id, state, title, created_by) values ($1, $2, 'in_review', 'next', $3)`,
+		uuid.New(), fixturePlainModel, fixtureUser)
+
+	// then
+	require.NoError(t, entryErr, "only active revisions are limited to one")
+	require.NoError(t, modelErr, "only active revisions are limited to one")
+}
+
+// requireUniqueViolation asserts that err is the database refusing a row for unique index constraint.
+func requireUniqueViolation(t *testing.T, err error, constraint string) {
+	t.Helper()
+	var pqErr *pq.Error
+	require.ErrorAs(t, err, &pqErr)
+	assert.Equal(t, pq.ErrorCode("23505"), pqErr.Code)
+	assert.Equal(t, constraint, pqErr.Constraint)
 }
 
 type inventoryRow struct {

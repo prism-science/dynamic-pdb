@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -150,7 +149,8 @@ func (s *Server) listEntryRevisionsByProteinSequence(
 
 func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	var req CreateEntryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	_, rawBody, err := decodeRequestBody(r, &req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
@@ -163,7 +163,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	if s.writeMutationError(r.Context(), w, relatedErr, "create entry") {
 		return
 	}
-	schemaErr := s.checkSchema(r, createEntryRequestErrors(req))
+	schemaErr := s.checkSchema(r, requestKeyErrors(rawBody, CreateEntryRequest{}), createEntryRequestErrors(req))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create entry") {
 		return
 	}
@@ -426,7 +426,8 @@ func applyEntryRevisionChange(
 
 func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID string) {
 	var request CreateModelRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	_, rawBody, err := decodeRequestBody(r, &request)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
@@ -435,7 +436,9 @@ func (s *Server) CreateModel(w http.ResponseWriter, r *http.Request, entryID str
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
-	schemaErr := s.checkSchema(r, createModelRequestErrors(validation.Root.Field("model"), request.Model))
+	schemaErr := s.checkSchema(r,
+		requestKeyErrors(rawBody, CreateModelRequest{}),
+		createModelRequestErrors(validation.Root.Field("model"), request.Model))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create model") {
 		return
 	}
@@ -646,7 +649,7 @@ func (s *Server) CreateModelRevision(w http.ResponseWriter, r *http.Request, ent
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
-	schemaErr := s.checkSchema(r, modelRevisionChangeErrors(payload))
+	schemaErr := s.checkSchema(r, requestKeyErrors(payload.RawBody, CreateModelRevisionRequest{}), modelRevisionChangeErrors(payload))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create model revision") {
 		return
 	}
@@ -2212,6 +2215,8 @@ func ptr[T any](value T) *T { return &value }
 type createEntryRevisionPayload struct {
 	Request     CreateEntryRevisionRequest
 	EntryFields map[string]json.RawMessage
+	// RawBody is the whole body as plain JSON values, for requestKeyErrors.
+	RawBody any
 }
 
 type rawCreateEntryRevisionPayload struct {
@@ -2219,12 +2224,9 @@ type rawCreateEntryRevisionPayload struct {
 }
 
 func decodeCreateEntryRevisionPayload(r *http.Request) (createEntryRevisionPayload, error) {
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return createEntryRevisionPayload{}, fmt.Errorf("read entry revision request: %w", err)
-	}
 	var request CreateEntryRevisionRequest
-	if err := json.Unmarshal(data, &request); err != nil {
+	data, rawBody, err := decodeRequestBody(r, &request)
+	if err != nil {
 		return createEntryRevisionPayload{}, fmt.Errorf("decode entry revision request: %w", err)
 	}
 	var raw rawCreateEntryRevisionPayload
@@ -2234,12 +2236,15 @@ func decodeCreateEntryRevisionPayload(r *http.Request) (createEntryRevisionPaylo
 	return createEntryRevisionPayload{
 		Request:     request,
 		EntryFields: raw.Entry,
+		RawBody:     rawBody,
 	}, nil
 }
 
 type createModelRevisionPayload struct {
 	Request     CreateModelRevisionRequest
 	ModelFields map[string]json.RawMessage
+	// RawBody is the whole body as plain JSON values, for requestKeyErrors.
+	RawBody any
 }
 
 type rawCreateModelRevisionPayload struct {
@@ -2247,19 +2252,16 @@ type rawCreateModelRevisionPayload struct {
 }
 
 func decodeCreateModelRevisionPayload(r *http.Request) (createModelRevisionPayload, error) {
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		return createModelRevisionPayload{}, fmt.Errorf("read model revision request: %w", err)
-	}
 	var request CreateModelRevisionRequest
-	if err := json.Unmarshal(data, &request); err != nil {
+	data, rawBody, err := decodeRequestBody(r, &request)
+	if err != nil {
 		return createModelRevisionPayload{}, fmt.Errorf("decode model revision request: %w", err)
 	}
 	var raw rawCreateModelRevisionPayload
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return createModelRevisionPayload{}, fmt.Errorf("decode model revision field presence: %w", err)
 	}
-	return createModelRevisionPayload{Request: request, ModelFields: raw.Model}, nil
+	return createModelRevisionPayload{Request: request, ModelFields: raw.Model, RawBody: rawBody}, nil
 }
 
 var entryRevisionFields = map[string]struct{}{

@@ -292,7 +292,7 @@ func Test_should_accept_archive_metric_without_software_when_rcsb_names_no_progr
 	metrics := []models.Metric{{Key: models.MetricKeyRWork, Value: 0.135}}
 
 	// when
-	fieldErrors := modelUpdateErrors(models.ModelRevision{}, metrics)
+	fieldErrors := modelUpdateErrors(models.ModelRevision{}, metrics, nil)
 
 	// then
 	assert.Empty(t, fieldErrors)
