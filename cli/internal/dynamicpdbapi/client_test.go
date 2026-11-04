@@ -226,6 +226,69 @@ func Test_should_decode_s3_xml_error_when_upload_part_failed(t *testing.T) {
 	assert.Equal(t, "Your socket connection to the server was not read from or written to within the timeout period.", backendError.Message)
 }
 
+func Test_should_report_every_problem_with_its_pointer_when_create_model_gets_422(t *testing.T) {
+	// given
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", jsonAPIMediaType)
+		response.WriteHeader(http.StatusUnprocessableEntity)
+		err := json.NewEncoder(response).Encode(map[string]any{
+			"errors": []map[string]any{
+				{"status": "422", "code": "REQUIRED", "detail": "is required", "source": map[string]string{"pointer": "/model/runs/0/software_version"}},
+				{"status": "422", "code": "INVALID_VALUE", "detail": "must be one of r_work, r_free", "source": map[string]string{"pointer": "/model/metrics/1/key"}},
+				{"status": "422", "code": "REQUIRED", "title": "needs at least one input artifact", "source": map[string]string{"pointer": "/model/runs/0/artifacts"}},
+			},
+		})
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "jwt-token")
+
+	// when
+	_, err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Title: "model"}})
+
+	// then
+	require.Error(t, err)
+	var backendError *Error
+	require.True(t, errors.As(err, &backendError))
+	assert.Equal(t, http.StatusUnprocessableEntity, backendError.Status)
+	assert.Equal(t, "REQUIRED", backendError.Code)
+	assert.Equal(t, "is required", backendError.Message)
+	assert.Equal(t, []Problem{
+		{Code: "REQUIRED", Detail: "is required", Pointer: "/model/runs/0/software_version"},
+		{Code: "INVALID_VALUE", Detail: "must be one of r_work, r_free", Pointer: "/model/metrics/1/key"},
+		{Code: "REQUIRED", Detail: "needs at least one input artifact", Pointer: "/model/runs/0/artifacts"},
+	}, backendError.Problems)
+	assert.Equal(t, "dynamicpdbapi: backend 422: 3 problems:\n"+
+		"  /model/runs/0/software_version: REQUIRED: is required\n"+
+		"  /model/metrics/1/key: INVALID_VALUE: must be one of r_work, r_free\n"+
+		"  /model/runs/0/artifacts: REQUIRED: needs at least one input artifact", backendError.Error())
+}
+
+func Test_should_keep_one_line_message_when_error_has_one_problem_without_pointer(t *testing.T) {
+	// given
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", jsonAPIMediaType)
+		response.WriteHeader(http.StatusConflict)
+		err := json.NewEncoder(response).Encode(map[string]any{
+			"errors": []map[string]any{
+				{"status": "409", "code": "ENTRY_PDB_REF_EXISTS", "detail": "entry with this PDB reference already exists"},
+			},
+		})
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "jwt-token")
+
+	// when
+	_, err := client.CreateModel(context.Background(), "entry-1", CreateModelRequest{Model: CreateModelData{Title: "model"}})
+
+	// then
+	require.Error(t, err)
+	var backendError *Error
+	require.True(t, errors.As(err, &backendError))
+	assert.Equal(t, "dynamicpdbapi: backend 409: ENTRY_PDB_REF_EXISTS: entry with this PDB reference already exists", backendError.Error())
+}
+
 func ptr[T any](value T) *T {
 	return &value
 }

@@ -90,6 +90,8 @@ func (c *RemoteAuthClient) ExchangeGitHubToken(ctx context.Context, githubToken 
 	return token, nil
 }
 
+// decodeError reads a failed response: a JSON:API error document (every error object
+// becomes a Problem), a plain {code, message} object, an S3 XML error, or plain text.
 func decodeError(status int, body []byte) error {
 	var payload struct {
 		Code    string `json:"code"`
@@ -100,14 +102,26 @@ func decodeError(status int, body []byte) error {
 			Code   string `json:"code"`
 			Title  string `json:"title"`
 			Detail string `json:"detail"`
+			Source *struct {
+				Pointer string `json:"pointer"`
+			} `json:"source"`
 		} `json:"errors"`
 	}
+	var problems []Problem
 	if err := json.Unmarshal(body, &jsonAPIPayload); err == nil && len(jsonAPIPayload.Errors) > 0 {
-		payload.Code = jsonAPIPayload.Errors[0].Code
-		payload.Message = jsonAPIPayload.Errors[0].Detail
-		if payload.Message == "" {
-			payload.Message = jsonAPIPayload.Errors[0].Title
+		problems = make([]Problem, 0, len(jsonAPIPayload.Errors))
+		for _, errorObject := range jsonAPIPayload.Errors {
+			problem := Problem{Code: errorObject.Code, Detail: errorObject.Detail}
+			if problem.Detail == "" {
+				problem.Detail = errorObject.Title
+			}
+			if errorObject.Source != nil {
+				problem.Pointer = errorObject.Source.Pointer
+			}
+			problems = append(problems, problem)
 		}
+		payload.Code = problems[0].Code
+		payload.Message = problems[0].Detail
 	} else if err := json.Unmarshal(body, &payload); err != nil {
 		var xmlPayload struct {
 			Code    string `xml:"Code"`
@@ -123,7 +137,7 @@ func decodeError(status int, body []byte) error {
 	if payload.Message == "" {
 		payload.Message = http.StatusText(status)
 	}
-	backendError := &Error{Status: status, Code: payload.Code, Message: payload.Message}
+	backendError := &Error{Status: status, Code: payload.Code, Message: payload.Message, Problems: problems}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return fmt.Errorf("dynamicpdbapi: authorization failed: %w", errors.Join(ErrUnauthorized, backendError))
 	}

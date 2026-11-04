@@ -2,6 +2,8 @@ package dynamicpdbapi
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -14,17 +16,65 @@ type TokenResponse struct {
 	Login       string    `json:"login"`
 }
 
+// Error is a failed backend or storage response. Code and Message describe the first
+// problem; Problems lists every JSON:API error object the backend sent, such as one
+// per schema violation in a 422.
 type Error struct {
-	Status  int
+	Status   int
+	Code     string
+	Message  string
+	Problems []Problem
+}
+
+// Problem is one JSON:API error object. Pointer is the JSON pointer of the request
+// field the problem is about, such as /model/runs/0/software_version, or empty when
+// the problem is not about one field.
+type Problem struct {
 	Code    string
-	Message string
+	Detail  string
+	Pointer string
 }
 
 func (e *Error) Error() string {
-	if e.Code == "" {
-		return fmt.Sprintf("dynamicpdbapi: backend %d: %s", e.Status, e.Message)
+	header := fmt.Sprintf("dynamicpdbapi: backend %d", e.Status)
+	if len(e.Problems) <= 1 && !e.hasPointer() {
+		if e.Code == "" {
+			return fmt.Sprintf("%s: %s", header, e.Message)
+		}
+		return fmt.Sprintf("%s: %s: %s", header, e.Code, e.Message)
 	}
-	return fmt.Sprintf("dynamicpdbapi: backend %d: %s: %s", e.Status, e.Code, e.Message)
+	var message strings.Builder
+	message.WriteString(header)
+	message.WriteString(": ")
+	message.WriteString(countNoun(len(e.Problems), "problem"))
+	message.WriteString(":")
+	for _, problem := range e.Problems {
+		message.WriteString("\n  ")
+		message.WriteString(problem.String())
+	}
+	return message.String()
+}
+
+func (e *Error) hasPointer() bool {
+	return slices.ContainsFunc(e.Problems, func(problem Problem) bool { return problem.Pointer != "" })
+}
+
+// String prints the problem as "pointer: CODE: detail", leaving out empty parts.
+func (p Problem) String() string {
+	parts := make([]string, 0, 3)
+	for _, part := range []string{p.Pointer, p.Code, p.Detail} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ": ")
+}
+
+func countNoun(count int, noun string) string {
+	if count == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", count, noun)
 }
 
 type ListEntriesParams struct {
@@ -134,10 +184,15 @@ type CreateArtifactRequest struct {
 	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
+// CreateMetricRequest is one metric of a new model. A metric of a computed model
+// names the software that produced it or links to that run with RunID.
 type CreateMetricRequest struct {
 	ID    string  `json:"id"`
 	Key   string  `json:"key"`
 	Value float64 `json:"value"`
+	// SoftwareName and SoftwareVersion name the program that produced the value.
+	SoftwareName    *string `json:"software_name,omitempty"`
+	SoftwareVersion *string `json:"software_version,omitempty"`
 	// RunID names the run, in the same request, that produced the value.
 	RunID *string `json:"run_id,omitempty"`
 }
