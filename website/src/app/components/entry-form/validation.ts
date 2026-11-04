@@ -1,3 +1,5 @@
+import type { StructureModelType } from "@/lib/api/entries";
+
 import { COMPOUND_LIST_NAMES, compoundIdError } from "./compounds";
 import {
   COLLECTION_TEMPERATURE_RANGE,
@@ -16,7 +18,7 @@ import {
   type CompoundListFields,
   type FieldId,
 } from "./fields";
-import { isModelFile, parseRunParameters } from "./helpers";
+import { isModelFile, linkedRunId, parseRunParameters } from "./helpers";
 import {
   advice,
   invalid,
@@ -50,8 +52,9 @@ import type {
 
 // The checks a form runs before it lets the depositor submit. They repeat
 // the API's own rules (required title and method, resolution above zero,
-// mutation format, organism name, allowed purposes and model types) so a
-// mistake shows beside its field instead of coming back as a 422, and add
+// mutation format, organism name, allowed purposes and model types, and a
+// computed model's programs and score software) so a mistake shows beside
+// its field instead of coming back as a 422, and add
 // the format checks the API leaves to the client: PDB ID, CCD ID, pH and
 // temperatures. Related datasets repeat the API's rules exactly, because the
 // API refuses a malformed one in every validation mode. A space group that does not look like Hermann–Mauguin
@@ -64,6 +67,14 @@ const HERMANN_MAUGUIN_PATTERN =
 const TAXONOMY_ID_PATTERN = /^[1-9][0-9]*$/;
 
 const MODEL_FILE_MISSING_LINE = "add exactly one PDB/mmCIF model file";
+
+const DEPOSITED_MODEL_TYPE: StructureModelType = "Deposited";
+
+const PROGRAM_MISSING_LINE = "add the program that made this model";
+const PROGRAM_INPUT_MISSING_LINE = "choose at least one input file";
+const PROGRAM_OUTPUT_MISSING_LINE = "choose at least one output file of this model";
+const METRIC_SOFTWARE_MISSING_LINE =
+  "name the software that computed the scores, or choose the program step that did";
 
 export function entryFormMessages(
   title: string,
@@ -152,12 +163,34 @@ function relatedDatasetMessages(datasets: RelatedDatasetDraft[]): FieldMessage[]
   return messages;
 }
 
-export function modelFormMessages(draft: ModelDraft): FieldMessage[] {
+/**
+ * Whether the API's computed-model rules apply to a model of this type: at
+ * least one run with software, version, inputs and outputs, and scores that
+ * name their software or their run. Only a stated Deposited model is exempt;
+ * a blank or unknown type counts as computed, as ModelRevision.IsComputed in
+ * backend/internal/validation/provenance.go decides it.
+ */
+export function isComputedModelType(modelType: string): boolean {
+  return modelType.trim() !== DEPOSITED_MODEL_TYPE;
+}
+
+/**
+ * The add-model form's checks. Depositors cannot choose Deposited, so every
+ * model added here is computed and needs its programs and score software.
+ *
+ * @param baselineFileIds ids of the entry's own files, which a program may
+ *   read as inputs (but never write as outputs).
+ */
+export function modelFormMessages(
+  draft: ModelDraft,
+  baselineFileIds: ReadonlySet<string> = new Set(),
+): FieldMessage[] {
   return [
     ...modelOverviewMessages(draft, { purpose: false, modelType: false, compounds: false }),
     ...modelFileMessages(draft),
     ...metricMessages(draft.metrics),
-    ...programMessages(draft),
+    ...metricSoftwareMessages(draft.metrics, newModelSoftwareRule(draft)),
+    ...programMessages(draft, baselineFileIds),
   ];
 }
 
@@ -168,6 +201,7 @@ export function modelFormMessages(draft: ModelDraft): FieldMessage[] {
 export function modelEditMessages(
   draft: ModelEditDraft,
   locks: ModelLocks,
+  metricsSent: MetricsSent,
 ): FieldMessage[] {
   return [
     ...modelOverviewMessages(draft, {
@@ -176,7 +210,63 @@ export function modelEditMessages(
       compounds: locks.fields.ligands !== undefined,
     }),
     ...metricMessages(draft.metrics),
+    ...metricSoftwareMessages(draft.metrics, editedModelSoftwareRule(draft, metricsSent)),
   ];
+}
+
+/** Says whether a score set must name its software. */
+export type MetricSoftwareRule = (metric: MetricDraft) => boolean;
+
+/**
+ * The add-model form's rule: a computed model's scores name their software
+ * unless they are linked to one of the draft's programs.
+ */
+export function newModelSoftwareRule(draft: ModelDraft): MetricSoftwareRule {
+  const programIds = new Set(draft.programs.map((program) => program.id));
+  return (metric) =>
+    isComputedModelType(draft.modelType) && metricNeedsSoftware(metric, programIds);
+}
+
+/** What the edit form sends of the metrics. */
+export type MetricsSent = {
+  /** Metrics are sent only when one changed, and checked only then. */
+  changed: boolean;
+  /** Ids of the model's stored runs, which the new revision inherits. */
+  storedRunIds: ReadonlySet<string>;
+};
+
+/**
+ * The edit form's rule: when the change sends the metrics of a computed
+ * model, each score set names its software unless it is stored with one of
+ * the model's runs.
+ */
+export function editedModelSoftwareRule(
+  draft: ModelEditDraft,
+  { changed, storedRunIds }: MetricsSent,
+): MetricSoftwareRule {
+  return (metric) =>
+    changed &&
+    isComputedModelType(draft.modelType) &&
+    metricNeedsSoftware(metric, storedRunIds);
+}
+
+/** A score set holding a score and linked to none of runIds. */
+function metricNeedsSoftware(metric: MetricDraft, runIds: ReadonlySet<string>): boolean {
+  const hasScore = METRIC_FIELDS.some(
+    (field) => (metric.values[field.key] ?? "").trim() !== "",
+  );
+  return hasScore && linkedRunId(metric, runIds) === null;
+}
+
+function metricSoftwareMessages(
+  metrics: MetricDraft[],
+  softwareRequired: MetricSoftwareRule,
+): FieldMessage[] {
+  return metrics.flatMap((metric) =>
+    softwareRequired(metric) && !metric.softwareName?.trim()
+      ? [{ ...required("model.metrics.software", metric.id), message: METRIC_SOFTWARE_MISSING_LINE }]
+      : [],
+  );
 }
 
 function modelOverviewMessages(
@@ -415,7 +505,21 @@ function metricMessages(metrics: MetricDraft[]): FieldMessage[] {
   );
 }
 
-function programMessages(draft: ModelDraft): FieldMessage[] {
+/**
+ * The programs (runs) of a model. A computed model needs at least one, and
+ * each needs a version, an input and an output: the API's ModelRuns rule.
+ * Only links to files the request carries count. An input may be one of this
+ * model's files or one of the entry's; an output only one of this model's.
+ */
+function programMessages(
+  draft: ModelDraft,
+  baselineFileIds: ReadonlySet<string>,
+): FieldMessage[] {
+  const computed = isComputedModelType(draft.modelType);
+  if (computed && draft.programs.length === 0) {
+    return [{ ...required("model.runs"), message: PROGRAM_MISSING_LINE }];
+  }
+  const modelFileIds = new Set(draft.files.map((file) => file.id));
   return draft.programs.flatMap((program, index) => {
     const itemLabel = `step ${index + 1}`;
     const messages: FieldMessage[] = [];
@@ -423,6 +527,26 @@ function programMessages(draft: ModelDraft): FieldMessage[] {
       messages.push(
         invalid("run.name", "name the program or remove this step", program.id, itemLabel),
       );
+    }
+    if (computed) {
+      if (!program.version.trim()) {
+        messages.push(required("run.version", program.id, itemLabel));
+      }
+      const hasInput = program.inputFileIds.some(
+        (id) => modelFileIds.has(id) || baselineFileIds.has(id),
+      );
+      if (!hasInput) {
+        messages.push({
+          ...required("run.files", program.id, itemLabel),
+          message: PROGRAM_INPUT_MISSING_LINE,
+        });
+      }
+      if (!program.outputFileIds.some((id) => modelFileIds.has(id))) {
+        messages.push({
+          ...required("run.files", program.id, itemLabel),
+          message: PROGRAM_OUTPUT_MISSING_LINE,
+        });
+      }
     }
     if (parseRunParameters(program.parameters) === null) {
       messages.push(

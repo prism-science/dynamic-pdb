@@ -37,6 +37,13 @@ export type MetricDraft = {
   /** The program that computed the scores; a stored draft may lack it. */
   softwareName?: string;
   softwareVersion?: string;
+  /**
+   * The run that computed the scores, sent as each score's run_id. In the
+   * add-model form it is the id of one of the draft's programs, chosen by the
+   * depositor; in the edit form, the stored run the scores came with.
+   * Undefined when the scores name their software instead.
+   */
+  runId?: string;
 };
 
 /**

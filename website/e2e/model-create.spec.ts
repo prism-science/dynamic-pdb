@@ -37,7 +37,12 @@ async function linkFile(step: Locator, side: "Inputs" | "Outputs", file: UploadF
   await expect(step.getByRole("button", { name: `Unlink ${file.name}` })).toBeVisible();
 }
 
-test("should save the model for review when it has an uploaded coordinate file and a complete program", async ({
+/** The list beside the disabled submit button: what still stops the save. */
+function submitBlockers(page: Page): Locator {
+  return page.getByRole("status").filter({ hasText: "Before you can add the model" });
+}
+
+test("should save the model for review when it has an uploaded coordinate file, a complete program and scores linked to it", async ({
   page,
   request,
   submitterApi,
@@ -58,19 +63,26 @@ test("should save the model for review when it has an uploaded coordinate file a
   await step.getByLabel("Version").fill("1.21.2");
   await linkFile(step, "Inputs", reflections);
   await linkFile(step, "Outputs", model);
+  await page.getByRole("button", { name: "Add metrics" }).click();
+  await page.getByLabel("R-work", { exact: true }).fill("0.196");
+  await page.getByLabel("Computed by").selectOption({ label: "Step 1: phenix.refine 1.21.2" });
 
   // when
   await page.getByRole("button", { name: "Add model" }).click();
 
   // then the model waits for review. Its run is not readable until a reviewer
   // publishes it, but in enforce mode (checked by global-setup.ts) the backend
-  // saves a model only together with a complete run.
+  // saves a model only together with a complete run, and scores only with
+  // their software or their run.
   await page.waitForURL(`**/entries/${entryId}`);
   const group = await submitterApi.inReviewGroup({ entryId });
   expect(group.modelRevisions).toHaveLength(1);
   const { model_id: modelId, id: revisionId } = group.modelRevisions[0];
   const revision = await submitterApi.modelRevision(entryId, modelId, revisionId);
   expect(revision).toMatchObject({ state: "in_review", title });
+  expect(revision.metrics).toEqual([
+    expect.objectContaining({ key: "r_work", value: 0.196, run_id: expect.any(String) }),
+  ]);
   // and the coordinate file is the one stored in the S3 stand-in
   const stored = revision.artifacts.find((artifact) => artifact.name === model.name);
   expect(stored?.uri.startsWith(`${stack.s3URL}/${stack.s3Bucket}/`)).toBe(true);
@@ -79,33 +91,57 @@ test("should save the model for review when it has an uploaded coordinate file a
   expect(await download.body()).toEqual(model.buffer);
 });
 
-test("should mark the field beside the error when the backend rejects the model", async ({
+test("should list what the API requires until the program and the score software are complete", async ({
   page,
   submitterApi,
   reviewerApi,
   runTag,
 }) => {
-  // given a program with a name only: the form lets it through, and the
-  // backend in enforce mode answers 422 at /model/runs/0/software_version
-  const entryId = await createActiveEntry(submitterApi, reviewerApi, `T2-D 422 entry ${runTag}`);
+  // given a model with a coordinate file and a score, and no program yet
+  const entryId = await createActiveEntry(submitterApi, reviewerApi, `T2-D required entry ${runTag}`);
+  const model = coordinateFile(runTag);
+  const reflections = reflectionsFile(runTag);
   await page.goto(`/entries/${entryId}/models/new`);
-  await page.getByLabel("Title", { exact: true }).fill(`T2-D rejected model ${runTag}`);
-  await uploadFiles(page, [coordinateFile(runTag)]);
+  await page.getByLabel("Title", { exact: true }).fill(`T2-D required model ${runTag}`);
+  await uploadFiles(page, [model, reflections]);
+  await page.getByRole("button", { name: "Add metrics" }).click();
+  await page.getByLabel("R-work", { exact: true }).fill("0.196");
+  const addModel = page.getByRole("button", { name: "Add model" });
+  await expect(addModel).toBeDisabled();
+  await expect(submitBlockers(page)).toContainText("Programs: add the program that made this model");
+  await expect(submitBlockers(page)).toContainText(
+    "Software: name the software that computed the scores, or choose the program step that did",
+  );
+
+  // when the program has only a name
   await page.getByRole("button", { name: "Add program" }).click();
   const step = page.getByRole("group", { name: "Step 1" });
   await step.getByLabel("Name").fill("phenix.refine");
-  const addModel = page.getByRole("button", { name: "Add model" });
-  await expect(addModel).toBeEnabled();
 
-  // when
+  // then the list names what the API would refuse it for
+  await expect(addModel).toBeDisabled();
+  await expect(submitBlockers(page)).toContainText("Version (step 1): required");
+  await expect(submitBlockers(page)).toContainText(
+    "Inputs and outputs (step 1): choose at least one input file",
+  );
+  await expect(submitBlockers(page)).toContainText(
+    "Inputs and outputs (step 1): choose at least one output file of this model",
+  );
+
+  // when the program and the score software are complete
+  await step.getByLabel("Version").fill("1.21.2");
+  await linkFile(step, "Inputs", reflections);
+  await linkFile(step, "Outputs", model);
+  await page.getByLabel("Software (required)").fill("MolProbity");
+
+  // then the model saves, with the scores' software
+  await expect(submitBlockers(page)).toHaveCount(0);
   await addModel.click();
-
-  // then
-  await expect(
-    page.getByText("Dynamic PDB did not accept some values. They are marked below."),
-  ).toBeVisible();
-  await expect(step.locator("label").filter({ hasText: /^Version/ })).toContainText("Is required.");
-  await expect(page).toHaveURL(new RegExp(`/entries/${entryId}/models/new$`));
-  const groups = await submitterApi.inReviewGroups();
-  expect(groups.find((item) => item.entryId === entryId)).toBeUndefined();
+  await page.waitForURL(`**/entries/${entryId}`);
+  const group = await submitterApi.inReviewGroup({ entryId });
+  const { model_id: modelId, id: revisionId } = group.modelRevisions[0];
+  const revision = await submitterApi.modelRevision(entryId, modelId, revisionId);
+  expect(revision.metrics).toEqual([
+    expect.objectContaining({ key: "r_work", value: 0.196, software_name: "MolProbity" }),
+  ]);
 });

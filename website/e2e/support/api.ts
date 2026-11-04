@@ -56,6 +56,13 @@ export type ModelRevision = {
   state: RevisionState;
   title: string;
   artifacts: { id: string; name: string; type: string; uri: string; sha256: string | null }[];
+  metrics: {
+    key: string;
+    value: number;
+    software_name?: string | null;
+    software_version?: string | null;
+    run_id?: string | null;
+  }[];
 };
 
 /**

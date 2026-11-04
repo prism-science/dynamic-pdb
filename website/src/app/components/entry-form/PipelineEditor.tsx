@@ -178,9 +178,11 @@ export default function PipelineEditor({
                 selected={program.inputFileIds}
                 onChange={(next) => setLinks(program, "inputFileIds", next)}
               />
+              {/* The API takes outputs only from this model's own files: the
+                  entry's files existed before any of its runs. */}
               <FileLinkField
                 label="Outputs"
-                files={candidates}
+                files={files}
                 selected={program.outputFileIds}
                 onChange={(next) => setLinks(program, "outputFileIds", next)}
               />

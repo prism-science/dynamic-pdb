@@ -490,6 +490,7 @@ export function modelDraftFromModel(model: ModelDetail): ModelEditDraft {
       ),
       softwareName: group.softwareName ?? "",
       softwareVersion: group.softwareVersion ?? "",
+      ...(group.runId !== null ? { runId: group.runId } : {}),
     })),
   };
 }
@@ -630,9 +631,6 @@ function metricValues(
   locked: Partial<Record<MetricKey, ArchiveLock>>,
 ): Omit<CreateMetricRequest, "id">[] {
   const stored = model.metrics ?? [];
-  const runByGroup = new Map(
-    metricGroups(stored).map((group) => [group.id, group.runId]),
-  );
   const formKeys = new Set<string>(METRIC_FIELDS.map((field) => field.key));
   const values: Omit<CreateMetricRequest, "id">[] = stored
     .filter((metric) => locked[metric.key] || !formKeys.has(metric.key))
@@ -657,7 +655,7 @@ function metricValues(
         value,
         software_name: draft.softwareName?.trim() || null,
         software_version: draft.softwareVersion?.trim() || null,
-        run_id: runByGroup.get(draft.id) ?? null,
+        run_id: draft.runId ?? null,
       });
     }
   }

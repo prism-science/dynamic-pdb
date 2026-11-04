@@ -15,6 +15,7 @@ import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
 import { type FieldId, type SectionId } from "./fields";
 import { inlineMessages, type FieldMessage } from "./messages";
 import { emptyCompounds } from "./types";
+import { newModelSoftwareRule } from "./validation";
 import type { ModelDraft, ParsedFile } from "./types";
 import {
   ONE_MODEL_FILE_ERROR,
@@ -311,21 +312,24 @@ export default function ModelDraftFields({
               setMetrics={(next) =>
                 edit("evaluations", (current) => ({ ...current, metrics: next }))
               }
+              programs={draft.programs}
+              softwareRequired={newModelSoftwareRule(draft)}
             />
           </Field>
         </FormSection>
 
         <FormSection id="experiment">
-          <span className={styles.subLabel}>Software</span>
-          <PipelineEditor
-            programs={draft.programs}
-            files={draft.files}
-            baseline={baselineFiles}
-            messages={messages}
-            onChange={(next) =>
-              edit("experiment", (current) => ({ ...current, programs: next }))
-            }
-          />
+          <Field id="model.runs" messages={inline("model.runs")}>
+            <PipelineEditor
+              programs={draft.programs}
+              files={draft.files}
+              baseline={baselineFiles}
+              messages={messages}
+              onChange={(next) =>
+                edit("experiment", (current) => ({ ...current, programs: next }))
+              }
+            />
+          </Field>
         </FormSection>
       </div>
 

@@ -23,7 +23,11 @@ import {
 } from "./entry-form/revisionChanges";
 import { METRIC_FIELDS } from "./entry-form/types";
 import { useThumbnailUpload } from "./entry-form/useThumbnailUpload";
-import { modelEditMessages } from "./entry-form/validation";
+import {
+  editedModelSoftwareRule,
+  modelEditMessages,
+  type MetricsSent,
+} from "./entry-form/validation";
 import styles from "./entry-form/form.module.css";
 
 /**
@@ -68,7 +72,13 @@ export default function EditModelForm({
   });
   const changed = hasChanges(change);
 
-  const validationMessages = modelEditMessages(draft, locks);
+  // The stored runs stay with the new revision, so scores stored with one of
+  // them keep naming it as their run.
+  const metricsSent: MetricsSent = {
+    changed: change.metrics !== undefined,
+    storedRunIds: new Set(runs.map((run) => run.id)),
+  };
+  const validationMessages = modelEditMessages(draft, locks, metricsSent);
   const messages = [...validationMessages, ...apiMessages];
   const blockers = [
     ...blockerLines(validationMessages),
@@ -144,6 +154,7 @@ export default function EditModelForm({
               edit("evaluations", (current) => ({ ...current, metrics }))
             }
             locked={lockedMetrics}
+            softwareRequired={editedModelSoftwareRule(draft, metricsSent)}
           />
         </Field>
       </FormSection>
