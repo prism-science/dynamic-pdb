@@ -1,8 +1,18 @@
 import { basename } from "@/lib/parse/runLog";
 
+import type { MetricKey } from "@/lib/api/entries";
+
 import { compoundsAreUntouched, compoundsFromParsed } from "./compounds";
-import { emptyProgramDraft } from "./helpers";
-import type { ExpectedInput, MetricDraft, ModelDraft, ParsedFile, ProgramDraft } from "./types";
+import { emptyHeaderFills } from "./headerFills";
+import { emptyProgramDraft, isModelFile } from "./helpers";
+import type {
+  ExpectedInput,
+  HeaderFill,
+  MetricDraft,
+  ModelDraft,
+  ParsedFile,
+  ProgramDraft,
+} from "./types";
 import { METRIC_FIELDS } from "./types";
 
 // Reading a dropped file for what it already says about itself.
@@ -10,6 +20,14 @@ import { METRIC_FIELDS } from "./types";
 // Everything here is additive: a value only lands in a field that is still
 // empty, and an existing program is extended rather than replaced. A depositor
 // who typed something must never watch it get overwritten by a parser.
+//
+// A structure file's header describes the model only when it is the model's
+// own coordinate file. Any other structure file, such as the archive's mmCIF
+// dropped as an input of a run, fills nothing of the model: its program,
+// authors, composition and scores belong to another model (ticket 3: archive
+// scores are never assigned to a submitted model). Each value filled from the
+// model file is recorded in headerFills, so the request can name the file as
+// its source.
 
 // phenix logs run to tens of megabytes. Only the head is read — the banner,
 // the echoed parameter block and the written-file list all live near the top —
@@ -69,6 +87,22 @@ function applyStructure(
   const notes: string[] = [];
   const patch: Partial<ModelDraft> & { notes: string[] } = { notes };
 
+  // The file describes itself whatever its role, so its own metadata is kept.
+  if (Object.keys(facts.metadata).length > 0) {
+    patch.files = draft.files.map((file) =>
+      file.id === parsedFile.id
+        ? { ...file, metadata: mergeFileMetadata(facts.metadata, file.metadata) }
+        : file,
+    );
+    notes.push(`Composition and cell — from ${fileName}`);
+  }
+  if (!isModelFile(parsedFile)) {
+    return patch;
+  }
+
+  const fills = draft.headerFills ?? emptyHeaderFills();
+  const fill = <T>(value: T): HeaderFill<T> => ({ fileId: parsedFile.id, fileName, value });
+
   if (facts.program) {
     const programs = mergeProgram(draft.programs, {
       name: facts.program.name,
@@ -84,8 +118,10 @@ function applyStructure(
 
   // Only ever fills an empty field: a depositor who already typed the author
   // list must not watch a header overwrite it.
+  let authorsFill = fills.authors;
   if (facts.authors.length > 0 && draft.authors.length === 0) {
     patch.authors = facts.authors;
+    authorsFill = fill(facts.authors);
     notes.push(
       `${facts.authors.length} author${facts.authors.length > 1 ? "s" : ""} — from ${fileName}`,
     );
@@ -102,21 +138,17 @@ function applyStructure(
     patch.compoundsSource = fileName;
   }
 
-  const metrics = mergeMetrics(draft.metrics, facts.metrics);
-  if (metrics) {
-    patch.metrics = metrics;
+  const metricFills = { ...fills.metrics };
+  const merged = mergeMetrics(draft.metrics, facts.metrics);
+  if (merged) {
+    patch.metrics = merged.metrics;
+    for (const [key, value] of Object.entries(merged.filled) as [MetricKey, string][]) {
+      metricFills[key] = fill(value);
+    }
     notes.push(`R-factors — from ${fileName}`);
   }
 
-  if (Object.keys(facts.metadata).length > 0) {
-    patch.files = (patch.files ?? draft.files).map((file) =>
-      file.id === parsedFile.id
-        ? { ...file, metadata: mergeFileMetadata(facts.metadata, file.metadata) }
-        : file,
-    );
-    notes.push(`Composition and cell — from ${fileName}`);
-  }
-
+  patch.headerFills = { metrics: metricFills, authors: authorsFill };
   return patch;
 }
 
@@ -263,10 +295,12 @@ function mergeExpected(
   ];
 }
 
+/** The metrics with each empty score filled from the header, and the values
+ *  filled, by key; null when nothing was filled. */
 function mergeMetrics(
   metrics: MetricDraft[],
   values: { r_work?: number; r_free?: number },
-): MetricDraft[] | null {
+): { metrics: MetricDraft[]; filled: Partial<Record<MetricKey, string>> } | null {
   const found = Object.entries(values).filter(([, value]) => value !== undefined);
   if (found.length === 0) {
     return null;
@@ -274,18 +308,21 @@ function mergeMetrics(
   const known = new Set<string>(METRIC_FIELDS.map((field) => field.key));
   const target = metrics[0] ?? { id: crypto.randomUUID(), values: {} };
   const next = { ...target, values: { ...target.values } };
-  let touched = false;
+  const filled: Partial<Record<MetricKey, string>> = {};
   for (const [key, value] of found) {
     if (!known.has(key) || next.values[key]) {
       continue;
     }
     next.values[key] = String(value);
-    touched = true;
+    filled[key as MetricKey] = String(value);
   }
-  if (!touched) {
+  if (Object.keys(filled).length === 0) {
     return null;
   }
-  return metrics.length === 0 ? [next] : metrics.map((m, i) => (i === 0 ? next : m));
+  return {
+    metrics: metrics.length === 0 ? [next] : metrics.map((m, i) => (i === 0 ? next : m)),
+    filled,
+  };
 }
 
 /**

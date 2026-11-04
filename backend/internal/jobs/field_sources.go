@@ -13,28 +13,28 @@ import (
 // them. Every other field keeps the archive's value.
 func keepDepositorEntryFields(current models.EntryRevision, desired *models.EntryRevision) {
 	sources := current.FieldSources
-	if sources.IsDepositor(models.EntryFieldTitle) {
+	if sources.IsUserSupplied(models.EntryFieldTitle) {
 		desired.Title = current.Title
 	}
-	if sources.IsDepositor(models.EntryFieldDetails) {
+	if sources.IsUserSupplied(models.EntryFieldDetails) {
 		desired.Metadata.Details = current.Metadata.Details
 	}
-	if sources.IsDepositor(models.EntryFieldResolution) {
+	if sources.IsUserSupplied(models.EntryFieldResolution) {
 		desired.Metadata.Resolution = current.Metadata.Resolution
 	}
-	if sources.IsDepositor(models.EntryFieldMethod) {
+	if sources.IsUserSupplied(models.EntryFieldMethod) {
 		desired.Metadata.Method = current.Metadata.Method
 	}
-	if sources.IsDepositor(models.EntryFieldSpaceGroup) {
+	if sources.IsUserSupplied(models.EntryFieldSpaceGroup) {
 		desired.Metadata.SpaceGroup = current.Metadata.SpaceGroup
 	}
-	if sources.IsDepositor(models.EntryFieldCrystallography) {
+	if sources.IsUserSupplied(models.EntryFieldCrystallography) {
 		desired.Metadata.Crystallography = current.Metadata.Crystallography
 	}
-	if sources.IsDepositor(models.EntryFieldLigands) {
+	if sources.IsUserSupplied(models.EntryFieldLigands) {
 		desired.Metadata.Ligands = current.Metadata.Ligands
 	}
-	if sources.IsDepositor(models.EntryFieldCofactors) {
+	if sources.IsUserSupplied(models.EntryFieldCofactors) {
 		desired.Metadata.Cofactors = current.Metadata.Cofactors
 	}
 }
@@ -43,31 +43,31 @@ func keepDepositorEntryFields(current models.EntryRevision, desired *models.Entr
 // kept by leaving their keys out of syncedArchiveMetricKeys.
 func keepDepositorModelFields(current models.ModelRevision, desired *models.ModelRevision) {
 	sources := current.FieldSources
-	if sources.IsDepositor(models.ModelFieldAuthors) {
+	if sources.IsUserSupplied(models.ModelFieldAuthors) {
 		desired.Metadata.Authors = current.Metadata.Authors
 	}
-	if sources.IsDepositor(models.ModelFieldDetails) {
+	if sources.IsUserSupplied(models.ModelFieldDetails) {
 		desired.Metadata.Details = current.Metadata.Details
 	}
-	if sources.IsDepositor(models.ModelFieldAffiliation) {
+	if sources.IsUserSupplied(models.ModelFieldAffiliation) {
 		desired.Metadata.Affiliation = current.Metadata.Affiliation
 	}
-	if sources.IsDepositor(models.ModelFieldAtomCount) {
+	if sources.IsUserSupplied(models.ModelFieldAtomCount) {
 		desired.Metadata.AtomCount = current.Metadata.AtomCount
 	}
-	if sources.IsDepositor(models.ModelFieldModeledResidues) {
+	if sources.IsUserSupplied(models.ModelFieldModeledResidues) {
 		desired.Metadata.ModeledResidues = current.Metadata.ModeledResidues
 	}
-	if sources.IsDepositor(models.ModelFieldUniqueProteinChains) {
+	if sources.IsUserSupplied(models.ModelFieldUniqueProteinChains) {
 		desired.Metadata.UniqueProteinChains = current.Metadata.UniqueProteinChains
 	}
-	if sources.IsDepositor(models.ModelFieldUnmodeledFraction) {
+	if sources.IsUserSupplied(models.ModelFieldUnmodeledFraction) {
 		desired.Metadata.UnmodeledFraction = current.Metadata.UnmodeledFraction
 	}
-	if sources.IsDepositor(models.ModelFieldLigands) {
+	if sources.IsUserSupplied(models.ModelFieldLigands) {
 		desired.Metadata.Ligands = current.Metadata.Ligands
 	}
-	if sources.IsDepositor(models.ModelFieldResidueData) {
+	if sources.IsUserSupplied(models.ModelFieldResidueData) {
 		desired.Metadata.ResidueData = current.Metadata.ResidueData
 	}
 }
@@ -77,7 +77,7 @@ func keepDepositorModelFields(current models.ModelRevision, desired *models.Mode
 func syncedArchiveMetricKeys(sources models.FieldSources) []models.MetricKey {
 	keys := make([]models.MetricKey, 0, len(models.ArchiveMetricKeys))
 	for _, key := range models.ArchiveMetricKeys {
-		if !sources.IsDepositor(models.ArchiveMetricField(key)) {
+		if !sources.IsUserSupplied(models.ArchiveMetricField(key)) {
 			keys = append(keys, key)
 		}
 	}
@@ -157,7 +157,7 @@ func archiveModelFieldSources(
 	sources := archiveFieldSources(current, fields, source, retrievedAt)
 	for _, key := range models.ArchiveMetricKeys {
 		pointer := models.ArchiveMetricField(key)
-		if current.IsDepositor(pointer) {
+		if current.IsUserSupplied(pointer) {
 			sources[pointer] = current[pointer]
 		}
 	}
@@ -172,7 +172,7 @@ func archiveFieldSources(
 ) models.FieldSources {
 	sources := make(models.FieldSources, len(fields))
 	for _, pointer := range fields {
-		if current.IsDepositor(pointer) {
+		if current.IsUserSupplied(pointer) {
 			sources[pointer] = current[pointer]
 			continue
 		}

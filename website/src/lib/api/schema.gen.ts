@@ -1729,6 +1729,7 @@ export interface components {
             artifacts?: components["schemas"]["CreateArtifactRequest"][];
             runs?: components["schemas"]["CreateRunRequest"][];
             metrics?: components["schemas"]["CreateMetricRequest"][];
+            value_sources?: components["schemas"]["ValueSources"];
         };
         CreateModelData: {
             title: string;
@@ -1740,6 +1741,7 @@ export interface components {
             artifacts?: components["schemas"]["CreateArtifactRequest"][];
             runs?: components["schemas"]["CreateRunRequest"][];
             metrics?: components["schemas"]["CreateMetricRequest"][];
+            value_sources?: components["schemas"]["ValueSources"];
         };
         CreateModelRevisionRequest: {
             model: components["schemas"]["ModelRevisionChange"];
@@ -1950,16 +1952,34 @@ export interface components {
             program?: string;
             program_version?: string;
         };
+        /** @description Optional. Names the uploaded file each value of this request was read from, keyed by the JSON pointer of the field, as in `field_sources` (for example /metrics/r_free or /metadata/authors). The value is then recorded with source `file` and the file's artifact ID and SHA-256, instead of `depositor`. Each key must be a field whose source is recorded and that this request sets, and the artifact must be the request's primary artifact (the model's own coordinate file) with a SHA-256: a model's scores and attribution are read only from the model's own file, never from an input of one of its runs. Otherwise the request is invalid (422 in enforce mode). */
+        ValueSources: {
+            [key: string]: components["schemas"]["ValueSource"];
+        };
+        ValueSource: {
+            /**
+             * Format: uuid
+             * @description An artifact of the same request.
+             */
+            artifact_id: string;
+        };
         /** @description Where the values of the revision's archive-synced fields came from, keyed by JSON pointer into the revision (for example /title, /metadata/resolution, or /metrics/r_free for an archive metric). A field without a key was not typed by a depositor, so the archive sync may update it. Null for revisions stored before sources were recorded; those were imported from the archive. Read-only. */
         FieldSources: {
             [key: string]: components["schemas"]["FieldSource"];
         } | null;
         FieldSource: {
             /**
-             * @description rcsb: the value came from RCSB, either copied by the archive sync or sent on create equal to the archive's value; the archive sync keeps it current. depositor: a user set or changed the value, and the archive sync never overwrites it.
+             * @description rcsb: the value came from RCSB, either copied by the archive sync or sent on create equal to the archive's value; the archive sync keeps it current. depositor: a user set or changed the value, and the archive sync never overwrites it. file: a user sent the value as read from a file they uploaded with the revision (see `value_sources` on the create requests); `artifact_id` and `sha256` name the file. Like a depositor's value, the archive sync never overwrites it.
              * @enum {string}
              */
-            source: "rcsb" | "depositor";
+            source: "rcsb" | "depositor" | "file";
+            /**
+             * Format: uuid
+             * @description The artifact the value was read from, for file values.
+             */
+            artifact_id?: string;
+            /** @description The SHA-256 of that artifact as it was uploaded, for file values. */
+            sha256?: string;
             /** @description The PDB ID the value was read from, for archive values. */
             accession?: string;
             /** @description The archive version the value was read from, such as 4.3, for archive values. */

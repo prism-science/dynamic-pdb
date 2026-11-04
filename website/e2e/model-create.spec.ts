@@ -2,7 +2,12 @@ import type { Locator, Page } from "@playwright/test";
 
 import { createActiveEntry } from "./support/api";
 import { signIn, submitter } from "./support/auth";
-import { coordinateFile, reflectionsFile, type UploadFile } from "./support/files";
+import {
+  coordinateFile,
+  reflectionsFile,
+  scoredCoordinateFile,
+  type UploadFile,
+} from "./support/files";
 import { expect, test } from "./support/fixtures";
 import { stack } from "./support/stack";
 
@@ -144,4 +149,74 @@ test("should list what the API requires until the program and the score software
   expect(revision.metrics).toEqual([
     expect.objectContaining({ key: "r_work", value: 0.196, software_name: "MolProbity" }),
   ]);
+});
+
+test("should fill no score from the archive's mmCIF dropped beside the model file", async ({
+  page,
+  submitterApi,
+  reviewerApi,
+  runTag,
+}) => {
+  // given: the depositor's model file, then the archive's mmCIF as a run input
+  const entryId = await createActiveEntry(submitterApi, reviewerApi, `G4 archive input entry ${runTag}`);
+  const model = coordinateFile(runTag);
+  const archive = scoredCoordinateFile(runTag, `1abc-${runTag}.cif`, { rWork: "0.250", rFree: "0.290" });
+  await page.goto(`/entries/${entryId}/models/new`);
+  await uploadFiles(page, [model]);
+
+  // when
+  await uploadFiles(page, [archive]);
+
+  // then: no scores and no authors were filled from it
+  await expect(page.getByRole("button", { name: "Add metrics" })).toBeVisible();
+  await expect(page.getByLabel("R-work", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(`from ${archive.name}`)).toHaveCount(0);
+});
+
+test("should fill scores and authors from the model file and save them as read from that file", async ({
+  page,
+  submitterApi,
+  reviewerApi,
+  runTag,
+}) => {
+  // given
+  const entryId = await createActiveEntry(submitterApi, reviewerApi, `G4 file scores entry ${runTag}`);
+  const model = scoredCoordinateFile(runTag, `model-${runTag}.cif`, { rWork: "0.191", rFree: "0.232" });
+  const reflections = reflectionsFile(runTag);
+  const title = `G4 file scores ${runTag}`;
+  await page.goto(`/entries/${entryId}/models/new`);
+  await page.getByLabel("Title", { exact: true }).fill(title);
+
+  // when
+  await uploadFiles(page, [model, reflections]);
+
+  // then
+  // The badge is part of each field's label.
+  await expect(page.getByRole("textbox", { name: `R-work from ${model.name}`, exact: true })).toHaveValue("0.191");
+  await expect(page.getByRole("textbox", { name: `R-free from ${model.name}`, exact: true })).toHaveValue("0.232");
+  await expect(page.getByText(`from ${model.name}`, { exact: true })).toHaveCount(3);
+
+  // when
+  await page.getByRole("button", { name: "Add program" }).click();
+  const step = page.getByRole("group", { name: "Step 1" });
+  await step.getByLabel("Name").fill("phenix.refine");
+  await step.getByLabel("Version").fill("1.21.2");
+  await linkFile(step, "Inputs", reflections);
+  await linkFile(step, "Outputs", model);
+  await page.getByLabel("Computed by").selectOption({ label: "Step 1: phenix.refine 1.21.2" });
+  await page.getByRole("button", { name: "Add model" }).click();
+
+  // then
+  await page.waitForURL(`**/entries/${entryId}`);
+  const group = await submitterApi.inReviewGroup({ entryId });
+  const { model_id: modelId, id: revisionId } = group.modelRevisions[0];
+  const revision = await submitterApi.modelRevision(entryId, modelId, revisionId);
+  const stored = revision.artifacts.find((artifact) => artifact.name === model.name);
+  const fromFile = { source: "file", artifact_id: stored?.id, sha256: stored?.sha256 };
+  expect(stored?.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(revision.field_sources).toEqual({
+    "/metrics/r_work": fromFile,
+    "/metrics/r_free": fromFile,
+    "/metadata/authors": fromFile,
+  });
 });

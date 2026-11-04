@@ -561,9 +561,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
-		initialRevision.FieldSources = domainmodels.ModelRevisionFieldSources(
-			nil, nil, initialRevision, metricsFromRequests(data.Metrics),
-		)
+		// createModelRequestErrors reported the value_sources that cannot be recorded; those
+		// values stay the depositor's.
+		initialRevision.FieldSources, _ = newModelRevisionSources(validation.Root, data, metadata)
 		revision, err := s.database.Models.Create(ctx, entryID, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)

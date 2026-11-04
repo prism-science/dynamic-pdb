@@ -60,8 +60,8 @@ func applyArchiveComposition(current models.EntryRevision, desired *models.Entry
 // derived from the file by these rules, so a person typed them; the schema migrations set no lists
 // on archive entries.
 func entryListsPersonSet(revision models.EntryRevision) bool {
-	if revision.FieldSources.IsDepositor(models.EntryFieldLigands) ||
-		revision.FieldSources.IsDepositor(models.EntryFieldCofactors) {
+	if revision.FieldSources.IsUserSupplied(models.EntryFieldLigands) ||
+		revision.FieldSources.IsUserSupplied(models.EntryFieldCofactors) {
 		return true
 	}
 	listsSet := revision.Metadata.Ligands != nil || revision.Metadata.Cofactors != nil

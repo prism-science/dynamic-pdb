@@ -141,6 +141,8 @@ function archiveLock(
         release: source.release ?? null,
       };
     case "depositor":
+    case "file":
+      // A user's value, typed or read from their file: not the archive's to lock.
       return null;
     default:
       throw new Error(`unknown field source: ${String(source.source)}`);

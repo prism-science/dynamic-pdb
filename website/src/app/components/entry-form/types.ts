@@ -214,6 +214,19 @@ export function emptyEntryMetadataDraft(): EntryMetadataDraft {
   };
 }
 
+/**
+ * A value the New model form filled from the header of the model's coordinate
+ * file. It is the file's value only while the field still holds exactly this
+ * value and the file is still the model file (headerFills.ts).
+ */
+export type HeaderFill<T> = { fileId: string; fileName: string; value: T };
+
+export type HeaderFills = {
+  /** R-factors, by metric key, as the form shows them. */
+  metrics: Partial<Record<MetricKey, HeaderFill<string>>>;
+  authors: HeaderFill<string[]> | null;
+};
+
 export type ModelDraft = {
   id: string;
   title: string;
@@ -242,6 +255,12 @@ export type ModelDraft = {
    * chain no longer has to be inferred from file extensions.
    */
   programs: ProgramDraft[];
+  /** Values filled from the model file's header. Absent in drafts stored
+   *  before the form recorded them. */
+  headerFills?: HeaderFills;
+  /** Why filled values were cleared, when their file stopped being the model
+   *  file. */
+  headerFillNotice?: string | null;
 };
 
 export const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];

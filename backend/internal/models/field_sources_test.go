@@ -5,7 +5,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_should_mark_set_fields_depositor_and_leave_unset_fields_without_source_when_entry_is_created(t *testing.T) {
@@ -76,7 +78,7 @@ func Test_should_mark_field_depositor_when_user_revision_clears_it(t *testing.T)
 	sources := EntryRevisionFieldSources(&parent, revision)
 
 	// then
-	assert.True(t, sources.IsDepositor(EntryFieldResolution))
+	assert.True(t, sources.IsUserSupplied(EntryFieldResolution))
 }
 
 func Test_should_record_no_sources_when_user_revision_of_imported_parent_changes_no_synced_field(t *testing.T) {
@@ -141,7 +143,7 @@ func Test_should_treat_missing_sources_as_not_typed_by_depositor_when_revision_p
 	var sources FieldSources
 
 	// when
-	depositor := sources.IsDepositor(EntryFieldTitle)
+	depositor := sources.IsUserSupplied(EntryFieldTitle)
 
 	// then
 	assert.False(t, depositor)
@@ -221,4 +223,49 @@ func Test_should_mark_changed_lists_depositor_when_user_creates_entry_revision(t
 		EntryFieldLigands:   archiveSource("1ABC"),
 		EntryFieldCofactors: {Source: FieldSourceDepositor},
 	}, sources)
+}
+
+func Test_should_treat_file_values_as_user_supplied_and_archive_values_as_synced(t *testing.T) {
+	// given
+	artifactID := uuid.New()
+	sources := FieldSources{
+		ArchiveMetricField(MetricKeyRWork): {Source: FieldSourceFile, ArtifactID: &artifactID, SHA256: new("abc")},
+		ModelFieldAuthors:                  {Source: FieldSourceDepositor},
+		ModelFieldAtomCount:                {Source: FieldSourceRCSB},
+	}
+
+	// when / then
+	assert.True(t, sources.IsUserSupplied(ArchiveMetricField(MetricKeyRWork)))
+	assert.True(t, sources.IsUserSupplied(ModelFieldAuthors))
+	assert.False(t, sources.IsUserSupplied(ModelFieldAtomCount))
+	assert.False(t, sources.IsUserSupplied(ModelFieldLigands))
+	assert.Panics(t, func() {
+		FieldSources{ModelFieldDetails: {Source: "guess"}}.IsUserSupplied(ModelFieldDetails)
+	})
+}
+
+func Test_should_reject_stored_field_source_of_unknown_kind(t *testing.T) {
+	// given
+	known := FieldSources{
+		EntryFieldTitle:      {Source: FieldSourceRCSB},
+		EntryFieldDetails:    {Source: FieldSourceDepositor},
+		EntryFieldResolution: {Source: FieldSourceFile},
+	}
+	unknown := FieldSources{EntryFieldTitle: {Source: "guess"}}
+
+	// when / then
+	require.NoError(t, known.Validate())
+	require.ErrorContains(t, unknown.Validate(), `field source at /title: unknown field source: "guess"`)
+}
+
+func Test_should_list_model_fields_and_archive_metrics_as_fields_with_sources(t *testing.T) {
+	// when
+	fields := ModelSourceFields()
+
+	// then
+	assert.Contains(t, fields, ModelFieldAuthors)
+	assert.Contains(t, fields, ArchiveMetricField(MetricKeyRFree))
+	assert.Contains(t, fields, ArchiveMetricField(MetricKeyRWork))
+	assert.NotContains(t, fields, ArchiveMetricField(MetricKeyRSCC))
+	assert.Len(t, fields, len(ModelArchiveFields)+len(ArchiveMetricKeys))
 }

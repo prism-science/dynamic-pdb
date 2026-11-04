@@ -63,6 +63,11 @@ export type ModelRevision = {
     software_version?: string | null;
     run_id?: string | null;
   }[];
+  /** Where each archive-synced field's value came from, by JSON pointer. */
+  field_sources: Record<
+    string,
+    { source: string; artifact_id?: string; sha256?: string; accession?: string }
+  > | null;
 };
 
 /**

@@ -487,6 +487,9 @@ export type CreateModelInput = {
   /** Judgements a file cannot state about itself: what the run was for and
    *  what kind of model came out. Composition is read from the coordinates. */
   metadata?: JSONRecord;
+  /** The model file each value was read from, by field pointer
+   *  (ValueSources in openapi.yaml). */
+  value_sources?: Schemas["ValueSources"];
 };
 
 export type CreateEntryInput = EntryProperties & {
@@ -1353,6 +1356,7 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     metrics: entities
       .filter((entity) => entity.type === "metrics")
       .flatMap(createMetricRequests),
+    value_sources: input.value_sources,
   };
 }
 

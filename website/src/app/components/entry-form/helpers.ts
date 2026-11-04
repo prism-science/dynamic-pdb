@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/uploads";
 
 import { compoundListRequest, compoundReviewRequest } from "./compounds";
+import { valueSourcesRequest } from "./headerFills";
 import { crystallographyRequest, optionalNumber } from "./crystals";
 import { polymerEntitiesRequest } from "./polymerEntities";
 import { relatedDatasetsRequest } from "./relatedDatasets";
@@ -154,6 +155,7 @@ export function buildCreateModelInput(
     entities,
     relations,
     metadata: modelMetadataInput(modelDraft),
+    value_sources: valueSourcesRequest(modelDraft),
   };
 }
 

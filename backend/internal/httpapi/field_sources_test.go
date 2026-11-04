@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -43,6 +44,26 @@ func Test_should_key_field_sources_by_pointer_when_revision_has_sources(t *testi
 	assert.Equal(t, FieldSources{
 		"/title":               {Source: FieldSourceSourceDepositor},
 		"/metadata/resolution": {Source: FieldSourceSourceRcsb, Accession: new("1ABC"), RetrievedAt: &retrievedAt},
+	}, *response)
+}
+
+func Test_should_return_artifact_and_sha256_when_value_was_read_from_a_file(t *testing.T) {
+	// given
+	artifactID := uuid.New()
+	sources := domainmodels.FieldSources{
+		domainmodels.ArchiveMetricField(domainmodels.MetricKeyRWork): {
+			Source: domainmodels.FieldSourceFile, ArtifactID: &artifactID, SHA256: new("abc123"),
+		},
+	}
+
+	// when
+	response, err := fieldSourcesFromModel(sources)
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	assert.Equal(t, FieldSources{
+		"/metrics/r_work": {Source: FieldSourceSourceFile, ArtifactId: &artifactID, Sha256: new("abc123")},
 	}, *response)
 }
 

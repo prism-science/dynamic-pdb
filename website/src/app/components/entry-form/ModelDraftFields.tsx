@@ -12,6 +12,12 @@ import ModelOverviewFields from "./ModelOverviewFields";
 import PipelineEditor from "./PipelineEditor";
 import PipelinePreview from "./PipelinePreview";
 import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
+import {
+  HEADER_METRIC_KEYS,
+  headerFillBadge,
+  liveHeaderFills,
+  withoutStaleHeaderFills,
+} from "./headerFills";
 import { type FieldId, type SectionId } from "./fields";
 import { inlineMessages, type FieldMessage } from "./messages";
 import { emptyCompounds } from "./types";
@@ -73,6 +79,13 @@ export default function ModelDraftFields({
   draftRef.current = draft;
 
   const hasModel = draft.files.some(isModelFile);
+  const fills = liveHeaderFills(draft);
+  const metricSources = Object.fromEntries(
+    HEADER_METRIC_KEYS.flatMap((key) => {
+      const badge = headerFillBadge(fills.metrics[key]);
+      return badge ? [[key, badge]] : [];
+    }),
+  );
   const inline = (field: FieldId, item: string | null = null) =>
     inlineMessages(messages, field, item);
 
@@ -173,6 +186,7 @@ export default function ModelDraftFields({
           compoundsSource={
             draft.compoundsSource ? `from ${draft.compoundsSource}` : null
           }
+          authorsSource={headerFillBadge(fills.authors)}
           compoundsFromFile={modelFileIsStored(draft.files)}
           messages={messages}
         />
@@ -282,10 +296,13 @@ export default function ModelDraftFields({
                 appendFiles(parsed);
               }}
               onRemove={(id) =>
-                edit("data", (current) => ({
-                  ...current,
-                  files: current.files.filter((file) => file.id !== id),
-                }))
+                // The values its header filled leave with the model file.
+                edit("data", (current) =>
+                  withoutStaleHeaderFills({
+                    ...current,
+                    files: current.files.filter((file) => file.id !== id),
+                  }),
+                )
               }
               onLevel={(id, level) =>
                 edit("data", (current) => ({
@@ -296,7 +313,16 @@ export default function ModelDraftFields({
                 }))
               }
               onPatch={(id, patch) => {
-                patchFile(id, patch);
+                // A model file set to another type takes its filled values
+                // with it: they are no longer the model's own.
+                onUpdate((current) =>
+                  withoutStaleHeaderFills({
+                    ...current,
+                    files: current.files.map((file) =>
+                      file.id === id ? { ...file, ...patch } : file,
+                    ),
+                  }),
+                );
                 onEdit("data");
               }}
               artifactTypeOptions={["structure_factors", "other"]}
@@ -306,8 +332,12 @@ export default function ModelDraftFields({
 
         <FormSection id="evaluations">
           <Field id="model.metrics" messages={inline("model.metrics")}>
+            {draft.headerFillNotice ? (
+              <p className={styles.sectionNote}>{draft.headerFillNotice}.</p>
+            ) : null}
             <MetricsEditor
               metrics={draft.metrics}
+              sources={metricSources}
               messages={messages}
               setMetrics={(next) =>
                 edit("evaluations", (current) => ({ ...current, metrics: next }))

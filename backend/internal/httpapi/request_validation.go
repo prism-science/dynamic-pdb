@@ -224,7 +224,8 @@ func createModelRequestErrors(at validation.Pointer, data CreateModelData) []val
 		validation.MetricProvenance(at.Field("metrics"), metricsFromRequests(data.Metrics), revision)...)
 	fieldErrors = append(fieldErrors, runRequestErrors(at.Field("runs"), data.Runs)...)
 	fieldErrors = append(fieldErrors, validation.ModelRuns(at.Field("runs"), revision)...)
-	return fieldErrors
+	_, sourceErrors := newModelRevisionSources(at, data, metadata)
+	return append(fieldErrors, sourceErrors...)
 }
 
 func artifactIDsFromRequests(requests *[]CreateArtifactRequest) []uuid.UUID {
