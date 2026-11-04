@@ -93,6 +93,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("server::rate_limit::window", defaultRateLimitWindow)
 	v.SetDefault("server::rate_limit::internal_requests", defaultRateLimitInternalRequests)
 	v.SetDefault("validation::mode", string(validation.ModeLogOnly))
+	v.SetDefault("validation::request_keys", string(validation.ModeLogOnly))
 	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetDefault("entries::delete_enabled", false)
 	v.SetDefault("revisions::self_approval_enabled", false)
@@ -151,6 +152,9 @@ func validate(cfg Config) error {
 	}
 	if err := cfg.Validation.Mode.Validate(); err != nil {
 		return fmt.Errorf("validation.mode: %w", err)
+	}
+	if err := cfg.Validation.RequestKeys.Validate(); err != nil {
+		return fmt.Errorf("validation.request_keys: %w", err)
 	}
 	return nil
 }

@@ -75,7 +75,7 @@ func Test_should_accept_model_update_when_rcsb_metrics_follow_schema(t *testing.
 	}
 
 	// when
-	fieldErrors := modelUpdateErrors(models.ModelRevision{}, modelMetricsFromRCSB(details))
+	fieldErrors := modelUpdateErrors(models.ModelRevision{}, modelMetricsFromRCSB(details), nil)
 
 	// then
 	assert.Empty(t, fieldErrors)
@@ -87,7 +87,7 @@ func Test_should_report_model_update_errors_when_rcsb_values_break_schema(t *tes
 	metrics := []models.Metric{{Key: "resolution", Value: 2.0}}
 
 	// when
-	fieldErrors := modelUpdateErrors(revision, metrics)
+	fieldErrors := modelUpdateErrors(revision, metrics, nil)
 
 	// then
 	assert.Equal(t, []validation.Pointer{"/metadata/unmodeled_fraction", "/metrics/0/key"}, pointersOf(fieldErrors))

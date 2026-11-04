@@ -78,7 +78,10 @@ func Test_should_not_limit_when_extraction_limits_are_not_installed(t *testing.T
 
 func Test_should_install_default_extraction_limits_when_server_is_created(t *testing.T) {
 	// when
-	server := NewServer(nil, nil, auth.Config{}, nil, nil, nil, "", validation.ModeLogOnly)
+	server := NewServer(nil, nil, auth.Config{}, nil, nil, nil, "", validation.Config{
+		Mode:        validation.ModeLogOnly,
+		RequestKeys: validation.ModeLogOnly,
+	})
 
 	// then
 	require.NotNil(t, server.extractionLimits)

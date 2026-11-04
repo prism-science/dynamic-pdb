@@ -209,6 +209,45 @@ func Test_should_reject_config_when_validation_mode_is_unknown(t *testing.T) {
 	assert.ErrorContains(t, err, "validation.mode: unknown validation mode: warn")
 }
 
+func Test_should_default_request_keys_mode_to_log_only_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.RequestKeys)
+}
+
+func Test_should_override_request_keys_mode_from_env_var(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_REQUEST_KEYS", "enforce")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.RequestKeys)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode, "the schema mode keeps its own setting")
+}
+
+func Test_should_reject_config_when_request_keys_mode_is_unknown(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_VALIDATION_REQUEST_KEYS", "warn")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "validation.request_keys: unknown validation mode: warn")
+}
+
 func Test_should_override_rate_limit_from_env_vars(t *testing.T) {
 	// given
 	t.Chdir(writeSampleConfig(t))
@@ -454,6 +493,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
+	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.RequestKeys, "prod logs unknown request keys until dev has soaked")
 	assert.True(t, cfg.DataSync.CoordinateRevisions)
 	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }
@@ -478,6 +518,7 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.RequestKeys)
 	assert.True(t, cfg.DataSync.CoordinateRevisions)
 	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }
@@ -504,6 +545,7 @@ func Test_should_enforce_schema_validation_when_repository_local_config_is_read(
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.RequestKeys)
 }
 
 func Test_should_leave_entry_deletion_off_when_config_does_not_set_it(t *testing.T) {

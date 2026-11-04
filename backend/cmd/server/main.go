@@ -86,10 +86,10 @@ func run() int {
 		slog.Error("file CDN init failed", "err", err)
 		return 1
 	}
-	slog.Info("schema validation configured", "mode", cfg.Validation.Mode)
+	slog.Info("schema validation configured", "mode", cfg.Validation.Mode, "request_keys", cfg.Validation.RequestKeys)
 	srv := httpapi.NewServer(
 		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
-		cfg.Validation.Mode,
+		cfg.Validation,
 	).WithArchiveLookup(archive.NewLookup(
 		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
 		sifts.NewClient(),

@@ -407,7 +407,8 @@ func (s *EntriesSuite) Test_should_reconcile_protein_sequences_only_when_model_r
 	s.NotEqual(initialSequenceID, entryAfterReplacement.ProteinSequences[0].Id)
 	s.Equal(replacementArtifactID, entryAfterReplacement.ProteinSequences[0].SourceArtifactId)
 	s.Equal("MNPQRSTVWY", entryAfterReplacement.ProteinSequences[0].Sequence)
-	assertErrorResponse(s.T(), deleteResponse, "BAD_REQUEST", "revision field \"state\" is not allowed")
+	s.Equal([]keyErrorResponse{{Pointer: "/model/state", Code: "UNKNOWN_FIELD"}},
+		keyErrorsFromResponse(s.T(), decodeErrorResponseForTest(s.T(), deleteResponse, http.StatusUnprocessableEntity)))
 	s.Require().Len(entryAfterRejectedDeletion.ProteinSequences, 1)
 	s.Equal(replacementArtifactID, entryAfterRejectedDeletion.ProteinSequences[0].SourceArtifactId)
 	s.Equal("renamed protein model", stringValue(getModelForTest(s.T(), entryID, modelID).Title))
@@ -454,7 +455,8 @@ func (s *EntriesSuite) Test_should_allow_any_authenticated_user_to_create_revisi
 	s.True(entryRevisionSummaryContainsID(item.EntryRevisions, entryRevision.RevisionId))
 	s.True(modelRevisionSummaryContainsID(item.ModelRevisions, modelRevision.RevisionId))
 	s.True(modelRevisionSummaryContainsID(item.ModelRevisions, newModelRevision.RevisionId))
-	assertErrorResponse(s.T(), deleteEntryResponse, "BAD_REQUEST", "revision field \"state\" is not allowed")
+	s.Equal([]keyErrorResponse{{Pointer: "/entry/state", Code: "UNKNOWN_FIELD"}},
+		keyErrorsFromResponse(s.T(), decodeErrorResponseForTest(s.T(), deleteEntryResponse, http.StatusUnprocessableEntity)))
 }
 
 func (s *EntriesSuite) Test_should_keep_entry_and_model_revision_lifecycles_independent() {
@@ -597,12 +599,11 @@ func (s *EntriesSuite) Test_should_reject_old_create_shape_and_require_authentic
 
 	// then
 	oldShapeErrors := decodeErrorResponseForTest(s.T(), oldShapeResponse, http.StatusUnprocessableEntity)
-	s.Require().Len(oldShapeErrors, 2)
-	s.Equal("REQUIRED", stringValue(oldShapeErrors[0].Code))
-	s.Require().NotNil(oldShapeErrors[0].Source)
-	s.Equal("/entry/title", oldShapeErrors[0].Source.Pointer)
-	s.Require().NotNil(oldShapeErrors[1].Source)
-	s.Equal("/entry/method", oldShapeErrors[1].Source.Pointer)
+	s.Equal([]keyErrorResponse{
+		{Pointer: "/name", Code: "UNKNOWN_FIELD"},
+		{Pointer: "/entry/title", Code: "REQUIRED"},
+		{Pointer: "/entry/method", Code: "REQUIRED"},
+	}, keyErrorsFromResponse(s.T(), oldShapeErrors))
 	s.Equal(http.StatusUnauthorized, unauthenticatedResponse.StatusCode)
 	s.Require().NoError(unauthenticatedResponse.Body.Close())
 }
