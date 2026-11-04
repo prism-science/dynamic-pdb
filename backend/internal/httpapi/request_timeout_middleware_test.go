@@ -47,6 +47,32 @@ func Test_should_not_set_deadline_when_request_is_a_write(t *testing.T) {
 	assert.False(t, hasDeadline)
 }
 
+func Test_should_reject_read_request_timeout_not_shorter_than_statement_timeout(t *testing.T) {
+	// when
+	equalErr := CheckReadRequestTimeout(10*time.Second, 10*time.Second)
+	longerErr := CheckReadRequestTimeout(15*time.Second, 10*time.Second)
+
+	// then
+	require.EqualError(t, equalErr, "read request timeout 10s must be shorter than the database statement_timeout 10s")
+	require.EqualError(t, longerErr, "read request timeout 15s must be shorter than the database statement_timeout 10s")
+}
+
+func Test_should_accept_read_request_timeout_shorter_than_statement_timeout(t *testing.T) {
+	// when
+	err := CheckReadRequestTimeout(9*time.Second, 10*time.Second)
+
+	// then
+	assert.NoError(t, err)
+}
+
+func Test_should_accept_any_read_request_timeout_when_statement_timeout_is_off(t *testing.T) {
+	// when
+	err := CheckReadRequestTimeout(9*time.Second, 0)
+
+	// then
+	assert.NoError(t, err)
+}
+
 func Test_should_panic_when_read_request_timeout_is_not_positive(t *testing.T) {
 	// when
 	create := func() { ReadRequestTimeoutMiddleware(0) }

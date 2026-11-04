@@ -2,9 +2,23 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 )
+
+// CheckReadRequestTimeout returns an error unless readTimeout is shorter than the database
+// statement timeout. The request deadline must fire first: then a single slow query on a read
+// is cancelled by the deadline and answered with a 504 by ReadTimeoutStatusMiddleware. If the
+// statement timeout fired first, the deadline would not have passed yet and the client would
+// get a 500. A zero statementTimeout means PostgreSQL has none, so any readTimeout is fine.
+func CheckReadRequestTimeout(readTimeout, statementTimeout time.Duration) error {
+	if statementTimeout > 0 && readTimeout >= statementTimeout {
+		return fmt.Errorf("read request timeout %s must be shorter than the database statement_timeout %s",
+			readTimeout, statementTimeout)
+	}
+	return nil
+}
 
 // ReadRequestTimeoutMiddleware gives GET and HEAD requests a deadline, so slow reads stop and
 // release their database connections. Writes are exempt because completing a large multipart

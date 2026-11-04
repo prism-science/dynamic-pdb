@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,6 +83,41 @@ func Test_should_log_context_error_when_read_request_times_out(t *testing.T) {
 	assert.Equal(t, "ERROR", entry["level"])
 	assert.InDelta(t, http.StatusInternalServerError, entry["status"], 0)
 	assert.Equal(t, "context deadline exceeded", entry["context_error"])
+}
+
+func Test_should_log_matched_route_pattern(t *testing.T) {
+	// given
+	var logs bytes.Buffer
+	router := chi.NewRouter()
+	router.Use(middleware.RequestID, AccessLogMiddleware(newJSONTestLogger(&logs)))
+	router.Get("/v1/entries/{entry_id}/models", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/v1/entries/dpdb_abc/models", nil)
+
+	// when
+	router.ServeHTTP(httptest.NewRecorder(), request)
+
+	// then
+	entry := decodeSingleLogEntry(t, &logs)
+	assert.Equal(t, "/v1/entries/{entry_id}/models", entry["route"])
+	assert.Equal(t, "/v1/entries/dpdb_abc/models", entry["path"])
+}
+
+func Test_should_log_empty_route_when_request_bypasses_router(t *testing.T) {
+	// given
+	var logs bytes.Buffer
+	handler := middleware.RequestID(AccessLogMiddleware(newJSONTestLogger(&logs))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+	request := httptest.NewRequest(http.MethodGet, "/v1/entries", nil)
+
+	// when
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	// then
+	entry := decodeSingleLogEntry(t, &logs)
+	assert.Empty(t, entry["route"])
 }
 
 func newJSONTestLogger(output *bytes.Buffer) *slog.Logger {
