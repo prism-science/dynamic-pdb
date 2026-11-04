@@ -71,3 +71,14 @@ Retrieve entry-level and model-level files separately. A model's file list also 
 The [OpenAPI specification](/api/openapi.yaml) is a machine-readable description of the API, suitable for scripts and LLM agents.
 
 Before reusing data, check the applicable license and attribution requirements, including those of externally referenced sources. Data originating from The Dynamic PDB and Prism are freely available for community use. See [Reuse, acknowledgment, and feedback](/docs/reuse).
+
+## Submit data through the API
+
+Submitting needs an account with permission to submit. Every new entry, model, and revision is checked against [Dynamic PDB Schema v0.2.0](https://github.com/prism-science/dynamic-pdb/blob/main/docs/schema/dynamic-pdb-schema-v0.2.0.md) before anything is saved.
+
+- A request that breaks a rule gets HTTP `422`, and nothing is saved. The response lists every broken rule, each with a `source.pointer` that names the field, for example `/model/metrics/0/key`.
+- Fix every listed field and send the whole request again.
+- Some mistakes that used to get `400` or `409`, such as the same metric key twice in one model, now get `422`.
+- In rare cases a database check refuses a value. That error has the code `CONSTRAINT_VIOLATION`, names the check, and has no `source.pointer`.
+
+The [API reference](/docs/api) shows the fields each request accepts.

@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -129,12 +130,22 @@ func similarEntryIDs(entries []similarEntryResponse) []string {
 	return ids
 }
 
+// mmseqsBaseImageOverrides maps each base-image ARG in backend/cmd/mmseqs-job/Dockerfile to
+// the environment variable that overrides it. Unset variables keep the Dockerfile's Harbor
+// defaults. CI sets them to Docker Hub images because its runners can't reach Harbor.
+var mmseqsBaseImageOverrides = []struct {
+	buildArg string
+	env      string
+}{
+	{buildArg: "GO_IMAGE", env: "DYNAMIC_PDB_MMSEQS_GO_IMAGE"},
+	{buildArg: "RUNTIME_IMAGE", env: "DYNAMIC_PDB_MMSEQS_RUNTIME_IMAGE"},
+}
+
 func buildMMseqsJobImage(t *testing.T, root string) string {
 	t.Helper()
 
 	image := "dynamic-pdb-mmseqs-job-integration:" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	cmd := exec.Command(
-		dockerCommand(),
+	args := []string{
 		"build",
 		"--build-context",
 		"lib=lib",
@@ -142,8 +153,14 @@ func buildMMseqsJobImage(t *testing.T, root string) string {
 		"backend/cmd/mmseqs-job/Dockerfile",
 		"-t",
 		image,
-		"backend",
-	)
+	}
+	for _, override := range mmseqsBaseImageOverrides {
+		if value := strings.TrimSpace(os.Getenv(override.env)); value != "" {
+			args = append(args, "--build-arg", override.buildArg+"="+value)
+		}
+	}
+	args = append(args, "backend")
+	cmd := exec.Command(dockerCommand(), args...)
 	cmd.Dir = root
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -167,6 +184,10 @@ func runMMseqsJobContainer(t *testing.T, root string, image string, cacheDir str
 		dockerCommand(),
 		"run",
 		"--rm",
+		// Run as the test's own user. The job writes nested directories into cacheDir (a
+		// t.TempDir); on Linux, root-owned ones would make t.TempDir's cleanup fail.
+		"--user",
+		fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"--add-host=host.docker.internal:host-gateway",
 		"-v",
 		cacheDir+":/app/.tmp/mmseqs",

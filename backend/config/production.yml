@@ -46,8 +46,9 @@ analytics:
   website_id: 41e0ae39-0a08-45d0-bf1a-3a4f34bbc40c
   hostname: dynamicpdb.com
 validation:
-  # Log schema violations without rejecting requests until clients are updated.
-  mode: log_only
+  # Reject requests that break the schema rules with 422, and skip RCSB versions that break them.
+  # log_only stays available as the rollback: set it here, or DYNAMIC_PDB_VALIDATION_MODE=log_only.
+  mode: enforce
 data_sync:
   # Coordinate-change revisions are on: the checksum job has copied the coordinate files. A file it
   # has not verified and copied yet keeps its entry waiting until a later sync.
