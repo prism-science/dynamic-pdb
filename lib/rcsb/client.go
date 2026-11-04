@@ -124,38 +124,41 @@ func NewClient(options ...Option) *RemoteClient {
 }
 
 func (c *RemoteClient) GetEntry(ctx context.Context, pdbID string) (map[string]any, error) {
-	contents, err := c.getEntry(ctx, pdbID)
+	url := c.entryURL(pdbID)
+	contents, err := c.getEntry(ctx, url)
 	if err != nil {
 		return nil, err
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal(contents, &payload); err != nil {
+	if err := c.decodeJSON(url, contents, &payload); err != nil {
 		return nil, fmt.Errorf("decode RCSB entry: %w", err)
 	}
 	return payload, nil
 }
 
 func (c *RemoteClient) GetEntryDetails(ctx context.Context, pdbID string) (EntryDetails, error) {
-	contents, err := c.getEntry(ctx, pdbID)
+	url := c.entryURL(pdbID)
+	contents, err := c.getEntry(ctx, url)
 	if err != nil {
 		return EntryDetails{}, err
 	}
 
 	var details EntryDetails
-	if err := json.Unmarshal(contents, &details); err != nil {
+	if err := c.decodeJSON(url, contents, &details); err != nil {
 		return EntryDetails{}, fmt.Errorf("decode RCSB entry: %w", err)
 	}
 	return details, nil
 }
 
 func (c *RemoteClient) GetPolymerEntity(ctx context.Context, pdbID string, entityID string) (map[string]any, error) {
-	contents, err := c.getPolymerEntity(ctx, pdbID, entityID)
+	url := c.polymerEntityURL(pdbID, entityID)
+	contents, err := c.getPolymerEntity(ctx, url, pdbID, entityID)
 	if err != nil {
 		return nil, err
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(contents, &payload); err != nil {
+	if err := c.decodeJSON(url, contents, &payload); err != nil {
 		return nil, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
 	return payload, nil
@@ -166,13 +169,14 @@ func (c *RemoteClient) GetPolymerEntityDetails(
 	pdbID string,
 	entityID string,
 ) (PolymerEntityDetails, error) {
-	contents, err := c.getPolymerEntity(ctx, pdbID, entityID)
+	url := c.polymerEntityURL(pdbID, entityID)
+	contents, err := c.getPolymerEntity(ctx, url, pdbID, entityID)
 	if err != nil {
 		return PolymerEntityDetails{}, err
 	}
 
 	var details PolymerEntityDetails
-	if err := json.Unmarshal(contents, &details); err != nil {
+	if err := c.decodeJSON(url, contents, &details); err != nil {
 		return PolymerEntityDetails{}, fmt.Errorf("decode RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
 	return details, nil
@@ -196,7 +200,7 @@ func (c *RemoteClient) GetPolymerEntityInstanceDetails(
 	}
 
 	var details PolymerEntityInstanceDetails
-	if err := json.Unmarshal(contents, &details); err != nil {
+	if err := c.decodeJSON(url, contents, &details); err != nil {
 		return PolymerEntityInstanceDetails{}, fmt.Errorf(
 			"decode RCSB polymer entity instance %s.%s: %w",
 			pdbID,
@@ -207,8 +211,15 @@ func (c *RemoteClient) GetPolymerEntityInstanceDetails(
 	return details, nil
 }
 
-func (c *RemoteClient) getEntry(ctx context.Context, pdbID string) ([]byte, error) {
-	url := c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(strings.TrimSpace(pdbID))
+func (c *RemoteClient) entryURL(pdbID string) string {
+	return c.dataBaseURL + "/rest/v1/core/entry/" + strings.ToUpper(strings.TrimSpace(pdbID))
+}
+
+func (c *RemoteClient) polymerEntityURL(pdbID string, entityID string) string {
+	return c.dataBaseURL + "/rest/v1/core/polymer_entity/" + strings.ToUpper(strings.TrimSpace(pdbID)) + "/" + strings.TrimSpace(entityID)
+}
+
+func (c *RemoteClient) getEntry(ctx context.Context, url string) ([]byte, error) {
 	contents, err := c.get(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("get RCSB entry: %w", err)
@@ -216,13 +227,34 @@ func (c *RemoteClient) getEntry(ctx context.Context, pdbID string) ([]byte, erro
 	return contents, nil
 }
 
-func (c *RemoteClient) getPolymerEntity(ctx context.Context, pdbID string, entityID string) ([]byte, error) {
-	url := c.dataBaseURL + "/rest/v1/core/polymer_entity/" + strings.ToUpper(strings.TrimSpace(pdbID)) + "/" + strings.TrimSpace(entityID)
+func (c *RemoteClient) getPolymerEntity(ctx context.Context, url string, pdbID string, entityID string) ([]byte, error) {
 	contents, err := c.get(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("get RCSB polymer entity %s_%s: %w", pdbID, entityID, err)
 	}
 	return contents, nil
+}
+
+// decodeJSON decodes a body fetched from url into target. get caches every 200
+// answer before anyone reads it, so a body that does not decode is dropped from
+// the cache here: the next request fetches it again instead of failing on the
+// cached copy until it expires. A malformed RCSB answer can then be retried.
+func (c *RemoteClient) decodeJSON(url string, contents []byte, target any) error {
+	if err := json.Unmarshal(contents, target); err != nil {
+		c.forget(url)
+		return err
+	}
+	return nil
+}
+
+// forget drops url's cached answer, if there is one.
+func (c *RemoteClient) forget(url string) {
+	if c.cache == nil {
+		return
+	}
+	c.cacheMutex.Lock()
+	c.cache.Remove(url)
+	c.cacheMutex.Unlock()
 }
 
 func (c *RemoteClient) GetFile(_ context.Context, pdbID string, file string) (Artifact, error) {

@@ -154,6 +154,79 @@ test("should show the original mutation text when only part of it is a plain sub
   assert.deepEqual(parsed.mutations, ["C54T", "K7R"]);
 });
 
+test("should mark archive mutation text that is not single substitutions as needing review", () => {
+  // given
+  const entities = [
+    entity({
+      label_entity_id: "1",
+      mutations: ["C54T"],
+      mutations_raw: "C54T, ENGINEERED MUTATION",
+      mutations_status: "needs_review",
+    }),
+    entity({
+      label_entity_id: "2",
+      mutations: ["C54T", "K7R"],
+      mutations_raw: "C54T, K7R",
+      mutations_status: "parsed",
+      uniprot_mappings: [{ accession: "P00698", source: "sifts" }],
+    }),
+  ];
+
+  // when
+  const [unclear, parsed] = polymerEntityViews(entities, []);
+
+  // then
+  assert.equal(unclear.mutationsReview, "part of this text is not a single substitution");
+  assert.equal(parsed.mutationsReview, null);
+});
+
+test("should mark the depositor's mutations as needing review when the entity has no UniProt mapping", () => {
+  // given
+  const entities = [
+    entity({ label_entity_id: "1", mutations: ["C54T"] }),
+    entity({
+      label_entity_id: "2",
+      mutations: ["C54T"],
+      uniprot_mappings: [{ accession: "P00698", source: "sifts" }],
+    }),
+    entity({ label_entity_id: "3", mutations: ["K7R"] }),
+  ];
+  const typed = [
+    { label_entity_id: "1", mutations: ["C54T"] },
+    { label_entity_id: "2", mutations: ["C54T"] },
+  ];
+
+  // when
+  const [unmapped, mapped, archiveOnly] = polymerEntityViews(entities, [], [], typed);
+
+  // then
+  assert.equal(unmapped.mutationsReview, "no UniProt mapping to check these positions against");
+  assert.equal(mapped.mutationsReview, null);
+  assert.equal(archiveOnly.mutationsReview, null);
+});
+
+test("should show the depositor's mutations instead of the archive's unclear text they replaced", () => {
+  // given: the sync keeps the archive's raw text and status beside typed mutations
+  const entities = [
+    entity({
+      label_entity_id: "1",
+      mutations: ["C54T"],
+      mutations_raw: "C54T, ENGINEERED MUTATION",
+      mutations_status: "needs_review",
+      uniprot_mappings: [{ accession: "P00698", source: "sifts" }],
+    }),
+  ];
+  const typed = [{ label_entity_id: "1", mutations: ["C54T"] }];
+
+  // when
+  const [view] = polymerEntityViews(entities, [], [], typed);
+
+  // then
+  assert.equal(view.mutationsText, "C54T");
+  assert.deepEqual(view.mutations, ["C54T"]);
+  assert.equal(view.mutationsReview, null);
+});
+
 test("should split mutations into substitutions only when the field is a plain list", () => {
   // given / when / then
   assert.deepEqual(mutationTokens("K986P, V987P, R682G"), [

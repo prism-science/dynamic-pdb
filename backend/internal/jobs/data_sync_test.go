@@ -607,7 +607,30 @@ func Test_should_prefer_depositor_construct_and_mutations_when_rcsb_extraction_h
 	// then
 	assert.Equal(t, optionalString("depositor construct"), merged[0].Metadata.Construct)
 	assert.Equal(t, []string{"C54T", "C97A"}, merged[0].Metadata.Mutations)
+	assert.Equal(t, optionalString("C54T, C97A"), merged[0].Metadata.MutationsRaw)
+	assert.Equal(t, models.MutationsStatusParsed, *merged[0].Metadata.MutationsStatus)
 	assert.Equal(t, optionalString("rcsb fragment"), extracted[0].Metadata.Construct)
+}
+
+func Test_should_replace_archive_mutation_text_needing_review_when_depositor_types_substitutions(t *testing.T) {
+	// given: RCSB's text is only partly substitutions
+	needsReview := models.MutationsStatusNeedsReview
+	extracted := []models.PolymerEntity{{Metadata: models.PolymerEntityMetadata{
+		LabelEntityID:   optionalString("1"),
+		Mutations:       []string{"C54T"},
+		MutationsRaw:    optionalString("C54T, ENGINEERED MUTATION"),
+		MutationsStatus: &needsReview,
+	}}}
+	depositor := []models.DepositorPolymerEntity{{LabelEntityID: "1", Mutations: []string{"C54T", "K7R"}}}
+
+	// when
+	merged := applyDepositorPolymerEntities(extracted, depositor)
+
+	// then
+	assert.Equal(t, []string{"C54T", "K7R"}, merged[0].Metadata.Mutations)
+	assert.Equal(t, optionalString("C54T, K7R"), merged[0].Metadata.MutationsRaw)
+	assert.Equal(t, models.MutationsStatusParsed, *merged[0].Metadata.MutationsStatus)
+	assert.Equal(t, models.MutationsStatusNeedsReview, *extracted[0].Metadata.MutationsStatus)
 }
 
 func Test_should_use_depositor_organism_only_when_rcsb_extraction_finds_none(t *testing.T) {

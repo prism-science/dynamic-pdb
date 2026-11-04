@@ -18,7 +18,26 @@
         "needs_review": true,
         "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "184D",
+      "authors": [
+        "Leonard, G.A.",
+        "Zhang, S.",
+        "Peterson, M.R.",
+        "Harrop, S.J.",
+        "Helliwell, J.R.",
+        "Cruse, W.B.T.",
+        "Langlois D'Estaintot, B.",
+        "Kennard, O.",
+        "Brown, T.",
+        "Hunter, W.N."
+      ],
+      "r_work": 0.214,
+      "resolution": 1.8,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "C 2 2 2"
+    }
   },
   "193L.cif": {
     "atom_count": 86,
@@ -37,13 +56,43 @@
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "193L",
+      "authors": [
+        "Vaney, M.C.",
+        "Maignan, S.",
+        "Ries-Kautt, M.",
+        "Ducruix, A."
+      ],
+      "r_work": 0.184,
+      "r_free": 0.226,
+      "resolution": 1.33,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 43 21 2"
+    }
   },
   "1A62.cif": {
     "atom_count": 88,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
-    "compounds": []
+    "compounds": [],
+    "header": {
+      "entry_id": "1A62",
+      "authors": [
+        "Allison, T.J.",
+        "Wood, T.C.",
+        "Briercheck, D.M.",
+        "Rastinejad, F.",
+        "Richardson, J.P.",
+        "Rule, G.S."
+      ],
+      "r_work": 0.216,
+      "r_free": 0.25,
+      "resolution": 1.55,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 1 21 1"
+    }
   },
   "1A62.pdb": {
     "atom_count": 88,
@@ -61,7 +110,18 @@
         "id": "AP5",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "1AKE",
+      "authors": [
+        "Mueller, C.W.",
+        "Schulz, G.E."
+      ],
+      "r_work": 0.196,
+      "resolution": 2,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 21 2 21"
+    }
   },
   "1C0R.cif": {
     "atom_count": 223,
@@ -107,7 +167,20 @@
           }
         ]
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "1C0R",
+      "authors": [
+        "Loll, P.J.",
+        "Kaplan, J.",
+        "Selinsky, B.",
+        "Axelsen, P.H."
+      ],
+      "r_free": 0.142,
+      "resolution": 1,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 43 21 2"
+    }
   },
   "1II5.pdb": {
     "atom_count": 62,
@@ -138,7 +211,25 @@
         "id": "XE",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "1W53",
+      "authors": [
+        "Delumeau, O.",
+        "Dutta, S.",
+        "Brigulla, M.",
+        "Kuhnke, G.",
+        "Hardwick, S.W.",
+        "Voelker, U.",
+        "Yudkin, M.D.",
+        "Lewis, R.J."
+      ],
+      "r_work": 0.198,
+      "r_free": 0.227,
+      "resolution": 1.6,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "C 2 2 21"
+    }
   },
   "2HQZ.pdb": {
     "atom_count": 215,
@@ -191,7 +282,20 @@
           }
         ]
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "2VSD",
+      "authors": [
+        "Arnon, T.I.",
+        "Kaiser, J.T.",
+        "Bjorkman, P.J."
+      ],
+      "r_work": 0.207,
+      "r_free": 0.247,
+      "resolution": 1.82,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 31 2 1"
+    }
   },
   "3CEB.cif": {
     "atom_count": 161,
@@ -215,7 +319,18 @@
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "3CEB",
+      "authors": [
+        "Joint Center for Structural Genomics (JCSG)"
+      ],
+      "r_work": 0.186,
+      "r_free": 0.225,
+      "resolution": 2.4,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 61"
+    }
   },
   "3CEB.pdb": {
     "atom_count": 161,
@@ -251,7 +366,18 @@
         "id": "CA",
         "rule": "metalc"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "3CLN",
+      "authors": [
+        "Babu, Y.S.",
+        "Bugg, C.E.",
+        "Cook, W.J."
+      ],
+      "resolution": 2.2,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 1"
+    }
   },
   "3CLN.pdb": {
     "atom_count": 71,
@@ -277,7 +403,21 @@
         "needs_review": true,
         "reason": "single-atom compound is not in the metal ion reference list: confirm whether it is a metal ion"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "4HB1",
+      "authors": [
+        "Schafmeister, C.E.",
+        "Laporte, S.L.",
+        "Miercke, L.J.W.",
+        "Stroud, R.M."
+      ],
+      "r_work": 0.234,
+      "r_free": 0.284,
+      "resolution": 2.9,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 64 2 2"
+    }
   },
   "4HHB.cif": {
     "atom_count": 420,
@@ -296,7 +436,18 @@
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "4HHB",
+      "authors": [
+        "Fermi, G.",
+        "Perutz, M.F."
+      ],
+      "r_work": 0.135,
+      "resolution": 1.74,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 1 21 1"
+    }
   },
   "4UG1.cif": {
     "atom_count": 132,
@@ -318,7 +469,27 @@
         "id": "IMD",
         "rule": "metalc"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "4UG1",
+      "authors": [
+        "Rismondo, J.",
+        "Cleverley, R.M.",
+        "Lane, H.V.",
+        "Grohennig, S.",
+        "Steglich, A.",
+        "Muller, L.",
+        "Krishna Mannala, G.",
+        "Hain, T.",
+        "Lewis, R.J.",
+        "Halbedel, S."
+      ],
+      "r_work": 0.1743,
+      "r_free": 0.2147,
+      "resolution": 1.6,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 31 2 1"
+    }
   },
   "6OIM.cif": {
     "atom_count": 134,
@@ -340,7 +511,18 @@
         "id": "MOV",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "6OIM",
+      "authors": [
+        "Mohr, C."
+      ],
+      "r_work": 0.18092,
+      "r_free": 0.21519,
+      "resolution": 1.65,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 21 21 21"
+    }
   },
   "6OIM.pdb": {
     "atom_count": 134,
@@ -374,7 +556,20 @@
         "id": "NA",
         "rule": "metalc"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "6TQP",
+      "authors": [
+        "Suraweera, C.D.",
+        "Hinds, M.G.",
+        "Kvansakul, M."
+      ],
+      "r_work": 0.190904044812,
+      "r_free": 0.218444012118,
+      "resolution": 1.8494094828,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 21 21 21"
+    }
   },
   "7LTB.cif": {
     "atom_count": 236,
@@ -423,7 +618,20 @@
           }
         ]
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "7LTB",
+      "authors": [
+        "Davis, K.M.",
+        "Jeffrey, P.D.",
+        "Seyedsayamdost, M.R."
+      ],
+      "r_work": 0.1458,
+      "r_free": 0.1509,
+      "resolution": 0.95,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 21 21 21"
+    }
   },
   "7LTB.pdb": {
     "atom_count": 236,
@@ -461,7 +669,16 @@
     "atom_count": 77,
     "modeled_residues": 4,
     "unique_protein_chains": 1,
-    "compounds": []
+    "compounds": [],
+    "header": {
+      "entry_id": "9A8B",
+      "authors": [
+        "Moyer, A.P.",
+        "Baker, D.",
+        "Ramelot, T.A.",
+        "Montelione, G.T."
+      ]
+    }
   },
   "parity/entity_rules.cif": {
     "atom_count": 19,
@@ -534,7 +751,10 @@
           }
         ]
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/ihm_probe.cif": {
     "atom_count": 6,
@@ -556,7 +776,10 @@
         "id": "ATP",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/instances.cif": {
     "atom_count": 11,
@@ -597,7 +820,10 @@
         "id": "ZZ9",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/metal_partner_flags.cif": {
     "atom_count": 10,
@@ -643,7 +869,10 @@
         "needs_review": true,
         "reason": "metal ion instance has no metalc connection to a protein residue or ligand"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/no_atom_site.cif": {
     "atom_count": 0,
@@ -674,7 +903,10 @@
           }
         ]
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/no_entity_3CEB.cif": {
     "atom_count": 161,
@@ -712,7 +944,18 @@
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
-    ]
+    ],
+    "header": {
+      "entry_id": "3CEB",
+      "authors": [
+        "Joint Center for Structural Genomics (JCSG)"
+      ],
+      "r_work": 0.186,
+      "r_free": 0.225,
+      "resolution": 2.4,
+      "method": "X-RAY DIFFRACTION",
+      "space_group": "P 61"
+    }
   },
   "parity/no_entity_chem_comp.cif": {
     "atom_count": 11,
@@ -743,7 +986,10 @@
         "needs_review": true,
         "reason": "unknown chemical component type \"mystery linking\": confirm where this compound belongs"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/no_metalc.cif": {
     "atom_count": 9,
@@ -783,7 +1029,10 @@
         "needs_review": true,
         "reason": "often from the buffer: confirm it is part of the sample"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/no_seqres_3CEB.pdb": {
     "atom_count": 161,
@@ -828,7 +1077,10 @@
         "id": "GOL",
         "rule": "depositor_flag"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/pdb_blank_chain.pdb": {
     "atom_count": 3,
@@ -937,7 +1189,10 @@
         "id": "ATP",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/two_models.cif": {
     "atom_count": 4,
@@ -949,7 +1204,10 @@
         "id": "LIG",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/unlocated_metalc.cif": {
     "atom_count": 3,
@@ -961,7 +1219,10 @@
         "id": "CA",
         "rule": "metalc"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   },
   "parity/wrapped_rows.cif": {
     "atom_count": 4,
@@ -983,6 +1244,9 @@
         "id": "1UD",
         "rule": "list"
       }
-    ]
+    ],
+    "header": {
+      "authors": []
+    }
   }
 }

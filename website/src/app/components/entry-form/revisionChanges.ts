@@ -23,7 +23,11 @@ import {
   compoundsFromParsed,
 } from "./compounds";
 import { optionalNumber } from "./crystals";
-import { organismLabel, polymerEntitiesRequest } from "./polymerEntities";
+import {
+  mutationsNeedingReview,
+  organismLabel,
+  polymerEntitiesRequest,
+} from "./polymerEntities";
 import {
   relatedDatasetDraftsFromStored,
   relatedDatasetsRequest,
@@ -137,6 +141,8 @@ function archiveLock(
         release: source.release ?? null,
       };
     case "depositor":
+    case "file":
+      // A user's value, typed or read from their file: not the archive's to lock.
       return null;
     default:
       throw new Error(`unknown field source: ${String(source.source)}`);
@@ -237,6 +243,7 @@ function polymerEntityDraftsFromEntry(
         archiveOrganisms: ownOrganism ? [] : entity.source_organisms.map(organismLabel),
         archiveConstruct: own?.construct ? "" : (entity.construct ?? ""),
         archiveMutations: own?.mutations?.length ? [] : (entity.mutations ?? []),
+        archiveMutationsRaw: own?.mutations?.length ? "" : mutationsNeedingReview(entity),
         construct: own?.construct ?? "",
         mutations: own?.mutations ?? [],
         organismName: ownOrganism?.scientific_name ?? "",

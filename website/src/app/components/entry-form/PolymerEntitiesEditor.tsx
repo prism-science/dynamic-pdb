@@ -126,7 +126,11 @@ function PolymerEntityCard({
       <FieldMessages messages={inlineMessages(messages, "entity.block", item)} />
 
       <div className={styles.fieldGrid}>
-        <Field id="entity.uniprot" source={source}>
+        <Field
+          id="entity.uniprot"
+          source={source}
+          messages={inlineMessages(messages, "entity.uniprot", item)}
+        >
           <ReadOnlyValue>
             {entity.uniprotAccessions.length > 0
               ? entity.uniprotAccessions.join(", ")
@@ -210,7 +214,14 @@ function PolymerEntityCard({
             validate={mutationError}
             separators={/[,;\s]+/}
           />
-          {entity.archiveMutations.length > 0 ? (
+          {entity.archiveMutationsRaw ? (
+            // Part of the archive's text is not a single substitution, so
+            // the text is shown as written rather than as the parsed list.
+            <span className={styles.archiveNote}>
+              PDB {pdbId}: {entity.archiveMutationsRaw}{" "}
+              <span className={styles.reviewTag}>needs review</span>
+            </span>
+          ) : entity.archiveMutations.length > 0 ? (
             <span className={styles.archiveNote}>
               PDB {pdbId}: {entity.archiveMutations.join(", ")}
             </span>

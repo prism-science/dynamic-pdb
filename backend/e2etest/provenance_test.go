@@ -2,6 +2,7 @@ package e2etest
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -277,4 +278,114 @@ func (s *SchemaValidationSuite) Test_should_reject_metric_run_id_with_400_when_m
 	s.Equal(http.StatusBadRequest, response.StatusCode)
 	assertErrorResponse(s.T(), response, "BAD_REQUEST", "metric run_id must name a run of the same model revision")
 	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
+}
+
+func (s *SchemaValidationSuite) Test_should_record_score_read_from_the_model_file_as_the_files_when_value_sources_names_it() {
+	// given: a computed model whose R-work its own coordinate file states
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "value-sources-owner", 8440)
+	entryFileID, modelFileID, runID := uuid.New(), uuid.New(), uuid.New()
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title":     "value sources entry",
+			"artifacts": []map[string]any{artifactRequest(entryFileID, "data", "L0", "structure_factors_cif", "s3://e/sf.cif", nil)},
+		},
+	})
+	modelFile := artifactRequest(modelFileID, "model", "L2", "cif", "s3://m/m.cif", nil)
+	modelFile["sha256"] = "3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"
+
+	// when
+	created := createModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title":               "model with file scores",
+			"metadata":            map[string]any{"model_type": "Multiconformer"},
+			"primary_artifact_id": modelFileID,
+			"artifacts":           []map[string]any{modelFile},
+			"runs":                []map[string]any{refinementRunForTest(runID, entryFileID, modelFileID)},
+			"metrics": []map[string]any{
+				{"id": uuid.New(), "key": "r_work", "value": 0.19, "run_id": runID},
+				{"id": uuid.New(), "key": "r_free", "value": 0.23, "run_id": runID},
+			},
+			"value_sources": map[string]any{"/metrics/r_work": map[string]any{"artifact_id": modelFileID}},
+		},
+	})
+
+	// then
+	path := "/v1/entries/" + entry.EntryId + "/models/" + created.ModelId + "/revisions/" + created.RevisionId.String()
+	revision := getModelRevisionForTest(s.T(), path, adminToken)
+	s.Require().NotNil(revision.FieldSources)
+	s.Equal(httpapi.FieldSources{
+		"/metrics/r_work": {
+			Source:     httpapi.FieldSourceSourceFile,
+			ArtifactId: &modelFileID,
+			Sha256:     new("3b2a8f0c9d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90"),
+		},
+		"/metrics/r_free": {Source: httpapi.FieldSourceSourceDepositor},
+	}, *revision.FieldSources)
+}
+
+func (s *SchemaValidationSuite) Test_should_reject_score_source_and_write_nothing_when_it_names_a_run_input() {
+	// given: the archive's mmCIF reaches the deposit as an input of the refinement
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "value-sources-run-input-owner", 8441)
+	entryFileID, archiveFileID, modelFileID, runID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title":     "value sources run input entry",
+			"artifacts": []map[string]any{artifactRequest(entryFileID, "data", "L0", "structure_factors_cif", "s3://e/sf.cif", nil)},
+		},
+	})
+	modelFile := artifactRequest(modelFileID, "model", "L2", "cif", "s3://m/m.cif", nil)
+	modelFile["sha256"] = strings.Repeat("a", 64)
+	archiveFile := artifactRequest(archiveFileID, "1abc.cif", "L2", "cif", "s3://m/1abc.cif", nil)
+	archiveFile["sha256"] = strings.Repeat("b", 64)
+	run := refinementRunForTest(runID, entryFileID, modelFileID)
+	run["artifacts"] = append(run["artifacts"].([]map[string]any), map[string]any{"artifact_id": archiveFileID, "direction": "input"})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/models", map[string]any{
+		"model": map[string]any{
+			"title":               "model claiming an archive score",
+			"metadata":            map[string]any{"model_type": "Multiconformer"},
+			"primary_artifact_id": modelFileID,
+			"artifacts":           []map[string]any{modelFile, archiveFile},
+			"runs":                []map[string]any{run},
+			"metrics":             []map[string]any{{"id": uuid.New(), "key": "r_work", "value": 0.19, "run_id": runID}},
+			"value_sources":       map[string]any{"/metrics/r_work": map[string]any{"artifact_id": archiveFileID}},
+		},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("/model/value_sources/~1metrics~1r_work/artifact_id", errors[0].Source.Pointer)
+	s.Contains(stringValue(errors[0].Detail), "must be the request's primary artifact")
+	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
+}
+
+func (s *SchemaValidationSuite) Test_should_record_entry_ligands_read_from_an_uploaded_structure_file_as_the_files() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-value-sources-owner", 8442)
+	fileID := uuid.New()
+	file := artifactRequest(fileID, "deposit.cif", "L0", "cif", "s3://e/deposit.cif", nil)
+	file["sha256"] = strings.Repeat("c", 64)
+
+	// when
+	created := createEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title":         "entry with file ligands",
+			"ligands":       []string{"ATP"},
+			"artifacts":     []map[string]any{file},
+			"value_sources": map[string]any{"/metadata/ligands": map[string]any{"artifact_id": fileID}},
+		},
+	})
+
+	// then
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := getWithToken(s.T(), "/v1/entries/"+created.EntryId+"/revisions/"+created.RevisionId.String(), adminToken)
+	revision := decodeJSONResponse[httpapi.EntryRevisionDocument](s.T(), response, http.StatusOK).Data.Attributes
+	s.Require().NotNil(revision.FieldSources)
+	s.Equal(httpapi.FieldSource{
+		Source: httpapi.FieldSourceSourceFile, ArtifactId: &fileID, Sha256: new(strings.Repeat("c", 64)),
+	}, (*revision.FieldSources)["/metadata/ligands"])
+	s.Equal(httpapi.FieldSourceSourceDepositor, (*revision.FieldSources)["/title"].Source)
 }

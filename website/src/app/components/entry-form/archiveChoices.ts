@@ -1,4 +1,4 @@
-import type { Entry, EntryRevisionChange } from "@/lib/api/entries";
+import type { Entry, EntryRevisionChange, FieldSource } from "@/lib/api/entries";
 
 import type { ArchiveAutofill } from "./autofill";
 import { crystallographyRequest, optionalNumber } from "./crystals";
@@ -359,6 +359,29 @@ const SYNCED_FIELD_LABELS: Record<EntrySyncedField, string> = {
 
 export const DEPOSITOR_BADGE = "set by the depositor";
 
+/** Beside a value the depositor sent as read from a file they uploaded. */
+export const FILE_BADGE = "read from an uploaded file";
+
+/**
+ * Whether a user set the field, typed or read from a file they uploaded, so
+ * the weekly archive update keeps it. A field without a source is the
+ * archive's to update.
+ */
+export function isUserSupplied(source: FieldSource | undefined): boolean {
+  if (!source) {
+    return false;
+  }
+  switch (source.source) {
+    case "depositor":
+    case "file":
+      return true;
+    case "rcsb":
+      return false;
+    default:
+      throw new Error(`unknown field source: ${String(source.source)}`);
+  }
+}
+
 /**
  * Edit entry: the badges of the sync-written fields the archive does not lock.
  * A field the depositor set says so. Ligands and cofactors stay editable
@@ -375,6 +398,9 @@ export function entrySourceBadges(entry: Entry): Partial<Record<EntrySyncedField
     switch (source.source) {
       case "depositor":
         badges[field] = DEPOSITOR_BADGE;
+        break;
+      case "file":
+        badges[field] = FILE_BADGE;
         break;
       case "rcsb":
         if (field === "ligands" || field === "cofactors") {
@@ -403,7 +429,7 @@ export function editTakenOverFields(entry: Entry, change: EntryRevisionChange): 
   return ENTRY_SYNCED_FIELDS.filter(
     (field) =>
       field in change &&
-      entry.field_sources?.[ENTRY_SYNCED_POINTERS[field]]?.source !== "depositor",
+      !isUserSupplied(entry.field_sources?.[ENTRY_SYNCED_POINTERS[field]]),
   );
 }
 

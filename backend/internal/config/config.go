@@ -27,6 +27,8 @@ type Config struct {
 	DataSync   jobs.DataSyncConfig `mapstructure:"data_sync"`
 	Entries    EntriesConfig       `mapstructure:"entries"`
 	Revisions  RevisionsConfig     `mapstructure:"revisions"`
+	// ArtifactExtraction holds the switch for extracting uploaded files before they are saved.
+	ArtifactExtraction ArtifactExtractionConfig `mapstructure:"artifact_extraction"`
 }
 
 type ServerConfig struct {
@@ -42,6 +44,14 @@ type EntriesConfig struct {
 	// DeleteEnabled lets reviewers soft-delete entries with DELETE /v1/entries/{entry_id}. It is
 	// on only on dev, so researchers can delete their test entries and retest the deposition forms.
 	DeleteEnabled bool `mapstructure:"delete_enabled"`
+}
+
+// ArtifactExtractionConfig holds the switches for reading values from structure files.
+type ArtifactExtractionConfig struct {
+	// UploadsEnabled turns on POST /v1/files/extract, which the deposition forms call to show the
+	// values of an uploaded mmCIF before the entry or model is saved. Off, the forms keep their
+	// own browser preview of the file.
+	UploadsEnabled bool `mapstructure:"uploads_enabled"`
 }
 
 // RevisionsConfig holds the switches for reviewing revisions.
@@ -97,6 +107,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetDefault("entries::delete_enabled", false)
 	v.SetDefault("revisions::self_approval_enabled", false)
+	v.SetDefault("artifact_extraction::uploads_enabled", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

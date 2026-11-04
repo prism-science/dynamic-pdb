@@ -18,6 +18,43 @@ export function mutationError(mutation: string): string | null {
     : `${mutation} is not one substitution: write the original residue, the UniProt position and the new residue, for example C54T`;
 }
 
+/**
+ * The mutation text of an archive entity when part of it is not a single
+ * substitution, so it needs review; empty when every part was read into the
+ * mutation list, or the text names no mutation.
+ */
+export function mutationsNeedingReview(entity: {
+  mutations_raw?: string;
+  mutations_status?: "parsed" | "needs_review" | "none";
+}): string {
+  switch (entity.mutations_status) {
+    case "needs_review":
+      return entity.mutations_raw?.trim() ?? "";
+    case "parsed":
+    case "none":
+    case undefined:
+      return "";
+    default:
+      throw new Error(`unknown mutations status: ${String(entity.mutations_status)}`);
+  }
+}
+
+/**
+ * Why a depositor's mutations need review, or null when they do not:
+ * mutations are written in UniProt numbering, and an entity the PDB maps to no
+ * UniProt entry gives nothing to check the positions against (researchers'
+ * rule, answer 3 of 2026-10-21).
+ */
+export function unmappedMutationsReason(entity: {
+  mutations: string[];
+  uniprotAccessions: string[];
+}): string | null {
+  if (entity.mutations.length === 0 || entity.uniprotAccessions.length > 0) {
+    return null;
+  }
+  return "needs review: the PDB maps this entity to no UniProt entry, so these positions cannot be checked against UniProt numbering";
+}
+
 /** A PDB ID as the archive lookup accepts it: a digit, then three letters or digits. */
 export const PDB_ID_PATTERN = /^[0-9][A-Z0-9]{3}$/;
 
@@ -55,6 +92,7 @@ export function polymerEntityDraftsFromArchive(
         archiveOrganisms: proposal.source_organisms.map(organismLabel),
         archiveConstruct: proposal.construct ?? "",
         archiveMutations: proposal.mutations ?? [],
+        archiveMutationsRaw: mutationsNeedingReview(proposal),
         construct: typed?.construct ?? "",
         mutations: typed?.mutations ?? [],
         organismName: typed?.organismName ?? "",

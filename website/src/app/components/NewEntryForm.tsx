@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import type { ArchiveEntryProposal } from "@/lib/api/entries";
 import {
   createEntryAction,
   lookupArchiveEntryAction,
@@ -12,6 +11,7 @@ import DraftRestorePrompt, {
   draftSummary,
 } from "./entry-form/DraftRestorePrompt";
 import EntryFormSections from "./entry-form/EntryFormSections";
+import FileReadStatus from "./entry-form/FileReadStatus";
 import FilesEditor from "./entry-form/FilesEditor";
 import { Field, SubmitBlockers } from "./entry-form/FormFields";
 import type { ArchiveLookupState } from "./entry-form/PolymerEntitiesEditor";
@@ -44,6 +44,20 @@ import {
   withoutOwnFields,
 } from "./entry-form/archiveChoices";
 import type { EntryArchiveField } from "./entry-form/revisionChanges";
+import {
+  entryFileBadges,
+  entryFileMessages,
+  entryValueSourcesRequest,
+  pdbSuggestion,
+  withEntryFileValues,
+  type EntryFileFill,
+  type ReadEntryFile,
+} from "./entry-form/entryFileFills";
+import {
+  lookupReviewMessages,
+  type ArchiveLookupReview,
+} from "./entry-form/lookupReview";
+import { uploadedStructure, useFileExtraction } from "./entry-form/useFileExtraction";
 import { entryFormMessages } from "./entry-form/validation";
 import { DRAFT_VERSION, emptyEntryMetadataDraft } from "./entry-form/types";
 import type { EntryMetadataDraft, ParsedFile } from "./entry-form/types";
@@ -93,14 +107,21 @@ export default function NewEntryForm() {
   const [apiMessages, setApiMessages] = useState<FieldMessage[]>([]);
   const [lookup, setLookup] = useState<ArchiveLookupState>({ status: "idle" });
   const [lookupAttempt, setLookupAttempt] = useState(0);
-  // The entry values the last finished lookup proposed, for the PDB ID it read.
+  // What the last finished lookup proposed, for the PDB ID it read: the
+  // entry values the form fills in, and the conflicts and warnings it shows.
   const [archiveEntry, setArchiveEntry] = useState<{
     pdbId: string;
-    proposal: ArchiveEntryProposal;
+    review: ArchiveLookupReview;
   } | null>(null);
   // The archive fields the depositor took over: their typed values are shown
   // and sent instead of the archive's. A refetch never changes this list.
   const [ownFields, setOwnFields] = useState<EntryArchiveField[]>([]);
+  // Values filled from uploaded mmCIF files the server read, and what each
+  // read file said, for the notes beside the fields.
+  const [fileFills, setFileFills] = useState<EntryFileFill[]>([]);
+  const [readFiles, setReadFiles] = useState<ReadEntryFile[]>([]);
+  const metadataRef = useRef(metadata);
+  metadataRef.current = metadata;
 
   // Draft persistence: restore prompt + gate so we never overwrite a saved
   // draft before the user decides whether to continue or discard it.
@@ -130,6 +151,7 @@ export default function NewEntryForm() {
       thumbUploadStatus: thumbnail.url ? "uploaded" : "idle",
       files: files.filter(isPersistable).map(fileToDraft),
       ownFields,
+      fileFills,
     };
     if (draftHasContent(draft)) {
       writeStoredDraft(draft);
@@ -153,12 +175,26 @@ export default function NewEntryForm() {
     thumbnail.preview,
     files,
     ownFields,
+    fileFills,
   ]);
 
   // The polymer entities come from the PDB entry: without their
   // label_entity_id the API cannot tell which one a construct belongs to.
   const pdbId = metadata.pdb.trim().toUpperCase();
   const pdbIsComplete = PDB_ID_PATTERN.test(pdbId);
+
+  // An uploaded mmCIF is read on the server; its values fill what the
+  // depositor left empty, and stay the file's while unchanged.
+  const extraction = useFileExtraction((file, extracted) => {
+    const pdb = metadataRef.current.pdb.trim().toUpperCase();
+    const { fill } = withEntryFileValues(metadataRef.current, file, extracted, pdb);
+    setMetadata((current) => withEntryFileValues(current, file, extracted, pdb).metadata);
+    setFileFills((current) => [...current.filter((item) => item.fileId !== file.id), fill]);
+    setReadFiles((current) => [
+      ...current.filter((item) => item.fileId !== file.id),
+      { fileId: file.id, fileName: file.name, extracted },
+    ]);
+  });
   useEffect(() => {
     if (!pdbIsComplete) {
       setLookup({ status: "idle" });
@@ -183,7 +219,14 @@ export default function NewEntryForm() {
               current.polymerEntities,
             ),
           }));
-          setArchiveEntry({ pdbId, proposal: result.entry });
+          setArchiveEntry({
+            pdbId,
+            review: {
+              entry: result.entry,
+              polymerEntities: result.polymerEntities,
+              warnings: result.warnings,
+            },
+          });
           setLookup({ status: "ready", pdbId });
         })
         .catch((lookupError: unknown) => {
@@ -214,6 +257,7 @@ export default function NewEntryForm() {
     setTitle(draft.title);
     setMetadata(draft.metadata ?? emptyEntryMetadataDraft());
     setOwnFields(draft.ownFields);
+    setFileFills(draft.fileFills ?? []);
     thumbnail.restore(draft.thumbUrl, draft.thumbPreview ?? null);
     setFiles(
       assignCanonicalArtifactTypes(
@@ -239,6 +283,8 @@ export default function NewEntryForm() {
     setTitle("");
     setMetadata(emptyEntryMetadataDraft());
     setOwnFields([]);
+    setFileFills([]);
+    setReadFiles([]);
     thumbnail.reset();
     setFiles([]);
     setError(null);
@@ -270,7 +316,12 @@ export default function NewEntryForm() {
       ...assignCanonicalArtifactTypes(current, parsed, "entry"),
     ]);
     parsed.forEach((file) => {
-      void uploadParsedFileNow(file, { entryId, modelId: null }, patchEntryFile);
+      void uploadParsedFileNow(file, { entryId, modelId: null }, patchEntryFile).then((url) => {
+        const structure = url ? uploadedStructure({ ...file, url, uploadStatus: "uploaded" }) : null;
+        if (structure) {
+          void extraction.read(structure);
+        }
+      });
     });
   };
 
@@ -303,10 +354,17 @@ export default function NewEntryForm() {
   // for the current PDB ID has finished. What the depositor typed stays
   // underneath, and shows again when the PDB ID is cleared or changed, or
   // when they take the field over with "Use my own value".
-  const archiveFill =
+  const finishedLookup =
     lookup.status === "ready" && archiveEntry?.pdbId === lookup.pdbId
-      ? archiveAutofill(lookup.pdbId, archiveEntry.proposal)
+      ? archiveEntry
       : null;
+  const archiveFill = finishedLookup
+    ? archiveAutofill(finishedLookup.pdbId, finishedLookup.review.entry)
+    : null;
+  // Advice only: the depositor can take a field over, not fix the archive.
+  const reviewMessages = finishedLookup
+    ? lookupReviewMessages(finishedLookup.pdbId, finishedLookup.review)
+    : [];
   const autofill = archiveFill ? withoutOwnFields(archiveFill, ownFields) : null;
   const archiveFields = archiveFieldsView(
     archiveFill?.locks ?? {},
@@ -340,7 +398,14 @@ export default function NewEntryForm() {
   const validationMessages = entryFormMessages(shownTitle, submittedMetadata).filter(
     (message) => !locked.has(message.field),
   );
-  const messages = [...validationMessages, ...apiMessages];
+  const fileMessages = entryFileMessages(readFiles, archiveFill, pdbId);
+  const messages = [...validationMessages, ...apiMessages, ...reviewMessages, ...fileMessages];
+  // The request as it would be sent now, to tell which file values still hold.
+  const currentInput = withAutofilledRequest(
+    buildCreateEntryInput(shownTitle, submittedMetadata, thumbnail.url, files),
+    autofill,
+  );
+  const fileBadges = entryFileBadges(currentInput, fileFills, files);
   const inline = (field: FieldId, item: string | null = null) =>
     inlineMessages(messages, field, item);
 
@@ -374,10 +439,14 @@ export default function NewEntryForm() {
         return;
       }
 
-      const input = withAutofilledRequest(
+      const built = withAutofilledRequest(
         buildCreateEntryInput(shownTitle, submittedMetadata, thumbnail.url, files),
         autofill,
       );
+      const input = {
+        ...built,
+        value_sources: entryValueSourcesRequest(built, fileFills, files),
+      };
 
       // The server action redirects on success, so clear the saved draft up
       // front, and save it again if the action returns an error.
@@ -436,6 +505,8 @@ export default function NewEntryForm() {
         onRetryLookup={() => setLookupAttempt((attempt) => attempt + 1)}
         archiveFields={archiveFields}
         onOwn={chooseOwn}
+        badges={fileBadges}
+        pdbSuggestion={pdbSuggestion(readFiles, pdbId)}
         messages={messages}
         data={
           <Field id="entry.files" messages={inline("entry.files")}>
@@ -445,7 +516,11 @@ export default function NewEntryForm() {
               fileMessages={(fileId) => inline("entry.files", fileId)}
               onAdd={addEntryFiles}
               onAddUrl={addEntryUrl}
-              onRemove={(id) => editFiles((p) => p.filter((f) => f.id !== id))}
+              onRemove={(id) => {
+                extraction.forget(id);
+                setReadFiles((current) => current.filter((item) => item.fileId !== id));
+                editFiles((p) => p.filter((f) => f.id !== id));
+              }}
               onLevel={(id, level) =>
                 editFiles((p) => p.map((f) => (f.id === id ? { ...f, level } : f)))
               }
@@ -455,6 +530,7 @@ export default function NewEntryForm() {
                 )
               }
             />
+            <FileReadStatus states={extraction.states} onRetry={(file) => void extraction.read(file)} />
           </Field>
         }
       />

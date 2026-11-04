@@ -592,18 +592,21 @@ func applyDepositorPolymerEntities(
 	return merged
 }
 
-// applyDepositorMutations replaces the extracted mutations with the depositor's. The API only
-// accepts plain substitutions; a token that is not one is kept out of Mutations all the same,
-// in the raw text, flagged for review.
+// applyDepositorMutations replaces the extracted mutations with the depositor's, and the raw
+// text and its status with the depositor's text: the archive's text no longer describes the
+// list, so its "needs review" must not stay beside typed substitutions. The API only accepts
+// plain substitutions; a token that is not one is kept out of Mutations all the same, in the
+// raw text, flagged for review.
 func applyDepositorMutations(metadata *models.PolymerEntityMetadata, supplied []string) {
-	accepted, status := models.ParseMutations(strings.Join(supplied, ", "))
+	text := strings.Join(supplied, ", ")
+	accepted, status := models.ParseMutations(text)
+	metadata.MutationsRaw = &text
+	metadata.MutationsStatus = &status
 	if status == models.MutationsStatusParsed {
 		metadata.Mutations = supplied
 		return
 	}
 	metadata.Mutations = accepted
-	metadata.MutationsRaw = new(strings.Join(supplied, ", "))
-	metadata.MutationsStatus = &status
 }
 
 func polymerEntitiesHaveSameData(

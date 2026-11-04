@@ -52,6 +52,7 @@ export default function ModelOverviewFields({
   thumbnail,
   onThumbnail,
   compoundsSource = null,
+  authorsSource = null,
   compoundsFromFile = false,
   locks = NO_LOCKS,
   messages,
@@ -67,6 +68,8 @@ export default function ModelOverviewFields({
   onThumbnail: (file: File) => void;
   /** Where the composition was read from, such as the coordinate file. */
   compoundsSource?: string | null;
+  /** Where editable authors were read from, such as "from model.cif". */
+  authorsSource?: string | null;
   /** The model file is in our bucket, so the server reads its compounds and
    *  the form asks for none. */
   compoundsFromFile?: boolean;
@@ -224,7 +227,7 @@ export default function ModelOverviewFields({
           id="model.authors"
           htmlFor={locks.fields.authors ? undefined : `${fieldId}-authors`}
           messages={inline("model.authors")}
-          source={badge("authors")}
+          source={badge("authors") ?? authorsSource}
         >
           {locks.fields.authors ? (
             <ReadOnlyText value={values.authors.join("; ")} />

@@ -32,6 +32,9 @@ func fieldSourcesFromSQL(data []byte) (models.FieldSources, error) {
 	if err := json.Unmarshal(data, &sources); err != nil {
 		return nil, fmt.Errorf("unmarshal field sources: %w", err)
 	}
+	if err := sources.Validate(); err != nil {
+		return nil, fmt.Errorf("read field sources: %w", err)
+	}
 	return sources, nil
 }
 

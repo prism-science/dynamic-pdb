@@ -19,6 +19,7 @@ export default function MetricsEditor({
   messages,
   setMetrics,
   locked = {},
+  sources = {},
   programs,
   softwareRequired,
 }: {
@@ -29,6 +30,8 @@ export default function MetricsEditor({
   /** Scores the PDB archive keeps up to date, each with its source badge.
    *  They are shown read-only. */
   locked?: Partial<Record<MetricKey, string>>;
+  /** Where an editable score was read from, such as "from model.cif". */
+  sources?: Partial<Record<MetricKey, string>>;
   /** The model's programs, offered as what computed the scores. Given only
    *  where the programs are edited in the same form. */
   programs?: ProgramDraft[];
@@ -145,6 +148,8 @@ export default function MetricsEditor({
                     {field.label}
                     {locked[field.key] ? (
                       <span className={styles.sourceBadge}>{locked[field.key]}</span>
+                    ) : sources[field.key] ? (
+                      <span className={styles.sourceBadge}>{sources[field.key]}</span>
                     ) : null}
                   </span>
                   <input

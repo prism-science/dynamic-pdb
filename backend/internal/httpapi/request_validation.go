@@ -202,6 +202,15 @@ func createEntryRequestErrors(request CreateEntryRequest) []validation.FieldErro
 	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, request.Entry, true)...)
 	fieldErrors = append(fieldErrors, depositorPolymerEntityErrors(entry.Field("polymer_entities"), request.Entry.PolymerEntities)...)
 	fieldErrors = append(fieldErrors, artifactRequestErrors(entry.Field("artifacts"), request.Entry.Artifacts)...)
+	// Metadata that does not decode is reported by entryMetadataErrors; its value_sources
+	// are then not checked.
+	if metadata, err := entryMetadataFromAPIFields(request.Entry); err == nil {
+		sources := domainmodels.EntryRevisionFieldSources(nil, domainmodels.EntryRevision{
+			Title: &request.Entry.Title, Metadata: metadata,
+		})
+		_, sourceErrors := newEntryRevisionSources(entry, request.Entry, sources)
+		fieldErrors = append(fieldErrors, sourceErrors...)
+	}
 	if request.ModelOperations != nil {
 		for index, operation := range *request.ModelOperations {
 			data := validation.Root.Field("model_operations").Index(index).Field("data")
@@ -224,7 +233,8 @@ func createModelRequestErrors(at validation.Pointer, data CreateModelData) []val
 		validation.MetricProvenance(at.Field("metrics"), metricsFromRequests(data.Metrics), revision)...)
 	fieldErrors = append(fieldErrors, runRequestErrors(at.Field("runs"), data.Runs)...)
 	fieldErrors = append(fieldErrors, validation.ModelRuns(at.Field("runs"), revision)...)
-	return fieldErrors
+	_, sourceErrors := newModelRevisionSources(at, data, metadata)
+	return append(fieldErrors, sourceErrors...)
 }
 
 func artifactIDsFromRequests(requests *[]CreateArtifactRequest) []uuid.UUID {

@@ -487,6 +487,9 @@ export type CreateModelInput = {
   /** Judgements a file cannot state about itself: what the run was for and
    *  what kind of model came out. Composition is read from the coordinates. */
   metadata?: JSONRecord;
+  /** The model file each value was read from, by field pointer
+   *  (ValueSources in openapi.yaml). */
+  value_sources?: Schemas["ValueSources"];
 };
 
 export type CreateEntryInput = EntryProperties & {
@@ -496,6 +499,8 @@ export type CreateEntryInput = EntryProperties & {
   entities?: CreateEntityInput[];
   models?: CreateModelInput[];
   polymer_entities?: DepositorPolymerEntity[];
+  /** The uploaded file each value was read from, by field pointer. */
+  value_sources?: Schemas["ValueSources"];
 };
 
 /** Creates a model and immediately places its initial revision in review. */
@@ -509,6 +514,28 @@ export async function createModel(
     `/v1/entries/${encodeURIComponent(entryId)}/models`,
     token,
     createModelRequestBody(input),
+  );
+  return attributesFromDocument(document);
+}
+
+export type ArtifactExtraction = Schemas["ArtifactExtractionAttributes"];
+export type ExtractedValue = Schemas["ExtractedValue"];
+
+/**
+ * Reads an uploaded mmCIF on the server before it is saved as an artifact
+ * (POST /v1/files/extract). Throws ApiRequestError: 404 when the server has
+ * the endpoint turned off, 422 when the object is not an mmCIF of that
+ * artifact, 429 or 503 when the server is busy.
+ */
+export async function extractUploadedFile(
+  token: string,
+  request: Schemas["ExtractUploadedFileRequest"],
+): Promise<ArtifactExtraction> {
+  const document = await sendJSON<JSONAPIDataDocument<ArtifactExtraction>>(
+    "POST",
+    "/v1/files/extract",
+    token,
+    request,
   );
   return attributesFromDocument(document);
 }
@@ -1320,6 +1347,7 @@ function createEntryRequest(input: CreateEntryInput): BackendCreateEntryRequest 
       related_datasets: input.related_datasets,
       polymer_entities: input.polymer_entities,
       artifacts: entities.filter(isArtifactEntity).map(createArtifactRequest),
+      value_sources: input.value_sources,
     },
     model_operations: (input.models ?? []).map((model) => ({
       op: "add" as const,
@@ -1353,6 +1381,7 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     metrics: entities
       .filter((entity) => entity.type === "metrics")
       .flatMap(createMetricRequests),
+    value_sources: input.value_sources,
   };
 }
 

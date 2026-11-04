@@ -47,6 +47,20 @@ export function setArchiveEntryFields(pdbId: string, fields: Record<string, unkn
   return call("PUT", `/__fake/entries/${pdbId}`, fields);
 }
 
+/** Merges fields over polymer entity entityId of the archive entry pdbId. */
+export function setArchiveEntityFields(
+  pdbId: string,
+  entityId: string,
+  fields: Record<string, unknown>,
+) {
+  return call("PUT", `/__fake/entries/${pdbId}/polymer_entities/${entityId}`, fields);
+}
+
+/** Makes every RCSB request for pdbId answer 200 with a body that is not JSON. */
+export function answerArchiveEntryMalformed(pdbId: string) {
+  return call("POST", `/__fake/entries/${pdbId}/fail?mode=malformed`);
+}
+
 /**
  * Makes every RCSB request for pdbId fail. The default 403 is not retried by
  * the backend, which retries 5xx answers for about 10 seconds first.

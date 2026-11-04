@@ -124,6 +124,23 @@ func Test_should_keep_depositor_metric_when_archive_metric_changes(t *testing.T)
 	assert.False(t, metricsChanged)
 }
 
+func Test_should_keep_metric_read_from_the_model_file_when_archive_metric_changes(t *testing.T) {
+	// given
+	current := models.ModelRevision{FieldSources: models.FieldSources{
+		models.ArchiveMetricField(models.MetricKeyRFree): {Source: models.FieldSourceFile, SHA256: new("abc")},
+	}}
+	currentMetrics := []models.Metric{{Key: models.MetricKeyRFree, Value: 0.25}}
+	desiredMetrics := []models.Metric{{Key: models.MetricKeyRFree, Value: 0.21}}
+
+	// when
+	keys := syncedArchiveMetricKeys(current.FieldSources)
+	_, metricsChanged := compareModelUpdate(current, current, currentMetrics, desiredMetrics, keys)
+
+	// then
+	assert.NotContains(t, keys, models.MetricKeyRFree)
+	assert.False(t, metricsChanged)
+}
+
 func Test_should_keep_depositor_atom_count_when_archive_count_changes(t *testing.T) {
 	// given
 	current := models.ModelRevision{
@@ -154,8 +171,8 @@ func Test_should_record_rcsb_source_for_synced_model_fields_and_metrics(t *testi
 
 	// then
 	require.Len(t, sources, len(models.ModelArchiveFields)+len(models.ArchiveMetricKeys))
-	assert.True(t, sources.IsDepositor(models.ModelFieldLigands))
-	assert.True(t, sources.IsDepositor(models.ArchiveMetricField(models.MetricKeyRFree)))
+	assert.True(t, sources.IsUserSupplied(models.ModelFieldLigands))
+	assert.True(t, sources.IsUserSupplied(models.ArchiveMetricField(models.MetricKeyRFree)))
 	assert.Equal(t, models.FieldSourceRCSB, sources[models.ModelFieldAtomCount].Source)
 	assert.Equal(t, models.FieldSourceRCSB, sources[models.ArchiveMetricField(models.MetricKeyClashscore)].Source)
 	assert.Equal(t, new("5AMF"), sources[models.ArchiveMetricField(models.MetricKeyClashscore)].Accession)

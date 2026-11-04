@@ -1317,6 +1317,8 @@ func fieldSourcesFromModel(sources domainmodels.FieldSources) (*FieldSources, er
 			Accession:   source.Accession,
 			Release:     source.Release,
 			RetrievedAt: source.RetrievedAt,
+			ArtifactId:  source.ArtifactID,
+			Sha256:      source.SHA256,
 		}
 	}
 	return &result, nil
@@ -1328,6 +1330,8 @@ func fieldSourceKindFromModel(kind domainmodels.FieldSourceKind) (FieldSourceSou
 		return FieldSourceSourceRcsb, nil
 	case domainmodels.FieldSourceDepositor:
 		return FieldSourceSourceDepositor, nil
+	case domainmodels.FieldSourceFile:
+		return FieldSourceSourceFile, nil
 	default:
 		return "", fmt.Errorf("unknown field source: %s", kind)
 	}

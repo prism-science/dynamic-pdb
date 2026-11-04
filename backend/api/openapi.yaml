@@ -377,6 +377,96 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/files/extract:
+    post:
+      tags: [Files]
+      operationId: extractUploadedFile
+      summary: Extract values from an uploaded mmCIF before it is saved
+      description: |
+        The same extraction as `POST /v1/artifacts/{id}/extract`, for a file the
+        deposition forms have uploaded (`POST /v1/files`) but not yet saved as an
+        artifact: the forms create artifacts only when the entry or model is
+        submitted, and show the extracted values before that. The object is named
+        by the artifact ID it was uploaded under and the `object_url` the upload
+        returned; it must lie in that artifact's folder. Nothing is stored.
+
+        Every value carries `source: file:<sha256>` with the `sha256` the caller
+        sends: the checksum job verifies it once the artifact is saved. Only
+        `.cif` and `.mmcif` objects are read. The limits are those of the artifact
+        endpoint, shared with it.
+
+        Off unless `artifact_extraction.uploads_enabled` is set: the answer is then
+        404 with error code `EXTRACTION_OFF`, and the forms keep their own preview
+        of the file.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/ExtractUploadedFileRequest"
+      responses:
+        "200":
+          description: Extracted values, as for an artifact; `data.id` is the artifact ID sent.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ArtifactExtractionDocument"
+        "400":
+          description: Invalid request body.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >
+            Extraction of uploads is turned off (error code `EXTRACTION_OFF`), or nothing is
+            stored at the URL (`NOT_FOUND`).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The URL is not an uploaded mmCIF object of the artifact, or the sha256 is not 64 lowercase hexadecimal characters.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: The user made too many extraction requests in the last minute. `Retry-After` gives seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before extracting again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: The object could not be read from storage.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Every extraction slot of this server instance is busy. `Retry-After` gives seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before extracting again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/files:
     post:
       tags: [Files]
@@ -3186,6 +3276,14 @@ components:
                 $ref: "#/components/schemas/CreateArtifactRequest"
             polymer_entities:
               $ref: "#/components/schemas/DepositorPolymerEntities"
+            value_sources:
+              description: >
+                As on a model, except that the artifact must be one of this request's entry
+                artifacts: an entry has no primary artifact. A value equal to the archive's
+                is recorded as the archive's all the same, so the archive sync keeps it
+                current.
+              allOf:
+                - $ref: "#/components/schemas/ValueSources"
 
     Entry:
       allOf:
@@ -3312,6 +3410,23 @@ components:
         detail:
           type: string
 
+    ExtractUploadedFileRequest:
+      type: object
+      required: [artifact_id, object_url, sha256]
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+          description: The artifact ID the file was uploaded under (`POST /v1/files`).
+        object_url:
+          type: string
+          minLength: 1
+          description: The `object_url` the upload returned.
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: The SHA-256 of the uploaded file, in lowercase hexadecimal.
+
     ArtifactExtractionDocument:
       type: object
       required: [data]
@@ -3370,12 +3485,22 @@ components:
           description: >
             One of `atom_count`, `modeled_residues`, `unique_protein_chains`,
             `altloc_fraction`, `ligands`, `cofactors`, `compound_sources`,
-            `glycan_descriptors`, `mutations`, `program_name`, `program_version`.
+            `glycan_descriptors`, `mutations`, `program_name`, `program_version`,
+            and the header items `entry_id`, `authors`, `r_work`, `r_free`,
+            `resolution`, `method`, `space_group`. A header item is a non-looped
+            mmCIF item (`_entry.id` or the data block name, `_audit_author`,
+            `_refine.ls_R_factor_R_work`, `_refine.ls_R_factor_R_free`,
+            `_refine.ls_d_res_high` or `_reflns.d_resolution_high`,
+            `_exptl.method`, `_symmetry.space_group_name_H-M` or
+            `_space_group.name_H-M_alt`) and is left out when the file gives
+            none or writes its category as a loop; `entry_id` only when it is a
+            PDB ID, `method` as the file writes it.
         value:
           description: >
-            A number for the counts and fraction, a string for the program, a
-            list of compounds or mutation sets for `ligands`, `cofactors` and
-            `mutations`. `compound_sources` is the decision record: the groups
+            A number for the counts, fraction, R-factors and resolution, a
+            string for the program, `entry_id`, `method` and `space_group`, a
+            list of names for `authors`, a list of compounds or mutation sets for
+            `ligands`, `cofactors` and `mutations`. `compound_sources` is the decision record: the groups
             `ligands`, `cofactors` and `excluded`, each mapping a CCD ID to the
             `rule` that placed it (`list`, `metalc`, `branched`, `macrolide`,
             `ccd_type`, `depositor_flag`, `covalent_map` or `ihm_probe`) and the
@@ -4530,6 +4655,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreateMetricRequest"
+        value_sources:
+          $ref: "#/components/schemas/ValueSources"
 
     CreateModelData:
       type: object
@@ -4562,6 +4689,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreateMetricRequest"
+        value_sources:
+          $ref: "#/components/schemas/ValueSources"
 
     CreateModelRevisionRequest:
       type: object
@@ -4961,6 +5090,29 @@ components:
         program_version:
           type: string
 
+    ValueSources:
+      type: object
+      description: >
+        Optional. Names the uploaded file each value of this request was read from, keyed by
+        the JSON pointer of the field, as in `field_sources` (for example /metrics/r_free or
+        /metadata/authors). The value is then recorded with source `file` and the file's
+        artifact ID and SHA-256, instead of `depositor`. Each key must be a field whose source
+        is recorded and that this request sets, and the artifact must be the request's
+        primary artifact (the model's own coordinate file) with a SHA-256: a model's scores
+        and attribution are read only from the model's own file, never from an input of
+        one of its runs. Otherwise the request is invalid (422 in enforce mode).
+      additionalProperties:
+        $ref: "#/components/schemas/ValueSource"
+
+    ValueSource:
+      type: object
+      required: [artifact_id]
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+          description: An artifact of the same request.
+
     FieldSources:
       type: object
       nullable: true
@@ -4979,12 +5131,22 @@ components:
       properties:
         source:
           type: string
-          enum: [rcsb, depositor]
-          x-enum-varnames: [FieldSourceSourceRcsb, FieldSourceSourceDepositor]
+          enum: [rcsb, depositor, file]
+          x-enum-varnames: [FieldSourceSourceRcsb, FieldSourceSourceDepositor, FieldSourceSourceFile]
           description: >
             rcsb: the value came from RCSB, either copied by the archive sync or sent on
             create equal to the archive's value; the archive sync keeps it current.
             depositor: a user set or changed the value, and the archive sync never overwrites it.
+            file: a user sent the value as read from a file they uploaded with the revision
+            (see `value_sources` on the create requests); `artifact_id` and `sha256` name the
+            file. Like a depositor's value, the archive sync never overwrites it.
+        artifact_id:
+          type: string
+          format: uuid
+          description: The artifact the value was read from, for file values.
+        sha256:
+          type: string
+          description: The SHA-256 of that artifact as it was uploaded, for file values.
         accession:
           type: string
           description: The PDB ID the value was read from, for archive values.

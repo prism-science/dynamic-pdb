@@ -49,6 +49,8 @@ type parityEntry struct {
 	UniqueProteinChains int              `json:"unique_protein_chains"`
 	Compounds           []parityCompound `json:"compounds"`
 	Glycans             []Glycan         `json:"glycans,omitempty"`
+	// Header is read from mmCIF only: a PDB-format file's header stays the preview's.
+	Header *Header `json:"header,omitempty"`
 }
 
 // parityExtraction reads a parity file: a .pdb file through PDBExtraction,
@@ -130,6 +132,9 @@ func parityGolden(t *testing.T) map[string]parityEntry {
 		}
 		if len(result.Glycans) > 0 {
 			entry.Glycans = result.Glycans
+		}
+		if strings.HasSuffix(name, ".cif") {
+			entry.Header = &result.Header
 		}
 		sort.SliceStable(entry.Compounds, func(i, j int) bool {
 			left, right := entry.Compounds[i], entry.Compounds[j]

@@ -162,6 +162,7 @@ export default async function ScopePage({
     data.entry.polymer_entities ?? [],
     data.entry.protein_sequences ?? [],
     residueData,
+    data.entry.depositor_polymer_entities ?? [],
   );
   const crystallography = crystallographyView(data.entry.crystallography);
   const artifacts = new Map(data.entities.map((entity) => [entity.id, entity]));

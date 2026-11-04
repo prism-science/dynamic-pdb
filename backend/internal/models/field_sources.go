@@ -1,9 +1,12 @@
 package models
 
 import (
+	"fmt"
 	"maps"
 	"reflect"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // FieldSourceKind names where the value of a revision field came from.
@@ -15,15 +18,33 @@ const (
 	// FieldSourceDepositor means a user set or changed the value; the archive sync never
 	// overwrites it.
 	FieldSourceDepositor FieldSourceKind = "depositor"
+	// FieldSourceFile means a user sent the value as read from a file they uploaded with the
+	// revision; ArtifactID and SHA256 name the file. Like a depositor's value, the archive
+	// sync never overwrites it.
+	FieldSourceFile FieldSourceKind = "file"
 )
 
+// Validate reports a kind this package does not define, so a stored source of an unknown
+// kind fails where it is read instead of being taken for one of the known kinds.
+func (kind FieldSourceKind) Validate() error {
+	switch kind {
+	case FieldSourceRCSB, FieldSourceDepositor, FieldSourceFile:
+		return nil
+	default:
+		return fmt.Errorf("unknown field source: %q", kind)
+	}
+}
+
 // FieldSource records where the value of one revision field came from. For archive values,
-// Accession is the PDB ID and Release the archive version, such as 4.3.
+// Accession is the PDB ID and Release the archive version, such as 4.3. For file values,
+// ArtifactID and SHA256 name the uploaded file the value was read from.
 type FieldSource struct {
 	Source      FieldSourceKind `json:"source"`
 	Accession   *string         `json:"accession,omitempty"`
 	Release     *string         `json:"release,omitempty"`
 	RetrievedAt *time.Time      `json:"retrieved_at,omitempty"`
+	ArtifactID  *uuid.UUID      `json:"artifact_id,omitempty"`
+	SHA256      *string         `json:"sha256,omitempty"`
 }
 
 // FieldPointer is a JSON pointer to a revision field the archive sync writes, such as /title.
@@ -36,10 +57,43 @@ type FieldPointer string
 // from the archive, so none of their fields count as typed by a depositor.
 type FieldSources map[FieldPointer]FieldSource
 
-// IsDepositor reports whether a user set or changed the field, so the archive sync must keep it.
-func (sources FieldSources) IsDepositor(pointer FieldPointer) bool {
+// IsUserSupplied reports whether a user set or changed the field, typed or read from a file
+// they uploaded, so the archive sync must keep it.
+func (sources FieldSources) IsUserSupplied(pointer FieldPointer) bool {
 	source, ok := sources[pointer]
-	return ok && source.Source == FieldSourceDepositor
+	if !ok {
+		return false
+	}
+	switch source.Source {
+	case FieldSourceDepositor, FieldSourceFile:
+		return true
+	case FieldSourceRCSB:
+		return false
+	default:
+		// Stored sources are checked on read (FieldSourceKind.Validate), so only a source
+		// built in code can get here.
+		panic(fmt.Sprintf("unknown field source %q at %s", source.Source, pointer))
+	}
+}
+
+// Validate reports the first source of an unknown kind.
+func (sources FieldSources) Validate() error {
+	for pointer, source := range sources {
+		if err := source.Source.Validate(); err != nil {
+			return fmt.Errorf("field source at %s: %w", pointer, err)
+		}
+	}
+	return nil
+}
+
+// ModelSourceFields are the model revision fields whose sources are recorded: the fields
+// the archive sync writes and the archive metrics.
+func ModelSourceFields() []FieldPointer {
+	fields := append([]FieldPointer(nil), ModelArchiveFields...)
+	for _, key := range ArchiveMetricKeys {
+		fields = append(fields, ArchiveMetricField(key))
+	}
+	return fields
 }
 
 // Entry revision fields the archive sync writes.

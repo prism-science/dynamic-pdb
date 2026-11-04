@@ -97,8 +97,10 @@ func run() int {
 	).WithArchiveLookup(archive.NewLookup(
 		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
 		sifts.NewClient(),
-	)).WithEntryDeletion(cfg.Entries.DeleteEnabled).WithSelfApproval(cfg.Revisions.SelfApprovalEnabled)
+	)).WithEntryDeletion(cfg.Entries.DeleteEnabled).WithSelfApproval(cfg.Revisions.SelfApprovalEnabled).
+		WithUploadExtraction(cfg.ArtifactExtraction.UploadsEnabled)
 	slog.Info("entry deletion configured", "enabled", cfg.Entries.DeleteEnabled)
+	slog.Info("upload extraction configured", "enabled", cfg.ArtifactExtraction.UploadsEnabled)
 	slog.Info("self-approval configured", "enabled", cfg.Revisions.SelfApprovalEnabled)
 
 	trustedProxies, err := cfg.Server.RateLimit.TrustedProxyPrefixes()

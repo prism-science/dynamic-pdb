@@ -60,6 +60,9 @@ data_sync:
 entries:
   # Entry deletion is for testing on dev only; production keeps every entry.
   delete_enabled: false
+artifact_extraction:
+  # Off until tried on dev; the forms then keep their browser preview. Turn on in its own PR.
+  uploads_enabled: false
 revisions:
   # Publishing a change always takes a second reviewer; self-approval is for testing on dev only.
   self_approval_enabled: false

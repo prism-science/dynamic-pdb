@@ -758,7 +758,9 @@ test("should_block_bad_formats_and_only_advise_on_an_unusual_space_group", () =>
       { key: "a", ph: "15", growthTemperature: "", diffractions: [{ key: "d", temperature: "" }] },
       { key: "b", ph: "", growthTemperature: "", diffractions: [] },
     ],
-    polymerEntities: [{ labelEntityId: "1", description: "", uniprotAccessions: [], archiveOrganisms: [], archiveConstruct: "", archiveMutations: [], construct: "", mutations: ["C54"], organismName: "", organismTaxonomyId: "9606" }],
+    // Mapped to UniProt, so the only advice is the space group's; mutations
+    // without a mapping are covered in lookup-review.test.cjs.
+    polymerEntities: [{ labelEntityId: "1", description: "", uniprotAccessions: ["P00698"], archiveOrganisms: [], archiveConstruct: "", archiveMutations: [], archiveMutationsRaw: "", construct: "", mutations: ["C54"], organismName: "", organismTaxonomyId: "9606" }],
   };
 
   // when

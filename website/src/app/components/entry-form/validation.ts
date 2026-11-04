@@ -29,6 +29,7 @@ import {
   PDB_ID_PATTERN,
   mutationError,
   organismIsEditable,
+  unmappedMutationsReason,
 } from "./polymerEntities";
 import {
   DOI_PATTERN,
@@ -337,6 +338,10 @@ function polymerEntityMessages(entities: PolymerEntityDraft[]): FieldMessage[] {
       const error = mutationError(mutation);
       return error ? [invalid("entity.mutations", error, item, itemLabel)] : [];
     });
+    const review = unmappedMutationsReason(entity);
+    if (review) {
+      messages.push(advice("entity.mutations", review, item));
+    }
     if (organismIsEditable(entity)) {
       const name = entity.organismName.trim();
       const taxonomyId = entity.organismTaxonomyId.trim();

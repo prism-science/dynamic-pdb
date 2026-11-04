@@ -18,6 +18,7 @@ type Result struct {
 	SequenceDifferences []SequenceDifference `json:"sequence_differences"`
 	Connections         []Connection         `json:"connections"`
 	Program             Program              `json:"program"`
+	Header              Header               `json:"header"`
 	ReferenceVersion    string               `json:"reference_version"`
 	Warnings            []string             `json:"warnings"`
 }
