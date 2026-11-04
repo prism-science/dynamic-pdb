@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +23,25 @@ import (
 // firstSchemaCleanupMigration is the first C1 migration; everything before it is the
 // "old shape" the fixture is seeded in.
 const firstSchemaCleanupMigration = "V20261023090000__"
+
+// firstEnforceCheckMigration adds the first of the checks held back until prod validated in
+// enforce mode (T1-E). The old-shape fixture breaks those checks on purpose.
+const firstEnforceCheckMigration = "V20261104150000__"
+
+// enforceCheckRepairSQL repairs the old-shape rows that break the enforce checks, as an operator
+// repairs the rows the inventory lists before those checks ship: it drops the bad value and keeps
+// the rest of the record. Prod had no such rows on 2026-11-04.
+const enforceCheckRepairSQL = `
+update artifacts set sha256 = null, size_bytes = null where id = '00000000-0000-0000-0000-0000000000b1';
+update model_revisions set metadata = metadata - 'model_type' where id = '00000000-0000-0000-0000-00000000f002';
+update model_revisions set metadata = metadata - 'purpose' where id = '00000000-0000-0000-0000-00000000f003';
+delete from model_revision_metrics where metric_id = '00000000-0000-0000-0000-00000000a004';
+delete from metrics where id = '00000000-0000-0000-0000-00000000a004';
+update polymer_entities
+set metadata = jsonb_set(metadata, '{uniprot_mappings}', '[{"accession":"P1","source":"alignment","unp_release":"2026_01"}]')
+where id = '00000000-0000-0000-0000-00000000d007';
+delete from run_artifacts where run_id = '00000000-0000-0000-0000-0000000000c2' and direction = 'sideways';
+`
 
 const (
 	fixtureUser           = "00000000-0000-0000-0000-0000000000a1"
@@ -41,14 +61,36 @@ type migratedFixture struct {
 	schemaName string
 }
 
+// fixtureOptions picks how far newFixture migrates the old-shape data.
+type fixtureOptions struct {
+	// extraSeedSQL is seeded right after the shared old-shape fixture, before the C1 migrations.
+	extraSeedSQL string
+	// stopBeforeEnforceChecks leaves out the enforce-check migrations and every later one, and
+	// keeps the old-shape rows that break those checks, as prod was before they shipped.
+	// Otherwise enforceCheckRepairSQL repairs those rows before the enforce checks apply.
+	stopBeforeEnforceChecks bool
+}
+
 func newMigratedFixture(t *testing.T) *migratedFixture {
 	t.Helper()
-	return newMigratedFixtureWithExtraSeed(t, "")
+	return newFixture(t, fixtureOptions{})
 }
 
 // newMigratedFixtureWithExtraSeed seeds extraSeedSQL right after the shared old-shape fixture,
 // before the C1 migrations run.
 func newMigratedFixtureWithExtraSeed(t *testing.T, extraSeedSQL string) *migratedFixture {
+	t.Helper()
+	return newFixture(t, fixtureOptions{extraSeedSQL: extraSeedSQL})
+}
+
+// newFixtureBeforeEnforceChecks is the old-shape data migrated up to, not including, the
+// enforce checks, with the rows that break them still in place.
+func newFixtureBeforeEnforceChecks(t *testing.T) *migratedFixture {
+	t.Helper()
+	return newFixture(t, fixtureOptions{stopBeforeEnforceChecks: true})
+}
+
+func newFixture(t *testing.T, options fixtureOptions) *migratedFixture {
 	t.Helper()
 
 	schemaName := "migration_test_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
@@ -72,15 +114,24 @@ func newMigratedFixtureWithExtraSeed(t *testing.T, extraSeedSQL string) *migrate
 	oldShapeFixture, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "old_shape_fixture.sql"))
 	require.NoError(t, err)
 	seeded := false
+	reachedEnforceChecks := false
 	for _, path := range paths {
 		if !seeded && strings.HasPrefix(filepath.Base(path), firstSchemaCleanupMigration) {
 			_, err := database.Exec(string(oldShapeFixture))
 			require.NoError(t, err, "seed old-shape fixture")
-			if extraSeedSQL != "" {
-				_, err = database.Exec(extraSeedSQL)
+			if options.extraSeedSQL != "" {
+				_, err = database.Exec(options.extraSeedSQL)
 				require.NoError(t, err, "seed extra fixture")
 			}
 			seeded = true
+		}
+		if !reachedEnforceChecks && strings.HasPrefix(filepath.Base(path), firstEnforceCheckMigration) {
+			reachedEnforceChecks = true
+			if options.stopBeforeEnforceChecks {
+				break
+			}
+			_, err := database.Exec(enforceCheckRepairSQL)
+			require.NoError(t, err, "repair rows that break the enforce checks")
 		}
 		migrationSQL, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -88,7 +139,26 @@ func newMigratedFixtureWithExtraSeed(t *testing.T, extraSeedSQL string) *migrate
 		require.NoError(t, err, "apply %s", filepath.Base(path))
 	}
 	require.True(t, seeded, "first C1 migration not found")
+	require.True(t, reachedEnforceChecks, "first enforce-check migration not found")
 	return &migratedFixture{database: database, schemaName: schemaName}
+}
+
+// applyMigration runs the schema migration whose file name starts with version, as Flyway
+// would: the whole file in one implicit transaction.
+func (fixture *migratedFixture) applyMigration(t *testing.T, version string) error {
+	t.Helper()
+	paths, err := schemaMigrationPaths()
+	require.NoError(t, err)
+	for _, path := range paths {
+		if strings.HasPrefix(filepath.Base(path), version+"__") {
+			migrationSQL, err := os.ReadFile(path)
+			require.NoError(t, err)
+			_, err = fixture.database.Exec(string(migrationSQL))
+			return err
+		}
+	}
+	require.FailNow(t, "migration not found", version)
+	return nil
 }
 
 // appDatabase opens the application repositories on the migrated fixture schema.
@@ -379,7 +449,7 @@ func Test_should_flag_mutations_that_are_neither_string_nor_array_when_polymer_e
 
 func Test_should_quarantine_duplicate_metric_keys_and_enforce_uniqueness_when_metrics_migrated(t *testing.T) {
 	// given
-	fixture := newMigratedFixture(t)
+	fixture := newFixtureBeforeEnforceChecks(t) // keeps the legacy made_up metric C1 keyed
 
 	// when
 	var keyed []string
@@ -485,7 +555,7 @@ func Test_should_fill_metric_key_and_reject_second_link_when_application_attache
 
 func Test_should_backfill_in_batches_and_stay_idempotent_when_backfill_migration_reruns(t *testing.T) {
 	// given
-	fixture := newMigratedFixture(t)
+	fixture := newFixtureBeforeEnforceChecks(t) // keeps the legacy made_up metric C1 keyed
 	_, err := fixture.database.Exec(`insert into model_revisions(id, model_id, state, title, metadata, created_by)
 		select gen_random_uuid(), 'm_plain', 'archived', 'bulk', '{}', $1 from generate_series(1, 1500)`, fixtureUser)
 	require.NoError(t, err)
@@ -538,14 +608,29 @@ func migrationPathWithPrefix(t *testing.T, prefix string) string {
 	return ""
 }
 
-func Test_should_add_only_structural_constraints_when_stable_invariants_migrated(t *testing.T) {
+// enforceChecks are the checks T1-E held back until prod validated in enforce mode.
+var enforceChecks = []string{
+	"metrics_key_known_chk", "model_revisions_model_type_chk", "model_revisions_purpose_chk",
+	"artifacts_sha256_format_chk", "artifacts_size_bytes_chk", "polymer_entities_uniprot_mappings_chk",
+}
+
+// enforceCheckNotValidMigrations add the enforce checks NOT VALID, one table each.
+var enforceCheckNotValidMigrations = []string{
+	"V20261104150000", "V20261104150100", "V20261104150200", "V20261104150300",
+}
+
+// requireCheckViolation asserts that err is the database refusing a row for constraint.
+func requireCheckViolation(t *testing.T, err error, constraint string, msgAndArgs ...any) {
+	t.Helper()
+	var pqErr *pq.Error
+	require.ErrorAs(t, err, &pqErr, msgAndArgs...)
+	assert.Equal(t, pq.ErrorCode("23514"), pqErr.Code, msgAndArgs...)
+	assert.Equal(t, constraint, pqErr.Constraint, msgAndArgs...)
+}
+
+func Test_should_validate_every_check_constraint_when_migrations_applied(t *testing.T) {
 	// given
 	fixture := newMigratedFixture(t)
-	wantNotValid := []string{"run_artifacts_direction_chk", "run_artifacts_position_chk"}
-	deferredToEnforce := []string{
-		"metrics_key_known_chk", "model_revisions_model_type_chk", "model_revisions_purpose_chk",
-		"artifacts_sha256_format_chk", "artifacts_size_bytes_chk", "polymer_entities_uniprot_mappings_chk",
-	}
 
 	// when
 	var unvalidated, allChecks []string
@@ -558,28 +643,134 @@ func Test_should_add_only_structural_constraints_when_stable_invariants_migrated
 		where connamespace = current_schema()::regnamespace and contype = 'c'`))
 
 	// then
-	assert.ElementsMatch(t, wantNotValid, unvalidated)
-	for _, deferred := range deferredToEnforce {
-		assert.NotContains(t, allChecks, deferred)
+	assert.Empty(t, unvalidated)
+	assert.Subset(t, allChecks, append([]string{"run_artifacts_direction_chk", "run_artifacts_position_chk"}, enforceChecks...))
+}
+
+func Test_should_refuse_updates_of_breaking_rows_when_enforce_checks_are_not_valid(t *testing.T) {
+	// given
+	fixture := newFixtureBeforeEnforceChecks(t)
+	for _, version := range enforceCheckNotValidMigrations {
+		require.NoError(t, fixture.applyMigration(t, version), "NOT VALID scans nothing, so old rows do not stop it")
+	}
+	statements := map[string]struct{ statement, constraint string }{
+		"archive revision with legacy purpose": {
+			`update model_revisions set state = 'archived' where id = '` + fixtureModelRevBase + `03'`, "model_revisions_purpose_chk",
+		},
+		"archive revision with legacy type": {
+			`update model_revisions set title = title where id = '` + fixtureModelRevBase + `02'`, "model_revisions_model_type_chk",
+		},
+		"update artifact with legacy sha256": {
+			`update artifacts set name = 'renamed' where id = '` + fixtureArtifact + `'`, "artifacts_sha256_format_chk",
+		},
+		"update unknown metric": {
+			`update metrics set value = 2 where id = '` + fixtureMetricBase + `04'`, "metrics_key_known_chk",
+		},
+		"update mapping without release": {
+			`update polymer_entities set metadata = metadata where id = '` + fixtureEntityBase + `07'`, "polymer_entities_uniprot_mappings_chk",
+		},
+	}
+
+	for name, update := range statements {
+		// when
+		_, err := fixture.database.Exec(update.statement)
+
+		// then
+		requireCheckViolation(t, err, update.constraint, "%s: why the inventory must be empty before the checks ship", name)
 	}
 }
 
-func Test_should_still_update_legacy_rows_when_vocabulary_checks_are_deferred(t *testing.T) {
+func Test_should_fail_and_keep_check_not_valid_when_validate_meets_a_breaking_row(t *testing.T) {
 	// given
-	fixture := newMigratedFixture(t)
-	statements := map[string]string{
-		"archive revision with legacy purpose": `update model_revisions set state = 'archived' where id = '` + fixtureModelRevBase + `03'`,
-		"archive revision with legacy type":    `update model_revisions set title = title where id = '` + fixtureModelRevBase + `02'`,
-		"update artifact with legacy sha256":   `update artifacts set name = 'renamed' where id = '` + fixtureArtifact + `'`,
-		"update unknown metric":                `update metrics set value = 2 where id = '` + fixtureMetricBase + `04'`,
+	fixture := newFixtureBeforeEnforceChecks(t)
+	for _, version := range enforceCheckNotValidMigrations {
+		require.NoError(t, fixture.applyMigration(t, version))
+	}
+	failingValidations := map[string]string{
+		"V20261104150400": "metrics_key_known_chk",
+		"V20261104150500": "model_revisions_model_type_chk",
+		"V20261104150600": "model_revisions_purpose_chk",
+		"V20261104150700": "artifacts_sha256_format_chk",
+		"V20261104150800": "artifacts_size_bytes_chk",
+		"V20261104150900": "polymer_entities_uniprot_mappings_chk",
+		"V20261104151000": "run_artifacts_direction_chk",
 	}
 
-	for name, statement := range statements {
+	for version, constraint := range failingValidations {
+		// when
+		err := fixture.applyMigration(t, version)
+
+		// then
+		requireCheckViolation(t, err, constraint, version)
+		var validated bool
+		require.NoError(t, fixture.database.Get(&validated, `
+			select convalidated from pg_constraint
+			where connamespace = current_schema()::regnamespace and conname = $1`, constraint))
+		assert.False(t, validated, "%s applies nothing when it fails", version)
+	}
+	assert.NoError(t, fixture.applyMigration(t, "V20261104151100"), "no old row has a position")
+}
+
+func Test_should_reject_new_violations_when_enforce_checks_exist(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	plainRevision := fixtureModelRevBase + "05"
+	statements := map[string]string{
+		"metrics_key_known_chk": `insert into metrics(id, key, value) values (gen_random_uuid(), 'made_up', 1)`,
+		"model_revisions_model_type_chk": `update model_revisions set metadata = '{"model_type":"Refinement"}'
+			where id = '` + plainRevision + `'`,
+		"model_revisions_purpose_chk": `update model_revisions set metadata = '{"purpose":"Bogus"}'
+			where id = '` + plainRevision + `'`,
+		"artifacts_sha256_format_chk": `update artifacts set sha256 = repeat('A', 64)
+			where id = '00000000-0000-0000-0000-0000000000b2'`,
+		"artifacts_size_bytes_chk": `update artifacts set size_bytes = -1
+			where id = '00000000-0000-0000-0000-0000000000b2'`,
+		"polymer_entities_uniprot_mappings_chk": `insert into polymer_entities(id, protein_sequence_id, metadata)
+			values (gen_random_uuid(), '` + fixtureSequenceBase + `01', '{"uniprot_mappings":[{"accession":"P1","source":"sifts"}]}')`,
+	}
+
+	for constraint, statement := range statements {
 		// when
 		_, err := fixture.database.Exec(statement)
 
 		// then
-		assert.NoError(t, err, name)
+		requireCheckViolation(t, err, constraint)
+	}
+}
+
+func Test_should_accept_every_schema_value_when_enforce_checks_exist(t *testing.T) {
+	// given
+	fixture := newMigratedFixture(t)
+	plainRevision := fixtureModelRevBase + "05"
+	var errs []error
+	exec := func(statement string, args ...any) {
+		_, err := fixture.database.Exec(statement, args...)
+		errs = append(errs, err)
+	}
+
+	// when
+	for _, key := range models.MetricKeys {
+		exec(`insert into metrics(id, key, value) values (gen_random_uuid(), $1, 1)`, key)
+	}
+	for _, modelType := range models.StructureModelTypes {
+		exec(`update model_revisions set metadata = jsonb_build_object('model_type', $1::text) where id = $2`, modelType, plainRevision)
+	}
+	for _, purpose := range models.ModelPurposes {
+		exec(`update model_revisions set metadata = jsonb_build_object('purpose', $1::text) where id = $2`, purpose, plainRevision)
+	}
+	exec(`update model_revisions set metadata = '{}' where id = $1`, plainRevision)
+	for _, source := range models.UniProtReferenceSources {
+		exec(`insert into polymer_entities(id, protein_sequence_id, metadata)
+			values (gen_random_uuid(), $1, jsonb_build_object('uniprot_mappings', jsonb_build_array(
+				jsonb_build_object('accession', 'P1', 'source', $2::text, 'unp_release', '2026_01'))))`,
+			fixtureSequenceBase+"01", source)
+	}
+	exec(`update artifacts set sha256 = repeat('0123456789abcdef', 4), size_bytes = 0
+		where id = '00000000-0000-0000-0000-0000000000b2'`)
+
+	// then
+	for _, err := range errs {
+		assert.NoError(t, err, "every value the Go validators accept is accepted by the database")
 	}
 }
 
@@ -731,7 +922,7 @@ type inventoryRow struct {
 
 func Test_should_list_every_violation_in_read_only_transaction_when_inventory_runs(t *testing.T) {
 	// given
-	fixture := newMigratedFixture(t)
+	fixture := newFixtureBeforeEnforceChecks(t)
 	inventorySQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "inventory", "schema_inventory.sql"))
 	require.NoError(t, err)
 
