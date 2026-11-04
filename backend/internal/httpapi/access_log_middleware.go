@@ -5,13 +5,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 // AccessLogMiddleware writes one structured log line per request and echoes the request id
 // in the response so clients can quote it when reporting a failure. Server errors are logged
-// at error level. It must run after middleware.RequestID; when it runs after
-// ReadRequestTimeoutMiddleware, timed-out and abandoned requests carry a context_error.
+// at error level. The line carries the matched chi route (for example
+// /v1/entries/{entry_id}) so slow or failing requests can be grouped per endpoint. It must
+// run after middleware.RequestID; when it runs after ReadRequestTimeoutMiddleware, timed-out
+// and abandoned requests carry a context_error.
 func AccessLogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +39,7 @@ func AccessLogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 			attrs := []slog.Attr{
 				slog.String("request_id", requestID),
 				slog.String("method", r.Method),
+				slog.String("route", matchedRoutePattern(r)),
 				slog.String("path", r.URL.Path),
 				slog.String("query", r.URL.RawQuery),
 				slog.Int("status", status),
@@ -50,4 +54,15 @@ func AccessLogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.LogAttrs(r.Context(), level, "http request", attrs...)
 		})
 	}
+}
+
+// matchedRoutePattern returns the chi route that served the request, such as
+// /v1/entries/{entry_id}. It is empty when no route matched or the request did not go
+// through a chi router. chi fills the pattern while routing, so call it after the handler.
+func matchedRoutePattern(r *http.Request) string {
+	routeContext := chi.RouteContext(r.Context())
+	if routeContext == nil {
+		return ""
+	}
+	return routeContext.RoutePattern()
 }

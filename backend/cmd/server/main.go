@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	chicors "github.com/go-chi/cors"
 
 	"dynamic-pdb/backend/internal/auth"
@@ -29,9 +28,10 @@ import (
 	"dynamic-pdb/lib/sifts"
 )
 
-// readRequestTimeout bounds GET and HEAD requests. It is longer than the database
-// statement_timeout so a single slow query fails on its own before the whole request does.
-const readRequestTimeout = 15 * time.Second
+// readRequestTimeout bounds GET and HEAD requests. It must stay shorter than the database
+// statement_timeout (10 s in every config), so a slow read always ends on this deadline and
+// is answered with a 504; httpapi.CheckReadRequestTimeout enforces that at startup.
+const readRequestTimeout = 9 * time.Second
 
 // The archive lookup endpoint keeps recent RCSB responses so repeated lookups of the
 // same entry do not hit RCSB again.
@@ -57,6 +57,10 @@ func run() int {
 	cfg, err := config.ReadFromFile(env)
 	if err != nil {
 		slog.Error("read config failed", "err", err)
+		return 1
+	}
+	if err := httpapi.CheckReadRequestTimeout(readRequestTimeout, cfg.DB.StatementTimeout); err != nil {
+		slog.Error("check read request timeout failed", "err", err)
 		return 1
 	}
 
@@ -104,10 +108,7 @@ func run() int {
 	}
 
 	router := chi.NewRouter()
-	router.Use(middleware.RequestID)
-	router.Use(httpapi.ReadRequestTimeoutMiddleware(readRequestTimeout))
-	router.Use(httpapi.AccessLogMiddleware(logger))
-	router.Use(httpapi.RecoverMiddleware(logger))
+	router.Use(httpapi.RequestLifecycleMiddlewares(logger, readRequestTimeout)...)
 	router.Use(corsMiddleware(env))
 	router.Use(httpapi.GlobalRateLimitMiddleware(httpapi.RateLimitPolicy{
 		Requests:         cfg.Server.RateLimit.Requests,
