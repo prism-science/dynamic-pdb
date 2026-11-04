@@ -798,7 +798,9 @@ type fakeDynamicPDBClient struct {
 	createEntryAttempts int
 	// createEntryDelay holds each CreateEntry call this long, or until its context
 	// is cancelled.
-	createEntryDelay    time.Duration
+	createEntryDelay time.Duration
+	// createEntryStarted, when set, receives a value as each CreateEntry call starts.
+	createEntryStarted  chan<- struct{}
 	putUploadPartErrors []error
 	putUploadPartCalls  int
 	entries             []dynamicpdbapi.CreateEntryRequest
@@ -845,6 +847,9 @@ func (b *fakeDynamicPDBClient) CreateEntry(
 	ctx context.Context,
 	request dynamicpdbapi.CreateEntryRequest,
 ) (dynamicpdbapi.CreateEntryResult, error) {
+	if b.createEntryStarted != nil {
+		b.createEntryStarted <- struct{}{}
+	}
 	if b.createEntryDelay > 0 {
 		select {
 		case <-ctx.Done():

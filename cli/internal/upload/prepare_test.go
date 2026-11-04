@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,11 +229,20 @@ func Test_should_finish_started_entries_and_leave_none_uploading_when_another_en
 	uploadManifest.Entries[0].Models[0].Run = nil
 	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
 	writeTestManifest(t, manifestPath, uploadManifest)
-	// 5AMF and 6ABC are still creating their entries when 7DEF fails its checks.
-	dynamicPDBClient := &fakeDynamicPDBClient{createEntryDelay: 300 * time.Millisecond}
+	// 7DEF's RCSB lookup waits until 5AMF and 6ABC are creating their entries, which
+	// then take 300 ms, so both are mid-upload when 7DEF fails its checks.
+	createEntryStarted := make(chan struct{}, 3)
+	dynamicPDBClient := &fakeDynamicPDBClient{createEntryDelay: 300 * time.Millisecond, createEntryStarted: createEntryStarted}
+	release := make(chan struct{})
+	go func() {
+		<-createEntryStarted
+		<-createEntryStarted
+		close(release)
+	}()
+	rcsbClient := gatedRCSB{gatedPDBID: "7DEF", release: release}
 
 	// when
-	summary, err := New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 3).Upload(context.Background(), manifestPath)
+	summary, err := New(dynamicPDBClient, rcsbClient, NoopProgress{}, 3).Upload(context.Background(), manifestPath)
 
 	// then
 	var checkError *EntryCheckError
@@ -289,4 +299,23 @@ func Test_should_say_listed_input_has_no_file_when_run_inputs_find_nothing(t *te
 		`model "model_1": the run has no input artifact: no artifact in run.inputs has a file for this entry`,
 	}, checkError.Problems)
 	assert.Empty(t, dynamicPDBClient.uploads)
+}
+
+// gatedRCSB answers like fakeRCSB, but holds entry lookups of gatedPDBID until
+// release is closed.
+type gatedRCSB struct {
+	fakeRCSB
+	gatedPDBID string
+	release    <-chan struct{}
+}
+
+func (g gatedRCSB) GetEntry(ctx context.Context, pdbID string) (map[string]any, error) {
+	if strings.EqualFold(pdbID, g.gatedPDBID) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-g.release:
+		}
+	}
+	return g.fakeRCSB.GetEntry(ctx, pdbID)
 }
