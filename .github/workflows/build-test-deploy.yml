@@ -29,6 +29,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       cli: ${{ steps.filter.outputs.cli }}
       website: ${{ steps.filter.outputs.website }}
+      integration: ${{ steps.filter.outputs.integration }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,6 +62,17 @@ jobs:
               - "lib/cif/*.json"
               - "lib/cif/testdata/**"
               - "backend/api/openapi.yaml"
+            integration:
+              - ".github/workflows/build-test-deploy.yml"
+              - "Makefile"
+              - "go.work"
+              - "go.work.sum"
+              - "backend/**"
+              - "cli/**"
+              - "lib/**"
+              - "integration/**"
+              # integration/form_parity_test.go reads the website's golden form requests.
+              - "website/test/fixtures/form-parity-requests.json"
 
   backend:
     name: Backend
@@ -301,6 +313,72 @@ jobs:
             website/browser-test-logs/
           retention-days: 7
 
+  # Runs integration/ against the real backend, Postgres and the mmseqs job image. Every test
+  # skips unless DYNAMIC_PDB_RUN_INTEGRATION=1 (make integration-test sets it), so the last
+  # step fails the job if any test skipped or none passed.
+  integration:
+    name: Integration tests
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: dynamic_pdb_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 35432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dynamic_pdb_local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # GitHub-hosted runners can't reach harbor.astera.sh (Tailscale only), so the mmseqs
+      # test builds its image from the same base images on Docker Hub.
+      DYNAMIC_PDB_MMSEQS_GO_IMAGE: golang:1.26-alpine
+      DYNAMIC_PDB_MMSEQS_RUNTIME_IMAGE: debian:bookworm-slim
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            backend/tools/go.sum
+            cli/go.sum
+            integration/go.sum
+            lib/go.sum
+
+      - name: Install codegen tools
+        run: make -C backend install-tools
+
+      - name: Generate backend code
+        run: PATH="$(go env GOPATH)/bin:${PATH}" make -C backend generate
+
+      - name: Apply database migrations
+        run: make -C backend migrate-local
+
+      - name: Run integration tests
+        run: |
+          set -euo pipefail
+          make integration-test INTEGRATION_TIMEOUT=15m 2>&1 | tee integration-test.log
+
+      - name: Check every integration test ran
+        run: |
+          set -euo pipefail
+          passed="$(grep -c '^--- PASS:' integration-test.log || true)"
+          skipped="$(grep -c -- '--- SKIP:' integration-test.log || true)"
+          echo "Top-level tests passed: ${passed}. Tests skipped: ${skipped}."
+          if [ "${passed}" -eq 0 ] || [ "${skipped}" -ne 0 ]; then
+            echo "::error::Integration tests did not all run (passed=${passed}, skipped=${skipped})."
+            exit 1
+          fi
+
   deploy-images:
     name: Build and push deploy images
     needs:
@@ -309,6 +387,7 @@ jobs:
       - cli
       - website
       - browser
+      - integration
     if: |
       always() &&
       github.event_name == 'push' &&
@@ -317,7 +396,8 @@ jobs:
       (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.cli.result == 'success' || needs.cli.result == 'skipped') &&
       (needs.website.result == 'success' || needs.website.result == 'skipped') &&
-      (needs.browser.result == 'success' || needs.browser.result == 'skipped')
+      (needs.browser.result == 'success' || needs.browser.result == 'skipped') &&
+      (needs.integration.result == 'success' || needs.integration.result == 'skipped')
     runs-on: diffuse-sh-builder
     timeout-minutes: 60
     steps:
