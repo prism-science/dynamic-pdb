@@ -439,7 +439,7 @@ func (s *SchemaValidationSuite) Test_should_round_trip_extensions_and_distinct_e
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-round-trip-owner", 8422)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "round trip entry", "method": "Neutron diffraction"},
+		"entry": map[string]any{"title": "round trip entry", "method": "CryoEM"},
 	})
 
 	// when

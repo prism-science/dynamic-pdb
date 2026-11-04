@@ -14,7 +14,7 @@ test("should restore the typed values when the page is reloaded", async ({ page,
   await page.goto("/entries/new");
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Description", { exact: true }).fill("A draft kept across a reload.");
-  await page.getByLabel("Method", { exact: true }).fill("X-ray crystallography");
+  await page.getByLabel("Method", { exact: true }).selectOption("X-ray crystallography");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key) ?? "", entryDraftStorageKey))
     .toContain("A draft kept across a reload.");

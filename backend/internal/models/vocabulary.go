@@ -10,6 +10,19 @@ import (
 // (docs/schema/dynamic-pdb-schema-v0.2.0.md), in the schema's order. Each Validate
 // method accepts exactly the values in its list.
 
+// StructureMethods are the methods a depositor may give an entry. Entries the
+// archive sync imports keep the archive's text, which can be outside this list.
+var StructureMethods = []StructureMethod{StructureMethodXRayCrystallography, StructureMethodCryoEM}
+
+func (method StructureMethod) Validate() error {
+	switch method {
+	case StructureMethodXRayCrystallography, StructureMethodCryoEM:
+		return nil
+	default:
+		return unknownValueError("method", method, StructureMethods)
+	}
+}
+
 var ModelPurposes = []ModelPurpose{ModelPurposeModelBuilding, ModelPurposeRefinement, ModelPurposeReference}
 
 func (purpose ModelPurpose) Validate() error {

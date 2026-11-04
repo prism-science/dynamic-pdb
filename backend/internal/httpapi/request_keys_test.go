@@ -43,7 +43,7 @@ const validCreateEntryBody = `{
 	"entry": {
 		"title": "Lysozyme",
 		"thumbnail_image_url": null,
-		"method": "X-ray diffraction",
+		"method": "X-ray crystallography",
 		"details": "room temperature",
 		"resolution": 1.5,
 		"space_group": "P 43 21 2",
@@ -118,7 +118,7 @@ func Test_should_report_unknown_and_reserved_keys_at_every_depth_when_request_ha
 			body: `{
 				"note": 1,
 				"entry": {
-					"title": "t", "method": "X-ray diffraction",
+					"title": "t", "method": "X-ray crystallography",
 					"colour": "blue",
 					"metadata": {},
 					"crystallography": {"crystals": [{"id": "1", "growth": {"ph": 7, "ph_note": "x"}}]},
@@ -221,7 +221,7 @@ func Test_should_report_unknown_and_reserved_keys_at_every_depth_when_request_ha
 
 func Test_should_not_point_to_extensions_when_request_object_has_none(t *testing.T) {
 	// given
-	raw := rawJSON(t, `{"entry": {"Title": "wrong case", "title": "t", "method": "X-ray diffraction"}}`)
+	raw := rawJSON(t, `{"entry": {"Title": "wrong case", "title": "t", "method": "X-ray crystallography"}}`)
 
 	// when
 	fieldErrors := requestKeyErrors(raw, CreateEntryRequest{})
@@ -238,7 +238,7 @@ func Test_should_report_each_key_once_when_field_has_its_own_key_rule(t *testing
 	// given
 	body := `{
 		"entry": {
-			"title": "t", "method": "X-ray diffraction",
+			"title": "t", "method": "X-ray crystallography",
 			"external_refs": {"__pdb": "1ABC"},
 			"artifacts": [{"id": "00000000-0000-0000-0000-000000000001", "name": "a", "level": "L0", "type": "model",
 				"metadata": {"__a": 1, "colour": "blue"}}]
@@ -254,7 +254,7 @@ func Test_should_report_each_key_once_when_field_has_its_own_key_rule(t *testing
 
 	// when
 	keyErrors := requestKeyErrors(rawJSON(t, body), CreateEntryRequest{})
-	schemaErrors := createEntryRequestErrors(request)
+	schemaErrors := createEntryRequestErrors(request, nil)
 
 	// then
 	assert.Empty(t, keyErrors, "metadata and external_refs keys are left to their own rules")

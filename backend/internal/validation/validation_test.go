@@ -612,6 +612,65 @@ func Test_should_require_method_when_new_entry_metadata_has_none(t *testing.T) {
 	assert.Empty(t, freeTextErrors)
 }
 
+func Test_should_accept_listed_methods_when_a_depositor_sends_one(t *testing.T) {
+	for _, method := range models.StructureMethods {
+		t.Run(string(method), func(t *testing.T) {
+			// given
+			metadata := models.EntryMetadata{Method: &method}
+
+			// when
+			fieldErrors := DepositorMethod(Root.Field("entry"), metadata, nil)
+
+			// then
+			assert.Empty(t, fieldErrors)
+		})
+	}
+}
+
+func Test_should_refuse_an_unlisted_method_and_name_the_allowed_ones_when_a_depositor_sends_it(t *testing.T) {
+	// given
+	method := models.StructureMethod("X-ray diffraction")
+	archiveMethod := models.StructureMethod("NEUTRON DIFFRACTION")
+
+	// when
+	withoutArchive := DepositorMethod(Root.Field("entry"), models.EntryMetadata{Method: &method}, nil)
+	otherArchive := DepositorMethod(Root.Field("entry"), models.EntryMetadata{Method: &method}, &archiveMethod)
+
+	// then
+	for _, fieldErrors := range [][]FieldError{withoutArchive, otherArchive} {
+		require.Len(t, fieldErrors, 1)
+		assert.Equal(t, Pointer("/entry/method"), fieldErrors[0].Pointer)
+		assert.Equal(t, CodeInvalidValue, fieldErrors[0].Code)
+		assert.Equal(t, `method "X-ray diffraction" is not one of "X-ray crystallography", "CryoEM"`,
+			fieldErrors[0].Detail)
+	}
+}
+
+func Test_should_accept_the_archive_method_when_a_create_keeps_it(t *testing.T) {
+	// given
+	archiveMethod := models.StructureMethod("NEUTRON DIFFRACTION")
+	method := archiveMethod
+
+	// when
+	fieldErrors := DepositorMethod(Root.Field("entry"), models.EntryMetadata{Method: &method}, &archiveMethod)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_leave_a_missing_or_blank_method_to_the_presence_rule_when_depositor_method_is_checked(t *testing.T) {
+	// given
+	blank := models.StructureMethod("  ")
+
+	// when
+	missingErrors := DepositorMethod(Root.Field("entry"), models.EntryMetadata{}, nil)
+	blankErrors := DepositorMethod(Root.Field("entry"), models.EntryMetadata{Method: &blank}, nil)
+
+	// then
+	assert.Empty(t, missingErrors)
+	assert.Empty(t, blankErrors)
+}
+
 func Test_should_not_check_mutation_format_when_polymer_entity_comes_from_rcsb(t *testing.T) {
 	// given
 	metadata := models.PolymerEntityMetadata{Mutations: []string{"ENGINEERED MUTATION", "DELETION", "A(-3)G"}}

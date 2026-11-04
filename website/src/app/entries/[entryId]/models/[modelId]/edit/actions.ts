@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 
 import {
-  ApiRequestError,
   createModelRevision,
   createModelRevisionRequestBody,
   type ModelRevisionChange,
@@ -11,6 +10,7 @@ import {
 import { getAuthSession } from "@/lib/auth/session";
 import {
   apiFailure,
+  requestFailure,
   type ApiFailure,
 } from "@/app/components/entry-form/apiErrors";
 
@@ -30,11 +30,7 @@ export async function updateModelAction(
   try {
     await createModelRevision(session.token, entryId, modelId, change);
   } catch (error) {
-    return apiFailure(
-      error instanceof Error ? error.message : "Failed to save the change.",
-      error instanceof ApiRequestError ? error.errors : [],
-      () => createModelRevisionRequestBody(change),
-    );
+    return apiFailure(requestFailure(error), () => createModelRevisionRequestBody(change));
   }
 
   redirect(

@@ -8,6 +8,7 @@ const test = require("node:test");
 const {
   createEntryRequestBody,
   createEntryRevisionRequestBody,
+  createModelRequestBody,
   createModelRevisionRequestBody,
 } = require("../src/lib/api/entries.ts");
 const {
@@ -16,7 +17,11 @@ const {
   autofilledTitle,
   withAutofilledRequest,
 } = require("../src/app/components/entry-form/autofill.ts");
-const { buildCreateEntryInput } = require("../src/app/components/entry-form/helpers.ts");
+const {
+  buildCreateEntryInput,
+  buildCreateModelInput,
+  emptyProgramDraft,
+} = require("../src/app/components/entry-form/helpers.ts");
 const { polymerEntityDraftsFromArchive } = require("../src/app/components/entry-form/polymerEntities.ts");
 const {
   buildEntryRevisionChange,
@@ -24,7 +29,7 @@ const {
   entryDraftFromEntry,
   modelDraftFromModel,
 } = require("../src/app/components/entry-form/revisionChanges.ts");
-const { emptyEntryMetadataDraft } = require("../src/app/components/entry-form/types.ts");
+const { emptyCompounds, emptyEntryMetadataDraft } = require("../src/app/components/entry-form/types.ts");
 
 // The requests the forms send for fixed drafts, kept in a committed golden
 // file. integration/form_parity_test.go posts each one, and a hand-written API
@@ -155,7 +160,7 @@ function entryCreateRequest() {
 function entryRevisionRequest() {
   const initial = entryDraftFromEntry(BASE_ENTRY);
   const current = entryDraftFromEntry(BASE_ENTRY);
-  current.metadata.method = "Neutron diffraction";
+  current.metadata.method = "CryoEM";
   current.metadata.crystals[0].ph = "7.5";
   current.metadata.crystals.push({
     key: "added-crystal",
@@ -187,11 +192,95 @@ function modelRevisionRequest() {
   );
 }
 
+// The ids the New model draft below gives its files, run and scores. The
+// integration test puts fresh ids in their place before it posts.
+const MODEL_CREATE_IDS = {
+  modelFile: "00000000-0000-4000-8000-000000000101",
+  dataFile: "00000000-0000-4000-8000-000000000102",
+  run: "00000000-0000-4000-8000-000000000103",
+  metrics: "00000000-0000-4000-8000-000000000104",
+};
+
+/** A New model draft as the form holds it after both files are uploaded, the
+ *  server has read the model file, and the depositor filled in the rest. */
+function modelCreateRequest() {
+  const uploaded = {
+    source: "upload",
+    authors: "",
+    progress: 1,
+    uploadStatus: "uploaded",
+    uploadError: null,
+  };
+  const draft = {
+    id: "parity-model-draft",
+    title: "Room-temperature multiconformer model",
+    thumbFileId: "parity-thumb",
+    thumbFile: null,
+    thumbPreview: null,
+    thumbUrl: null,
+    thumbProgress: 0,
+    thumbUploadStatus: "idle",
+    thumbUploadError: null,
+    files: [
+      {
+        ...uploaded,
+        id: MODEL_CREATE_IDS.modelFile,
+        name: "model.cif",
+        size: 2048,
+        type: "mmcif",
+        artifactType: "model",
+        level: "L2",
+        url: "s3://parity/model.cif",
+        sha256: "a".repeat(64),
+        metadata: { atom_count: 1234, modeled_residues: 164, unique_protein_chains: 1 },
+      },
+      {
+        ...uploaded,
+        id: MODEL_CREATE_IDS.dataFile,
+        name: "data.mtz",
+        size: 4096,
+        type: "mtz",
+        artifactType: "structure_factors",
+        level: "L0",
+        url: "s3://parity/data.mtz",
+        sha256: "b".repeat(64),
+      },
+    ],
+    metrics: [
+      {
+        id: MODEL_CREATE_IDS.metrics,
+        values: { r_work: "0.196", r_free: "0.231" },
+        runId: MODEL_CREATE_IDS.run,
+      },
+    ],
+    purpose: "Refinement",
+    modelType: "Multiconformer",
+    details: "Refined at room temperature.",
+    authors: ["A. Author", "B. Author"],
+    affiliation: "Example Lab",
+    compounds: emptyCompounds(),
+    compoundsSource: null,
+    programs: [
+      emptyProgramDraft({
+        id: MODEL_CREATE_IDS.run,
+        name: "phenix.refine",
+        version: "1.21",
+        command: "phenix.refine model.cif data.mtz",
+        parameters: '{"cycles": 5}',
+        inputFileIds: [MODEL_CREATE_IDS.dataFile],
+        outputFileIds: [MODEL_CREATE_IDS.modelFile],
+      }),
+    ],
+  };
+  return createModelRequestBody(buildCreateModelInput(draft));
+}
+
 function formRequests() {
   return {
     entry_create: entryCreateRequest(),
     entry_revision: entryRevisionRequest(),
     model_revision: modelRevisionRequest(),
+    model_create: modelCreateRequest(),
   };
 }
 

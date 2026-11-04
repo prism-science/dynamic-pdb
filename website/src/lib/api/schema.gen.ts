@@ -1040,6 +1040,7 @@ export interface components {
             details?: string;
             /** Format: double */
             resolution?: number;
+            /** @description Experimental method. A create or entry revision request that sends a method must use one of StructureMethod, or get 422 INVALID_VALUE. A create may also keep the archive's method for the PDB ID it names. Entries the archive sync imports keep the archive's text, so responses can carry other values. */
             method?: string;
             space_group?: string;
             crystallography?: components["schemas"]["EntryCrystallography"];
@@ -1508,6 +1509,11 @@ export interface components {
             updated_at: string;
             metrics: components["schemas"]["Metric"][];
         };
+        /**
+         * @description The experimental methods a depositor may give an entry. EntryProperties.method says where other values come from.
+         * @enum {string}
+         */
+        StructureMethod: "X-ray crystallography" | "CryoEM";
         /** @enum {string} */
         ModelPurpose: "Model Building" | "Refinement" | "Reference";
         /** @enum {string} */
@@ -4387,3 +4393,46 @@ export interface operations {
         };
     };
 }
+type FlattenedDeepRequired<T> = {
+    [K in keyof T]-?: FlattenedDeepRequired<T[K] extends unknown[] | undefined | null ? Extract<T[K], unknown[]>[number] : T[K]>;
+};
+type ReadonlyArray<T> = [
+    Exclude<T, undefined>
+] extends [
+    unknown[]
+] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
+export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
+export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];
+export const tokenAttributesToken_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TokenAttributes"]["token_type"]> = ["Bearer"];
+export const archivePdbDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchivePdbData"]["type"]> = ["archive_pdb_lookups"];
+export const archiveWarningSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveWarning"]["source"]> = ["archive", "validation"];
+export const artifactExtractionDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactExtractionData"]["type"]> = ["artifact_extractions"];
+export const archivePolymerEntityProposalMutations_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchivePolymerEntityProposal"]["mutations_status"]> = ["parsed", "needs_review", "none"];
+export const entryDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryData"]["type"]> = ["entries"];
+export const entryArchiveStatusStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryArchiveStatus"]["state"]> = ["obsolete"];
+export const polymerEntityMutations_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PolymerEntity"]["mutations_status"]> = ["parsed", "needs_review", "none"];
+export const polymerEntityUniProtMappingSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["PolymerEntityUniProtMapping"]["source"]> = ["sifts", "struct_ref", "alignment"];
+export const entryCreatedByIdentifierTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryCreatedByIdentifier"]["type"]> = ["users"];
+export const entryProteinSequenceIdentifierTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryProteinSequenceIdentifier"]["type"]> = ["protein_sequences"];
+export const entryProteinSequenceDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryProteinSequenceData"]["type"]> = ["protein_sequences"];
+export const entrySourceArtifactIdentifierTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntrySourceArtifactIdentifier"]["type"]> = ["artifacts"];
+export const structureMethodValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StructureMethod"]> = ["X-ray crystallography", "CryoEM"];
+export const modelPurposeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelPurpose"]> = ["Model Building", "Refinement", "Reference"];
+export const structureModelTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StructureModelType"]> = ["Single Conformer", "Multiconformer", "Ensemble", "Deposited"];
+export const metricKeyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MetricKey"]> = ["r_work", "r_free", "cc", "rscc", "clashscore", "ramachandran_outliers", "side_chain_outliers", "molprobity_score", "wilson_b", "rmsf"];
+export const artifactLevelValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactLevel"]> = ["L0", "L1", "L2", "L3"];
+export const artifactTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactType"]> = ["model", "structure_factors", "fasta", "other"];
+export const runArtifactDirectionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RunArtifactDirection"]> = ["input", "output"];
+export const artifactChecksumStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactChecksumStatus"]> = ["pending", "verified", "mismatch", "failed"];
+export const artifactChecksumCopyStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactChecksumCopyStatus"]> = ["copied", "own_storage", "over_limit", "mismatch", "copy_failed", "copy_off"];
+export const revisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RevisionState"]> = ["pending", "in_review", "active", "rejected", "archived"];
+export const entryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["EntryState"]> = ["new", "active", "deleted"];
+export const modelStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelState"]> = ["new", "active", "deleted"];
+export const addModelOperationOpValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AddModelOperation"]["op"]> = ["add"];
+export const submitRevisionRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SubmitRevisionRequest"]["state"]> = ["in_review"];
+export const createEntryRevisionAttributesStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CreateEntryRevisionAttributes"]["state"]> = ["in_review"];
+export const modelOperationResultOpValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelOperationResult"]["op"]> = ["add"];
+export const updateRevisionStateRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["UpdateRevisionStateRequest"]["state"]> = ["active", "rejected"];
+export const compoundSourceRuleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["CompoundSource"]["rule"]> = ["list", "metalc", "branched", "macrolide", "ccd_type", "depositor_flag", "covalent_map", "ihm_probe", "depositor"];
+export const fieldSourceSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["FieldSource"]["source"]> = ["rcsb", "depositor", "file"];

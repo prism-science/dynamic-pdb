@@ -283,6 +283,20 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// writeErrorAt is writeError for an error about one field of the request body.
+func writeErrorAt(w http.ResponseWriter, status int, code string, pointer validation.Pointer, message string) {
+	writeJSON(w, status, Error{
+		Errors: []ErrorObject{
+			{
+				Status: strconv.Itoa(status),
+				Code:   &code,
+				Detail: &message,
+				Source: &ErrorSource{Pointer: string(pointer)},
+			},
+		},
+	})
+}
+
 // writeFieldErrors writes every schema violation of a request as one 422 response.
 func writeFieldErrors(w http.ResponseWriter, fieldErrors []validation.FieldError) {
 	status := strconv.Itoa(http.StatusUnprocessableEntity)

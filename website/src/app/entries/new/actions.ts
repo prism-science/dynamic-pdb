@@ -15,6 +15,7 @@ import {
 import { getAuthSession } from "@/lib/auth/session";
 import {
   apiFailure,
+  requestFailure,
   type ApiFailure,
 } from "@/app/components/entry-form/apiErrors";
 
@@ -29,11 +30,7 @@ export async function createEntryAction(
   try {
     await createEntry(session.token, input);
   } catch (error) {
-    return apiFailure(
-      error instanceof Error ? error.message : "Failed to create the entry.",
-      error instanceof ApiRequestError ? error.errors : [],
-      () => createEntryRequestBody(input),
-    );
+    return apiFailure(requestFailure(error), () => createEntryRequestBody(input));
   }
 
   redirect("/entries?tab=under-review");

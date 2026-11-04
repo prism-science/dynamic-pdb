@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	domainmodels "dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/archive"
 )
 
@@ -125,4 +126,63 @@ func archiveLookupFields() []domainmodels.FieldPointer {
 	return slices.DeleteFunc(slices.Clone(domainmodels.EntryArchiveFields), func(pointer domainmodels.FieldPointer) bool {
 		return pointer == domainmodels.EntryFieldLigands || pointer == domainmodels.EntryFieldCofactors
 	})
+}
+
+func Test_should_let_a_create_keep_the_archive_method_when_it_is_off_the_depositor_list(t *testing.T) {
+	// given
+	result := archiveResultForCreate()
+	result.Entry.Method = new("NEUTRON DIFFRACTION")
+	server := (&Server{}).WithArchiveLookup(&fakeArchiveLookup{result: result})
+	entry := CreateEntryData{
+		Title:        "Lysozyme",
+		Method:       "NEUTRON DIFFRACTION",
+		ExternalRefs: &map[string]string{"pdb": " 7l0b "},
+	}
+
+	// when
+	archive := server.lookUpNewEntryArchive(t.Context(), entry, time.Now())
+	keptErrors := createEntryRequestErrors(CreateEntryRequest{Entry: entry}, archive.method())
+	entry.Method = "Neutron diffraction"
+	typedErrors := createEntryRequestErrors(CreateEntryRequest{Entry: entry}, archive.method())
+
+	// then
+	require.True(t, archive.found)
+	require.NotNil(t, archive.method())
+	assert.Equal(t, domainmodels.StructureMethod("NEUTRON DIFFRACTION"), *archive.method())
+	assert.Empty(t, keptErrors)
+	assert.Equal(t, []validation.Pointer{"/entry/method"}, pointersOf(typedErrors))
+}
+
+func Test_should_give_no_archive_method_when_the_create_names_no_pdb_id_or_the_lookup_fails(t *testing.T) {
+	// given
+	lookup := &fakeArchiveLookup{result: archiveResultForCreate()}
+	withLookup := (&Server{}).WithArchiveLookup(lookup)
+	failing := (&Server{}).WithArchiveLookup(&fakeArchiveLookup{err: errors.New("rcsb is down")})
+	withPDB := CreateEntryData{Title: "Lysozyme", Method: "CryoEM", ExternalRefs: &map[string]string{"pdb": "7L0B"}}
+
+	// when
+	withoutPDB := withLookup.lookUpNewEntryArchive(t.Context(), CreateEntryData{Title: "Lysozyme"}, time.Now())
+	lookupFailed := failing.lookUpNewEntryArchive(t.Context(), withPDB, time.Now())
+
+	// then
+	assert.False(t, withoutPDB.found)
+	assert.Nil(t, withoutPDB.method())
+	assert.Empty(t, lookup.requestedID, "no PDB ID means no lookup")
+	assert.False(t, lookupFailed.found)
+	assert.Nil(t, lookupFailed.method())
+}
+
+func Test_should_require_the_depositor_list_when_an_entry_revision_sends_a_method(t *testing.T) {
+	// given
+	method := "NEUTRON DIFFRACTION"
+	sendsMethod := createEntryRevisionPayload{Request: CreateEntryRevisionRequest{Entry: EntryRevisionChange{Method: &method}}}
+	sendsTitleOnly := createEntryRevisionPayload{Request: CreateEntryRevisionRequest{Entry: EntryRevisionChange{Title: new("new title")}}}
+
+	// when
+	methodErrors := entryRevisionChangeErrors(sendsMethod)
+	titleErrors := entryRevisionChangeErrors(sendsTitleOnly)
+
+	// then
+	assert.Equal(t, []validation.Pointer{"/entry/method"}, pointersOf(methodErrors))
+	assert.Empty(t, titleErrors)
 }

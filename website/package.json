@@ -10,7 +10,7 @@
     "test:browser": "playwright test",
     "typecheck": "tsc --noEmit",
     "gen:cif-reference": "node scripts/gen-cif-reference.mjs",
-    "gen:api": "openapi-typescript ../backend/api/openapi.yaml -o src/lib/api/schema.gen.ts"
+    "gen:api": "openapi-typescript ../backend/api/openapi.yaml --enum-values -o src/lib/api/schema.gen.ts"
   },
   "dependencies": {
     "@dynamic-pdb/hetkit": "file:vendor/hetstar/packages/hetkit",

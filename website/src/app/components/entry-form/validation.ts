@@ -40,7 +40,7 @@ import {
   relatedDatasetItem,
 } from "./relatedDatasets";
 import type { ModelEditDraft, ModelLocks } from "./revisionChanges";
-import { METRIC_FIELDS, MODEL_PURPOSES, MODEL_TYPES } from "./types";
+import { METHODS, METRIC_FIELDS, MODEL_PURPOSES, MODEL_TYPES } from "./types";
 import type {
   CompoundsDraft,
   CrystalDraft,
@@ -52,7 +52,7 @@ import type {
 } from "./types";
 
 // The checks a form runs before it lets the depositor submit. They repeat
-// the API's own rules (required title and method, resolution above zero,
+// the API's own rules (required title, a method from the list, resolution above zero,
 // mutation format, organism name, allowed purposes and model types, and a
 // computed model's programs and score software) so a mistake shows beside
 // its field instead of coming back as a 422, and add
@@ -77,9 +77,22 @@ const PROGRAM_OUTPUT_MISSING_LINE = "choose at least one output file of this mod
 const METRIC_SOFTWARE_MISSING_LINE =
   "name the software that computed the scores, or choose the program step that did";
 
+/** Whether a method is filled in but not one a depositor may pick. */
+export function unlistedMethod(method: string): boolean {
+  const value = method.trim();
+  return value !== "" && !(METHODS as readonly string[]).includes(value);
+}
+
+/**
+ * keptMethod is the method the form started from: the archive's on a new
+ * entry, the stored one on an edit ("" when there is none). The API accepts
+ * it although it may be off the list (an archive method such as NEUTRON
+ * DIFFRACTION, kept on create; an unchanged value is not sent on an edit).
+ */
 export function entryFormMessages(
   title: string,
   metadata: EntryMetadataDraft,
+  keptMethod: string,
 ): FieldMessage[] {
   const messages: FieldMessage[] = [];
   if (!title.trim()) {
@@ -95,6 +108,8 @@ export function entryFormMessages(
   messages.push(...polymerEntityMessages(metadata.polymerEntities));
   if (!metadata.method.trim()) {
     messages.push(required("entry.method"));
+  } else if (unlistedMethod(metadata.method) && metadata.method.trim() !== keptMethod.trim()) {
+    messages.push(invalid("entry.method", `pick a method from the list (${METHODS.join(" or ")})`));
   }
   messages.push(
     ...numberMessages("entry.resolution", metadata.resolution, (value) =>

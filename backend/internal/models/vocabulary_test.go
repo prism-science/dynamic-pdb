@@ -10,6 +10,7 @@ import (
 func Test_should_accept_every_schema_value_when_vocabularies_are_validated(t *testing.T) {
 	// given
 	validators := map[string][]interface{ Validate() error }{
+		"method":             valuesOf(StructureMethods),
 		"model purpose":      valuesOf(ModelPurposes),
 		"model type":         valuesOf(StructureModelTypes),
 		"metric key":         valuesOf(MetricKeys),
@@ -40,6 +41,7 @@ func Test_should_list_schema_v0_2_0_values_when_vocabularies_are_read(t *testing
 	// given
 	// when
 	// then
+	assert.ElementsMatch(t, []StructureMethod{"X-ray crystallography", "CryoEM"}, StructureMethods)
 	assert.ElementsMatch(t, []ModelPurpose{"Model Building", "Refinement", "Reference"}, ModelPurposes)
 	assert.ElementsMatch(t,
 		[]StructureModelType{"Single Conformer", "Multiconformer", "Ensemble", "Deposited"},
@@ -78,6 +80,7 @@ func Test_should_name_allowed_values_when_vocabulary_value_is_unknown(t *testing
 func Test_should_reject_unknown_value_when_any_vocabulary_is_validated(t *testing.T) {
 	// given
 	unknownValues := map[string]interface{ Validate() error }{
+		"method":             StructureMethod("NEUTRON DIFFRACTION"),
 		"model purpose":      ModelPurpose("Docking"),
 		"model type":         StructureModelType("Trajectory"),
 		"metric key":         MetricKey("resolution"),

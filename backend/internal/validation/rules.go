@@ -236,7 +236,7 @@ func sortedKeys[K ~string, V any](values map[K]V) []K {
 }
 
 // NewEntryMethod checks that an entry being created names its experimental method.
-// The method is free text, so nothing beyond presence is checked.
+// DepositorMethod checks which methods are allowed.
 func NewEntryMethod(at Pointer, metadata models.EntryMetadata) []FieldError {
 	var method *string
 	if metadata.Method != nil {
@@ -244,6 +244,21 @@ func NewEntryMethod(at Pointer, metadata models.EntryMetadata) []FieldError {
 		method = &text
 	}
 	return RequiredText(at.Field("method"), method)
+}
+
+// DepositorMethod checks the method a create or entry revision request sends. It must be
+// one of models.StructureMethods, unless it equals archiveMethod: the archive's method for
+// the PDB ID a create names, which the entry may keep. archiveMethod is nil when there is
+// none. A request without a method passes; NewEntryMethod requires one on a create.
+func DepositorMethod(at Pointer, metadata models.EntryMetadata, archiveMethod *models.StructureMethod) []FieldError {
+	if metadata.Method == nil || strings.TrimSpace(string(*metadata.Method)) == "" {
+		return nil
+	}
+	method := *metadata.Method
+	if archiveMethod != nil && method == *archiveMethod {
+		return nil
+	}
+	return vocabularyValue(at.Field("method"), method)
 }
 
 // DepositorPolymerEntities checks polymer-entity values a depositor supplies on a

@@ -3,9 +3,17 @@ import type {
   EntityLevel,
   MetricKey,
   ModelPurpose,
+  StructureMethod,
   StructureModelType,
 } from "@/lib/api/entries";
 import type { ExtFileReference } from "@/lib/api/ext";
+import {
+  artifactLevelValues,
+  artifactTypeValues,
+  modelPurposeValues,
+  structureMethodValues,
+  structureModelTypeValues,
+} from "@/lib/api/schema.gen";
 
 export type UploadStatus = "idle" | "uploading" | "uploaded" | "failed";
 
@@ -149,7 +157,8 @@ export type PolymerEntityDraft = {
  * Properties of the structure, not of any one model. Kept on the entry
  * because two models of the same crystal share them.
  *
- * Method and space group are free text.
+ * Method is one of METHODS, or a value the form started from (see
+ * entryFormMessages). Space group is free text.
  */
 export type EntryMetadataDraft = {
   details: string;
@@ -163,19 +172,26 @@ export type EntryMetadataDraft = {
   relatedDatasets: RelatedDatasetDraft[];
 };
 
-export const METHODS = ["X-ray crystallography", "CryoEM"] as const;
+// The options of the form dropdowns that offer an API enum. Each list is the
+// generated openapi.yaml enum (`npm run gen:api` writes the *Values arrays), in
+// the spec's order, so the forms offer what the API accepts. Where depositors
+// may pick only some values, a record keyed by the enum says which: a value
+// added to openapi.yaml then fails to compile here until someone decides.
 
-/**
- * Keyed by the backend enum so a value added to openapi.yaml fails to compile
- * here until someone decides whether depositors may pick it. Reference and
- * Deposited are set by the system for unchanged archive imports.
- */
+/** The methods the API accepts from a depositor: every StructureMethod. */
+export const METHODS: readonly StructureMethod[] = structureMethodValues;
+
+/** Every level a file can have. */
+export const LEVELS: readonly EntityLevel[] = artifactLevelValues;
+
+/** Reference is set by the system for unchanged archive imports. */
 const MODEL_PURPOSE_DEPOSITOR_CHOICE: Record<ModelPurpose, boolean> = {
   "Model Building": true,
   Refinement: true,
   Reference: false,
 };
 
+/** Deposited is set by the system for unchanged archive imports. */
 const MODEL_TYPE_DEPOSITOR_CHOICE: Record<StructureModelType, boolean> = {
   "Single Conformer": true,
   Multiconformer: true,
@@ -183,15 +199,30 @@ const MODEL_TYPE_DEPOSITOR_CHOICE: Record<StructureModelType, boolean> = {
   Deposited: false,
 };
 
+/**
+ * The types a depositor may give a model's other files. "model" belongs to
+ * the model's own coordinate file, which the form types itself; sequences
+ * ("fasta") belong to the entry, not to a model.
+ */
+const MODEL_FILE_TYPE_DEPOSITOR_CHOICE: Record<ArtifactType, boolean> = {
+  model: false,
+  structure_factors: true,
+  fasta: false,
+  other: true,
+};
+
 function depositorChoices<Value extends string>(
+  values: readonly Value[],
   choices: Record<Value, boolean>,
 ): Value[] {
-  return (Object.keys(choices) as Value[]).filter((value) => choices[value]);
+  return values.filter((value) => choices[value]);
 }
 
-export const MODEL_PURPOSES = depositorChoices(MODEL_PURPOSE_DEPOSITOR_CHOICE);
+export const MODEL_PURPOSES = depositorChoices(modelPurposeValues, MODEL_PURPOSE_DEPOSITOR_CHOICE);
 
-export const MODEL_TYPES = depositorChoices(MODEL_TYPE_DEPOSITOR_CHOICE);
+export const MODEL_TYPES = depositorChoices(structureModelTypeValues, MODEL_TYPE_DEPOSITOR_CHOICE);
+
+export const MODEL_FILE_TYPES = depositorChoices(artifactTypeValues, MODEL_FILE_TYPE_DEPOSITOR_CHOICE);
 
 export function emptyCompounds(): CompoundsDraft {
   return {
@@ -263,7 +294,6 @@ export type ModelDraft = {
   headerFillNotice?: string | null;
 };
 
-export const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 
 export type MetricField = { key: MetricKey; label: string; example: string };
 

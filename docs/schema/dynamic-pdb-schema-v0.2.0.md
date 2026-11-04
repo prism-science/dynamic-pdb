@@ -51,7 +51,7 @@ Extract metadata from files and archives where possible. Depositors supply title
 |---|---|
 | title | Required text; replaces separate revision name and description. |
 | external_refs.pdb | Optional source accession, unique across active entries. pdb is the only supported key. |
-| method | Required experimental method. Free text today; OBI/EFO ontology identifiers remain planned. |
+| method | Required experimental method. A depositor picks X-ray crystallography or CryoEM; an entry created for a PDB ID may keep the archive's method. Entries the archive sync imports keep the archive's text (for example NEUTRON DIFFRACTION). OBI/EFO ontology identifiers remain planned. |
 | resolution | Optional positive number in ångströms, describing highest measured resolution. Omit when undefined for the method. |
 | space_group | Optional crystallographic symmetry in Hermann–Mauguin notation, such as P 21 21 21. |
 | crystallography.crystals[] | Per-crystal growth.ph, growth.temperature_kelvin, and diffractions[].temperature_kelvin. Keep growth and collection conditions separate; do not flatten multiple crystals into one value. |

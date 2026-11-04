@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 
 import {
-  ApiRequestError,
   createEntryRevision,
   createEntryRevisionRequestBody,
   type EntryRevisionChange,
@@ -11,6 +10,7 @@ import {
 import { getAuthSession } from "@/lib/auth/session";
 import {
   apiFailure,
+  requestFailure,
   type ApiFailure,
 } from "@/app/components/entry-form/apiErrors";
 
@@ -29,11 +29,7 @@ export async function updateEntryAction(
   try {
     await createEntryRevision(session.token, entryId, change);
   } catch (error) {
-    return apiFailure(
-      error instanceof Error ? error.message : "Failed to save the change.",
-      error instanceof ApiRequestError ? error.errors : [],
-      () => createEntryRevisionRequestBody(change),
-    );
+    return apiFailure(requestFailure(error), () => createEntryRevisionRequestBody(change));
   }
 
   redirect(`/entries/${encodeURIComponent(entryId)}?${CHANGE_SUBMITTED_PARAM}=1`);

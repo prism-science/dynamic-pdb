@@ -146,11 +146,11 @@ test("should_send_only_method_when_only_method_changed", () => {
     entry,
     entryDraftFromEntry(entry),
     editedDraft(entry, (draft) => {
-      draft.metadata.method = "Neutron diffraction";
+      draft.metadata.method = "CryoEM";
     }),
   );
 
-  assert.deepEqual(change, { method: "Neutron diffraction" });
+  assert.deepEqual(change, { method: "CryoEM" });
 });
 
 test("should_send_null_when_a_value_is_cleared", () => {
@@ -279,11 +279,11 @@ test("should_never_send_rcsb_fields_when_the_draft_changes_them", () => {
     entryDraftFromEntry(entry),
     editedDraft(entry, (draft) => {
       draft.title = "A depositor title";
-      draft.metadata.method = "Neutron diffraction";
+      draft.metadata.method = "CryoEM";
     }),
   );
 
-  assert.deepEqual(change, { method: "Neutron diffraction" });
+  assert.deepEqual(change, { method: "CryoEM" });
 });
 
 test("should_lock_only_rcsb_fields_when_sources_mix_rcsb_depositor_and_none", () => {

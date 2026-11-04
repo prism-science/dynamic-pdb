@@ -21,6 +21,7 @@ import { sanitizeNumeric, uploadStatusText } from "./helpers";
 import { inlineMessages, type FieldMessage } from "./messages";
 import type { EntryArchiveField } from "./revisionChanges";
 import { METHODS, type EntryMetadataDraft } from "./types";
+import { unlistedMethod } from "./validation";
 import type { ThumbnailUpload } from "./useThumbnailUpload";
 import styles from "./form.module.css";
 
@@ -282,27 +283,31 @@ export default function EntryFormSections({
             {locked("method") ? (
               <ReadOnlyText value={metadata.method} />
             ) : (
-              <>
-                <input
-                  id="entry-method"
-                  className={styles.input}
-                  list="entry-method-options"
-                  value={metadata.method}
-                  onChange={(event) =>
-                    onEdit("experiment", (current) => ({
-                      ...current,
-                      method: event.target.value,
-                    }))
-                  }
-                  placeholder="e.g. X-ray crystallography"
-                  autoComplete="off"
-                />
-                <datalist id="entry-method-options">
-                  {METHODS.map((value) => (
-                    <option key={value} value={value} />
-                  ))}
-                </datalist>
-              </>
+              <select
+                id="entry-method"
+                className={styles.select}
+                value={metadata.method}
+                onChange={(event) =>
+                  onEdit("experiment", (current) => ({
+                    ...current,
+                    method: event.target.value,
+                  }))
+                }
+              >
+                <option value="">—</option>
+                {unlistedMethod(metadata.method) ? (
+                  // A restored draft or a stored value off the list stays
+                  // visible; entryFormMessages says whether it can be kept.
+                  <option value={metadata.method}>
+                    {metadata.method} (not on the list)
+                  </option>
+                ) : null}
+                {METHODS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
             )}
             {choice(
               "method",
