@@ -23,7 +23,11 @@ import {
   compoundsFromParsed,
 } from "./compounds";
 import { optionalNumber } from "./crystals";
-import { organismLabel, polymerEntitiesRequest } from "./polymerEntities";
+import {
+  mutationsNeedingReview,
+  organismLabel,
+  polymerEntitiesRequest,
+} from "./polymerEntities";
 import {
   relatedDatasetDraftsFromStored,
   relatedDatasetsRequest,
@@ -237,6 +241,7 @@ function polymerEntityDraftsFromEntry(
         archiveOrganisms: ownOrganism ? [] : entity.source_organisms.map(organismLabel),
         archiveConstruct: own?.construct ? "" : (entity.construct ?? ""),
         archiveMutations: own?.mutations?.length ? [] : (entity.mutations ?? []),
+        archiveMutationsRaw: own?.mutations?.length ? "" : mutationsNeedingReview(entity),
         construct: own?.construct ?? "",
         mutations: own?.mutations ?? [],
         organismName: ownOrganism?.scientific_name ?? "",

@@ -146,6 +146,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Mutation text the registry could not read as single substitutions, or
+   typed with no UniProt mapping to check it against. */
+.reviewTag {
+  display: block;
+  color: var(--warning-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* The cell's whole value is the handle on its FASTA: clicking it opens the
    preview of the artifact these chains were read out of. A button rather than a
    link -- it opens a dialog on this page, it does not navigate. The auth label

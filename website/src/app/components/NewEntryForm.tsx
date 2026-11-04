@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { ArchiveEntryProposal } from "@/lib/api/entries";
 import {
   createEntryAction,
   lookupArchiveEntryAction,
@@ -44,6 +43,10 @@ import {
   withoutOwnFields,
 } from "./entry-form/archiveChoices";
 import type { EntryArchiveField } from "./entry-form/revisionChanges";
+import {
+  lookupReviewMessages,
+  type ArchiveLookupReview,
+} from "./entry-form/lookupReview";
 import { entryFormMessages } from "./entry-form/validation";
 import { DRAFT_VERSION, emptyEntryMetadataDraft } from "./entry-form/types";
 import type { EntryMetadataDraft, ParsedFile } from "./entry-form/types";
@@ -93,10 +96,11 @@ export default function NewEntryForm() {
   const [apiMessages, setApiMessages] = useState<FieldMessage[]>([]);
   const [lookup, setLookup] = useState<ArchiveLookupState>({ status: "idle" });
   const [lookupAttempt, setLookupAttempt] = useState(0);
-  // The entry values the last finished lookup proposed, for the PDB ID it read.
+  // What the last finished lookup proposed, for the PDB ID it read: the
+  // entry values the form fills in, and the conflicts and warnings it shows.
   const [archiveEntry, setArchiveEntry] = useState<{
     pdbId: string;
-    proposal: ArchiveEntryProposal;
+    review: ArchiveLookupReview;
   } | null>(null);
   // The archive fields the depositor took over: their typed values are shown
   // and sent instead of the archive's. A refetch never changes this list.
@@ -183,7 +187,14 @@ export default function NewEntryForm() {
               current.polymerEntities,
             ),
           }));
-          setArchiveEntry({ pdbId, proposal: result.entry });
+          setArchiveEntry({
+            pdbId,
+            review: {
+              entry: result.entry,
+              polymerEntities: result.polymerEntities,
+              warnings: result.warnings,
+            },
+          });
           setLookup({ status: "ready", pdbId });
         })
         .catch((lookupError: unknown) => {
@@ -303,10 +314,17 @@ export default function NewEntryForm() {
   // for the current PDB ID has finished. What the depositor typed stays
   // underneath, and shows again when the PDB ID is cleared or changed, or
   // when they take the field over with "Use my own value".
-  const archiveFill =
+  const finishedLookup =
     lookup.status === "ready" && archiveEntry?.pdbId === lookup.pdbId
-      ? archiveAutofill(lookup.pdbId, archiveEntry.proposal)
+      ? archiveEntry
       : null;
+  const archiveFill = finishedLookup
+    ? archiveAutofill(finishedLookup.pdbId, finishedLookup.review.entry)
+    : null;
+  // Advice only: the depositor can take a field over, not fix the archive.
+  const reviewMessages = finishedLookup
+    ? lookupReviewMessages(finishedLookup.pdbId, finishedLookup.review)
+    : [];
   const autofill = archiveFill ? withoutOwnFields(archiveFill, ownFields) : null;
   const archiveFields = archiveFieldsView(
     archiveFill?.locks ?? {},
@@ -340,7 +358,7 @@ export default function NewEntryForm() {
   const validationMessages = entryFormMessages(shownTitle, submittedMetadata).filter(
     (message) => !locked.has(message.field),
   );
-  const messages = [...validationMessages, ...apiMessages];
+  const messages = [...validationMessages, ...apiMessages, ...reviewMessages];
   const inline = (field: FieldId, item: string | null = null) =>
     inlineMessages(messages, field, item);
 

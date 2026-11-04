@@ -1,10 +1,12 @@
 import { signIn, submitter } from "./support/auth";
 import {
   ARCHIVE_VERSION,
+  answerArchiveEntryMalformed,
   archiveTitle,
   failArchiveEntry,
   freshPdbId,
   restoreArchiveEntry,
+  setArchiveEntityFields,
   setArchiveEntryFields,
 } from "./support/fakeRcsb";
 import { expect, test } from "./support/fixtures";
@@ -172,12 +174,18 @@ test("should show the server's error beside an archive value it rejects and save
   await page.goto("/entries/new");
   await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
   await expect(page.getByText(archiveTitle(pdbId), { exact: true })).toBeVisible();
+  // The lookup already says so, as advice: it does not block the submit.
+  await expect(
+    page.getByText(`The value from PDB ${pdbId} breaks a schema rule: must be greater than 0.`, {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   // when
   await page.getByRole("button", { name: "Create entry" }).click();
 
   // then
-  await expect(page.getByText(/must be greater than 0/i)).toBeVisible();
+  await expect(page.getByText("Must be greater than 0.", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/entries\/new$/);
 
   // when
@@ -193,4 +201,97 @@ test("should show the server's error beside an archive value it rejects and save
   const revision = await submitterApi.entryRevision(group.entryId, group.entryRevisions[0].id);
   expect(revision.resolution).toBe(1.9);
   expect(revision.field_sources?.["/metadata/resolution"]).toEqual({ source: "depositor" });
+});
+
+test("should show a value RCSB reports twice beside its field, without blocking the submit", async ({
+  page,
+}) => {
+  // given
+  const pdbId = freshPdbId();
+  await setArchiveEntryFields(pdbId, {
+    exptl: [{ method: "X-RAY DIFFRACTION" }, { method: "NEUTRON DIFFRACTION" }],
+  });
+  await page.goto("/entries/new");
+
+  // when
+  await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
+
+  // then
+  await expect(
+    page.getByText(
+      `PDB ${pdbId} lists more than one method: X-RAY DIFFRACTION, NEUTRON DIFFRACTION. The form fills in the first.`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create entry" })).toBeEnabled();
+});
+
+test("should mark unclear archive mutations and typed mutations without a UniProt mapping for review", async ({
+  page,
+}) => {
+  // given: entity 1 of the fake archive has no UniProt mapping
+  const pdbId = freshPdbId();
+  await setArchiveEntityFields(pdbId, "1", {
+    rcsb_polymer_entity: { pdbx_description: "Lysozyme C", pdbx_mutation: "C54T, ENGINEERED MUTATION" },
+  });
+  await page.goto("/entries/new");
+
+  // when
+  await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
+
+  // then
+  await expect(page.getByText(`PDB ${pdbId}: C54T, ENGINEERED MUTATION`)).toBeVisible();
+  await expect(page.getByText("needs review", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Part of the PDB's mutation text is not a single substitution, so it needs review: type the substitutions you mean.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  // when
+  await page.getByLabel("Mutations", { exact: true }).fill("C54T");
+  await page.getByLabel("Mutations", { exact: true }).press("Enter");
+
+  // then
+  await expect(
+    page.getByText(
+      "Needs review: the PDB maps this entity to no UniProt entry, so these positions cannot be checked against UniProt numbering.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create entry" })).toBeEnabled();
+});
+
+test("should keep the draft and allow a retry when RCSB answers with malformed data", async ({
+  page,
+}) => {
+  // given
+  const pdbId = freshPdbId();
+  await answerArchiveEntryMalformed(pdbId);
+  await page.goto("/entries/new");
+  await page.getByLabel("Title", { exact: true }).fill("Typed before the lookup");
+
+  // when
+  await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
+
+  // then
+  await expect(page.getByText(`Could not read ${pdbId} from the PDB`)).toBeVisible();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Typed before the lookup");
+
+  // when: the draft comes back after a reload, and its lookup fails the same way
+  await page.reload();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  // then
+  await expect(page.getByText(`Could not read ${pdbId} from the PDB`)).toBeVisible();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Typed before the lookup");
+
+  // when: RCSB answers properly again; the bad answer was not cached
+  await restoreArchiveEntry(pdbId);
+  await page.getByRole("button", { name: "Try again" }).click();
+
+  // then
+  await expect(page.getByText(archiveTitle(pdbId), { exact: true })).toBeVisible();
+  await expect(page.getByText("You typed: “Typed before the lookup”", { exact: true })).toBeVisible();
 });

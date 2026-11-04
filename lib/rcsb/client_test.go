@@ -328,6 +328,46 @@ func Test_should_cache_successful_rcsb_responses_by_url(t *testing.T) {
 	assert.Equal(t, 1, requests["/fasta/entry/5AMF"])
 }
 
+func Test_should_refetch_rcsb_response_that_did_not_decode(t *testing.T) {
+	// given: RCSB answers 200 with a cut-off body once, then a whole one
+	requests := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests[r.URL.Path]++
+		if requests[r.URL.Path] == 1 {
+			writeText(t, w, `{"struct": {"title": "`)
+			return
+		}
+		switch r.URL.Path {
+		case "/rest/v1/core/entry/5AMF":
+			writeText(t, w, `{"struct": {"title": "whole entry"}}`)
+		case "/rest/v1/core/polymer_entity/5AMF/1":
+			writeText(t, w, `{"rcsb_polymer_entity": {"pdbx_description": "whole entity"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURLs(server.URL, server.URL, server.URL, server.URL))
+
+	// when
+	_, firstEntryErr := client.GetEntryDetails(context.Background(), "5amf")
+	entry, retriedEntryErr := client.GetEntryDetails(context.Background(), "5amf")
+	_, firstEntityErr := client.GetPolymerEntityDetails(context.Background(), "5amf", "1")
+	entity, retriedEntityErr := client.GetPolymerEntityDetails(context.Background(), "5amf", "1")
+	_, cachedEntityErr := client.GetPolymerEntityDetails(context.Background(), "5amf", "1")
+
+	// then
+	require.ErrorContains(t, firstEntryErr, "decode RCSB entry")
+	require.NoError(t, retriedEntryErr)
+	assert.Equal(t, "whole entry", entry.Structure.Title)
+	require.ErrorContains(t, firstEntityErr, "decode RCSB polymer entity 5amf_1")
+	require.NoError(t, retriedEntityErr)
+	require.NoError(t, cachedEntityErr)
+	assert.Equal(t, "whole entity", entity.Entity.Description)
+	assert.Equal(t, 2, requests["/rest/v1/core/entry/5AMF"])
+	assert.Equal(t, 2, requests["/rest/v1/core/polymer_entity/5AMF/1"])
+}
+
 func Test_should_refetch_rcsb_response_when_cache_entry_expired(t *testing.T) {
 	// given
 	requests := 0

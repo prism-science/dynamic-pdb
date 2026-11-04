@@ -131,6 +131,13 @@ export type PolymerEntityDraft = {
   archiveOrganisms: string[];
   archiveConstruct: string;
   archiveMutations: string[];
+  /**
+   * The archive's mutation text when part of it is not a single substitution
+   * (mutations_status needs_review): only the plain ones are in
+   * archiveMutations, so the text is shown as written, marked "needs review".
+   * Empty otherwise.
+   */
+  archiveMutationsRaw: string;
   construct: string;
   mutations: string[];
   /** Used only when the PDB names no organism. */

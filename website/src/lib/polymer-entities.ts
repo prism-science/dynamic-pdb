@@ -1,4 +1,5 @@
 import type {
+  DepositorPolymerEntity,
   PolymerEntity,
   PolymerEntityOrganism,
   PolymerEntityUniProtMapping,
@@ -27,14 +28,24 @@ export type PolymerEntityView = {
    *  mutationsText is shown as written. */
   mutations: string[] | null;
   mutationsText: string | null;
+  /** Why the mutations need review, or null: part of the text is not a single
+   *  substitution, or the depositor's mutations have no UniProt mapping to
+   *  check their positions against. */
+  mutationsReview: string | null;
   uniprotMappings: PolymerEntityUniProtMapping[];
   residueData: ResidueData[];
 };
 
+/**
+ * depositorEntities are the values the depositor typed (the entry's
+ * depositor_polymer_entities). The stored entities already carry their
+ * mutations; this list says which mutations are the depositor's.
+ */
 export function polymerEntityViews(
   entities: PolymerEntity[],
   sequences: ProteinSequence[],
   residueData: ResidueData[] = [],
+  depositorEntities: DepositorPolymerEntity[] = [],
 ): PolymerEntityView[] {
   return entities
     .map((entity, index) => {
@@ -43,10 +54,22 @@ export function polymerEntityViews(
       const storedMutations = (entity.mutations ?? [])
         .map((mutation) => mutation.trim())
         .filter(Boolean);
-      // Text that is not a plain list of substitutions is only in mutations_raw.
+      const typedMutations = depositorEntities.some(
+        (typed) =>
+          typed.label_entity_id === entityId && (typed.mutations ?? []).length > 0,
+      );
+      // Text that is not a plain list of substitutions is only in
+      // mutations_raw. Typed mutations replace the archive's list, and the
+      // stored raw text is the archive's, so it is not shown over them.
       const rawMutations =
-        entity.mutations_status === "needs_review"
+        !typedMutations && entity.mutations_status === "needs_review"
           ? trimmed(entity.mutations_raw)
+          : null;
+      const unmapped = (entity.uniprot_mappings ?? []).length === 0;
+      const mutationsReview = rawMutations
+        ? "part of this text is not a single substitution"
+        : typedMutations && unmapped && storedMutations.length > 0
+          ? "no UniProt mapping to check these positions against"
           : null;
       const mutationsText =
         rawMutations ??
@@ -68,6 +91,7 @@ export function polymerEntityViews(
         construct: trimmed(entity.construct),
         mutations: mutationsText ? mutationTokens(mutationsText) : null,
         mutationsText,
+        mutationsReview,
         uniprotMappings: entity.uniprot_mappings ?? [],
         residueData: residueDataForChains(chains, residueData, entities.length),
       };

@@ -226,6 +226,11 @@ function detailsCell(view: PolymerEntityView): ReactNode {
         ) : (
           view.mutationsText
         )}
+        {view.mutationsReview ? (
+          <span className={styles.reviewTag}>
+            needs review: {view.mutationsReview}
+          </span>
+        ) : null}
       </li>,
     );
   }
