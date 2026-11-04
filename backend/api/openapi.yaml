@@ -838,7 +838,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1006,7 +1009,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1443,7 +1449,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1569,6 +1578,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models/{model_id}/revisions:
     get:
@@ -1687,7 +1704,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1816,6 +1836,14 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision changed since it was loaded.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -2226,6 +2254,14 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision is not editable.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
