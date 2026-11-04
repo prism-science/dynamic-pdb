@@ -249,11 +249,10 @@ export type CreateMetricRequest = Schemas["CreateMetricRequest"];
 
 type CreateRunArtifactRequest = Schemas["CreateRunArtifactRequest"];
 
-type CreateRunRequest = Omit<
-  Schemas["CreateRunRequest"],
-  "metadata" | "artifacts"
-> & {
-  metadata: JSONRecord;
+// metadata keeps the generated RunMetadata type: the API allows only
+// extensions there, so another key fails typecheck instead of getting a 422.
+type CreateRunRequest = Omit<Schemas["CreateRunRequest"], "metadata" | "artifacts"> & {
+  metadata: Schemas["RunMetadata"];
   artifacts: CreateRunArtifactRequest[];
 };
 
@@ -1366,7 +1365,9 @@ function createArtifactRequest(entity: CreateEntityInput): CreateArtifactRequest
     level: entity.level ?? "L0",
     type: artifactTypeFromEntity(entity),
     uri: stringOrNull(payload.file_url),
-    sha256: stringOrNull(payload.sha256),
+    // The API takes a checksum and a format only in lowercase. A browser
+    // checksum already is; one copied from Ext may not be.
+    sha256: stringOrNull(payload.sha256)?.toLowerCase() ?? null,
     format: artifactFormat(entity),
     size_bytes: numberOrNull(payload.size),
     metadata: artifactMetadataRequest(metadata),
@@ -1474,10 +1475,11 @@ function createRunRequest(
   const payload = objectRecord(entity.payload);
   const name = stringOrNull(payload.name) ?? entity.name;
   const description = stringOrNull(payload.description);
-  const metadata: JSONRecord = {};
-  if (description) {
-    metadata.description = description;
-  }
+  // Schema v0.2.0 gives a run no description field, so the form's text goes
+  // under extensions; runDescription reads it back.
+  const metadata: Schemas["RunMetadata"] = description
+    ? { extensions: { description } }
+    : {};
   const artifacts: CreateRunArtifactRequest[] = [];
   for (const relation of relations) {
     if (relation.target_entity_id !== entity.id) {
@@ -1530,15 +1532,17 @@ function isMetricKey(key: string): key is MetricKey {
   return Object.hasOwn(metricKeys, key);
 }
 
-/** One request per score. The set's software, when named, goes on every score:
- *  one program computed the whole set. Unnamed software is left out, not sent as null. */
+/** One request per score. The set's software and run, when named, go on every
+ *  score: one program computed the whole set. Unnamed ones are left out, not sent as null. */
 function createMetricRequests(entity: CreateEntityInput): CreateMetricRequest[] {
-  const { software_name, software_version, ...scores } = entity.payload;
+  const { software_name, software_version, run_id, ...scores } = entity.payload;
   const softwareName = stringOrNull(software_name);
   const softwareVersion = stringOrNull(software_version);
+  const runId = stringOrNull(run_id);
   const software = {
     ...(softwareName !== null ? { software_name: softwareName } : {}),
     ...(softwareVersion !== null ? { software_version: softwareVersion } : {}),
+    ...(runId !== null ? { run_id: runId } : {}),
   };
   return Object.entries(scores).flatMap(([key, value]) => {
     if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -1678,7 +1682,7 @@ function entityFromArtifact(
 }
 
 function entityFromRun(entryId: string, modelId: string, run: Run): Entity {
-  const description = stringOrNull(run.metadata?.description) ?? "";
+  const description = runDescription(run.metadata);
   return {
     id: run.id,
     entry_id: entryId,
@@ -1723,6 +1727,16 @@ function entityFromMetrics(entryId: string, model: Model): Entity | null {
   };
 }
 
+/** A run's description: under metadata.extensions since the forms met Schema
+ *  v0.2.0, directly under metadata on runs stored before that. */
+function runDescription(metadata: JSONRecord | undefined): string {
+  return (
+    stringOrNull(objectRecord(metadata?.extensions).description) ??
+    stringOrNull(metadata?.description) ??
+    ""
+  );
+}
+
 function entityRelationFromRunArtifact(
   link: RunArtifact,
   model: Model,
@@ -1753,7 +1767,7 @@ function artifactFormat(entity: CreateEntityInput): string | null {
   const payload = objectRecord(entity.payload);
   const explicit = stringOrNull(payload.type);
   if (explicit) {
-    return explicit;
+    return explicit.toLowerCase();
   }
   return formatFromNameOrURL(entity.name, stringOrNull(payload.file_url));
 }

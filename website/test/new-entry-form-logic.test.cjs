@@ -285,18 +285,20 @@ test("should validate the single model entity and complete program contract", ()
 
   assert.equal(canAddModelFiles([modelFile], [dataFile]), true);
   assert.equal(canAddModelFiles([modelFile], [otherModelFile]), false);
+  const modelFileMessages = (draft) =>
+    modelFormMessages(draft)
+      .filter((message) => message.field === "model.files")
+      .map((message) => message.message);
+  assert.deepEqual(modelFileMessages(modelDraftFixture({ files: [] })), [
+    "add exactly one PDB/mmCIF model file",
+  ]);
   assert.deepEqual(
-    modelFormMessages(modelDraftFixture({ files: [] })).map((m) => m.message),
-    ["add exactly one PDB/mmCIF model file"],
-  );
-  assert.deepEqual(
-    modelFormMessages(
-      modelDraftFixture({ files: [modelFile, otherModelFile] }),
-    ).map((m) => m.message),
+    modelFileMessages(modelDraftFixture({ files: [modelFile, otherModelFile] })),
     ["keep only one PDB/mmCIF model file"],
   );
-  // A run with no name cannot be recorded; a missing version is simply a
-  // version nobody wrote down.
+  // Building the request refuses only a run with no name, which cannot be
+  // recorded at all. The version and the files the API requires are checked
+  // by modelFormMessages, which keeps the submit button disabled.
   assert.equal(
     programsValidationMessage([
       {

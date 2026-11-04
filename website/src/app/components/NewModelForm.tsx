@@ -158,7 +158,7 @@ export default function NewModelForm({
       current.filter((message) => FIELDS[message.field].section !== section),
     );
 
-  const validationMessages = modelFormMessages(draft);
+  const validationMessages = modelFormMessages(draft, baselineIds);
   const messages = [...validationMessages, ...apiMessages];
   const hasPendingUploads =
     draft.thumbUploadStatus === "uploading" ||

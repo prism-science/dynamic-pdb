@@ -83,8 +83,10 @@ test("should_place_every_field_in_a_section_the_pages_use", () => {
 
 test("should_mark_required_exactly_the_values_the_api_or_the_model_rule_requires", () => {
   // given: CreateEntryData requires title and method, RelatedDataset doi and
-  // data_type, CreateModelData title, CreateRunRequest name; the form adds
-  // the one-model-file rule.
+  // data_type, CreateModelData title, CreateRunRequest name; the API's
+  // computed-model rule (ModelRuns in backend/internal/validation/provenance.go)
+  // requires runs, each with a version and input and output artifacts, and
+  // every model the forms add is computed; the form adds the one-model-file rule.
   const expected = [
     "entry.title",
     "entry.method",
@@ -92,7 +94,10 @@ test("should_mark_required_exactly_the_values_the_api_or_the_model_rule_requires
     "relatedDataset.dataType",
     "model.title",
     "model.files",
+    "model.runs",
     "run.name",
+    "run.version",
+    "run.files",
   ];
 
   // when
@@ -785,7 +790,7 @@ test("should_accept_hermann_mauguin_space_groups", () => {
   }
 });
 
-test("should_check_model_files_steps_parameters_metrics_and_hidden_choices", () => {
+test("should_check_model_files_steps_parameters_metrics_software_and_hidden_choices", () => {
   // given
   const draft = modelDraft({
     files: [],
@@ -804,7 +809,11 @@ test("should_check_model_files_steps_parameters_metrics_and_hidden_choices", () 
       ["model.purpose", null, false],
       ["model.files", null, true],
       ["model.metrics", "r_work", false],
+      ["model.metrics.software", "m", true],
       ["run.name", "p-1", false],
+      ["run.version", "p-1", true],
+      ["run.files", "p-1", true],
+      ["run.files", "p-1", true],
       ["run.parameters", "p-1", false],
     ],
   );

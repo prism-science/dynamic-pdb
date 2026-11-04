@@ -96,7 +96,10 @@ export function buildCreateModelInput(
   }
 
   const fileEntities = modelDraft.files.map(toEntity);
-  const metricsEntities = modelDraft.metrics.map(toMetricEntity);
+  const programIds = new Set(modelDraft.programs.map((program) => program.id));
+  const metricsEntities = modelDraft.metrics.map((metric) =>
+    toMetricEntity(metric, programIds),
+  );
   const programEntities = modelDraft.programs.map(toProgramEntity);
   const entities: CreateEntityInput[] = [
     ...fileEntities,
@@ -420,7 +423,21 @@ export function sanitizeNumeric(raw: string): string {
   return s;
 }
 
-export function toMetricEntity(metric: MetricDraft) {
+/** The run the score set is linked to, when it is one of runIds. A link to a
+ *  program that was removed since counts as no link. */
+export function linkedRunId(metric: MetricDraft, runIds: ReadonlySet<string>): string | null {
+  return metric.runId !== undefined && runIds.has(metric.runId) ? metric.runId : null;
+}
+
+/**
+ * The score set as a metrics entity. Scores linked to one of the programs
+ * carry its id as run_id and no software of their own: the run names it.
+ * Otherwise they carry the software the depositor named.
+ */
+export function toMetricEntity(
+  metric: MetricDraft,
+  programIds: ReadonlySet<string> = new Set(),
+) {
   const payload: Record<string, number | string> = {};
   for (const field of METRIC_FIELDS) {
     const raw = metric.values[field.key];
@@ -429,13 +446,18 @@ export function toMetricEntity(metric: MetricDraft) {
       payload[field.key] = value;
     }
   }
-  const softwareName = metric.softwareName?.trim();
-  if (softwareName) {
-    payload.software_name = softwareName;
-  }
-  const softwareVersion = metric.softwareVersion?.trim();
-  if (softwareVersion) {
-    payload.software_version = softwareVersion;
+  const runId = linkedRunId(metric, programIds);
+  if (runId !== null) {
+    payload.run_id = runId;
+  } else {
+    const softwareName = metric.softwareName?.trim();
+    if (softwareName) {
+      payload.software_name = softwareName;
+    }
+    const softwareVersion = metric.softwareVersion?.trim();
+    if (softwareVersion) {
+      payload.software_version = softwareVersion;
+    }
   }
   return {
     id: metric.id,
