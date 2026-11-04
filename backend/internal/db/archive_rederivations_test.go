@@ -170,44 +170,6 @@ func Test_should_list_only_later_revisions_when_candidates_are_paged(t *testing.
 	assert.Empty(t, candidates)
 }
 
-func Test_should_resolve_only_open_rows_of_given_objects_when_review_rows_are_resolved(t *testing.T) {
-	// given
-	fixture := newMigratedFixture(t)
-	repository := fixture.appDatabase(t).ArchiveRederivations
-	ctx := context.Background()
-	resolution := models.MigrationReviewResolution{
-		ObjectType: "entry",
-		Issue:      "ligands_cofactors_rederive_from_archive",
-		ObjectIDs:  []string{"e_pdb", "e_missing"},
-		ResolvedBy: "archive-rederive-job",
-	}
-	resolvedAt := func() *time.Time {
-		var at *time.Time
-		require.NoError(t, fixture.database.Get(&at,
-			`select resolved_at from schema_migration_review
-			 where object_type = 'entry' and object_id = 'e_pdb' and issue = 'ligands_cofactors_rederive_from_archive'`))
-		return at
-	}
-
-	// when
-	require.NoError(t, repository.ResolveMigrationReviews(ctx, resolution))
-	first := resolvedAt()
-	require.NoError(t, repository.ResolveMigrationReviews(ctx, resolution))
-
-	// then
-	require.NotNil(t, first)
-	assert.Equal(t, first, resolvedAt(), "a resolved row keeps when it was resolved")
-	var resolvedBy string
-	require.NoError(t, fixture.database.Get(&resolvedBy,
-		`select resolved_by from schema_migration_review
-		 where object_type = 'entry' and object_id = 'e_pdb' and issue = 'ligands_cofactors_rederive_from_archive'`))
-	assert.Equal(t, "archive-rederive-job", resolvedBy)
-	var otherResolved int
-	require.NoError(t, fixture.database.Get(&otherResolved,
-		`select count(*) from schema_migration_review where resolved_at is not null and object_id <> 'e_pdb'`))
-	assert.Zero(t, otherResolved)
-}
-
 func Test_should_set_composition_in_place_and_keep_other_metadata_when_composition_is_updated(t *testing.T) {
 	// given
 	ctx := context.Background()

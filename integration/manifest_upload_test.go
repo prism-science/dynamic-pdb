@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -522,6 +523,27 @@ type rcsbStub struct {
 	revisionGroups []string
 	// coordinateFile, when set, replaces the mmCIF served at /download/<PDB ID>.cif.
 	coordinateFile string
+	// entryInfoOverrides replaces fields of the entry's rcsb_entry_info, for example to serve a
+	// value that breaks the schema rules. Change it with setEntryInfoOverrides while the stub runs.
+	entryInfoOverrides map[string]any
+	// entryStatus, when not 0, makes the entry endpoint answer with this HTTP status instead.
+	// Change it with setEntryStatus while the stub runs.
+	entryStatus int
+}
+
+// setEntryInfoOverrides replaces the rcsb_entry_info fields the stub overrides; nil serves the
+// default entry again.
+func (s *rcsbStub) setEntryInfoOverrides(overrides map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entryInfoOverrides = overrides
+}
+
+// setEntryStatus makes the entry endpoint answer with status; 0 serves the entry again.
+func (s *rcsbStub) setEntryStatus(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entryStatus = status
 }
 
 func newRCSBStub(t *testing.T, pdbID string) *rcsbStub {
@@ -572,27 +594,35 @@ func (s *rcsbStub) Close() {
 func (s *rcsbStub) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.seen = append(s.seen, r.URL.Path)
+	entryInfoOverrides := maps.Clone(s.entryInfoOverrides)
+	entryStatus := s.entryStatus
 	s.mu.Unlock()
 
 	pdbIDLower := strings.ToLower(s.pdbID)
 	switch r.URL.Path {
 	case "/rest/v1/core/entry/" + s.pdbID:
+		if entryStatus != 0 {
+			http.Error(w, http.StatusText(entryStatus), entryStatus)
+			return
+		}
+		entryInfo := map[string]any{
+			"resolution_combined":                       []float64{1.4},
+			"deposited_atom_count":                      1383,
+			"deposited_polymer_monomer_count":           200,
+			"deposited_modeled_polymer_monomer_count":   164,
+			"deposited_unmodeled_polymer_monomer_count": 36,
+			"deposited_polymer_entity_instance_count":   1,
+			"nonpolymer_bound_components":               []string{"ATP", "HOH"},
+		}
+		maps.Copy(entryInfo, entryInfoOverrides)
 		writeJSON(w, map[string]any{
 			"struct": map[string]any{
 				"title":              "example structure",
 				"pdbx_model_details": "Deposited model details",
 			},
-			"exptl": []map[string]any{{"method": "X-RAY DIFFRACTION"}},
-			"rcsb_entry_info": map[string]any{
-				"resolution_combined":                       []float64{1.4},
-				"deposited_atom_count":                      1383,
-				"deposited_polymer_monomer_count":           200,
-				"deposited_modeled_polymer_monomer_count":   164,
-				"deposited_unmodeled_polymer_monomer_count": 36,
-				"deposited_polymer_entity_instance_count":   1,
-				"nonpolymer_bound_components":               []string{"ATP", "HOH"},
-			},
-			"symmetry": map[string]any{"space_group_name_H_M": "P 21 21 21"},
+			"exptl":           []map[string]any{{"method": "X-RAY DIFFRACTION"}},
+			"rcsb_entry_info": entryInfo,
+			"symmetry":        map[string]any{"space_group_name_H_M": "P 21 21 21"},
 			"rcsb_entry_container_identifiers": map[string]any{
 				"polymer_entity_ids": []string{"1"},
 			},

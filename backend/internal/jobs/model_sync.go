@@ -148,15 +148,19 @@ func (s *modelSyncStrategy) syncModel(
 			return dataSyncOutcome{}, fmt.Errorf("plan coordinate change: %w", err)
 		}
 		if reason != "" {
-			return s.applyWithoutCoordinateChange(
+			outcome, err := s.applyWithoutCoordinateChange(
 				ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source, reason,
 			)
+			if err != nil {
+				return outcomeOfFailedApply(err, source)
+			}
+			return outcome, nil
 		}
 	}
 	if err := s.applyArchiveVersion(
 		ctx, *currentRevision, details, currentMetrics, desiredMetrics, metricKeys, source, change,
 	); err != nil {
-		return dataSyncOutcome{}, err
+		return outcomeOfFailedApply(err, source)
 	}
 	return dataSyncOutcome{archiveVersion: &latest}, nil
 }

@@ -34,6 +34,12 @@ duplicate metric keys. Original model lists are kept in `model_revisions.metadat
 A row a later job settled has `resolved_at` and `resolved_by` (see "Archive re-derivation" below);
 open rows have both NULL.
 
+The data sync writes rows here too, in `enforce` mode only. When an entry's or a model's latest RCSB
+version breaks the schema rules, the sync keeps the current revision, does not record the version
+and tries again at its normal 7–14-day cadence. It opens one `sync_validation_failed` row per object
+(`object_type` `entry` or `model`, `details` = PDB ID, version and field errors), and resolves it
+(`resolved_by = 'data-sync'`) once a later run applies or records a version.
+
 Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run_artifacts_direction_chk`,
 `run_artifacts_position_chk`, `entry_revisions_composition_lists_chk`) once its violations are repaired:
 `ALTER TABLE <table> VALIDATE CONSTRAINT <name>;` (names are listed by

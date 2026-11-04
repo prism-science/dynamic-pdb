@@ -2318,8 +2318,18 @@ func isForeignKeyViolation(err error, constraint string) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "23503" && pqErr.Constraint == constraint
 }
 
+// checkViolation returns the database CHECK constraint err breaks (SQLSTATE 23514), if any.
+func checkViolation(err error) (string, bool) {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "23514" {
+		return pqErr.Constraint, true
+	}
+	return "", false
+}
+
 func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
 	var validationError *validation.Error
+	violatedCheck, isCheckViolation := checkViolation(err)
 	switch {
 	case err == nil:
 		return false
@@ -2339,6 +2349,11 @@ func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, 
 	case isStoredIDPrimaryKey(err):
 		writeError(w, http.StatusConflict, "CONFLICT",
 			"an artifact, run or metric with this id is already stored and is not part of the revision this request changes; send a new id")
+	case isCheckViolation:
+		// The database rejected a value the request validators let through. The constraint does
+		// not know which request field held it, so the error has no source pointer.
+		writeError(w, http.StatusUnprocessableEntity, "CONSTRAINT_VIOLATION",
+			"the change breaks the database check "+violatedCheck)
 	default:
 		slog.ErrorContext(ctx, action+" failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to "+action)

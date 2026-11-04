@@ -175,9 +175,18 @@ func (j *DataSyncJob) executeNext(ctx context.Context) (bool, error) {
 		)
 		return true, nil
 	}
+	if outcome.rejected != nil {
+		if err := j.skipRejectedVersion(ctx, *job, *outcome.rejected); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	if outcome.archiveVersion != nil {
 		if err := j.database.DataSyncJobs.RecordArchiveVersion(ctx, *job, *outcome.archiveVersion); err != nil {
 			return false, fmt.Errorf("record data sync job archive version: %w", err)
+		}
+		if err := j.resolveRejectedVersion(ctx, *job); err != nil {
+			return false, err
 		}
 	}
 	job.ScheduledAt = j.nextScheduledAt(j.now())

@@ -53,12 +53,3 @@ type ArchivePolymerEntityMutations struct {
 	MutationsRaw    *string          `json:"mutations_raw"`
 	MutationsStatus *MutationsStatus `json:"mutations_status"`
 }
-
-// MigrationReviewResolution names the open schema_migration_review rows a job settled: the rows
-// of ObjectType with Issue for each of ObjectIDs. ResolvedBy names the job.
-type MigrationReviewResolution struct {
-	ObjectType string
-	Issue      string
-	ObjectIDs  []string
-	ResolvedBy string
-}

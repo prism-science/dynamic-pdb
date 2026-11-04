@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/archive"
 	"dynamic-pdb/lib/rcsb"
 )
@@ -19,6 +20,31 @@ type dataSyncOutcome struct {
 	archiveVersion *models.ArchiveVersion
 	// stopReason, when not empty, stops the job for good.
 	stopReason string
+	// rejected, when not nil, is an archive version the job did not apply because its values
+	// break the schema rules (enforce mode only). It is not recorded, so a later run tries it again.
+	rejected *rejectedArchiveVersion
+}
+
+// rejectedArchiveVersion is an archive version whose values break the schema rules.
+type rejectedArchiveVersion struct {
+	pdbID       string
+	version     models.ArchiveVersion
+	fieldErrors []validation.FieldError
+}
+
+// outcomeOfFailedApply turns an error from applying source into the job's outcome. A version
+// whose values break the schema rules is rejected: the runner reports it and tries it again at
+// the normal cadence. Any other error fails the run, which is retried within the hour.
+func outcomeOfFailedApply(err error, source archiveRevisionSource) (dataSyncOutcome, error) {
+	var validationError *validation.Error
+	if !errors.As(err, &validationError) {
+		return dataSyncOutcome{}, err
+	}
+	return dataSyncOutcome{rejected: &rejectedArchiveVersion{
+		pdbID:       source.pdbID,
+		version:     source.version,
+		fieldErrors: validationError.Fields,
+	}}, nil
 }
 
 // archiveVersionOf returns the latest version of an RCSB entry.
