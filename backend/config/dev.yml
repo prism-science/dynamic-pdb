@@ -46,8 +46,9 @@ validation:
   # Dev enforces first, so the forms and the data sync soak here before production switches.
   mode: enforce
 data_sync:
-  # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
-  coordinate_revisions: false
+  # Coordinate-change revisions are on: the checksum job has copied the coordinate files. A file it
+  # has not verified and copied yet keeps its entry waiting until a later sync.
+  coordinate_revisions: true
 entries:
   # Reviewers can soft-delete entries, so researchers can delete test entries and retest the forms.
   delete_enabled: true
