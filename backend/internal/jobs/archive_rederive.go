@@ -382,7 +382,7 @@ func (j *ArchiveRederiveJob) record(ctx context.Context, row models.ArchiveReder
 }
 
 func (j *ArchiveRederiveJob) resolveReviews(ctx context.Context, objectType string, issue string, objectIDs []string) error {
-	if err := j.database.ArchiveRederivations.ResolveMigrationReviews(ctx, models.MigrationReviewResolution{
+	if err := j.database.MigrationReviews.Resolve(ctx, models.MigrationReviewResolution{
 		ObjectType: objectType,
 		Issue:      issue,
 		ObjectIDs:  objectIDs,

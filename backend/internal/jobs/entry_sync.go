@@ -95,7 +95,7 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, job models.DataSyncJo
 		summary: archiveChangeSummary(*job.ArchiveVersion, latest, mapping.RevisionGroups),
 	}
 	if err := s.applyArchiveVersion(ctx, *currentRevision, details, source); err != nil {
-		return dataSyncOutcome{}, err
+		return outcomeOfFailedApply(err, source)
 	}
 	return dataSyncOutcome{archiveVersion: &latest}, nil
 }
