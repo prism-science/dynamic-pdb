@@ -453,7 +453,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
-	assert.Equal(t, validation.ModeLogOnly, cfg.Validation.Mode)
+	assert.Equal(t, validation.ModeEnforce, cfg.Validation.Mode)
 	assert.True(t, cfg.DataSync.CoordinateRevisions)
 	assertClusterTrustedProxies(t, cfg.Server.RateLimit)
 }

@@ -838,7 +838,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1006,7 +1009,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1443,7 +1449,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1569,6 +1578,14 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/entries/{entry_id}/models/{model_id}/revisions:
     get:
@@ -1687,7 +1704,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "422":
-          description: The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer.
+          description: >
+            The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
+            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
+            instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1816,6 +1836,14 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision changed since it was loaded.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -2226,6 +2254,14 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Model revision is not editable.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            A database check refused the change (code `CONSTRAINT_VIOLATION`). The error
+            names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -3911,8 +3947,7 @@ components:
     ModelMetadata:
       type: object
       description: >
-        Model metadata. Keys outside this list get 422 when validation mode is enforce;
-        open data goes in extensions. Keys starting with "__" are reserved. The list
+        Model metadata. Keys outside this list get 422; open data goes in extensions. Keys starting with "__" are reserved. The list
         fields distinguish unknown (null or omitted) from known empty ([]).
       additionalProperties: false
       x-go-type: map[string]interface{}
@@ -3984,8 +4019,7 @@ components:
     ArtifactMetadata:
       type: object
       description: >
-        Artifact metadata. Keys outside this list get 422 when validation mode is enforce;
-        open data goes in extensions. Keys starting with "__" are reserved.
+        Artifact metadata. Keys outside this list get 422; open data goes in extensions. Keys starting with "__" are reserved.
       additionalProperties: false
       x-go-type: map[string]interface{}
       properties:
@@ -4027,8 +4061,7 @@ components:
     RunMetadata:
       type: object
       description: >
-        Run metadata. The only key is extensions; other keys get 422 when validation
-        mode is enforce. Keys starting with "__" are reserved.
+        Run metadata. The only key is extensions; other keys get 422. Keys starting with "__" are reserved.
       additionalProperties: false
       x-go-type: map[string]interface{}
       properties:
@@ -4098,7 +4131,7 @@ components:
         type:
           allOf:
             - $ref: "#/components/schemas/ArtifactType"
-          description: Required by Dynamic PDB Schema v0.2.0. A request without it gets 422 when validation mode is enforce; in log_only mode the artifact is stored as other.
+          description: Required by Dynamic PDB Schema v0.2.0. A request without it gets 422.
         uri:
           type: string
           nullable: true
@@ -4108,7 +4141,7 @@ components:
         format:
           type: string
           nullable: true
-          description: File encoding, lowercase, from an open vocabulary (for example mmcif, mtz, fasta). Uppercase letters get 422 when validation mode is enforce.
+          description: File encoding, lowercase, from an open vocabulary (for example mmcif, mtz, fasta). Uppercase letters get 422.
         size_bytes:
           type: integer
           format: int64

@@ -1467,7 +1467,7 @@ export interface components {
         StructureModelType: "Single Conformer" | "Multiconformer" | "Ensemble" | "Deposited";
         /** @enum {string} */
         MetricKey: "r_work" | "r_free" | "cc" | "rscc" | "clashscore" | "ramachandran_outliers" | "side_chain_outliers" | "molprobity_score" | "wilson_b" | "rmsf";
-        /** @description Model metadata. Keys outside this list get 422 when validation mode is enforce; open data goes in extensions. Keys starting with "__" are reserved. The list fields distinguish unknown (null or omitted) from known empty ([]). */
+        /** @description Model metadata. Keys outside this list get 422; open data goes in extensions. Keys starting with "__" are reserved. The list fields distinguish unknown (null or omitted) from known empty ([]). */
         ModelMetadata: {
             external_refs?: {
                 [key: string]: string;
@@ -1497,7 +1497,7 @@ export interface components {
             residue_data?: components["schemas"]["ResidueData"][];
             extensions?: components["schemas"]["Extensions"];
         };
-        /** @description Artifact metadata. Keys outside this list get 422 when validation mode is enforce; open data goes in extensions. Keys starting with "__" are reserved. */
+        /** @description Artifact metadata. Keys outside this list get 422; open data goes in extensions. Keys starting with "__" are reserved. */
         ArtifactMetadata: {
             /** @description FASTA records. */
             records?: {
@@ -1515,7 +1515,7 @@ export interface components {
             archive_version?: string;
             extensions?: components["schemas"]["Extensions"];
         };
-        /** @description Run metadata. The only key is extensions; other keys get 422 when validation mode is enforce. Keys starting with "__" are reserved. */
+        /** @description Run metadata. The only key is extensions; other keys get 422. Keys starting with "__" are reserved. */
         RunMetadata: {
             extensions?: components["schemas"]["Extensions"];
         };
@@ -1542,11 +1542,11 @@ export interface components {
             id: string;
             name: string;
             level: components["schemas"]["ArtifactLevel"];
-            /** @description Required by Dynamic PDB Schema v0.2.0. A request without it gets 422 when validation mode is enforce; in log_only mode the artifact is stored as other. */
+            /** @description Required by Dynamic PDB Schema v0.2.0. A request without it gets 422. */
             type?: components["schemas"]["ArtifactType"];
             uri?: string | null;
             sha256?: string | null;
-            /** @description File encoding, lowercase, from an open vocabulary (for example mmcif, mtz, fasta). Uppercase letters get 422 when validation mode is enforce. */
+            /** @description File encoding, lowercase, from an open vocabulary (for example mmcif, mtz, fasta). Uppercase letters get 422. */
             format?: string | null;
             /** Format: int64 */
             size_bytes?: number | null;
@@ -2898,7 +2898,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3101,7 +3101,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3430,7 +3430,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3554,6 +3554,15 @@ export interface operations {
             };
             /** @description Entry revision changed since it was loaded. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A database check refused the change (code `CONSTRAINT_VIOLATION`). The error names the check and has no source.pointer. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3692,7 +3701,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3818,6 +3827,15 @@ export interface operations {
             };
             /** @description Model revision changed since it was loaded. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A database check refused the change (code `CONSTRAINT_VIOLATION`). The error names the check and has no source.pointer. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4192,6 +4210,15 @@ export interface operations {
             };
             /** @description Model revision is not editable. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A database check refused the change (code `CONSTRAINT_VIOLATION`). The error names the check and has no source.pointer. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
