@@ -39,6 +39,9 @@ type Server struct {
 	// validationMode decides whether create requests that break schema rules are
 	// rejected or only logged.
 	validationMode validation.Mode
+	// requestKeysMode decides whether write requests with keys their request type does not
+	// define, or keys starting with "__", are rejected or only logged.
+	requestKeysMode validation.Mode
 	// archive serves GET /v1/archive/pdb/{pdb_id}; see WithArchiveLookup.
 	archive ArchiveLookup
 	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
@@ -64,18 +67,19 @@ func NewServer(
 	database *db.DB,
 	downloads analytics.Tracker,
 	publicBaseURL string,
-	validationMode validation.Mode,
+	validationConfig validation.Config,
 ) *Server {
 	return &Server{
-		githubClient:   githubClient,
-		fileCDN:        fileCDN,
-		authConfig:     authConfig,
-		jwt:            jwt,
-		authorizer:     auth.NewAuthorizer(database),
-		database:       database,
-		downloads:      downloads,
-		publicBaseURL:  publicBaseURL,
-		validationMode: validationMode,
+		githubClient:    githubClient,
+		fileCDN:         fileCDN,
+		authConfig:      authConfig,
+		jwt:             jwt,
+		authorizer:      auth.NewAuthorizer(database),
+		database:        database,
+		downloads:       downloads,
+		publicBaseURL:   publicBaseURL,
+		validationMode:  validationConfig.Mode,
+		requestKeysMode: validationConfig.RequestKeys,
 		extractionLimits: newExtractionLimits(
 			defaultExtractionMaxInFlight, defaultExtractionUserRequests, defaultExtractionUserWindow,
 		),

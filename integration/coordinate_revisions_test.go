@@ -92,6 +92,57 @@ func Test_should_add_deposited_model_revision_with_new_coordinate_file_when_rcsb
 	assert.Equal(t, "1.1", modelJobArchiveVersion(t, database, fixture))
 }
 
+func Test_should_keep_coordinate_file_and_report_version_when_new_coordinate_file_breaks_schema_in_enforce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given: the switch on, RCSB version 1.1 changing the atomic model, and a copied coordinate
+	// file whose metadata has a key outside the schema, which the new file would copy
+	root := repoRoot(t)
+	backendBinaryPath := buildBackend(t, root)
+	database := setupDB(t)
+	auth := seedUserAndIssueToken(t, database)
+	pdbID := integrationPDBID()
+	rcsb := newRCSBStub(t, pdbID)
+	rcsb.revisionGroups = []string{"Atomic model"}
+	defer rcsb.Close()
+	setRCSBURLs(t, rcsb.URL())
+	fixture := seedArchiveDepositedModel(t, database, auth.UserID, pdbID, rcsb.URL(), "verified")
+	_, err := database.Conn.ExecContext(t.Context(),
+		`update artifacts set metadata = '{"legacy_note": "imported by hand"}'::jsonb where id = $1`,
+		fixture.CoordinateArtifactID)
+	require.NoError(t, err)
+	s3 := newS3Stub(t)
+	defer s3.Close()
+
+	// when
+	startBackendWithEnv(t, root, backendBinaryPath, s3.URL(), append([]string{coordinateRevisionsOnEnv}, enforceValidation...))
+	review := waitForSyncReview(t, database, "model", fixture.ModelID)
+
+	// then
+	details := review.details(t)
+	assert.Equal(t, "1.1", details.ArchiveVersion)
+	assert.Contains(t, details.pointers(), "/coordinate_file/metadata/legacy_note")
+	var activeRevisionID uuid.UUID
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select id from model_revisions where model_id = $1 and state = 'active'`, fixture.ModelID,
+	).Scan(&activeRevisionID))
+	assert.Equal(t, fixture.RevisionID, activeRevisionID, "the model keeps its revision")
+	assert.ElementsMatch(t,
+		[]uuid.UUID{fixture.CoordinateArtifactID, fixture.StructureFactorsArtifactID},
+		modelRevisionArtifactIDs(t, database, fixture.RevisionID))
+	var coordinateFiles int
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select count(*) from artifacts where uri = $1`, fixture.CoordinateURI,
+	).Scan(&coordinateFiles))
+	assert.Equal(t, 1, coordinateFiles, "no new coordinate file is stored")
+	assert.Equal(t, "1.0", modelJobArchiveVersion(t, database, fixture), "the rejected version is not recorded")
+}
+
 func Test_should_leave_coordinate_change_for_later_when_coordinate_revisions_are_switched_off(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

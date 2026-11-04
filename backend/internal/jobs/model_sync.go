@@ -227,7 +227,7 @@ func (s *modelSyncStrategy) applyArchiveVersion(
 	if !modelRevisionChanged && !metricsChanged && change == nil {
 		return nil
 	}
-	fieldErrors := modelUpdateErrors(desiredRevision, desiredMetrics)
+	fieldErrors := modelUpdateErrors(desiredRevision, desiredMetrics, change)
 	if err := s.validationMode.Check(ctx, s.logger, "data sync model "+currentRevision.ModelID, fieldErrors); err != nil {
 		return fmt.Errorf("validate model update: %w", err)
 	}
@@ -505,12 +505,21 @@ func metricsWithKeys(metrics []models.Metric, keys []models.MetricKey) []models.
 	return result
 }
 
-// modelUpdateErrors checks the values the sync takes from RCSB with the rules that
-// apply to API submissions. Pointers address the model revision. Synced metrics are
-// archive values, so the accession is their provenance and software stays optional.
-func modelUpdateErrors(revision models.ModelRevision, metrics []models.Metric) []validation.FieldError {
+// modelUpdateErrors checks the values the sync takes from RCSB, and the coordinate file it
+// creates when change is not nil, with the rules that apply to API submissions. Pointers
+// address the model revision; the new coordinate file is at coordinateFilePointer. Synced
+// metrics are archive values, so the accession is their provenance and software stays optional.
+func modelUpdateErrors(
+	revision models.ModelRevision,
+	metrics []models.Metric,
+	change *coordinateChange,
+) []validation.FieldError {
 	fieldErrors := validation.ModelMetadata(validation.Root.Field("metadata"), revision.Metadata)
-	return append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
+	fieldErrors = append(fieldErrors, validation.Metrics(validation.Root.Field("metrics"), metrics)...)
+	if change != nil {
+		fieldErrors = append(fieldErrors, coordinateFileErrors(change.replacement)...)
+	}
+	return fieldErrors
 }
 
 // metricSoftwareFill is software the archive names for a stored metric that has none.

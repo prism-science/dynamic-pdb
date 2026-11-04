@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/archive"
 )
 
@@ -288,6 +289,59 @@ func Test_should_reject_new_coordinate_file_when_previous_metadata_is_not_an_obj
 	// then
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "metadata of previous coordinate file has type *models.FASTAMetadata")
+}
+
+func Test_should_accept_new_coordinate_file_when_previous_metadata_follows_schema(t *testing.T) {
+	// given
+	previous := coordinateArtifact(models.ChecksumStatusVerified, new("s3://copies/1ABC.cif"))
+	previous.Metadata = map[string]any{"extensions": map[string]any{"note": "kept"}, "archive_version": "1.0"}
+	replacement, err := newCoordinateArtifact(previous, models.ArchiveVersion{Ordinal: 2, Version: "1.1"}, time.Now())
+	require.NoError(t, err)
+
+	// when
+	fieldErrors := coordinateFileErrors(replacement)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_report_new_coordinate_file_errors_when_previous_file_breaks_schema(t *testing.T) {
+	// given
+	previous := coordinateArtifact(models.ChecksumStatusVerified, new("s3://copies/1ABC.cif"))
+	previous.Format = new("mmCIF")
+	previous.Metadata = map[string]any{"legacy_note": "x", "__origin": "import"}
+	replacement, err := newCoordinateArtifact(previous, models.ArchiveVersion{Ordinal: 2, Version: "1.1"}, time.Now())
+	require.NoError(t, err)
+
+	// when
+	fieldErrors := coordinateFileErrors(replacement)
+
+	// then
+	assert.Equal(t, []validation.FieldError{
+		{Pointer: "/coordinate_file/format", Code: validation.CodeInvalidFormat, Detail: "must be lowercase"},
+		{Pointer: "/coordinate_file/metadata/__origin", Code: validation.CodeReservedKey, Detail: `keys starting with "__" are reserved`},
+		{
+			Pointer: "/coordinate_file/metadata/legacy_note",
+			Code:    validation.CodeUnknownField,
+			Detail:  `is not a field of this object; put open data under "extensions"`,
+		},
+	}, fieldErrors)
+}
+
+func Test_should_report_new_coordinate_file_with_model_update_errors_when_change_replaces_file(t *testing.T) {
+	// given
+	previous := coordinateArtifact(models.ChecksumStatusVerified, new("s3://copies/1ABC.cif"))
+	previous.Metadata = map[string]any{"legacy_note": "x"}
+	replacement, err := newCoordinateArtifact(previous, models.ArchiveVersion{Ordinal: 2, Version: "1.1"}, time.Now())
+	require.NoError(t, err)
+	change := &coordinateChange{previous: previous, replacement: replacement}
+	metrics := []models.Metric{{Key: "resolution", Value: 2.0}}
+
+	// when
+	fieldErrors := modelUpdateErrors(models.ModelRevision{}, metrics, change)
+
+	// then
+	assert.Equal(t, []validation.Pointer{"/metrics/0/key", "/coordinate_file/metadata/legacy_note"}, pointersOf(fieldErrors))
 }
 
 func coordinateArtifact(status models.ChecksumStatus, storedURI *string) models.Artifact {

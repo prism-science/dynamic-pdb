@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -17,11 +18,37 @@ import (
 	"dynamic-pdb/backend/internal/validation"
 )
 
-// checkSchema applies the server's validation mode to the schema errors of a create
-// request. Handlers call it before any database write. In log-only mode the request
-// continues, and the handler's inline checks return 400 for the fields they cover.
-func (s *Server) checkSchema(r *http.Request, fieldErrors []validation.FieldError) error {
-	return s.validationMode.Check(r.Context(), slog.Default(), requestSubject(r), fieldErrors)
+// checkSchema applies the server's validation modes to the errors of a write request:
+// keyErrors (from requestKeyErrors) under the request-keys mode, schemaErrors under the
+// schema mode. Handlers call it before any database write. Whatever the modes enforce comes
+// back as one *validation.Error, key errors first, so a client sees every broken rule at
+// once. In log-only mode the request continues, and the handler's inline checks return 400
+// for the fields they cover.
+func (s *Server) checkSchema(r *http.Request, keyErrors, schemaErrors []validation.FieldError) error {
+	subject := requestSubject(r)
+	keysErr := s.requestKeysMode.Check(r.Context(), slog.Default().With("rule", "request_keys"), subject, keyErrors)
+	schemaErr := s.validationMode.Check(r.Context(), slog.Default(), subject, schemaErrors)
+	return joinValidationErrors(keysErr, schemaErr)
+}
+
+// joinValidationErrors merges the field errors of *validation.Error values into one, in
+// order. Any other error is returned as it is.
+func joinValidationErrors(errs ...error) error {
+	var fieldErrors []validation.FieldError
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		var validationError *validation.Error
+		if !errors.As(err, &validationError) {
+			return err
+		}
+		fieldErrors = append(fieldErrors, validationError.Fields...)
+	}
+	if len(fieldErrors) == 0 {
+		return nil
+	}
+	return &validation.Error{Fields: fieldErrors}
 }
 
 // schemaCheck names the request in logs and points at the model in its body, for

@@ -11,6 +11,7 @@ import (
 
 	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/backend/internal/validation"
 	"dynamic-pdb/lib/archive"
 	"dynamic-pdb/lib/rcsb"
 )
@@ -25,6 +26,10 @@ const coordinateFileKeptNote = " (coordinate file not replaced yet)"
 // archiveVersionMetadataKey is the artifact metadata key naming the RCSB version a coordinate
 // file stands for.
 const archiveVersionMetadataKey = "archive_version"
+
+// coordinateFilePointer addresses the coordinate file a sync revision creates, in the field errors
+// a sync review lists. The file is not part of any request, so it has no request position.
+const coordinateFilePointer = validation.Pointer("/coordinate_file")
 
 // coordinateChange is the new coordinate file a sync revision links instead of the previous one
 // (researcher answer Q4a).
@@ -159,6 +164,15 @@ func newCoordinateArtifact(
 		CreatedBy: dataSyncUserID,
 		CreatedAt: createdAt,
 	}, nil
+}
+
+// coordinateFileErrors checks the coordinate file a sync revision creates with the rules an API
+// artifact meets. Its metadata is cloned from the previous file, so a key that file carries
+// outside the schema is reported here instead of being stored again.
+func coordinateFileErrors(replacement models.Artifact) []validation.FieldError {
+	fieldErrors := validation.Artifact(coordinateFilePointer, replacement)
+	return append(fieldErrors,
+		validation.ObjectKeys(coordinateFilePointer.Field("metadata"), replacement.Metadata, models.ArtifactMetadata{})...)
 }
 
 // coordinateArtifactLinks returns the artifact links of a sync revision that replaces the

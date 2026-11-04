@@ -34,7 +34,7 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 	if s.writeMutationError(r.Context(), w, relatedErr, "create entry revision") {
 		return
 	}
-	schemaErr := s.checkSchema(r, entryRevisionChangeErrors(payload))
+	schemaErr := s.checkSchema(r, requestKeyErrors(payload.RawBody, CreateEntryRevisionRequest{}), entryRevisionChangeErrors(payload))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create entry revision") {
 		return
 	}

@@ -16,8 +16,12 @@ const (
 	ModeEnforce Mode = "enforce"
 )
 
+// Config holds the validation modes. Mode covers the schema rules. RequestKeys covers keys a
+// request type does not define and keys starting with "__"; it has its own mode so that rule
+// can be rolled out after the others already enforce.
 type Config struct {
-	Mode Mode `mapstructure:"mode"`
+	Mode        Mode `mapstructure:"mode"`
+	RequestKeys Mode `mapstructure:"request_keys"`
 }
 
 func (mode Mode) Validate() error {
