@@ -541,9 +541,7 @@ func migrationPathWithPrefix(t *testing.T, prefix string) string {
 func Test_should_add_only_structural_constraints_when_stable_invariants_migrated(t *testing.T) {
 	// given
 	fixture := newMigratedFixture(t)
-	wantNotValid := []string{
-		"entry_revisions_composition_lists_chk", "run_artifacts_direction_chk", "run_artifacts_position_chk",
-	}
+	wantNotValid := []string{"run_artifacts_direction_chk", "run_artifacts_position_chk"}
 	deferredToEnforce := []string{
 		"metrics_key_known_chk", "model_revisions_model_type_chk", "model_revisions_purpose_chk",
 		"artifacts_sha256_format_chk", "artifacts_size_bytes_chk", "polymer_entities_uniprot_mappings_chk",
