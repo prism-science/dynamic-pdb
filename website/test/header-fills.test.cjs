@@ -7,8 +7,10 @@ const { detectFromFile } = require("../src/app/components/entry-form/autoDetect.
 const {
   liveHeaderFills,
   valueSourcesRequest,
+  withServerHeader,
   withoutStaleHeaderFills,
 } = require("../src/app/components/entry-form/headerFills.ts");
+const { emptyExtractedFile } = require("../src/app/components/entry-form/fileExtraction.ts");
 const { emptyCompounds } = require("../src/app/components/entry-form/types.ts");
 const { createModelRequestBody } = require("../src/lib/api/entries.ts");
 const { buildCreateModelInput } = require("../src/app/components/entry-form/helpers.ts");
@@ -16,9 +18,9 @@ const { buildCreateModelInput } = require("../src/app/components/entry-form/help
 // The New model form fills R-factors and authors only from the model's own
 // coordinate file, and names that file as their source in the request.
 
+// A refinement program's output: its own block name, no PDB ID.
 const HEADER = [
-  "data_1ABC",
-  "_entry.id 1ABC",
+  "data_refined",
   "_audit_author.name 'Doe, J.'",
   "_refine.ls_R_factor_R_work 0.191",
   "_refine.ls_R_factor_R_free 0.232",
@@ -175,3 +177,67 @@ function uploadedFile(overrides) {
     ...overrides,
   };
 }
+
+test("should fill no scores from a file that names a PDB ID, and say why", async () => {
+  // given: the archive's own mmCIF used as the model file (D5)
+  const archiveHeader = HEADER.replace("data_refined", "data_1ABC\n_entry.id 1ABC");
+  const modelFile = uploadedFile({ id: "model-file", name: "1abc.cif", artifactType: "model" });
+
+  // when
+  const patch = await detectFromFile(new File([archiveHeader], "1abc.cif"), modelFile, modelDraft({ files: [modelFile] }));
+
+  // then
+  assert.equal(patch.metrics, undefined);
+  assert.deepEqual(patch.authors, ["Doe, J."]);
+  assert.equal(
+    patch.headerFillNotice,
+    "1abc.cif names PDB 1ABC: its scores may be the archive's, so they were not filled. Type the model's own",
+  );
+});
+
+test("should take the server's values where the preview's are untouched, and keep the depositor's", () => {
+  // given: R-free was edited after the preview filled it
+  const draft = filledDraft({ metrics: [{ id: "m", values: { r_work: "0.191", r_free: "0.24" } }] });
+  const extracted = {
+    ...emptyExtractedFile(),
+    rWork: 0.1912,
+    rFree: 0.2325,
+    authors: ["Doe, J.", "Roe, R."],
+    atomCount: 1383,
+  };
+
+  // when
+  const next = withServerHeader(draft, { id: "model-file", name: "model.cif" }, extracted);
+
+  // then
+  assert.deepEqual(next.metrics[0].values, { r_work: "0.1912", r_free: "0.24" });
+  assert.deepEqual(next.authors, ["Doe, J.", "Roe, R."]);
+  assert.equal(next.files[0].metadata.atom_count, 1383);
+  assert.deepEqual(valueSourcesRequest(next), {
+    "/metrics/r_work": { artifact_id: "model-file" },
+    "/metadata/authors": { artifact_id: "model-file" },
+    "/metadata/atom_count": { artifact_id: "model-file" },
+  });
+});
+
+test("should clear the preview's scores when the server finds the file names a PDB ID", () => {
+  // given
+  const draft = filledDraft({});
+
+  // when
+  const next = withServerHeader(draft, { id: "model-file", name: "model.cif" }, { ...emptyExtractedFile(), entryId: "1ABC", rWork: 0.191 });
+
+  // then
+  assert.deepEqual(next.metrics[0].values, {});
+  assert.deepEqual(next.headerFills.metrics, {});
+  assert.match(next.headerFillNotice, /names PDB 1ABC/);
+});
+
+test("should ignore the server's values for a file that is no longer the model file", () => {
+  // given
+  const draft = filledDraft({});
+  draft.files = [{ ...draft.files[0], artifactType: "other" }];
+
+  // when / then
+  assert.equal(withServerHeader(draft, { id: "model-file", name: "model.cif" }, { ...emptyExtractedFile(), rWork: 0.5 }), draft);
+});

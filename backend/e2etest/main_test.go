@@ -185,7 +185,8 @@ func TestMain(m *testing.M) {
 		server := httpapi.NewServer(
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
 			options.validation,
-		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion).WithSelfApproval(options.selfApproval)
+		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion).WithSelfApproval(options.selfApproval).
+			WithUploadExtraction(true)
 		if options.limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
 		}

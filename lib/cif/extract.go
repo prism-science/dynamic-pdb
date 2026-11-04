@@ -33,6 +33,8 @@ var extractionTables = map[string]struct{}{
 	"_pdbx_struct_mod_residue":       {},
 	"_ihm_ligand_probe":              {},
 	"_ihm_model_list":                {},
+	// The depositors' names (header.go); a loop when there is more than one.
+	"_audit_author": {},
 }
 
 // ExtractText parses text and extracts its values in a single pass. The
@@ -103,6 +105,7 @@ func ExtractWithReference(document *Document, reference *Reference) (Result, err
 	result.SequenceDifferences = readSequenceDifferences(document)
 	result.Mutations = readMutations(document, result.SequenceDifferences)
 	result.Program = mmcifProgram(document)
+	result.Header = readHeader(document)
 
 	atoms, instances, warning := readAtomSite(document)
 	result.Atoms = atoms

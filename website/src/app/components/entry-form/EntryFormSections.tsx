@@ -47,6 +47,7 @@ export default function EntryFormSections({
   archiveFields,
   onOwn,
   badges = {},
+  pdbSuggestion = null,
   messages,
   data,
 }: {
@@ -68,6 +69,9 @@ export default function EntryFormSections({
   /** Badges of the fields the archive did not fill, such as "set by the
    *  depositor" on the Edit form. */
   badges?: Partial<Record<EntrySyncedField, string>>;
+  /** A PDB ID an uploaded file names while none is typed, offered as a
+   *  button that looks it up (D5). */
+  pdbSuggestion?: { pdbId: string; fileName: string } | null;
   messages: readonly FieldMessage[];
   /** The Data section's files: an editor on the New form, a list on Edit.
    *  The related datasets editor follows them on both. */
@@ -229,6 +233,15 @@ export default function EntryFormSections({
                 data-form-type="other"
               />
             )}
+            {pdbSuggestion && !pdbReadOnly ? (
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => onPdb(pdbSuggestion.pdbId)}
+              >
+                Look up PDB {pdbSuggestion.pdbId}, named in {pdbSuggestion.fileName}
+              </button>
+            ) : null}
           </Field>
         </div>
 

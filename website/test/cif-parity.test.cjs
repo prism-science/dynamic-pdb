@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-const { parseStructureFacts } = require("../src/lib/parse/structure.ts");
+const { canonicalMethod, parseStructureFacts } = require("../src/lib/parse/structure.ts");
 
 const cifRoot = path.resolve(__dirname, "..", "..", "lib", "cif");
 const golden = JSON.parse(
@@ -57,6 +57,18 @@ for (const [name, expected] of Object.entries(golden)) {
     assert.equal(facts.metadata.atom_count ?? 0, expected.atom_count);
     assert.equal(facts.metadata.modeled_residues ?? 0, expected.modeled_residues);
     assert.equal(facts.metadata.unique_protein_chains ?? 0, expected.unique_protein_chains);
+    // The header values the server returns for an uploaded mmCIF. The server
+    // gives the method as the file writes it; the form shows it canonical.
+    if (expected.header) {
+      const header = expected.header;
+      assert.equal(facts.pdbId ?? undefined, header.entry_id);
+      assert.deepEqual(facts.authors, header.authors);
+      assert.equal(facts.metrics.r_work, header.r_work);
+      assert.equal(facts.metrics.r_free, header.r_free);
+      assert.equal(facts.metadata.resolution, header.resolution);
+      assert.equal(facts.metadata.space_group, header.space_group);
+      assert.equal(facts.metadata.method, header.method ? canonicalMethod(header.method) ?? undefined : undefined);
+    }
   });
 }
 

@@ -686,13 +686,15 @@ export function isValidHttpUrl(value: string): boolean {
 
 type FileUploadLocation = Pick<FileUploadContext, "entryId" | "modelId">;
 
+/** Uploads the file and returns its object URL, or null when it failed or
+ *  has nothing to upload. */
 export async function uploadParsedFileNow(
   file: ParsedFile,
   location: FileUploadLocation,
   patchFile: (id: string, patch: Partial<ParsedFile>) => void,
-): Promise<void> {
+): Promise<string | null> {
   if (!file.file) {
-    return;
+    return null;
   }
   try {
     const url = await uploadFileToObjectStorage(
@@ -706,11 +708,13 @@ export async function uploadParsedFileNow(
       uploadStatus: "uploaded",
       uploadError: null,
     });
+    return url;
   } catch (error) {
     patchFile(file.id, {
       uploadStatus: "failed",
       uploadError: uploadErrorMessage(error),
     });
+    return null;
   }
 }
 

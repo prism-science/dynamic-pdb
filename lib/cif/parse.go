@@ -12,6 +12,8 @@ type Document struct {
 	scalarTags []string
 	scalars    map[string]string
 	tables     map[string]*Table
+	// blockName is the name of the first data_ block, without the prefix.
+	blockName string
 	// atomSite is set when the _atom_site rows were streamed, not stored.
 	atomSite *atomSiteReader
 	// metalLinks is set when the _struct_conn rows were streamed, not stored.
@@ -124,6 +126,7 @@ func parseTokens(source tokenSource, truncated bool, options parseOptions) *Docu
 				return document.finish(pairColumns, reader, "")
 			}
 			seenDataHeader = true
+			document.blockName = current.text[len("data_"):]
 		case strings.EqualFold(current.text, "loop_"):
 			openPairCategory = ""
 			document.readLoop(reader, truncated, options)

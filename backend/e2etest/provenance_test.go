@@ -361,3 +361,31 @@ func (s *SchemaValidationSuite) Test_should_reject_score_source_and_write_nothin
 	s.Contains(stringValue(errors[0].Detail), "must be the request's primary artifact")
 	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
 }
+
+func (s *SchemaValidationSuite) Test_should_record_entry_ligands_read_from_an_uploaded_structure_file_as_the_files() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "entry-value-sources-owner", 8442)
+	fileID := uuid.New()
+	file := artifactRequest(fileID, "deposit.cif", "L0", "cif", "s3://e/deposit.cif", nil)
+	file["sha256"] = strings.Repeat("c", 64)
+
+	// when
+	created := createEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title":         "entry with file ligands",
+			"ligands":       []string{"ATP"},
+			"artifacts":     []map[string]any{file},
+			"value_sources": map[string]any{"/metadata/ligands": map[string]any{"artifact_id": fileID}},
+		},
+	})
+
+	// then
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := getWithToken(s.T(), "/v1/entries/"+created.EntryId+"/revisions/"+created.RevisionId.String(), adminToken)
+	revision := decodeJSONResponse[httpapi.EntryRevisionDocument](s.T(), response, http.StatusOK).Data.Attributes
+	s.Require().NotNil(revision.FieldSources)
+	s.Equal(httpapi.FieldSource{
+		Source: httpapi.FieldSourceSourceFile, ArtifactId: &fileID, Sha256: new(strings.Repeat("c", 64)),
+	}, (*revision.FieldSources)["/metadata/ligands"])
+	s.Equal(httpapi.FieldSourceSourceDepositor, (*revision.FieldSources)["/title"].Source)
+}

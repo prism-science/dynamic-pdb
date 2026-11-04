@@ -47,3 +47,24 @@ export function scoredCoordinateFile(
   ].join("\n");
   return { name, mimeType: "chemical/x-mmcif", buffer: Buffer.from(header, "utf8") };
 }
+
+/**
+ * An mmCIF a depositor uploads with an entry: how it was measured, and the
+ * PDB ID it names when entryId is given. Its bytes are unique to tag.
+ */
+export function entryCoordinateFile(
+  tag: string,
+  name: string,
+  header: { entryId?: string; resolution: string; method: string; spaceGroup: string },
+): UploadFile {
+  const lines = [
+    header.entryId ? `data_${header.entryId}` : `data_deposit${tag.replace(/[^A-Za-z0-9]/g, "")}`,
+    ...(header.entryId ? [`_entry.id ${header.entryId}`] : []),
+    `_exptl.method '${header.method}'`,
+    `_refine.ls_d_res_high ${header.resolution}`,
+    `_symmetry.space_group_name_H-M '${header.spaceGroup}'`,
+    "#",
+    "",
+  ];
+  return { name, mimeType: "chemical/x-mmcif", buffer: Buffer.from(lines.join("\n"), "utf8") };
+}

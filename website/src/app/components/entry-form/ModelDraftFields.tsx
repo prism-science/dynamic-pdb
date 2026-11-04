@@ -12,12 +12,15 @@ import ModelOverviewFields from "./ModelOverviewFields";
 import PipelineEditor from "./PipelineEditor";
 import PipelinePreview from "./PipelinePreview";
 import { detectFromFile, resolveExpectedInputs } from "./autoDetect";
+import FileReadStatus from "./FileReadStatus";
 import {
   HEADER_METRIC_KEYS,
   headerFillBadge,
   liveHeaderFills,
+  withServerHeader,
   withoutStaleHeaderFills,
 } from "./headerFills";
+import { uploadedStructure, useFileExtraction } from "./useFileExtraction";
 import { type FieldId, type SectionId } from "./fields";
 import { inlineMessages, type FieldMessage } from "./messages";
 import { emptyCompounds } from "./types";
@@ -77,6 +80,12 @@ export default function ModelDraftFields({
   // Tracks the draft that is currently on screen, for the guards below.
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  // The server reads the uploaded model file; its values replace the
+  // preview's where the depositor has not changed them.
+  const extraction = useFileExtraction((file, extracted) =>
+    onUpdate((current) => withServerHeader(current, file, extracted)),
+  );
 
   const hasModel = draft.files.some(isModelFile);
   const fills = liveHeaderFills(draft);
@@ -227,7 +236,16 @@ export default function ModelDraftFields({
                     file,
                     { entryId, modelId: draft.id },
                     patchFile,
-                  );
+                  ).then((url) => {
+                    // Only the model's own file describes the model.
+                    const structure =
+                      url && isModelFile(file)
+                        ? uploadedStructure({ ...file, url, uploadStatus: "uploaded" })
+                        : null;
+                    if (structure) {
+                      void extraction.read(structure);
+                    }
+                  });
                 });
                 // Any new file may be the one a log was waiting for, whether or
                 // not it has a header of its own — a plain .mtz never parses
@@ -295,15 +313,16 @@ export default function ModelDraftFields({
                 );
                 appendFiles(parsed);
               }}
-              onRemove={(id) =>
+              onRemove={(id) => {
+                extraction.forget(id);
                 // The values its header filled leave with the model file.
                 edit("data", (current) =>
                   withoutStaleHeaderFills({
                     ...current,
                     files: current.files.filter((file) => file.id !== id),
                   }),
-                )
-              }
+                );
+              }}
               onLevel={(id, level) =>
                 edit("data", (current) => ({
                   ...current,
@@ -327,6 +346,7 @@ export default function ModelDraftFields({
               }}
               artifactTypeOptions={["structure_factors", "other"]}
             />
+            <FileReadStatus states={extraction.states} onRetry={(file) => void extraction.read(file)} />
           </Field>
         </FormSection>
 

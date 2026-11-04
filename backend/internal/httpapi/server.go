@@ -57,6 +57,8 @@ type Server struct {
 	entryDeletionEnabled bool
 	// selfApprovalEnabled lets reviewers approve revisions they created; see WithSelfApproval.
 	selfApprovalEnabled bool
+	// uploadExtractionEnabled turns POST /v1/files/extract on; see WithUploadExtraction.
+	uploadExtractionEnabled bool
 }
 
 func NewServer(

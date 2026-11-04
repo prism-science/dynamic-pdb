@@ -2,6 +2,7 @@ import type { ArtifactType, EntityLevel } from "@/lib/api/entries";
 import type { ExtFileReference } from "@/lib/api/ext";
 
 import { ownFieldsFromStored } from "./archiveChoices";
+import type { EntryFileFill } from "./entryFileFills";
 import { compoundsAreUntouched } from "./compounds";
 import type { EntryArchiveField } from "./revisionChanges";
 import {
@@ -52,6 +53,9 @@ export type StoredDraft = {
   /** The archive fields the depositor took over; their values are in title
    *  and metadata. */
   ownFields: EntryArchiveField[];
+  /** Values filled from uploaded files (entryFileFills.ts). Absent in drafts
+   *  stored before the form read files on the server. */
+  fileFills?: EntryFileFill[];
 };
 
 export function isPersistable(file: ParsedFile): boolean {
@@ -147,6 +151,7 @@ export function readStoredDraft(): StoredDraft | null {
     files: Array.isArray(parsed.files) ? parsed.files : [],
     metadata: { ...emptyEntryMetadataDraft(), ...(parsed.metadata ?? {}) },
     ownFields: ownFieldsFromStored(parsed.ownFields),
+    fileFills: Array.isArray(parsed.fileFills) ? parsed.fileFills : [],
   };
 }
 

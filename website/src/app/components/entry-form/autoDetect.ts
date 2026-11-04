@@ -3,7 +3,7 @@ import { basename } from "@/lib/parse/runLog";
 import type { MetricKey } from "@/lib/api/entries";
 
 import { compoundsAreUntouched, compoundsFromParsed } from "./compounds";
-import { emptyHeaderFills } from "./headerFills";
+import { archiveScoresNotice, emptyHeaderFills } from "./headerFills";
 import { emptyProgramDraft, isModelFile } from "./helpers";
 import type {
   ExpectedInput,
@@ -139,7 +139,11 @@ function applyStructure(
   }
 
   const metricFills = { ...fills.metrics };
-  const merged = mergeMetrics(draft.metrics, facts.metrics);
+  // A file that names a PDB ID may carry the archive model's scores (D5).
+  const merged = facts.pdbId ? null : mergeMetrics(draft.metrics, facts.metrics);
+  if (facts.pdbId && (facts.metrics.r_work !== undefined || facts.metrics.r_free !== undefined)) {
+    patch.headerFillNotice = archiveScoresNotice(fileName, facts.pdbId);
+  }
   if (merged) {
     patch.metrics = merged.metrics;
     for (const [key, value] of Object.entries(merged.filled) as [MetricKey, string][]) {

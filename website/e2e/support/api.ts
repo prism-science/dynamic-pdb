@@ -33,10 +33,13 @@ export type InReviewGroup = {
 
 /** Where one archive-synced field's value came from (FieldSource in openapi.yaml). */
 export type FieldSource = {
-  source: "rcsb" | "depositor";
+  source: "rcsb" | "depositor" | "file";
   accession?: string;
   release?: string;
   retrieved_at?: string;
+  /** For file values: the artifact the value was read from, and its checksum. */
+  artifact_id?: string;
+  sha256?: string;
 };
 
 export type EntryRevision = {

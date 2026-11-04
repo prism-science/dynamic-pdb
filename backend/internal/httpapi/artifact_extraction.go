@@ -54,7 +54,19 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 		writeError(w, http.StatusUnprocessableEntity, "UNPROCESSABLE_ENTITY", problem)
 		return
 	}
+	s.writeObjectExtraction(w, r, id, *artifact.URI, source)
+}
 
+// writeObjectExtraction reads the head of the object at objectURL, which must lie in the
+// folder of artifact id, and answers with the values extracted from it, each tagged with
+// source. It holds one of the instance's extraction slots while it reads and parses.
+func (s *Server) writeObjectExtraction(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	objectURL string,
+	source string,
+) {
 	release, acquired := s.extractionLimits.tryAcquire()
 	if !acquired {
 		w.Header().Set("Retry-After", retryAfterSeconds(extractionBusyRetryAfter))
@@ -63,7 +75,7 @@ func (s *Server) ExtractArtifact(w http.ResponseWriter, r *http.Request, id open
 	}
 	defer release()
 
-	head, err := s.fileCDN.ReadArtifactHead(r.Context(), artifact.ID.String(), *artifact.URI, artifactExtractionReadLimit)
+	head, err := s.fileCDN.ReadArtifactHead(r.Context(), id.String(), objectURL, artifactExtractionReadLimit)
 	switch {
 	case errors.Is(err, cdn.ErrObjectNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "nothing is stored at the artifact URI")
@@ -221,6 +233,9 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 	if result.Program.Version != "" {
 		values = append(values, ExtractedValue{Name: "program_version", Value: result.Program.Version, Source: source})
 	}
+	header, headerWarnings := headerValues(result.Header, source)
+	values = append(values, header...)
+	warnings = append(warnings, headerWarnings...)
 
 	values, ruleWarnings, err := applySchemaRules(values, atoms)
 	if err != nil {
@@ -237,6 +252,50 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 		Values:           values,
 		Warnings:         warnings,
 	}, nil
+}
+
+// headerValues returns the header items the file states, one extracted value each. A
+// resolution the schema rejects (not greater than 0) is left out and reported, as writes
+// would reject it.
+func headerValues(header cif.Header, source string) ([]ExtractedValue, []ExtractionWarning) {
+	values := []ExtractedValue{}
+	add := func(name string, value any) {
+		values = append(values, ExtractedValue{Name: name, Value: value, Source: source})
+	}
+	if header.EntryID != "" {
+		add("entry_id", header.EntryID)
+	}
+	if len(header.Authors) > 0 {
+		add("authors", header.Authors)
+	}
+	if header.RWork != nil {
+		add("r_work", *header.RWork)
+	}
+	if header.RFree != nil {
+		add("r_free", *header.RFree)
+	}
+	warnings := []ExtractionWarning{}
+	if header.Resolution != nil {
+		fieldErrors := validation.EntryMetadata(validation.Root, models.EntryMetadata{Resolution: header.Resolution})
+		if len(fieldErrors) == 0 {
+			add("resolution", *header.Resolution)
+		}
+		for _, fieldError := range fieldErrors {
+			warnings = append(warnings, ExtractionWarning{
+				Field:   ptr("resolution"),
+				Pointer: ptr(string(fieldError.Pointer)),
+				Code:    ptr(string(fieldError.Code)),
+				Detail:  fieldError.Detail,
+			})
+		}
+	}
+	if header.Method != "" {
+		add("method", header.Method)
+	}
+	if header.SpaceGroup != "" {
+		add("space_group", header.SpaceGroup)
+	}
+	return values, warnings
 }
 
 // bytesAsString views data as a string without copying the 4 MiB head. The

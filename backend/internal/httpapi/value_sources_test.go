@@ -1,6 +1,9 @@
 package httpapi
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -137,4 +140,65 @@ func modelDataWithFile(t *testing.T, format string, sha256 *string) CreateModelD
 			{Id: uuid.New(), Key: MetricKeyRFree, Value: new(0.23), SoftwareName: new("phenix.refine")},
 		},
 	}
+}
+
+func Test_should_answer_404_when_upload_extraction_is_turned_off(t *testing.T) {
+	// given
+	server := &Server{}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/files/extract", strings.NewReader(`{}`))
+
+	// when
+	server.ExtractUploadedFile(recorder, request)
+
+	// then
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"code":"EXTRACTION_OFF"`)
+}
+
+func Test_should_record_entry_value_read_from_one_of_its_structure_files(t *testing.T) {
+	// given
+	fileID := uuid.New()
+	data := CreateEntryData{
+		Title: "Entry",
+		Artifacts: &[]CreateArtifactRequest{
+			{Id: fileID, Name: "model.cif", Level: L0, Format: new("cif"), Sha256: new("abc123")},
+		},
+		ValueSources: &ValueSources{
+			"/metadata/ligands": {ArtifactId: fileID},
+			"/metadata/method":  {ArtifactId: uuid.New()},
+		},
+	}
+	sources := domainmodels.FieldSources{
+		domainmodels.EntryFieldLigands: {Source: domainmodels.FieldSourceDepositor},
+		domainmodels.EntryFieldMethod:  {Source: domainmodels.FieldSourceDepositor},
+	}
+
+	// when
+	result, fieldErrors := newEntryRevisionSources(validation.Root.Field("entry"), data, sources)
+
+	// then
+	require.Len(t, fieldErrors, 1)
+	assert.Equal(t, validation.Pointer("/entry/value_sources/~1metadata~1method/artifact_id"), fieldErrors[0].Pointer)
+	assert.Equal(t, "the artifact is not among this request's artifacts", fieldErrors[0].Detail)
+	assert.Equal(t, domainmodels.FieldSources{
+		domainmodels.EntryFieldLigands: {Source: domainmodels.FieldSourceFile, ArtifactID: &fileID, SHA256: new("abc123")},
+		domainmodels.EntryFieldMethod:  {Source: domainmodels.FieldSourceDepositor},
+	}, result)
+}
+
+func Test_should_keep_archive_source_when_file_value_equals_the_archives(t *testing.T) {
+	// given
+	fileID := uuid.New()
+	archive := domainmodels.FieldSource{Source: domainmodels.FieldSourceRCSB, Accession: new("1ABC")}
+	sources := domainmodels.FieldSources{domainmodels.EntryFieldResolution: archive}
+	fileSources := domainmodels.FieldSources{
+		domainmodels.EntryFieldResolution: {Source: domainmodels.FieldSourceFile, ArtifactID: &fileID},
+	}
+
+	// when
+	merged := withFileSources(sources, fileSources)
+
+	// then
+	assert.Equal(t, archive, merged[domainmodels.EntryFieldResolution])
 }

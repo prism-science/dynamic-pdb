@@ -246,6 +246,10 @@ func (s *Server) createInitialEntryRevision(
 			initialRevision.FieldSources = domainmodels.ArchiveEntryFieldSources(
 				initialRevision.FieldSources, initialRevision, archiveValues, archiveSource)
 		}
+		// createEntryRequestErrors reported the value_sources that cannot be recorded; those
+		// values keep their source.
+		initialRevision.FieldSources, _ = newEntryRevisionSources(
+			validation.Root.Field("entry"), req.Entry, initialRevision.FieldSources)
 		revision, err := s.database.Entries.Create(ctx, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create entry revision: %w", err)
