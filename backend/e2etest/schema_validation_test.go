@@ -156,7 +156,9 @@ func (s *SchemaValidationSuite) Test_should_return_every_field_error_and_write_n
 	s.Empty(decodeEntryRevisionGroupsForTest(s.T(), revisionsResponse))
 }
 
-func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_is_log_only() {
+// In log_only mode the validators only log an unknown metric key, but the database check
+// metrics_key_known_chk still refuses it, so the request gets 422 CONSTRAINT_VIOLATION.
+func (s *SchemaValidationSuite) Test_should_refuse_unknown_metric_key_in_database_when_mode_is_log_only() {
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "schema-log-only-owner", 8406)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
@@ -164,11 +166,11 @@ func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_
 	})
 
 	// when
-	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := jsonRequestToServerWithToken(
 		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/models",
 		map[string]any{"model": map[string]any{
-			"title":    "model accepted in log-only mode",
+			"title":    "model with a metric key the database refuses",
 			"metadata": map[string]any{"model_type": "Deposited"},
 			"metrics":  []map[string]any{{"id": uuid.New(), "key": "resolution", "value": 2.1}},
 		}},
@@ -176,8 +178,12 @@ func (s *SchemaValidationSuite) Test_should_accept_unknown_metric_key_when_mode_
 	)
 
 	// then
-	created := decodeJSONResponse[httpapi.CreateModelRevisionDocument](s.T(), response, http.StatusCreated)
-	s.NotEqual(uuid.Nil, created.Data.Attributes.RevisionId)
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("CONSTRAINT_VIOLATION", stringValue(errors[0].Code))
+	s.Contains(stringValue(errors[0].Detail), "metrics_key_known_chk")
+	s.Nil(errors[0].Source, "the database check does not know the request field")
+	s.Empty(listEntryModelsForTest(s.T(), entry.EntryId))
 }
 
 func (s *SchemaValidationSuite) Test_should_return_409_when_mode_is_log_only_and_model_repeats_a_metric_key() {

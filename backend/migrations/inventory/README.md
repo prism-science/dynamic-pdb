@@ -40,11 +40,10 @@ and tries again at its normal 7–14-day cadence. It opens one `sync_validation_
 (`object_type` `entry` or `model`, `details` = PDB ID, version and field errors), and resolves it
 (`resolved_by = 'data-sync'`) once a later run applies or records a version.
 
-Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run_artifacts_direction_chk`,
-`run_artifacts_position_chk`; `entry_revisions_composition_lists_chk` is validated by `V20261103230000`)
-once its violations are repaired:
-`ALTER TABLE <table> VALIDATE CONSTRAINT <name>;` (names are listed by
-`select conname from pg_constraint where contype = 'c' and not convalidated`).
+Every check that shipped `NOT VALID` is validated by a later migration:
+`entry_revisions_composition_lists_chk` by `V20261103230000`, `run_artifacts_direction_chk` and
+`run_artifacts_position_chk` by `V20261104151000` and `V20261104151100`, and the enforce checks below.
+`select conname from pg_constraint where contype = 'c' and not convalidated` lists any that are not.
 Ligand/cofactor lists are checked in jsonpath `strict` mode (`strict $.ligands[*] ? (@.type() != "string")`)
 behind a `jsonb_typeof(...) = 'array'` guard: lax mode would unwrap an inner array, so `[["x"]]` would pass as
 all strings. Every element of a merged list must be a JSON string.
@@ -80,83 +79,46 @@ with duplicates keeps getting new revisions. After repair (unlink the metrics th
 nothing silently), bring the remaining rows under the real key:
 `update model_revision_metrics l set metric_key = m.key from metrics m where m.id = l.metric_id and l.metric_key like '%#duplicate#%' and not exists (select 1 from model_revision_metrics o join metrics om on om.id = o.metric_id where o.model_revision_id = l.model_revision_id and om.key = m.key and o.metric_id <> l.metric_id);`
 
-## Constraints to ship with `validation.mode=enforce`
+## Checks that shipped with `validation.mode=enforce` (T1-E)
 
-These CHECK constraints are deliberately **not** in the C1 migrations. Adding them `NOT VALID` skips
+These CHECK constraints were deliberately **not** in the C1 migrations. Adding them `NOT VALID` skips
 legacy rows, but an UPDATE of an existing violating row (the app archives the previous
 active revision with an UPDATE whenever a new revision activates) is checked too, so a legacy value
-such as `model_type = 'Foo'` would block that model from ever getting a new revision, even in enforce
-mode. And in `log_only` mode they would turn requests the Go validators merely log into a 500 from the
-database. Ship them in the rollout that switches validation to `enforce`, after (a) the CLI release,
-(b) the log-only soak shows no violations, and (c) each inventory check below returns **zero rows**
-(`psql -v ON_ERROR_STOP=1 -At -c` on the single SELECT, filtered by `check_name`):
+such as `model_type = 'Foo'` would block that model from ever getting a new revision. And in
+`log_only` mode they would have turned requests the Go validators merely log into an error from the
+database. They shipped once production validated in `enforce` mode, after the log-only soak showed
+no violations and each inventory check below returned **zero rows** on prod (2026-11-04):
 
-| Constraint | Inventory check that must be empty first |
-|---|---|
-| `metrics_key_known_chk` | `metric_unknown_key` |
-| `model_revisions_model_type_chk` | `model_invalid_type` |
-| `model_revisions_purpose_chk` | `model_invalid_purpose` |
-| `artifacts_sha256_format_chk` | `artifact_malformed_sha256` |
-| `artifacts_size_bytes_chk` | `artifact_negative_size` |
-| `polymer_entities_uniprot_mappings_chk` | `polymer_entity_uniprot_mapping_invalid` |
+| Constraint | Added `NOT VALID` | Validated | Inventory check that must be empty |
+|---|---|---|---|
+| `metrics_key_known_chk` | `V20261104150000` | `V20261104150400` | `metric_unknown_key` |
+| `model_revisions_model_type_chk` | `V20261104150100` | `V20261104150500` | `model_invalid_type` |
+| `model_revisions_purpose_chk` | `V20261104150100` | `V20261104150600` | `model_invalid_purpose` |
+| `artifacts_sha256_format_chk` | `V20261104150200` | `V20261104150700` | `artifact_malformed_sha256` |
+| `artifacts_size_bytes_chk` | `V20261104150200` | `V20261104150800` | `artifact_negative_size` |
+| `polymer_entities_uniprot_mappings_chk` | `V20261104150300` | `V20261104150900` | `polymer_entity_uniprot_mapping_invalid` |
 
-The UniProt check can trip on writes made today: the data sync stores SIFTS mappings without a release
-when the release lookup fails (`lib/archive/polymer.go`). Make the sync skip or retry such mappings
-before shipping it.
+Each table gets its own `NOT VALID` migration, one lock at a time: these take ACCESS EXCLUSIVE for
+milliseconds and scan nothing, and `lock_timeout` makes a migration fail cleanly instead of queueing
+behind a long transaction (rerun it). Each `VALIDATE CONSTRAINT` is its own migration, so it runs in
+its own transaction under SHARE UPDATE EXCLUSIVE: reads and writes continue while it scans. On a
+clone of the prod copy (data of 2026-10-23: 843k metrics, 372k model revisions, 568k artifacts,
+241k polymer entities, 495k run artifacts) all twelve migrations together took about 9 s, the longest
+3 s (`model_revisions`).
 
-Ship each table in its own migration, one lock at a time (these take ACCESS EXCLUSIVE for milliseconds
-and scan nothing; `lock_timeout` makes the migration fail cleanly instead of queueing behind a long
-transaction, rerun it). Validate afterwards (`VALIDATE CONSTRAINT` only takes SHARE UPDATE EXCLUSIVE).
+If a `VALIDATE` meets a breaking row, its migration fails and applies nothing: the check stays
+`NOT VALID` and the migration Job stops later deploys. Repair the rows the inventory check lists, then
+rerun the migration Job. PostgreSQL rolls the failed migration back with its history row; if Flyway
+still lists it as failed, run `flyway repair` first, as for `V20261023090500` above.
 
-```sql
--- V..._metrics_key_check.sql
-SET LOCAL lock_timeout = '5s';
-ALTER TABLE metrics
-    ADD CONSTRAINT metrics_key_known_chk CHECK (key IN (
-        'r_work', 'r_free', 'cc', 'rscc', 'clashscore', 'ramachandran_outliers',
-        'side_chain_outliers', 'molprobity_score', 'wilson_b', 'rmsf')) NOT VALID;
+The data sync used to store SIFTS mappings without a release when the release lookup failed
+(`lib/archive/polymer.go`). In enforce mode it validates polymer entities before writing and skips
+such an RCSB version instead (`sync_validation_failed`). A database check violation (`23514`) that
+reaches the API answers 422 `CONSTRAINT_VIOLATION` (`writeMutationError`), not 500.
 
--- V..._model_revisions_checks.sql
-SET LOCAL lock_timeout = '5s';
-ALTER TABLE model_revisions
-    ADD CONSTRAINT model_revisions_model_type_chk CHECK (
-        metadata ->> 'model_type' IS NULL
-        OR metadata ->> 'model_type' IN ('Single Conformer', 'Multiconformer', 'Ensemble', 'Deposited')) NOT VALID,
-    ADD CONSTRAINT model_revisions_purpose_chk CHECK (
-        metadata ->> 'purpose' IS NULL
-        OR metadata ->> 'purpose' IN ('Model Building', 'Refinement', 'Reference')) NOT VALID;
-
--- V..._artifacts_checks.sql
-SET LOCAL lock_timeout = '5s';
-ALTER TABLE artifacts
-    ADD CONSTRAINT artifacts_sha256_format_chk CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$') NOT VALID,
-    ADD CONSTRAINT artifacts_size_bytes_chk CHECK (size_bytes IS NULL OR size_bytes >= 0) NOT VALID;
-
--- V..._polymer_entities_uniprot_check.sql
--- Sources: sifts, struct_ref, alignment. sifts and alignment need unp_release.
-SET LOCAL lock_timeout = '5s';
-ALTER TABLE polymer_entities
-    ADD CONSTRAINT polymer_entities_uniprot_mappings_chk CHECK (NOT jsonb_path_exists(
-        metadata,
-        '$.uniprot_mappings[*] ? (
-            !exists(@.accession) || @.accession.type() != "string"
-            || !exists(@.source) || @.source.type() != "string"
-            || !(@.source like_regex "^(sifts|struct_ref|alignment)$")
-            || ((@.source == "sifts" || @.source == "alignment")
-                && (!exists(@.unp_release) || @.unp_release.type() != "string" || @.unp_release == "")))'
-    )) NOT VALID;
-
--- after the data is clean, one statement per transaction:
-ALTER TABLE metrics VALIDATE CONSTRAINT metrics_key_known_chk;
-ALTER TABLE model_revisions VALIDATE CONSTRAINT model_revisions_model_type_chk;
-ALTER TABLE model_revisions VALIDATE CONSTRAINT model_revisions_purpose_chk;
-ALTER TABLE artifacts VALIDATE CONSTRAINT artifacts_sha256_format_chk;
-ALTER TABLE artifacts VALIDATE CONSTRAINT artifacts_size_bytes_chk;
-ALTER TABLE polymer_entities VALIDATE CONSTRAINT polymer_entities_uniprot_mappings_chk;
-```
-
-Also map a `23514` (check violation) to a 4xx in `writeMutationError` in the same change, so a client
-that bypasses validation gets an error it can act on instead of a 500.
+The migration tests (`backend/internal/db/schema_migrations_test.go`) repair the old-shape fixture's
+breaking rows before these migrations (`enforceCheckRepairSQL`), and check on the unrepaired fixture
+that each `VALIDATE` fails and leaves its check `NOT VALID`.
 
 ## Archive re-derivation (T1-C2)
 
