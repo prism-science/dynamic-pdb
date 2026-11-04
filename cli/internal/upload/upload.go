@@ -111,6 +111,9 @@ func (u *Uploader) Upload(ctx context.Context, manifestPath string, options ...O
 	if strings.TrimSpace(uploadingManifest.DataRoot) == "" {
 		return Summary{}, errors.New("manifest data_root is required")
 	}
+	if err := manifest.Validate(uploadingManifest); err != nil {
+		return Summary{}, err
+	}
 	entryTemplate, err := manifestEntry(uploadingManifest)
 	if err != nil {
 		return Summary{}, err
@@ -169,6 +172,11 @@ func (u *Uploader) uploadEntries(
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// dispatchCtx stops handing out entries. An entry that fails its schema checks
+	// stops only the dispatch, so entries already uploading finish and leave no
+	// unfinished state; any other error also cancels them.
+	dispatchCtx, stopDispatch := context.WithCancel(ctx)
+	defer stopDispatch()
 
 	jobs := make(chan string)
 	results := make(chan entryUploadResult, len(pdbIDs))
@@ -180,14 +188,18 @@ func (u *Uploader) uploadEntries(
 		go func() {
 			defer waitGroup.Done()
 			for pdbID := range jobs {
-				if ctx.Err() != nil {
+				if dispatchCtx.Err() != nil {
 					return
 				}
 				entryResult, err := u.uploadEntryJob(ctx, entryTemplate, dataRoot, pdbID, state)
 				if err != nil {
 					select {
 					case errors <- err:
-						cancel()
+						if isEntryCheckError(err) {
+							stopDispatch()
+						} else {
+							cancel()
+						}
 					default:
 					}
 					return
@@ -206,7 +218,7 @@ func (u *Uploader) uploadEntries(
 		for _, pdbID := range pdbIDs {
 			select {
 			case jobs <- pdbID:
-			case <-ctx.Done():
+			case <-dispatchCtx.Done():
 				return
 			}
 		}
@@ -238,14 +250,21 @@ func (u *Uploader) uploadEntryJob(
 	pdbID string,
 	state *uploadStateRecorder,
 ) (entryUploadResult, error) {
-	if err := state.startEntry(pdbID); err != nil {
-		return entryUploadResult{}, err
-	}
 	existingEntry, err := u.existingEntryByPDBID(ctx, pdbID)
 	if err != nil {
 		return entryUploadResult{}, fmt.Errorf("check existing entry %s: %w", pdbID, err)
 	}
-	entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
+	prepared, err := u.prepareEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry)
+	if err != nil {
+		if isEntryCheckError(err) {
+			return entryUploadResult{}, err
+		}
+		return entryUploadResult{}, fmt.Errorf("prepare %s: %w", pdbID, err)
+	}
+	if err := state.startEntry(pdbID); err != nil {
+		return entryUploadResult{}, err
+	}
+	entryResult, err := u.uploadEntry(ctx, entryTemplate, dataRoot, pdbID, existingEntry, prepared)
 	if err != nil {
 		return entryUploadResult{}, fmt.Errorf("upload %s: %w", pdbID, err)
 	}
@@ -287,10 +306,11 @@ func (u *Uploader) uploadEntry(
 	dataRoot string,
 	pdbID string,
 	existingEntry *dynamicpdbapi.Entry,
+	prepared preparedEntry,
 ) (entryUploadResult, error) {
 	entryPDBID := canonicalPDBID(pdbID)
 	if existingEntry != nil {
-		uploadedModels, err := u.uploadModels(ctx, entryTemplate.Models, dataRoot, pdbID, existingEntry.ID, true)
+		uploadedModels, err := u.uploadModels(ctx, prepared.Models, existingEntry.ID, true)
 		if err != nil {
 			return entryUploadResult{}, err
 		}
@@ -306,12 +326,21 @@ func (u *Uploader) uploadEntry(
 		}, nil
 	}
 
-	uploadedEntry, uploadedModels, err := u.uploadNewEntry(ctx, entryTemplate, dataRoot, pdbID, entryPDBID)
+	uploadedEntry, uploadedModels, err := u.uploadNewEntry(ctx, entryPDBID, prepared)
 	if err != nil {
 		return entryUploadResult{}, err
 	}
 	if uploadedEntry.Existing {
-		uploadedModels, err = u.uploadModels(ctx, entryTemplate.Models, dataRoot, pdbID, uploadedEntry.EntryID, true)
+		// Another upload created the entry after the lookup. Its models are prepared
+		// again, so their files go up under fresh ids for that entry.
+		models, problems, err := u.prepareModels(ctx, entryTemplate.Models, dataRoot, pdbID)
+		if err != nil {
+			return entryUploadResult{}, err
+		}
+		if len(problems) > 0 {
+			return entryUploadResult{}, &EntryCheckError{PDBID: entryPDBID, Problems: problems}
+		}
+		uploadedModels, err = u.uploadModels(ctx, models, uploadedEntry.EntryID, true)
 		if err != nil {
 			return entryUploadResult{}, err
 		}
@@ -339,55 +368,26 @@ type uploadedEntry struct {
 
 func (u *Uploader) uploadNewEntry(
 	ctx context.Context,
-	entryTemplate manifest.Entry,
-	dataRoot string,
-	pdbID string,
 	entryPDBID string,
+	prepared preparedEntry,
 ) (uploadedEntry, uploadedModelSet, error) {
-	uploadEntryID := uuid.NewString()
-	metadata, err := u.entryMetadata(ctx, dataRoot, entryTemplate.Metadata, entryPDBID)
+	thumbnailImageURL, err := u.uploadPreviewImage(ctx, prepared.UploadEntryID, prepared.PreviewImage)
+	if err != nil {
+		return uploadedEntry{}, uploadedModelSet{}, err
+	}
+	entryArtifacts, err := u.uploadArtifacts(ctx, prepared.UploadEntryID, nil, prepared.Artifacts)
+	if err != nil {
+		return uploadedEntry{}, uploadedModelSet{}, err
+	}
+	uploadedModels, err := u.uploadModels(ctx, prepared.Models, prepared.UploadEntryID, false)
 	if err != nil {
 		return uploadedEntry{}, uploadedModelSet{}, err
 	}
 
-	thumbnailImageURL, err := u.uploadPreviewImage(ctx, dataRoot, uploadEntryID, entryTemplate.PreviewImage, pdbID)
-	if err != nil {
-		return uploadedEntry{}, uploadedModelSet{}, err
-	}
-
-	entryArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0)
-	uploadedArtifactIDs := make([]string, 0, len(entryTemplate.Artifacts))
-	for _, artifact := range entryTemplate.Artifacts {
-		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, uploadEntryID, nil, artifact, pdbID)
-		if err != nil {
-			return uploadedEntry{}, uploadedModelSet{}, err
-		}
-		if ok {
-			entryArtifacts = append(entryArtifacts, uploaded.Request)
-			uploadedArtifactIDs = append(uploadedArtifactIDs, uploaded.Ref.ArtifactID)
-		}
-	}
-
-	uploadedModels, err := u.uploadModels(ctx, entryTemplate.Models, dataRoot, pdbID, uploadEntryID, false)
-	if err != nil {
-		return uploadedEntry{}, uploadedModelSet{}, err
-	}
-
-	title := strings.ReplaceAll(entryTemplate.Title, templatePDBID, canonicalPDBID(entryPDBID))
-	if extractedTitle := entryTitle(metadata); extractedTitle != nil {
-		title = *extractedTitle
-	}
-	if strings.TrimSpace(title) == "" {
-		title = entryPDBID
-	}
-	entryProperties, err := entryProperties(metadata)
-	if err != nil {
-		return uploadedEntry{}, uploadedModelSet{}, err
-	}
 	result, err := u.dynamicPDBClient.CreateEntry(ctx, dynamicpdbapi.CreateEntryRequest{
 		Entry: dynamicpdbapi.CreateEntryData{
-			EntryProperties:   entryProperties,
-			Title:             title,
+			EntryProperties:   prepared.Properties,
+			Title:             prepared.Title,
 			ThumbnailImageURL: thumbnailImageURL,
 			Artifacts:         entryArtifacts,
 		},
@@ -423,7 +423,7 @@ func (u *Uploader) uploadNewEntry(
 	return uploadedEntry{
 		EntryID:        result.EntryID,
 		CreatedEntryID: result.EntryID,
-		ArtifactIDs:    uploadedArtifactIDs,
+		ArtifactIDs:    artifactIDs(entryArtifacts),
 		ArtifactCount:  len(entryArtifacts),
 	}, uploadedModels, nil
 }
@@ -438,27 +438,25 @@ type uploadedModelSet struct {
 	ModelOperations []dynamicpdbapi.AddModelOperation
 }
 
+// uploadModels uploads the files of each prepared model. With create, each model is
+// created under entryID at once; otherwise its add operation is returned for the
+// entry's create request.
 func (u *Uploader) uploadModels(
 	ctx context.Context,
-	modelTemplates []manifest.ModelPattern,
-	dataRoot string,
-	pdbID string,
+	models []preparedModel,
 	entryID string,
 	create bool,
 ) (uploadedModelSet, error) {
-	uploadedModelIDs := make([]string, 0, len(modelTemplates))
+	uploadedModelIDs := make([]string, 0, len(models))
 	uploadedArtifactIDs := make([]string, 0)
 	uploadedRunIDs := make([]string, 0)
 	uploadedMetricIDs := make([]string, 0)
-	modelOperations := make([]dynamicpdbapi.AddModelOperation, 0, len(modelTemplates))
+	modelOperations := make([]dynamicpdbapi.AddModelOperation, 0, len(models))
 	artifactCount := 0
-	for _, model := range modelTemplates {
-		createdModel, ok, err := u.uploadModel(ctx, dataRoot, entryID, model, pdbID, create)
+	for _, model := range models {
+		createdModel, err := u.uploadModel(ctx, entryID, model, create)
 		if err != nil {
 			return uploadedModelSet{}, err
-		}
-		if !ok {
-			continue
 		}
 		uploadedModelIDs = append(uploadedModelIDs, createdModel.ModelID)
 		uploadedArtifactIDs = append(uploadedArtifactIDs, createdModel.ArtifactIDs...)
@@ -489,108 +487,44 @@ type uploadedModel struct {
 
 func (u *Uploader) uploadModel(
 	ctx context.Context,
-	dataRoot string,
 	entryID string,
-	model manifest.ModelPattern,
-	pdbID string,
+	model preparedModel,
 	create bool,
-) (uploadedModel, bool, error) {
-	uploadModelID := uuid.NewString()
-	modelArtifacts := make([]dynamicpdbapi.CreateArtifactRequest, 0, len(model.Artifacts))
-	modelArtifactRefs := make([]uploadedArtifactRef, 0, len(model.Artifacts))
-	artifactPayloads := make(map[string]extractorapi.Artifact, len(model.Artifacts))
-	hasCoordinates, err := u.hasModelCoordinates(ctx, dataRoot, pdbID, model)
+) (uploadedModel, error) {
+	modelArtifacts, err := u.uploadArtifacts(ctx, entryID, &model.UploadModelID, model.Artifacts)
 	if err != nil {
-		return uploadedModel{}, false, err
+		return uploadedModel{}, err
 	}
-	if !hasCoordinates {
-		return uploadedModel{}, false, nil
+	primaryArtifactID := model.PrimaryArtifactID
+	data := dynamicpdbapi.AddModelData{
+		Title:             model.Title,
+		Metadata:          model.Metadata,
+		IdempotencyKey:    model.IdempotencyKey,
+		PrimaryArtifactID: &primaryArtifactID,
+		Artifacts:         modelArtifacts,
+		Runs:              model.Runs,
+		Metrics:           model.Metrics,
 	}
-	for _, artifact := range model.Artifacts {
-		uploaded, ok, err := u.uploadArtifact(ctx, dataRoot, entryID, &uploadModelID, artifact, pdbID)
-		if err != nil {
-			return uploadedModel{}, false, err
-		}
-		if ok {
-			modelArtifacts = append(modelArtifacts, uploaded.Request)
-			modelArtifactRefs = append(modelArtifactRefs, uploaded.Ref)
-			artifactPayloads[artifact.ID] = uploaded.Payload
-		}
-	}
-	if len(modelArtifacts) == 0 {
-		return uploadedModel{}, false, nil
-	}
-
-	metadata, err := u.modelMetadata(ctx, dataRoot, pdbID, model.Metadata, artifactPayloads)
-	if err != nil {
-		return uploadedModel{}, false, err
-	}
-	if strings.TrimSpace(model.ModelType) != "" {
-		metadata["model_type"] = strings.TrimSpace(model.ModelType)
-	}
-	if strings.TrimSpace(model.Purpose) != "" {
-		metadata["purpose"] = strings.TrimSpace(model.Purpose)
-	}
-	program, err := u.modelProgram(ctx, pdbID, artifactPayloads)
-	if err != nil {
-		return uploadedModel{}, false, err
-	}
-	runs := modelRuns(modelArtifactRefs, program)
-	metrics, err := u.modelMetrics(ctx, dataRoot, pdbID, model.Metrics, artifactPayloads, coordinatesRunID(runs))
-	if err != nil {
-		return uploadedModel{}, false, err
-	}
-
-	primaryArtifactID := modelArtifacts[0].ID
-	title := strings.TrimSpace(model.Title)
-	if title == "" {
-		title = model.ID
-	}
-	idempotencyKey := modelArtifacts[0].SHA256
-	modelOperation := dynamicpdbapi.AddModelOperation{
-		Op: "add",
-		Data: dynamicpdbapi.AddModelData{
-			Title:             title,
-			Metadata:          metadata,
-			IdempotencyKey:    idempotencyKey,
-			PrimaryArtifactID: &primaryArtifactID,
-			Artifacts:         modelArtifacts,
-			Runs:              runs,
-			Metrics:           metrics,
-		},
-	}
-	if create {
-		request := dynamicpdbapi.CreateModelRequest{
-			Model: dynamicpdbapi.CreateModelData{
-				Title:             title,
-				Metadata:          metadata,
-				IdempotencyKey:    idempotencyKey,
-				PrimaryArtifactID: &primaryArtifactID,
-				Artifacts:         modelArtifacts,
-				Runs:              runs,
-				Metrics:           metrics,
-			},
-		}
-		result, err := u.dynamicPDBClient.CreateModel(ctx, entryID, request)
-		if err != nil {
-			return uploadedModel{}, false, err
-		}
-		return uploadedModel{
-			ModelID:       result.ModelID,
-			ArtifactIDs:   artifactIDs(modelArtifacts),
-			RunIDs:        runIDs(runs),
-			MetricIDs:     metricIDs(metrics),
-			ArtifactCount: len(modelArtifacts),
-			Operation:     modelOperation,
-		}, true, nil
-	}
-	return uploadedModel{
+	uploaded := uploadedModel{
 		ArtifactIDs:   artifactIDs(modelArtifacts),
-		RunIDs:        runIDs(runs),
-		MetricIDs:     metricIDs(metrics),
+		RunIDs:        runIDs(model.Runs),
+		MetricIDs:     metricIDs(model.Metrics),
 		ArtifactCount: len(modelArtifacts),
-		Operation:     modelOperation,
-	}, true, nil
+		Operation:     dynamicpdbapi.AddModelOperation{Op: "add", Data: data},
+	}
+	if !create {
+		return uploaded, nil
+	}
+	// AddModelData and CreateModelData carry the same fields: one is a model inside
+	// an entry's create request, the other a model added to an existing entry.
+	result, err := u.dynamicPDBClient.CreateModel(ctx, entryID, dynamicpdbapi.CreateModelRequest{
+		Model: dynamicpdbapi.CreateModelData(data),
+	})
+	if err != nil {
+		return uploadedModel{}, err
+	}
+	uploaded.ModelID = result.ModelID
+	return uploaded, nil
 }
 
 func (u *Uploader) hasModelCoordinates(
@@ -625,69 +559,35 @@ func modelCoordinatesArtifact(model manifest.ModelPattern) (manifest.Artifact, i
 	return manifest.Artifact{}, 0, false
 }
 
-type uploadedArtifact struct {
-	Request dynamicpdbapi.CreateArtifactRequest
-	Payload extractorapi.Artifact
-	Ref     uploadedArtifactRef
-}
-
-type uploadedArtifactRef struct {
+// artifactRef names an artifact by its manifest id and its API id, with its format.
+type artifactRef struct {
 	ManifestID string
 	ArtifactID string
 	Format     string
 }
 
-func (u *Uploader) uploadArtifact(
+// uploadArtifacts uploads the bytes of each prepared artifact that has no URI yet,
+// under entryID and modelID, and returns the artifacts' API requests.
+func (u *Uploader) uploadArtifacts(
 	ctx context.Context,
-	dataRoot string,
 	entryID string,
 	modelID *string,
-	artifact manifest.Artifact,
-	pdbID string,
-) (uploadedArtifact, bool, error) {
-	payload, ok, err := u.artifactPayload(ctx, dataRoot, pdbID, artifact)
-	if err != nil {
-		return uploadedArtifact{}, false, err
-	}
-	if !ok {
-		return uploadedArtifact{}, false, nil
-	}
-
-	artifactID := uuid.NewString()
-	artifactURI := strings.TrimSpace(payload.URI)
-	if artifactURI == "" {
-		uploadedURL, err := u.uploadPayload(ctx, entryID, modelID, artifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
-		if err != nil {
-			return uploadedArtifact{}, false, err
+	artifacts []preparedArtifact,
+) ([]dynamicpdbapi.CreateArtifactRequest, error) {
+	requests := make([]dynamicpdbapi.CreateArtifactRequest, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		artifactURI := strings.TrimSpace(artifact.Payload.URI)
+		if artifactURI == "" {
+			payload := artifact.Payload
+			uploadedURL, err := u.uploadPayload(ctx, entryID, modelID, artifact.Ref.ArtifactID, payload.Filename, payload.Size, payload.LocalPath, payload.Contents)
+			if err != nil {
+				return nil, err
+			}
+			artifactURI = uploadedURL
 		}
-		artifactURI = uploadedURL
+		requests = append(requests, artifact.request(artifactURI))
 	}
-	name, err := artifactName(artifact, payload)
-	if err != nil {
-		return uploadedArtifact{}, false, err
-	}
-	level := strings.TrimSpace(artifact.Level)
-	if level == "" {
-		level = "L1"
-	}
-	format := artifactFormat(artifact, payload)
-	request := dynamicpdbapi.CreateArtifactRequest{
-		ID:        artifactID,
-		Name:      name,
-		Level:     level,
-		Type:      artifactTypeForRequest(artifact, modelID != nil),
-		URI:       stringPtr(artifactURI),
-		SHA256:    stringPtr(payload.SHA256),
-		Format:    stringPtr(format),
-		SizeBytes: int64Ptr(payload.Size),
-		Metadata:  payload.Metadata,
-	}
-	ref := uploadedArtifactRef{
-		ManifestID: artifact.ID,
-		ArtifactID: artifactID,
-		Format:     format,
-	}
-	return uploadedArtifact{Request: request, Payload: payload, Ref: ref}, true, nil
+	return requests, nil
 }
 
 func artifactTypeForRequest(artifact manifest.Artifact, attachedToModel bool) string {
@@ -714,21 +614,8 @@ func artifactTypeForRequest(artifact manifest.Artifact, attachedToModel bool) st
 	}
 }
 
-func (u *Uploader) uploadPreviewImage(
-	ctx context.Context,
-	dataRoot string,
-	entryID string,
-	previewImage *manifest.EntryPreviewImage,
-	pdbID string,
-) (*string, error) {
-	if previewImage == nil || sourceIsEmpty(previewImage.Source) {
-		return nil, nil
-	}
-	image, ok, err := u.imagePayload(ctx, dataRoot, pdbID, previewImage.Source)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
+func (u *Uploader) uploadPreviewImage(ctx context.Context, entryID string, image *extractorapi.Image) (*string, error) {
+	if image == nil {
 		return nil, nil
 	}
 	uploadedURL, err := u.uploadPayload(ctx, entryID, nil, uuid.NewString(), image.Filename, image.Size, image.LocalPath, image.Contents)
@@ -1290,8 +1177,9 @@ func floatValue(value any) (float64, bool) {
 	}
 }
 
-// modelMetrics links a value read from the coordinates file to coordinatesRunID, the
-// run of the program that wrote that file.
+// modelMetrics reads each metric of the manifest. A value read from the coordinates
+// file links to coordinatesRunID, the run of the program that wrote that file; a
+// value whose extraction names its software carries that software.
 func (u *Uploader) modelMetrics(
 	ctx context.Context,
 	dataRoot string,
@@ -1299,11 +1187,11 @@ func (u *Uploader) modelMetrics(
 	metrics manifest.Metrics,
 	artifacts map[string]extractorapi.Artifact,
 	coordinatesRunID *string,
-) ([]dynamicpdbapi.CreateMetricRequest, error) {
-	requests := make([]dynamicpdbapi.CreateMetricRequest, 0, len(metrics))
+) ([]modelMetric, error) {
+	values := make([]modelMetric, 0, len(metrics))
 	for _, key := range metricKeys(metrics) {
 		field := metrics[key]
-		value, source, ok, err := u.fieldValueAndSource(ctx, dataRoot, pdbID, field, artifacts)
+		value, extraction, ok, err := u.fieldValueAndExtraction(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil {
 			return nil, fmt.Errorf("extract metric %s: %w", key, err)
 		}
@@ -1319,12 +1207,17 @@ func (u *Uploader) modelMetrics(
 			Key:   key,
 			Value: number,
 		}
-		if isCoordinatesArtifact(source.Artifact) {
+		if extraction.Software != nil {
+			request.SoftwareName = stringPtr(extraction.Software.Name)
+			request.SoftwareVersion = stringPtr(extraction.Software.Version)
+		}
+		fromCoordinates := isCoordinatesArtifact(extraction.Source.Artifact)
+		if fromCoordinates {
 			request.RunID = coordinatesRunID
 		}
-		requests = append(requests, request)
+		values = append(values, modelMetric{Request: request, FromCoordinates: fromCoordinates})
 	}
-	return requests, nil
+	return values, nil
 }
 
 func metricKeys(metrics manifest.Metrics) []string {
@@ -1359,24 +1252,26 @@ func (u *Uploader) fieldValue(
 	fields []manifest.FieldExtraction,
 	artifacts map[string]extractorapi.Artifact,
 ) (any, bool, error) {
-	value, _, ok, err := u.fieldValueAndSource(ctx, dataRoot, pdbID, fields, artifacts)
+	value, _, ok, err := u.fieldValueAndExtraction(ctx, dataRoot, pdbID, fields, artifacts)
 	return value, ok, err
 }
 
-func (u *Uploader) fieldValueAndSource(
+// fieldValueAndExtraction returns the first value found by fields, in order, and the
+// extraction that found it.
+func (u *Uploader) fieldValueAndExtraction(
 	ctx context.Context,
 	dataRoot string,
 	pdbID string,
 	fields []manifest.FieldExtraction,
 	artifacts map[string]extractorapi.Artifact,
-) (any, manifest.Source, bool, error) {
+) (any, manifest.FieldExtraction, bool, error) {
 	for _, field := range fields {
 		value, ok, err := u.fieldExtractionValue(ctx, dataRoot, pdbID, field, artifacts)
 		if err != nil || fieldValuePresent(value, ok) {
-			return value, fieldExtractionSource(field), ok, err
+			return value, field, ok, err
 		}
 	}
-	return nil, manifest.Source{}, false, nil
+	return nil, manifest.FieldExtraction{}, false, nil
 }
 
 func (u *Uploader) fieldExtractionValue(
@@ -1629,7 +1524,7 @@ func isCoordinatesArtifact(manifestID string) bool {
 	return strings.EqualFold(strings.TrimSpace(manifestID), coordinatesArtifactID)
 }
 
-// coordinatesRunID returns the run modelRuns built, or nil when it built none.
+// coordinatesRunID returns the id of the model's one run, or nil when it has none.
 func coordinatesRunID(runs []dynamicpdbapi.CreateRunRequest) *string {
 	if len(runs) != 1 {
 		return nil
@@ -1637,72 +1532,22 @@ func coordinatesRunID(runs []dynamicpdbapi.CreateRunRequest) *string {
 	return &runs[0].ID
 }
 
-// modelRuns returns at most one run: the program named in the coordinates file.
-func modelRuns(artifacts []uploadedArtifactRef, program *modelProgramInfo) []dynamicpdbapi.CreateRunRequest {
-	runArtifacts := make([]dynamicpdbapi.CreateRunArtifactRequest, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		direction, ok := runArtifactDirection(artifact)
-		if !ok {
-			continue
-		}
-		runArtifacts = append(runArtifacts, dynamicpdbapi.CreateRunArtifactRequest{
-			ArtifactID: artifact.ArtifactID,
-			Direction:  direction,
-		})
-	}
-	if len(runArtifacts) == 0 || !hasRunOutput(runArtifacts) || !hasRunInput(runArtifacts) {
-		return nil
-	}
-	if program == nil || strings.TrimSpace(program.Name) == "" {
-		return nil
-	}
-	softwareName := strings.TrimSpace(program.Name)
-	softwareVersion := stringPtr(program.Version)
-	runID := uuid.NewString()
-	return []dynamicpdbapi.CreateRunRequest{
-		{
-			ID:              runID,
-			Name:            softwareName,
-			SoftwareName:    &softwareName,
-			SoftwareVersion: softwareVersion,
-			Parameters:      map[string]any{},
-			Metadata:        map[string]any{},
-			Artifacts:       runArtifacts,
-		},
-	}
-}
-
-func runArtifactDirection(artifact uploadedArtifactRef) (string, bool) {
+// runArtifactDirection is the default direction rule: coordinates and log_* files
+// are what the program wrote; mtz_*, structure_factors_* and density files what it
+// read. Other artifacts are not linked to the run.
+func runArtifactDirection(artifact artifactRef) (string, bool) {
 	id := strings.ToLower(strings.TrimSpace(artifact.ManifestID))
 	format := strings.ToLower(strings.TrimSpace(artifact.Format))
 	switch {
 	case id == coordinatesArtifactID || strings.HasPrefix(id, "log_"):
-		return "output", true
+		return runDirectionOutput, true
 	case strings.HasPrefix(id, "mtz_") || strings.HasPrefix(id, "structure_factors_"):
-		return "input", true
+		return runDirectionInput, true
 	case format == "mtz" || format == "structure_factors_cif" || format == "map" || format == "ccp4" || format == "mrc":
-		return "input", true
+		return runDirectionInput, true
 	default:
 		return "", false
 	}
-}
-
-func hasRunOutput(artifacts []dynamicpdbapi.CreateRunArtifactRequest) bool {
-	for _, artifact := range artifacts {
-		if artifact.Direction == "output" {
-			return true
-		}
-	}
-	return false
-}
-
-func hasRunInput(artifacts []dynamicpdbapi.CreateRunArtifactRequest) bool {
-	for _, artifact := range artifacts {
-		if artifact.Direction == "input" {
-			return true
-		}
-	}
-	return false
 }
 
 func rcsbLigands(components []string) []string {
@@ -1818,4 +1663,11 @@ func int64Ptr(value int64) *int64 {
 		return nil
 	}
 	return &value
+}
+
+// isEntryCheckError reports whether err is an entry's schema check failure, found
+// before anything of the entry was uploaded.
+func isEntryCheckError(err error) bool {
+	var checkError *EntryCheckError
+	return errors.As(err, &checkError)
 }

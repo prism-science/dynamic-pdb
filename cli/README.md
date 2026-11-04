@@ -129,37 +129,37 @@ entries:
     title: "{{ pdb_id }}"
     metadata:
       title:
-        source:
-          rcsb:
-            pdb_id: "{{ pdb_id }}"
-            resource: entry
-        extract:
-          json:
-            field: struct.title
+        - source:
+            rcsb:
+              pdb_id: "{{ pdb_id }}"
+              resource: entry
+          extract:
+            json:
+              field: struct.title
       method:
-        source:
-          rcsb:
-            pdb_id: "{{ pdb_id }}"
-            resource: entry
-        extract:
-          json:
-            field: exptl[0].method
+        - source:
+            rcsb:
+              pdb_id: "{{ pdb_id }}"
+              resource: entry
+          extract:
+            json:
+              field: exptl[0].method
       resolution:
-        source:
-          rcsb:
-            pdb_id: "{{ pdb_id }}"
-            resource: entry
-        extract:
-          json:
-            field: rcsb_entry_info.resolution_combined[0]
+        - source:
+            rcsb:
+              pdb_id: "{{ pdb_id }}"
+              resource: entry
+          extract:
+            json:
+              field: rcsb_entry_info.resolution_combined[0]
       space_group:
-        source:
-          rcsb:
-            pdb_id: "{{ pdb_id }}"
-            resource: entry
-        extract:
-          json:
-            field: symmetry.space_group_name_H_M
+        - source:
+            rcsb:
+              pdb_id: "{{ pdb_id }}"
+              resource: entry
+          extract:
+            json:
+              field: symmetry.space_group_name_H_M
     preview_image:
       source:
         rcsb:
@@ -175,8 +175,8 @@ entries:
     models:
       - id: model_1
         title: Deposited model
-        model_type: Single Conformer
-        purpose: Model Building
+        model_type: Deposited
+        purpose: Reference
         artifacts:
           - id: coordinates
             source:
@@ -192,21 +192,21 @@ entries:
             level: L1
         metrics:
           r_free:
-            source:
-              rcsb:
-                pdb_id: "{{ pdb_id }}"
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_free
+            - source:
+                rcsb:
+                  pdb_id: "{{ pdb_id }}"
+                  resource: entry
+              extract:
+                json:
+                  field: refine[0].ls_R_factor_R_free
           r_work:
-            source:
-              rcsb:
-                pdb_id: "{{ pdb_id }}"
-                resource: entry
-            extract:
-              json:
-                field: refine[0].ls_R_factor_R_work
+            - source:
+                rcsb:
+                  pdb_id: "{{ pdb_id }}"
+                  resource: entry
+              extract:
+                json:
+                  field: refine[0].ls_R_factor_R_work
 
       - id: model_2
         title: Rerefined model
@@ -231,17 +231,29 @@ entries:
             level: L1
         metrics:
           r_free:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 FREE R VALUE
+            - source:
+                artifact: coordinates
+              extract:
+                pdb:
+                  field: REMARK 3 FREE R VALUE
           r_work:
-            source:
-              artifact: coordinates
-            extract:
-              pdb:
-                field: REMARK 3 R VALUE WORKING SET
+            - source:
+                artifact: coordinates
+              extract:
+                pdb:
+                  field: REMARK 3 R VALUE WORKING SET
+          clashscore:
+            - source:
+                files:
+                  - Rerefined/validation/{{ pdb_id }}_molprobity.json
+              extract:
+                json:
+                  field: clashscore
+              software:
+                name: MolProbity
+                version: 4.5.2
+        run:
+          software_version: "1.21.2_5419"
 ```
 
 Useful source forms:
@@ -257,16 +269,68 @@ CSV and TSV metadata tables can be used with `extract.csv` or `extract.tsv`:
 ```yaml
 metadata:
   atom_count:
-    source:
-      files:
-        - Rerefined/final_model_structure_table.tsv
-    extract:
-      tsv:
-        column: Atom Count
-        where:
-          column: ID
-          equals: "{{ pdb_id }}"
+    - source:
+        files:
+          - Rerefined/final_model_structure_table.tsv
+      extract:
+        tsv:
+          column: Atom Count
+          where:
+            column: ID
+            equals: "{{ pdb_id }}"
 ```
+
+Each metadata field and metric holds a list of extractions. The CLI tries them
+in order and uses the first one that finds a value.
+
+#### Values the API accepts
+
+The CLI checks the manifest before it reads any data file, and stops with every
+problem listed:
+
+- metric keys: `r_work`, `r_free`, `cc`, `rscc`, `clashscore`,
+  `ramachandran_outliers`, `side_chain_outliers`, `molprobity_score`,
+  `wilson_b`, `rmsf`;
+- artifact `level`: `L0`, `L1`, `L2`, `L3`; artifact `type`: `model`,
+  `structure_factors`, `fasta`, `other`;
+- model `model_type`: `Single Conformer`, `Multiconformer`, `Ensemble`,
+  `Deposited`; model `purpose`: `Model Building`, `Refinement`, `Reference`.
+
+#### How a computed model was produced
+
+Every model that is not `model_type: Deposited` counts as computed, also when
+`model_type` is empty. The API needs to know how a computed model was produced:
+
+- **A run.** The program's name and version, at least one input file and at
+  least one output file. By default the CLI reads the program from the
+  coordinates file header (`REMARK 3 PROGRAM` in PDB files, `_software` or
+  `_computing` in mmCIF files). `coordinates` and `log_*` artifacts are
+  outputs; `mtz_*`, `structure_factors_*` and density files (`mtz`,
+  `structure_factors_cif`, `map`, `ccp4`, `mrc`) are inputs.
+  Add a `run` block to a model to fill in or correct any of this:
+
+  ```yaml
+  run:
+    software_name: qFit           # replaces the header's program name
+    software_version: "2024.1"    # replaces or fills in the header's version
+    inputs: [starting_model, structure_factors_1]   # replaces the default inputs
+    outputs: [coordinates]                          # replaces the default outputs
+  ```
+
+  `inputs` and `outputs` list artifact ids of the same model. Set only the
+  fields you need; a list you leave out keeps the default rule.
+- **The software behind each metric.** A metric read from the coordinates file
+  links to the run. Any other metric names its program with `software` on its
+  extraction, as `clashscore` does in the example above.
+
+The entry also needs its experimental method (`metadata.method`); `init`
+reads it from RCSB.
+
+`upload start` checks each entry against these rules after reading its files
+and before uploading anything. An entry that fails stops the upload with every
+problem listed. Nothing of that entry is uploaded and the upload state does not
+mark it, so you can fix the manifest and run `upload start` again. Entries that
+were already uploading finish first.
 
 ### 4. Upload
 
@@ -306,3 +370,7 @@ The upload state is an append-only JSONL file:
 Completed entries are skipped on restart. If an entry is still marked as
 `entry_uploading` without a later `entry_completed`, the upload will stop until
 the failed upload is fixed and that entry is removed from the state file.
+
+When the API rejects a request, the CLI prints every problem it names, each
+with the JSON pointer of the request field, for example
+`/model/runs/0/software_version: REQUIRED: is required`.

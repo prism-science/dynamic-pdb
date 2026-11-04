@@ -207,22 +207,18 @@ func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t
 
 	database := setupDB(t)
 	auth := seedUserAndIssueToken(t, database)
+	// Storage rejects every file part, so the upload fails after the entry was
+	// recorded as uploading. (A failure while reading files or RCSB values comes
+	// before that and leaves no state.)
 	s3 := newS3Stub(t)
+	s3.rejectParts = true
 	defer s3.Close()
 	backend := startBackend(t, root, backendBinaryPath, s3.URL())
-	brokenRCSB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "RCSB is down", http.StatusInternalServerError)
-	}))
-	defer brokenRCSB.Close()
+	rcsb := newRCSBStub(t, "9ZZZ")
+	defer rcsb.Close()
 	dataHome := t.TempDir()
 	writeConfig(t, dataHome, backend.URL, auth.AccessToken)
-	env := []string{
-		"XDG_DATA_HOME=" + dataHome,
-		"DYNAMIC_PDB_RCSB_DATA_URL=" + brokenRCSB.URL,
-		"DYNAMIC_PDB_RCSB_FILES_URL=" + brokenRCSB.URL,
-		"DYNAMIC_PDB_RCSB_WWW_URL=" + brokenRCSB.URL,
-		"DYNAMIC_PDB_RCSB_CDN_URL=" + brokenRCSB.URL,
-	}
+	env := rcsbEnv(dataHome, rcsb.URL())
 
 	// when
 	runCLI(t, binaryPath, nil, "upload", "manifest", "init", dataRoot, "--out", manifestPath)
@@ -238,7 +234,7 @@ func Test_should_stop_restart_when_previous_upload_left_unfinished_entry_state(t
 	assert.Contains(t, stateLines[0], `"event":"entry_uploading"`)
 	assert.Contains(t, stateLines[0], `"pdb_id":"9ZZZ"`)
 	assert.NotContains(t, string(stateContents), `"event":"entry_completed"`)
-	assert.Contains(t, firstOutput, "unexpected HTTP status 500")
+	assert.Contains(t, firstOutput, "part rejected by test")
 	assert.Contains(t, secondOutput, "unfinished entries 9ZZZ")
 	assert.Contains(t, secondOutput, "fix the failed upload and remove those entries")
 
@@ -423,6 +419,8 @@ type s3Stub struct {
 	mu     sync.Mutex
 	paths  []string
 	bodies map[string][]byte
+	// rejectParts answers every part upload with 400, which the CLI does not retry.
+	rejectParts bool
 }
 
 func newS3Stub(t *testing.T) *s3Stub {
@@ -446,6 +444,12 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 		s.recordPath(r.URL.Path)
 		writeXML(w, `<CreateMultipartUploadResult><UploadId>upload-id</UploadId></CreateMultipartUploadResult>`)
 	case r.Method == http.MethodPut && r.URL.Query().Get("uploadId") != "":
+		if s.rejectParts {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusBadRequest)
+			writeBody(w, `<Error><Code>InvalidPart</Code><Message>part rejected by test</Message></Error>`)
+			return
+		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "read upload body", http.StatusInternalServerError)

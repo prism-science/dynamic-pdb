@@ -41,6 +41,21 @@ type ModelPattern struct {
 	Metadata  ModelMetadata `yaml:"metadata,omitempty"`
 	Artifacts []Artifact    `yaml:"artifacts"`
 	Metrics   Metrics       `yaml:"metrics"`
+	// Run describes the program that produced the model. Each field it sets
+	// overrides what the coordinates file header says.
+	Run *Run `yaml:"run,omitempty"`
+}
+
+// Run names the program that produced a model, and which of the model's artifacts
+// the program read (inputs) and wrote (outputs). Inputs and Outputs hold artifact
+// ids of the same model. A list that is set replaces the default rule for its
+// direction (coordinates and log_* are outputs; mtz_*, structure_factors_* and
+// density files are inputs).
+type Run struct {
+	SoftwareName    string   `yaml:"software_name,omitempty"`
+	SoftwareVersion string   `yaml:"software_version,omitempty"`
+	Inputs          []string `yaml:"inputs,omitempty"`
+	Outputs         []string `yaml:"outputs,omitempty"`
 }
 
 type ModelMetadata map[string][]FieldExtraction
@@ -50,6 +65,15 @@ type Metrics map[string][]FieldExtraction
 type FieldExtraction struct {
 	Source  Source  `yaml:"source"`
 	Extract Extract `yaml:"extract"`
+	// Software names the program that produced a metric value read by this
+	// extraction. Only metric extractions may set it.
+	Software *Software `yaml:"software,omitempty"`
+}
+
+// Software is a program and, where known, its version.
+type Software struct {
+	Name    string `yaml:"name"`
+	Version string `yaml:"version,omitempty"`
 }
 
 type Extract struct {

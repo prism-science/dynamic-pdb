@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -441,7 +442,7 @@ func Test_should_use_manifest_artifact_format_when_set(t *testing.T) {
 
 	// when
 	format := artifactFormat(artifact, payload)
-	direction, ok := runArtifactDirection(uploadedArtifactRef{
+	direction, ok := runArtifactDirection(artifactRef{
 		ManifestID: artifact.ID,
 		Format:     format,
 	})
@@ -486,7 +487,7 @@ func Test_should_upload_entries_in_parallel_when_concurrency_is_greater_than_one
 	require.NoError(t, err)
 	assert.Equal(t, 3, summary.Entries)
 	assert.Equal(t, 3, summary.Models)
-	assert.Equal(t, 3, summary.Artifacts)
+	assert.Equal(t, 6, summary.Artifacts, "coordinates and RCSB structure factors per entry")
 	assert.Len(t, dynamicPDBClient.entries, 3)
 	state := readState(t, summary.StatePath)
 	assert.Equal(t, entryStatusCompleted, state.Entries["5AMF"].Status)
@@ -625,7 +626,7 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 	}
 
 	// when
-	requests, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
+	values, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
 		context.Background(),
 		"",
 		"5amf",
@@ -641,6 +642,7 @@ func Test_should_parse_metrics_from_mmcif_artifact_when_metrics_source_reference
 
 	// then
 	require.NoError(t, err)
+	requests := metricRequests(values)
 	require.Len(t, requests, 2)
 	assert.Equal(t, "r_free", requests[0].Key)
 	assert.Equal(t, 0.244, requests[0].Value)
@@ -671,7 +673,7 @@ func Test_should_link_metric_to_coordinates_run_only_when_value_comes_from_coord
 	coordinatesRunID := uuid.NewString()
 
 	// when
-	requests, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
+	values, err := New(&fakeDynamicPDBClient{}, fakeRCSB{}, NoopProgress{}, 1).modelMetrics(
 		context.Background(),
 		dataRoot,
 		"5amf",
@@ -682,6 +684,7 @@ func Test_should_link_metric_to_coordinates_run_only_when_value_comes_from_coord
 
 	// then
 	require.NoError(t, err)
+	requests := metricRequests(values)
 	require.Len(t, requests, 2)
 	assert.Equal(t, "r_free", requests[0].Key)
 	assert.Equal(t, &coordinatesRunID, requests[0].RunID)
@@ -793,6 +796,9 @@ type fakeDynamicPDBClient struct {
 	listCalls           int
 	createEntryError    error
 	createEntryAttempts int
+	// createEntryDelay holds each CreateEntry call this long, or until its context
+	// is cancelled.
+	createEntryDelay    time.Duration
 	putUploadPartErrors []error
 	putUploadPartCalls  int
 	entries             []dynamicpdbapi.CreateEntryRequest
@@ -836,9 +842,16 @@ func (b *fakeDynamicPDBClient) ListEntries(_ context.Context, params dynamicpdba
 }
 
 func (b *fakeDynamicPDBClient) CreateEntry(
-	_ context.Context,
+	ctx context.Context,
 	request dynamicpdbapi.CreateEntryRequest,
 ) (dynamicpdbapi.CreateEntryResult, error) {
+	if b.createEntryDelay > 0 {
+		select {
+		case <-ctx.Done():
+			return dynamicpdbapi.CreateEntryResult{}, ctx.Err()
+		case <-time.After(b.createEntryDelay):
+		}
+	}
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	b.createEntryAttempts++
@@ -1023,11 +1036,12 @@ func (fakeRCSB) GetFile(_ context.Context, _ string, file string) (rcsb.Artifact
 			Format:   "cif",
 			URI:      "https://files.rcsb.test/download/5AMF.cif",
 		}, nil
-	case "5amf-sf.cif":
+	case "5amf-sf.cif", "6abc-sf.cif", "7def-sf.cif":
+		pdbID := strings.TrimSuffix(file, "-sf.cif")
 		return rcsb.Artifact{
-			Filename: "5amf-sf.cif",
+			Filename: file,
 			Format:   "structure_factors_cif",
-			URI:      "https://files.rcsb.test/download/5AMF-sf.cif",
+			URI:      "https://files.rcsb.test/download/" + strings.ToUpper(pdbID) + "-sf.cif",
 		}, nil
 	default:
 		return rcsb.Artifact{}, assert.AnError
@@ -1085,19 +1099,21 @@ func writeManifest(t *testing.T, path string, dataRoot string) {
 func writeRemoteMTZManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
 	uploadManifest := testManifest(dataRoot, "models/{{ pdb_id }}_model.pdb", "models/{{ pdb_id }}_model.log", "")
-	uploadManifest.Entries[0].Metadata = manifest.EntryMetadata{"title": rcsbJSONExtraction("entry", "struct.title")}
+	uploadManifest.Entries[0].Metadata = titleAndMethodMetadata()
 	uploadManifest.Entries[0].Models[1].Artifacts = []manifest.Artifact{
 		fileArtifact("coordinates", "models/{{ pdb_id }}_model.pdb", "L2"),
 		fileArtifact("log_1", "models/{{ pdb_id }}_model.log", ""),
 		rcsbFileArtifact("structure_factors_1", "{{ pdb_id }}-sf.cif", "L1"),
 	}
+	uploadManifest.Entries[0].Models[1].Run = testRun()
 	writeTestManifest(t, path, uploadManifest)
 }
 
 func writeZipManifest(t *testing.T, path string, dataRoot string) {
 	t.Helper()
 	uploadManifest := testManifest(dataRoot, "models.zip#models/{{ pdb_id }}_model.pdb", "models.zip#models/{{ pdb_id }}_model.log", "models.zip#models/{{ pdb_id }}_model.mtz")
-	uploadManifest.Entries[0].Metadata = manifest.EntryMetadata{"title": rcsbJSONExtraction("entry", "struct.title")}
+	uploadManifest.Entries[0].Metadata = titleAndMethodMetadata()
+	uploadManifest.Entries[0].Models[1].Run = testRun()
 	writeTestManifest(t, path, uploadManifest)
 }
 
@@ -1141,10 +1157,13 @@ func testManifest(dataRoot string, coordinateSource string, logSource string, mt
 	}
 }
 
+// simpleManifest has one computed model whose coordinates file names no program,
+// so the manifest's run block names it; the structure factors come from RCSB.
 func simpleManifest(dataRoot string) manifest.Manifest {
 	entry := manifest.Entry{
-		PDBID: "{{ pdb_id }}",
-		Title: "{{ pdb_id }}",
+		PDBID:    "{{ pdb_id }}",
+		Title:    "{{ pdb_id }}",
+		Metadata: manifest.EntryMetadata{"method": rcsbJSONExtraction("entry", "exptl[0].method")},
 		Models: []manifest.ModelPattern{
 			{
 				ID:        "model_1",
@@ -1153,8 +1172,10 @@ func simpleManifest(dataRoot string) manifest.Manifest {
 				Purpose:   "",
 				Artifacts: []manifest.Artifact{
 					fileArtifact("coordinates", "models/{{ pdb_id }}_model.pdb", "L2"),
+					rcsbFileArtifact("structure_factors_1", "{{ pdb_id }}-sf.cif", "L1"),
 				},
 				Metrics: pdbRefinementMetrics(),
+				Run:     testRun(),
 			},
 		},
 	}
@@ -1164,6 +1185,18 @@ func simpleManifest(dataRoot string) manifest.Manifest {
 		Filter:   manifest.Filter{Include: []string{}, Skip: []string{}},
 		Entries:  []manifest.Entry{entry},
 	}
+}
+
+func titleAndMethodMetadata() manifest.EntryMetadata {
+	return manifest.EntryMetadata{
+		"title":  rcsbJSONExtraction("entry", "struct.title"),
+		"method": rcsbJSONExtraction("entry", "exptl[0].method"),
+	}
+}
+
+// testRun names the program of a model whose coordinates file header does not.
+func testRun() *manifest.Run {
+	return &manifest.Run{SoftwareName: "PHENIX", SoftwareVersion: "1.21.2"}
 }
 
 func testEntry() manifest.Entry {
@@ -1383,8 +1416,7 @@ func Test_should_upload_cofactors_from_mmcif_when_manifest_is_generated_from_dat
 			dataRoot := t.TempDir()
 			writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
 			manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
-			_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
-			require.NoError(t, err)
+			initManifestWithRun(t, dataRoot, manifestPath)
 			dynamicPDBClient := &fakeDynamicPDBClient{}
 
 			// when
@@ -1417,12 +1449,11 @@ func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_revie
 			"HETATM    2 ZN    ZN B 101      16.104  13.207   9.447  1.00 20.00          ZN\n"+
 			"HETATM    3  S   SO4 B 102      16.104  13.207   9.447  1.00 20.00           S\n")
 	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
-	_, _, _, err := manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
-	require.NoError(t, err)
+	initManifestWithRun(t, dataRoot, manifestPath)
 	dynamicPDBClient := &fakeDynamicPDBClient{}
 
 	// when
-	_, err = New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
+	_, err := New(dynamicPDBClient, fakeRCSB{}, NoopProgress{}, 1).Upload(context.Background(), manifestPath)
 
 	// then
 	require.NoError(t, err)
@@ -1443,6 +1474,23 @@ func Test_should_upload_review_flags_under_extensions_when_pdb_metal_needs_revie
 		{"list": "ligands", "id": "SO4", "reason": "often from the buffer: confirm it is part of the sample"},
 		{"list": "cofactors", "id": "ZN", "reason": "metal ion kept for review: the file has no metalc connection rows"}
 	]`, string(reviewJSON))
+}
+
+// initManifestWithRun writes the manifest init builds for dataRoot, with a run
+// block on each computed model: the test coordinates files name no program, or one
+// without a version.
+func initManifestWithRun(t *testing.T, dataRoot string, manifestPath string) {
+	t.Helper()
+	_, generated, _, err := manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
+	require.NoError(t, err)
+	for _, model := range manifestModels(&generated) {
+		if model.ModelType != manifest.ModelTypeDeposited {
+			model.Run = testRun()
+		}
+	}
+	encoded, err := yaml.Marshal(generated)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manifestPath, encoded, 0o600))
 }
 
 // writeManifestWithoutKeys rewrites a generated manifest the way versions before
@@ -1502,8 +1550,7 @@ func Test_should_upload_cofactors_when_manifest_was_saved_before_cofactors_exist
 	dataRoot := t.TempDir()
 	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
 	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
-	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
-	require.NoError(t, err)
+	initManifestWithRun(t, dataRoot, manifestPath)
 	writeManifestWithoutKeys(t, manifestPath, "cofactors", "extensions.compound_review")
 	dynamicPDBClient := &fakeDynamicPDBClient{}
 
@@ -1528,8 +1575,7 @@ func Test_should_keep_manifest_extensions_when_review_flags_are_added(t *testing
 	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
 	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept", "compound_review": "mine"}, "nested": {"x": 1}}`)
 	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
-	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
-	require.NoError(t, err)
+	initManifestWithRun(t, dataRoot, manifestPath)
 	generated, err := manifest.Read(manifestPath)
 	require.NoError(t, err)
 	setManifestExtensions(&generated)
@@ -1557,8 +1603,7 @@ func Test_should_add_review_flags_next_to_manifest_extensions_when_keys_do_not_c
 	writeFile(t, dataRoot, "models/5amf_model.cif", string(fixture))
 	writeFile(t, dataRoot, "notes.json", `{"extensions": {"lab_note": "kept"}}`)
 	manifestPath := filepath.Join(t.TempDir(), manifest.DefaultFilename)
-	_, _, _, err = manifest.Init(manifest.Options{DataRoot: dataRoot, OutputPath: manifestPath})
-	require.NoError(t, err)
+	initManifestWithRun(t, dataRoot, manifestPath)
 	generated, err := manifest.Read(manifestPath)
 	require.NoError(t, err)
 	setManifestExtensions(&generated)
