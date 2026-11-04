@@ -35,7 +35,8 @@ A row a later job settled has `resolved_at` and `resolved_by` (see "Archive re-d
 open rows have both NULL.
 
 Validate a constraint (the NOT VALID ones that ship with the C1 migrations: `run_artifacts_direction_chk`,
-`run_artifacts_position_chk`, `entry_revisions_composition_lists_chk`) once its violations are repaired:
+`run_artifacts_position_chk`; `entry_revisions_composition_lists_chk` is validated by `V20261103230000`)
+once its violations are repaired:
 `ALTER TABLE <table> VALIDATE CONSTRAINT <name>;` (names are listed by
 `select conname from pg_constraint where contype = 'c' and not convalidated`).
 Ligand/cofactor lists are checked in jsonpath `strict` mode (`strict $.ligands[*] ? (@.type() != "string")`)
@@ -206,3 +207,5 @@ Prod run, after the merge with the job off:
 4. Once `entry_revision_malformed_composition_lists` is empty in `schema_inventory.sql`, a follow-up
    migration validates the composition check:
    `ALTER TABLE entry_revisions VALIDATE CONSTRAINT entry_revisions_composition_lists_chk;`
+   Prod's run finished on 2026-11-03 (73,074 derived, none failed), the inventory check was empty,
+   and migration `V20261103230000` validates the check.
