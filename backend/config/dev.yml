@@ -42,8 +42,9 @@ cdn:
   cloudfront:
     base_url: https://dev-files.dynamicpdb.com
 validation:
-  # Log schema violations without rejecting requests until clients are updated.
-  mode: log_only
+  # Reject requests that break the schema rules with 422, and skip RCSB versions that break them.
+  # Dev enforces first, so the forms and the data sync soak here before production switches.
+  mode: enforce
 data_sync:
   # Coordinate-change revisions stay off until the checksum job has copied the coordinate files.
   coordinate_revisions: false
