@@ -61,8 +61,10 @@ entries:
   # Entry deletion is for testing on dev only; production keeps every entry.
   delete_enabled: false
 artifact_extraction:
-  # Off until tried on dev; the forms then keep their browser preview. Turn on in its own PR.
-  uploads_enabled: false
+  # The deposition forms read an uploaded mmCIF through the server before saving (G5), as on dev,
+  # where it was tried on 2026-11-05. Rollback: false here, or
+  # DYNAMIC_PDB_ARTIFACT_EXTRACTION_UPLOADS_ENABLED=false; the forms then keep their browser preview.
+  uploads_enabled: true
 revisions:
   # Publishing a change always takes a second reviewer; self-approval is for testing on dev only.
   self_approval_enabled: false
