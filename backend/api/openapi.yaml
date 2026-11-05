@@ -930,8 +930,9 @@ paths:
         "422":
           description: >
             The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
-            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
-            instead, which names the check and has no source.pointer.
+            source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key
+            starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code
+            `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1101,8 +1102,9 @@ paths:
         "422":
           description: >
             The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
-            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
-            instead, which names the check and has no source.pointer.
+            source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key
+            starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code
+            `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1541,8 +1543,9 @@ paths:
         "422":
           description: >
             The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
-            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
-            instead, which names the check and has no source.pointer.
+            source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key
+            starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code
+            `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:
@@ -1796,8 +1799,9 @@ paths:
         "422":
           description: >
             The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with
-            source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION`
-            instead, which names the check and has no source.pointer.
+            source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key
+            starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code
+            `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer.
           content:
             application/vnd.api+json:
               schema:

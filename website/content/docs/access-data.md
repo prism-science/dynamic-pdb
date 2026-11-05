@@ -79,6 +79,7 @@ Submitting needs an account with permission to submit. Every new entry, model, a
 - A request that breaks a rule gets HTTP `422`, and nothing is saved. The response lists every broken rule, each with a `source.pointer` that names the field, for example `/model/metrics/0/key`.
 - Fix every listed field and send the whole request again.
 - Some mistakes that used to get `400` or `409`, such as the same metric key twice in one model, now get `422`.
+- A field the request does not define gets `422` with code `UNKNOWN_FIELD`, for example `/entry/colour`. Keys are case-sensitive. A key starting with `__` gets code `RESERVED_KEY`. Free-form data goes in `extensions`, inside the `metadata` of a model, artifact, or run.
 - In rare cases a database check refuses a value. That error has the code `CONSTRAINT_VIOLATION`, names the check, and has no `source.pointer`.
 
 The [API reference](/docs/api) shows the fields each request accepts.
