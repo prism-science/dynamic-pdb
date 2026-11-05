@@ -17,12 +17,12 @@ type RCSBFiles interface {
 	GetFile(ctx context.Context, pdbID string, file string) (rcsb.Artifact, error)
 }
 
-// ensureArchiveModelSyncJob makes sure the archive's own Deposited model has a sync job once a
+// ensureArchiveModelSyncJob makes sure an archive deposition has a sync job once a
 // revision of it is active. An existing job, stopped or not, keeps its schedule and recorded
 // version. The first run is 7 to 14 days out, as for entries.
 func (s *Server) ensureArchiveModelSyncJob(ctx context.Context, revision domainmodels.ModelRevision, now time.Time) error {
 	pdbID := strings.TrimSpace(revision.Metadata.ExternalRefs[domainmodels.ModelSourcePDB])
-	if pdbID == "" || !isDepositedModel(revision) {
+	if pdbID == "" || !revision.Metadata.IsArchiveModel() {
 		return nil
 	}
 	coordinateFile, err := s.rcsbFiles.GetFile(ctx, pdbID, rcsb.CoordinateFile(pdbID))
@@ -53,26 +53,25 @@ func (s *Server) ensureArchiveModelSyncJob(ctx context.Context, revision domainm
 	return nil
 }
 
-// needsArchiveModelSync reports whether an active model revision is the archive's own Deposited
-// model: Deposited, naming a PDB ID, and linking RCSB's coordinate file for it. A depositor's
-// Deposited model links its own file, and the archive sync leaves it alone.
+// needsArchiveModelSync reports whether an active model revision is an archive deposition: Deposited
+// or with the archive as its origin, naming a PDB ID, and linking RCSB's coordinate file for it. A
+// depositor's Deposited model links its own file, and the archive sync leaves it alone.
 func needsArchiveModelSync(
 	revision domainmodels.ModelRevision,
 	linked []domainmodels.Artifact,
 	coordinateURI string,
 ) bool {
-	if !isDepositedModel(revision) || strings.TrimSpace(revision.Metadata.ExternalRefs[domainmodels.ModelSourcePDB]) == "" {
+	if !revision.Metadata.IsArchiveModel() || strings.TrimSpace(revision.Metadata.ExternalRefs[domainmodels.ModelSourcePDB]) == "" {
 		return false
 	}
+	return linksCoordinateFile(linked, coordinateURI)
+}
+
+func linksCoordinateFile(linked []domainmodels.Artifact, coordinateURI string) bool {
 	for _, artifact := range linked {
 		if artifact.Type == domainmodels.ArtifactTypeModel && artifact.URI != nil && *artifact.URI == coordinateURI {
 			return true
 		}
 	}
 	return false
-}
-
-func isDepositedModel(revision domainmodels.ModelRevision) bool {
-	return revision.Metadata.ModelType != nil &&
-		*revision.Metadata.ModelType == domainmodels.StructureModelTypeDeposited
 }

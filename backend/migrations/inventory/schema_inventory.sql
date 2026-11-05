@@ -41,6 +41,7 @@ FROM (
     JOIN model_revision_metrics link ON link.metric_id = metrics.id
     JOIN model_revisions computed ON computed.id = link.model_revision_id
                                  AND computed.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
+                                 AND computed.metadata ->> 'origin' IS DISTINCT FROM 'archive'
     WHERE metrics.run_id IS NULL
       AND (metrics.software_name IS NULL OR metrics.software_name !~ '\S')
     GROUP BY metrics.id, metrics.key
@@ -52,6 +53,13 @@ FROM (
     JOIN metrics ON metrics.id = link.metric_id
     GROUP BY link.model_revision_id, metrics.key
     HAVING count(*) > 1
+
+    UNION ALL
+    SELECT 'model_invalid_origin', 'model_revision', model_revisions.id::text,
+           jsonb_build_object('model_id', model_revisions.model_id, 'origin', model_revisions.metadata ->> 'origin')
+    FROM model_revisions
+    WHERE model_revisions.metadata ->> 'origin' IS NOT NULL
+      AND model_revisions.metadata ->> 'origin' <> 'archive'
 
     UNION ALL
     SELECT 'model_invalid_type', 'model_revision', model_revisions.id::text,
@@ -69,7 +77,7 @@ FROM (
 
     UNION ALL
     -- validation.ModelRuns: a run of a computed model names its software version. Runs of
-    -- Deposited models only are exempt.
+    -- Deposited models and models naming the archive as their origin are exempt.
     SELECT 'run_missing_software_version', 'run', runs.id::text,
            jsonb_build_object('name', runs.name, 'software_name', runs.software_name,
                               'model_revisions', jsonb_agg(jsonb_build_object('id', computed.id, 'state', computed.state)
@@ -78,6 +86,7 @@ FROM (
     JOIN model_revision_runs link ON link.run_id = runs.id
     JOIN model_revisions computed ON computed.id = link.model_revision_id
                                  AND computed.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
+                                 AND computed.metadata ->> 'origin' IS DISTINCT FROM 'archive'
     WHERE runs.software_version IS NULL OR runs.software_version !~ '\S'
     GROUP BY runs.id, runs.name, runs.software_name
 
@@ -89,6 +98,7 @@ FROM (
                               'state', model_revisions.state)
     FROM model_revisions
     WHERE model_revisions.metadata ->> 'model_type' IS DISTINCT FROM 'Deposited'
+      AND model_revisions.metadata ->> 'origin' IS DISTINCT FROM 'archive'
       AND NOT EXISTS (SELECT 1 FROM model_revision_runs WHERE model_revision_runs.model_revision_id = model_revisions.id)
 
     UNION ALL

@@ -7,6 +7,7 @@ import {
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
 import NewModelForm from "@/app/components/NewModelForm";
+import ArchiveModelForm from "@/app/components/entry-form/ArchiveModelForm";
 
 import styles from "@/app/entries/new/new-entry.module.css";
 
@@ -39,6 +40,13 @@ export default async function NewModelPage({ params }: NewModelPageProps) {
     <main className={styles.page}>
       <div className={styles.shell}>
         <h1 className={styles.title}>New model</h1>
+        <details className={styles.archiveModel}>
+          <summary>Add a deposition from a PDB ID</summary>
+          <ArchiveModelForm
+            entryId={data.entry.id}
+            entryPdbId={data.entry.external_refs?.pdb ?? null}
+          />
+        </details>
         <NewModelForm
           entry={data.entry}
           entryDataEntities={entryDataEntities(data.entities)}

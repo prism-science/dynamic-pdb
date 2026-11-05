@@ -423,6 +423,8 @@ function polymerEntitiesValue(
 /** What the model edit form holds. Files and runs are not here: the form
  *  shows them read-only. */
 export type ModelEditDraft = {
+  /** The stored model names the archive as its origin, so it needs no runs. */
+  archiveOrigin: boolean;
   title: string;
   thumbUrl: string | null;
   purpose: string;
@@ -445,10 +447,12 @@ export type ModelLocks = {
 
 export function modelLocks(model: ModelDetail): ModelLocks {
   const metadata = model.metadata ?? {};
-  // The sync writes only the archive's own model, and reads it from the PDB
-  // ID the model itself names.
+  // The sync writes only an archive deposition, and reads it from the PDB ID
+  // the model itself names.
   const archiveAccession =
-    metadata.model_type === "Deposited" ? modelPdbId(metadata.external_refs) : null;
+    metadata.model_type === "Deposited" || metadata.origin === "archive"
+      ? modelPdbId(metadata.external_refs)
+      : null;
   const metricPointers = Object.fromEntries(
     ARCHIVE_METRIC_KEYS.map((key) => [key, metricPointer(key)]),
   ) as Record<MetricKey, string>;
@@ -479,6 +483,7 @@ function isSystemChoice(
 export function modelDraftFromModel(model: ModelDetail): ModelEditDraft {
   const metadata = model.metadata ?? {};
   return {
+    archiveOrigin: metadata.origin === "archive",
     title: model.title ?? "",
     thumbUrl: model.thumbnail_image_url ?? null,
     purpose: stringValue(metadata.purpose),
@@ -590,6 +595,10 @@ function patchedMetadata(
       continue;
     }
     setOrDelete(metadata, key, value);
+  }
+  // Members belong to an ensemble, so a change of type away from it drops them.
+  if (metadata.model_type !== "Ensemble") {
+    delete metadata.member_count;
   }
   return metadata;
 }

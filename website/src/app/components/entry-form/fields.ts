@@ -346,7 +346,7 @@ export const FIELDS = {
   "model.type": {
     section: "overview",
     label: "Model type",
-    help: "Single conformer: one position per atom. Multiconformer: alternate positions where the data support them. Ensemble: several whole models.",
+    help: "Single conformer: one position per atom. Multiconformer: alternate positions where the data support them. Ensemble: several whole models, as MODELs or as altloc letters that each cover the whole chain.",
     required: false,
     unknownAllowed: false,
     autofill: null,

@@ -93,6 +93,7 @@ no violations and each inventory check below returned **zero rows** on prod (202
 |---|---|---|---|
 | `metrics_key_known_chk` | `V20261104150000` | `V20261104150400` | `metric_unknown_key` |
 | `model_revisions_model_type_chk` | `V20261104150100` | `V20261104150500` | `model_invalid_type` |
+| `model_revisions_origin_chk` | `V20261105120000` | `V20261105120100` | `model_invalid_origin` |
 | `model_revisions_purpose_chk` | `V20261104150100` | `V20261104150600` | `model_invalid_purpose` |
 | `artifacts_sha256_format_chk` | `V20261104150200` | `V20261104150700` | `artifact_malformed_sha256` |
 | `artifacts_size_bytes_chk` | `V20261104150200` | `V20261104150800` | `artifact_negative_size` |

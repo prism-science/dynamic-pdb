@@ -28,7 +28,11 @@ func (s *Server) missingInfoForRevision(
 	for _, run := range runs {
 		modelRuns = append(modelRuns, validation.ModelRun{Run: run})
 	}
-	gaps := validation.MissingInfoOf(validation.ModelRevision{ModelType: revision.Metadata.ModelType, Runs: modelRuns}, metrics)
+	gaps := validation.MissingInfoOf(validation.ModelRevision{
+		ModelType: revision.Metadata.ModelType,
+		Origin:    revision.Metadata.Origin,
+		Runs:      modelRuns,
+	}, metrics)
 	items, err := missingInfoFromValidation(gaps)
 	if err != nil {
 		slog.ErrorContext(ctx, "build missing info failed", "err", err, "model_revision_id", revision.ID)

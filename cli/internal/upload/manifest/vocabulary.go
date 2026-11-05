@@ -32,3 +32,10 @@ var ModelPurposes = []string{"Model Building", "Refinement", "Reference"}
 // ModelTypeDeposited is the only model type the API treats as not computed: a
 // Deposited model needs no run, and its metrics need not name their software.
 const ModelTypeDeposited = "Deposited"
+
+// ModelOriginArchive makes the API treat a model of any type as not computed, as
+// ModelTypeDeposited does.
+const ModelOriginArchive = "archive"
+
+// ModelOrigins are the model origins the API accepts (ModelOrigin).
+var ModelOrigins = []string{ModelOriginArchive}

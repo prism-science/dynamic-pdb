@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dynamic-pdb/backend/internal/models"
+	"dynamic-pdb/lib/rcsb"
 )
 
 func Test_should_keep_depositor_title_when_archive_title_changes(t *testing.T) {
@@ -90,9 +91,9 @@ func Test_should_sync_model_only_when_it_is_deposited(t *testing.T) {
 	singleConformer := models.StructureModelTypeSingleConformer
 
 	// when
-	syncsDeposited := isDepositedModel(models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &deposited}})
-	syncsSingleConformer := isDepositedModel(models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &singleConformer}})
-	syncsUntyped := isDepositedModel(models.ModelRevision{})
+	syncsDeposited := isArchiveModel(models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &deposited}})
+	syncsSingleConformer := isArchiveModel(models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &singleConformer}})
+	syncsUntyped := isArchiveModel(models.ModelRevision{})
 
 	// then
 	assert.True(t, syncsDeposited)
@@ -167,7 +168,7 @@ func Test_should_record_rcsb_source_for_synced_model_fields_and_metrics(t *testi
 
 	// when
 	source := archiveRevisionSource{pdbID: "5AMF", version: models.ArchiveVersion{Ordinal: 3, Version: "2.1"}}
-	sources := archiveModelFieldSources(current, source, retrievedAt, syncedArchiveMetricKeys(current))
+	sources := archiveModelFieldSources(current, source, retrievedAt, syncedArchiveMetricKeys(current), false)
 
 	// then
 	require.Len(t, sources, len(models.ModelArchiveFields)+len(models.ArchiveMetricKeys))
@@ -228,4 +229,83 @@ func Test_should_keep_depositor_lists_when_archive_lists_change(t *testing.T) {
 	// then
 	assert.Equal(t, &depositorLigands, desired.Metadata.Ligands)
 	assert.Equal(t, &archiveCofactors, desired.Metadata.Cofactors)
+}
+
+func Test_should_sync_model_when_it_names_the_archive_as_its_origin(t *testing.T) {
+	// given
+	origin := models.ModelOriginArchive
+	ensemble := models.StructureModelTypeEnsemble
+
+	// when
+	syncs := isArchiveModel(models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &ensemble, Origin: &origin}})
+
+	// then
+	assert.True(t, syncs)
+}
+
+func Test_should_record_the_source_of_related_entries_when_an_archive_origin_model_syncs(t *testing.T) {
+	// when
+	sources := archiveModelFieldSources(nil, archiveRevisionSource{pdbID: "44PS"}, time.Now(), nil, true)
+	withoutOrigin := archiveModelFieldSources(nil, archiveRevisionSource{pdbID: "7KR0"}, time.Now(), nil, false)
+
+	// then
+	assert.Equal(t, models.FieldSourceRCSB, sources[models.ModelFieldRelatedEntries].Source)
+	assert.NotContains(t, withoutOrigin, models.ModelFieldRelatedEntries)
+}
+
+func Test_should_keep_related_entries_current_when_an_archive_origin_model_syncs(t *testing.T) {
+	// given
+	origin := models.ModelOriginArchive
+	ensemble := models.StructureModelTypeEnsemble
+	stored := []models.RelatedEntry{{DBName: "PDB", DBID: "7KR0", ContentType: "re-refinement"}}
+	current := models.ModelRevision{Metadata: models.ModelMetadata{
+		Origin: &origin, ModelType: &ensemble, RelatedEntries: stored,
+	}}
+	details := rcsb.EntryDetails{RelatedEntries: []rcsb.EntryRelatedEntry{
+		{DBName: "PDB", DBID: "7KR0", ContentType: "re-refinement"},
+	}}
+
+	// when
+	desired := models.ModelRevision{}
+	applyRCSBModelDetails(&desired, details)
+	keepDepositorModelFields(current, &desired)
+	applyRCSBRelatedEntries(current, &desired, details)
+
+	// then
+	assert.Equal(t, stored, desired.Metadata.RelatedEntries)
+}
+
+func Test_should_ignore_related_entries_when_a_deposited_model_syncs(t *testing.T) {
+	// given
+	deposited := models.StructureModelTypeDeposited
+	current := models.ModelRevision{Metadata: models.ModelMetadata{ModelType: &deposited}}
+	details := rcsb.EntryDetails{RelatedEntries: []rcsb.EntryRelatedEntry{
+		{DBName: "PDB", DBID: "5KXL", ContentType: "unspecified"},
+	}}
+
+	// when
+	desired := models.ModelRevision{}
+	applyRCSBModelDetails(&desired, details)
+	keepDepositorModelFields(current, &desired)
+	applyRCSBRelatedEntries(current, &desired, details)
+
+	// then
+	assert.Nil(t, desired.Metadata.RelatedEntries)
+}
+
+func Test_should_keep_typed_related_entries_when_an_archive_origin_model_syncs(t *testing.T) {
+	// given
+	origin := models.ModelOriginArchive
+	typed := []models.RelatedEntry{{DBName: "PDB", DBID: "4PSS", ContentType: "re-refinement"}}
+	current := models.ModelRevision{
+		Metadata:     models.ModelMetadata{Origin: &origin, RelatedEntries: typed},
+		FieldSources: models.FieldSources{models.ModelFieldRelatedEntries: {Source: models.FieldSourceDepositor}},
+	}
+
+	// when
+	desired := models.ModelRevision{}
+	applyRCSBRelatedEntries(current, &desired, rcsb.EntryDetails{})
+
+	// then
+	assert.Equal(t, typed, desired.Metadata.RelatedEntries)
 }

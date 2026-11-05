@@ -34,9 +34,12 @@ type Artifact struct {
 }
 
 type ModelPattern struct {
-	ID        string        `yaml:"id"`
-	Title     string        `yaml:"title"`
-	ModelType string        `yaml:"model_type"`
+	ID        string `yaml:"id"`
+	Title     string `yaml:"title"`
+	ModelType string `yaml:"model_type"`
+	// Origin is "archive" for an unchanged archive deposition whose ModelType describes its
+	// representation.
+	Origin    string        `yaml:"origin,omitempty"`
 	Purpose   string        `yaml:"purpose"`
 	Metadata  ModelMetadata `yaml:"metadata,omitempty"`
 	Artifacts []Artifact    `yaml:"artifacts"`

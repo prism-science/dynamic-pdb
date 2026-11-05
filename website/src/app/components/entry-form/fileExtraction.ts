@@ -32,6 +32,7 @@ export type ExtractedFile = {
   modeledResidues: number | null;
   uniqueProteinChains: number | null;
   altlocFraction: number | null;
+  memberCount: number | null;
   ligands: ExtractedCompound[] | null;
   cofactors: ExtractedCompound[] | null;
   mutations: ExtractedMutationSet[] | null;
@@ -53,6 +54,7 @@ export function emptyExtractedFile(): ExtractedFile {
     modeledResidues: null,
     uniqueProteinChains: null,
     altlocFraction: null,
+    memberCount: null,
     ligands: null,
     cofactors: null,
     mutations: null,
@@ -104,6 +106,9 @@ export function readExtraction(extraction: ArtifactExtraction): ExtractedFile {
         break;
       case "altloc_fraction":
         file.altlocFraction = number(value);
+        break;
+      case "member_count":
+        file.memberCount = number(value);
         break;
       case "ligands":
         file.ligands = compounds(value);

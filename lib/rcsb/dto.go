@@ -25,6 +25,16 @@ type EntryDetails struct {
 	RevisionHistory    []EntryRevisionHistory    `json:"pdbx_audit_revision_history"`
 	RevisionGroups     []EntryRevisionGroup      `json:"pdbx_audit_revision_group"`
 	ObsoleteRecords    []EntryObsoleteRecord     `json:"pdbx_database_PDB_obs_spr"`
+	RelatedEntries     []EntryRelatedEntry       `json:"pdbx_database_related"`
+}
+
+// EntryRelatedEntry is one pdbx_database_related row: an entry related to this one, in the
+// database DBName, with the content type the depositor gave the relationship.
+type EntryRelatedEntry struct {
+	DBName      string `json:"db_name"`
+	DBID        string `json:"db_id"`
+	ContentType string `json:"content_type"`
+	Details     string `json:"details"`
 }
 
 // EntrySoftware is one software row of an entry: a program the depositors used, with

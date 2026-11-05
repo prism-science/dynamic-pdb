@@ -19,6 +19,7 @@ import (
 	"dynamic-pdb/backend/internal/db"
 	domainmodels "dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
+	"dynamic-pdb/lib/rcsb"
 )
 
 var (
@@ -543,6 +544,7 @@ func (s *Server) createInitialModelRevisionForEntry(
 		IdempotencyKey: modelRevisionIdempotencyKeyFromCreateModelData(data),
 		State:          RevisionStateInReview,
 	}
+	archive := s.lookUpArchiveModel(ctx, metadata, now)
 	err = s.database.Do(ctx, func(ctx context.Context) error {
 		if attributes.IdempotencyKey != nil {
 			activeState := domainmodels.RevisionStateActive
@@ -573,6 +575,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 			ctx, check, entryID, modelRunsFromRequests(data.Runs), artifactIDsFromRequests(data.Artifacts),
 		); err != nil {
 			return fmt.Errorf("check model run artifacts: %w", err)
+		}
+		if err := s.ensureModelPDBReferenceAvailable(ctx, check, entryID, metadata); err != nil {
+			return fmt.Errorf("validate model PDB reference: %w", err)
 		}
 		modelID, err := s.database.Models.NextID(ctx, entryID)
 		if err != nil {
@@ -605,6 +610,11 @@ func (s *Server) createInitialModelRevisionForEntry(
 		// createModelRequestErrors reported the value_sources that cannot be recorded; those
 		// values stay the depositor's.
 		initialRevision.FieldSources, _ = newModelRevisionSources(validation.Root, data, metadata)
+		if archive.found {
+			initialRevision.FieldSources = domainmodels.ArchiveModelFieldSources(
+				initialRevision.FieldSources, initialRevision, metricsFromRequests(data.Metrics),
+				archive.values, archive.metrics, archive.source)
+		}
 		revision, err := s.database.Models.Create(ctx, entryID, initialRevision)
 		if err != nil {
 			return fmt.Errorf("create model revision: %w", err)
@@ -612,6 +622,9 @@ func (s *Server) createInitialModelRevisionForEntry(
 		attributes.RevisionId = revision.ID
 		if err := s.attachModelArtifacts(ctx, revision.ID, artifacts); err != nil {
 			return fmt.Errorf("attach model artifacts: %w", err)
+		}
+		if err := s.checkArchiveModelFile(ctx, check, *revision); err != nil {
+			return fmt.Errorf("check archive model file: %w", err)
 		}
 		// Runs first: a metric may name the run that produced it.
 		if data.Runs != nil {
@@ -630,6 +643,46 @@ func (s *Server) createInitialModelRevisionForEntry(
 		return CreateModelRevisionAttributes{}, fmt.Errorf("create initial model revision: %w", err)
 	}
 	return attributes, nil
+}
+
+// archiveModelLookup is what the archive says about a new model naming the archive as its origin.
+// found is false for any other model, and when the lookup is off or fails: every value the model
+// was given then stays the depositor's.
+type archiveModelLookup struct {
+	values  domainmodels.ModelRevision
+	metrics []domainmodels.Metric
+	source  domainmodels.FieldSource
+	found   bool
+}
+
+func (s *Server) lookUpArchiveModel(
+	ctx context.Context,
+	metadata domainmodels.ModelMetadata,
+	retrievedAt time.Time,
+) archiveModelLookup {
+	pdbID := strings.ToUpper(strings.TrimSpace(metadata.ExternalRefs[domainmodels.ModelSourcePDB]))
+	if !metadata.HasArchiveOrigin() || pdbID == "" || s.archive == nil {
+		return archiveModelLookup{}
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, archiveLookupTimeout)
+	defer cancel()
+	result, err := s.archive.Get(lookupCtx, pdbID)
+	if err != nil {
+		slog.WarnContext(ctx, "archive lookup for a new model failed; its values stay the depositor's",
+			"err", err, "pdb_id", pdbID)
+		return archiveModelLookup{}
+	}
+	return archiveModelLookup{
+		values:  domainmodels.ModelRevision{Metadata: archivemodels.ModelMetadata(result.Model)},
+		metrics: archivemodels.Metrics(result.Model),
+		source: domainmodels.FieldSource{
+			Source:      domainmodels.FieldSourceRCSB,
+			Accession:   new(result.PDBID),
+			Release:     result.Entry.LatestVersion,
+			RetrievedAt: new(retrievedAt),
+		},
+		found: true,
+	}
 }
 
 func createModelDataFromAddOperation(data AddModelData) CreateModelData {
@@ -828,6 +881,11 @@ func (s *Server) createModelRevisionGraph(
 			if _, sent := (*data.Metadata)["residue_data"]; !sent {
 				metadata.ResidueData = base.Metadata.ResidueData
 			}
+			if metadata.ExternalRefs[domainmodels.ModelSourcePDB] != base.Metadata.ExternalRefs[domainmodels.ModelSourcePDB] {
+				if err := s.ensureModelPDBReferenceAvailable(ctx, check, entryID, metadata); err != nil {
+					return fmt.Errorf("validate model PDB reference: %w", err)
+				}
+			}
 			revision.Metadata = metadata
 		}
 		fieldSources, err := s.modelRevisionFieldSources(ctx, *base, revision, data.Metrics)
@@ -853,6 +911,9 @@ func (s *Server) createModelRevisionGraph(
 			now,
 		); err != nil {
 			return fmt.Errorf("populate model revision: %w", err)
+		}
+		if err := s.checkArchiveModelFile(ctx, check, *created); err != nil {
+			return fmt.Errorf("check archive model file: %w", err)
 		}
 		return nil
 	})
@@ -1002,6 +1063,116 @@ func (s *Server) createModelRuns(
 	return nil
 }
 
+// pdbReferenceHeldError names the record in another entry that already holds a PDB ID, so the
+// response can send the person there.
+type pdbReferenceHeldError struct {
+	pointer validation.Pointer
+	detail  string
+}
+
+func (err *pdbReferenceHeldError) Error() string { return err.detail }
+
+func (err *pdbReferenceHeldError) Unwrap() error { return errPDBReferenceTaken }
+
+// activeModelsWithPDBID lists the active models that name pdbID, whichever entry holds them.
+func (s *Server) activeModelsWithPDBID(ctx context.Context, pdbID string) ([]domainmodels.ModelRevision, error) {
+	activeState := domainmodels.RevisionStateActive
+	activeModelState := domainmodels.ModelStateActive
+	activeEntryState := domainmodels.EntryStateActive
+	revisions, err := s.database.Models.List(ctx, db.ModelRevisionFilters{
+		State:              &activeState,
+		ModelState:         &activeModelState,
+		EntryState:         &activeEntryState,
+		PDBIDs:             []string{pdbID},
+		ExcludeResidueData: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list active models with PDB ID: %w", err)
+	}
+	return revisions, nil
+}
+
+// ensureModelPDBReferenceAvailable refuses a model naming a PDB ID that another entry holds, as its
+// own reference or on one of its models. One deposition is one model of one entry.
+func (s *Server) ensureModelPDBReferenceAvailable(
+	ctx context.Context,
+	check schemaCheck,
+	entryID string,
+	metadata domainmodels.ModelMetadata,
+) error {
+	pdbID := strings.TrimSpace(metadata.ExternalRefs[domainmodels.ModelSourcePDB])
+	if pdbID == "" {
+		return nil
+	}
+	pointer := check.at.Field("metadata").Field("external_refs").Field(string(domainmodels.ModelSourcePDB))
+	activeState := domainmodels.RevisionStateActive
+	activeEntryState := domainmodels.EntryStateActive
+	entries, err := s.database.Entries.List(ctx, db.EntryRevisionFilters{
+		State:      &activeState,
+		EntryState: &activeEntryState,
+		PDBIDs:     []string{pdbID},
+	})
+	if err != nil {
+		return fmt.Errorf("check active entry PDB references: %w", err)
+	}
+	for _, revision := range entries {
+		if revision.EntryID != entryID {
+			return &pdbReferenceHeldError{
+				pointer: pointer,
+				detail:  fmt.Sprintf("entry %s already has PDB ID %s; add this model to that entry instead", revision.EntryID, pdbID),
+			}
+		}
+	}
+	models, err := s.activeModelsWithPDBID(ctx, pdbID)
+	if err != nil {
+		return err
+	}
+	for _, revision := range models {
+		if revision.EntryID != entryID {
+			return &pdbReferenceHeldError{
+				pointer: pointer,
+				detail:  fmt.Sprintf("model %s of entry %s already has PDB ID %s", revision.ModelID, revision.EntryID, pdbID),
+			}
+		}
+	}
+	return nil
+}
+
+// checkArchiveModelFile checks that a model naming the archive as its origin links RCSB's own
+// coordinate file for its PDB ID, so the origin cannot be used to skip the rules for computed models.
+func (s *Server) checkArchiveModelFile(
+	ctx context.Context,
+	check schemaCheck,
+	revision domainmodels.ModelRevision,
+) error {
+	if !revision.Metadata.HasArchiveOrigin() {
+		return nil
+	}
+	pdbID := strings.TrimSpace(revision.Metadata.ExternalRefs[domainmodels.ModelSourcePDB])
+	if pdbID == "" {
+		return nil
+	}
+	coordinateFile, err := s.rcsbFiles.GetFile(ctx, pdbID, rcsb.CoordinateFile(pdbID))
+	if err != nil {
+		return fmt.Errorf("get RCSB coordinate file URL of %s: %w", pdbID, err)
+	}
+	linked, err := s.database.Artifacts.List(ctx, db.ArtifactFilters{
+		ModelRevisionID: &revision.ID,
+		Types:           []domainmodels.ArtifactType{domainmodels.ArtifactTypeModel},
+	})
+	if err != nil {
+		return fmt.Errorf("list model files: %w", err)
+	}
+	if linksCoordinateFile(linked, coordinateFile.URI) {
+		return nil
+	}
+	return s.validationMode.Check(ctx, slog.Default(), check.subject, []validation.FieldError{{
+		Pointer: check.at.Field("metadata").Field("origin"),
+		Code:    validation.CodeInvalidValue,
+		Detail:  "needs a model file linking RCSB's coordinate file " + coordinateFile.URI,
+	}})
+}
+
 func (s *Server) ensurePDBReferenceAvailable(
 	ctx context.Context,
 	metadata domainmodels.EntryMetadata,
@@ -1026,6 +1197,21 @@ func (s *Server) ensurePDBReferenceAvailable(
 	for _, revision := range revisions {
 		if excludeEntryID == nil || revision.EntryID != *excludeEntryID {
 			return errPDBReferenceTaken
+		}
+	}
+	models, err := s.activeModelsWithPDBID(ctx, pdbID)
+	if err != nil {
+		return err
+	}
+	for _, revision := range models {
+		if excludeEntryID == nil || revision.EntryID != *excludeEntryID {
+			return &pdbReferenceHeldError{
+				pointer: pdbReferencePointer,
+				detail: fmt.Sprintf(
+					"this PDB ID is already model %s of entry %s; add your models to that entry instead",
+					revision.ModelID, revision.EntryID,
+				),
+			}
 		}
 	}
 	return nil
@@ -2006,7 +2192,7 @@ func entryFiltersFromParams(params ListEntriesParams) (db.EntryRevisionFilters, 
 		filters.Query = boundedString(strings.TrimSpace(*params.Query), maxEntrySearchQueryLength)
 	}
 	if params.PdbId != nil {
-		filters.PDBIDs = boundedSearchFilterValues(*params.PdbId)
+		filters.EntryOrModelPDBIDs = boundedSearchFilterValues(*params.PdbId)
 	}
 	return filters, page, nil
 }
@@ -2178,6 +2364,7 @@ func modelMetadataFromRequest(metadata *map[string]interface{}) (domainmodels.Mo
 	if err := decodeMetadataRequest(*metadata, &result); err != nil {
 		return domainmodels.ModelMetadata{}, invalidPayloadRequest("decode model metadata", err)
 	}
+	result.RelatedEntries = domainmodels.NormalizeRelatedEntries(result.RelatedEntries)
 	return result, nil
 }
 
@@ -2372,6 +2559,7 @@ func checkViolation(err error) (string, bool) {
 
 func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, err error, action string) bool {
 	var validationError *validation.Error
+	var heldError *pdbReferenceHeldError
 	violatedCheck, isCheckViolation := checkViolation(err)
 	switch {
 	case err == nil:
@@ -2382,6 +2570,8 @@ func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, 
 		writeFieldErrors(w, validationError.Fields)
 	case errors.Is(err, errInvalidRequest):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case errors.As(err, &heldError):
+		writeErrorAt(w, http.StatusConflict, "CONFLICT", heldError.pointer, heldError.detail)
 	case errors.Is(err, errPDBReferenceTaken):
 		writeErrorAt(w, http.StatusConflict, "CONFLICT", pdbReferencePointer,
 			"another entry already has this PDB ID; add your models to that entry instead")

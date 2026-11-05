@@ -135,8 +135,8 @@ func Test_should_bound_pdb_filters_when_list_entries_has_too_many_long_values(t 
 
 	// then
 	require.NoError(t, err)
-	require.Len(t, got.PDBIDs, maxListFilterValues)
-	assert.Equal(t, strings.Repeat("A", maxEntryPDBIDLength), got.PDBIDs[0])
+	require.Len(t, got.EntryOrModelPDBIDs, maxListFilterValues)
+	assert.Equal(t, strings.Repeat("A", maxEntryPDBIDLength), got.EntryOrModelPDBIDs[0])
 }
 
 func Test_should_bound_levels_when_list_artifacts_has_too_many_values(t *testing.T) {

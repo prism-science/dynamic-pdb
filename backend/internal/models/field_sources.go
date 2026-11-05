@@ -90,6 +90,7 @@ func (sources FieldSources) Validate() error {
 // the archive sync writes and the archive metrics.
 func ModelSourceFields() []FieldPointer {
 	fields := append([]FieldPointer(nil), ModelArchiveFields...)
+	fields = append(fields, ModelFieldRelatedEntries)
 	for _, key := range ArchiveMetricKeys {
 		fields = append(fields, ArchiveMetricField(key))
 	}
@@ -119,6 +120,9 @@ const (
 	ModelFieldUnmodeledFraction   FieldPointer = "/metadata/unmodeled_fraction"
 	ModelFieldLigands             FieldPointer = "/metadata/ligands"
 	ModelFieldResidueData         FieldPointer = "/metadata/residue_data"
+	// ModelFieldRelatedEntries is synced only on models that name the archive as their origin,
+	// so it is not one of ModelArchiveFields.
+	ModelFieldRelatedEntries FieldPointer = "/metadata/related_entries"
 )
 
 // EntryArchiveFields are the entry revision fields the archive sync writes.
@@ -209,6 +213,28 @@ func ModelRevisionFieldSources(
 	)
 }
 
+// ArchiveModelFieldSources marks each field of a new model revision whose value equals the
+// archive's with source, so the archive sync keeps that value current. Every other field keeps
+// its source in sources.
+func ArchiveModelFieldSources(
+	sources FieldSources,
+	revision ModelRevision,
+	metrics []Metric,
+	archive ModelRevision,
+	archiveMetrics []Metric,
+	source FieldSource,
+) FieldSources {
+	archiveValues := modelFieldValues(archive, archiveMetrics)
+	marked := make(FieldSources, len(sources))
+	maps.Copy(marked, sources)
+	for pointer, value := range modelFieldValues(revision, metrics) {
+		if !isUnset(value) && reflect.DeepEqual(value, archiveValues[pointer]) {
+			marked[pointer] = source
+		}
+	}
+	return marked
+}
+
 // depositorFieldSources marks the fields a user set (no parent) or changed (with a parent) as
 // the depositor's; unchanged fields keep the parent's source, if it has one.
 func depositorFieldSources(
@@ -259,6 +285,7 @@ func modelFieldValues(revision ModelRevision, metrics []Metric) map[FieldPointer
 		ModelFieldUnmodeledFraction:   revision.Metadata.UnmodeledFraction,
 		ModelFieldLigands:             revision.Metadata.Ligands,
 		ModelFieldResidueData:         revision.Metadata.ResidueData,
+		ModelFieldRelatedEntries:      revision.Metadata.RelatedEntries,
 	}
 	for _, key := range ArchiveMetricKeys {
 		values[ArchiveMetricField(key)] = metricValue(metrics, key)

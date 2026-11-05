@@ -153,6 +153,7 @@ export function withServerHeader(
     ["modeled_residues", extracted.modeledResidues],
     ["unique_protein_chains", extracted.uniqueProteinChains],
     ["altloc_fraction", extracted.altlocFraction],
+    ["member_count", extracted.memberCount],
   ] as const) {
     if (value != null) {
       counts[key] = value;

@@ -222,6 +222,9 @@ func (u *Uploader) prepareModel(
 	if strings.TrimSpace(model.Purpose) != "" {
 		metadata["purpose"] = strings.TrimSpace(model.Purpose)
 	}
+	if strings.TrimSpace(model.Origin) != "" {
+		metadata["origin"] = strings.TrimSpace(model.Origin)
+	}
 	program, err := u.modelProgram(ctx, pdbID, payloads)
 	if err != nil {
 		return preparedModel{}, nil, false, err
@@ -246,7 +249,7 @@ func (u *Uploader) prepareModel(
 		Artifacts:         artifacts,
 		Runs:              runs,
 		Metrics:           metricRequests(metrics),
-	}, computedModelProblems(model.ModelType, draft, metrics), true, nil
+	}, computedModelProblems(model, draft, metrics), true, nil
 }
 
 // prepareArtifact resolves an artifact's bytes or URI and gives it an id. It

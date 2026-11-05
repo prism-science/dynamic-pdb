@@ -1363,6 +1363,15 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
   const artifacts = entities.filter(isArtifactEntity).map(createArtifactRequest);
   const primaryModelEntity =
     entities.find((entity) => entity.type === "model") ?? null;
+  const metadata = mergeModelMetadata(
+    modelMetadataFromEntity(primaryModelEntity),
+    input.metadata ?? {},
+  );
+  // A file's altloc letters or models only make members of an ensemble, which
+  // the depositor says it is.
+  if (metadata.model_type !== "Ensemble") {
+    delete metadata.member_count;
+  }
 
   return {
     title: input.title,
@@ -1370,10 +1379,7 @@ function createModelData(input: CreateModelInput): BackendCreateModelData {
     idempotency_key:
       stringOrNull(input.idempotency_key) ??
       modelRevisionIdempotencyKey(artifacts, primaryModelEntity?.id ?? null),
-    metadata: mergeModelMetadata(
-      modelMetadataFromEntity(primaryModelEntity),
-      input.metadata ?? {},
-    ),
+    metadata,
     primary_artifact_id: primaryModelEntity?.id ?? null,
     artifacts,
     runs: entities
@@ -1418,6 +1424,7 @@ const modelCompositionKeys = [
   "modeled_residues",
   "unique_protein_chains",
   "altloc_fraction",
+  "member_count",
   "unmodeled_fraction",
 ] as const;
 

@@ -36,8 +36,11 @@ type EntryRevisionFilters struct {
 	EntryState *models.EntryState
 	CreatedBy  *uuid.UUID
 	PDBIDs     []string
-	Limit      *int
-	Offset     *int
+	// EntryOrModelPDBIDs matches entries with one of these PDB IDs, on the entry or on one of its
+	// active models.
+	EntryOrModelPDBIDs []string
+	Limit              *int
+	Offset             *int
 	// After continues the list (ordered by created_at desc, id desc) past this position.
 	// It cannot be combined with Offset.
 	After           *ListPosition
@@ -504,6 +507,24 @@ func entryRevisionListQuery(filters EntryRevisionFilters) (string, map[string]an
 	if len(pdbIDs) > 0 {
 		conditions = append(conditions, "upper(metadata #>> '{external_refs,pdb}') = any(:pdb_ids)")
 		args["pdb_ids"] = pq.Array(pdbIDs)
+	}
+	entryOrModelPDBIDs := normalizedPDBIDs(filters.EntryOrModelPDBIDs)
+	if len(entryOrModelPDBIDs) > 0 {
+		conditions = append(conditions, `entry_revisions.entry_id in (
+			select entry.entry_id
+			from entry_revisions entry
+			where entry.state = 'active'
+			  and upper(entry.metadata #>> '{external_refs,pdb}') = any(:entry_or_model_pdb_ids)
+			union
+			select model.entry_id
+			from model_revisions model_revision
+			join models model on model.id = model_revision.model_id
+			where model_revision.state = 'active'
+			  and model.state = 'active'
+			  and model_revision.metadata #>> '{external_refs,pdb}' is not null
+			  and upper(model_revision.metadata #>> '{external_refs,pdb}') = any(:entry_or_model_pdb_ids)
+		)`)
+		args["entry_or_model_pdb_ids"] = pq.Array(entryOrModelPDBIDs)
 	}
 	if queryText != "" {
 		conditions = append(conditions, `exists (

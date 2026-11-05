@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -159,6 +161,9 @@ func modelRevisionSearchParts(revision models.ModelRevision) []string {
 		stringFromPtr(revision.Metadata.Affiliation),
 		strings.Join(revision.Metadata.Ligands, " "),
 		strings.Join(revision.Metadata.Cofactors, " "),
+	}
+	for _, source := range slices.Sorted(maps.Keys(revision.Metadata.ExternalRefs)) {
+		parts = append(parts, revision.Metadata.ExternalRefs[source])
 	}
 
 	if revision.Metadata.Purpose != nil {

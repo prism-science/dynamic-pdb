@@ -59,7 +59,24 @@ func ModelMetadata(mapping archive.ModelMapping) models.ModelMetadata {
 		UniqueProteinChains: mapping.UniqueProteinChains,
 		UnmodeledFraction:   mapping.UnmodeledFraction,
 		Ligands:             mapping.Ligands,
+		RelatedEntries:      relatedEntries(mapping.RelatedEntries),
 	}
+}
+
+func relatedEntries(entries []archive.RelatedEntry) []models.RelatedEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	related := make([]models.RelatedEntry, 0, len(entries))
+	for _, entry := range entries {
+		related = append(related, models.RelatedEntry{
+			DBName:      entry.DBName,
+			DBID:        entry.DBID,
+			ContentType: entry.ContentType,
+			Details:     entry.Details,
+		})
+	}
+	return related
 }
 
 func Metrics(mapping archive.ModelMapping) []models.Metric {

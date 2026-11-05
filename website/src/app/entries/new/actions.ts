@@ -7,6 +7,7 @@ import {
   createEntry,
   createEntryRequestBody,
   getArchivePdb,
+  listEntries,
   type ArchiveEntryProposal,
   type ArchivePdbLookup,
   type ArchivePolymerEntityProposal,
@@ -36,11 +37,36 @@ export async function createEntryAction(
   redirect("/entries?tab=under-review");
 }
 
+export type ReRefinementOf = { pdbId: string; entryId: string };
+
+/** The registered entry this deposition re-refines: the place its model belongs. */
+async function registeredReRefinementTarget(
+  token: string,
+  lookup: ArchivePdbLookup,
+): Promise<ReRefinementOf | null> {
+  const targets = (lookup.model.related_entries ?? [])
+    .filter((entry) => entry.content_type === "re-refinement" && entry.db_name === "PDB")
+    .map((entry) => entry.db_id.toUpperCase());
+  try {
+    for (const pdbId of targets) {
+      const entries = await listEntries(token, { pdbIds: [pdbId], limit: 1 });
+      if (entries[0]) {
+        return { pdbId, entryId: entries[0].id };
+      }
+    }
+  } catch {
+    // This only adds advice, so a failed search leaves the lookup as it is.
+  }
+  return null;
+}
+
 export type ArchiveLookupResult =
   | {
       entry: ArchiveEntryProposal;
       polymerEntities: ArchivePolymerEntityProposal[];
       warnings: ArchivePdbLookup["warnings"];
+      /** The registered entry of the deposition this one re-refines, if any. */
+      reRefinementOf: ReRefinementOf | null;
     }
   | { error: string };
 
@@ -62,6 +88,7 @@ export async function lookupArchiveEntryAction(
       entry: lookup.entry,
       polymerEntities: lookup.polymer_entities,
       warnings: lookup.warnings,
+      reRefinementOf: await registeredReRefinementTarget(session.token, lookup),
     };
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) {

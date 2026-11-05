@@ -27,3 +27,12 @@
     padding: 22px 14px 64px;
   }
 }
+
+.archiveModel {
+  margin-bottom: 24px;
+}
+
+.archiveModel summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}

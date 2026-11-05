@@ -190,6 +190,11 @@ export function isComputedModelType(modelType: string): boolean {
   return modelType.trim() !== DEPOSITED_MODEL_TYPE;
 }
 
+/** Whether a stored model counts as computed: an archive origin exempts it too. */
+function isComputedEdit(draft: { modelType: string; archiveOrigin?: boolean }): boolean {
+  return !draft.archiveOrigin && isComputedModelType(draft.modelType);
+}
+
 /**
  * The add-model form's checks. Depositors cannot choose Deposited, so every
  * model added here is computed and needs its programs and score software.
@@ -262,7 +267,7 @@ export function editedModelSoftwareRule(
 ): MetricSoftwareRule {
   return (metric) =>
     changed &&
-    isComputedModelType(draft.modelType) &&
+    isComputedEdit(draft) &&
     metricNeedsSoftware(metric, storedRunIds);
 }
 

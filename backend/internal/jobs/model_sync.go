@@ -89,9 +89,9 @@ func (s *modelSyncStrategy) syncModel(
 	if pdbID == "" {
 		return dataSyncOutcome{}, nil
 	}
-	if !isDepositedModel(*currentRevision) {
+	if !isArchiveModel(*currentRevision) {
 		s.logger.Warn(
-			"data sync skipped a model that is not the archive's Deposited model",
+			"data sync skipped a model that is not an archive deposition",
 			"entry_id", job.EntryID,
 			"model_id", modelID,
 			"model_type", modelTypeName(currentRevision.Metadata.ModelType),
@@ -216,6 +216,7 @@ func (s *modelSyncStrategy) applyArchiveVersion(
 	}
 	desiredRevision.Metadata.ResidueData = residueData
 	keepDepositorModelFields(currentRevision, &desiredRevision)
+	applyRCSBRelatedEntries(currentRevision, &desiredRevision, details)
 
 	modelRevisionChanged, metricsChanged := compareModelUpdate(
 		currentRevision,
@@ -293,7 +294,8 @@ func compareModelUpdate(
 		!reflect.DeepEqual(currentRevision.Metadata.UniqueProteinChains, desiredRevision.Metadata.UniqueProteinChains) ||
 		!reflect.DeepEqual(currentRevision.Metadata.UnmodeledFraction, desiredRevision.Metadata.UnmodeledFraction) ||
 		!reflect.DeepEqual(currentRevision.Metadata.Ligands, desiredRevision.Metadata.Ligands) ||
-		!reflect.DeepEqual(currentRevision.Metadata.ResidueData, desiredRevision.Metadata.ResidueData)
+		!reflect.DeepEqual(currentRevision.Metadata.ResidueData, desiredRevision.Metadata.ResidueData) ||
+		!reflect.DeepEqual(currentRevision.Metadata.RelatedEntries, desiredRevision.Metadata.RelatedEntries)
 	metricsChanged := !modelMetricsHaveSameData(currentMetrics, desiredMetrics, metricKeys)
 	return modelRevisionChanged, metricsChanged
 }
@@ -320,7 +322,10 @@ func (s *modelSyncStrategy) saveModelUpdate(
 	revision.Metadata.UnmodeledFraction = desiredRevision.Metadata.UnmodeledFraction
 	revision.Metadata.Ligands = desiredRevision.Metadata.Ligands
 	revision.Metadata.ResidueData = desiredRevision.Metadata.ResidueData
-	revision.FieldSources = archiveModelFieldSources(currentRevision.FieldSources, source, now, metricKeys)
+	revision.Metadata.RelatedEntries = desiredRevision.Metadata.RelatedEntries
+	revision.FieldSources = archiveModelFieldSources(
+		currentRevision.FieldSources, source, now, metricKeys, currentRevision.Metadata.HasArchiveOrigin(),
+	)
 	revision.ParentRevisionID = new(parentRevisionID)
 	revision.ID = uuid.New()
 	revision.RevisionNumber = nil
@@ -579,6 +584,15 @@ func applyRCSBModelDetails(revision *models.ModelRevision, details rcsb.EntryDet
 	revision.Metadata.UniqueProteinChains = metadata.UniqueProteinChains
 	revision.Metadata.UnmodeledFraction = metadata.UnmodeledFraction
 	revision.Metadata.Ligands = metadata.Ligands
+}
+
+// applyRCSBRelatedEntries gives a model naming the archive as its origin the archive's related
+// entries. Only such a model syncs them, so a Deposited model gets no new revision for them.
+func applyRCSBRelatedEntries(current models.ModelRevision, desired *models.ModelRevision, details rcsb.EntryDetails) {
+	desired.Metadata.RelatedEntries = current.Metadata.RelatedEntries
+	if current.Metadata.HasArchiveOrigin() && !current.FieldSources.IsUserSupplied(models.ModelFieldRelatedEntries) {
+		desired.Metadata.RelatedEntries = archivemodels.ModelMetadata(archive.MapModel(details)).RelatedEntries
+	}
 }
 
 func modelMetricsFromRCSB(details rcsb.EntryDetails) []models.Metric {

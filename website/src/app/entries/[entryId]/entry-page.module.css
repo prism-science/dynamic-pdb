@@ -664,3 +664,9 @@ a.identityThumb:focus-visible {
     font-size: 30px;
   }
 }
+
+.altlocEnsembleNote {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}

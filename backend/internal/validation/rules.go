@@ -122,6 +122,18 @@ func ModelMetadata(at Pointer, metadata models.ModelMetadata) []FieldError {
 	if metadata.ModelType != nil {
 		fieldErrors = append(fieldErrors, vocabularyValue(at.Field("model_type"), *metadata.ModelType)...)
 	}
+	if metadata.Origin != nil {
+		fieldErrors = append(fieldErrors, vocabularyValue(at.Field("origin"), *metadata.Origin)...)
+		if metadata.HasArchiveOrigin() && strings.TrimSpace(metadata.ExternalRefs[models.ModelSourcePDB]) == "" {
+			fieldErrors = append(fieldErrors, FieldError{
+				Pointer: at.Field("external_refs").Field(string(models.ModelSourcePDB)),
+				Code:    CodeRequired,
+				Detail:  "is required for a model whose origin is the archive",
+			})
+		}
+	}
+	fieldErrors = append(fieldErrors, RelatedEntries(at.Field("related_entries"), metadata.RelatedEntries)...)
+	fieldErrors = append(fieldErrors, memberCount(at.Field("member_count"), metadata)...)
 	counts := []struct {
 		name  string
 		value *int
@@ -184,6 +196,20 @@ func uniProtSourceErrors(at Pointer, mapping models.PolymerEntityUniProtReferenc
 			Code:    CodeRequired,
 			Detail:  fmt.Sprintf("is required for UniProt source %q", mapping.Source),
 		}}
+	}
+	return nil
+}
+
+// memberCount checks a count of whole-model states, which only an Ensemble has.
+func memberCount(at Pointer, metadata models.ModelMetadata) []FieldError {
+	if metadata.MemberCount == nil {
+		return nil
+	}
+	if *metadata.MemberCount < 2 {
+		return []FieldError{{Pointer: at, Code: CodeOutOfRange, Detail: "must be at least 2"}}
+	}
+	if metadata.ModelType != nil && *metadata.ModelType != models.StructureModelTypeEnsemble {
+		return []FieldError{{Pointer: at, Code: CodeInvalidValue, Detail: "is only for a model of type Ensemble"}}
 	}
 	return nil
 }

@@ -169,11 +169,12 @@ func metricRequests(metrics []modelMetric) []dynamicpdbapi.CreateMetricRequest {
 
 // computedModelProblems lists what a computed model lacks: a complete run, and for
 // each metric the software that produced it or a link to the run. Only a stated
-// Deposited type exempts a model, as on the server. A metric read from the
+// Deposited type or archive origin exempts a model, as on the server. A metric read from the
 // coordinates file is not reported while the run itself has problems: it links to
 // the run once the run is complete.
-func computedModelProblems(modelType string, draft runDraft, metrics []modelMetric) []string {
-	if strings.TrimSpace(modelType) == manifest.ModelTypeDeposited {
+func computedModelProblems(model manifest.ModelPattern, draft runDraft, metrics []modelMetric) []string {
+	if strings.TrimSpace(model.ModelType) == manifest.ModelTypeDeposited ||
+		strings.TrimSpace(model.Origin) == manifest.ModelOriginArchive {
 		return nil
 	}
 	problems := draft.problems()

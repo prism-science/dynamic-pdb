@@ -85,7 +85,10 @@ Specific ligand instances belong to model revisions: modeled compounds and resid
 | Model-revision field | Meaning and rule |
 |---|---|
 | title | Required depositor text. |
-| model_type | Single Conformer, Multiconformer, Ensemble, Deposited. The first three describe representation; Deposited denotes an unchanged archive import. This inherited list mixes representation and origin. |
+| model_type | Single Conformer, Multiconformer, Ensemble, Deposited. The first three describe representation; Deposited denotes an unchanged archive import. This inherited list mixes representation and origin. An Ensemble holds several whole-model states, as MODEL frames or as altloc letters that each trace one conformer along the whole chain. |
+| origin | Optional; archive is the only value. Names an unchanged archive deposition whose model_type keeps its representation, such as a re-refinement deposited as an Ensemble. Requires external_refs.pdb and a model file at RCSB's coordinate URI for that ID. Exempts the model from the computed-model rules, as Deposited does, and lets the archive sync keep it current. |
+| external_refs.pdb | On a model, the PDB ID of that deposition. One PDB ID belongs to one entry: it cannot be another entry's reference or on a model of another entry. A re-refinement of an entry's data is a model of that entry, not a new entry. |
+| related_entries[] | Optional rows of mmCIF _pdbx_database_related under the dictionary's item names: required db_name, db_id and content_type, each db_name and content_type from the dictionary's list, and optional details. For a re-refinement, content_type is re-refinement and db_id names the original deposition. The sync writes them only on models with origin archive. |
 | purpose | Model Building, Refinement, Reference. Archive imports use Reference, meaning comparison context rather than preferred truth. |
 | model_source | pdb or ext: origin of the coordinate file. |
 | authors, affiliation | Attribution from the archive or depositor. |
@@ -93,6 +96,7 @@ Specific ligand instances belong to model revisions: modeled compounds and resid
 | modeled_residues | Polymer residues with coordinates, across chains. |
 | unique_protein_chains | Distinct protein chains in the coordinates. |
 | altloc_fraction | Fraction of modeled residues with alternate positions; count a second position only at occupancy ≥0.1. Count residues, not atoms. |
+| member_count | Optional, at least 2, Ensemble only. MODEL frames when the file has several; otherwise the altloc letters on every polymer residue. Omitted when the coordinates could not be read to the end, so large files may have none. Never a quality measure. |
 | unmodeled_fraction | One minus modeled residues divided by full deposited sequence length, matching each chain to its entity sequence. |
 
 Counts and fractions are optional registry calculations. Fractions range from 0 to 1. Prefer mmCIF coordinates; use legacy PDB files only within that format's limits.
