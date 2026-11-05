@@ -49,10 +49,10 @@ validation:
   # Reject requests that break the schema rules with 422, and skip RCSB versions that break them.
   # log_only stays available as the rollback: set it here, or DYNAMIC_PDB_VALIDATION_MODE=log_only.
   mode: enforce
-  # Request keys the API does not define, and keys starting with "__", are only logged here
-  # (rule=request_keys) until dev has soaked; then this switches to enforce. Dev already enforces.
-  # Override: DYNAMIC_PDB_VALIDATION_REQUEST_KEYS.
-  request_keys: log_only
+  # Reject request keys the API does not define, and keys starting with "__" (HTTP 422). Logged only
+  # (rule=request_keys) from 2026-11-04 15:50Z with 0 hits, then switched as on dev. Rollback:
+  # log_only here, or DYNAMIC_PDB_VALIDATION_REQUEST_KEYS=log_only.
+  request_keys: enforce
 data_sync:
   # Coordinate-change revisions are on: the checksum job has copied the coordinate files. A file it
   # has not verified and copied yet keeps its entry waiting until a later sync.

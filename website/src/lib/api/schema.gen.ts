@@ -3062,7 +3062,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3265,7 +3265,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3594,7 +3594,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3865,7 +3865,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
+            /** @description The request breaks Dynamic PDB Schema rules. Every broken rule is listed, each with source.pointer. A key the request does not define gets `UNKNOWN_FIELD`; a key starting with `__` gets `RESERVED_KEY`. A value a database check refuses gets code `CONSTRAINT_VIOLATION` instead, which names the check and has no source.pointer. */
             422: {
                 headers: {
                     [name: string]: unknown;
