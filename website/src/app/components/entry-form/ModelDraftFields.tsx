@@ -23,7 +23,7 @@ import {
 import { uploadedStructure, useFileExtraction } from "./useFileExtraction";
 import { type FieldId, type SectionId } from "./fields";
 import { inlineMessages, type FieldMessage } from "./messages";
-import { emptyCompounds } from "./types";
+import { emptyCompounds, MODEL_FILE_TYPES } from "./types";
 import { newModelSoftwareRule } from "./validation";
 import type { ModelDraft, ParsedFile } from "./types";
 import {
@@ -344,7 +344,7 @@ export default function ModelDraftFields({
                 );
                 onEdit("data");
               }}
-              artifactTypeOptions={["structure_factors", "other"]}
+              artifactTypeOptions={MODEL_FILE_TYPES}
             />
             <FileReadStatus states={extraction.states} onRetry={(file) => void extraction.read(file)} />
           </Field>

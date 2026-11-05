@@ -3077,6 +3077,11 @@ components:
           format: double
         method:
           type: string
+          description: >
+            Experimental method. A create or entry revision request that sends a method
+            must use one of StructureMethod, or get 422 INVALID_VALUE. A create may also
+            keep the archive's method for the PDB ID it names. Entries the archive sync
+            imports keep the archive's text, so responses can carry other values.
         space_group:
           type: string
         crystallography:
@@ -4025,6 +4030,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Metric"
+
+    StructureMethod:
+      type: string
+      description: >
+        The experimental methods a depositor may give an entry. EntryProperties.method
+        says where other values come from.
+      enum: [X-ray crystallography, CryoEM]
+      x-enum-varnames: [StructureMethodXRayCrystallography, StructureMethodCryoEM]
 
     ModelPurpose:
       type: string

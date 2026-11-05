@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from "react";
 
 import type { Entity, EntityLevel } from "@/lib/api/entries";
+import { artifactLevelValues } from "@/lib/api/schema.gen";
 import {
   dataTableEntities,
   type FileItem,
@@ -14,7 +15,6 @@ import FilePreviewModal from "./FilePreviewModal";
 
 import styles from "./DataTable.module.css";
 
-const LEVELS: EntityLevel[] = ["L0", "L1", "L2", "L3"];
 const LEVEL_TITLE: Record<EntityLevel, string> = {
   L0: "Raw",
   L1: "Processed",
@@ -30,7 +30,7 @@ export default function DataTable({ entities }: { entities: Entity[] }) {
 
   // Empty levels are dropped rather than shown as a dash, so a model with only
   // L2 output does not render three placeholder columns.
-  const columns = LEVELS.map((level) => ({
+  const columns = artifactLevelValues.map((level) => ({
     level,
     items: graphEntities.filter((entity) => entity.level === level),
   })).filter((column) => column.items.length > 0);

@@ -75,7 +75,7 @@ export default function FilesEditor({
   /** Overrides the drop-zone headline; the model form asks for the
    *  coordinates first because that file is what everything else hangs off. */
   title?: ReactNode;
-  artifactTypeOptions?: ArtifactType[];
+  artifactTypeOptions?: readonly ArtifactType[];
   /** The messages about one file, such as an API error whose pointer runs
    *  through that file's artifact in the request. */
   fileMessages?: (fileId: string) => readonly FieldMessage[];

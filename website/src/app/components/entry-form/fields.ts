@@ -1,4 +1,4 @@
-import type { components } from "@/lib/api/schema.gen";
+import { structureMethodValues, type components } from "@/lib/api/schema.gen";
 
 import type { CompoundListName } from "./types";
 
@@ -200,7 +200,7 @@ export const FIELDS = {
   "entry.method": {
     section: "experiment",
     label: "Method",
-    help: "The experimental method, for example X-ray crystallography or cryo-EM. Any text is accepted.",
+    help: `The experimental method: ${structureMethodValues.join(" or ")}. An entry made from a PDB ID can keep the archive's method.`,
     required: true,
     unknownAllowed: false,
     autofill: null,

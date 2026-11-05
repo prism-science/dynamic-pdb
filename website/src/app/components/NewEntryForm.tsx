@@ -395,7 +395,11 @@ export default function NewEntryForm() {
       : { ...shownMetadata, polymerEntities: [] };
   // A filled-in value cannot be fixed here, so its messages never block.
   const locked = lockedFieldIds(archiveFields.states);
-  const validationMessages = entryFormMessages(shownTitle, submittedMetadata).filter(
+  const validationMessages = entryFormMessages(
+    shownTitle,
+    submittedMetadata,
+    archiveFields.archive.method,
+  ).filter(
     (message) => !locked.has(message.field),
   );
   const fileMessages = entryFileMessages(readFiles, archiveFill, pdbId);

@@ -56,7 +56,7 @@ func (s *RequestKeysSuite) Test_should_reject_unknown_and_reserved_keys_and_writ
 		"__trace": "x",
 		"entry": map[string]any{
 			"title":  "entry that must not be saved",
-			"method": "X-ray diffraction",
+			"method": "X-ray crystallography",
 			"colour": "blue",
 			"crystallography": map[string]any{"crystals": []map[string]any{{
 				"id": "1", "growth": map[string]any{"ph": 7, "ph_note": "buffered"},
@@ -91,7 +91,7 @@ func (s *RequestKeysSuite) Test_should_list_key_and_value_errors_together_when_r
 	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
 	response := postJSONWithToken(s.T(), "/v1/entries", map[string]any{
 		"entry": map[string]any{
-			"title": "entry that must not be saved", "method": "X-ray diffraction", "resolution": -2, "colour": "blue",
+			"title": "entry that must not be saved", "method": "X-ray crystallography", "resolution": -2, "colour": "blue",
 		},
 	}, ownerToken)
 
@@ -107,7 +107,7 @@ func (s *RequestKeysSuite) Test_should_reject_unknown_key_and_write_nothing_when
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "request-keys-create-model-owner", 8853)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "request keys model entry", "method": "X-ray diffraction"},
+		"entry": map[string]any{"title": "request keys model entry", "method": "X-ray crystallography"},
 	})
 
 	// when
@@ -134,7 +134,7 @@ func (s *RequestKeysSuite) Test_should_reject_top_level_and_nested_unknown_keys_
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "request-keys-entry-revision-owner", 8854)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "request keys revision entry", "method": "X-ray diffraction"},
+		"entry": map[string]any{"title": "request keys revision entry", "method": "X-ray crystallography"},
 	})
 
 	// when
@@ -160,7 +160,7 @@ func (s *RequestKeysSuite) Test_should_reject_top_level_unknown_key_with_422_whe
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "request-keys-model-revision-owner", 8855)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "request keys model revision entry", "method": "X-ray diffraction"},
+		"entry": map[string]any{"title": "request keys model revision entry", "method": "X-ray crystallography"},
 	})
 	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
 		"model": map[string]any{"title": "model to change", "metadata": map[string]any{"model_type": "Deposited"}},
@@ -187,7 +187,7 @@ func (s *RequestKeysSuite) Test_should_save_entry_without_unknown_key_when_reque
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
 	response := jsonRequestToServerWithToken(s.T(), requestKeysLogOnlyServer.URL, http.MethodPost, "/v1/entries",
 		map[string]any{"entry": map[string]any{
-			"title": "entry saved while request keys are only logged", "method": "X-ray diffraction",
+			"title": "entry saved while request keys are only logged", "method": "X-ray crystallography",
 			"colour": "blue", "__trace": "x",
 		}}, ownerToken)
 
@@ -200,7 +200,7 @@ func (s *RequestKeysSuite) Test_should_keep_400_for_top_level_unknown_key_when_r
 	// given
 	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "request-keys-log-only-revision-owner", 8857)
 	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
-		"entry": map[string]any{"title": "request keys log-only revision entry", "method": "X-ray diffraction"},
+		"entry": map[string]any{"title": "request keys log-only revision entry", "method": "X-ray crystallography"},
 	})
 
 	// when

@@ -585,20 +585,36 @@ test("purpose and model type travel with the model request", () => {
   });
 });
 
-test("should_block_submit_when_method_is_blank_and_allow_free_text_when_typed", () => {
+test("should_block_submit_when_method_is_blank_or_off_the_list_unless_the_form_started_from_it", () => {
   // given
   const blankMethods = ["", "   "];
-  const typedMethods = ["CryoEM", "Neutron diffraction"];
-
-  // when / then
-  const methodMessages = (method) =>
-    entryFormMessages("Title", { ...emptyEntryMetadataDraft(), method }).filter(
+  const listedMethods = ["X-ray crystallography", "CryoEM"];
+  const methodMessages = (method, keptMethod) =>
+    entryFormMessages("Title", { ...emptyEntryMetadataDraft(), method }, keptMethod).filter(
       (message) => message.field === "entry.method",
     );
+
+  // when
+  const offList = methodMessages("Neutron diffraction", "");
+  const keptArchiveMethod = methodMessages("NEUTRON DIFFRACTION", "NEUTRON DIFFRACTION");
+  const otherThanKept = methodMessages("Neutron diffraction", "NEUTRON DIFFRACTION");
+
+  // then
   for (const method of blankMethods) {
-    assert.equal(methodMessages(method).length, 1, JSON.stringify(method));
+    assert.equal(methodMessages(method, "").length, 1, JSON.stringify(method));
   }
-  for (const method of typedMethods) {
-    assert.deepEqual(methodMessages(method), [], method);
+  for (const method of listedMethods) {
+    assert.deepEqual(methodMessages(method, ""), [], method);
   }
+  assert.deepEqual(offList, [
+    {
+      field: "entry.method",
+      item: null,
+      itemLabel: undefined,
+      message: "pick a method from the list (X-ray crystallography or CryoEM)",
+      blocking: true,
+    },
+  ]);
+  assert.deepEqual(keptArchiveMethod, []);
+  assert.equal(otherThanKept.length, 1);
 });

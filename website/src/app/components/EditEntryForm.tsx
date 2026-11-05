@@ -111,7 +111,7 @@ export default function EditEntryForm({
 
   // A read-only value cannot be fixed here, so its messages never block.
   const locked = lockedFieldIds(archiveFields.states);
-  const validationMessages = entryFormMessages(title, metadata).filter(
+  const validationMessages = entryFormMessages(title, metadata, storedValues.method).filter(
     (message) => !locked.has(message.field),
   );
   const messages = [...validationMessages, ...apiMessages];

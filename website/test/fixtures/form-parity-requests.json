@@ -46,7 +46,7 @@
   },
   "entry_revision": {
     "entry": {
-      "method": "Neutron diffraction",
+      "method": "CryoEM",
       "crystallography": {
         "crystals": [
           {
@@ -99,6 +99,103 @@
           "id": "00000000-0000-4000-8000-000000000001"
         }
       ]
+    }
+  },
+  "model_create": {
+    "model": {
+      "title": "Room-temperature multiconformer model",
+      "thumbnail_image_url": null,
+      "idempotency_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "metadata": {
+        "atom_count": 1234,
+        "modeled_residues": 164,
+        "unique_protein_chains": 1,
+        "purpose": "Refinement",
+        "model_type": "Multiconformer",
+        "details": "Refined at room temperature.",
+        "authors": [
+          "A. Author",
+          "B. Author"
+        ],
+        "affiliation": "Example Lab"
+      },
+      "primary_artifact_id": "00000000-0000-4000-8000-000000000101",
+      "artifacts": [
+        {
+          "id": "00000000-0000-4000-8000-000000000101",
+          "name": "model.cif",
+          "level": "L2",
+          "type": "model",
+          "uri": "s3://parity/model.cif",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "format": "mmcif",
+          "size_bytes": 2048,
+          "metadata": {}
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000102",
+          "name": "data.mtz",
+          "level": "L0",
+          "type": "structure_factors",
+          "uri": "s3://parity/data.mtz",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "format": "mtz",
+          "size_bytes": 4096,
+          "metadata": {}
+        }
+      ],
+      "runs": [
+        {
+          "id": "00000000-0000-4000-8000-000000000103",
+          "name": "phenix.refine",
+          "software_name": "phenix.refine",
+          "software_version": "1.21",
+          "command": "phenix.refine model.cif data.mtz",
+          "parameters": {
+            "cycles": 5
+          },
+          "metadata": {},
+          "started_at": null,
+          "finished_at": null,
+          "artifacts": [
+            {
+              "artifact_id": "00000000-0000-4000-8000-000000000102",
+              "direction": "input",
+              "position": null
+            },
+            {
+              "artifact_id": "00000000-0000-4000-8000-000000000101",
+              "direction": "output",
+              "position": null
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "id": "3de39e5c-b438-54be-a679-7edcde560b10",
+          "key": "r_work",
+          "value": 0.196,
+          "run_id": "00000000-0000-4000-8000-000000000103"
+        },
+        {
+          "id": "cce47485-75d7-5548-9b4e-be85a5a3e933",
+          "key": "r_free",
+          "value": 0.231,
+          "run_id": "00000000-0000-4000-8000-000000000103"
+        }
+      ],
+      "value_sources": {
+        "/metadata/atom_count": {
+          "artifact_id": "00000000-0000-4000-8000-000000000101"
+        },
+        "/metadata/modeled_residues": {
+          "artifact_id": "00000000-0000-4000-8000-000000000101"
+        },
+        "/metadata/unique_protein_chains": {
+          "artifact_id": "00000000-0000-4000-8000-000000000101"
+        }
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,14 +18,25 @@ import (
 
 const archiveFixtureDirectory = "../../lib/archive/testdata"
 
-// serveArchiveFixture answers RCSB core API requests for 4HHB from the recorded fixtures.
+// neutronArchivePDBID is served as 4HHB with the method NEUTRON DIFFRACTION: an archive
+// method no depositor may pick, which an entry created for this PDB ID may keep. Tests
+// leave its entries in review, so it never gets an active PDB reference.
+const neutronArchivePDBID = "4NTR"
+
+// serveArchiveFixture answers RCSB core API requests for 4HHB from the recorded fixtures,
+// and for neutronArchivePDBID from the same fixtures with its ID and method.
 func serveArchiveFixture(w http.ResponseWriter, r *http.Request) {
 	fixtures := map[string]string{
 		"/rest/v1/core/entry/4HHB":            "entry_4HHB.json",
 		"/rest/v1/core/polymer_entity/4HHB/1": "polymer_entity_4HHB_1.json",
 		"/rest/v1/core/polymer_entity/4HHB/2": "polymer_entity_4HHB_1.json",
+
+		"/rest/v1/core/entry/" + neutronArchivePDBID:                 "entry_4HHB.json",
+		"/rest/v1/core/polymer_entity/" + neutronArchivePDBID + "/1": "polymer_entity_4HHB_1.json",
+		"/rest/v1/core/polymer_entity/" + neutronArchivePDBID + "/2": "polymer_entity_4HHB_1.json",
 	}
-	name, ok := fixtures[strings.TrimSpace(r.URL.Path)]
+	path := strings.TrimSpace(r.URL.Path)
+	name, ok := fixtures[path]
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -33,6 +45,10 @@ func serveArchiveFixture(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if strings.Contains(path, "/"+neutronArchivePDBID) {
+		contents = bytes.ReplaceAll(contents, []byte("4HHB"), []byte(neutronArchivePDBID))
+		contents = bytes.ReplaceAll(contents, []byte(`"X-RAY DIFFRACTION"`), []byte(`"NEUTRON DIFFRACTION"`))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(contents); err != nil {

@@ -18,7 +18,7 @@ test("should keep Create entry disabled when a required field is empty", async (
   await expect(createEntry).toBeDisabled();
 
   // when
-  await page.getByLabel("Method", { exact: true }).fill("X-ray crystallography");
+  await page.getByLabel("Method", { exact: true }).selectOption("X-ray crystallography");
 
   // then
   await expect(createEntry).toBeEnabled();
@@ -41,7 +41,7 @@ test("should list why Create entry is disabled when required fields are empty", 
   await expect(reasons).toContainText("Method: required");
 
   // when
-  await page.getByLabel("Method", { exact: true }).fill("X-ray crystallography");
+  await page.getByLabel("Method", { exact: true }).selectOption("X-ray crystallography");
 
   // then
   await expect(reasons).toBeHidden();
@@ -57,7 +57,7 @@ test("should save the entry for review when the filled-in form is submitted", as
   await page.goto("/entries/new");
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Description", { exact: true }).fill("Saved by the browser tests.");
-  await page.getByLabel("Method", { exact: true }).fill("X-ray crystallography");
+  await page.getByLabel("Method", { exact: true }).selectOption("X-ray crystallography");
   await page.getByLabel("Resolution (Å)", { exact: true }).fill("1.8");
 
   // when

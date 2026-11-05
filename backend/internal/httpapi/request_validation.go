@@ -196,10 +196,13 @@ func requestSubject(r *http.Request) string {
 	return r.Method + " " + r.URL.Path
 }
 
-func createEntryRequestErrors(request CreateEntryRequest) []validation.FieldError {
+// createEntryRequestErrors checks a create request. archiveMethod is the archive's method
+// for the PDB ID the request names (nil when there is none): the entry may keep it,
+// although it is not one a depositor may pick.
+func createEntryRequestErrors(request CreateEntryRequest, archiveMethod *domainmodels.StructureMethod) []validation.FieldError {
 	entry := validation.Root.Field("entry")
 	fieldErrors := validation.RequiredText(entry.Field("title"), &request.Entry.Title)
-	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, request.Entry, true)...)
+	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, request.Entry, true, archiveMethod)...)
 	fieldErrors = append(fieldErrors, depositorPolymerEntityErrors(entry.Field("polymer_entities"), request.Entry.PolymerEntities)...)
 	fieldErrors = append(fieldErrors, artifactRequestErrors(entry.Field("artifacts"), request.Entry.Artifacts)...)
 	// Metadata that does not decode is reported by entryMetadataErrors; its value_sources
@@ -291,7 +294,7 @@ func entryRevisionChangeErrors(payload createEntryRevisionPayload) []validation.
 	if _, present := payload.EntryFields["title"]; present {
 		fieldErrors = append(fieldErrors, validation.RequiredText(entry.Field("title"), payload.Request.Entry.Title)...)
 	}
-	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, payload.Request.Entry, false)...)
+	fieldErrors = append(fieldErrors, entryMetadataErrors(entry, payload.Request.Entry, false, nil)...)
 	if raw, present := payload.EntryFields["polymer_entities"]; present {
 		if isJSONNull(raw) {
 			return append(fieldErrors, validation.MustNotBeNull(entry.Field("polymer_entities"))...)
@@ -372,8 +375,15 @@ func modelRevisionChangeErrors(payload createModelRevisionPayload) []validation.
 }
 
 // entryMetadataErrors checks the entry metadata fields of a create or change request,
-// which sit directly on the request's entry object.
-func entryMetadataErrors(at validation.Pointer, fields any, requireMethod bool) []validation.FieldError {
+// which sit directly on the request's entry object. requireMethod is true for a create.
+// archiveMethod is the archive method a create may keep (see createEntryRequestErrors);
+// a change passes nil, so a change that sends a method must use the depositor list.
+func entryMetadataErrors(
+	at validation.Pointer,
+	fields any,
+	requireMethod bool,
+	archiveMethod *domainmodels.StructureMethod,
+) []validation.FieldError {
 	metadata, err := entryMetadataFromAPIFields(fields)
 	if err != nil {
 		return []validation.FieldError{{
@@ -386,7 +396,7 @@ func entryMetadataErrors(at validation.Pointer, fields any, requireMethod bool) 
 	if requireMethod {
 		fieldErrors = append(fieldErrors, validation.NewEntryMethod(at, metadata)...)
 	}
-	return fieldErrors
+	return append(fieldErrors, validation.DepositorMethod(at, metadata, archiveMethod)...)
 }
 
 // checkRelatedDatasets refuses malformed related datasets in every validation mode, not only

@@ -67,6 +67,7 @@ export type ModelDetail = Model & {
 export type EntityType = "data" | "metrics" | "model" | "program";
 export type EntityLevel = Schemas["ArtifactLevel"];
 export type ArtifactType = Schemas["ArtifactType"];
+export type StructureMethod = Schemas["StructureMethod"];
 
 export type FastaRecordMetadata = NonNullable<Schemas["ArtifactMetadata"]["records"]>[number];
 

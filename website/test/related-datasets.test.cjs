@@ -118,7 +118,7 @@ test("should_name_the_row_of_each_broken_rule_when_the_form_is_checked", () => {
   };
 
   // when
-  const messages = entryFormMessages("Lysozyme", metadata).filter((message) =>
+  const messages = entryFormMessages("Lysozyme", metadata, "").filter((message) =>
     message.field.startsWith("relatedDataset."),
   );
 

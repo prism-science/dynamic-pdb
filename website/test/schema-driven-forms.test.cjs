@@ -198,7 +198,7 @@ test("should_key_model_errors_by_metric_key_and_run_id", () => {
   );
 });
 
-test("should_keep_the_message_and_skip_the_request_when_the_api_sent_no_errors", () => {
+test("should_skip_the_request_and_say_what_to_do_when_the_api_sent_no_errors", () => {
   // given
   let built = false;
   const request = () => {
@@ -207,18 +207,25 @@ test("should_keep_the_message_and_skip_the_request_when_the_api_sent_no_errors",
   };
 
   // when
-  const withoutErrors = apiFailure("Backend responded with 502", [], request);
+  const withoutErrors = apiFailure({ status: 502, errors: [], detail: "Backend responded with 502" }, request);
   const withErrors = apiFailure(
-    "Backend responded with 422",
-    [{ status: "422", detail: "is required", source: { pointer: "/entry/method" } }],
+    {
+      status: 422,
+      errors: [{ status: "422", detail: "is required", source: { pointer: "/entry/method" } }],
+      detail: "Backend responded with 422: is required (/entry/method)",
+    },
     () => ({ entry: {} }),
   );
 
   // then
-  assert.deepEqual(withoutErrors, { error: "Backend responded with 502", fieldErrors: [] });
+  assert.deepEqual(withoutErrors, {
+    error:
+      "Dynamic PDB could not save this right now. Nothing you entered is lost: try again in a minute, and tell the Dynamic PDB team if it keeps failing.",
+    fieldErrors: [],
+  });
   assert.equal(built, false);
   assert.equal(withErrors.fieldErrors[0].field, "entry.method");
-  assert.match(withErrors.error, /marked below/);
+  assert.equal(withErrors.error, "Dynamic PDB did not accept some values. They are marked below.");
 });
 
 test("should_show_an_api_error_under_its_file_when_the_pointer_runs_through_an_artifact", () => {
@@ -240,7 +247,7 @@ test("should_show_an_api_error_under_its_file_when_the_pointer_runs_through_an_a
   ];
 
   // when
-  const { fieldErrors } = apiFailure("Backend responded with 422", errors, () => request);
+  const { fieldErrors } = apiFailure({ status: 422, errors, detail: "" }, () => request);
   const html = renderToStaticMarkup(
     React.createElement(FilesEditor, {
       files,
@@ -430,7 +437,7 @@ test("should_report_a_bad_id_on_its_own_list_when_either_form_is_checked", () =>
       .map((message) => message.field);
 
   // when
-  const entryMessages = entryFormMessages("Entry", { ...emptyEntryMetadataDraft(), compounds });
+  const entryMessages = entryFormMessages("Entry", { ...emptyEntryMetadataDraft(), compounds }, "");
   const modelMessages = modelFormMessages(modelDraft({ compounds }));
 
   // then
@@ -495,7 +502,7 @@ test("should_warn_but_never_block_on_temperatures_outside_the_wwpdb_ranges", () 
   const collectionLine = "outside the usual 80–300 K for data collection; keep it only if it is right";
 
   // when
-  const messages = entryFormMessages("Lysozyme", metadata);
+  const messages = entryFormMessages("Lysozyme", metadata, "");
 
   // then
   assert.deepEqual(messages.filter((message) => message.blocking), []);
@@ -521,7 +528,7 @@ test("should_only_block_a_temperature_at_or_below_0_k", () => {
   };
 
   // when
-  const messages = entryFormMessages("Lysozyme", metadata);
+  const messages = entryFormMessages("Lysozyme", metadata, "");
 
   // then
   assert.deepEqual(
@@ -739,7 +746,7 @@ test("should_list_missing_values_beside_the_button_but_not_under_the_field", () 
   const metadata = emptyEntryMetadataDraft();
 
   // when
-  const messages = entryFormMessages(" ", metadata);
+  const messages = entryFormMessages(" ", metadata, "");
 
   // then
   assert.deepEqual(blockerLines(messages), ["Title: required", "Method: required"]);
@@ -764,7 +771,7 @@ test("should_block_bad_formats_and_only_advise_on_an_unusual_space_group", () =>
   };
 
   // when
-  const messages = entryFormMessages("Lysozyme", metadata);
+  const messages = entryFormMessages("Lysozyme", metadata, "");
 
   // then
   const blocking = messages.filter((message) => message.blocking).map((message) => [message.field, message.item]);
@@ -787,7 +794,7 @@ test("should_accept_hermann_mauguin_space_groups", () => {
 
   // when / then
   for (const spaceGroup of groups) {
-    const messages = entryFormMessages("T", { ...emptyEntryMetadataDraft(), method: "X", spaceGroup });
+    const messages = entryFormMessages("T", { ...emptyEntryMetadataDraft(), method: "CryoEM", spaceGroup }, "");
     assert.deepEqual(messages, [], spaceGroup);
   }
 });

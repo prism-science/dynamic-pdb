@@ -27,7 +27,13 @@ var (
 	// errIDInUse marks a request that sends the ID of a stored artifact, run or metric
 	// in a way the write cannot keep.
 	errIDInUse = errors.New("id in use")
+	// errPDBReferenceTaken marks a create or entry revision whose PDB ID another active
+	// entry has. It is an errConflict that names the request field.
+	errPDBReferenceTaken = fmt.Errorf("active PDB reference already exists: %w", errConflict)
 )
+
+// pdbReferencePointer is where a create or entry revision request names its PDB ID.
+const pdbReferencePointer validation.Pointer = "/entry/external_refs/pdb"
 
 // storedIDPrimaryKeys are the primary keys a request hits when it sends the ID of a stored
 // artifact, run or metric that the write does not keep.
@@ -163,12 +169,18 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	if s.writeMutationError(r.Context(), w, relatedErr, "create entry") {
 		return
 	}
-	schemaErr := s.checkSchema(r, requestKeyErrors(rawBody, CreateEntryRequest{}), createEntryRequestErrors(req))
+	// Read before validation and outside the write transaction: the entry may keep the
+	// archive's method, and the create records which values came from the archive. The
+	// lookup may call RCSB, although the form's own lookup a moment earlier has usually
+	// filled the cache.
+	archive := s.lookUpNewEntryArchive(r.Context(), req.Entry, time.Now().UTC())
+	schemaErr := s.checkSchema(r,
+		requestKeyErrors(rawBody, CreateEntryRequest{}), createEntryRequestErrors(req, archive.method()))
 	if s.writeMutationError(r.Context(), w, schemaErr, "create entry") {
 		return
 	}
 
-	result, err := s.createInitialEntryRevision(r.Context(), req, user.ID, requestSubject(r))
+	result, err := s.createInitialEntryRevision(r.Context(), req, archive, user.ID, requestSubject(r))
 	if s.writeMutationError(r.Context(), w, err, "create entry") {
 		return
 	}
@@ -184,6 +196,7 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createInitialEntryRevision(
 	ctx context.Context,
 	req CreateEntryRequest,
+	archive newEntryArchive,
 	createdBy uuid.UUID,
 	subject string,
 ) (CreateEntryRevisionAttributes, error) {
@@ -207,10 +220,6 @@ func (s *Server) createInitialEntryRevision(
 	}
 	metadata.DepositorPolymerEntities = depositorPolymerEntitiesFromRequest(req.Entry.PolymerEntities)
 	now := time.Now().UTC()
-	// Read before the transaction: the lookup may call RCSB, although the form's own lookup
-	// a moment earlier has usually filled the cache.
-	pdbID := strings.ToUpper(strings.TrimSpace(metadata.ExternalRefs[domainmodels.EntrySourcePDB]))
-	archiveValues, archiveSource, archiveFound := s.archiveEntryValues(ctx, pdbID, now)
 	attributes := CreateEntryRevisionAttributes{
 		EntryId:      entryID,
 		State:        CreateEntryRevisionAttributesStateInReview,
@@ -242,9 +251,9 @@ func (s *Server) createInitialEntryRevision(
 			UpdatedAt:         now,
 		}
 		initialRevision.FieldSources = domainmodels.EntryRevisionFieldSources(nil, initialRevision)
-		if archiveFound {
+		if archive.found {
 			initialRevision.FieldSources = domainmodels.ArchiveEntryFieldSources(
-				initialRevision.FieldSources, initialRevision, archiveValues, archiveSource)
+				initialRevision.FieldSources, initialRevision, archive.values, archive.source)
 		}
 		// createEntryRequestErrors reported the value_sources that cannot be recorded; those
 		// values keep their source.
@@ -304,6 +313,34 @@ func (s *Server) createInitialEntryRevision(
 		return CreateEntryRevisionAttributes{}, fmt.Errorf("create initial entry graph: %w", err)
 	}
 	return attributes, nil
+}
+
+// newEntryArchive is what the archive says about the PDB ID a create request names.
+type newEntryArchive struct {
+	values domainmodels.EntryRevision
+	source domainmodels.FieldSource
+	found  bool
+}
+
+// method is the archive's method for the entry, or nil when the archive gave none.
+func (archive newEntryArchive) method() *domainmodels.StructureMethod {
+	if !archive.found {
+		return nil
+	}
+	return archive.values.Metadata.Method
+}
+
+// lookUpNewEntryArchive reads the archive values for the PDB ID a create request names.
+// A request whose entry fields do not decode names no PDB ID here; entryMetadataErrors
+// reports it.
+func (s *Server) lookUpNewEntryArchive(ctx context.Context, entry CreateEntryData, retrievedAt time.Time) newEntryArchive {
+	metadata, err := entryMetadataFromAPIFields(entry)
+	if err != nil {
+		return newEntryArchive{}
+	}
+	pdbID := strings.ToUpper(strings.TrimSpace(metadata.ExternalRefs[domainmodels.EntrySourcePDB]))
+	values, source, found := s.archiveEntryValues(ctx, pdbID, retrievedAt)
+	return newEntryArchive{values: values, source: source, found: found}
 }
 
 // archiveEntryValues reads what the archive says about the entry pdbID names, through the
@@ -988,7 +1025,7 @@ func (s *Server) ensurePDBReferenceAvailable(
 	}
 	for _, revision := range revisions {
 		if excludeEntryID == nil || revision.EntryID != *excludeEntryID {
-			return fmt.Errorf("active PDB reference already exists: %w", errConflict)
+			return errPDBReferenceTaken
 		}
 	}
 	return nil
@@ -2345,6 +2382,9 @@ func (s *Server) writeMutationError(ctx context.Context, w http.ResponseWriter, 
 		writeFieldErrors(w, validationError.Fields)
 	case errors.Is(err, errInvalidRequest):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case errors.Is(err, errPDBReferenceTaken):
+		writeErrorAt(w, http.StatusConflict, "CONFLICT", pdbReferencePointer,
+			"another entry already has this PDB ID; add your models to that entry instead")
 	case errors.Is(err, errConflict), errors.Is(err, db.ErrEntryRevisionConflict), errors.Is(err, db.ErrModelRevisionConflict),
 		isUniqueConstraint(err, "entry_revisions_active_pdb_ref_idx"):
 		writeError(w, http.StatusConflict, "CONFLICT", "revision conflicts with the current active state")

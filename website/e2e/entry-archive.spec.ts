@@ -203,6 +203,66 @@ test("should show the server's error beside an archive value it rejects and save
   expect(revision.field_sources?.["/metadata/resolution"]).toEqual({ source: "depositor" });
 });
 
+test("should keep an archive method that is not one a depositor may pick", async ({
+  page,
+  submitterApi,
+  runTag,
+}) => {
+  // given: a PDB entry whose method is outside the depositor list
+  const pdbId = freshPdbId();
+  const title = `G6 archive method ${runTag}`;
+  await setArchiveEntryFields(pdbId, { exptl: [{ method: "NEUTRON DIFFRACTION" }] });
+  await page.goto("/entries/new");
+  await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
+  await expect(page.getByText("NEUTRON DIFFRACTION", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Use my own value for Title" }).click();
+  await page.getByLabel("Title", { exact: true }).fill(title);
+
+  // when
+  await page.getByRole("button", { name: "Create entry" }).click();
+
+  // then
+  await page.waitForURL("**/entries?tab=under-review");
+  const group = await submitterApi.inReviewGroup({ title });
+  const revision = await submitterApi.entryRevision(group.entryId, group.entryRevisions[0].id);
+  expect(revision.method).toBe("NEUTRON DIFFRACTION");
+  expect(revision.field_sources?.["/metadata/method"]).toMatchObject({ source: "rcsb", accession: pdbId });
+});
+
+test("should say beside the PDB ID that another entry already has it", async ({
+  page,
+  submitterApi,
+  reviewerApi,
+  runTag,
+}) => {
+  // given: an active entry for the PDB ID
+  const pdbId = freshPdbId();
+  const { entryId, revisionId } = await submitterApi.createEntry({
+    title: `G6 entry that has the PDB ID ${runTag}`,
+    method: "X-ray crystallography",
+    external_refs: { pdb: pdbId },
+  });
+  await reviewerApi.approveEntryRevision(entryId, revisionId);
+  await page.goto("/entries/new");
+  await page.getByLabel("PDB ID", { exact: true }).fill(pdbId);
+  await expect(page.getByText(archiveTitle(pdbId), { exact: true })).toBeVisible();
+
+  // when
+  await page.getByRole("button", { name: "Create entry" }).click();
+
+  // then
+  await expect(
+    page.getByText("Dynamic PDB did not accept some values. They are marked below.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Another entry already has this PDB ID; add your models to that entry instead.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(/Backend responded|\/entry\//)).toHaveCount(0);
+  await expect(page).toHaveURL(/\/entries\/new$/);
+});
+
 test("should show a value RCSB reports twice beside its field, without blocking the submit", async ({
   page,
 }) => {

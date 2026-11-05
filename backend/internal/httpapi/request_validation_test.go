@@ -31,7 +31,7 @@ func Test_should_point_to_nested_metric_when_entry_model_operation_metric_is_inv
 	}
 
 	// when
-	fieldErrors := createEntryRequestErrors(request)
+	fieldErrors := createEntryRequestErrors(request, nil)
 
 	// then
 	assert.Equal(t, []validation.Pointer{"/model_operations/1/data/metrics/0/key"}, pointersOf(fieldErrors))
@@ -215,7 +215,7 @@ func Test_should_require_artifact_type_when_request_omits_it(t *testing.T) {
 	}
 
 	// when
-	fieldErrors := createEntryRequestErrors(request)
+	fieldErrors := createEntryRequestErrors(request, nil)
 
 	// then
 	assert.Equal(t, []validation.FieldError{{

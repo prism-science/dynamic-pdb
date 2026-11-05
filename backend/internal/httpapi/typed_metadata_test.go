@@ -181,31 +181,32 @@ func Test_should_require_method_when_new_entry_request_has_none(t *testing.T) {
 	request := CreateEntryRequest{Entry: CreateEntryData{Title: "Lysozyme"}}
 
 	// when
-	fieldErrors := createEntryRequestErrors(request)
+	fieldErrors := createEntryRequestErrors(request, nil)
 
 	// then
 	assert.Equal(t, []validation.Pointer{"/entry/method"}, pointersOf(fieldErrors))
 	assert.Equal(t, []validation.Code{validation.CodeRequired}, codesOf(fieldErrors))
 }
 
-func Test_should_accept_free_text_method_when_new_entry_request_names_one(t *testing.T) {
+func Test_should_refuse_a_method_off_the_depositor_list_when_new_entry_request_names_one(t *testing.T) {
 	// given
 	request := CreateEntryRequest{Entry: CreateEntryData{Title: "Lysozyme", Method: "Serial femtosecond crystallography"}}
 
 	// when
-	fieldErrors := createEntryRequestErrors(request)
+	fieldErrors := createEntryRequestErrors(request, nil)
 
 	// then
-	assert.Empty(t, fieldErrors)
+	assert.Equal(t, []validation.Pointer{"/entry/method"}, pointersOf(fieldErrors))
+	assert.Equal(t, []validation.Code{validation.CodeInvalidValue}, codesOf(fieldErrors))
 }
 
 func Test_should_validate_depositor_polymer_entities_when_entry_request_carries_them(t *testing.T) {
 	// given
 	entities := DepositorPolymerEntities{{LabelEntityId: "1", Mutations: &[]string{"C54T", "bad"}}}
-	request := CreateEntryRequest{Entry: CreateEntryData{Title: "Lysozyme", Method: "X-ray", PolymerEntities: &entities}}
+	request := CreateEntryRequest{Entry: CreateEntryData{Title: "Lysozyme", Method: "X-ray crystallography", PolymerEntities: &entities}}
 
 	// when
-	fieldErrors := createEntryRequestErrors(request)
+	fieldErrors := createEntryRequestErrors(request, nil)
 
 	// then
 	assert.Equal(t, []validation.Pointer{"/entry/polymer_entities/0/mutations/1"}, pointersOf(fieldErrors))
