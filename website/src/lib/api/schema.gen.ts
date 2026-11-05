@@ -1244,7 +1244,7 @@ export interface components {
             warnings: components["schemas"]["ExtractionWarning"][];
         };
         ExtractedValue: {
-            /** @description One of `atom_count`, `modeled_residues`, `unique_protein_chains`, `altloc_fraction`, `ligands`, `cofactors`, `compound_sources`, `glycan_descriptors`, `mutations`, `program_name`, `program_version`, and the header items `entry_id`, `authors`, `r_work`, `r_free`, `resolution`, `method`, `space_group`. A header item is a non-looped mmCIF item (`_entry.id` or the data block name, `_audit_author`, `_refine.ls_R_factor_R_work`, `_refine.ls_R_factor_R_free`, `_refine.ls_d_res_high` or `_reflns.d_resolution_high`, `_exptl.method`, `_symmetry.space_group_name_H-M` or `_space_group.name_H-M_alt`) and is left out when the file gives none or writes its category as a loop; `entry_id` only when it is a PDB ID, `method` as the file writes it. */
+            /** @description One of `atom_count`, `modeled_residues`, `unique_protein_chains`, `altloc_fraction`, `member_count`, `ligands`, `cofactors`, `compound_sources`, `glycan_descriptors`, `mutations`, `program_name`, `program_version`, and the header items `entry_id`, `authors`, `r_work`, `r_free`, `resolution`, `method`, `space_group`. A header item is a non-looped mmCIF item (`_entry.id` or the data block name, `_audit_author`, `_refine.ls_R_factor_R_work`, `_refine.ls_R_factor_R_free`, `_refine.ls_d_res_high` or `_reflns.d_resolution_high`, `_exptl.method`, `_symmetry.space_group_name_H-M` or `_space_group.name_H-M_alt`) and is left out when the file gives none or writes its category as a loop; `entry_id` only when it is a PDB ID, `method` as the file writes it. */
             name: string;
             /**
              * @description A number for the counts, fraction, R-factors and resolution, a string for the program, `entry_id`, `method` and `space_group`, a list of names for `authors`, a list of compounds or mutation sets for `ligands`, `cofactors` and `mutations`. `compound_sources` is the decision record: the groups `ligands`, `cofactors` and `excluded`, each mapping a CCD ID to the `rule` that placed it (`list`, `metalc`, `branched`, `macrolide`, `ccd_type`, `depositor_flag`, `covalent_map` or `ihm_probe`) and the reference `list_version`; water and polymer residues are never in it. `glycan_descriptors` lists one glycan per branched entity: `entity_id`, `compound_ids` and its WURCS `descriptors` (`descriptor`, `type`, `program`, `program_version`).
@@ -1321,6 +1321,19 @@ export interface components {
             unmodeled_fraction?: number;
             ligands: string[];
             metrics: components["schemas"]["ArchiveMetric"][];
+            /** @description The entry's `_pdbx_database_related` rows the mmCIF dictionary allows. */
+            related_entries?: components["schemas"]["RelatedEntry"][];
+        };
+        /** @description An entry related to this one, as mmCIF `_pdbx_database_related` records it, under the dictionary's item names. */
+        RelatedEntry: {
+            /** @description `_pdbx_database_related.db_name`, one of the dictionary's values such as `PDB`. */
+            db_name: string;
+            /** @description `_pdbx_database_related.db_id`, the identifying code in that database. */
+            db_id: string;
+            /** @description `_pdbx_database_related.content_type`, one of the dictionary's values such as `re-refinement`. */
+            content_type: string;
+            /** @description `_pdbx_database_related.details`, a description of the related entry. */
+            details?: string;
         };
         ArchiveUniProtMapping: {
             accession: string;
@@ -1530,11 +1543,20 @@ export interface components {
             affiliation?: string;
             purpose?: components["schemas"]["ModelPurpose"];
             model_type?: components["schemas"]["StructureModelType"];
+            /**
+             * @description Set for an unchanged archive deposition whose model_type describes its representation, such as a re-refinement deposited as an Ensemble. Requires external_refs.pdb and a model file linking RCSB's coordinate file for it. Exempts the model from the rules for computed models, as model_type Deposited does.
+             * @enum {string}
+             */
+            origin?: "archive";
+            /** @description The model's `_pdbx_database_related` rows. */
+            related_entries?: components["schemas"]["RelatedEntry"][];
             atom_count?: number;
             modeled_residues?: number;
             unique_protein_chains?: number;
             /** Format: double */
             altloc_fraction?: number;
+            /** @description How many whole-model states an Ensemble holds: its MODEL frames, or the altloc letters on every polymer residue. Omitted when the file could not be read to the end. Not a measure of quality. */
+            member_count?: number;
             /** Format: double */
             unmodeled_fraction?: number;
             /**
@@ -2984,7 +3006,7 @@ export interface operations {
                 cursor?: string;
                 /** @description Text to search across entries, models, artifacts, and artifact metadata. */
                 query?: string;
-                /** @description PDB IDs to match against entry external_refs.pdb. */
+                /** @description PDB IDs to match against external_refs.pdb of an entry or of one of its active models. */
                 pdb_id?: string[];
             };
             header?: never;
@@ -4421,6 +4443,7 @@ export const structureMethodValues: ReadonlyArray<FlattenedDeepRequired<componen
 export const modelPurposeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelPurpose"]> = ["Model Building", "Refinement", "Reference"];
 export const structureModelTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StructureModelType"]> = ["Single Conformer", "Multiconformer", "Ensemble", "Deposited"];
 export const metricKeyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MetricKey"]> = ["r_work", "r_free", "cc", "rscc", "clashscore", "ramachandran_outliers", "side_chain_outliers", "molprobity_score", "wilson_b", "rmsf"];
+export const modelMetadataOriginValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelMetadata"]["origin"]> = ["archive"];
 export const artifactLevelValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactLevel"]> = ["L0", "L1", "L2", "L3"];
 export const artifactTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactType"]> = ["model", "structure_factors", "fasta", "other"];
 export const runArtifactDirectionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RunArtifactDirection"]> = ["input", "output"];

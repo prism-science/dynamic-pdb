@@ -143,6 +143,15 @@ func archiveModelProposal(mapping archive.ModelMapping) ArchiveModelProposal {
 			Key: metric.Key, Value: metric.Value, SoftwareName: metric.SoftwareName, SoftwareVersion: metric.SoftwareVersion,
 		})
 	}
+	var relatedEntries *[]RelatedEntry
+	if len(mapping.RelatedEntries) > 0 {
+		relatedEntries = new([]RelatedEntry)
+	}
+	for _, entry := range mapping.RelatedEntries {
+		*relatedEntries = append(*relatedEntries, RelatedEntry{
+			DbName: entry.DBName, DbId: entry.DBID, ContentType: entry.ContentType, Details: entry.Details,
+		})
+	}
 	return ArchiveModelProposal{
 		Details:             mapping.Details,
 		Authors:             nonNilStrings(mapping.Authors),
@@ -153,6 +162,7 @@ func archiveModelProposal(mapping archive.ModelMapping) ArchiveModelProposal {
 		UnmodeledFraction:   mapping.UnmodeledFraction,
 		Ligands:             nonNilStrings(mapping.Ligands),
 		Metrics:             proposedMetrics,
+		RelatedEntries:      relatedEntries,
 		Provenance:          nonNilProvenance(mapping.Provenance),
 		Conflicts:           archiveConflicts(mapping.Conflicts),
 		Warnings:            archiveWarnings(mapping.Warnings, fieldErrors),

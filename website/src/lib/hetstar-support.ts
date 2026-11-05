@@ -127,3 +127,20 @@ export function hetstarCanRender(data: EntryPageData, modelId: string): boolean 
     })
   );
 }
+
+/**
+ * How many altloc frames the viewer should get for this model, or null when it
+ * takes the model's file as it is. Only a model typed Ensemble has them, and a
+ * multi-MODEL ensemble has no alternate positions to make frames of.
+ */
+export function altlocEnsembleMembers(metadata: Record<string, unknown>): number | null {
+  const members = metadata.member_count;
+  const altlocFraction = metadata.altloc_fraction;
+  return metadata.model_type === "Ensemble" &&
+    typeof members === "number" &&
+    members >= 2 &&
+    typeof altlocFraction === "number" &&
+    altlocFraction > 0
+    ? members
+    : null;
+}

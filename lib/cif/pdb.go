@@ -100,6 +100,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 				firstModelDone = true
 			}
 			modelStarted = true
+			tally.modelCount++
 			continue
 		case "ENDMDL":
 			firstModelDone = true
@@ -161,6 +162,9 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		addPositiveInt(fields, "unique_protein_chains", len(tally.chains))
 		if len(tally.residues) > 0 {
 			addField(fields, "altloc_fraction", float64(countAltlocResidues(tally.positions))/float64(len(tally.residues)))
+		}
+		if members := wholeModelStates(tally.modelCount, tally); members != nil {
+			addPositiveInt(fields, "member_count", *members)
 		}
 	default:
 		warnings = append(warnings, "PDB coordinates were cut off by the read limit: atom counts, residue counts and altloc fraction not extracted")

@@ -79,7 +79,9 @@ type instanceFacts struct {
 // coordinateTally reduces coordinate rows to counts as they arrive, with every
 // set bounded, so a large or hostile coordinate block never has to be held.
 type coordinateTally struct {
-	atomCount  int
+	atomCount int
+	// modelCount is how many coordinate models the file lists.
+	modelCount int
 	residues   map[residueKey]struct{}
 	chains     map[string]struct{}
 	positions  map[residueKey]map[string]float64

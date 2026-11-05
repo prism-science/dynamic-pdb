@@ -56,6 +56,21 @@ function originOf(headerList: Headers): string | null {
   return `${proto || "http"}://${host}`;
 }
 
+/**
+ * The catalogue for a model deposited as an altloc ensemble: the same calls,
+ * with the model's file replaced by frames the viewer's ensemble tools can read.
+ */
+export function altlocEnsembleDpdbConfig(
+  config: HetstarDpdbConfig,
+  entryId: string,
+  modelId: string,
+): HetstarDpdbConfig {
+  return {
+    ...config,
+    apiBase: `/dpdb-api-ensemble/${encodeURIComponent(entryId)}/${encodeURIComponent(modelId)}/v1`,
+  };
+}
+
 export async function hetstarDpdbConfig(): Promise<HetstarDpdbConfig> {
   return resolveDpdbConfig(getApiBaseUrl(), originOf(await headers()));
 }

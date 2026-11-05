@@ -54,21 +54,29 @@ const (
 // ModelMetadata lists are null when unknown and [] when known to be empty, so the
 // list fields have no omitempty.
 type ModelMetadata struct {
-	ExternalRefs        map[ModelSource]string `json:"external_refs,omitempty"`
-	Details             *string                `json:"details,omitempty"`
-	Authors             []string               `json:"authors"`
-	Affiliation         *string                `json:"affiliation,omitempty"`
-	Purpose             *ModelPurpose          `json:"purpose,omitempty"`
-	ModelType           *StructureModelType    `json:"model_type,omitempty"`
-	AtomCount           *int                   `json:"atom_count,omitempty"`
-	ModeledResidues     *int                   `json:"modeled_residues,omitempty"`
-	UniqueProteinChains *int                   `json:"unique_protein_chains,omitempty"`
-	AltLocFraction      *float64               `json:"altloc_fraction,omitempty"`
-	UnmodeledFraction   *float64               `json:"unmodeled_fraction,omitempty"`
-	Ligands             []string               `json:"ligands"`
-	Cofactors           []string               `json:"cofactors"`
-	ResidueData         []ResidueData          `json:"residue_data,omitempty"`
-	Extensions          map[string]any         `json:"extensions,omitempty"`
+	ExternalRefs map[ModelSource]string `json:"external_refs,omitempty"`
+	// Origin is set for a model that is an unchanged archive deposition but keeps a model type
+	// that describes its representation, such as a re-refinement deposited as an Ensemble.
+	Origin *ModelOrigin `json:"origin,omitempty"`
+	// RelatedEntries are the model's _pdbx_database_related rows.
+	RelatedEntries      []RelatedEntry      `json:"related_entries,omitempty"`
+	Details             *string             `json:"details,omitempty"`
+	Authors             []string            `json:"authors"`
+	Affiliation         *string             `json:"affiliation,omitempty"`
+	Purpose             *ModelPurpose       `json:"purpose,omitempty"`
+	ModelType           *StructureModelType `json:"model_type,omitempty"`
+	AtomCount           *int                `json:"atom_count,omitempty"`
+	ModeledResidues     *int                `json:"modeled_residues,omitempty"`
+	UniqueProteinChains *int                `json:"unique_protein_chains,omitempty"`
+	AltLocFraction      *float64            `json:"altloc_fraction,omitempty"`
+	// MemberCount is how many whole-model states an Ensemble holds: its MODEL frames, or the
+	// altloc letters on every polymer residue. Nil when the file could not be read to the end.
+	MemberCount       *int           `json:"member_count,omitempty"`
+	UnmodeledFraction *float64       `json:"unmodeled_fraction,omitempty"`
+	Ligands           []string       `json:"ligands"`
+	Cofactors         []string       `json:"cofactors"`
+	ResidueData       []ResidueData  `json:"residue_data,omitempty"`
+	Extensions        map[string]any `json:"extensions,omitempty"`
 }
 
 type ResidueData struct {
@@ -87,6 +95,18 @@ type ResidueData struct {
 	RMSF            *float64 `json:"rmsf,omitempty"`
 }
 
+// IsArchiveModel reports whether the model is an unchanged archive deposition, whose provenance
+// is its source accession rather than the runs that produced it.
+func (metadata ModelMetadata) IsArchiveModel() bool {
+	return metadata.HasArchiveOrigin() ||
+		(metadata.ModelType != nil && *metadata.ModelType == StructureModelTypeDeposited)
+}
+
+// HasArchiveOrigin reports whether the model names the archive as its origin explicitly.
+func (metadata ModelMetadata) HasArchiveOrigin() bool {
+	return metadata.Origin != nil && *metadata.Origin == ModelOriginArchive
+}
+
 type ModelPurpose string
 
 const (
@@ -94,6 +114,11 @@ const (
 	ModelPurposeRefinement    ModelPurpose = "Refinement"
 	ModelPurposeReference     ModelPurpose = "Reference"
 )
+
+// ModelOrigin says where a model's coordinates come from when its model type does not.
+type ModelOrigin string
+
+const ModelOriginArchive ModelOrigin = "archive"
 
 type StructureModelType string
 

@@ -43,6 +43,8 @@ type ModelMapping struct {
 	UnmodeledFraction   *float64
 	Ligands             []string
 	Metrics             []Metric
+	// RelatedEntries are the entry's pdbx_database_related rows.
+	RelatedEntries []RelatedEntry
 }
 
 func MapModel(details rcsb.EntryDetails) ModelMapping {
@@ -92,6 +94,7 @@ func MapModel(details rcsb.EntryDetails) ModelMapping {
 	)
 
 	mapping.mapMetrics(details)
+	mapping.mapRelatedEntries(details.RelatedEntries)
 	return mapping
 }
 

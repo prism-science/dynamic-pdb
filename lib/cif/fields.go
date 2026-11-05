@@ -93,6 +93,9 @@ func mmcifExtraction(ctx context.Context, text string, truncated bool, reference
 		addPositiveInt(fields, "unique_protein_chains", result.Atoms.ProteinChains)
 		if result.Atoms.ModeledResidues > 0 {
 			addField(fields, "altloc_fraction", result.Atoms.AltlocFraction)
+			if result.Atoms.MemberCount != nil {
+				addPositiveInt(fields, "member_count", *result.Atoms.MemberCount)
+			}
 		}
 	}
 	review := addCompoundFields(fields, result.Ligands, result.Cofactors, result.Atoms != nil)

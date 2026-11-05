@@ -38,8 +38,8 @@ import { modelOverlays } from "@/lib/model-overlays";
 import { polymerEntityViews } from "@/lib/polymer-entities";
 import { SIMILAR_ENTRIES_FETCH_LIMIT } from "@/lib/similarity";
 import { entryModels } from "@/lib/entry-models";
-import { hetstarDpdbConfig } from "@/lib/hetstar";
-import { hasCoordinates, hetstarCanRender } from "@/lib/hetstar-support";
+import { altlocEnsembleDpdbConfig, hetstarDpdbConfig } from "@/lib/hetstar";
+import { altlocEnsembleMembers, hasCoordinates, hetstarCanRender } from "@/lib/hetstar-support";
 import { modeledCompoundsView } from "@/lib/modeled-compounds";
 import { missingInfoLinesForPage, type MissingInfoRun } from "@/lib/missing-info";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
@@ -187,6 +187,7 @@ export default async function ScopePage({
   // so the tab falls back to the plain Mol* viewer -- the one the file preview
   // opens -- only when one of those two has no coordinates it can read.
   const useHetstar = model !== null && hetstarCanRender(data, model.id);
+  const altlocMembers = useHetstar ? altlocEnsembleMembers(metadata) : null;
 
   // The comparison the page is built around. All of it is derived from the
   // entry's own metrics, so an entry recording different figures -- or none --
@@ -205,7 +206,7 @@ export default async function ScopePage({
           facts: summaryModelFacts(
             metadata,
             modelEntity ? provenance.programOf(modelEntity.id) : null,
-            { typedCompounds: compounds.state !== "read" },
+            { typedCompounds: compounds.state !== "read", entryPdbId: data.entry.external_refs?.pdb },
           ),
           compounds,
           metrics: modelEntity
@@ -368,11 +369,23 @@ export default async function ScopePage({
           {active === "structure" && structure ? (
             <section aria-label="Structure" data-tour="structure">
               {useHetstar ? (
-                <HetstarPanel
-                  entryId={data.entry.id}
-                  modelId={model?.id ?? null}
-                  dpdb={dpdb}
-                />
+                <>
+                  {altlocMembers !== null ? (
+                    <p className={styles.altlocEnsembleNote}>
+                      Shown as {altlocMembers} frames, one per altloc letter. The deposited file is
+                      one MODEL.
+                    </p>
+                  ) : null}
+                  <HetstarPanel
+                    entryId={data.entry.id}
+                    modelId={model?.id ?? null}
+                    dpdb={
+                      altlocMembers !== null && model
+                        ? altlocEnsembleDpdbConfig(dpdb, data.entry.id, model.id)
+                        : dpdb
+                    }
+                  />
+                </>
               ) : (
                 <StructurePanel
                   url={structure.url}

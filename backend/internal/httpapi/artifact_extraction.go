@@ -175,6 +175,7 @@ type atomValues struct {
 	modeledResidues int
 	proteinChains   int
 	altlocFraction  float64
+	memberCount     *int
 }
 
 // buildArtifactExtraction parses the head of an mmCIF file and returns the
@@ -201,6 +202,7 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 			modeledResidues: result.Atoms.ModeledResidues,
 			proteinChains:   result.Atoms.ProteinChains,
 			altlocFraction:  result.Atoms.AltlocFraction,
+			memberCount:     result.Atoms.MemberCount,
 		}
 		values = append(values,
 			ExtractedValue{Name: "atom_count", Value: atoms.atomCount, Source: source},
@@ -208,6 +210,9 @@ func buildArtifactExtraction(ctx context.Context, data []byte, totalSize int64, 
 			ExtractedValue{Name: "unique_protein_chains", Value: atoms.proteinChains, Source: source},
 			ExtractedValue{Name: "altloc_fraction", Value: atoms.altlocFraction, Source: source},
 		)
+		if atoms.memberCount != nil {
+			values = append(values, ExtractedValue{Name: "member_count", Value: *atoms.memberCount, Source: source})
+		}
 	} else if !result.AtomsCutOff {
 		warnings = append(warnings, ExtractionWarning{Detail: "no atom_site records found: atom counts, residue counts and altloc fraction not extracted"})
 	}
@@ -359,6 +364,7 @@ func applySchemaRules(values []ExtractedValue, atoms atomValues) ([]ExtractedVal
 		ModeledResidues:     &atoms.modeledResidues,
 		UniqueProteinChains: &atoms.proteinChains,
 		AltLocFraction:      &atoms.altlocFraction,
+		MemberCount:         atoms.memberCount,
 	}
 	fieldErrors := validation.ModelMetadata(validation.Root, metadata)
 	if len(fieldErrors) == 0 {
@@ -398,6 +404,8 @@ func extractedValueName(pointer validation.Pointer) (string, error) {
 		return "unique_protein_chains", nil
 	case validation.Root.Field("altloc_fraction"):
 		return "altloc_fraction", nil
+	case validation.Root.Field("member_count"):
+		return "member_count", nil
 	default:
 		return "", fmt.Errorf("unknown extracted value for pointer: %s", pointer)
 	}

@@ -335,7 +335,7 @@ function buildColumns(
 export function summaryModelFacts(
   metadata: Record<string, unknown>,
   program: Entity | null,
-  { typedCompounds = true }: { typedCompounds?: boolean } = {},
+  { typedCompounds = true, entryPdbId }: { typedCompounds?: boolean; entryPdbId?: string | null } = {},
 ): MetadataFact[] {
   const facts: MetadataFact[] = [];
   const modelType = stringValue(metadata.model_type);
@@ -358,6 +358,7 @@ export function summaryModelFacts(
   if (purpose) {
     facts.push({ label: "Purpose", value: purpose });
   }
+  facts.push(...depositionFacts(metadata, entryPdbId));
   if (authors.length > 0) {
     facts.push({ label: "Authors", value: authors.join(", ") });
   }
@@ -527,6 +528,42 @@ export function modelDetails(
   return stringValue(metadata.details);
 }
 
+type RelatedEntryRow = { db_name?: unknown; db_id?: unknown; content_type?: unknown };
+
+// A model that is a deposition of its own: its PDB ID, what it re-refines, and
+// how many whole-model states it holds. The archive's own model of the entry
+// repeats the entry's PDB ID, which the entry shows already.
+function depositionFacts(
+  metadata: Record<string, unknown>,
+  entryPdbId: string | null | undefined,
+): MetadataFact[] {
+  const facts: MetadataFact[] = [];
+  const entryPdb = entryPdbId?.trim().toUpperCase() || null;
+  const pdb = stringValue(recordValue(metadata.external_refs)?.pdb)?.trim().toUpperCase();
+  if (pdb && pdb !== entryPdb) {
+    facts.push({ label: "PDB", value: pdb, href: rcsbStructureURL(pdb), format: "mono" });
+  }
+  const related = Array.isArray(metadata.related_entries)
+    ? (metadata.related_entries as RelatedEntryRow[])
+    : [];
+  for (const row of related) {
+    const target = stringValue(row.db_id)?.trim().toUpperCase();
+    if (row.content_type !== "re-refinement" || row.db_name !== "PDB" || !target) {
+      continue;
+    }
+    facts.push(
+      target === entryPdb
+        ? { label: "Re-refinement of", value: `${target} (this entry)`, format: "mono" }
+        : { label: "Re-refinement of", value: target, href: rcsbStructureURL(target), format: "mono" },
+    );
+  }
+  const members = numberValue(metadata.member_count);
+  if (members !== null) {
+    facts.push({ label: "Members", value: String(members) });
+  }
+  return facts;
+}
+
 // A PDB ID is four alphanumerics starting with a digit; anything else is not
 // addressable on rcsb.org and stays plain text rather than a broken link.
 function rcsbStructureURL(pdb: string): string | undefined {
@@ -571,7 +608,7 @@ export function modelVitals(metadata: Record<string, unknown>): string[] {
 export function modelInfoFacts(
   metadata: Record<string, unknown>,
   program: Entity | null,
-  { typedCompounds = true }: { typedCompounds?: boolean } = {},
+  { typedCompounds = true, entryPdbId }: { typedCompounds?: boolean; entryPdbId?: string | null } = {},
 ): MetadataFact[] {
   const facts: MetadataFact[] = [];
   const purpose = stringValue(metadata.purpose);
@@ -592,6 +629,7 @@ export function modelInfoFacts(
   if (modelType) {
     facts.push({ label: "Model type", value: modelType });
   }
+  facts.push(...depositionFacts(metadata, entryPdbId));
   if (details) {
     facts.push({ label: "Details", value: details });
   }

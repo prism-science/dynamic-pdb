@@ -53,6 +53,8 @@ export type StructureFacts = {
     modeled_residues?: number;
     unique_protein_chains?: number;
     altloc_fraction?: number;
+    /** Whole-model states the file holds, when it holds several. */
+    member_count?: number;
     ligands?: string[];
     /** Organic cofactors (heme, NAD, ...) and metal ions, sorted with the same
      *  lists as the backend parser (lib/cif/cofactors.json). */
@@ -160,6 +162,7 @@ function parsePdb(text: string): StructureFacts {
         firstModelDone = true;
       }
       modelStarted = true;
+      residueTally.modelCount += 1;
       continue;
     }
     if (record === "ENDMDL") {
@@ -405,11 +408,16 @@ function parseMmcif(fileText: string): StructureFacts {
   if (atomSite) {
     // Only the first model counts, as in lib/cif.
     let firstModel: string | null | undefined;
+    let lastModel: string | null | undefined;
 
     for (const row of atomSite.rows) {
       const model = loopValue(atomSite, row, "pdbx_pdb_model_num");
       if (firstModel === undefined) {
         firstModel = model;
+      }
+      if (lastModel === undefined || model !== lastModel) {
+        lastModel = model;
+        residueTally.modelCount += 1;
       }
       const laterModel = model !== firstModel;
       const group = (loopValue(atomSite, row, "group_pdb") ?? "ATOM").toUpperCase();
@@ -546,6 +554,8 @@ function numberOf(value: string | null): number | null {
 const MIN_ALTLOC_OCCUPANCY = 0.1;
 
 class ResidueTally {
+  /** How many coordinate models the file lists. */
+  modelCount = 0;
   readonly residues = new Set<string>();
   readonly chains = new Set<string>();
   private readonly positions = new Map<string, Map<string, number>>();
@@ -560,6 +570,22 @@ class ResidueTally {
       byAltID.set(altID, Math.max(byAltID.get(altID) ?? 0, occupancy));
       this.positions.set(residue, byAltID);
     }
+  }
+
+  /** How many whole-model states the coordinates hold, null when fewer than
+   *  two: the models when there are several, otherwise the altloc letters on
+   *  every polymer residue, as lib/cif counts them. */
+  memberCount(): number | null {
+    if (this.modelCount > 1) {
+      return this.modelCount;
+    }
+    const [first, ...others] = [...this.residues].map(
+      (residue) => this.positions.get(residue) ?? new Map<string, number>(),
+    );
+    const shared = first
+      ? [...first.keys()].filter((letter) => others.every((letters) => letters.has(letter)))
+      : [];
+    return shared.length >= 2 ? shared.length : null;
   }
 
   altlocResidueCount(): number {
@@ -599,6 +625,10 @@ function applyCounts(
   }
   if (residueCount > 0) {
     facts.metadata.altloc_fraction = residueTally.altlocResidueCount() / residueCount;
+  }
+  const memberCount = residueTally.memberCount();
+  if (memberCount !== null) {
+    facts.metadata.member_count = memberCount;
   }
   const sorted = sortCompounds(instances, metalcLinks, annotations);
   if (sorted.ligands.length > 0) {

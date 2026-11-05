@@ -201,6 +201,7 @@ type atomSiteReader struct {
 	// started is set after the first row; firstModel is that row's model number.
 	started    bool
 	firstModel string
+	lastModel  string
 }
 
 // atomSiteColumns holds the index of each column the reader uses, -1 when the
@@ -253,6 +254,12 @@ func (r *atomSiteReader) add(row []string) {
 	if !r.started {
 		r.started = true
 		r.firstModel = model
+		r.lastModel = model
+		tally.modelCount = 1
+	}
+	if model != r.lastModel {
+		r.lastModel = model
+		tally.modelCount++
 	}
 	laterModel := model != r.firstModel
 	group := strings.ToUpper(cell(row, columns.group))
@@ -326,6 +333,7 @@ func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance
 	if stats.ModeledResidues > 0 {
 		stats.AltlocFraction = float64(countAltlocResidues(tally.positions)) / float64(stats.ModeledResidues)
 	}
+	stats.MemberCount = wholeModelStates(tally.modelCount, tally)
 	if stats.AtomCount == 0 {
 		return nil, instances, ""
 	}
@@ -361,6 +369,39 @@ func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]instance
 }
 
 const minAltlocOccupancy = 0.1
+
+// wholeModelStates returns how many whole-model states the coordinates hold, nil when fewer than
+// two: the coordinate models when there are several, otherwise the altloc letters on every polymer
+// residue. Whether such letters make an ensemble is for the model's type to say.
+func wholeModelStates(modelCount int, tally *coordinateTally) *int {
+	if modelCount > 1 {
+		return &modelCount
+	}
+	if len(tally.residues) == 0 {
+		return nil
+	}
+	var shared map[string]struct{}
+	for residue := range tally.residues {
+		letters := tally.positions[residue]
+		if shared == nil {
+			shared = make(map[string]struct{}, len(letters))
+			for letter := range letters {
+				shared[letter] = struct{}{}
+			}
+			continue
+		}
+		for letter := range shared {
+			if _, present := letters[letter]; !present {
+				delete(shared, letter)
+			}
+		}
+	}
+	if len(shared) < 2 {
+		return nil
+	}
+	count := len(shared)
+	return &count
+}
 
 // countAltlocResidues counts residues with at least two alternate positions
 // that each reach the minimum occupancy.

@@ -84,11 +84,10 @@ func syncedArchiveMetricKeys(sources models.FieldSources) []models.MetricKey {
 	return keys
 }
 
-// isDepositedModel reports whether a model revision is the archive's own model. Archive values
+// isArchiveModel reports whether a model revision is an archive deposition. Archive values
 // describe that model only, so the sync never copies them onto any other model.
-func isDepositedModel(revision models.ModelRevision) bool {
-	return revision.Metadata.ModelType != nil &&
-		*revision.Metadata.ModelType == models.StructureModelTypeDeposited
+func isArchiveModel(revision models.ModelRevision) bool {
+	return revision.Metadata.IsArchiveModel()
 }
 
 // archiveEntryFieldSources returns the sources of an entry revision the sync creates: fields a
@@ -149,10 +148,14 @@ func archiveModelFieldSources(
 	source archiveRevisionSource,
 	retrievedAt time.Time,
 	metricKeys []models.MetricKey,
+	hasArchiveOrigin bool,
 ) models.FieldSources {
 	fields := slices.Clone(models.ModelArchiveFields)
 	for _, key := range metricKeys {
 		fields = append(fields, models.ArchiveMetricField(key))
+	}
+	if hasArchiveOrigin {
+		fields = append(fields, models.ModelFieldRelatedEntries)
 	}
 	sources := archiveFieldSources(current, fields, source, retrievedAt)
 	for _, key := range models.ArchiveMetricKeys {

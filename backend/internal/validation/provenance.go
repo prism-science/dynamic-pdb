@@ -14,7 +14,9 @@ import (
 type ModelRevision struct {
 	// ModelType is nil when the write does not state it.
 	ModelType *models.StructureModelType
-	Runs      []ModelRun
+	// Origin is nil unless the write names the archive as the model's origin.
+	Origin *models.ModelOrigin
+	Runs   []ModelRun
 }
 
 type ModelRun struct {
@@ -28,8 +30,11 @@ type RunArtifactLink struct {
 }
 
 // IsComputed reports whether the computed-model rules apply. Only a stated Deposited
-// type exempts a revision; an unknown type is reported by ModelMetadata.
+// type or archive origin exempts a revision; an unknown type is reported by ModelMetadata.
 func (revision ModelRevision) IsComputed() bool {
+	if revision.Origin != nil && *revision.Origin == models.ModelOriginArchive {
+		return false
+	}
 	if revision.ModelType == nil {
 		return true
 	}

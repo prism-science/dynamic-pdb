@@ -225,6 +225,7 @@ export default function NewEntryForm() {
               entry: result.entry,
               polymerEntities: result.polymerEntities,
               warnings: result.warnings,
+              reRefinementOf: result.reRefinementOf,
             },
           });
           setLookup({ status: "ready", pdbId });

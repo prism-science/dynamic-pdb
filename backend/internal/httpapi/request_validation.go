@@ -112,12 +112,13 @@ func (s *Server) checkModelRevisionChangeProvenance(
 	_, setsMetrics := payload.ModelFields["metrics"]
 	_, setsRuns := payload.ModelFields["runs"]
 	change := payload.Request.Model
-	before := validation.ModelRevision{ModelType: base.Metadata.ModelType}
-	revision := validation.ModelRevision{ModelType: base.Metadata.ModelType}
+	before := validation.ModelRevision{ModelType: base.Metadata.ModelType, Origin: base.Metadata.Origin}
+	revision := validation.ModelRevision{ModelType: base.Metadata.ModelType, Origin: base.Metadata.Origin}
 	if setsMetadata && change.Metadata != nil {
 		// Metadata field errors are reported by modelRevisionChangeErrors.
 		metadata, _ := decodeModelMetadataFields(check.at.Field("metadata"), *change.Metadata)
 		revision.ModelType = metadata.ModelType
+		revision.Origin = metadata.Origin
 	}
 	becomesComputed := !before.IsComputed() && revision.IsComputed()
 	if !setsMetrics && !setsRuns && !becomesComputed {
@@ -230,7 +231,11 @@ func createModelRequestErrors(at validation.Pointer, data CreateModelData) []val
 	fieldErrors = append(fieldErrors, artifactRequestErrors(at.Field("artifacts"), data.Artifacts)...)
 	// Which artifacts a run may link needs stored data, so checkRunArtifactLinks
 	// checks that inside the write transaction.
-	revision := validation.ModelRevision{ModelType: metadata.ModelType, Runs: modelRunsFromRequests(data.Runs)}
+	revision := validation.ModelRevision{
+		ModelType: metadata.ModelType,
+		Origin:    metadata.Origin,
+		Runs:      modelRunsFromRequests(data.Runs),
+	}
 	fieldErrors = append(fieldErrors, metricRequestErrors(at.Field("metrics"), data.Metrics)...)
 	fieldErrors = append(fieldErrors,
 		validation.MetricProvenance(at.Field("metrics"), metricsFromRequests(data.Metrics), revision)...)
@@ -463,6 +468,7 @@ func decodeModelMetadataFields(
 			})
 		}
 	}
+	decoded.RelatedEntries = domainmodels.NormalizeRelatedEntries(decoded.RelatedEntries)
 	return decoded, fieldErrors
 }
 

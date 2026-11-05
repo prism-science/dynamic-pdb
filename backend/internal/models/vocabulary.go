@@ -34,6 +34,15 @@ func (purpose ModelPurpose) Validate() error {
 	}
 }
 
+var ModelOrigins = []ModelOrigin{ModelOriginArchive}
+
+func (origin ModelOrigin) Validate() error {
+	if origin == ModelOriginArchive {
+		return nil
+	}
+	return unknownValueError("model origin", origin, ModelOrigins)
+}
+
 var StructureModelTypes = []StructureModelType{
 	StructureModelTypeSingleConformer,
 	StructureModelTypeMulticonformer,

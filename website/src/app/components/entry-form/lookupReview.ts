@@ -22,6 +22,8 @@ export type ArchiveLookupReview = {
   entry: ArchiveEntryProposal;
   polymerEntities: ArchivePolymerEntityProposal[];
   warnings: ArchiveWarning[];
+  /** The registered entry the deposition re-refines, where its model belongs. */
+  reRefinementOf?: { pdbId: string; entryId: string } | null;
 };
 
 /**
@@ -66,6 +68,15 @@ export function lookupReviewMessages(
   const messages: FieldMessage[] = review.warnings.map((warning) =>
     advice(ENTRY_FALLBACK_FIELD, warningText(pdbId, warning)),
   );
+  if (review.reRefinementOf) {
+    const { pdbId: original, entryId } = review.reRefinementOf;
+    messages.push(
+      advice(
+        ENTRY_FALLBACK_FIELD,
+        `the PDB records ${pdbId} as a re-refinement of ${original}, which is entry ${entryId}. One experiment is one entry, so add ${pdbId} as a model at /entries/${entryId}/models/new instead.`,
+      ),
+    );
+  }
   messages.push(
     ...proposalMessages(pdbId, review.entry, (name) => entryField(name), null),
   );

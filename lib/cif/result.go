@@ -28,6 +28,8 @@ type AtomStats struct {
 	ModeledResidues int     `json:"modeled_residues"`
 	ProteinChains   int     `json:"unique_protein_chains"`
 	AltlocFraction  float64 `json:"altloc_fraction"`
+	// MemberCount is how many whole-model states the file holds, when it holds several.
+	MemberCount *int `json:"member_count,omitempty"`
 }
 
 // Compound is a chemical component kept as a ligand or cofactor.

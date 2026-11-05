@@ -155,7 +155,7 @@ func Test_should_compare_exactly_the_archive_fields_when_sources_are_computed(t 
 	modelValues := modelFieldValues(ModelRevision{}, nil)
 
 	// when
-	modelArchiveFields := append([]FieldPointer{}, ModelArchiveFields...)
+	modelArchiveFields := append([]FieldPointer{ModelFieldRelatedEntries}, ModelArchiveFields...)
 	for _, key := range ArchiveMetricKeys {
 		modelArchiveFields = append(modelArchiveFields, ArchiveMetricField(key))
 	}
@@ -267,5 +267,6 @@ func Test_should_list_model_fields_and_archive_metrics_as_fields_with_sources(t 
 	assert.Contains(t, fields, ArchiveMetricField(MetricKeyRFree))
 	assert.Contains(t, fields, ArchiveMetricField(MetricKeyRWork))
 	assert.NotContains(t, fields, ArchiveMetricField(MetricKeyRSCC))
-	assert.Len(t, fields, len(ModelArchiveFields)+len(ArchiveMetricKeys))
+	assert.Contains(t, fields, ModelFieldRelatedEntries)
+	assert.Len(t, fields, len(ModelArchiveFields)+1+len(ArchiveMetricKeys))
 }

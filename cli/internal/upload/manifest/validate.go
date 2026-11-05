@@ -47,6 +47,7 @@ func modelProblems(path string, model ModelPattern) []string {
 	var problems []string
 	problems = append(problems, vocabularyProblem(path+".model_type", "model type", model.ModelType, ModelTypes)...)
 	problems = append(problems, vocabularyProblem(path+".purpose", "purpose", model.Purpose, ModelPurposes)...)
+	problems = append(problems, vocabularyProblem(path+".origin", "model origin", model.Origin, ModelOrigins)...)
 	problems = append(problems, softwareOutsideMetrics(path+".metadata", model.Metadata)...)
 	for artifactIndex, artifact := range model.Artifacts {
 		problems = append(problems, artifactProblems(fmt.Sprintf("%s.artifacts[%d]", path, artifactIndex), artifact)...)

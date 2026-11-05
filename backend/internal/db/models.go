@@ -39,8 +39,10 @@ type ModelRevisionFilters struct {
 	EntryState        *models.EntryState
 	CreatedBy         *uuid.UUID
 	IdempotencyKey    *string
-	Limit             *int
-	Offset            *int
+	// PDBIDs matches revisions naming one of these PDB IDs. An empty slice is no filter.
+	PDBIDs []string
+	Limit  *int
+	Offset *int
 	// After continues the list (ordered by created_at asc, id asc) past this position.
 	// It cannot be combined with Offset.
 	After *ListPosition
@@ -483,6 +485,11 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 	if filters.ModelID != nil {
 		conditions = append(conditions, "model_revisions.model_id = :model_id")
 		args["model_id"] = *filters.ModelID
+	}
+	if pdbIDs := normalizedPDBIDs(filters.PDBIDs); len(pdbIDs) > 0 {
+		conditions = append(conditions, `model_revisions.metadata #>> '{external_refs,pdb}' is not null
+			and upper(model_revisions.metadata #>> '{external_refs,pdb}') = any(:pdb_ids)`)
+		args["pdb_ids"] = pq.Array(pdbIDs)
 	}
 	if filters.PrimaryArtifactID != nil {
 		conditions = append(conditions, "model_revisions.primary_artifact_id = :primary_artifact_id")
