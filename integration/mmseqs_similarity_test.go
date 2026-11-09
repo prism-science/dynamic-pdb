@@ -204,7 +204,7 @@ func runMMseqsJobContainer(t *testing.T, root string, image string, cacheDir str
 		"-e",
 		"DYNAMIC_PDB_DB_PASSWORD=password",
 		"-e",
-		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
+		"DYNAMIC_PDB_DB_CONNECTION_PARAMS="+runConnectionParams(),
 		"-e",
 		"DYNAMIC_PDB_MMSEQS_CACHE_DIR=/app/.tmp/mmseqs",
 		image,

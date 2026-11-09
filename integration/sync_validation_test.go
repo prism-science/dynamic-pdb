@@ -130,8 +130,7 @@ func Test_should_resolve_review_when_rejected_entry_version_applies_later_in_enf
 	}, 20*time.Second, 100*time.Millisecond)
 
 	// then
-	review := waitForSyncReview(t, database, "entry", fixture.EntryID)
-	require.True(t, review.ResolvedAt.Valid, "the applied version resolves the row")
+	review := waitForResolvedSyncReview(t, database, "entry", fixture.EntryID)
 	assert.Equal(t, "data-sync", review.ResolvedBy.String)
 	assert.NotEqual(t, fixture.RevisionID, activeEntryRevisionID(t, database, fixture.EntryID), "version 1.1 is applied")
 }
@@ -206,6 +205,29 @@ func (d syncReviewDetails) pointers() []string {
 // waitForSyncReview waits for the object's sync_validation_failed row and returns it.
 func waitForSyncReview(t *testing.T, database integrationDB, objectType string, objectID string) syncReviewRow {
 	t.Helper()
+	return waitForSyncReviewWhere(t, database, objectType, objectID, func(syncReviewRow) bool { return true })
+}
+
+// waitForResolvedSyncReview waits until the object's sync_validation_failed row is resolved and
+// returns it. The job records an applied archive version and resolves the row in two
+// statements, so a test that has seen the version can still read the row open.
+func waitForResolvedSyncReview(t *testing.T, database integrationDB, objectType string, objectID string) syncReviewRow {
+	t.Helper()
+	return waitForSyncReviewWhere(t, database, objectType, objectID, func(row syncReviewRow) bool {
+		return row.ResolvedAt.Valid
+	})
+}
+
+// waitForSyncReviewWhere waits until the object's sync_validation_failed row exists and done
+// accepts it, and returns it.
+func waitForSyncReviewWhere(
+	t *testing.T,
+	database integrationDB,
+	objectType string,
+	objectID string,
+	done func(syncReviewRow) bool,
+) syncReviewRow {
+	t.Helper()
 	var row syncReviewRow
 	require.Eventually(t, func() bool {
 		err := database.Conn.QueryRowContext(t.Context(),
@@ -213,7 +235,7 @@ func waitForSyncReview(t *testing.T, database integrationDB, objectType string, 
 			 where object_type = $1 and object_id = $2 and issue = 'sync_validation_failed'`,
 			objectType, objectID,
 		).Scan(&row.Details, &row.ResolvedAt, &row.ResolvedBy)
-		return err == nil
+		return err == nil && done(row)
 	}, 20*time.Second, 100*time.Millisecond)
 	return row
 }
