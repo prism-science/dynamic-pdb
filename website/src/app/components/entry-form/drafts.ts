@@ -4,6 +4,7 @@ import type { ExtFileReference } from "@/lib/api/ext";
 import { ownFieldsFromStored } from "./archiveChoices";
 import type { EntryFileFill } from "./entryFileFills";
 import { compoundsAreUntouched } from "./compounds";
+import { emptyRelatedDataset } from "./relatedDatasets";
 import type { EntryArchiveField } from "./revisionChanges";
 import {
   DRAFT_STORAGE_KEY,
@@ -132,7 +133,8 @@ export function draftHasContent(draft: StoredDraft): boolean {
 /**
  * Reads the saved entry draft. Older versions are read rather than thrown
  * away: a version 3 draft with an empty metadata block, and versions 3 and 4
- * with no archive field taken over.
+ * with no archive field taken over. A related dataset saved before it had an
+ * accession and a landing page gets both empty.
  */
 export function readStoredDraft(): StoredDraft | null {
   const parsed = readStoredJSON(DRAFT_STORAGE_KEY) as StoredDraft | null;
@@ -144,12 +146,19 @@ export function readStoredDraft(): StoredDraft | null {
   ) {
     return null;
   }
+  const metadata = { ...emptyEntryMetadataDraft(), ...(parsed.metadata ?? {}) };
   return {
     ...parsed,
     version: DRAFT_VERSION,
     title: typeof parsed.title === "string" ? parsed.title : "",
     files: Array.isArray(parsed.files) ? parsed.files : [],
-    metadata: { ...emptyEntryMetadataDraft(), ...(parsed.metadata ?? {}) },
+    metadata: {
+      ...metadata,
+      relatedDatasets: (Array.isArray(metadata.relatedDatasets)
+        ? metadata.relatedDatasets
+        : []
+      ).map((dataset) => ({ ...emptyRelatedDataset(), ...dataset })),
+    },
     ownFields: ownFieldsFromStored(parsed.ownFields),
     fileFills: Array.isArray(parsed.fileFills) ? parsed.fileFills : [],
   };

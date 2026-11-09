@@ -55,7 +55,7 @@ Extract metadata from files and archives where possible. Depositors supply title
 | resolution | Optional positive number in ångströms, describing highest measured resolution. Omit when undefined for the method. |
 | space_group | Optional crystallographic symmetry in Hermann–Mauguin notation, such as P 21 21 21. |
 | crystallography.crystals[] | Per-crystal growth.ph, growth.temperature_kelvin, and diffractions[].temperature_kelvin. Keep growth and collection conditions separate; do not flatten multiple crystals into one value. |
-| related_datasets[] | Optional datasets held elsewhere that relate to this entry, as mmCIF _pdbx_related_exp_data_set records them: required doi and data_type, optional repository and details. References, not artifacts: no copy and no checksum. Set by people only; archive synchronisation never changes them. They do not record which data a model was refined against. |
+| related_datasets[] | Optional datasets held elsewhere that relate to this entry, as mmCIF _pdbx_related_exp_data_set records them: required data_type; a doi, an accession (the repository's own ID, for datasets without a DOI) or both; optional landing_url (an http or https page), repository and details. References, not artifacts: no copy and no checksum. Set by people only; archive synchronisation never changes them. They do not record which data a model was refined against. |
 
 A polymer entity is a distinct sequence or construct; multiple chains may share it. Preserve registry id and source label_entity_id; link entities to entry revisions.
 
@@ -151,7 +151,7 @@ Each artifact requires name, level, type, and a registry-computed sha256 of its 
 
 Optional fields are lowercase format, nonnegative size_bytes, and format-specific metadata. Format is an open vocabulary: examples include mmcif, mtz, mrc, fasta, and structure_factors_cif. Record unfamiliar formats rather than rejecting them. FASTA metadata contains records[] with header and sequence. Metadata keys beginning with __ are reserved.
 
-Require a stored/external URI or accession resolving to the exact file. The registry reads each external file to compute its sha256 and keeps its own copy of files up to 1 GiB. A larger file is checked but only linked, and the record states why no copy was kept. Datasets linked by DOI on the entry revision (related_datasets) are not artifacts and are neither checked nor copied.
+Require a stored/external URI or accession resolving to the exact file. The registry reads each external file to compute its sha256 and keeps its own copy of files up to 1 GiB. A larger file is checked but only linked, and the record states why no copy was kept. Datasets linked by DOI or accession on the entry revision (related_datasets) are not artifacts and are neither checked nor copied.
 
 Every computed model needs at least one run recording software_name, software_version, and explicit input/output artifact links (direction: input or output). Separate model building, refinement and later processing into their actual executions. Record the verbatim command and structured JSON parameters where available. An unchanged archive import may use its source accession as provenance.
 

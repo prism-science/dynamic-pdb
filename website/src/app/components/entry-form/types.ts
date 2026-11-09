@@ -116,11 +116,14 @@ export type CrystalDraft = {
   diffractions: DiffractionDraft[];
 };
 
-/** A dataset kept elsewhere, by DOI, as mmCIF _pdbx_related_exp_data_set
- *  records it. We store no copy and no checksum of it. */
+/** A dataset kept elsewhere, by DOI or by the repository's accession, as
+ *  mmCIF _pdbx_related_exp_data_set records it. We store no copy and no
+ *  checksum of it. */
 export type RelatedDatasetDraft = {
   key: string;
   doi: string;
+  accession: string;
+  landingUrl: string;
   dataType: string;
   repository: string;
   details: string;

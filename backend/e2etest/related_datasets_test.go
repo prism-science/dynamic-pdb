@@ -9,8 +9,8 @@ import (
 	"dynamic-pdb/backend/internal/httpapi"
 )
 
-// RelatedDatasetsSuite covers the DOI references to datasets kept elsewhere that people add
-// to an entry.
+// RelatedDatasetsSuite covers the references, by DOI or accession, to datasets kept elsewhere
+// that people add to an entry.
 type RelatedDatasetsSuite struct {
 	baseSuite
 }
@@ -40,7 +40,7 @@ func (s *RelatedDatasetsSuite) Test_should_store_bare_doi_when_entry_is_created_
 
 	// then
 	s.Equal([]httpapi.RelatedDataset{{
-		Doi: "10.15785/SBGRID/1303", DataType: "diffraction image data",
+		Doi: new("10.15785/SBGRID/1303"), DataType: "diffraction image data",
 		Repository: new("SBGrid Data Bank"), Details: new("Similar crystals, collected in October 2025."),
 	}}, s.relatedDatasets(entry.EntryId))
 }
@@ -64,7 +64,7 @@ func (s *RelatedDatasetsSuite) Test_should_keep_related_datasets_when_entry_revi
 	// then
 	datasets := s.relatedDatasets(entry.EntryId)
 	s.Require().Len(datasets, 1)
-	s.Equal("10.15785/SBGRID/1303", datasets[0].Doi)
+	s.Equal(new("10.15785/SBGRID/1303"), datasets[0].Doi)
 }
 
 func (s *RelatedDatasetsSuite) Test_should_replace_then_remove_related_datasets_when_entry_revisions_send_them() {
@@ -100,8 +100,8 @@ func (s *RelatedDatasetsSuite) Test_should_replace_then_remove_related_datasets_
 
 	// then
 	s.Require().Len(afterAdd, 2)
-	s.Equal("10.15785/SBGRID/1303", afterAdd[0].Doi)
-	s.Equal(httpapi.RelatedDataset{Doi: "10.5281/zenodo.1234", DataType: "EM raw micrographs"}, afterAdd[1])
+	s.Equal(new("10.15785/SBGRID/1303"), afterAdd[0].Doi)
+	s.Equal(httpapi.RelatedDataset{Doi: new("10.5281/zenodo.1234"), DataType: "EM raw micrographs"}, afterAdd[1])
 	s.Empty(afterEmpty)
 	s.Empty(afterNull)
 }
@@ -155,6 +155,56 @@ func (s *RelatedDatasetsSuite) Test_should_return_422_when_new_entry_lists_the_s
 	s.Require().Len(errors, 1)
 	s.Equal("/entry/related_datasets/1/doi", errors[0].Source.Pointer)
 	s.Equal("DUPLICATE", stringValue(errors[0].Code))
+}
+
+func (s *RelatedDatasetsSuite) Test_should_store_dataset_named_only_by_accession_with_its_landing_page() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-accession-owner", 8716)
+
+	// when
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{
+			"title": "entry with an EMPIAR dataset",
+			"related_datasets": []map[string]any{{
+				"accession": " EMPIAR-10028 ", "landing_url": "https://www.ebi.ac.uk/empiar/EMPIAR-10028/",
+				"data_type": "EM raw micrographs", "repository": "EMPIAR",
+			}},
+		},
+	})
+
+	// then
+	s.Equal([]httpapi.RelatedDataset{{
+		Accession: new("EMPIAR-10028"), LandingUrl: new("https://www.ebi.ac.uk/empiar/EMPIAR-10028/"),
+		DataType: "EM raw micrographs", Repository: new("EMPIAR"),
+	}}, s.relatedDatasets(entry.EntryId))
+}
+
+func (s *RelatedDatasetsSuite) Test_should_return_422_when_dataset_has_no_name_or_a_landing_url_that_is_not_http() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-landing-owner", 8717)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry refusing a bad landing page"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), logOnlyTestServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/revisions",
+		map[string]any{"entry": map[string]any{"related_datasets": []map[string]any{
+			{"data_type": "raw data", "repository": "Zenodo"},
+			{"accession": "EMPIAR-10028", "landing_url": "javascript:alert(1)", "data_type": "EM raw micrographs"},
+		}}},
+		ownerToken,
+	)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	pointers := make([]string, 0, len(errors))
+	for _, fieldError := range errors {
+		pointers = append(pointers, fieldError.Source.Pointer)
+	}
+	s.Equal([]string{"/entry/related_datasets/0/doi", "/entry/related_datasets/1/landing_url"}, pointers)
+	s.Empty(s.relatedDatasets(entry.EntryId))
 }
 
 // relatedDatasets reads the entry's related datasets as the public API returns them.

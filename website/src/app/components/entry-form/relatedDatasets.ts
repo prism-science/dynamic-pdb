@@ -2,7 +2,8 @@ import type { RelatedDataset } from "@/lib/api/entries";
 
 import type { RelatedDatasetDraft } from "./types";
 
-// Datasets kept elsewhere that relate to the entry, by DOI. The rules repeat
+// Datasets kept elsewhere that relate to the entry, by DOI or by the
+// repository's accession. The rules repeat
 // the API's (backend/internal/validation/related_datasets.go), so a mistake
 // shows beside its row: the API refuses a malformed dataset in every
 // validation mode.
@@ -10,6 +11,7 @@ import type { RelatedDatasetDraft } from "./types";
 export const MAX_RELATED_DATASETS = 20;
 export const MAX_RELATED_DATASET_LABEL_CHARS = 256;
 export const MAX_RELATED_DATASET_DETAILS_CHARS = 2000;
+export const MAX_RELATED_DATASET_URL_CHARS = 2048;
 
 /** A bare DOI. The registrant code has no minimum length: RCSB's own example
  *  is 10.000/10002/image_data/cif. */
@@ -70,6 +72,8 @@ export function emptyRelatedDataset(): RelatedDatasetDraft {
   return {
     key: crypto.randomUUID(),
     doi: "",
+    accession: "",
+    landingUrl: "",
     dataType: "",
     repository: "",
     details: "",
@@ -81,7 +85,9 @@ export function relatedDatasetDraftsFromStored(
 ): RelatedDatasetDraft[] {
   return (datasets ?? []).map((dataset) => ({
     key: crypto.randomUUID(),
-    doi: dataset.doi,
+    doi: dataset.doi ?? "",
+    accession: dataset.accession ?? "",
+    landingUrl: dataset.landing_url ?? "",
     dataType: dataset.data_type,
     repository: dataset.repository ?? "",
     details: dataset.details ?? "",
@@ -97,7 +103,9 @@ export function relatedDatasetsRequest(
     return undefined;
   }
   return drafts.map((draft) => ({
-    doi: normalizeDoi(draft.doi),
+    doi: normalizeDoi(draft.doi) || undefined,
+    accession: draft.accession.trim() || undefined,
+    landing_url: draft.landingUrl.trim() || undefined,
     data_type: draft.dataType.trim(),
     repository: draft.repository.trim() || undefined,
     details: draft.details.trim() || undefined,

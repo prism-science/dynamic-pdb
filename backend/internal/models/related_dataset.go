@@ -2,11 +2,15 @@ package models
 
 import "strings"
 
-// RelatedDataset is a dataset kept elsewhere that relates to the entry, referenced by DOI, as
-// mmCIF _pdbx_related_exp_data_set records it (data_reference, data_set_type, db_source,
-// details). We store no copy and no checksum of it.
+// RelatedDataset is a dataset kept elsewhere that relates to the entry, as mmCIF
+// _pdbx_related_exp_data_set records it (data_reference, data_set_type, db_source, details).
+// It is named by a DOI, by the repository's accession, or by both; a dataset without a DOI
+// has an empty DOI, which is left out of the stored JSON. We store no copy and no checksum
+// of it.
 type RelatedDataset struct {
-	DOI        string  `json:"doi"`
+	DOI        string  `json:"doi,omitempty"`
+	Accession  *string `json:"accession,omitempty"`
+	LandingURL *string `json:"landing_url,omitempty"`
 	DataType   string  `json:"data_type"`
 	Repository *string `json:"repository,omitempty"`
 	Details    *string `json:"details,omitempty"`
@@ -43,6 +47,8 @@ func NormalizeRelatedDatasets(datasets []RelatedDataset) []RelatedDataset {
 	for _, dataset := range datasets {
 		normalized = append(normalized, RelatedDataset{
 			DOI:        NormalizeDOI(dataset.DOI),
+			Accession:  nonEmptyTrimmed(dataset.Accession),
+			LandingURL: nonEmptyTrimmed(dataset.LandingURL),
 			DataType:   strings.TrimSpace(dataset.DataType),
 			Repository: nonEmptyTrimmed(dataset.Repository),
 			Details:    nonEmptyTrimmed(dataset.Details),
