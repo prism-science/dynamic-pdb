@@ -1048,10 +1048,11 @@ export interface components {
             ligands?: string[];
             /** @description Cofactor component IDs of the sample. Absent means unknown; an empty list means none. */
             cofactors?: string[];
-            /** @description Datasets kept elsewhere that relate to this entry, by DOI, as mmCIF _pdbx_related_exp_data_set records them. Set only by people; the archive sync never changes them. We store no copy and no checksum of these datasets. Absent when none are given; a change that sends null or an empty list removes them. A malformed dataset is refused with 422 in every validation mode. */
+            /** @description Datasets kept elsewhere that relate to this entry, by DOI or by the repository's accession, as mmCIF _pdbx_related_exp_data_set records them. Set only by people; the archive sync never changes them. We store no copy and no checksum of these datasets. Absent when none are given; a change that sends null or an empty list removes them. A malformed dataset is refused with 422 in every validation mode. */
             related_datasets?: components["schemas"]["RelatedDataset"][];
         };
         /**
+         * @description A dataset named by a DOI, by the repository's accession, or by both: one of doi and accession is required.
          * @example {
          *       "doi": "10.15785/SBGRID/1303",
          *       "data_type": "diffraction image data",
@@ -1060,8 +1061,12 @@ export interface components {
          *     }
          */
         RelatedDataset: {
-            /** @description mmCIF data_reference. A DOI such as 10.15785/SBGRID/1303. A resolver URL (https://doi.org/…) or a "doi:" prefix is accepted and stored as the bare DOI. DOIs are case-insensitive, so an entry cannot list the same one twice. */
-            doi: string;
+            /** @description mmCIF data_reference. A DOI such as 10.15785/SBGRID/1303. A resolver URL (https://doi.org/…) or a "doi:" prefix is accepted and stored as the bare DOI. DOIs are case-insensitive, so an entry cannot list the same one twice. Absent on a dataset named only by its accession. */
+            doi?: string;
+            /** @description The repository's own ID for a dataset that has no DOI, or has one besides, such as EMPIAR-10028. Accessions are compared case-insensitively, so an entry cannot list the same one twice in the same repository. A dataset with no repository counts as one repository of its own: the same accession twice with no repository is refused, but once with a repository and once without is allowed. */
+            accession?: string;
+            /** @description The dataset's page in its repository, such as https://www.ebi.ac.uk/empiar/EMPIAR-10028/. An absolute http or https URL with a host, without spaces or a user name and password. */
+            landing_url?: string;
             /** @description mmCIF data_set_type: what the dataset holds, for example "diffraction image data" or "NMR free induction decay data". */
             data_type: string;
             /** @description mmCIF db_source, for example "SBGrid Data Bank" or "Zenodo". */

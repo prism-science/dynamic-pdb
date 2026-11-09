@@ -423,8 +423,13 @@ func relatedDatasetsFromRequest(datasets *[]RelatedDataset) []domainmodels.Relat
 	}
 	result := make([]domainmodels.RelatedDataset, 0, len(*datasets))
 	for _, dataset := range *datasets {
+		var doi string
+		if dataset.Doi != nil {
+			doi = *dataset.Doi
+		}
 		result = append(result, domainmodels.RelatedDataset{
-			DOI: dataset.Doi, DataType: dataset.DataType, Repository: dataset.Repository, Details: dataset.Details,
+			DOI: doi, Accession: dataset.Accession, LandingURL: dataset.LandingUrl,
+			DataType: dataset.DataType, Repository: dataset.Repository, Details: dataset.Details,
 		})
 	}
 	return domainmodels.NormalizeRelatedDatasets(result)

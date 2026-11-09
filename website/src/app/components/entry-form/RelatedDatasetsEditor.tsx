@@ -18,13 +18,16 @@ import styles from "./form.module.css";
 
 const ROW_FIELDS: FieldId[] = [
   "relatedDataset.doi",
+  "relatedDataset.accession",
+  "relatedDataset.landingUrl",
   "relatedDataset.dataType",
   "relatedDataset.repository",
   "relatedDataset.details",
 ];
 
 /**
- * Datasets kept in other repositories, one card each, linked by DOI. The
+ * Datasets kept in other repositories, one card each, linked by DOI or by the
+ * repository's accession. The
  * request carries no id for a dataset, so an API error about one comes back
  * without an item and is shown above the cards; the form's own checks, which
  * repeat the API's rules, name the card.
@@ -148,6 +151,21 @@ function RelatedDatasetCard({
           />
         </Field>
         <Field
+          id="relatedDataset.accession"
+          htmlFor={`${fieldId}-accession`}
+          messages={inlineMessages(messages, "relatedDataset.accession", item)}
+        >
+          <input
+            id={`${fieldId}-accession`}
+            className={styles.input}
+            value={dataset.accession}
+            onChange={(event) => onPatch({ accession: event.target.value })}
+            placeholder="e.g. EMPIAR-10028"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </Field>
+        <Field
           id="relatedDataset.dataType"
           htmlFor={`${fieldId}-data-type`}
           messages={inlineMessages(messages, "relatedDataset.dataType", item)}
@@ -178,6 +196,23 @@ function RelatedDatasetCard({
           />
         </Field>
       </div>
+      <Field
+        id="relatedDataset.landingUrl"
+        htmlFor={`${fieldId}-landing-url`}
+        messages={inlineMessages(messages, "relatedDataset.landingUrl", item)}
+      >
+        <input
+          id={`${fieldId}-landing-url`}
+          className={styles.input}
+          type="url"
+          inputMode="url"
+          value={dataset.landingUrl}
+          onChange={(event) => onPatch({ landingUrl: event.target.value })}
+          placeholder="e.g. https://www.ebi.ac.uk/empiar/EMPIAR-10028/"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </Field>
       <Field
         id="relatedDataset.details"
         htmlFor={`${fieldId}-details`}

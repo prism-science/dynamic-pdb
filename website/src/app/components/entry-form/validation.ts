@@ -1,4 +1,5 @@
 import type { StructureModelType } from "@/lib/api/entries";
+import { isLandingUrl } from "@/lib/related-datasets";
 
 import { COMPOUND_LIST_NAMES, compoundIdError } from "./compounds";
 import {
@@ -36,6 +37,7 @@ import {
   MAX_RELATED_DATASETS,
   MAX_RELATED_DATASET_DETAILS_CHARS,
   MAX_RELATED_DATASET_LABEL_CHARS,
+  MAX_RELATED_DATASET_URL_CHARS,
   normalizeDoi,
   relatedDatasetItem,
 } from "./relatedDatasets";
@@ -137,29 +139,32 @@ function relatedDatasetMessages(datasets: RelatedDatasetDraft[]): FieldMessage[]
       invalid("entry.relatedDatasets", `list at most ${MAX_RELATED_DATASETS} datasets`),
     );
   }
-  // DOIs are case-insensitive, so 10.15785/sbgrid/1303 is the same dataset.
-  const seenDois = new Set<string>();
+  // Each dataset's name, to find one listed twice.
+  const seen = new Set<string>();
   datasets.forEach((dataset, index) => {
     const item = relatedDatasetItem(index);
     const itemLabel = `dataset ${item}`;
     const doi = normalizeDoi(dataset.doi);
-    if (!doi) {
-      messages.push(required("relatedDataset.doi", item, itemLabel));
-    } else if (!DOI_PATTERN.test(doi)) {
-      messages.push(
-        invalid(
-          "relatedDataset.doi",
-          "use a DOI such as 10.15785/SBGRID/1303",
-          item,
-          itemLabel,
-        ),
-      );
-    } else if (seenDois.has(doi.toLowerCase())) {
-      messages.push(
-        invalid("relatedDataset.doi", "this dataset is already listed", item, itemLabel),
-      );
-    } else {
-      seenDois.add(doi.toLowerCase());
+    const accession = dataset.accession.trim();
+    const landing = dataset.landingUrl.trim();
+    if (!doi && !accession) {
+      messages.push({
+        ...required("relatedDataset.doi", item, itemLabel),
+        message: "add a DOI or an accession",
+      });
+    }
+    const problems: [FieldId, string | null][] = [
+      ["relatedDataset.doi", doi ? relatedDatasetDoiProblem(doi, seen) : null],
+      [
+        "relatedDataset.accession",
+        accession ? relatedDatasetAccessionProblem(accession, dataset.repository, seen) : null,
+      ],
+      ["relatedDataset.landingUrl", landing ? landingUrlProblem(landing) : null],
+    ];
+    for (const [field, problem] of problems) {
+      if (problem) {
+        messages.push(invalid(field, problem, item, itemLabel));
+      }
     }
     if (!dataset.dataType.trim()) {
       messages.push(required("relatedDataset.dataType", item, itemLabel));
@@ -170,13 +175,62 @@ function relatedDatasetMessages(datasets: RelatedDatasetDraft[]): FieldMessage[]
       ["relatedDataset.details", dataset.details, MAX_RELATED_DATASET_DETAILS_CHARS],
     ];
     for (const [field, text, limit] of limits) {
-      // Counted in characters (code points), as the API counts them.
-      if ([...text.trim()].length > limit) {
-        messages.push(invalid(field, `use at most ${limit} characters`, item, itemLabel));
+      if (tooLong(text.trim(), limit)) {
+        messages.push(invalid(field, tooLongProblem(limit), item, itemLabel));
       }
     }
   });
   return messages;
+}
+
+/** DOIs are case-insensitive, so 10.15785/sbgrid/1303 is the same dataset. */
+function relatedDatasetDoiProblem(doi: string, seen: Set<string>): string | null {
+  if (!DOI_PATTERN.test(doi)) {
+    return "use a DOI such as 10.15785/SBGRID/1303";
+  }
+  return firstSighting(seen, `doi:${doi.toLowerCase()}`);
+}
+
+/** Accessions are case-insensitive too, but only within one repository: two
+ *  repositories may use the same ID. No repository counts as a repository of
+ *  its own, as the API counts it. */
+function relatedDatasetAccessionProblem(
+  accession: string,
+  repository: string,
+  seen: Set<string>,
+): string | null {
+  if (tooLong(accession, MAX_RELATED_DATASET_LABEL_CHARS)) {
+    return tooLongProblem(MAX_RELATED_DATASET_LABEL_CHARS);
+  }
+  const key = `accession:${repository.trim().toLowerCase()}\u0000${accession.toLowerCase()}`;
+  return firstSighting(seen, key);
+}
+
+function landingUrlProblem(landing: string): string | null {
+  if (tooLong(landing, MAX_RELATED_DATASET_URL_CHARS)) {
+    return tooLongProblem(MAX_RELATED_DATASET_URL_CHARS);
+  }
+  return isLandingUrl(landing)
+    ? null
+    : "use an http or https link such as https://www.ebi.ac.uk/empiar/EMPIAR-10028/";
+}
+
+/** Records a dataset's name; says so when an earlier dataset had it. */
+function firstSighting(seen: Set<string>, key: string): string | null {
+  if (seen.has(key)) {
+    return "this dataset is already listed";
+  }
+  seen.add(key);
+  return null;
+}
+
+/** Counted in characters (code points), as the API counts them. */
+function tooLong(text: string, limit: number): boolean {
+  return [...text].length > limit;
+}
+
+function tooLongProblem(limit: number): string {
+  return `use at most ${limit} characters`;
 }
 
 /**
