@@ -26,3 +26,26 @@ export default function SearchTracker({
 
   return null;
 }
+
+/**
+ * Reports a model search once its first page is on screen: which filters it
+ * used (the URL Umami records already holds their values) and how many models
+ * matched, so searches that find nothing stand out.
+ */
+export function ModelSearchTracker({
+  filters,
+  results,
+  capped,
+}: {
+  /** The search's parameter names, comma-separated. */
+  filters: string;
+  results: number;
+  /** Whether the count stopped at the cap ("10,000+"). */
+  capped: boolean;
+}) {
+  useEffect(() => {
+    track("model-search", { filters, results, capped });
+  }, [filters, results, capped]);
+
+  return null;
+}

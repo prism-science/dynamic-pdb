@@ -142,6 +142,13 @@
   box-shadow: var(--ring);
 }
 
+.filterLink {
+  flex-basis: 100%;
+  text-align: center;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* The same button as Search, so the two calls to action read as a pair. */
 .tour {
   display: inline-flex;

@@ -44,6 +44,10 @@ export default function LandingSearch({ samples }: { samples: string[] }) {
             {term}
           </Link>
         ))}
+        {/* The model search has more to choose from than one field holds. */}
+        <Link className={styles.filterLink} href="/browse">
+          Filter models by method, resolution, ligands, scores…
+        </Link>
       </p>
     </form>
   );

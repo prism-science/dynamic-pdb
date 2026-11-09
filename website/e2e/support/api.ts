@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { request, type APIRequestContext, type APIResponse } from "@playwright/test";
 
 import { mintToken, type TestUser } from "./auth";
@@ -6,6 +8,19 @@ import { stack } from "./stack";
 const jsonApiMediaType = "application/vnd.api+json";
 
 export type RevisionState = "in_review" | "active" | "rejected";
+
+type CreateModelResult = {
+  data: { attributes: { entry_id: string; model_id: string; revision_id: string; state: RevisionState } };
+};
+
+/** A model the tests create through the API; see BackendClient.createModel. */
+export type TestModel = {
+  title: string;
+  modelType: "Single Conformer" | "Multiconformer" | "Ensemble" | "Deposited";
+  rFree: number;
+};
+
+export type CreatedModel = { modelId: string; revisionId: string };
 
 type CreateEntryResult = {
   data: { attributes: { entry_id: string; revision_id: string; state: RevisionState } };
@@ -133,6 +148,77 @@ export class BackendClient {
     await expectStatus(response, 200, "approve entry revision");
   }
 
+  /**
+   * Adds a model to an entry through the API, with what enforce mode requires:
+   * a coordinate file, the run that made it and a score that run computed.
+   * The files are only records here: nothing reads their bytes.
+   */
+  async createModel(entryId: string, model: TestModel): Promise<CreatedModel> {
+    const modelArtifactId = randomUUID();
+    const inputArtifactId = randomUUID();
+    const runId = randomUUID();
+    const fileBase = `${stack.s3URL}/${stack.s3Bucket}/browser-tests/${modelArtifactId}`;
+    const response = await this.post(`/v1/entries/${entryId}/models`, {
+      model: {
+        title: model.title,
+        primary_artifact_id: modelArtifactId,
+        metadata: { model_type: model.modelType, purpose: "Refinement" },
+        artifacts: [
+          {
+            id: modelArtifactId,
+            name: "model.pdb",
+            level: "L2",
+            type: "model",
+            format: "pdb",
+            uri: `${fileBase}/model.pdb`,
+            sha256: "a".repeat(64),
+            size_bytes: 100,
+            metadata: {},
+          },
+          {
+            id: inputArtifactId,
+            name: "data.mtz",
+            level: "L1",
+            type: "structure_factors",
+            format: "mtz",
+            uri: `${fileBase}/data.mtz`,
+            sha256: "b".repeat(64),
+            size_bytes: 100,
+            metadata: {},
+          },
+        ],
+        metrics: [{ id: randomUUID(), key: "r_free", value: model.rFree, run_id: runId }],
+        runs: [
+          {
+            id: runId,
+            name: "refinement",
+            software_name: "phenix.refine",
+            software_version: "1.21",
+            command: "phenix.refine",
+            artifacts: [
+              { artifact_id: inputArtifactId, direction: "input" },
+              { artifact_id: modelArtifactId, direction: "output" },
+            ],
+          },
+        ],
+      },
+    });
+    const body = await expectStatus<CreateModelResult>(response, 201, "create model");
+    return {
+      modelId: body.data.attributes.model_id,
+      revisionId: body.data.attributes.revision_id,
+    };
+  }
+
+  /** Publishes another user's model revision. */
+  async approveModelRevision(entryId: string, modelId: string, revisionId: string): Promise<void> {
+    const response = await this.context.patch(
+      `/v1/entries/${entryId}/models/${modelId}/revisions/${revisionId}`,
+      { data: { state: "active" }, headers: { "Content-Type": jsonApiMediaType } },
+    );
+    await expectStatus(response, 200, "approve model revision");
+  }
+
   /** This user's revisions that wait for review, grouped by entry. */
   async inReviewGroups(): Promise<InReviewGroup[]> {
     const response = await this.context.get(
@@ -192,14 +278,28 @@ export async function createActiveEntry(
   submitter: BackendClient,
   reviewer: BackendClient,
   title: string,
+  fields: { resolution?: number } = {},
 ): Promise<string> {
   const { entryId, revisionId } = await submitter.createEntry({
     title,
     method: "X-ray crystallography",
     details: "Created by the browser tests.",
+    ...fields,
   });
   await reviewer.approveEntryRevision(entryId, revisionId);
   return entryId;
+}
+
+/** A model the submitter added and the reviewer published, so searches find it. */
+export async function createActiveModel(
+  submitter: BackendClient,
+  reviewer: BackendClient,
+  entryId: string,
+  model: TestModel,
+): Promise<string> {
+  const { modelId, revisionId } = await submitter.createModel(entryId, model);
+  await reviewer.approveModelRevision(entryId, modelId, revisionId);
+  return modelId;
 }
 
 export async function expectStatus<Body = unknown>(
