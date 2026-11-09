@@ -78,7 +78,13 @@ func (s *ModelSearchSuite) Test_should_return_models_of_entries_listing_adp_with
 	token := issueEntryTokenForGitHubIDForTest(s.T(), "model-search-adp-owner", 8811)
 	inLigands := s.createEntryWithModelsForTest(token, map[string]any{
 		"title": "ADP in ligands", "ligands": []string{"ADP", "MG"}, "cofactors": []string{},
-		"related_datasets": []map[string]any{sbgridDatasetForTest("10.15785/SBGRID/1303")},
+		"related_datasets": []map[string]any{
+			sbgridDatasetForTest("10.15785/SBGRID/1303"),
+			{
+				"accession": "EMPIAR-10028", "landing_url": "https://www.ebi.ac.uk/empiar/EMPIAR-10028/",
+				"data_type": "EM raw micrographs", "repository": "EMPIAR",
+			},
+		},
 	}, 2)
 	inCofactors := s.createEntryWithModelsForTest(token, map[string]any{
 		"title": "ADP in cofactors", "ligands": []string{}, "cofactors": []string{"ADP"},
@@ -102,7 +108,12 @@ func (s *ModelSearchSuite) Test_should_return_models_of_entries_listing_adp_with
 	withDatasets := results[inLigands[0]]
 	s.Require().NotNil(withDatasets.Entry)
 	s.Require().NotNil(withDatasets.Entry.RelatedDatasets)
-	s.Equal("10.15785/SBGRID/1303", (*withDatasets.Entry.RelatedDatasets)[0].Doi)
+	datasets := *withDatasets.Entry.RelatedDatasets
+	s.Require().Len(datasets, 2)
+	s.Equal(new("10.15785/SBGRID/1303"), datasets[0].Doi)
+	s.Nil(datasets[1].Doi)
+	s.Equal(new("EMPIAR-10028"), datasets[1].Accession)
+	s.Equal(new("https://www.ebi.ac.uk/empiar/EMPIAR-10028/"), datasets[1].LandingUrl)
 	s.Equal(new(1), withDatasets.Entry.RevisionNumber)
 	s.Equal(new(1), withDatasets.RevisionNumber)
 	s.Require().NotNil(withDatasets.ReviewFlags)
