@@ -75,10 +75,10 @@ compounds:
   archive_files: true
   archive_fill: false
 model_search:
-  # Search filters, the capped total and the entry and review warnings on GET /v1/models (S1) stay
-  # off until their own switch-on PR. Rollback after that: false here, or
-  # DYNAMIC_PDB_MODEL_SEARCH_FILTERS_ENABLED=false. count_cap and rate_limit keep their defaults.
-  filters_enabled: false
+  # Search filters, the capped total and the entry and review warnings on GET /v1/models (S1) are
+  # on. Rollback: false here, or DYNAMIC_PDB_MODEL_SEARCH_FILTERS_ENABLED=false. count_cap and
+  # rate_limit keep their defaults.
+  filters_enabled: true
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR. Rollback after
   # that: false here, or DYNAMIC_PDB_SELECTIONS_ENABLED=false. The limits keep their defaults.
