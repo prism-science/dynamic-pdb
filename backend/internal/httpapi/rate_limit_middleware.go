@@ -68,6 +68,43 @@ func writeRateLimitedError(detail string) http.HandlerFunc {
 	}
 }
 
+// routeRateLimiter caps the requests of one route per client, on top of the global limit.
+// Clients are told apart as by GlobalRateLimitMiddleware: clients through the ingress and
+// in-cluster callers have their own caps.
+type routeRateLimiter struct {
+	ingress        *httprate.RateLimiter
+	internal       *httprate.RateLimiter
+	trustedProxies []netip.Prefix
+}
+
+// newRouteRateLimiter allows requests per window to each client through the ingress and
+// internalRequests to each in-cluster caller. A request over the limit gets a JSON:API 429 with
+// detail and Retry-After.
+func newRouteRateLimiter(
+	requests, internalRequests int,
+	window time.Duration,
+	trustedProxies []netip.Prefix,
+	detail string,
+) *routeRateLimiter {
+	limitHandler := httprate.WithLimitHandler(writeRateLimitedError(detail))
+	return &routeRateLimiter{
+		ingress:        httprate.NewRateLimiter(requests, window, limitHandler),
+		internal:       httprate.NewRateLimiter(internalRequests, window, limitHandler),
+		trustedProxies: trustedProxies,
+	}
+}
+
+// respondOnLimit counts r and reports whether it was over the limit, in which case the 429 is
+// already written.
+func (l *routeRateLimiter) respondOnLimit(w http.ResponseWriter, r *http.Request) bool {
+	requester := identifyCaller(r, l.trustedProxies)
+	limiter := l.ingress
+	if requester.internal {
+		limiter = l.internal
+	}
+	return limiter.RespondOnLimit(w, r, requester.key())
+}
+
 // caller is who a request is counted against.
 type caller struct {
 	// address is invalid when the request carries no readable address.

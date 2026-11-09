@@ -70,3 +70,6 @@ model_search:
   # Search filters, the capped total and the entry and review warnings on GET /v1/models (S1) stay
   # off until their own switch-on PR.
   filters_enabled: false
+selections:
+  # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR.
+  enabled: false

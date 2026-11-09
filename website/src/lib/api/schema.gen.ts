@@ -391,6 +391,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/selections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a frozen selection
+         * @description Saves a selection of models with the model revision and entry revision each one has now. Later changes to the catalog never change a saved selection: downloads of it name the same revisions. The selection holds every model in model_ids, and every model matching one of the searches, minus exclude_model_ids; a model is held once. A search is the query string of a GET /v1/models request, so it holds every result of that search, however many pages it has and whatever its meta.total shows.
+         *
+         *     Selections need no sign-in. Anyone with the ID can read one, so share the link to share the selection. Selections are kept indefinitely.
+         *
+         *     Saving a large search takes seconds. Available only where the server enables selections; elsewhere every selections route answers 404 with code SELECTIONS_OFF.
+         */
+        post: operations["createSelection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/selections/{selection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a frozen selection
+         * @description Returns a saved selection: how many models and entries it holds and what was asked for. Its models, with their frozen revisions, are at links.models.
+         */
+        get: operations["getSelection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/selections/{selection_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the models of a frozen selection
+         * @description Lists the models of a saved selection with the model revision and entry revision frozen for each, in the order GET /v1/models lists models.
+         */
+        get: operations["listSelectionModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entries/{entry_id}/models": {
         parameters: {
             query?: never;
@@ -843,6 +907,67 @@ export interface components {
         };
         /** @enum {string} */
         ModelSearchSource: "pdb_archive" | "dynamic_pdb_deposit";
+        /** @description Which models to save. Give model_ids, searches, or both; exclude_model_ids removes models from the result. */
+        CreateSelectionRequest: {
+            /** @description Models to hold, by model ID. Each must be a published model of a published entry. */
+            model_ids?: string[];
+            /** @description Searches whose every result the selection holds. Each is the query string of a GET /v1/models request (the part after "?"), with its filters only: no limit, offset or cursor. An empty string holds every model. Filters work where the server enables model search. */
+            searches?: string[];
+            /** @description Models to leave out, by model ID. IDs of no model are ignored. */
+            exclude_model_ids?: string[];
+        };
+        SelectionDocument: {
+            data: components["schemas"]["SelectionData"];
+        };
+        SelectionData: {
+            type: string;
+            id: string;
+            attributes: components["schemas"]["SelectionAttributes"];
+            links: components["schemas"]["SelectionLinks"];
+        };
+        SelectionAttributes: {
+            /** @description How many models the selection holds. */
+            model_count: number;
+            /** @description How many entries the selection's models belong to. */
+            entry_count: number;
+            /**
+             * Format: date-time
+             * @description When the selection was saved; its revisions are the ones active then.
+             */
+            created_at: string;
+            request: components["schemas"]["SelectionRequest"];
+        };
+        /** @description What was asked for when the selection was saved: model IDs trimmed and listed once, each search's parameters in a fixed order. */
+        SelectionRequest: {
+            model_ids: string[];
+            searches: string[];
+            exclude_model_ids: string[];
+        };
+        SelectionLinks: {
+            /** @description Absolute URL of the selection. */
+            self: string;
+            /** @description Absolute URL of the selection's models with their frozen revisions. */
+            models: string;
+        };
+        SelectionModelCollectionDocument: {
+            data: components["schemas"]["SelectionModelData"][];
+            links?: components["schemas"]["CollectionLinks"];
+            meta?: components["schemas"]["CursorPageMeta"];
+        };
+        SelectionModelData: {
+            type: string;
+            /** @description The model ID. */
+            id: string;
+            attributes: components["schemas"]["SelectionModelAttributes"];
+        };
+        SelectionModelAttributes: {
+            model_id: string;
+            entry_id: string;
+            /** @description Number of the model revision frozen in the selection (revision_number of the model as it was then). */
+            model_revision_number: number;
+            /** @description Number of the entry revision frozen in the selection (revision_number of the entry as it was then). */
+            entry_revision_number: number;
+        };
         ModelDocument: {
             data: components["schemas"]["ModelDetailData"];
         };
@@ -3322,6 +3447,170 @@ export interface operations {
                 headers: {
                     /** @description Seconds to wait before trying again. */
                     "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/vnd.api+json": components["schemas"]["CreateSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Selection saved. */
+            201: {
+                headers: {
+                    /** @description URL of the saved selection. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["SelectionDocument"];
+                };
+            };
+            /** @description The body is not valid JSON, or a search has filters where the server does not enable model search. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Selections are turned off on this server (code SELECTIONS_OFF). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is invalid; each error points at its field (for example a model ID with no active model, or an unknown search parameter). Code SELECTION_EMPTY: nothing matched. Code SELECTION_TOO_LARGE: more models matched than one selection may hold; narrow the searches. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many selections saved by this client (code RATE_LIMITED). Wait the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The server is saving other selections (code SERVICE_UNAVAILABLE), or the space for selections is used up (code SELECTIONS_FULL). Try again after Retry-After seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Saving did not finish within the server's time limit (code TIMEOUT). Narrow the searches, for example with a model type or a resolution range, and try again after Retry-After seconds. */
+            504: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSelection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Selection ID, as POST /v1/selections returned it. */
+                selection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selection found. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["SelectionDocument"];
+                };
+            };
+            /** @description No selection has this ID, or selections are turned off (code SELECTIONS_OFF). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSelectionModels: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of models to return. */
+                limit?: number;
+                /** @description Opaque cursor from the previous page's `meta.next_cursor`. Returns the models that follow it. Follow `links.next` to page without building URLs. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Selection ID, as POST /v1/selections returned it. */
+                selection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Models of the selection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["SelectionModelCollectionDocument"];
+                };
+            };
+            /** @description Invalid limit or cursor. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No selection has this ID, or selections are turned off (code SELECTIONS_OFF). */
+            404: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

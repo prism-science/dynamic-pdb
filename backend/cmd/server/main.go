@@ -33,6 +33,10 @@ import (
 // is answered with a 504; httpapi.CheckReadRequestTimeout enforces that at startup.
 const readRequestTimeout = 9 * time.Second
 
+// serverWriteTimeout bounds writing each response. A selection save's statement timeout must end
+// well before it (httpapi.CheckSelectionFreezeTimeout).
+const serverWriteTimeout = 3 * time.Minute
+
 // The archive lookup endpoint keeps recent RCSB responses so repeated lookups of the
 // same entry do not hit RCSB again.
 const (
@@ -61,6 +65,10 @@ func run() int {
 	}
 	if err := httpapi.CheckReadRequestTimeout(readRequestTimeout, cfg.DB.StatementTimeout); err != nil {
 		slog.Error("check read request timeout failed", "err", err)
+		return 1
+	}
+	if err := httpapi.CheckSelectionFreezeTimeout(cfg.Selections.FreezeTimeout, serverWriteTimeout); err != nil {
+		slog.Error("check selection freeze timeout failed", "err", err)
 		return 1
 	}
 
@@ -118,6 +126,20 @@ func run() int {
 	})
 	slog.Info("model search configured", "filters_enabled", cfg.ModelSearch.FiltersEnabled,
 		"count_cap", cfg.ModelSearch.CountCap)
+	srv = srv.WithSelections(httpapi.SelectionsPolicy{
+		Enabled:          cfg.Selections.Enabled,
+		MaxModels:        cfg.Selections.MaxModels,
+		MaxStoredModels:  cfg.Selections.MaxStoredModels,
+		FreezeTimeout:    cfg.Selections.FreezeTimeout,
+		MaxInFlight:      cfg.Selections.MaxInFlight,
+		Requests:         cfg.Selections.RateLimit.Requests,
+		InternalRequests: cfg.Selections.RateLimit.InternalRequests,
+		Window:           cfg.Selections.RateLimit.Window,
+		TrustedProxies:   trustedProxies,
+	})
+	slog.Info("selections configured", "enabled", cfg.Selections.Enabled,
+		"max_models", cfg.Selections.MaxModels, "max_stored_models", cfg.Selections.MaxStoredModels,
+		"freeze_timeout", cfg.Selections.FreezeTimeout)
 
 	router := chi.NewRouter()
 	router.Use(httpapi.RequestLifecycleMiddlewares(logger, readRequestTimeout)...)
@@ -164,7 +186,7 @@ func run() int {
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       3 * time.Minute,
-		WriteTimeout:      3 * time.Minute,
+		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
 
