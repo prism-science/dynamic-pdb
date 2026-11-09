@@ -19,13 +19,14 @@ import (
 type listCursorKind string
 
 const (
-	listCursorKindEntries        listCursorKind = "entries"
-	listCursorKindModels         listCursorKind = "models"
-	listCursorKindArtifacts      listCursorKind = "artifacts"
-	listCursorKindEntryRevisions listCursorKind = "entry_revisions"
-	listCursorKindModelRevisions listCursorKind = "model_revisions"
-	listCursorKindRevisionGroups listCursorKind = "revision_groups"
-	listCursorKindSimilarEntries listCursorKind = "similar_entries"
+	listCursorKindEntries         listCursorKind = "entries"
+	listCursorKindModels          listCursorKind = "models"
+	listCursorKindArtifacts       listCursorKind = "artifacts"
+	listCursorKindEntryRevisions  listCursorKind = "entry_revisions"
+	listCursorKindModelRevisions  listCursorKind = "model_revisions"
+	listCursorKindRevisionGroups  listCursorKind = "revision_groups"
+	listCursorKindSimilarEntries  listCursorKind = "similar_entries"
+	listCursorKindSelectionModels listCursorKind = "selection_models"
 )
 
 // maxListCursorLength bounds the cursor query value before it is decoded.
@@ -40,12 +41,15 @@ var errInvalidListCursor = errors.New("invalid list cursor")
 //   - row lists (entries, models, artifacts, revisions): CreatedAt and ID
 //   - revision groups: CreatedAt (of the group's newest revision) and EntryID
 //   - similar entries: Score and EntryID
+//   - selection models: Ordinal
 type listCursor struct {
 	Kind      listCursorKind `json:"k"`
 	CreatedAt time.Time      `json:"t,omitzero"`
 	ID        uuid.UUID      `json:"i,omitzero"`
 	EntryID   string         `json:"e,omitempty"`
 	Score     *float64       `json:"c,omitempty"`
+	// Ordinal is the position of a frozen selection's model; ordinals start at 1.
+	Ordinal int `json:"o,omitempty"`
 	// ProteinSequenceSearch records that an entry search fell back to protein-sequence
 	// matching, so the following pages keep matching sequences instead of text.
 	ProteinSequenceSearch bool `json:"s,omitempty"`
@@ -108,6 +112,7 @@ func (c listCursor) validatePosition() error {
 	hasID := c.ID != uuid.Nil
 	hasEntryID := c.EntryID != ""
 	hasScore := c.Score != nil
+	hasOrdinal := c.Ordinal != 0
 
 	switch c.Kind {
 	case listCursorKindEntries,
@@ -115,16 +120,20 @@ func (c listCursor) validatePosition() error {
 		listCursorKindArtifacts,
 		listCursorKindEntryRevisions,
 		listCursorKindModelRevisions:
-		if !hasCreatedAt || !hasID || hasEntryID || hasScore {
+		if !hasCreatedAt || !hasID || hasEntryID || hasScore || hasOrdinal {
 			return errors.New("row position needs created_at and id only")
 		}
 	case listCursorKindRevisionGroups:
-		if !hasCreatedAt || !hasEntryID || hasID || hasScore {
+		if !hasCreatedAt || !hasEntryID || hasID || hasScore || hasOrdinal {
 			return errors.New("revision group position needs created_at and entry_id only")
 		}
 	case listCursorKindSimilarEntries:
-		if !hasScore || !hasEntryID || hasCreatedAt || hasID {
+		if !hasScore || !hasEntryID || hasCreatedAt || hasID || hasOrdinal {
 			return errors.New("similar entry position needs score and entry_id only")
+		}
+	case listCursorKindSelectionModels:
+		if c.Ordinal < 1 || hasCreatedAt || hasID || hasEntryID || hasScore {
+			return errors.New("selection model position needs a positive ordinal only")
 		}
 	default:
 		return fmt.Errorf("unknown kind: %s", c.Kind)

@@ -31,6 +31,8 @@ type Config struct {
 	ArtifactExtraction ArtifactExtractionConfig `mapstructure:"artifact_extraction"`
 	// ModelSearch holds the switch and limits of the search filters on GET /v1/models.
 	ModelSearch ModelSearchConfig `mapstructure:"model_search"`
+	// Selections holds the switch and limits of frozen selections (/v1/selections).
+	Selections SelectionsConfig `mapstructure:"selections"`
 }
 
 type ServerConfig struct {
@@ -71,13 +73,37 @@ type ModelSearchConfig struct {
 	FiltersEnabled bool `mapstructure:"filters_enabled"`
 	// CountCap is where the total stops counting: above it the total is "CountCap+".
 	CountCap int `mapstructure:"count_cap"`
-	// RateLimit caps searches that count their results, per client and server instance.
-	RateLimit ModelSearchRateLimitConfig `mapstructure:"rate_limit"`
+	// RateLimit caps searches that count their results (requests without a cursor), per client
+	// and server instance.
+	RateLimit RouteRateLimitConfig `mapstructure:"rate_limit"`
 }
 
-// ModelSearchRateLimitConfig caps counted searches (requests without a cursor) per client, on
-// top of the server's global limit. Clients are told apart as for server.rate_limit.
-type ModelSearchRateLimitConfig struct {
+// SelectionsConfig holds frozen selections: POST /v1/selections saves the models a request
+// matches with their current revisions, and GET /v1/selections/{id} and its models read them.
+type SelectionsConfig struct {
+	// Enabled turns the selections routes on. Off, they answer 404.
+	Enabled bool `mapstructure:"enabled"`
+	// MaxModels is the most models one selection may hold. It sits above the catalog's size, so
+	// "every result of a search" fits; it bounds the time and space of one save.
+	MaxModels int `mapstructure:"max_models"`
+	// MaxStoredModels caps the rows of all stored selections together (about 120 bytes each); a
+	// selection's stored request counts as rows of the same size. Selections are public,
+	// anonymous and kept indefinitely; at the cap, saves answer 503 until it is raised or the
+	// database gets more space.
+	MaxStoredModels int `mapstructure:"max_stored_models"`
+	// FreezeTimeout is the statement timeout of one save, in place of db.statement_timeout. The
+	// server refuses to start unless it ends at least 30 s before the server's 3-minute write
+	// timeout (httpapi.CheckSelectionFreezeTimeout).
+	FreezeTimeout time.Duration `mapstructure:"freeze_timeout"`
+	// MaxInFlight caps the saves running at once on each server instance.
+	MaxInFlight int `mapstructure:"max_in_flight"`
+	// RateLimit caps saves per client and server instance.
+	RateLimit RouteRateLimitConfig `mapstructure:"rate_limit"`
+}
+
+// RouteRateLimitConfig caps one route's requests per client, on top of the server's global
+// limit. Clients are told apart as for server.rate_limit.
+type RouteRateLimitConfig struct {
 	// Requests caps each client that reaches the server through the load balancer and ingress.
 	Requests int `mapstructure:"requests"`
 	// InternalRequests caps each in-cluster caller, such as a website pod.
@@ -120,6 +146,14 @@ const (
 	defaultModelSearchRateLimitRequests         = 30
 	defaultModelSearchRateLimitInternalRequests = 300
 	defaultModelSearchRateLimitWindow           = 10 * time.Second
+
+	defaultSelectionsMaxModels                 = 250000
+	defaultSelectionsMaxStoredModels           = 10000000
+	defaultSelectionsFreezeTimeout             = time.Minute
+	defaultSelectionsMaxInFlight               = 2
+	defaultSelectionsRateLimitRequests         = 10
+	defaultSelectionsRateLimitInternalRequests = 100
+	defaultSelectionsRateLimitWindow           = time.Minute
 )
 
 func ReadFromFile(filename string) (Config, error) {
@@ -141,6 +175,14 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("model_search::rate_limit::requests", defaultModelSearchRateLimitRequests)
 	v.SetDefault("model_search::rate_limit::internal_requests", defaultModelSearchRateLimitInternalRequests)
 	v.SetDefault("model_search::rate_limit::window", defaultModelSearchRateLimitWindow)
+	v.SetDefault("selections::enabled", false)
+	v.SetDefault("selections::max_models", defaultSelectionsMaxModels)
+	v.SetDefault("selections::max_stored_models", defaultSelectionsMaxStoredModels)
+	v.SetDefault("selections::freeze_timeout", defaultSelectionsFreezeTimeout)
+	v.SetDefault("selections::max_in_flight", defaultSelectionsMaxInFlight)
+	v.SetDefault("selections::rate_limit::requests", defaultSelectionsRateLimitRequests)
+	v.SetDefault("selections::rate_limit::internal_requests", defaultSelectionsRateLimitInternalRequests)
+	v.SetDefault("selections::rate_limit::window", defaultSelectionsRateLimitWindow)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
@@ -203,6 +245,9 @@ func validate(cfg Config) error {
 	if cfg.ModelSearch.RateLimit.Window <= 0 {
 		return fmt.Errorf("model_search.rate_limit.window must be positive")
 	}
+	if err := validateSelections(cfg.Selections); err != nil {
+		return fmt.Errorf("selections.%w", err)
+	}
 	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
 		return fmt.Errorf("server.public_base_url: %w", err)
 	}
@@ -211,6 +256,31 @@ func validate(cfg Config) error {
 	}
 	if err := cfg.Validation.RequestKeys.Validate(); err != nil {
 		return fmt.Errorf("validation.request_keys: %w", err)
+	}
+	return nil
+}
+
+func validateSelections(selections SelectionsConfig) error {
+	if selections.MaxModels <= 0 {
+		return fmt.Errorf("max_models must be positive")
+	}
+	if selections.MaxStoredModels < selections.MaxModels {
+		return fmt.Errorf("max_stored_models must be at least max_models")
+	}
+	if selections.FreezeTimeout <= 0 {
+		return fmt.Errorf("freeze_timeout must be positive")
+	}
+	if selections.MaxInFlight <= 0 {
+		return fmt.Errorf("max_in_flight must be positive")
+	}
+	if selections.RateLimit.Requests <= 0 {
+		return fmt.Errorf("rate_limit.requests must be positive")
+	}
+	if selections.RateLimit.InternalRequests <= 0 {
+		return fmt.Errorf("rate_limit.internal_requests must be positive")
+	}
+	if selections.RateLimit.Window <= 0 {
+		return fmt.Errorf("rate_limit.window must be positive")
 	}
 	return nil
 }

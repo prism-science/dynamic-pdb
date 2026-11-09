@@ -46,6 +46,8 @@ type Server struct {
 	archive ArchiveLookup
 	// modelSearch holds the search filters of GET /v1/models; see WithModelSearch.
 	modelSearch modelSearch
+	// selections holds frozen selections (/v1/selections); see WithSelections.
+	selections selections
 	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
 	extractionLimits *extractionLimits
 	// extractionTimeout is the longest one extraction may spend parsing; see

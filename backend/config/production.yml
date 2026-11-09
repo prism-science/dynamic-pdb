@@ -79,3 +79,7 @@ model_search:
   # off until their own switch-on PR. Rollback after that: false here, or
   # DYNAMIC_PDB_MODEL_SEARCH_FILTERS_ENABLED=false. count_cap and rate_limit keep their defaults.
   filters_enabled: false
+selections:
+  # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR. Rollback after
+  # that: false here, or DYNAMIC_PDB_SELECTIONS_ENABLED=false. The limits keep their defaults.
+  enabled: false

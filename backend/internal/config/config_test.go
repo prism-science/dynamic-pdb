@@ -646,3 +646,92 @@ func Test_should_reject_config_when_model_search_count_cap_is_not_positive(t *te
 	// then
 	require.ErrorContains(t, err, "model_search.count_cap must be positive")
 }
+
+func Test_should_leave_selections_off_with_default_limits_when_config_does_not_set_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, config.SelectionsConfig{
+		Enabled:         false,
+		MaxModels:       250000,
+		MaxStoredModels: 10000000,
+		FreezeTimeout:   time.Minute,
+		MaxInFlight:     2,
+		RateLimit:       config.RouteRateLimitConfig{Requests: 10, InternalRequests: 100, Window: time.Minute},
+	}, cfg.Selections)
+}
+
+func Test_should_turn_selections_on_only_in_local_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
+	expected := map[string]bool{"local": true, "dev": false, "production": false}
+
+	for name, enabled := range expected {
+		// when
+		cfg, err := config.ReadFromFile(name)
+
+		// then
+		require.NoError(t, err, name)
+		assert.Equal(t, enabled, cfg.Selections.Enabled, name)
+	}
+}
+
+func Test_should_turn_selections_on_when_env_var_sets_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SELECTIONS_ENABLED", "true")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.Selections.Enabled)
+}
+
+func Test_should_reject_config_when_a_selections_limit_is_invalid(t *testing.T) {
+	cases := []struct {
+		env  string
+		want string
+	}{
+		{env: "DYNAMIC_PDB_SELECTIONS_MAX_MODELS", want: "selections.max_models must be positive"},
+		{env: "DYNAMIC_PDB_SELECTIONS_FREEZE_TIMEOUT", want: "selections.freeze_timeout must be positive"},
+		{env: "DYNAMIC_PDB_SELECTIONS_MAX_IN_FLIGHT", want: "selections.max_in_flight must be positive"},
+		{env: "DYNAMIC_PDB_SELECTIONS_RATE_LIMIT_REQUESTS", want: "selections.rate_limit.requests must be positive"},
+		{env: "DYNAMIC_PDB_SELECTIONS_RATE_LIMIT_INTERNAL_REQUESTS", want: "selections.rate_limit.internal_requests must be positive"},
+		{env: "DYNAMIC_PDB_SELECTIONS_RATE_LIMIT_WINDOW", want: "selections.rate_limit.window must be positive"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.env, func(t *testing.T) {
+			// given
+			t.Chdir(writeSampleConfig(t))
+			t.Setenv(tc.env, "0")
+
+			// when
+			_, err := config.ReadFromFile("test")
+
+			// then
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func Test_should_reject_config_when_the_selections_budget_is_below_one_selection(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_SELECTIONS_MAX_MODELS", "1000")
+	t.Setenv("DYNAMIC_PDB_SELECTIONS_MAX_STORED_MODELS", "999")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.ErrorContains(t, err, "selections.max_stored_models must be at least max_models")
+}

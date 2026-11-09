@@ -62,3 +62,7 @@ model_search:
   # Search filters on GET /v1/models (S1) are on locally, so the website's search can be built
   # against them before dev and production switch them on.
   filters_enabled: true
+selections:
+  # Frozen selections (/v1/selections, B1) are on locally, so the website's download panel can be
+  # built against them before dev and production switch them on.
+  enabled: true
