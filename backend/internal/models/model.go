@@ -107,6 +107,25 @@ func (metadata ModelMetadata) HasArchiveOrigin() bool {
 	return metadata.Origin != nil && *metadata.Origin == ModelOriginArchive
 }
 
+// ModelSearchSource says where a model comes from, as the model search's source filter names it.
+type ModelSearchSource string
+
+const (
+	// ModelSearchSourcePDBArchive is a model taken unchanged from a PDB deposition.
+	ModelSearchSourcePDBArchive ModelSearchSource = "pdb_archive"
+	// ModelSearchSourceDynamicPDBDeposit is every other model: one people uploaded to Dynamic PDB.
+	ModelSearchSourceDynamicPDBDeposit ModelSearchSource = "dynamic_pdb_deposit"
+)
+
+// SearchSource is where the model comes from: the archive for an unchanged archive deposition
+// (IsArchiveModel), Dynamic PDB for every other model.
+func (metadata ModelMetadata) SearchSource() ModelSearchSource {
+	if metadata.IsArchiveModel() {
+		return ModelSearchSourcePDBArchive
+	}
+	return ModelSearchSourceDynamicPDBDeposit
+}
+
 type ModelPurpose string
 
 const (

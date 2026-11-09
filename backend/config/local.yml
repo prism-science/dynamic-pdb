@@ -58,3 +58,7 @@ compounds:
   # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
   archive_files: false
   archive_fill: false
+model_search:
+  # Search filters on GET /v1/models (S1) are on locally, so the website's search can be built
+  # against them before dev and production switch them on.
+  filters_enabled: true

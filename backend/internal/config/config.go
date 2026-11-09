@@ -29,6 +29,8 @@ type Config struct {
 	Revisions  RevisionsConfig     `mapstructure:"revisions"`
 	// ArtifactExtraction holds the switch for extracting uploaded files before they are saved.
 	ArtifactExtraction ArtifactExtractionConfig `mapstructure:"artifact_extraction"`
+	// ModelSearch holds the switch and limits of the search filters on GET /v1/models.
+	ModelSearch ModelSearchConfig `mapstructure:"model_search"`
 }
 
 type ServerConfig struct {
@@ -62,6 +64,27 @@ type RevisionsConfig struct {
 	SelfApprovalEnabled bool `mapstructure:"self_approval_enabled"`
 }
 
+// ModelSearchConfig holds the search filters of GET /v1/models.
+type ModelSearchConfig struct {
+	// FiltersEnabled turns on the filters, the capped total, and the entry and review warnings in
+	// each result. Off, a filter parameter gets 400 and the list answers as before.
+	FiltersEnabled bool `mapstructure:"filters_enabled"`
+	// CountCap is where the total stops counting: above it the total is "CountCap+".
+	CountCap int `mapstructure:"count_cap"`
+	// RateLimit caps searches that count their results, per client and server instance.
+	RateLimit ModelSearchRateLimitConfig `mapstructure:"rate_limit"`
+}
+
+// ModelSearchRateLimitConfig caps counted searches (requests without a cursor) per client, on
+// top of the server's global limit. Clients are told apart as for server.rate_limit.
+type ModelSearchRateLimitConfig struct {
+	// Requests caps each client that reaches the server through the load balancer and ingress.
+	Requests int `mapstructure:"requests"`
+	// InternalRequests caps each in-cluster caller, such as a website pod.
+	InternalRequests int           `mapstructure:"internal_requests"`
+	Window           time.Duration `mapstructure:"window"`
+}
+
 // RateLimitConfig caps how many requests one client may send per window on each server instance.
 type RateLimitConfig struct {
 	// Requests caps each client that reaches the server through the load balancer and ingress.
@@ -92,6 +115,11 @@ const (
 	defaultRateLimitRequests         = 100
 	defaultRateLimitWindow           = 10 * time.Second
 	defaultRateLimitInternalRequests = 1000
+
+	defaultModelSearchCountCap                  = 10000
+	defaultModelSearchRateLimitRequests         = 30
+	defaultModelSearchRateLimitInternalRequests = 300
+	defaultModelSearchRateLimitWindow           = 10 * time.Second
 )
 
 func ReadFromFile(filename string) (Config, error) {
@@ -108,6 +136,11 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("entries::delete_enabled", false)
 	v.SetDefault("revisions::self_approval_enabled", false)
 	v.SetDefault("artifact_extraction::uploads_enabled", false)
+	v.SetDefault("model_search::filters_enabled", false)
+	v.SetDefault("model_search::count_cap", defaultModelSearchCountCap)
+	v.SetDefault("model_search::rate_limit::requests", defaultModelSearchRateLimitRequests)
+	v.SetDefault("model_search::rate_limit::internal_requests", defaultModelSearchRateLimitInternalRequests)
+	v.SetDefault("model_search::rate_limit::window", defaultModelSearchRateLimitWindow)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
@@ -157,6 +190,18 @@ func validate(cfg Config) error {
 	}
 	if _, err := cfg.Server.RateLimit.TrustedProxyPrefixes(); err != nil {
 		return fmt.Errorf("server.rate_limit.trusted_proxies: %w", err)
+	}
+	if cfg.ModelSearch.CountCap <= 0 {
+		return fmt.Errorf("model_search.count_cap must be positive")
+	}
+	if cfg.ModelSearch.RateLimit.Requests <= 0 {
+		return fmt.Errorf("model_search.rate_limit.requests must be positive")
+	}
+	if cfg.ModelSearch.RateLimit.InternalRequests <= 0 {
+		return fmt.Errorf("model_search.rate_limit.internal_requests must be positive")
+	}
+	if cfg.ModelSearch.RateLimit.Window <= 0 {
+		return fmt.Errorf("model_search.rate_limit.window must be positive")
 	}
 	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
 		return fmt.Errorf("server.public_base_url: %w", err)

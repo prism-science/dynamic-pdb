@@ -22,6 +22,7 @@ func Test_should_list_the_openapi_enum_values_when_domain_vocabularies_are_read(
 		"StructureMethod":      stringsOf(domainmodels.StructureMethods),
 		"ModelPurpose":         stringsOf(domainmodels.ModelPurposes),
 		"StructureModelType":   stringsOf(domainmodels.StructureModelTypes),
+		"ModelSearchSource":    stringsOf(domainmodels.ModelSearchSources),
 		"MetricKey":            stringsOf(domainmodels.MetricKeys),
 		"ArtifactLevel":        stringsOf(domainmodels.ArtifactLevels),
 		"ArtifactType":         stringsOf(domainmodels.ArtifactTypes),

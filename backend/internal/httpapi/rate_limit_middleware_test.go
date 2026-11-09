@@ -129,6 +129,27 @@ func Test_should_reject_request_when_client_without_proxy_exceeded_limit(t *test
 	assert.Equal(t, http.StatusTooManyRequests, status)
 }
 
+func Test_should_answer_json_api_error_with_retry_after_when_client_exceeded_limit(t *testing.T) {
+	// given
+	handler := newRateLimitedHandler(1, 100)
+	require.Equal(t, http.StatusOK, send(handler, newRequest("/v1/entries", "192.0.2.1:1234")))
+	recorder := httptest.NewRecorder()
+
+	// when
+	handler.ServeHTTP(recorder, newRequest("/v1/entries", "192.0.2.1:1234"))
+
+	// then
+	assert.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	assert.Equal(t, JSONAPIMediaType, recorder.Header().Get("Content-Type"))
+	assert.NotEmpty(t, recorder.Header().Get("Retry-After"))
+	errorObject := decodeSingleErrorObject(t, recorder)
+	assert.Equal(t, "429", errorObject.Status)
+	require.NotNil(t, errorObject.Code)
+	assert.Equal(t, rateLimitedErrorCode, *errorObject.Code)
+	require.NotNil(t, errorObject.Detail)
+	assert.Contains(t, *errorObject.Detail, "Retry-After")
+}
+
 func Test_should_use_peer_and_ignore_forwarded_for_when_peer_is_not_trusted_proxy(t *testing.T) {
 	// given
 	request := newRequest("/", "192.0.2.1:1234", "198.51.100.1")

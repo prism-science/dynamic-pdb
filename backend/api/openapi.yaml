@@ -1018,8 +1018,20 @@ paths:
     get:
       tags: [Models]
       operationId: listModelsAcrossEntries
-      summary: List models
-      description: Lists models from their current active revisions across active entries.
+      summary: List and search models
+      description: >
+        Lists models from their current active revisions across active entries, oldest first.
+        Each result is one model. Search filters narrow the list: entry filters apply to the
+        model's entry (its active revision), model filters to that same model, never to
+        another model of the entry. Different filters must all match; several values of one
+        filter mean any of them. A missing value (no resolution, unknown Ligands and Cofactors,
+        no metric value) never matches a filter that asks for a value or a range;
+        metric_missing finds missing metric values.
+
+
+        Search filters, meta.total, and the entry, review_flags and compounds_needing_review
+        fields are available only where the server enables model search; elsewhere a filter
+        parameter gets 400 and the response has none of them.
       security: []
       parameters:
         - name: limit
@@ -1050,15 +1062,395 @@ paths:
           schema:
             type: string
             maxLength: 512
+        - name: method
+          in: query
+          description: >
+            Entry filter. Models whose entry's experimental method is one of these values,
+            ignoring case. Archive entries keep the archive's text (for example
+            "NEUTRON DIFFRACTION"), so this is a list of strings, not StructureMethod.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: resolution_min
+          in: query
+          description: >
+            Entry filter. Models whose entry's resolution, in Å, is at least this value
+            (inclusive). An entry with no resolution never matches.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: resolution_max
+          in: query
+          description: >
+            Entry filter. Models whose entry's resolution, in Å, is at most this value
+            (inclusive). An entry with no resolution never matches.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: organism
+          in: query
+          description: >
+            Entry filter. Models whose entry has a polymer entity from one of these source
+            organisms: a scientific name (ignoring case, for example "Homo sapiens") or, for a
+            value of digits only, an NCBI taxonomy ID (for example 9606).
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: uniprot
+          in: query
+          description: >
+            Entry filter. Models whose entry has a polymer entity mapped to one of these UniProt
+            accessions, ignoring case (for example P69905).
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: ligand_or_cofactor
+          in: query
+          description: >
+            Entry filter. Models whose entry lists one of these chemical component IDs (for
+            example ADP) in its curated Ligands or its Cofactors, ignoring case. An entry whose
+            lists are unknown (absent) never matches. Compounds found in a model's coordinate
+            file are the separate compound filter.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: model_type
+          in: query
+          description: Model filter. Models of one of these types.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              $ref: "#/components/schemas/StructureModelType"
+        - name: purpose
+          in: query
+          description: Model filter. Models with one of these purposes.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              $ref: "#/components/schemas/ModelPurpose"
+        - name: source
+          in: query
+          description: >
+            Model filter. Where the model comes from: pdb_archive is a model taken unchanged
+            from a PDB deposition (model type Deposited, or origin archive, which includes
+            re-refinements filed under the entry of their experimental data);
+            dynamic_pdb_deposit is every other model.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              $ref: "#/components/schemas/ModelSearchSource"
+        - name: data_level
+          in: query
+          description: >
+            Model filter. Models with at least one file of one of these levels attached to the
+            model. Levels belong to files, not to models.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              $ref: "#/components/schemas/ArtifactLevel"
+        - name: compound
+          in: query
+          description: >
+            Model filter. Models whose coordinate file contains one of these chemical component
+            IDs (for example ADP), ignoring case. A file the server has not read yet never
+            matches. Compounds the reader marked "needs review" match too; the result lists them
+            in compounds_needing_review.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: r_work_min
+          in: query
+          description: >
+            Models whose r_work is at least this value (inclusive). A model with no value for
+            r_work never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: r_work_max
+          in: query
+          description: >
+            Models whose r_work is at most this value (inclusive). A model with no value for
+            r_work never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: r_free_min
+          in: query
+          description: >
+            Models whose r_free is at least this value (inclusive). A model with no value for
+            r_free never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: r_free_max
+          in: query
+          description: >
+            Models whose r_free is at most this value (inclusive). A model with no value for
+            r_free never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: cc_min
+          in: query
+          description: >
+            Models whose cc is at least this value (inclusive). A model with no value for
+            cc never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: cc_max
+          in: query
+          description: >
+            Models whose cc is at most this value (inclusive). A model with no value for
+            cc never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: rscc_min
+          in: query
+          description: >
+            Models whose rscc is at least this value (inclusive). A model with no value for
+            rscc never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: rscc_max
+          in: query
+          description: >
+            Models whose rscc is at most this value (inclusive). A model with no value for
+            rscc never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: clashscore_min
+          in: query
+          description: >
+            Models whose clashscore is at least this value (inclusive). A model with no value for
+            clashscore never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: clashscore_max
+          in: query
+          description: >
+            Models whose clashscore is at most this value (inclusive). A model with no value for
+            clashscore never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: ramachandran_outliers_min
+          in: query
+          description: >
+            Models whose ramachandran_outliers is at least this value (inclusive). A model with no value for
+            ramachandran_outliers never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: ramachandran_outliers_max
+          in: query
+          description: >
+            Models whose ramachandran_outliers is at most this value (inclusive). A model with no value for
+            ramachandran_outliers never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: side_chain_outliers_min
+          in: query
+          description: >
+            Models whose side_chain_outliers is at least this value (inclusive). A model with no value for
+            side_chain_outliers never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: side_chain_outliers_max
+          in: query
+          description: >
+            Models whose side_chain_outliers is at most this value (inclusive). A model with no value for
+            side_chain_outliers never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: molprobity_score_min
+          in: query
+          description: >
+            Models whose molprobity_score is at least this value (inclusive). A model with no value for
+            molprobity_score never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: molprobity_score_max
+          in: query
+          description: >
+            Models whose molprobity_score is at most this value (inclusive). A model with no value for
+            molprobity_score never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: wilson_b_min
+          in: query
+          description: >
+            Models whose wilson_b is at least this value (inclusive). A model with no value for
+            wilson_b never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: wilson_b_max
+          in: query
+          description: >
+            Models whose wilson_b is at most this value (inclusive). A model with no value for
+            wilson_b never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: rmsf_min
+          in: query
+          description: >
+            Models whose rmsf is at least this value (inclusive). A model with no value for
+            rmsf never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: rmsf_max
+          in: query
+          description: >
+            Models whose rmsf is at most this value (inclusive). A model with no value for
+            rmsf never matches; metric_missing finds those.
+          required: false
+          schema:
+            type: number
+            format: double
+        - name: metric_missing
+          in: query
+          description: >
+            Model filter. Models that have no value for at least one of these metrics.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              $ref: "#/components/schemas/MetricKey"
+        - name: flagged
+          in: query
+          description: >
+            true returns only models with an open review flag (on the model, its current
+            revision, its entry or the entry's polymer entities); false returns only models
+            without one. Results always list their flags in review_flags.
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: Models found.
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/ModelCollectionDocument"
+                $ref: "#/components/schemas/ModelSearchCollectionDocument"
         "400":
-          description: Invalid filters.
+          description: >
+            Invalid filters, or a filter parameter where the server does not enable model
+            search. The detail names the parameter.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >
+            Too many requests from this client (code RATE_LIMITED). Searches that count their
+            results (requests without cursor) have their own limit. Wait the number of seconds in
+            Retry-After; to read many results, follow links.next instead of repeating the search.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: >
+            The search did not finish within the server's time limit (code TIMEOUT). Add filters
+            that narrow the result, for example a model type or a resolution range, and try again
+            after Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
           content:
             application/vnd.api+json:
               schema:
@@ -2558,6 +2950,113 @@ components:
         meta:
           $ref: "#/components/schemas/CursorPageMeta"
 
+    ModelSearchCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelSearchData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/ModelSearchCollectionMeta"
+
+    ModelSearchData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/ModelSearchAttributes"
+
+    ModelSearchAttributes:
+      allOf:
+        - $ref: "#/components/schemas/ModelAttributes"
+        - type: object
+          properties:
+            entry:
+              description: >
+                The model's entry, from its active revision, with its related raw datasets.
+                Present where the server enables model search.
+              allOf:
+                - $ref: "#/components/schemas/EntryInfoAttributes"
+            review_flags:
+              description: >
+                Open review flags on the model, its current revision, its entry or the entry's
+                polymer entities. The record stays public; show the flags as a warning. Present
+                (possibly empty) where the server enables model search.
+              type: array
+              items:
+                $ref: "#/components/schemas/ReviewFlag"
+            compounds_needing_review:
+              description: >
+                Compounds named in the compound filter that the coordinate-file reader marked
+                "needs review" in this model's file (for example a possible chain residue).
+                They still match. Present only when the request has a compound filter.
+              type: array
+              items:
+                $ref: "#/components/schemas/CompoundNeedingReview"
+
+    ReviewFlag:
+      type: object
+      required: [object_type, object_id, issue, flagged_at]
+      properties:
+        object_type:
+          type: string
+          description: What the flag is on, for example entry, model, model_revision or polymer_entity.
+        object_id:
+          type: string
+        issue:
+          type: string
+          description: The open issue, for example sync_validation_failed.
+        flagged_at:
+          type: string
+          format: date-time
+
+    CompoundNeedingReview:
+      type: object
+      required: [ccd_id, review_reason]
+      properties:
+        ccd_id:
+          type: string
+        review_reason:
+          type: string
+
+    ModelSearchCollectionMeta:
+      type: object
+      properties:
+        next_cursor:
+          type: string
+          description: Present only when another page exists. Pass as `cursor` to get the next page.
+        total:
+          $ref: "#/components/schemas/ModelSearchTotal"
+
+    ModelSearchTotal:
+      type: object
+      description: >
+        How many models match the whole search. Present on the first page (a request without
+        cursor or offset) where the server enables model search.
+      required: [count, exact]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: >
+            The number of matching models when exact is true. When exact is false, more than
+            this many models match (show "10,000+" for a count of 10000).
+        exact:
+          type: boolean
+
+    ModelSearchSource:
+      type: string
+      enum: [pdb_archive, dynamic_pdb_deposit]
+      x-enum-varnames: [ModelSearchSourcePDBArchive, ModelSearchSourceDynamicPDBDeposit]
+
     ModelDocument:
       type: object
       required: [data]
@@ -3209,6 +3708,12 @@ components:
             thumbnail_image_url:
               type: string
               nullable: true
+            revision_number:
+              type: integer
+              nullable: true
+              description: >
+                Number of the entry revision these values come from; it grows by one with each
+                published change. Null only for a revision that was never published.
             published_at:
               type: string
               format: date-time
@@ -3754,6 +4259,12 @@ components:
             thumbnail_image_url:
               type: string
               nullable: true
+            revision_number:
+              type: integer
+              nullable: true
+              description: >
+                Number of the entry revision these values come from; it grows by one with each
+                published change. Null only for a revision that was never published.
             published_at:
               type: string
               format: date-time
@@ -4041,6 +4552,12 @@ components:
         idempotency_key:
           type: string
           nullable: true
+        revision_number:
+          type: integer
+          nullable: true
+          description: >
+            Number of the model revision these values come from; it grows by one with each
+            published change. Null only for a revision that was never published.
         primary_artifact_id:
           type: string
           format: uuid

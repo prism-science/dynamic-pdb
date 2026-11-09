@@ -119,3 +119,10 @@ type ModeledCompoundClaim struct {
 	// Attempts counts this claim.
 	Attempts int
 }
+
+// CompoundNeedingReview is a compound the model-compounds job found in a model file but marked
+// for review, for example a possible chain residue, with the reason.
+type CompoundNeedingReview struct {
+	CCDID        string
+	ReviewReason string
+}
