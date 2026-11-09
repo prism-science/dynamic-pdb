@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -95,7 +94,7 @@ func Test_should_initialize_and_upload_manifest_from_cli(t *testing.T) {
 	assert.Contains(t, uploadOutput, "Uploaded 1 entries, 2 models, 6 artifacts.")
 	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID, reviewer.AccessToken)
 
-	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
+	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries?pdb_id="+pdbID, auth.AccessToken)
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
 
 	entry := getJSON[entryDocumentResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID, auth.AccessToken).Entry()
@@ -248,9 +247,10 @@ type integrationDB struct {
 	Conn *sql.DB
 }
 
+// setupDB connects to the run's schema (see TestMain).
 func setupDB(t *testing.T) integrationDB {
 	t.Helper()
-	conn, err := sql.Open("postgres", dbDSN("sslmode=disable"))
+	conn, err := sql.Open("postgres", dbDSN(runConnectionParams()))
 	require.NoError(t, err)
 	require.NoError(t, conn.Ping())
 	t.Cleanup(func() {
@@ -353,7 +353,7 @@ func startBackendWithEnv(t *testing.T, root string, binaryPath string, s3URL str
 		"DYNAMIC_PDB_ENV=local",
 		"DYNAMIC_PDB_SERVER_ADDR="+addr,
 		"DYNAMIC_PDB_SERVER_PUBLIC_BASE_URL=http://"+addr,
-		"DYNAMIC_PDB_DB_CONNECTION_PARAMS=sslmode=disable",
+		"DYNAMIC_PDB_DB_CONNECTION_PARAMS="+runConnectionParams(),
 		"DYNAMIC_PDB_CDN_S3_ENDPOINT="+s3URL,
 		"DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID=AKIAEXAMPLE",
 		"DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY=secret",
@@ -1037,9 +1037,9 @@ func entryForUser(t *testing.T, entries []entryInfo, userID string) entryInfo {
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	_, filename, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	return filepath.Dir(filepath.Dir(filename))
+	root, err := sourceRepoRoot()
+	require.NoError(t, err)
+	return root
 }
 
 func buildCLI(t *testing.T, root string) string {
@@ -1145,17 +1145,31 @@ func integrationPDBModelTextWithNonce() string {
 	return "REMARK   1 " + uuid.NewString() + "\n" + integrationPDBModelText()
 }
 
-// integrationPDBID returns "9" and three random letters or digits, about 47,000 IDs. Test
-// entries stay in the shared local database and an active PDB ID is unique, so a narrow ID
-// space makes tests collide with entries earlier runs left behind.
+// integrationPDBIDs counts the PDB IDs integrationPDBID has handed out in this test process.
+var integrationPDBIDs struct {
+	sync.Mutex
+	next int
+}
+
+// integrationPDBID returns a PDB ID that no other test in this run has used: "9" and the next
+// three base-36 digits. An active PDB ID is unique, and each run has a schema of its own (see
+// TestMain), so IDs only need to differ within the run.
 func integrationPDBID() string {
 	const symbols = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	random := uuid.New()
-	id := []byte{'9'}
-	for _, value := range random[:3] {
-		id = append(id, symbols[int(value)%len(symbols)])
+	const suffixLength = 3
+	integrationPDBIDs.Lock()
+	defer integrationPDBIDs.Unlock()
+	index := integrationPDBIDs.next
+	integrationPDBIDs.next++
+	suffix := make([]byte, suffixLength)
+	for position := suffixLength - 1; position >= 0; position-- {
+		suffix[position] = symbols[index%len(symbols)]
+		index /= len(symbols)
 	}
-	return string(id)
+	if index > 0 {
+		panic("integrationPDBID: every 9xxx PDB ID is used in this run")
+	}
+	return "9" + string(suffix)
 }
 
 func assertArtifactNames(t *testing.T, artifacts []artifactResponse, names []string) {

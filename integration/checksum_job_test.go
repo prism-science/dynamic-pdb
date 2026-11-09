@@ -12,8 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -179,7 +177,7 @@ func runChecksumJob(t *testing.T, root string, binaryPath string, s3URL string, 
 // to it and the environment that points the backend and the job at it.
 func setupMigratedSchema(t *testing.T, root string) (integrationDB, []string) {
 	t.Helper()
-	schemaName := "integration_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	schemaName := newSchemaName("integration_")
 	admin, err := sql.Open("postgres", dbDSN("sslmode=disable"))
 	require.NoError(t, err)
 	_, err = admin.ExecContext(t.Context(), fmt.Sprintf(`create schema "%s"`, schemaName))
@@ -189,22 +187,13 @@ func setupMigratedSchema(t *testing.T, root string) (integrationDB, []string) {
 		assert.NoError(t, dropErr)
 		assert.NoError(t, admin.Close())
 	})
+	require.NoError(t, migrateSchema(t.Context(), root, schemaName))
 
-	connectionParams := "sslmode=disable search_path=" + schemaName
+	connectionParams := schemaConnectionParams(schemaName)
 	conn, err := sql.Open("postgres", dbDSN(connectionParams))
 	require.NoError(t, err)
 	conn.SetMaxOpenConns(1)
 	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
-
-	paths, err := filepath.Glob(filepath.Join(root, "backend", "migrations", "db", "public", "structure", "V*.sql"))
-	require.NoError(t, err)
-	sort.Strings(paths)
-	for _, path := range paths {
-		migration, err := os.ReadFile(path)
-		require.NoError(t, err)
-		_, err = conn.ExecContext(t.Context(), string(migration))
-		require.NoError(t, err, "apply %s", filepath.Base(path))
-	}
 	return integrationDB{Conn: conn}, []string{"DYNAMIC_PDB_DB_CONNECTION_PARAMS=" + connectionParams}
 }
 

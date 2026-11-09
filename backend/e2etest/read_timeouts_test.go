@@ -34,9 +34,6 @@ import (
 	"dynamic-pdb/lib/sifts"
 )
 
-// rawTestDatabaseDSN reaches the same local database as testDatabase, outside any server's pool.
-const rawTestDatabaseDSN = "host=localhost port=35432 dbname=dynamic_pdb_local user=postgres password=password sslmode=disable"
-
 // ReadTimeoutsSuite covers ticket 4's timeout rules through the request middleware cmd/server
 // uses: a read that runs past its deadline answers 504 and is logged, a client that hangs up
 // stops its database query, and stored records stay readable while RCSB is down.
@@ -189,7 +186,7 @@ func startLifecycleTestServer(t *testing.T, readTimeout time.Duration) lifecycle
 		Name:             "dynamic_pdb_local",
 		Username:         "postgres",
 		Password:         "password",
-		ConnectionParams: "sslmode=disable application_name=" + applicationName,
+		ConnectionParams: testSchemaConnectionParams + " application_name=" + applicationName,
 		// The statement timeout every deployed config uses; the read deadlines here are shorter.
 		StatementTimeout: 10 * time.Second,
 	})

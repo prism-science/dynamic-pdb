@@ -165,8 +165,7 @@ func (s *EntryDeleteSuite) Test_should_stop_entry_and_model_sync_jobs_when_entry
 	model := createAndActivateModelForTest(s.T(), ownerToken, entry.EntryId, map[string]any{
 		"model": map[string]any{"title": "model with a sync job", "metadata": map[string]any{"model_type": "Deposited"}},
 	})
-	rawDatabase, err := sqlx.Connect("postgres",
-		"host=localhost port=35432 dbname=dynamic_pdb_local user=postgres password=password sslmode=disable")
+	rawDatabase, err := sqlx.Connect("postgres", rawTestDatabaseDSN)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { s.NoError(rawDatabase.Close()) })
 	// the job the activation of an archive Deposited model creates
@@ -291,8 +290,8 @@ func listEntryIDsForTest(t *testing.T, query string) []string {
 	return ids
 }
 
-// unusedPDBIDForTest returns a PDB ID that no active revision holds. The local database is shared
-// with earlier runs, and the unique index on active PDB IDs would otherwise make creates collide.
+// unusedPDBIDForTest returns a PDB ID that no active revision holds. The tests of a run share its
+// schema, and the unique index on active PDB IDs would otherwise make creates collide.
 func unusedPDBIDForTest(t *testing.T) string {
 	t.Helper()
 	const symbols = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"

@@ -107,14 +107,20 @@ func TestMain(m *testing.M) {
 	githubClient = &MockGitHubClient{}
 	s3Stub = e2es3.NewStubServer()
 
-	var err error
+	schema, dropTestSchema, err := createTestSchema(context.Background())
+	if err != nil {
+		log.Fatalf("e2etest: %v", err)
+	}
+	testSchemaConnectionParams = "sslmode=disable search_path=" + schema
+	rawTestDatabaseDSN = localDatabaseDSN + " search_path=" + schema
+
 	testDatabase, err = db.NewDB(db.Config{
 		Host:             "localhost",
 		Port:             35432,
 		Name:             "dynamic_pdb_local",
 		Username:         "postgres",
 		Password:         "password",
-		ConnectionParams: "sslmode=disable",
+		ConnectionParams: testSchemaConnectionParams,
 	})
 	if err != nil {
 		log.Fatalf("e2etest: connect db: %v", err)
@@ -260,6 +266,9 @@ func TestMain(m *testing.M) {
 	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {
 		log.Printf("e2etest: close database: %v", err)
+	}
+	if err := dropTestSchema(); err != nil {
+		log.Printf("e2etest: %v", err)
 	}
 	os.Exit(code)
 }
