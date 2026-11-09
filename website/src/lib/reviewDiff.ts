@@ -5,6 +5,7 @@ import type {
   ReviewEntry,
   ReviewModel,
 } from "@/lib/api/entries";
+import { relatedDatasetKey, relatedDatasetName } from "@/lib/related-datasets";
 
 export type DiffState = "added" | "removed" | "changed" | "same";
 
@@ -94,19 +95,21 @@ function entryProperties(entry: ReviewEntry | null): Record<string, unknown> {
   );
 }
 
-/** One row per dataset, labelled by its DOI. DOIs are case-insensitive, so
- *  a DOI whose case changed is the same dataset. */
+/** One row per dataset, labelled by its DOI, or its accession when it has
+ *  none. Datasets are matched as the API tells duplicates apart, so a DOI
+ *  whose case changed is the same dataset. */
 function relatedDatasetRows(
   before: RelatedDataset[] | undefined,
   after: RelatedDataset[] | undefined,
 ): DiffRow[] {
-  const beforeByDoi = byDoi(before);
-  const afterByDoi = byDoi(after);
-  const keys = new Set([...beforeByDoi.keys(), ...afterByDoi.keys()]);
+  const beforeByKey = byRelatedDatasetKey(before);
+  const afterByKey = byRelatedDatasetKey(after);
+  const keys = new Set([...beforeByKey.keys(), ...afterByKey.keys()]);
   return [...keys].sort().map((key) => {
-    const beforeDataset = beforeByDoi.get(key);
-    const afterDataset = afterByDoi.get(key);
-    const label = (afterDataset ?? beforeDataset)?.doi ?? key;
+    const beforeDataset = beforeByKey.get(key);
+    const afterDataset = afterByKey.get(key);
+    const dataset = afterDataset ?? beforeDataset;
+    const label = (dataset ? relatedDatasetName(dataset).label : "") || key;
     return scalarRow(
       label,
       beforeDataset ? describeRelatedDataset(beforeDataset) : null,
@@ -115,14 +118,23 @@ function relatedDatasetRows(
   });
 }
 
-function byDoi(datasets: RelatedDataset[] | undefined): Map<string, RelatedDataset> {
+function byRelatedDatasetKey(
+  datasets: RelatedDataset[] | undefined,
+): Map<string, RelatedDataset> {
   const result = new Map<string, RelatedDataset>();
-  for (const dataset of datasets ?? []) result.set(dataset.doi.toLowerCase(), dataset);
+  for (const dataset of datasets ?? []) result.set(relatedDatasetKey(dataset), dataset);
   return result;
 }
 
 function describeRelatedDataset(dataset: RelatedDataset): string {
-  return [dataset.doi, dataset.data_type, dataset.repository, dataset.details]
+  return [
+    dataset.doi,
+    dataset.accession,
+    dataset.data_type,
+    dataset.repository,
+    dataset.landing_url,
+    dataset.details,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 }
