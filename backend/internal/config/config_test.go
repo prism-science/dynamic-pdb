@@ -605,3 +605,44 @@ func Test_should_turn_self_approval_on_only_in_dev_config(t *testing.T) {
 		assert.Equal(t, enabled, cfg.Revisions.SelfApprovalEnabled, name)
 	}
 }
+
+func Test_should_leave_model_search_off_with_default_limits_when_config_does_not_set_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, cfg.ModelSearch.FiltersEnabled)
+	assert.Equal(t, 10000, cfg.ModelSearch.CountCap)
+	assert.Equal(t, 30, cfg.ModelSearch.RateLimit.Requests)
+	assert.Equal(t, 300, cfg.ModelSearch.RateLimit.InternalRequests)
+	assert.Equal(t, 10*time.Second, cfg.ModelSearch.RateLimit.Window)
+}
+
+func Test_should_turn_model_search_on_when_env_var_sets_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_MODEL_SEARCH_FILTERS_ENABLED", "true")
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.ModelSearch.FiltersEnabled)
+}
+
+func Test_should_reject_config_when_model_search_count_cap_is_not_positive(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+	t.Setenv("DYNAMIC_PDB_MODEL_SEARCH_COUNT_CAP", "0")
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.ErrorContains(t, err, "model_search.count_cap must be positive")
+}

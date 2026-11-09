@@ -33,8 +33,11 @@ var probePaths = map[string]struct{}{
 // ingress share policy.Requests per window; in-cluster callers get their own buckets of
 // policy.InternalRequests.
 func GlobalRateLimitMiddleware(policy RateLimitPolicy) func(http.Handler) http.Handler {
-	ingressLimiter := httprate.NewRateLimiter(policy.Requests, policy.Window)
-	internalLimiter := httprate.NewRateLimiter(policy.InternalRequests, policy.Window)
+	limitHandler := httprate.WithLimitHandler(writeRateLimitedError(
+		"too many requests from this client. Wait the number of seconds in Retry-After, then try " +
+			"again; to read a long list, follow links.next instead of repeating requests"))
+	ingressLimiter := httprate.NewRateLimiter(policy.Requests, policy.Window, limitHandler)
+	internalLimiter := httprate.NewRateLimiter(policy.InternalRequests, policy.Window, limitHandler)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if _, isProbe := probePaths[r.URL.Path]; isProbe {
@@ -51,6 +54,17 @@ func GlobalRateLimitMiddleware(policy RateLimitPolicy) func(http.Handler) http.H
 			}
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+// rateLimitedErrorCode is the JSON:API error code of a request over a rate limit.
+const rateLimitedErrorCode = "RATE_LIMITED"
+
+// writeRateLimitedError answers a request over a rate limit with a JSON:API 429 carrying detail.
+// httprate sets Retry-After and the X-RateLimit headers before it calls the handler.
+func writeRateLimitedError(detail string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusTooManyRequests, rateLimitedErrorCode, detail)
 	}
 }
 

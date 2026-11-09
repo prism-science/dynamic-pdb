@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 )
 
-// readTimeoutErrorCode is the JSON:API error code of a read that ran past its deadline.
-const readTimeoutErrorCode = "TIMEOUT"
+const (
+	// readTimeoutErrorCode is the JSON:API error code of a read that ran past its deadline.
+	readTimeoutErrorCode = "TIMEOUT"
+	// readTimeoutRetryAfterSeconds is the Retry-After of a read that ran past its deadline.
+	readTimeoutRetryAfterSeconds = 10
+)
 
 // ReadTimeoutStatusMiddleware answers 504 instead of 500 when a GET or HEAD request fails
 // after its deadline has passed. Handlers report every database error as a 500, and a query
@@ -48,6 +53,7 @@ func (w *readTimeoutStatusWriter) WriteHeader(status int) {
 	w.wroteHeader = true
 	if status == http.StatusInternalServerError && errors.Is(w.ctx.Err(), context.DeadlineExceeded) {
 		w.replacedWithTimeout = true
+		w.ResponseWriter.Header().Set("Retry-After", strconv.Itoa(readTimeoutRetryAfterSeconds))
 		writeError(w.ResponseWriter, http.StatusGatewayTimeout, readTimeoutErrorCode,
 			"the request did not finish within the server's time limit; try again later")
 		return

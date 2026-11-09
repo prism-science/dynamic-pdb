@@ -58,10 +58,12 @@ var (
 	selfApprovalServer *httptest.Server
 	// entryDeletionServer shares the database with testServer and has entry deletion turned on.
 	entryDeletionServer *httptest.Server
-	testDatabase        *db.DB
-	githubClient        *MockGitHubClient
-	s3Stub              *e2es3.StubServer
-	adminToken          string
+	// modelSearchServer shares the database with testServer and has the model search filters on.
+	modelSearchServer *httptest.Server
+	testDatabase      *db.DB
+	githubClient      *MockGitHubClient
+	s3Stub            *e2es3.StubServer
+	adminToken        string
 )
 
 // enforceAllValidation enforces every validation rule, as dev and local configs do.
@@ -78,6 +80,8 @@ type testRouterOptions struct {
 	entryDeletion bool
 	// selfApproval lets reviewers approve revisions they created.
 	selfApproval bool
+	// modelSearch turns the search filters of GET /v1/models on.
+	modelSearch bool
 }
 
 type MockGitHubClient struct {
@@ -193,6 +197,13 @@ func TestMain(m *testing.M) {
 		if options.extractionTimeout > 0 {
 			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(options.extractionTimeout)
 		}
+		server.WithModelSearch(httpapi.ModelSearchPolicy{
+			FiltersEnabled:   options.modelSearch,
+			CountCap:         10000,
+			Requests:         1000,
+			InternalRequests: 1000,
+			Window:           time.Minute,
+		})
 		router := chi.NewRouter()
 		router.Use(corsMiddleware())
 		router.Use(httpapi.MediaTypeMiddleware())
@@ -230,6 +241,10 @@ func TestMain(m *testing.M) {
 		validation:   enforceAllValidation,
 		selfApproval: true,
 	}))
+	modelSearchServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validation:  enforceAllValidation,
+		modelSearch: true,
+	}))
 
 	code := m.Run()
 
@@ -240,6 +255,7 @@ func TestMain(m *testing.M) {
 	timeoutExtractionServer.Close()
 	entryDeletionServer.Close()
 	selfApprovalServer.Close()
+	modelSearchServer.Close()
 	s3Stub.Close()
 	rcsbStub.Close()
 	if err := testDatabase.Close(); err != nil {

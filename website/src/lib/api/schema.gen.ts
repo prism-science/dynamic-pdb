@@ -377,8 +377,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List models
-         * @description Lists models from their current active revisions across active entries.
+         * List and search models
+         * @description Lists models from their current active revisions across active entries, oldest first. Each result is one model. Search filters narrow the list: entry filters apply to the model's entry (its active revision), model filters to that same model, never to another model of the entry. Different filters must all match; several values of one filter mean any of them. A missing value (no resolution, unknown Ligands and Cofactors, no metric value) never matches a filter that asks for a value or a range; metric_missing finds missing metric values.
+         *
+         *     Search filters, meta.total, and the entry, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them.
          */
         get: operations["listModelsAcrossEntries"];
         put?: never;
@@ -797,6 +799,50 @@ export interface components {
             links?: components["schemas"]["CollectionLinks"];
             meta?: components["schemas"]["CursorPageMeta"];
         };
+        ModelSearchCollectionDocument: {
+            data: components["schemas"]["ModelSearchData"][];
+            links?: components["schemas"]["CollectionLinks"];
+            meta?: components["schemas"]["ModelSearchCollectionMeta"];
+        };
+        ModelSearchData: {
+            type: string;
+            id: string;
+            attributes: components["schemas"]["ModelSearchAttributes"];
+        };
+        ModelSearchAttributes: components["schemas"]["ModelAttributes"] & {
+            /** @description The model's entry, from its active revision, with its related raw datasets. Present where the server enables model search. */
+            entry?: components["schemas"]["EntryInfoAttributes"];
+            /** @description Open review flags on the model, its current revision, its entry or the entry's polymer entities. The record stays public; show the flags as a warning. Present (possibly empty) where the server enables model search. */
+            review_flags?: components["schemas"]["ReviewFlag"][];
+            /** @description Compounds named in the compound filter that the coordinate-file reader marked "needs review" in this model's file (for example a possible chain residue). They still match. Present only when the request has a compound filter. */
+            compounds_needing_review?: components["schemas"]["CompoundNeedingReview"][];
+        };
+        ReviewFlag: {
+            /** @description What the flag is on, for example entry, model, model_revision or polymer_entity. */
+            object_type: string;
+            object_id: string;
+            /** @description The open issue, for example sync_validation_failed. */
+            issue: string;
+            /** Format: date-time */
+            flagged_at: string;
+        };
+        CompoundNeedingReview: {
+            ccd_id: string;
+            review_reason: string;
+        };
+        ModelSearchCollectionMeta: {
+            /** @description Present only when another page exists. Pass as `cursor` to get the next page. */
+            next_cursor?: string;
+            total?: components["schemas"]["ModelSearchTotal"];
+        };
+        /** @description How many models match the whole search. Present on the first page (a request without cursor or offset) where the server enables model search. */
+        ModelSearchTotal: {
+            /** @description The number of matching models when exact is true. When exact is false, more than this many models match (show "10,000+" for a count of 10000). */
+            count: number;
+            exact: boolean;
+        };
+        /** @enum {string} */
+        ModelSearchSource: "pdb_archive" | "dynamic_pdb_deposit";
         ModelDocument: {
             data: components["schemas"]["ModelDetailData"];
         };
@@ -1111,6 +1157,8 @@ export interface components {
             created_by: string;
             title: string | null;
             thumbnail_image_url?: string | null;
+            /** @description Number of the entry revision these values come from; it grows by one with each published change. Null only for a revision that was never published. */
+            revision_number?: number | null;
             /** Format: date-time */
             published_at?: string | null;
             /** Format: date-time */
@@ -1376,6 +1424,8 @@ export interface components {
         EntryAttributes: components["schemas"]["EntryProperties"] & {
             title: string | null;
             thumbnail_image_url?: string | null;
+            /** @description Number of the entry revision these values come from; it grows by one with each published change. Null only for a revision that was never published. */
+            revision_number?: number | null;
             /** Format: date-time */
             published_at?: string | null;
             /** Format: date-time */
@@ -1517,6 +1567,8 @@ export interface components {
             /** @description Per-residue data. Returned only by the model detail endpoint (GET /v1/entries/{entry_id}/models/{model_id}); omitted from model lists. */
             residue_data?: components["schemas"]["ResidueData"][];
             idempotency_key?: string | null;
+            /** @description Number of the model revision these values come from; it grows by one with each published change. Null only for a revision that was never published. */
+            revision_number?: number | null;
             /** Format: uuid */
             primary_artifact_id?: string | null;
             /** Format: date-time */
@@ -3163,6 +3215,72 @@ export interface operations {
                 offset?: number;
                 /** @description Opaque cursor from the previous page's `meta.next_cursor`. Returns the models that follow it. Follow `links.next` to page without building URLs. Cannot be combined with `offset`. */
                 cursor?: string;
+                /** @description Entry filter. Models whose entry's experimental method is one of these values, ignoring case. Archive entries keep the archive's text (for example "NEUTRON DIFFRACTION"), so this is a list of strings, not StructureMethod. */
+                method?: string[];
+                /** @description Entry filter. Models whose entry's resolution, in Å, is at least this value (inclusive). An entry with no resolution never matches. */
+                resolution_min?: number;
+                /** @description Entry filter. Models whose entry's resolution, in Å, is at most this value (inclusive). An entry with no resolution never matches. */
+                resolution_max?: number;
+                /** @description Entry filter. Models whose entry has a polymer entity from one of these source organisms: a scientific name (ignoring case, for example "Homo sapiens") or, for a value of digits only, an NCBI taxonomy ID (for example 9606). */
+                organism?: string[];
+                /** @description Entry filter. Models whose entry has a polymer entity mapped to one of these UniProt accessions, ignoring case (for example P69905). */
+                uniprot?: string[];
+                /** @description Entry filter. Models whose entry lists one of these chemical component IDs (for example ADP) in its curated Ligands or its Cofactors, ignoring case. An entry whose lists are unknown (absent) never matches. Compounds found in a model's coordinate file are the separate compound filter. */
+                ligand_or_cofactor?: string[];
+                /** @description Model filter. Models of one of these types. */
+                model_type?: components["schemas"]["StructureModelType"][];
+                /** @description Model filter. Models with one of these purposes. */
+                purpose?: components["schemas"]["ModelPurpose"][];
+                /** @description Model filter. Where the model comes from: pdb_archive is a model taken unchanged from a PDB deposition (model type Deposited, or origin archive, which includes re-refinements filed under the entry of their experimental data); dynamic_pdb_deposit is every other model. */
+                source?: components["schemas"]["ModelSearchSource"][];
+                /** @description Model filter. Models with at least one file of one of these levels attached to the model. Levels belong to files, not to models. */
+                data_level?: components["schemas"]["ArtifactLevel"][];
+                /** @description Model filter. Models whose coordinate file contains one of these chemical component IDs (for example ADP), ignoring case. A file the server has not read yet never matches. Compounds the reader marked "needs review" match too; the result lists them in compounds_needing_review. */
+                compound?: string[];
+                /** @description Models whose r_work is at least this value (inclusive). A model with no value for r_work never matches; metric_missing finds those. */
+                r_work_min?: number;
+                /** @description Models whose r_work is at most this value (inclusive). A model with no value for r_work never matches; metric_missing finds those. */
+                r_work_max?: number;
+                /** @description Models whose r_free is at least this value (inclusive). A model with no value for r_free never matches; metric_missing finds those. */
+                r_free_min?: number;
+                /** @description Models whose r_free is at most this value (inclusive). A model with no value for r_free never matches; metric_missing finds those. */
+                r_free_max?: number;
+                /** @description Models whose cc is at least this value (inclusive). A model with no value for cc never matches; metric_missing finds those. */
+                cc_min?: number;
+                /** @description Models whose cc is at most this value (inclusive). A model with no value for cc never matches; metric_missing finds those. */
+                cc_max?: number;
+                /** @description Models whose rscc is at least this value (inclusive). A model with no value for rscc never matches; metric_missing finds those. */
+                rscc_min?: number;
+                /** @description Models whose rscc is at most this value (inclusive). A model with no value for rscc never matches; metric_missing finds those. */
+                rscc_max?: number;
+                /** @description Models whose clashscore is at least this value (inclusive). A model with no value for clashscore never matches; metric_missing finds those. */
+                clashscore_min?: number;
+                /** @description Models whose clashscore is at most this value (inclusive). A model with no value for clashscore never matches; metric_missing finds those. */
+                clashscore_max?: number;
+                /** @description Models whose ramachandran_outliers is at least this value (inclusive). A model with no value for ramachandran_outliers never matches; metric_missing finds those. */
+                ramachandran_outliers_min?: number;
+                /** @description Models whose ramachandran_outliers is at most this value (inclusive). A model with no value for ramachandran_outliers never matches; metric_missing finds those. */
+                ramachandran_outliers_max?: number;
+                /** @description Models whose side_chain_outliers is at least this value (inclusive). A model with no value for side_chain_outliers never matches; metric_missing finds those. */
+                side_chain_outliers_min?: number;
+                /** @description Models whose side_chain_outliers is at most this value (inclusive). A model with no value for side_chain_outliers never matches; metric_missing finds those. */
+                side_chain_outliers_max?: number;
+                /** @description Models whose molprobity_score is at least this value (inclusive). A model with no value for molprobity_score never matches; metric_missing finds those. */
+                molprobity_score_min?: number;
+                /** @description Models whose molprobity_score is at most this value (inclusive). A model with no value for molprobity_score never matches; metric_missing finds those. */
+                molprobity_score_max?: number;
+                /** @description Models whose wilson_b is at least this value (inclusive). A model with no value for wilson_b never matches; metric_missing finds those. */
+                wilson_b_min?: number;
+                /** @description Models whose wilson_b is at most this value (inclusive). A model with no value for wilson_b never matches; metric_missing finds those. */
+                wilson_b_max?: number;
+                /** @description Models whose rmsf is at least this value (inclusive). A model with no value for rmsf never matches; metric_missing finds those. */
+                rmsf_min?: number;
+                /** @description Models whose rmsf is at most this value (inclusive). A model with no value for rmsf never matches; metric_missing finds those. */
+                rmsf_max?: number;
+                /** @description Model filter. Models that have no value for at least one of these metrics. */
+                metric_missing?: components["schemas"]["MetricKey"][];
+                /** @description true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. Results always list their flags in review_flags. */
+                flagged?: boolean;
             };
             header?: never;
             path?: never;
@@ -3176,12 +3294,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/vnd.api+json": components["schemas"]["ModelCollectionDocument"];
+                    "application/vnd.api+json": components["schemas"]["ModelSearchCollectionDocument"];
                 };
             };
-            /** @description Invalid filters. */
+            /** @description Invalid filters, or a filter parameter where the server does not enable model search. The detail names the parameter. */
             400: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests from this client (code RATE_LIMITED). Searches that count their results (requests without cursor) have their own limit. Wait the number of seconds in Retry-After; to read many results, follow links.next instead of repeating the search. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The search did not finish within the server's time limit (code TIMEOUT). Add filters that narrow the result, for example a model type or a resolution range, and try again after Retry-After seconds. */
+            504: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4428,6 +4568,7 @@ type ReadonlyArray<T> = [
 ] extends [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const modelSearchSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelSearchSource"]> = ["pdb_archive", "dynamic_pdb_deposit"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];

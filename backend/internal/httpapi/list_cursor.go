@@ -49,6 +49,9 @@ type listCursor struct {
 	// ProteinSequenceSearch records that an entry search fell back to protein-sequence
 	// matching, so the following pages keep matching sequences instead of text.
 	ProteinSequenceSearch bool `json:"s,omitempty"`
+	// ModelSearchMatchesFew records that the first page of a model search counted few matches,
+	// so the following pages collect the matches before ordering them (db.ModelRevisionFilters).
+	ModelSearchMatchesFew bool `json:"f,omitempty"`
 }
 
 func (c listCursor) position() *db.ListPosition {

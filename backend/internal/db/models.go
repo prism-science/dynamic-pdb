@@ -49,6 +49,12 @@ type ModelRevisionFilters struct {
 	// ExcludeResidueData leaves metadata.residue_data out of the returned rows.
 	// List responses set it because per-residue data is large and only model details return it.
 	ExcludeResidueData bool
+	// Search narrows the list to the models matching the model search's filters.
+	Search *ModelSearch
+	// SearchMatchesFew says a count showed that Search matches few models. The list then collects
+	// every match before putting them in order, instead of walking all models in list order until
+	// it has a page, which reads every model when matches are rare.
+	SearchMatchesFew bool
 }
 
 func NewModelsRepository(database *sqlx.DB, queriers *QuerierProvider) *ModelsRepository {
@@ -467,7 +473,59 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		return "", nil, errors.New("after and offset cannot be combined")
 	}
 
-	conditions := make([]string, 0)
+	fromWhere, args, err := modelRevisionFromWhere(filters)
+	if err != nil {
+		return "", nil, err
+	}
+	if filters.After != nil {
+		fromWhere += "\n  and (model_revisions.created_at, model_revisions.id) > (:after_created_at, :after_id)"
+		args["after_created_at"] = filters.After.CreatedAt
+		args["after_id"] = filters.After.ID
+	}
+	metadataColumn := "model_revisions.metadata"
+	if filters.ExcludeResidueData {
+		metadataColumn = "model_revisions.metadata - 'residue_data' as metadata"
+	}
+	columns := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
+			         model_revisions.primary_artifact_id, model_revisions.revision_number,
+			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
+			         model_revisions.title, model_revisions.thumbnail_image_url,
+			         ` + metadataColumn + `, model_revisions.field_sources, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
+			         model_revisions.updated_at`
+	const order = "\norder by model_revisions.created_at asc, model_revisions.id asc"
+	paging := ""
+	if filters.Limit != nil {
+		paging += "\nlimit :limit"
+		args["limit"] = *filters.Limit
+	}
+	if filters.Offset != nil {
+		paging += "\noffset :offset"
+		args["offset"] = *filters.Offset
+	}
+
+	if filters.Search != nil && filters.SearchMatchesFew {
+		// The materialized match list keeps the planner from walking every model in list order.
+		query := `with search_matches as materialized (
+			    select model_revisions.id, model_revisions.created_at
+			    ` + fromWhere + `
+			  ), search_page as (
+			    select search_matches.id
+			    from search_matches
+			    order by search_matches.created_at asc, search_matches.id asc` + paging + `
+			  )
+			  ` + columns + `
+			  from search_page
+			  join model_revisions on model_revisions.id = search_page.id
+			  join models on models.id = model_revisions.model_id` + order
+		return query, args, nil
+	}
+	return columns + "\n" + fromWhere + order + paging, args, nil
+}
+
+// modelRevisionFromWhere is the from and where clauses of a model revision list: every filter
+// except paging. The where clause always exists, so callers can append "and" conditions.
+func modelRevisionFromWhere(filters ModelRevisionFilters) (string, map[string]any, error) {
+	conditions := []string{"true"}
 	args := map[string]any{}
 
 	if filters.ID != nil {
@@ -523,42 +581,56 @@ func modelRevisionListQuery(filters ModelRevisionFilters) (string, map[string]an
 		conditions = append(conditions, "model_revisions.idempotency_key = :idempotency_key")
 		args["idempotency_key"] = *filters.IdempotencyKey
 	}
-	if filters.After != nil {
-		conditions = append(conditions,
-			"(model_revisions.created_at, model_revisions.id) > (:after_created_at, :after_id)")
-		args["after_created_at"] = filters.After.CreatedAt
-		args["after_id"] = filters.After.ID
+	if filters.Search != nil {
+		searchConditions, err := modelSearchConditions(*filters.Search, args)
+		if err != nil {
+			return "", nil, fmt.Errorf("build model search conditions: %w", err)
+		}
+		conditions = append(conditions, searchConditions...)
 	}
-	metadataColumn := "model_revisions.metadata"
-	if filters.ExcludeResidueData {
-		metadataColumn = "model_revisions.metadata - 'residue_data' as metadata"
-	}
-	query := `select model_revisions.id, models.entry_id, model_revisions.model_id, model_revisions.parent_revision_id,
-			         model_revisions.primary_artifact_id, model_revisions.revision_number,
-			         model_revisions.state, model_revisions.model_state, model_revisions.change_summary, model_revisions.published_at,
-			         model_revisions.title, model_revisions.thumbnail_image_url,
-			         ` + metadataColumn + `, model_revisions.field_sources, model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at,
-			         model_revisions.updated_at
-			  from model_revisions
+
+	fromWhere := `from model_revisions
 			  join models on models.id = model_revisions.model_id`
 	if filters.EntryState != nil {
-		query += "\njoin entries on entries.id = models.entry_id"
+		fromWhere += "\njoin entries on entries.id = models.entry_id"
 	}
-	if len(conditions) > 0 {
-		query += "\nwhere " + strings.Join(conditions, "\n  and ")
+	if filters.Search != nil && filters.Search.readsEntryRevision() {
+		// At most one active revision per entry (entry_revisions_active_idx), so the join never
+		// repeats a model. Entry filters reject the null row of an entry without one. Only searches
+		// that read the row join it: the planner cannot drop the join by itself.
+		fromWhere += "\nleft join entry_revisions on entry_revisions.entry_id = models.entry_id and entry_revisions.state = 'active'"
 	}
-	query += "\norder by model_revisions.created_at asc, model_revisions.id asc"
+	fromWhere += "\nwhere " + strings.Join(conditions, "\n  and ")
+	return fromWhere, args, nil
+}
 
-	if filters.Limit != nil {
-		query += "\nlimit :limit"
-		args["limit"] = *filters.Limit
+// CountCapped counts the model revisions matching filters, ignoring paging, but stops at limit.
+// It returns the count and whether it is exact: a count of limit with exact false means more
+// than limit revisions match.
+func (r *ModelsRepository) CountCapped(ctx context.Context, filters ModelRevisionFilters, limit int) (int, bool, error) {
+	if limit < 0 {
+		return 0, false, errors.New("count limit must be non-negative")
 	}
-	if filters.Offset != nil {
-		query += "\noffset :offset"
-		args["offset"] = *filters.Offset
+	fromWhere, args, err := modelRevisionFromWhere(filters)
+	if err != nil {
+		return 0, false, fmt.Errorf("build model revision count query: %w", err)
 	}
+	args["count_limit"] = limit + 1
+	query := "select count(*) from (select 1 " + fromWhere + "\nlimit :count_limit) as capped"
+	boundQuery, queryArgs, err := sqlx.Named(query, args)
+	if err != nil {
+		return 0, false, fmt.Errorf("bind model revision count query: %w", err)
+	}
+	boundQuery = sqlx.Rebind(sqlx.DOLLAR, boundQuery)
 
-	return query, args, nil
+	var count int
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &count, boundQuery, queryArgs...); err != nil {
+		return 0, false, fmt.Errorf("count model revisions: %w", err)
+	}
+	if count > limit {
+		return limit, false, nil
+	}
+	return count, true, nil
 }
 
 func modelRevisionFromRow(row *modelRevisionRow) (*models.ModelRevision, error) {

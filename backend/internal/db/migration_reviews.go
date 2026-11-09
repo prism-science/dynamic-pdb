@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
@@ -59,4 +61,64 @@ func (r *MigrationReviewsRepository) Resolve(ctx context.Context, resolution mod
 		return fmt.Errorf("resolve %s review rows: %w", resolution.Issue, err)
 	}
 	return nil
+}
+
+// ListOpenForModelRevisions lists, for each of the model revisions, the open review flags its
+// search result shows (researcher question 7): flags on its model, on the revision itself, on its
+// entry, and on the polymer entities of the entry's active revision. openReviewFlagCondition, the
+// model search's flagged filter, uses the same objects. Flags come oldest first.
+func (r *MigrationReviewsRepository) ListOpenForModelRevisions(
+	ctx context.Context,
+	revisionIDs []uuid.UUID,
+) (map[uuid.UUID][]models.ReviewFlag, error) {
+	flags := make(map[uuid.UUID][]models.ReviewFlag, len(revisionIDs))
+	if len(revisionIDs) == 0 {
+		return flags, nil
+	}
+	rows := make([]reviewFlagRow, 0)
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows,
+		`with page as (
+		   select model_revisions.id as model_revision_id, model_revisions.model_id, models.entry_id
+		   from model_revisions
+		   join models on models.id = model_revisions.model_id
+		   where model_revisions.id = any($1)
+		 ), flag_objects as (
+		   select model_revision_id, 'model' as object_type, model_id as object_id from page
+		   union all
+		   select model_revision_id, 'model_revision', cast(model_revision_id as text) from page
+		   union all
+		   select model_revision_id, 'entry', entry_id from page
+		   union all
+		   select page.model_revision_id, 'polymer_entity', cast(entity_link.polymer_entity_id as text)
+		   from page
+		   join entry_revisions on entry_revisions.entry_id = page.entry_id and entry_revisions.state = 'active'
+		   join entry_revision_polymer_entities entity_link on entity_link.entry_revision_id = entry_revisions.id
+		 )
+		 select flag_objects.model_revision_id, review.object_type, review.object_id, review.issue, review.created_at
+		 from flag_objects
+		 join schema_migration_review review
+		   on review.object_type = flag_objects.object_type and review.object_id = flag_objects.object_id
+		 where review.resolved_at is null
+		 order by flag_objects.model_revision_id, review.created_at, review.id`,
+		pq.Array(revisionIDs),
+	); err != nil {
+		return nil, fmt.Errorf("list open review flags of model revisions: %w", err)
+	}
+	for _, row := range rows {
+		flags[row.ModelRevisionID] = append(flags[row.ModelRevisionID], models.ReviewFlag{
+			ObjectType: row.ObjectType,
+			ObjectID:   row.ObjectID,
+			Issue:      row.Issue,
+			FlaggedAt:  row.CreatedAt,
+		})
+	}
+	return flags, nil
+}
+
+type reviewFlagRow struct {
+	ModelRevisionID uuid.UUID `db:"model_revision_id"`
+	ObjectType      string    `db:"object_type"`
+	ObjectID        string    `db:"object_id"`
+	Issue           string    `db:"issue"`
+	CreatedAt       time.Time `db:"created_at"`
 }

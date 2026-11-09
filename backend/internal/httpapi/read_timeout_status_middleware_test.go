@@ -31,6 +31,7 @@ func Test_should_answer_504_when_read_fails_after_its_deadline(t *testing.T) {
 	require.NotNil(t, errorObject.Code)
 	assert.Equal(t, readTimeoutErrorCode, *errorObject.Code)
 	assert.NotContains(t, recorder.Body.String(), "INTERNAL_ERROR")
+	assert.Equal(t, "10", recorder.Header().Get("Retry-After"))
 }
 
 func Test_should_keep_500_when_read_fails_before_its_deadline(t *testing.T) {

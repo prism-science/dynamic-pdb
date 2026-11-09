@@ -43,6 +43,17 @@ func (origin ModelOrigin) Validate() error {
 	return unknownValueError("model origin", origin, ModelOrigins)
 }
 
+var ModelSearchSources = []ModelSearchSource{ModelSearchSourcePDBArchive, ModelSearchSourceDynamicPDBDeposit}
+
+func (source ModelSearchSource) Validate() error {
+	switch source {
+	case ModelSearchSourcePDBArchive, ModelSearchSourceDynamicPDBDeposit:
+		return nil
+	default:
+		return unknownValueError("model search source", source, ModelSearchSources)
+	}
+}
+
 var StructureModelTypes = []StructureModelType{
 	StructureModelTypeSingleConformer,
 	StructureModelTypeMulticonformer,

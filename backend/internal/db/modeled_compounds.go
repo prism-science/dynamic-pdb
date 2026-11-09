@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/lib/cif"
@@ -567,4 +568,49 @@ func (d *DB) SaveModeledCompounds(ctx context.Context, params SaveModeledCompoun
 		return 0, fmt.Errorf("save modeled compounds of %s: %w", params.ArtifactID, err)
 	}
 	return reindexed, nil
+}
+
+// ListNeedingReview lists, for each of the model files, the compounds among ccdIDs that its done
+// set marks for review, once per compound and reason, in ID order. The model search returns them
+// with results that matched those compounds (researcher question 6).
+func (r *ModeledCompoundsRepository) ListNeedingReview(
+	ctx context.Context,
+	artifactIDs []uuid.UUID,
+	ccdIDs []string,
+) (map[uuid.UUID][]models.CompoundNeedingReview, error) {
+	compounds := make(map[uuid.UUID][]models.CompoundNeedingReview, len(artifactIDs))
+	if len(artifactIDs) == 0 || len(ccdIDs) == 0 {
+		return compounds, nil
+	}
+	normalized := make([]string, 0, len(ccdIDs))
+	for _, ccdID := range ccdIDs {
+		normalized = append(normalized, normalizedCompoundID(ccdID))
+	}
+	rows := make([]compoundNeedingReviewRow, 0)
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows,
+		`select distinct records.artifact_id, records.ccd_id, records.review_reason
+		 from modeled_compound_records records
+		 join modeled_compound_sets sets on sets.artifact_id = records.artifact_id
+		 where records.artifact_id = any($1)
+		   and records.ccd_id = any($2)
+		   and records.needs_review
+		   and sets.status = 'done'
+		 order by records.artifact_id, records.ccd_id, records.review_reason`,
+		pq.Array(artifactIDs), pq.Array(normalized),
+	); err != nil {
+		return nil, fmt.Errorf("list modeled compounds needing review: %w", err)
+	}
+	for _, row := range rows {
+		compounds[row.ArtifactID] = append(compounds[row.ArtifactID], models.CompoundNeedingReview{
+			CCDID:        row.CCDID,
+			ReviewReason: row.ReviewReason,
+		})
+	}
+	return compounds, nil
+}
+
+type compoundNeedingReviewRow struct {
+	ArtifactID   uuid.UUID `db:"artifact_id"`
+	CCDID        string    `db:"ccd_id"`
+	ReviewReason string    `db:"review_reason"`
 }

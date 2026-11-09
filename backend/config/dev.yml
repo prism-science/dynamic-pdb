@@ -66,3 +66,7 @@ compounds:
   # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
   archive_files: true
   archive_fill: false
+model_search:
+  # Search filters, the capped total and the entry and review warnings on GET /v1/models (S1) stay
+  # off until their own switch-on PR.
+  filters_enabled: false

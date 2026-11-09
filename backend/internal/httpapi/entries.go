@@ -1290,6 +1290,7 @@ func (s *Server) GetEntry(w http.ResponseWriter, r *http.Request, entryID string
 			Attributes: EntryAttributes{
 				Title:             revision.Title,
 				ThumbnailImageUrl: revision.ThumbnailImageURL,
+				RevisionNumber:    revision.RevisionNumber,
 				ExternalRefs:      properties.ExternalRefs,
 				Details:           properties.Details,
 				Resolution:        properties.Resolution,
@@ -1403,33 +1404,6 @@ func (s *Server) ListSimilarEntries(
 		meta.NextCursor = &pageMeta.NextCursor
 	}
 	writeJSON(w, http.StatusOK, SimilarEntryCollectionDocument{Data: data, Links: links, Meta: meta})
-}
-
-func (s *Server) ListModelsAcrossEntries(
-	w http.ResponseWriter,
-	r *http.Request,
-	params ListModelsAcrossEntriesParams,
-) {
-	filters, page, err := modelFiltersFromParams(params)
-	if err != nil {
-		writeListParamsError(w, err, "invalid model filters")
-		return
-	}
-	activeState := domainmodels.RevisionStateActive
-	activeEntryState := domainmodels.EntryStateActive
-	activeModelState := domainmodels.ModelStateActive
-	filters.State = &activeState
-	filters.EntryState = &activeEntryState
-	filters.ModelState = &activeModelState
-	filters.ExcludeResidueData = true
-
-	revisions, err := s.database.Models.List(r.Context(), filters)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "list models across entries failed", "err", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list models")
-		return
-	}
-	s.writeModelListPage(w, r, revisions, page)
 }
 
 func (s *Server) ListModels(w http.ResponseWriter, r *http.Request, entryID string, params ListModelsParams) {
@@ -1559,6 +1533,7 @@ func modelDetailAttributesFromRevision(
 		ThumbnailImageUrl: model.ThumbnailImageUrl,
 		IdempotencyKey:    model.IdempotencyKey,
 		Metadata:          model.Metadata,
+		RevisionNumber:    model.RevisionNumber,
 		ResidueData:       ptr(residueDataFromModels(revision.Metadata.ResidueData)),
 		PrimaryArtifactId: model.PrimaryArtifactId,
 		PublishedAt:       model.PublishedAt,
@@ -1918,7 +1893,7 @@ func entryInfoAttributesFromRevision(revision domainmodels.EntryRevision) (Entry
 		return EntryInfoAttributes{}, fmt.Errorf("build entry fields response: %w", err)
 	}
 	return EntryInfoAttributes{Id: revision.EntryID, CreatedBy: revision.CreatedBy, Title: revision.Title,
-		ThumbnailImageUrl: revision.ThumbnailImageURL, ExternalRefs: properties.ExternalRefs,
+		ThumbnailImageUrl: revision.ThumbnailImageURL, RevisionNumber: revision.RevisionNumber, ExternalRefs: properties.ExternalRefs,
 		Details: properties.Details, Resolution: properties.Resolution, Method: properties.Method,
 		SpaceGroup: properties.SpaceGroup, Crystallography: properties.Crystallography,
 		Ligands: properties.Ligands, Cofactors: properties.Cofactors, RelatedDatasets: properties.RelatedDatasets,
@@ -1932,7 +1907,8 @@ func modelAttributesFromRevision(revision domainmodels.ModelRevision, metrics []
 	}
 	return ModelAttributes{Id: revision.ModelID, EntryId: revision.EntryID, CreatedBy: revision.CreatedBy,
 		Title: revision.Title, ThumbnailImageUrl: revision.ThumbnailImageURL,
-		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
+		IdempotencyKey: revision.IdempotencyKey, Metadata: metadata, RevisionNumber: revision.RevisionNumber,
+		PrimaryArtifactId: revision.PrimaryArtifactID, PublishedAt: revision.PublishedAt,
 		CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, Metrics: metricsFromModels(metrics)}, nil
 }
 
