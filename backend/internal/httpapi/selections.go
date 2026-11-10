@@ -197,7 +197,6 @@ func (s *Server) selectionFreezeFromRequest(ctx context.Context, request CreateS
 			Searches:        searchTexts,
 			ExcludeModelIDs: excluded,
 		},
-		CreatedAt:        time.Now().UTC(),
 		MaxModels:        s.selections.maxModels,
 		MaxStoredModels:  s.selections.maxStoredModels,
 		StatementTimeout: s.selections.freezeTimeout,
@@ -433,6 +432,13 @@ func (s *Server) ListSelectionModels(
 	}
 	data := make([]SelectionModelData, 0, len(items))
 	for _, item := range items {
+		files, err := selectionFilesResponse(item.Files)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "build selection model files failed", "err", err,
+				"selection_id", selection.ID, "model_id", item.ModelID)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list the selection's models")
+			return
+		}
 		data = append(data, SelectionModelData{
 			Type: jsonAPITypeSelectionModels,
 			Id:   item.ModelID,
@@ -441,10 +447,74 @@ func (s *Server) ListSelectionModels(
 				EntryId:             item.EntryID,
 				ModelRevisionNumber: item.ModelRevisionNumber,
 				EntryRevisionNumber: item.EntryRevisionNumber,
+				Files:               files,
 			},
 		})
 	}
 	writeJSON(w, http.StatusOK, SelectionModelCollectionDocument{Data: data, Links: links, Meta: meta})
+}
+
+func selectionFilesResponse(files []domainmodels.SelectionFile) ([]SelectionFile, error) {
+	response := make([]SelectionFile, 0, len(files))
+	for _, file := range files {
+		roles := make([]SelectionFileRole, 0, len(file.Roles))
+		for _, role := range file.Roles {
+			responseRole, err := selectionFileRoleResponse(role)
+			if err != nil {
+				return nil, fmt.Errorf("file %s: %w", file.ID, err)
+			}
+			roles = append(roles, responseRole)
+		}
+		source, err := selectionSHA256SourceResponse(file.RecordedSHA256Source)
+		if err != nil {
+			return nil, fmt.Errorf("file %s: %w", file.ID, err)
+		}
+		response = append(response, SelectionFile{
+			Id:                   file.ID,
+			Roles:                roles,
+			Name:                 file.Name,
+			Level:                ArtifactLevel(file.Level),
+			Type:                 ArtifactType(file.Type),
+			Format:               file.Format,
+			Uri:                  file.URI,
+			SizeBytes:            file.SizeBytes,
+			RecordedSha256:       file.RecordedSHA256,
+			RecordedSha256Source: source,
+			RecordedAfterSave:    file.RecordedAfterSave,
+			Checksum:             artifactChecksumFromModel(file.Checksum),
+		})
+	}
+	return response, nil
+}
+
+func selectionFileRoleResponse(role domainmodels.SelectionFileRole) (SelectionFileRole, error) {
+	switch role {
+	case domainmodels.SelectionFileRolePrimary:
+		return SelectionFileRolePrimary, nil
+	case domainmodels.SelectionFileRoleModel:
+		return SelectionFileRoleModel, nil
+	case domainmodels.SelectionFileRoleRunInput:
+		return SelectionFileRoleRunInput, nil
+	case domainmodels.SelectionFileRoleRunOutput:
+		return SelectionFileRoleRunOutput, nil
+	case domainmodels.SelectionFileRoleEntry:
+		return SelectionFileRoleEntry, nil
+	default:
+		return "", fmt.Errorf("unknown selection file role: %s", role)
+	}
+}
+
+func selectionSHA256SourceResponse(source domainmodels.SelectionSHA256Source) (SelectionSHA256Source, error) {
+	switch source {
+	case domainmodels.SelectionSHA256SourceDeclared:
+		return SelectionSHA256SourceDeclared, nil
+	case domainmodels.SelectionSHA256SourceComputed:
+		return SelectionSHA256SourceComputed, nil
+	case domainmodels.SelectionSHA256SourceNotRecorded:
+		return SelectionSHA256SourceNotRecorded, nil
+	default:
+		return "", fmt.Errorf("unknown selection sha256 source: %s", source)
+	}
 }
 
 // readSelection returns the selection named by a path's ID, or writes the 404 or 500 and
@@ -478,6 +548,8 @@ func (s *Server) selectionDocument(selection domainmodels.Selection) SelectionDo
 			ModelCount: selection.ModelCount,
 			EntryCount: selection.EntryCount,
 			CreatedAt:  selection.CreatedAt,
+			// The freeze is one statement, so the save time is the catalog moment it read.
+			CatalogDate: selection.CreatedAt,
 			Request: SelectionRequest{
 				ModelIds:        nonNilStrings(selection.Request.ModelIDs),
 				Searches:        nonNilStrings(selection.Request.Searches),

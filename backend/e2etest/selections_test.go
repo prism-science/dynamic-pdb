@@ -3,6 +3,7 @@ package e2etest
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -79,16 +80,79 @@ func (s *SelectionsSuite) Test_should_keep_the_frozen_revisions_when_a_model_and
 	s.Equal(2, saved.Data.Attributes.ModelCount)
 	s.Equal(1, saved.Data.Attributes.EntryCount)
 	frozen, _ := selectionModelsForTest(s.T(), saved.Data.Id, 100)
+	noFiles := []httpapi.SelectionFile{}
 	s.Equal([]httpapi.SelectionModelAttributes{
-		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1},
-		{ModelId: unchanged.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1},
+		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1, Files: noFiles},
+		{ModelId: unchanged.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1, Files: noFiles},
 	}, frozen)
 	// and a new selection freezes the new revisions
 	resaved := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{revised.ModelId}})
 	refrozen, _ := selectionModelsForTest(s.T(), resaved.Data.Id, 100)
 	s.Equal([]httpapi.SelectionModelAttributes{
-		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 2, EntryRevisionNumber: 2},
+		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 2, EntryRevisionNumber: 2, Files: noFiles},
 	}, refrozen)
+}
+
+func (s *SelectionsSuite) Test_should_keep_its_files_and_their_sha256_when_a_model_gets_a_new_file_after_a_selection_is_saved() {
+	// given a published model with a declared-checksum coordinate file and structure factors
+	// without one, in a published entry with a sequence file
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "selection-files-owner", 8912)
+	originalID, structureFactorsID, fastaID := uuid.New(), uuid.New(), uuid.New()
+	originalSHA256 := strings.Repeat("a", 64)
+	original := artifactRequest(originalID, "original.cif", "L2", "mmcif", "https://files.example/original.cif", nil)
+	original["type"], original["sha256"] = "model", originalSHA256
+	structureFactors := artifactRequest(structureFactorsID, "sf.cif", "L1", "cif", "https://files.example/sf.cif", nil)
+	structureFactors["type"] = "structure_factors"
+	fasta := artifactRequest(fastaID, "entry.fasta", "L0", "fasta", "https://files.example/entry.fasta", nil)
+	fasta["type"] = "fasta"
+	entry := createAndActivateEntryForTest(s.T(), token, map[string]any{
+		"entry": map[string]any{"title": "pinned files entry", "artifacts": []map[string]any{fasta}},
+	})
+	model := createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title": "pinned files model", "primary_artifact_id": originalID,
+			"metadata":  map[string]any{"model_type": "Deposited"},
+			"artifacts": []map[string]any{original, structureFactors},
+		},
+	})
+	saved := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{model.ModelId}})
+	s.Equal(saved.Data.Attributes.CreatedAt, saved.Data.Attributes.CatalogDate)
+
+	// when the model gets a new published revision with a new coordinate file
+	replacementID := uuid.New()
+	replacement := artifactRequest(replacementID, "revised.cif", "L2", "mmcif", "https://files.example/revised.cif", nil)
+	replacement["type"], replacement["sha256"] = "model", strings.Repeat("b", 64)
+	createAndActivateModelRevisionForTest(s.T(), token, entry.EntryId, model.ModelId, map[string]any{
+		"model": map[string]any{
+			"title": "revised model", "primary_artifact_id": replacementID,
+			"artifacts": []map[string]any{replacement},
+		},
+	})
+
+	// then the saved selection still names the original files, with the SHA-256 it recorded
+	frozen, _ := selectionModelsForTest(s.T(), saved.Data.Id, 100)
+	s.Require().Len(frozen, 1)
+	s.Equal(1, frozen[0].ModelRevisionNumber)
+	files := frozen[0].Files
+	s.Require().Len(files, 3)
+	s.Equal(originalID, files[0].Id)
+	s.Equal([]httpapi.SelectionFileRole{httpapi.SelectionFileRolePrimary}, files[0].Roles)
+	s.Equal(&originalSHA256, files[0].RecordedSha256)
+	s.Equal(httpapi.SelectionSHA256SourceDeclared, files[0].RecordedSha256Source)
+	s.Equal(structureFactorsID, files[1].Id)
+	s.Equal([]httpapi.SelectionFileRole{httpapi.SelectionFileRoleModel}, files[1].Roles)
+	s.Nil(files[1].RecordedSha256, "no checksum was declared and the checksum job has not read the file")
+	s.Equal(httpapi.SelectionSHA256SourceNotRecorded, files[1].RecordedSha256Source)
+	s.Equal(httpapi.ArtifactChecksumStatusPending, files[1].Checksum.Status)
+	s.Equal(fastaID, files[2].Id)
+	s.Equal([]httpapi.SelectionFileRole{httpapi.SelectionFileRoleEntry}, files[2].Roles)
+	// and a new selection names the new file
+	resaved := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{model.ModelId}})
+	refrozen, _ := selectionModelsForTest(s.T(), resaved.Data.Id, 100)
+	s.Require().Len(refrozen, 1)
+	s.Require().NotEmpty(refrozen[0].Files)
+	s.Equal(replacementID, refrozen[0].Files[0].Id)
+	s.Equal(2, refrozen[0].ModelRevisionNumber)
 }
 
 func (s *SelectionsSuite) Test_should_save_every_result_of_a_search_minus_excluded_models_when_a_selection_holds_a_search() {

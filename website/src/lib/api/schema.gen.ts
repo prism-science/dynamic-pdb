@@ -444,7 +444,7 @@ export interface paths {
         };
         /**
          * List the models of a frozen selection
-         * @description Lists the models of a saved selection with the model revision and entry revision frozen for each, in the order GET /v1/models lists models.
+         * @description Lists the models of a saved selection with the model revision and entry revision frozen for each, and the files of those revisions, in the order GET /v1/models lists models. Reopening a selection lists the same revisions and files every time, with each file's latest checksum status, so files that changed at their source or cannot be read are reported, never replaced by newer ones.
          */
         get: operations["listSelectionModels"];
         put?: never;
@@ -935,6 +935,11 @@ export interface components {
              * @description When the selection was saved; its revisions are the ones active then.
              */
             created_at: string;
+            /**
+             * Format: date-time
+             * @description The moment of the catalog the selection was frozen from. The selection is saved in one statement, so this is created_at: the selection names the model and entry revisions active then, and their files.
+             */
+            catalog_date: string;
             request: components["schemas"]["SelectionRequest"];
         };
         /** @description What was asked for when the selection was saved: model IDs trimmed and listed once, each search's parameters in a fixed order. */
@@ -967,7 +972,45 @@ export interface components {
             model_revision_number: number;
             /** @description Number of the entry revision frozen in the selection (revision_number of the entry as it was then). */
             entry_revision_number: number;
+            /** @description The files of the two frozen revisions, each once, ordered by first role, then name. A published revision's files, and each file's location, size and declared SHA-256, never change, so these are the files the selection named when it was saved; a newer file is never listed in their place. Files of the entry revision repeat on every model of that entry. */
+            files: components["schemas"]["SelectionFile"][];
         };
+        /** @description A file a selection names through its frozen revisions, as recorded when it was added, with the SHA-256 the selection names for it and the checksum job's latest check of its bytes. A checksum status of mismatch or failed means the bytes at uri no longer match or cannot be read: report the file, never replace it. */
+        SelectionFile: {
+            /**
+             * Format: uuid
+             * @description The artifact ID.
+             */
+            id: string;
+            /** @description Every way the file belongs to the model, in the order of SelectionFileRole. */
+            roles: components["schemas"]["SelectionFileRole"][];
+            name: string;
+            level: components["schemas"]["ArtifactLevel"];
+            type: components["schemas"]["ArtifactType"];
+            format: string | null;
+            uri: string | null;
+            /**
+             * Format: int64
+             * @description The size declared when the file was added.
+             */
+            size_bytes: number | null;
+            /** @description The SHA-256 the selection names for the file: the declared one, else the one the checksum job computed from the bytes (see recorded_sha256_source). Null when neither exists yet. */
+            recorded_sha256: string | null;
+            recorded_sha256_source: components["schemas"]["SelectionSHA256Source"];
+            /** @description True when recorded_sha256 was computed after the selection was saved (checksum.checked_at after catalog_date): it describes the bytes read then, not bytes known at the save. */
+            recorded_after_save: boolean;
+            checksum: components["schemas"]["ArtifactChecksum"];
+        };
+        /**
+         * @description primary: the model revision's primary file. model: another file of the model revision. run_input, run_output: an input or output of a run of the model revision. entry: a file of the entry revision.
+         * @enum {string}
+         */
+        SelectionFileRole: "primary" | "model" | "run_input" | "run_output" | "entry";
+        /**
+         * @description declared: recorded with the file when it was added. computed: the file was added without one and the checksum job computed it from the bytes. not_recorded: neither exists yet (the job has not read the bytes, could not, or found them differing from the declared size).
+         * @enum {string}
+         */
+        SelectionSHA256Source: "declared" | "computed" | "not_recorded";
         ModelDocument: {
             data: components["schemas"]["ModelDetailData"];
         };
@@ -4858,6 +4901,8 @@ type ReadonlyArray<T> = [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const modelSearchSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelSearchSource"]> = ["pdb_archive", "dynamic_pdb_deposit"];
+export const selectionFileRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionFileRole"]> = ["primary", "model", "run_input", "run_output", "entry"];
+export const selectionSHA256SourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionSHA256Source"]> = ["declared", "computed", "not_recorded"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];

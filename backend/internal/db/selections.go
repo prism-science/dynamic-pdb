@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,8 +52,7 @@ type SelectionFreeze struct {
 	Searches        []ModelSearch
 	ExcludeModelIDs []string
 	// Request is saved with the selection as what the client asked for.
-	Request   models.SelectionRequest
-	CreatedAt time.Time
+	Request models.SelectionRequest
 	// MaxModels is the most models the selection may hold.
 	MaxModels int
 	// MaxStoredModels caps the rows all stored selections are charged together, this one
@@ -147,7 +148,8 @@ func (r *SelectionsRepository) Freeze(ctx context.Context, freeze SelectionFreez
 		ChargedRows     int64          `db:"charged_rows"`
 		StoredRows      int64          `db:"stored_rows"`
 		Saved           bool           `db:"saved"`
-		// CreatedAt is freeze.CreatedAt as stored, at PostgreSQL's microsecond precision.
+		// CreatedAt is the freeze statement's start on the database clock: the moment of the
+		// snapshot the statement read the catalog from.
 		CreatedAt sql.NullTime `db:"created_at"`
 	}
 	if err := tx.GetContext(freezeCtx, &result, query, args...); err != nil {
@@ -252,7 +254,7 @@ func selectionFreezeQuery(freeze SelectionFreeze) (string, []any, error) {
 			select coalesce(sum(charged_rows), 0) as row_count from selections
 		), saved as (
 			insert into selections (id, model_count, entry_count, charged_rows, request, created_at)
-			select :id, counted.model_count, counted.entry_count, charged.row_count, cast(:request as jsonb), :created_at
+			select :id, counted.model_count, counted.entry_count, charged.row_count, cast(:request as jsonb), statement_timestamp()
 			from counted cross join charged cross join stored
 			where not exists (select 1 from missing)
 			  and counted.model_count between 1 and :max_models
@@ -271,7 +273,6 @@ func selectionFreezeQuery(freeze SelectionFreeze) (string, []any, error) {
 		"row_limit":         freeze.MaxModels + 1,
 		"id":                freeze.ID,
 		"request":           request,
-		"created_at":        freeze.CreatedAt,
 		"max_models":        freeze.MaxModels,
 		"max_stored_models": freeze.MaxStoredModels,
 		"request_rows":      selectionChargedRows(len(request)),
@@ -355,9 +356,9 @@ func (r *SelectionsRepository) Get(ctx context.Context, id uuid.UUID) (*models.S
 	return &selection, nil
 }
 
-// ListModels returns up to limit models of a selection with their frozen revisions, in ordinal
-// order, starting after afterOrdinal (0 for the first page). It does not check that the
-// selection exists.
+// ListModels returns up to limit models of a selection with their frozen revisions and the
+// files of those revisions, in ordinal order, starting after afterOrdinal (0 for the first page).
+// It does not check that the selection exists.
 func (r *SelectionsRepository) ListModels(
 	ctx context.Context,
 	selectionID uuid.UUID,
@@ -405,5 +406,255 @@ func (r *SelectionsRepository) ListModels(
 			EntryRevisionNumber: int(row.EntryRevisionNumber.Int64),
 		})
 	}
+	if len(items) == 0 {
+		return items, nil
+	}
+	files, err := r.listModelFiles(ctx, selectionID, items[0].Ordinal, items[len(items)-1].Ordinal)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index].Files = files[items[index].Ordinal]
+		if items[index].Files == nil {
+			items[index].Files = []models.SelectionFile{}
+		}
+	}
 	return items, nil
+}
+
+// selectionModelFilesQuery lists the files of the pinned revisions of a range of a selection's
+// models, one row per way a file belongs to a model:
+//   - primary: the model revision's primary file;
+//   - model: its other files;
+//   - run: a file of one of its runs, with the run's direction;
+//   - entry: a file of the entry revision.
+//
+// The triggers of V20261110170100 keep a published revision's files and each file's location,
+// size and declared SHA-256 as they were, so these are the files the selection pinned. The
+// checksum columns are the checksum job's latest check of the bytes; a file without a checksum
+// row reads as pending, as GET /v1/entries/{id}/artifacts reads it.
+const selectionModelFilesQuery = `
+with page as (
+    select selection_models.ordinal, selection_models.model_revision_id, selection_models.entry_revision_id
+    from selection_models
+    where selection_models.selection_id = $1 and selection_models.ordinal between $2 and $3
+), links as (
+    select page.ordinal, model_revisions.primary_artifact_id as artifact_id, 'primary' as link, null::text as direction
+    from page
+    join model_revisions on model_revisions.id = page.model_revision_id
+    where model_revisions.primary_artifact_id is not null
+    union all
+    select page.ordinal, model_revision_artifacts.artifact_id, 'model', null
+    from page
+    join model_revision_artifacts on model_revision_artifacts.model_revision_id = page.model_revision_id
+    join model_revisions on model_revisions.id = page.model_revision_id
+    where model_revisions.primary_artifact_id is distinct from model_revision_artifacts.artifact_id
+    union all
+    select page.ordinal, run_artifacts.artifact_id, 'run', run_artifacts.direction
+    from page
+    join model_revision_runs on model_revision_runs.model_revision_id = page.model_revision_id
+    join run_artifacts on run_artifacts.run_id = model_revision_runs.run_id
+    union all
+    select page.ordinal, entry_revision_artifacts.artifact_id, 'entry', null
+    from page
+    join entry_revision_artifacts on entry_revision_artifacts.entry_revision_id = page.entry_revision_id
+)
+select links.ordinal, links.link, links.direction,
+       artifacts.id, artifacts.name, artifacts.level, artifacts.type, artifacts.format, artifacts.uri,
+       artifacts.size_bytes, artifacts.sha256,
+       coalesce(artifact_checksums.status, 'pending') as checksum_status,
+       artifact_checksums.sha256 as checksum_sha256,
+       artifact_checksums.size_bytes as checksum_size_bytes,
+       artifact_checksums.stored_uri as checksum_stored_uri,
+       artifact_checksums.copy_status as checksum_copy_status,
+       artifact_checksums.checked_at as checksum_checked_at,
+       selections.created_at as catalog_date
+from links
+join artifacts on artifacts.id = links.artifact_id
+join selections on selections.id = $1
+left join artifact_checksums on artifact_checksums.artifact_id = artifacts.id
+order by links.ordinal, artifacts.id`
+
+type selectionModelFileRow struct {
+	Ordinal            int            `db:"ordinal"`
+	Link               string         `db:"link"`
+	Direction          sql.NullString `db:"direction"`
+	ID                 uuid.UUID      `db:"id"`
+	Name               string         `db:"name"`
+	Level              string         `db:"level"`
+	Type               string         `db:"type"`
+	Format             sql.NullString `db:"format"`
+	URI                sql.NullString `db:"uri"`
+	SizeBytes          sql.NullInt64  `db:"size_bytes"`
+	SHA256             sql.NullString `db:"sha256"`
+	ChecksumStatus     string         `db:"checksum_status"`
+	ChecksumSHA256     sql.NullString `db:"checksum_sha256"`
+	ChecksumSizeBytes  sql.NullInt64  `db:"checksum_size_bytes"`
+	ChecksumStoredURI  sql.NullString `db:"checksum_stored_uri"`
+	ChecksumCopyStatus sql.NullString `db:"checksum_copy_status"`
+	ChecksumCheckedAt  sql.NullTime   `db:"checksum_checked_at"`
+	CatalogDate        time.Time      `db:"catalog_date"`
+}
+
+// listModelFiles returns the pinned files of the selection's models from firstOrdinal to
+// lastOrdinal, by ordinal. A file that belongs to a model in several ways is listed once with
+// every role. Files are ordered by their first role, then name, then ID.
+func (r *SelectionsRepository) listModelFiles(
+	ctx context.Context,
+	selectionID uuid.UUID,
+	firstOrdinal, lastOrdinal int,
+) (map[int][]models.SelectionFile, error) {
+	var rows []selectionModelFileRow
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows, selectionModelFilesQuery,
+		selectionID, firstOrdinal, lastOrdinal); err != nil {
+		return nil, fmt.Errorf("list selection model files: %w", err)
+	}
+	type fileKey struct {
+		ordinal int
+		id      uuid.UUID
+	}
+	files := make(map[fileKey]*models.SelectionFile)
+	order := make([]fileKey, 0, len(rows))
+	for _, row := range rows {
+		role, err := selectionFileRole(row.Link, row.Direction)
+		if err != nil {
+			return nil, fmt.Errorf("selection %s model %d file %s: %w", selectionID, row.Ordinal, row.ID, err)
+		}
+		key := fileKey{ordinal: row.Ordinal, id: row.ID}
+		if file, found := files[key]; found {
+			file.Roles = append(file.Roles, role)
+			continue
+		}
+		file, err := selectionFileFromRow(row, role)
+		if err != nil {
+			return nil, fmt.Errorf("selection %s model %d file %s: %w", selectionID, row.Ordinal, row.ID, err)
+		}
+		files[key] = file
+		order = append(order, key)
+	}
+	byOrdinal := make(map[int][]models.SelectionFile)
+	for _, key := range order {
+		file := files[key]
+		file.Roles = sortedSelectionFileRoles(file.Roles)
+		byOrdinal[key.ordinal] = append(byOrdinal[key.ordinal], *file)
+	}
+	for ordinal := range byOrdinal {
+		sort.SliceStable(byOrdinal[ordinal], func(i, j int) bool {
+			left, right := byOrdinal[ordinal][i], byOrdinal[ordinal][j]
+			leftRank, rightRank := selectionFileRoleRank(left.Roles[0]), selectionFileRoleRank(right.Roles[0])
+			if leftRank != rightRank {
+				return leftRank < rightRank
+			}
+			if left.Name != right.Name {
+				return left.Name < right.Name
+			}
+			return left.ID.String() < right.ID.String()
+		})
+	}
+	return byOrdinal, nil
+}
+
+func selectionFileFromRow(row selectionModelFileRow, role models.SelectionFileRole) (*models.SelectionFile, error) {
+	checksum := models.ArtifactChecksum{
+		Status:     models.ChecksumStatus(row.ChecksumStatus),
+		SHA256:     stringPtrFromSQL(row.ChecksumSHA256),
+		SizeBytes:  int64PtrFromSQL(row.ChecksumSizeBytes),
+		StoredURI:  stringPtrFromSQL(row.ChecksumStoredURI),
+		CopyStatus: copyStatusFromSQL(row.ChecksumCopyStatus),
+		CheckedAt:  timePtrFromSQL(row.ChecksumCheckedAt),
+	}
+	recorded, source, afterSave, err := recordedSelectionSHA256(stringPtrFromSQL(row.SHA256), checksum, row.CatalogDate)
+	if err != nil {
+		return nil, err
+	}
+	return &models.SelectionFile{
+		ID:                   row.ID,
+		Roles:                []models.SelectionFileRole{role},
+		Name:                 row.Name,
+		Level:                models.ArtifactLevel(row.Level),
+		Type:                 models.ArtifactType(row.Type),
+		Format:               stringPtrFromSQL(row.Format),
+		URI:                  stringPtrFromSQL(row.URI),
+		SizeBytes:            int64PtrFromSQL(row.SizeBytes),
+		RecordedSHA256:       recorded,
+		RecordedSHA256Source: source,
+		RecordedAfterSave:    afterSave,
+		Checksum:             checksum,
+	}, nil
+}
+
+// recordedSelectionSHA256 is the SHA-256 a selection names for a file:
+//   - the declared SHA-256, when the file was added with one;
+//   - otherwise the checksum job's SHA-256 once it verified the bytes, with afterSave set when
+//     it read them after the selection was saved (catalogDate);
+//   - otherwise none: the job has not read the bytes (pending), could not (failed), or found
+//     them differing from the declared size (mismatch), so no SHA-256 describes the file.
+func recordedSelectionSHA256(
+	declared *string,
+	checksum models.ArtifactChecksum,
+	catalogDate time.Time,
+) (sha256 *string, source models.SelectionSHA256Source, afterSave bool, err error) {
+	if declared != nil {
+		return declared, models.SelectionSHA256SourceDeclared, false, nil
+	}
+	switch checksum.Status {
+	case models.ChecksumStatusVerified:
+		if checksum.SHA256 == nil || checksum.CheckedAt == nil {
+			return nil, "", false, errors.New("verified checksum has no sha256 or check time")
+		}
+		return checksum.SHA256, models.SelectionSHA256SourceComputed, checksum.CheckedAt.After(catalogDate), nil
+	case models.ChecksumStatusPending, models.ChecksumStatusFailed, models.ChecksumStatusMismatch:
+		return nil, models.SelectionSHA256SourceNotRecorded, false, nil
+	default:
+		return nil, "", false, fmt.Errorf("unknown checksum status: %s", checksum.Status)
+	}
+}
+
+// selectionFileRole reads how a selectionModelFilesQuery row links its file to the model.
+func selectionFileRole(link string, direction sql.NullString) (models.SelectionFileRole, error) {
+	switch link {
+	case "primary":
+		return models.SelectionFileRolePrimary, nil
+	case "model":
+		return models.SelectionFileRoleModel, nil
+	case "entry":
+		return models.SelectionFileRoleEntry, nil
+	case "run":
+		switch models.RunArtifactDirection(direction.String) {
+		case models.RunArtifactDirectionInput:
+			return models.SelectionFileRoleRunInput, nil
+		case models.RunArtifactDirectionOutput:
+			return models.SelectionFileRoleRunOutput, nil
+		default:
+			return "", fmt.Errorf("unknown run file direction: %q", direction.String)
+		}
+	default:
+		return "", fmt.Errorf("unknown selection file link: %s", link)
+	}
+}
+
+// selectionFileRoles is every SelectionFileRole in the order files and roles are listed.
+var selectionFileRoles = []models.SelectionFileRole{
+	models.SelectionFileRolePrimary,
+	models.SelectionFileRoleModel,
+	models.SelectionFileRoleRunInput,
+	models.SelectionFileRoleRunOutput,
+	models.SelectionFileRoleEntry,
+}
+
+// selectionFileRoleRank is role's place in selectionFileRoles. Every role comes from
+// selectionFileRole, so it is always listed there.
+func selectionFileRoleRank(role models.SelectionFileRole) int {
+	return slices.Index(selectionFileRoles, role)
+}
+
+// sortedSelectionFileRoles returns roles in selectionFileRoles order, each once.
+func sortedSelectionFileRoles(roles []models.SelectionFileRole) []models.SelectionFileRole {
+	sorted := make([]models.SelectionFileRole, 0, len(roles))
+	for _, known := range selectionFileRoles {
+		if slices.Contains(roles, known) {
+			sorted = append(sorted, known)
+		}
+	}
+	return sorted
 }

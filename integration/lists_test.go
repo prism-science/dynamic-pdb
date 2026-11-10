@@ -158,6 +158,29 @@ func seedActiveModel(
 	metadata string,
 ) {
 	t.Helper()
+	seedModel(t, database, entryID, modelID, createdBy, createdAt, metadata, "active")
+}
+
+// seedModel stores an active model whose first revision is in state ("pending" or "active"). A
+// fixture that links runs or files to the revision seeds it pending, links them, and then
+// publishes it with publishSeededModel: a published revision's files and runs cannot change
+// (V20261110170200-170500).
+func seedModel(
+	t *testing.T,
+	database integrationDB,
+	entryID string,
+	modelID string,
+	createdBy string,
+	createdAt time.Time,
+	metadata string,
+	state string,
+) {
+	t.Helper()
+	switch state {
+	case "pending", "active":
+	default:
+		require.FailNow(t, "unknown seeded model revision state", state)
+	}
 	runInTransactionForTest(t, database, func(transaction *sql.Tx) {
 		_, err := transaction.ExecContext(
 			t.Context(),
@@ -173,15 +196,24 @@ func seedActiveModel(
 			`insert into model_revisions(
 			   id, model_id, revision_number, state, model_state, published_at,
 			   title, metadata, created_by, created_at, updated_at
-			 ) values ($1, $2, 1, 'active', 'active', $3, 'list test model', $4::jsonb, $5, $3, $3)`,
+			 ) values ($1, $2, 1, $6, 'active', $3, 'list test model', $4::jsonb, $5, $3, $3)`,
 			uuid.New(),
 			modelID,
 			createdAt,
 			metadata,
 			createdBy,
+			state,
 		)
 		require.NoError(t, err)
 	})
+}
+
+// publishSeededModel publishes the pending revision seedModel stored.
+func publishSeededModel(t *testing.T, database integrationDB, modelID string) {
+	t.Helper()
+	_, err := database.Conn.ExecContext(t.Context(),
+		`update model_revisions set state = 'active' where model_id = $1 and state = 'pending'`, modelID)
+	require.NoError(t, err)
 }
 
 func runInTransactionForTest(t *testing.T, database integrationDB, run func(transaction *sql.Tx)) {

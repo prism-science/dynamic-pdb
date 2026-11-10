@@ -23,13 +23,11 @@ const (
 // freezeRequest is a selection freeze with the test limits.
 func freezeRequest(modelIDs []string, searches []db.ModelSearch, excluded []string) db.SelectionFreeze {
 	return db.SelectionFreeze{
-		ID:              uuid.New(),
-		ModelIDs:        modelIDs,
-		Searches:        searches,
-		ExcludeModelIDs: excluded,
-		Request:         models.SelectionRequest{ModelIDs: modelIDs, Searches: []string{}, ExcludeModelIDs: excluded},
-		// Nanoseconds, as time.Now gives on Linux: the database keeps microseconds.
-		CreatedAt:        time.Date(2026, 11, 9, 12, 0, 0, 123456789, time.UTC),
+		ID:               uuid.New(),
+		ModelIDs:         modelIDs,
+		Searches:         searches,
+		ExcludeModelIDs:  excluded,
+		Request:          models.SelectionRequest{ModelIDs: modelIDs, Searches: []string{}, ExcludeModelIDs: excluded},
 		MaxModels:        testSelectionMaxModels,
 		MaxStoredModels:  testSelectionMaxStoredModels,
 		StatementTimeout: testSelectionTimeout,
@@ -113,7 +111,8 @@ func Test_should_freeze_named_models_and_search_matches_once_each_minus_excluded
 	assert.Equal(t, selection.EntryCount, stored.EntryCount)
 	assert.Equal(t, request.Request, stored.Request)
 	assert.True(t, selection.CreatedAt.Equal(stored.CreatedAt), "the saved and the read selection show the same time")
-	assert.Equal(t, time.Date(2026, 11, 9, 12, 0, 0, 123457000, time.UTC), stored.CreatedAt.UTC())
+	// The save time is the freeze statement's start on the database clock, not the server's.
+	assert.WithinDuration(t, time.Now(), stored.CreatedAt, time.Minute)
 }
 
 func Test_should_freeze_the_union_of_several_searches_in_list_order_when_a_selection_is_saved(t *testing.T) {

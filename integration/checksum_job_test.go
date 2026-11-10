@@ -43,13 +43,14 @@ func Test_should_record_checksums_of_stored_and_external_files_when_checksum_job
 	rcsb := newRCSBStub(t, pdbID)
 	defer rcsb.Close()
 	backend := startBackendWithEnv(t, root, backendBinaryPath, s3.URL(), schemaEnv)
-	entryID, entryRevisionID := seedEntryRevision(t, database, auth.UserID)
+	entryID, entryRevisionID := seedEntryRevision(t, database, auth.UserID, "pending")
 
 	storedContent := "data_stored\n"
 	stored := seedStoredArtifact(t, database, s3, entryID, entryRevisionID, auth.UserID, storedContent, sha256Hex(storedContent))
 	changed := seedStoredArtifact(t, database, s3, entryID, entryRevisionID, auth.UserID, "data_changed\n", sha256Hex("data_declared\n"))
 	externalPath := "/download/" + pdbID + "-sf.cif"
 	external := seedArtifact(t, database, entryRevisionID, auth.UserID, rcsb.URL()+externalPath, nil)
+	publishEntryRevision(t, database, entryRevisionID)
 	apiContent := "data_uploaded\n"
 	apiEntryID, uploaded := createEntryWithStoredArtifact(t, backend.URL, auth.AccessToken, s3, apiContent)
 	assert.Equal(t, "pending", checksumStatus(t, database, uploaded), "the API adds the checksum row with the artifact")
@@ -197,8 +198,16 @@ func setupMigratedSchema(t *testing.T, root string) (integrationDB, []string) {
 	return integrationDB{Conn: conn}, []string{"DYNAMIC_PDB_DB_CONNECTION_PARAMS=" + connectionParams}
 }
 
-func seedEntryRevision(t *testing.T, database integrationDB, createdBy string) (string, uuid.UUID) {
+// seedEntryRevision stores an entry with one revision in state ("pending" or "active"). Files are
+// linked to a pending revision, which publishEntryRevision then publishes: a published revision's
+// files cannot change (V20261110170100).
+func seedEntryRevision(t *testing.T, database integrationDB, createdBy string, state string) (string, uuid.UUID) {
 	t.Helper()
+	switch state {
+	case "pending", "active":
+	default:
+		require.FailNow(t, "unknown seeded entry revision state", state)
+	}
 	entryID := "entry-" + uuid.NewString()
 	revisionID := uuid.New()
 	now := time.Now().UTC()
@@ -211,11 +220,18 @@ func seedEntryRevision(t *testing.T, database integrationDB, createdBy string) (
 			`insert into entry_revisions(
 			   id, entry_id, revision_number, state, entry_state, published_at, title,
 			   metadata, created_by, created_at, updated_at
-			 ) values ($1, $2, 1, 'active', 'active', $3, 'checksum test entry', '{}'::jsonb, $4, $3, $3)`,
-			revisionID, entryID, now, createdBy)
+			 ) values ($1, $2, 1, $5, 'active', $3, 'checksum test entry', '{}'::jsonb, $4, $3, $3)`,
+			revisionID, entryID, now, createdBy, state)
 		require.NoError(t, err)
 	})
 	return entryID, revisionID
+}
+
+func publishEntryRevision(t *testing.T, database integrationDB, revisionID uuid.UUID) {
+	t.Helper()
+	_, err := database.Conn.ExecContext(t.Context(),
+		`update entry_revisions set state = 'active' where id = $1 and state = 'pending'`, revisionID)
+	require.NoError(t, err)
 }
 
 // seedArtifact inserts an artifact without a checksum row, as code from before the checksum
