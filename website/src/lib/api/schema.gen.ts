@@ -380,7 +380,7 @@ export interface paths {
          * List and search models
          * @description Lists models from their current active revisions across active entries, oldest first. Each result is one model. Search filters narrow the list: entry filters apply to the model's entry (its active revision), model filters to that same model, never to another model of the entry. Different filters must all match; several values of one filter mean any of them. A missing value (no resolution, unknown Ligands and Cofactors, no metric value) never matches a filter that asks for a value or a range; metric_missing finds missing metric values.
          *
-         *     Search filters, meta.total, and the entry, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them.
+         *     Search filters, meta.total, and the entry, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them. The protein chain filters (protein_chains_min, protein_chain_length_min, protein_chain_length_max, protein_chain_mode) have a switch of their own.
          */
         get: operations["listModelsAcrossEntries"];
         put?: never;
@@ -907,11 +907,13 @@ export interface components {
         };
         /** @enum {string} */
         ModelSearchSource: "pdb_archive" | "dynamic_pdb_deposit";
+        /** @enum {string} */
+        ProteinChainMode: "at_least" | "every";
         /** @description Which models to save. Give model_ids, searches, or both; exclude_model_ids removes models from the result. */
         CreateSelectionRequest: {
             /** @description Models to hold, by model ID. Each must be a published model of a published entry. */
             model_ids?: string[];
-            /** @description Searches whose every result the selection holds. Each is the query string of a GET /v1/models request (the part after "?"), with its filters only: no limit, offset or cursor. An empty string holds every model. Filters work where the server enables model search. */
+            /** @description Searches whose every result the selection holds. Each is the query string of a GET /v1/models request (the part after "?"), with its filters only: no limit, offset or cursor. An empty string holds every model. Filters work where the server enables model search, and the protein chain filters where it also enables them, as on GET /v1/models. */
             searches?: string[];
             /** @description Models to leave out, by model ID. IDs of no model are ignored. */
             exclude_model_ids?: string[];
@@ -3362,6 +3364,14 @@ export interface operations {
                 data_level?: components["schemas"]["ArtifactLevel"][];
                 /** @description Model filter. Models whose coordinate file contains one of these chemical component IDs (for example ADP), ignoring case. A file the server has not read yet never matches. Compounds the reader marked "needs review" match too; the result lists them in compounds_needing_review. */
                 compound?: string[];
+                /** @description Model filter. Models whose coordinate file has at least this many protein chains (inclusive). With protein_chain_mode at_least (the default), only chains whose deposited length is within protein_chain_length_min and protein_chain_length_max count when either is given; all protein chains otherwise. Defaults to 1 when only a length bound or the mode is given. Each copy of a chain counts. A chain is an author chain of the file's first model; it is a protein chain when the file's _entity_poly.type for its entity is polypeptide(L) or polypeptide(D), and, in a file that states no polymer type for it (PDB format, most computed models), when more than half of its modeled residues are amino acids. A file the server has not read yet never matches. Example: "more than four protein chains, each longer than 300 residues" is protein_chains_min=5&protein_chain_length_min=301. Available only where the server enables the protein chain filters; elsewhere 400. */
+                protein_chains_min?: number;
+                /** @description Model filter, with protein_chains_min and protein_chain_mode. Lowest deposited sequence length of a protein chain, in residues (inclusive); residues without coordinates count. The length is the file's own (_entity_poly_seq, SEQRES), else the entry's FASTA record for the chain. A chain whose length is unknown never satisfies a length bound. */
+                protein_chain_length_min?: number;
+                /** @description Model filter, with protein_chains_min and protein_chain_mode. Highest deposited sequence length of a protein chain, in residues (inclusive). A chain whose length is unknown never satisfies a length bound. */
+                protein_chain_length_max?: number;
+                /** @description Model filter, with the protein chain length bounds. at_least (the default): at least protein_chains_min protein chains have a deposited length within the bounds; other protein chains may be shorter or longer. every: the file has at least protein_chains_min protein chains, and every one of them has a deposited length within the bounds, so a single chain outside them, or of unknown length, rules the model out. every needs protein_chain_length_min or protein_chain_length_max. Example: "at least two protein chains, all longer than 300 residues" is protein_chain_mode=every&protein_chains_min=2&protein_chain_length_min=301. */
+                protein_chain_mode?: components["schemas"]["ProteinChainMode"];
                 /** @description Models whose r_work is at least this value (inclusive). A model with no value for r_work never matches; metric_missing finds those. */
                 r_work_min?: number;
                 /** @description Models whose r_work is at most this value (inclusive). A model with no value for r_work never matches; metric_missing finds those. */
@@ -4858,6 +4868,7 @@ type ReadonlyArray<T> = [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const modelSearchSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelSearchSource"]> = ["pdb_archive", "dynamic_pdb_deposit"];
+export const proteinChainModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProteinChainMode"]> = ["at_least", "every"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];

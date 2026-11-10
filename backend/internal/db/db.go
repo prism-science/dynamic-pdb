@@ -30,6 +30,7 @@ type DB struct {
 	InteractionSets             *InteractionSetsRepository
 	ArchiveRederivations        *ArchiveRederivationsRepository
 	ModeledCompounds            *ModeledCompoundsRepository
+	CoordinateIndex             *CoordinateIndexRepository
 	MigrationReviews            *MigrationReviewsRepository
 	Selections                  *SelectionsRepository
 
@@ -102,6 +103,7 @@ func NewDB(cfg Config) (*DB, error) {
 		InteractionSets:             NewInteractionSetsRepository(sqlxDB, queriers),
 		ArchiveRederivations:        NewArchiveRederivationsRepository(sqlxDB, queriers),
 		ModeledCompounds:            NewModeledCompoundsRepository(sqlxDB, queriers),
+		CoordinateIndex:             NewCoordinateIndexRepository(sqlxDB, queriers),
 		MigrationReviews:            NewMigrationReviewsRepository(sqlxDB, queriers),
 		Selections:                  NewSelectionsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,

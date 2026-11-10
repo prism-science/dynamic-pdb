@@ -1,0 +1,74 @@
+{{- if .Values.coordinateIndexJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dynamic-pdb.coordinateIndexJobName" . }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.coordinateIndexJob.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.coordinateIndexJob.schedule | quote }}
+  {{- if .Values.coordinateIndexJob.timeZone }}
+  timeZone: {{ .Values.coordinateIndexJob.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.coordinateIndexJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.coordinateIndexJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.coordinateIndexJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.coordinateIndexJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.coordinateIndexJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "dynamic-pdb.labels" . | nindent 12 }}
+            {{- include "dynamic-pdb.coordinateIndexJob.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: coordinate-index-job
+              image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+              imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+              command: ["/app/coordinate-index-job"]
+              envFrom:
+                - secretRef:
+                    name: {{ include "dynamic-pdb.s3SecretName" . }}
+              env:
+                - name: DYNAMIC_PDB_ENV
+                  value: {{ .Values.backend.configProfile | quote }}
+                - name: DYNAMIC_PDB_DB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: host
+                - name: DYNAMIC_PDB_DB_PORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: port
+                - name: DYNAMIC_PDB_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: database
+                - name: DYNAMIC_PDB_DB_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: username
+                - name: DYNAMIC_PDB_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dynamic-pdb.dbSecretName" . }}
+                      key: password
+                - name: DYNAMIC_PDB_DB_STATEMENT_TIMEOUT
+                  value: {{ .Values.coordinateIndexJob.statementTimeout | quote }}
+                - name: DYNAMIC_PDB_COORDINATE_INDEX_MAX_FILES_PER_RUN
+                  value: {{ .Values.coordinateIndexJob.maxFilesPerRun | quote }}
+                - name: DYNAMIC_PDB_COORDINATE_INDEX_FILE_TIMEOUT
+                  value: {{ .Values.coordinateIndexJob.fileTimeout | quote }}
+                - name: DYNAMIC_PDB_COORDINATE_INDEX_FILL
+                  value: {{ .Values.coordinateIndexJob.fill | quote }}
+              resources:
+                {{- toYaml .Values.coordinateIndexJob.resources | nindent 16 }}
+{{- end }}

@@ -53,7 +53,8 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 
 	// The pending checksum row is inserted by the same statement, so an artifact never exists
 	// without one. A model file in our bucket (a URI in the artifact's own folder) also gets a
-	// pending modeled compound set, which the model-compounds job reads.
+	// pending modeled compound set and a pending coordinate index set, which the model-compounds
+	// and coordinate-index jobs read.
 	query := `with inserted as (
 			    insert into artifacts(
 			      id,
@@ -88,6 +89,10 @@ func (r *ArtifactsRepository) Create(ctx context.Context, artifact models.Artifa
 			    returning artifact_id, status
 			  ), compounds as (
 			    insert into modeled_compound_sets(artifact_id)
+			    select id from inserted
+			    where type = 'model' and strpos(uri, '/artifacts/' || cast(id as text) || '/') > 0
+			  ), coordinate_index as (
+			    insert into coordinate_index_sets(artifact_id)
 			    select id from inserted
 			    where type = 'model' and strpos(uri, '/artifacts/' || cast(id as text) || '/') > 0
 			  )

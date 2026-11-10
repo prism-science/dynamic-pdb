@@ -207,6 +207,24 @@ func Test_should_answer_400_naming_the_filters_when_a_selection_search_has_filte
 	assert.Contains(t, *errorObject.Detail, "resolution_max")
 }
 
+func Test_should_answer_400_naming_the_chain_filters_when_a_selection_search_has_them_and_they_are_off(t *testing.T) {
+	// given: model search on, protein chain filters off
+	recorder := httptest.NewRecorder()
+
+	// when
+	selectionsTestServer(true).CreateSelection(recorder,
+		newSelectionRequest(`{"searches": ["model_type=Ensemble", "model_type=Ensemble&protein_chains_min=5&protein_chain_length_min=301"]}`))
+
+	// then
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	errorObject := decodeSingleErrorObject(t, recorder)
+	require.NotNil(t, errorObject.Detail)
+	assert.Contains(t, *errorObject.Detail, "protein chain filters are not enabled")
+	assert.Contains(t, *errorObject.Detail, "protein_chains_min, protein_chain_length_min")
+	assert.Contains(t, *errorObject.Detail, "search 1")
+	assert.NotContains(t, *errorObject.Detail, "model_type")
+}
+
 func Test_should_answer_404_on_every_selections_route_when_selections_are_off(t *testing.T) {
 	// given
 	server := &Server{}

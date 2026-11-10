@@ -117,15 +117,16 @@ func run() int {
 		return 1
 	}
 	srv = srv.WithModelSearch(httpapi.ModelSearchPolicy{
-		FiltersEnabled:   cfg.ModelSearch.FiltersEnabled,
-		CountCap:         cfg.ModelSearch.CountCap,
-		Requests:         cfg.ModelSearch.RateLimit.Requests,
-		InternalRequests: cfg.ModelSearch.RateLimit.InternalRequests,
-		Window:           cfg.ModelSearch.RateLimit.Window,
-		TrustedProxies:   trustedProxies,
+		FiltersEnabled:      cfg.ModelSearch.FiltersEnabled,
+		ChainFiltersEnabled: cfg.ModelSearch.ChainFiltersEnabled,
+		CountCap:            cfg.ModelSearch.CountCap,
+		Requests:            cfg.ModelSearch.RateLimit.Requests,
+		InternalRequests:    cfg.ModelSearch.RateLimit.InternalRequests,
+		Window:              cfg.ModelSearch.RateLimit.Window,
+		TrustedProxies:      trustedProxies,
 	})
 	slog.Info("model search configured", "filters_enabled", cfg.ModelSearch.FiltersEnabled,
-		"count_cap", cfg.ModelSearch.CountCap)
+		"chain_filters_enabled", cfg.ModelSearch.ChainFiltersEnabled, "count_cap", cfg.ModelSearch.CountCap)
 	srv = srv.WithSelections(httpapi.SelectionsPolicy{
 		Enabled:          cfg.Selections.Enabled,
 		MaxModels:        cfg.Selections.MaxModels,
