@@ -162,11 +162,14 @@ func seedArchiveModelFile(t *testing.T, database integrationDB, createdAt time.T
 		{`insert into model_revisions(
 		    id, model_id, primary_artifact_id, revision_number, state, model_state, published_at,
 		    title, metadata, created_by, created_at, updated_at
-		  ) values ($1, $2, $3, 1, 'active', 'active', $4, 'Deposited model', $5::jsonb, $6, $4, $4)`,
+		  ) values ($1, $2, $3, 1, 'pending', 'active', $4, 'Deposited model', $5::jsonb, $6, $4, $4)`,
 			[]any{uuid.New(), fixture.ModelID, fixture.ArtifactID, createdAt, modelMetadata, createdBy}},
 		{`insert into model_revision_artifacts(model_revision_id, artifact_id)
 		  select id, primary_artifact_id from model_revisions where model_id = $1`,
 			[]any{fixture.ModelID}},
+		// Files are linked before the revision is published, as in the app: a published revision's
+		// files cannot change (V20261110170100).
+		{`update model_revisions set state = 'active' where model_id = $1`, []any{fixture.ModelID}},
 	}
 	runInTransactionForTest(t, database, func(transaction *sql.Tx) {
 		for _, statement := range statements {

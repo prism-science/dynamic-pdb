@@ -401,7 +401,7 @@ func seedScheduledDataSyncEntry(
 		`insert into entry_revisions(
 		   id, entry_id, revision_number, state, entry_state, published_at, title,
 		   metadata, created_by, created_at, updated_at
-		 ) values ($1, $2, 1, 'active', 'active', $3, $4, $5::jsonb, $6, $3, $3)`,
+		 ) values ($1, $2, 1, 'pending', 'active', $3, $4, $5::jsonb, $6, $3, $3)`,
 		revisionID,
 		entryID,
 		now,
@@ -427,6 +427,10 @@ func seedScheduledDataSyncEntry(
 		revisionID,
 		artifactID,
 	)
+	require.NoError(t, err)
+	// Files are linked before the revision is published, as in the app: a published revision's
+	// files cannot change (V20261110170100).
+	_, err = transaction.ExecContext(t.Context(), `update entry_revisions set state = 'active' where id = $1`, revisionID)
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),
@@ -543,7 +547,7 @@ func seedScheduledDataSyncModel(
 		`insert into model_revisions(
 		   id, model_id, primary_artifact_id, revision_number, state, model_state, published_at,
 		   title, metadata, created_by, created_at, updated_at
-		 ) values ($1, $2, $3, 1, 'active', 'active', $4, 'RCSB model', $5::jsonb, $6, $4, $4)`,
+		 ) values ($1, $2, $3, 1, 'pending', 'active', $4, 'RCSB model', $5::jsonb, $6, $4, $4)`,
 		modelRevisionID,
 		modelID,
 		artifactID,
@@ -574,6 +578,10 @@ func seedScheduledDataSyncModel(
 		modelRevisionID,
 		runID,
 	)
+	require.NoError(t, err)
+	// Files and runs are linked before the revision is published, as in the app: a published
+	// revision's files cannot change (V20261110170100).
+	_, err = transaction.ExecContext(t.Context(), `update model_revisions set state = 'active' where id = $1`, modelRevisionID)
 	require.NoError(t, err)
 	_, err = transaction.ExecContext(
 		t.Context(),

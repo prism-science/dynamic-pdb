@@ -1601,7 +1601,10 @@ paths:
       summary: List the models of a frozen selection
       description: >
         Lists the models of a saved selection with the model revision and entry revision frozen
-        for each, in the order GET /v1/models lists models.
+        for each, and the files of those revisions, in the order GET /v1/models lists models.
+        Reopening a selection lists the same revisions and files every time, with each file's
+        latest checksum status, so files that changed at their source or cannot be read are
+        reported, never replaced by newer ones.
       security: []
       parameters:
         - name: selection_id
@@ -3305,7 +3308,7 @@ components:
 
     SelectionAttributes:
       type: object
-      required: [model_count, entry_count, created_at, request]
+      required: [model_count, entry_count, created_at, catalog_date, request]
       properties:
         model_count:
           type: integer
@@ -3319,6 +3322,13 @@ components:
           type: string
           format: date-time
           description: When the selection was saved; its revisions are the ones active then.
+        catalog_date:
+          type: string
+          format: date-time
+          description: >
+            The moment of the catalog the selection was frozen from. The selection is saved in
+            one statement, so this is created_at: the selection names the model and entry
+            revisions active then, and their files.
         request:
           $ref: "#/components/schemas/SelectionRequest"
 
@@ -3380,7 +3390,7 @@ components:
 
     SelectionModelAttributes:
       type: object
-      required: [model_id, entry_id, model_revision_number, entry_revision_number]
+      required: [model_id, entry_id, model_revision_number, entry_revision_number, files]
       properties:
         model_id:
           type: string
@@ -3396,6 +3406,111 @@ components:
           description: >
             Number of the entry revision frozen in the selection (revision_number of the entry
             as it was then).
+        files:
+          type: array
+          description: >
+            The files of the two frozen revisions, each once, ordered by first role, then name.
+            A published revision's files, and each file's location, size and declared SHA-256,
+            never change, so these are the files the selection named when it was saved; a newer
+            file is never listed in their place. Files of the entry revision repeat on every
+            model of that entry.
+          items:
+            $ref: "#/components/schemas/SelectionFile"
+
+    SelectionFile:
+      type: object
+      description: >
+        A file a selection names through its frozen revisions, as recorded when it was added,
+        with the SHA-256 the selection names for it and the checksum job's latest check of its
+        bytes. A checksum status of mismatch or failed means the bytes at uri no longer match or
+        cannot be read: report the file, never replace it.
+      required:
+        [
+          id,
+          roles,
+          name,
+          level,
+          type,
+          format,
+          uri,
+          size_bytes,
+          recorded_sha256,
+          recorded_sha256_source,
+          recorded_after_save,
+          checksum,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The artifact ID.
+        roles:
+          type: array
+          minItems: 1
+          description: Every way the file belongs to the model, in the order of SelectionFileRole.
+          items:
+            $ref: "#/components/schemas/SelectionFileRole"
+        name:
+          type: string
+        level:
+          $ref: "#/components/schemas/ArtifactLevel"
+        type:
+          $ref: "#/components/schemas/ArtifactType"
+        format:
+          type: string
+          nullable: true
+        uri:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: The size declared when the file was added.
+        recorded_sha256:
+          type: string
+          nullable: true
+          description: >
+            The SHA-256 the selection names for the file: the declared one, else the one the
+            checksum job computed from the bytes (see recorded_sha256_source). Null when neither
+            exists yet.
+        recorded_sha256_source:
+          $ref: "#/components/schemas/SelectionSHA256Source"
+        recorded_after_save:
+          type: boolean
+          description: >
+            True when recorded_sha256 was computed after the selection was saved
+            (checksum.checked_at after catalog_date): it describes the bytes read then, not bytes
+            known at the save.
+        checksum:
+          $ref: "#/components/schemas/ArtifactChecksum"
+
+    SelectionFileRole:
+      type: string
+      description: >
+        primary: the model revision's primary file. model: another file of the model revision.
+        run_input, run_output: an input or output of a run of the model revision. entry: a file
+        of the entry revision.
+      enum: [primary, model, run_input, run_output, entry]
+      x-enum-varnames:
+        [
+          SelectionFileRolePrimary,
+          SelectionFileRoleModel,
+          SelectionFileRoleRunInput,
+          SelectionFileRoleRunOutput,
+          SelectionFileRoleEntry,
+        ]
+
+    SelectionSHA256Source:
+      type: string
+      description: >
+        declared: recorded with the file when it was added. computed: the file was added without
+        one and the checksum job computed it from the bytes. not_recorded: neither exists yet
+        (the job has not read the bytes, could not, or found them differing from the declared
+        size).
+      enum: [declared, computed, not_recorded]
+      x-enum-varnames:
+        [SelectionSHA256SourceDeclared, SelectionSHA256SourceComputed, SelectionSHA256SourceNotRecorded]
 
     ModelDocument:
       type: object

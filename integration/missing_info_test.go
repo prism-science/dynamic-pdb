@@ -48,13 +48,17 @@ func Test_should_label_missing_info_when_old_computed_model_lacks_required_prove
 	entryID := seedActiveEntry(t, database, auth.UserID)
 	now := time.Now().UTC()
 	computedID, depositedID, describedID, runlessID := entryID+"_m_001", entryID+"_m_002", entryID+"_m_003", entryID+"_m_004"
-	seedActiveModel(t, database, entryID, computedID, auth.UserID, now, `{"model_type": "Single Conformer"}`)
-	seedActiveModel(t, database, entryID, depositedID, auth.UserID, now, `{"model_type": "Deposited"}`)
-	seedActiveModel(t, database, entryID, describedID, auth.UserID, now, `{"model_type": "Multiconformer"}`)
+	// Runs are linked before the revisions are published, as in the app.
+	seedModel(t, database, entryID, computedID, auth.UserID, now, `{"model_type": "Single Conformer"}`, "pending")
+	seedModel(t, database, entryID, depositedID, auth.UserID, now, `{"model_type": "Deposited"}`, "pending")
+	seedModel(t, database, entryID, describedID, auth.UserID, now, `{"model_type": "Multiconformer"}`, "pending")
 	seedActiveModel(t, database, entryID, runlessID, auth.UserID, now, `{}`)
 	computed := seedRunAndMetric(t, database, computedID, auth.UserID, nil, false)
 	seedRunAndMetric(t, database, depositedID, auth.UserID, nil, false)
 	seedRunAndMetric(t, database, describedID, auth.UserID, new("1.21"), true)
+	for _, modelID := range []string{computedID, depositedID, describedID} {
+		publishSeededModel(t, database, modelID)
+	}
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	backend := startBackendWithEnv(t, root, backendBinaryPath, s3.URL(),
@@ -82,7 +86,7 @@ func Test_should_label_missing_info_when_old_computed_model_lacks_required_prove
 }
 
 // seedRunAndMetric stores a PHENIX run with the given version and an r_free metric on
-// the model's active revision. The metric names no software; linkMetric links it to the run.
+// the model's pending revision. The metric names no software; linkMetric links it to the run.
 func seedRunAndMetric(
 	t *testing.T,
 	database integrationDB,
@@ -101,7 +105,7 @@ func seedRunAndMetric(
 	runInTransactionForTest(t, database, func(transaction *sql.Tx) {
 		var revisionID uuid.UUID
 		require.NoError(t, transaction.QueryRowContext(t.Context(),
-			`select id from model_revisions where model_id = $1 and state = 'active'`, modelID).Scan(&revisionID))
+			`select id from model_revisions where model_id = $1 and state = 'pending'`, modelID).Scan(&revisionID))
 		_, err := transaction.ExecContext(t.Context(),
 			`insert into runs(id, name, software_name, software_version, parameters, metadata, created_by, created_at, updated_at)
 			 values ($1, 'refinement', 'PHENIX', $2, '{}'::jsonb, '{}'::jsonb, $3, $4, $4)`,

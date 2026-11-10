@@ -37,12 +37,14 @@ select format('lt_%s', lpad(n::text, 7, '0')),
        'active'
 from generate_series(1, :entries) as n;
 
+-- Entry revisions start pending and are published once their files are linked: a published
+-- revision's files cannot change (V20261110170100).
 insert into entry_revisions(id, entry_id, revision_number, state, entry_state, published_at,
                             title, metadata, created_by, created_at, updated_at)
 select gen_random_uuid(),
        entries.id,
        1,
-       'active',
+       'pending',
        'active',
        entries.created_at,
        format('Load test entry %s', entries.id),
@@ -149,6 +151,8 @@ from seeded_fasta_artifacts;
 insert into entry_revision_artifacts(entry_revision_id, artifact_id)
 select entry_revision_id, id
 from seeded_fasta_artifacts;
+
+update entry_revisions set state = 'active' where created_by = :'user_id' and state = 'pending';
 
 insert into protein_sequences(id, entry_revision_id, source_artifact_id, record_index, header, sequence,
                               processing_state, created_at)
