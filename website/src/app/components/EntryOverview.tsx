@@ -6,6 +6,7 @@ import { dataTableEntities } from "@/lib/entities";
 import type { MetricScale } from "@/lib/model-comparison";
 import type { ModeledCompoundsView } from "@/lib/modeled-compounds";
 import type { PolymerEntityView } from "@/lib/polymer-entities";
+import type { ReviewStatus } from "@/lib/review-flags";
 import {
   ImagePlaceholderIcon,
   InfoGrid,
@@ -19,6 +20,7 @@ import MissingInfoNotice from "./MissingInfoNotice";
 import ModeledCompoundList from "./ModeledCompoundList";
 import PolymerEntities from "./PolymerEntities";
 import RelatedDatasets from "./RelatedDatasets";
+import ReviewFlagNotice from "./ReviewFlagNotice";
 
 import styles from "./EntryOverview.module.css";
 
@@ -35,6 +37,8 @@ export type SummaryModel = {
   compounds: ModeledCompoundsView;
   /** What its record lacks that a write would now ask for, one line each. */
   missingInfo: string[];
+  /** Whether it is flagged for review, and the issues if this viewer may see them. */
+  review: ReviewStatus;
 };
 
 /**
@@ -136,6 +140,7 @@ export default function EntryOverview({
               <InfoGrid facts={secondHalf(model.facts)} columns={1} />
             </div>
           ) : null}
+          {model ? <ReviewFlagNotice status={model.review} /> : null}
           {model ? <MissingInfoNotice lines={model.missingInfo} /> : null}
         </div>
       </div>

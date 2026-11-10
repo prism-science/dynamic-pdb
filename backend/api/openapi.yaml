@@ -1033,9 +1033,14 @@ paths:
         metric_missing finds missing metric values.
 
 
-        Search filters, meta.total, and the entry, review_flags and compounds_needing_review
-        fields are available only where the server enables model search; elsewhere a filter
-        parameter gets 400 and the response has none of them.
+        Search filters, meta.total, and the entry, flagged_for_review, review_flags and
+        compounds_needing_review fields are available only where the server enables model
+        search; elsewhere a filter parameter gets 400 and the response has none of them.
+
+
+        Review flags: every caller sees whether a result is flagged for review
+        (flagged_for_review). The open issues (review_flags) and the flagged filter are only for
+        signed-in users with the reviewer or admin role; signing in alone grants neither.
       security: []
       parameters:
         - name: limit
@@ -1410,9 +1415,10 @@ paths:
         - name: flagged
           in: query
           description: >
-            true returns only models with an open review flag (on the model, its current
-            revision, its entry or the entry's polymer entities); false returns only models
-            without one. Results always list their flags in review_flags.
+            Reviewers and admins only: where the server enables model search, anyone else gets
+            403 (elsewhere every filter gets 400). true returns only models with an open review
+            flag (on the model, its current revision, its entry or the entry's polymer
+            entities); false returns only models without one.
           required: false
           schema:
             type: boolean
@@ -1427,6 +1433,14 @@ paths:
           description: >
             Invalid filters, or a filter parameter where the server does not enable model
             search. The detail names the parameter.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >
+            The flagged filter from a caller without the reviewer or admin role (code
+            FORBIDDEN). The detail names the parameter; remove it.
           content:
             application/vnd.api+json:
               schema:
@@ -1503,6 +1517,14 @@ paths:
           description: >
             The body is not valid JSON, or a search has filters where the server does not enable
             model search.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >
+            A search has the flagged filter and the caller does not have the reviewer or admin
+            role (code FORBIDDEN). The detail names the parameter and the search.
           content:
             application/vnd.api+json:
               schema:
@@ -3176,11 +3198,17 @@ components:
                 Present where the server enables model search.
               allOf:
                 - $ref: "#/components/schemas/EntryInfoAttributes"
+            flagged_for_review:
+              description: >
+                true when the model, its current revision, its entry or the entry's polymer
+                entities have an open review flag. The record stays public; show a generic
+                "flagged for review" badge. Present where the server enables model search.
+              type: boolean
             review_flags:
               description: >
-                Open review flags on the model, its current revision, its entry or the entry's
-                polymer entities. The record stays public; show the flags as a warning. Present
-                (possibly empty) where the server enables model search.
+                The open review flags flagged_for_review counts. Present (possibly empty) only
+                for callers with the reviewer or admin role, where the server enables model
+                search.
               type: array
               items:
                 $ref: "#/components/schemas/ReviewFlag"
@@ -3195,6 +3223,9 @@ components:
 
     ReviewFlag:
       type: object
+      description: >
+        One open review flag on a record. Only callers with the reviewer or admin role get
+        these; everyone else sees flagged_for_review only.
       required: [object_type, object_id, issue, flagged_at]
       properties:
         object_type:
@@ -3427,6 +3458,19 @@ components:
           properties:
             field_sources:
               $ref: "#/components/schemas/FieldSources"
+            flagged_for_review:
+              description: >
+                true when the model, its current revision, its entry or the entry's polymer
+                entities have an open review flag. The record stays public; show a generic
+                "flagged for review" badge. Omitted when it could not be worked out.
+              type: boolean
+            review_flags:
+              description: >
+                The open review flags flagged_for_review counts. Present (possibly empty) only
+                for callers with the reviewer or admin role.
+              type: array
+              items:
+                $ref: "#/components/schemas/ReviewFlag"
             modeled_compounds:
               $ref: "#/components/schemas/ModeledCompounds"
             missing_info:
@@ -3902,6 +3946,10 @@ components:
             Permission keys the user holds. Users with `revisions.approve` also
             get `entries.delete` where the server allows entry deletion, and
             `revisions.approve_own` where it allows self-approval (dev only).
+            Users with the reviewer or admin role also get `review_flags.read`:
+            they see review flag issues and may use the flagged filter. The API
+            checks the role on every request; the key only tells the website
+            what to offer.
           items:
             type: string
 
