@@ -180,6 +180,42 @@ modelCompoundsJob:
       cpu: "1"
       memory: 1Gi
 
+# Reads every model file in our bucket (and the checksum job's copy of each archive model file)
+# and stores its chains: author chain, entity, deposited length, modeled residues and whether it
+# is a protein (S2), one file at a time, outside the API pods. The model search's chain filters
+# read them. Merged off; its switch-on PR turns it on with the fill. See the README.
+coordinateIndexJob:
+  enabled: false
+  # Every 5 minutes, as the model-compounds job.
+  schedule: "*/5 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  backoffLimit: 0
+  # The job claims files for 4 minutes and gives each at most fileTimeout; this ends a run that
+  # hangs after both.
+  activeDeadlineSeconds: 900
+  # Caps the files one run reads; 0 means no cap. 500, as the model-compounds job: the fill of
+  # about 225,000 files then takes 450 runs, 1 to 1.6 days.
+  maxFilesPerRun: 500
+  fileTimeout: 10m
+  # Gives every model file stored before the job existed a set, as a fill row: uploads are read
+  # first. The first run with it queues them all; later runs add nothing while fill rows are
+  # pending. Off again once a run logs fill_sets_added=0 and none are pending.
+  fill: false
+  # The largest statement stores the chains of one file (2,000 per insert).
+  statementTimeout: 30s
+  # The largest file (538 MB, 100 members) streamed with a 40 MB peak in the S3 spike; the limit
+  # leaves room for a decompressed gzip stream and the database client.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
 # The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
 # glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
 # mmCIF, in place on the active revision. On for a planned run only; see the README. Prod's run

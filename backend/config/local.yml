@@ -58,10 +58,17 @@ compounds:
   # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
   archive_files: false
   archive_fill: false
+coordinate_index:
+  # The coordinate-index job (S2) also reads archive model files, from the checksum job's copies,
+  # through its recent window and its fill. See deploy/README.md, "Coordinate index job".
+  archive_files: false
 model_search:
   # Search filters on GET /v1/models (S1) are on locally, so the website's search can be built
   # against them before dev and production switch them on.
   filters_enabled: true
+  # The protein chain filters (S2) read the coordinate-index job's chains; locally they are on so
+  # the website can be built against them.
+  chain_filters_enabled: true
 selections:
   # Frozen selections (/v1/selections, B1) are on locally, so the website's download panel can be
   # built against them before dev and production switch them on.

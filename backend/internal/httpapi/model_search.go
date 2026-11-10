@@ -39,6 +39,9 @@ type ModelSearchPolicy struct {
 	// FiltersEnabled turns on the filters, the capped total, and the entry and review warnings in
 	// each result. Off, a filter parameter gets 400 and the list answers as before.
 	FiltersEnabled bool
+	// ChainFiltersEnabled also turns on the protein chain filters, which read the coordinate-index
+	// job's chains. Off, a chain parameter gets 400.
+	ChainFiltersEnabled bool
 	// CountCap is where the total stops counting.
 	CountCap int
 	// Requests and InternalRequests cap counted searches per client per Window, for clients
@@ -50,19 +53,26 @@ type ModelSearchPolicy struct {
 	TrustedProxies   []netip.Prefix
 }
 
+// errChainFiltersOff marks a search with protein chain filters where they are off: until the
+// coordinate-index job has read every model file, they would miss the models of unread files.
+// GET /v1/models and saved selections both refuse such a search.
+var errChainFiltersOff = errors.New("protein chain filters are not enabled on this server yet")
+
 // modelSearch is the server's model search setup; the zero value has the filters off.
 type modelSearch struct {
-	enabled  bool
-	countCap int
-	limiter  *routeRateLimiter
+	enabled       bool
+	chainsEnabled bool
+	countCap      int
+	limiter       *routeRateLimiter
 }
 
 // WithModelSearch configures the search filters of GET /v1/models.
 func (s *Server) WithModelSearch(policy ModelSearchPolicy) *Server {
 	s.modelSearch = modelSearch{
-		enabled:  policy.FiltersEnabled,
-		countCap: policy.CountCap,
-		limiter:  newModelSearchLimiter(policy),
+		enabled:       policy.FiltersEnabled,
+		chainsEnabled: policy.ChainFiltersEnabled,
+		countCap:      policy.CountCap,
+		limiter:       newModelSearchLimiter(policy),
 	}
 	return s
 }
@@ -113,6 +123,12 @@ func (s *Server) ListModelsAcrossEntries(
 			return
 		}
 		s.writeModelListPage(w, r, revisions, page)
+		return
+	}
+
+	if search != nil && len(search.chainParameters) > 0 && !s.modelSearch.chainsEnabled {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
+			errChainFiltersOff.Error()+"; remove "+strings.Join(search.chainParameters, ", "))
 		return
 	}
 
@@ -332,10 +348,12 @@ func compoundsNeedingReviewFromModels(compounds []domainmodels.CompoundNeedingRe
 	return items
 }
 
-// parsedModelSearch is a request's search filters and the parameters that set them.
+// parsedModelSearch is a request's search filters and the parameters that set them;
+// chainParameters are the protein chain ones, which have a switch of their own.
 type parsedModelSearch struct {
-	filters    db.ModelSearch
-	parameters []string
+	filters         db.ModelSearch
+	parameters      []string
+	chainParameters []string
 }
 
 // modelSearchParamError is a search parameter the request got wrong.
@@ -410,6 +428,9 @@ func modelSearchFromParams(params ListModelsAcrossEntriesParams) (*parsedModelSe
 			search.filters.MetricBounds = append(search.filters.MetricBounds,
 				db.MetricBound{Key: metric.key, Min: minimum, Max: maximum})
 		}
+	}
+	if search.filters.ProteinChains, err = search.proteinChains(params); err != nil {
+		return nil, err
 	}
 	if params.Flagged != nil {
 		search.parameters = append(search.parameters, "flagged")
@@ -580,6 +601,76 @@ func (search *parsedModelSearch) bounds(name string, minimum, maximum *float64) 
 		}
 	}
 	return minimum, maximum, nil
+}
+
+// proteinChains reads protein_chains_min, its length bounds and protein_chain_mode: every number
+// at least 1, the length range not empty, every with a bound. The count defaults to 1 and the mode
+// to at_least.
+func (search *parsedModelSearch) proteinChains(params ListModelsAcrossEntriesParams) (*db.ProteinChainFilter, error) {
+	if params.ProteinChainsMin == nil && params.ProteinChainLengthMin == nil && params.ProteinChainLengthMax == nil &&
+		params.ProteinChainMode == nil {
+		return nil, nil
+	}
+	filter := &db.ProteinChainFilter{Mode: db.ProteinChainsAtLeast, MinChains: 1}
+	if params.ProteinChainMode != nil {
+		mode, err := proteinChainMode(*params.ProteinChainMode)
+		if err != nil {
+			return nil, err
+		}
+		filter.Mode = mode
+		search.parameters = append(search.parameters, "protein_chain_mode")
+		search.chainParameters = append(search.chainParameters, "protein_chain_mode")
+	}
+	for _, value := range []struct {
+		parameter string
+		value     *int
+	}{
+		{"protein_chains_min", params.ProteinChainsMin},
+		{"protein_chain_length_min", params.ProteinChainLengthMin},
+		{"protein_chain_length_max", params.ProteinChainLengthMax},
+	} {
+		if value.value == nil {
+			continue
+		}
+		if *value.value < 1 {
+			return nil, &modelSearchParamError{parameter: value.parameter, problem: "must be at least 1"}
+		}
+		search.parameters = append(search.parameters, value.parameter)
+		search.chainParameters = append(search.chainParameters, value.parameter)
+	}
+	if params.ProteinChainsMin != nil {
+		filter.MinChains = *params.ProteinChainsMin
+	}
+	filter.MinLength = params.ProteinChainLengthMin
+	filter.MaxLength = params.ProteinChainLengthMax
+	if filter.MinLength != nil && filter.MaxLength != nil && *filter.MinLength > *filter.MaxLength {
+		return nil, &modelSearchParamError{
+			parameter: "protein_chain_length_min",
+			problem:   fmt.Sprintf("%d is greater than protein_chain_length_max %d", *filter.MinLength, *filter.MaxLength),
+		}
+	}
+	if filter.Mode == db.ProteinChainsEvery && filter.MinLength == nil && filter.MaxLength == nil {
+		return nil, &modelSearchParamError{
+			parameter: "protein_chain_mode",
+			problem:   "every needs protein_chain_length_min or protein_chain_length_max",
+		}
+	}
+	return filter, nil
+}
+
+// proteinChainMode reads protein_chain_mode.
+func proteinChainMode(mode ProteinChainMode) (db.ProteinChainMode, error) {
+	switch mode {
+	case ProteinChainModeAtLeast:
+		return db.ProteinChainsAtLeast, nil
+	case ProteinChainModeEvery:
+		return db.ProteinChainsEvery, nil
+	default:
+		return "", &modelSearchParamError{
+			parameter: "protein_chain_mode",
+			problem:   fmt.Sprintf("%q is not one of %s, %s", mode, ProteinChainModeAtLeast, ProteinChainModeEvery),
+		}
+	}
 }
 
 // vocabularyValues reads a list filter of one of the API's vocabularies, refusing values outside it.
