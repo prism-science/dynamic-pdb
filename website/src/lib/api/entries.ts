@@ -475,21 +475,25 @@ export const MODEL_SEARCH_PAGE_SIZE = 50;
 
 /**
  * Runs a model search: GET /v1/models with the search's own query string, then
- * limit and cursor. Public, like the route, so no token is sent: everyone sees
- * the same results. Throws ApiRequestError; a 429 or 504 carries
+ * limit and cursor, as the signed-in reader when a token is given. The models
+ * found are the same for everyone; what a reader learns about their review
+ * flags is not. Throws ApiRequestError; a 429 or 504 carries
  * retryAfterSeconds.
  */
 export async function searchModels(
   criteria: ModelSearchCriteria,
-  opts?: { limit?: number | null; cursor?: string | null },
+  opts?: { token?: string | null; limit?: number | null; cursor?: string | null },
 ): Promise<ModelSearchPage> {
   const params = new URLSearchParams(modelSearchQuery(criteria));
   params.set("limit", String(opts?.limit ?? MODEL_SEARCH_PAGE_SIZE));
   if (opts?.cursor) {
     params.set("cursor", opts.cursor);
   }
+  // Signed in, the API answers as the reader: reviewers and admins get the
+  // review flags' issues and may use the flagged filter.
   const document = await fetchBackend<Schemas["ModelSearchCollectionDocument"]>(
     `/v1/models?${params.toString()}`,
+    opts?.token ?? undefined,
   );
   return {
     items: document.data.map((item) => item.attributes),

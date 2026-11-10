@@ -1,5 +1,5 @@
 import type { ModelSearchPage } from "@/lib/api/entries";
-import { formatModelTotal } from "@/lib/model-search";
+import { modelTotalLine } from "@/lib/model-search";
 
 import CopyLinkButton from "./CopyLinkButton";
 import ModelResultRow from "./ModelResultRow";
@@ -25,11 +25,7 @@ export default function ModelResults({
     <section className={styles.results} aria-label="Model search results">
       <div className={styles.summary}>
         <p className={styles.count} role="status">
-          {page.total === null
-            ? "Models matching these filters"
-            : page.total.count === 0
-              ? "No models match these filters."
-              : `${formatModelTotal(page.total)} match these filters`}
+          {page.total === null ? "Models matching these filters" : modelTotalLine(page.total)}
         </p>
         <p className={styles.apiLine}>
           <span className={styles.apiLabel}>Same search in the API:</span>{" "}

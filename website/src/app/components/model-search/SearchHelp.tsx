@@ -28,7 +28,10 @@ export default function SearchHelp({ open = false }: { open?: boolean }) {
           Compounds the file reader marked &ldquo;needs review&rdquo; still match, and the result
           names them.
         </li>
-        <li>Records flagged for review stay in the results, with a warning.</li>
+        <li>
+          Records flagged for review stay in the results, with a &ldquo;Flagged for review&rdquo;
+          badge. Reviewers and admins also see which issues, and can filter by flags.
+        </li>
         <li>Counts are exact up to 10,000; above that they show as 10,000+.</li>
         <li>
           The API link under the count runs the same search, for scripts. Its address uses the same

@@ -18,12 +18,15 @@ const {
   MODEL_SEARCH_PARAMETERS,
   modelSearchApiUrl,
   modelSearchQuery,
+  modelTotalLine,
+  offeredFilters,
   panelProblems,
   panelValuesFromCriteria,
   readModelSearch,
-  reviewFlagLines,
   searchFailureMessage,
+  usesReviewerFilters,
   withDraftValues,
+  withoutReviewerFilters,
 } = require("../src/lib/model-search.ts");
 
 /** The query parameters of GET /v1/models, read from the generated API types. */
@@ -210,21 +213,41 @@ test("should say the total as the count line does, with 10,000+ above the cap", 
   assert.equal(formatModelTotal({ count: 10000, exact: false }), "10,000+ models");
 });
 
-test("should name known review issues and keep an unknown one's code", () => {
-  const lines = reviewFlagLines([
-    { object_type: "polymer_entity", object_id: "1", issue: "mutations_need_review", flagged_at: "x" },
-    { object_type: "polymer_entity", object_id: "2", issue: "mutations_need_review", flagged_at: "x" },
-    { object_type: "entry", object_id: "e", issue: "ligands_cofactors_rederive_from_archive", flagged_at: "x" },
-    { object_type: "model_revision", object_id: "r", issue: "sync_validation_failed", flagged_at: "x" },
-    { object_type: "chain", object_id: "c", issue: "new_issue_code", flagged_at: "x" },
-  ]);
+test("should say the count line in agreement with the number", () => {
+  assert.equal(modelTotalLine({ count: 0, exact: true }), "No models match these filters.");
+  assert.equal(modelTotalLine({ count: 1, exact: true }), "1 model matches these filters");
+  assert.equal(modelTotalLine({ count: 2, exact: true }), "2 models match these filters");
+  assert.equal(modelTotalLine({ count: 10000, exact: false }), "10,000+ models match these filters");
+});
 
-  assert.deepEqual(lines, [
-    "Mutations need review (2 polymer entities)",
-    "Ligands and Cofactors need review (entry)",
-    "The latest PDB update failed validation (model version)",
-    "new_issue_code (chain)",
+test("should offer the flagged filter to reviewers and admins only, and drop it on Apply for anyone else", () => {
+  const values = panelValuesFromCriteria(readModelSearch(new URLSearchParams("model_type=Ensemble&flagged=true")));
+
+  assert.deepEqual(
+    offeredFilters(true).map((filter) => filter.id),
+    MODEL_SEARCH_FILTERS.map((filter) => filter.id),
+  );
+  assert.deepEqual(
+    offeredFilters(false).filter((filter) => filter.group === "review"),
+    [],
+  );
+  assert.ok(offeredFilters(false).length === MODEL_SEARCH_FILTERS.length - 1);
+  assert.deepEqual(criteriaFromPanel(values, offeredFilters(true)), [
+    ["model_type", "Ensemble"],
+    ["flagged", "true"],
   ]);
+  assert.deepEqual(criteriaFromPanel(values, offeredFilters(false)), [["model_type", "Ensemble"]]);
+});
+
+test("should keep the rest of a search when the filter only reviewers may use is taken out", () => {
+  const criteria = readModelSearch(new URLSearchParams("flagged=false&model_type=Ensemble&r_free_max=0.2"));
+
+  assert.equal(usesReviewerFilters(criteria), true);
+  assert.equal(usesReviewerFilters(readModelSearch(new URLSearchParams("model_type=Ensemble"))), false);
+  assert.equal(
+    browseSearchHref(withoutReviewerFilters(criteria)),
+    "/browse?model_type=Ensemble&r_free_max=0.2",
+  );
 });
 
 test("should explain each failed search with what to do next", () => {
@@ -235,6 +258,14 @@ test("should explain each failed search with what to do next", () => {
       body: "invalid model search parameter r_free_min: 0.3 is greater than r_free_max 0.2",
     },
   );
+  assert.deepEqual(
+    searchFailureMessage({ status: 403, detail: "the flagged filter is for reviewers and admins; remove flagged" }),
+    {
+      title: "This search needs a reviewer or admin",
+      body: "the flagged filter is for reviewers and admins; remove flagged",
+    },
+  );
+  assert.match(searchFailureMessage({ status: 403 }).body, /for reviewers and admins/);
   assert.match(searchFailureMessage({ status: 429, retryAfterSeconds: 7 }).body, /Try again in 7 seconds\./);
   assert.match(searchFailureMessage({ status: 429, retryAfterSeconds: 1 }).body, /in 1 second\./);
   assert.match(searchFailureMessage({ status: 429 }).body, /links\.next/);

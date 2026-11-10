@@ -11,6 +11,8 @@ const {
 } = require("../src/lib/api/entries.ts");
 const { GET } = require("../src/app/browse/model-feed/route.ts");
 const { readModelSearch } = require("../src/lib/model-search.ts");
+const { __setCookieValues } = require("next/headers");
+const { authTokenCookieName } = require("../src/lib/auth/session.ts");
 
 const jsonApiMediaType = "application/vnd.api+json";
 
@@ -90,6 +92,17 @@ test("should search models with the search's own query string, then limit", asyn
   );
 });
 
+test("should search as the signed-in reader when given a token", async () => {
+  await withBackend(
+    () => jsonResponse(searchDocument(["m1"], { total: { count: 1, exact: true } })),
+    async (requests) => {
+      await searchModels(readModelSearch(new URLSearchParams("flagged=true")), { token: "reviewer-token" });
+
+      assert.equal(requests[0].headers.Authorization, "Bearer reviewer-token");
+    },
+  );
+});
+
 test("should read a later page of a search, which has no total", async () => {
   await withBackend(
     () => jsonResponse(searchDocument(["m3"])),
@@ -159,6 +172,33 @@ test("should page the model feed with the page's filters and cursor, other param
         items: [{ id: "m51", entry_id: "entry-1" }],
         nextCursor: "c3",
       });
+    },
+  );
+});
+
+test("should page the model feed as the signed-in reader, so later pages show flags as the first did", async () => {
+  __setCookieValues({ [authTokenCookieName]: "reviewer-token" });
+  try {
+    await withBackend(
+      () => jsonResponse(searchDocument(["m51"])),
+      async (requests) => {
+        await GET(new Request("http://localhost/browse/model-feed?flagged=true&cursor=c2"));
+
+        assert.equal(requests[0].headers.Authorization, "Bearer reviewer-token");
+      },
+    );
+  } finally {
+    __setCookieValues({});
+  }
+});
+
+test("should page the model feed anonymously without a session", async () => {
+  await withBackend(
+    () => jsonResponse(searchDocument(["m51"])),
+    async (requests) => {
+      await GET(new Request("http://localhost/browse/model-feed?model_type=Ensemble&cursor=c2"));
+
+      assert.equal(requests[0].headers.Authorization, undefined);
     },
   );
 });

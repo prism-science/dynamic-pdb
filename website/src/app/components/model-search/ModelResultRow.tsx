@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import type { ModelSearchResult } from "@/lib/api/entries";
 import { entryIdentity } from "@/lib/entry-label";
 import { modelTitle } from "@/lib/model-metrics";
-import { reviewFlagLines } from "@/lib/model-search";
 import { relatedDatasetKey, relatedDatasetName } from "@/lib/related-datasets";
+import { reviewStatus } from "@/lib/review-flags";
+import { REVIEW_FLAG_TOOLTIP } from "@/app/components/ReviewFlagNotice";
 
 import styles from "./model-search.module.css";
 
@@ -17,8 +18,10 @@ const ROW_METRICS: readonly { key: string; label: string; decimals: number }[] =
 
 /**
  * One model search result: the model, labelled with its entry, and what a
- * reader must know before using it (review flags, compounds that need review,
- * the entry's raw datasets).
+ * reader must know before using it (whether it is flagged for review, compounds
+ * that need review, the entry's raw datasets). Everyone sees the "Flagged for
+ * review" badge; the issues follow it only when the API sent them, which it
+ * does for reviewers and admins.
  *
  * `leading` is the cell before the model, kept for the selection checkbox the
  * download panel adds. Rendered on the server for the first page and in the
@@ -33,7 +36,7 @@ export default function ModelResultRow({
 }) {
   const entry = result.entry;
   const identity = entry ? entryIdentity(entry) : { name: null, id: result.entry_id };
-  const flags = reviewFlagLines(result.review_flags ?? []);
+  const review = reviewStatus(result);
   const compounds = result.compounds_needing_review ?? [];
   const datasets = entry?.related_datasets ?? [];
   const facts = rowFacts(result);
@@ -71,11 +74,14 @@ export default function ModelResultRow({
             ))}
           </ul>
         ) : null}
-        {flags.length > 0 ? (
-          <p className={styles.flagWarning} role="note">
+        {review.flagged ? (
+          <p className={styles.flagWarning} role="note" title={REVIEW_FLAG_TOOLTIP}>
             <WarningIcon />
             <span>
-              <strong>Flagged for review:</strong> {flags.join("; ")}
+              <strong>Flagged for review</strong>
+              {review.issueLines !== null && review.issueLines.length > 0
+                ? `: ${review.issueLines.join("; ")}`
+                : null}
             </span>
           </p>
         ) : null}

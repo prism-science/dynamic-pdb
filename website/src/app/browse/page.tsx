@@ -13,12 +13,16 @@ import { getApiBaseUrl } from "@/lib/api/baseUrl";
 import { getAuthSession } from "@/lib/auth/session";
 import { canDeleteEntries } from "@/lib/auth/permissions";
 import {
+  browseSearchHref,
   modelSearchApiUrl,
   modelSearchQuery,
   readModelSearch,
+  usesReviewerFilters,
+  withoutReviewerFilters,
   type ModelSearchCriteria,
   type SearchFailure,
 } from "@/lib/model-search";
+import { canSeeReviewFlags } from "@/lib/review-flags";
 import EntriesBrowser from "@/app/components/EntriesBrowser";
 import SearchTracker, { ModelSearchTracker } from "@/app/components/SearchTracker";
 import FilterPanel from "@/app/components/model-search/FilterPanel";
@@ -45,7 +49,8 @@ type BrowseProps = {
  * which the header's text search also lands on. With one, it is the model
  * search: one row per model, labelled with its entry, for exactly the filters
  * in the URL (GET /v1/models with the same query string), so a shared URL
- * restores the search.
+ * restores the search. Searches run as the signed-in reader, so reviewers and
+ * admins also see which issues a flagged model has, and may filter by flags.
  */
 export default async function Browse({ searchParams }: BrowseProps) {
   const session = await getAuthSession();
@@ -58,6 +63,7 @@ export default async function Browse({ searchParams }: BrowseProps) {
       ? firstQueryValue(resolvedSearchParams[ENTRY_DELETED_PARAM])
       : undefined;
   const criteria = readModelSearch(resolvedSearchParams);
+  const canFilterReviewFlags = session !== null && canSeeReviewFlags(session.permissions);
 
   return (
     <main className={styles.page} aria-label="dynamic-pdb entries">
@@ -69,11 +75,15 @@ export default async function Browse({ searchParams }: BrowseProps) {
       <div className={styles.layout}>
         <aside className={styles.filters}>
           {/* Remounted per search, so Back and Forward show the URL's filters. */}
-          <FilterPanel key={modelSearchQuery(criteria)} criteria={criteria} />
+          <FilterPanel
+            key={modelSearchQuery(criteria)}
+            criteria={criteria}
+            canFilterReviewFlags={canFilterReviewFlags}
+          />
         </aside>
         <section className={styles.entriesShell}>
           {criteria.length > 0 ? (
-            <ModelSearch criteria={criteria} textQuery={query} />
+            <ModelSearch token={session?.token} criteria={criteria} textQuery={query} />
           ) : (
             <Entries token={session?.token} query={query} />
           )}
@@ -99,14 +109,16 @@ async function Entries({ token, query }: { token?: string; query: string }) {
 }
 
 async function ModelSearch({
+  token,
   criteria,
   textQuery,
 }: {
+  token?: string;
   criteria: ModelSearchCriteria;
   textQuery: string;
 }) {
   const searchQuery = modelSearchQuery(criteria);
-  const outcome = await runModelSearch(criteria);
+  const outcome = await runModelSearch(criteria, token);
 
   return (
     <>
@@ -123,11 +135,7 @@ async function ModelSearch({
       ) : null}
       {"failure" in outcome ? (
         <SearchErrorNotice failure={outcome.failure}>
-          {outcome.failure.status !== 400 ? (
-            // A full reload: the search runs again on the server.
-            <a href={`/browse?${searchQuery}`}>Try again</a>
-          ) : null}
-          <Link href="/browse">Clear filters</Link>
+          <FailureActions failure={outcome.failure} criteria={criteria} />
         </SearchErrorNotice>
       ) : (
         <>
@@ -147,11 +155,42 @@ async function ModelSearch({
   );
 }
 
+/**
+ * What a reader can do about a failed search. A 400 or 403 fails the same way
+ * again, so only the others offer Try again; a 403 for a filter only reviewers
+ * may use (a shared link) offers the rest of the search.
+ */
+function FailureActions({
+  failure,
+  criteria,
+}: {
+  failure: SearchFailure;
+  criteria: ModelSearchCriteria;
+}) {
+  const retryHelps = failure.status !== 400 && failure.status !== 403;
+  const publicSearch = withoutReviewerFilters(criteria);
+  const offerPublicSearch =
+    failure.status === 403 && usesReviewerFilters(criteria) && publicSearch.length > 0;
+  return (
+    <>
+      {retryHelps ? (
+        // A full reload: the search runs again on the server.
+        <a href={browseSearchHref(criteria)}>Try again</a>
+      ) : null}
+      {offerPublicSearch ? (
+        <Link href={browseSearchHref(publicSearch)}>Search without the review filter</Link>
+      ) : null}
+      <Link href="/browse">Clear filters</Link>
+    </>
+  );
+}
+
 async function runModelSearch(
   criteria: ModelSearchCriteria,
+  token?: string,
 ): Promise<{ page: ModelSearchPage } | { failure: SearchFailure }> {
   try {
-    return { page: await searchModels(criteria) };
+    return { page: await searchModels(criteria, { token }) };
   } catch (error) {
     if (error instanceof ApiRequestError) {
       return { failure: searchFailureFromError(error) };

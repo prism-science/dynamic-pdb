@@ -55,6 +55,8 @@ type FilterBase = {
   label: string;
   /** One line under the label, when the label alone could mislead. */
   help?: string;
+  /** Offered only to reviewers and admins; the API answers 403 to anyone else. */
+  reviewersOnly?: true;
 };
 
 /** Free text values, each its own repeated parameter (organism=A&organism=B). */
@@ -243,6 +245,8 @@ export const MODEL_SEARCH_FILTERS: readonly ModelSearchFilter[] = [
     parameter: "flagged",
     group: "review",
     label: "Review flags",
+    help: "Shown to reviewers and admins only.",
+    reviewersOnly: true,
     anyLabel: "Any",
     yesLabel: "Only flagged records",
     noLabel: "Only records without flags",
@@ -272,6 +276,31 @@ export const MODEL_SEARCH_PARAMETERS: readonly ModelSearchParameter[] =
   MODEL_SEARCH_FILTERS.flatMap(filterParameters);
 
 const KNOWN_PARAMETERS = new Set<string>(MODEL_SEARCH_PARAMETERS);
+
+/**
+ * The filters the panel offers this reader. The flagged filter is for
+ * reviewers and admins (researcher answer 7), whose sign-in carries the
+ * review_flags.read permission; the API checks the role on every request.
+ */
+export function offeredFilters(canFilterReviewFlags: boolean): readonly ModelSearchFilter[] {
+  return canFilterReviewFlags
+    ? MODEL_SEARCH_FILTERS
+    : MODEL_SEARCH_FILTERS.filter((filter) => !filter.reviewersOnly);
+}
+
+const REVIEWER_ONLY_PARAMETERS = new Set<string>(
+  MODEL_SEARCH_FILTERS.filter((filter) => filter.reviewersOnly).flatMap(filterParameters),
+);
+
+/** Whether a search uses a filter that only reviewers and admins may use. */
+export function usesReviewerFilters(criteria: ModelSearchCriteria): boolean {
+  return criteria.some(([parameter]) => REVIEWER_ONLY_PARAMETERS.has(parameter));
+}
+
+/** The same search without the filters only reviewers and admins may use. */
+export function withoutReviewerFilters(criteria: ModelSearchCriteria): ModelSearchCriteria {
+  return criteria.filter(([parameter]) => !REVIEWER_ONLY_PARAMETERS.has(parameter));
+}
 
 /** One filter value as the URL holds it: [parameter, value]. */
 export type ModelSearchCriterion = readonly [ModelSearchParameter, string];
@@ -358,9 +387,16 @@ export function panelValuesFromCriteria(criteria: ModelSearchCriteria): PanelVal
   return values;
 }
 
-/** The search the panel describes, empty values left out. */
-export function criteriaFromPanel(values: PanelValues): ModelSearchCriteria {
-  return MODEL_SEARCH_PARAMETERS.flatMap((parameter) =>
+/**
+ * The search the panel describes, empty values left out. Only the given
+ * filters' parameters count, so a filter the panel does not offer this reader
+ * (one only reviewers may use, kept from a shared URL) is dropped on Apply.
+ */
+export function criteriaFromPanel(
+  values: PanelValues,
+  filters: readonly ModelSearchFilter[] = MODEL_SEARCH_FILTERS,
+): ModelSearchCriteria {
+  return filters.flatMap(filterParameters).flatMap((parameter) =>
     (values[parameter] ?? [])
       .map((value) => value.trim())
       .filter((value) => value !== "")
@@ -453,48 +489,19 @@ export function formatModelTotal(total: Schemas["ModelSearchTotal"]): string {
   return total.count === 1 ? "1 model" : `${count} models`;
 }
 
-// Open vocabularies on the server: a flag or object type added there must not
-// break the page, so these are lookups with the raw code as the fallback
-// rather than switches that fail.
-const REVIEW_ISSUE_LABELS: Readonly<Record<string, string>> = {
-  mutations_need_review: "Mutations need review",
-  ligands_cofactors_rederive_from_archive: "Ligands and Cofactors need review",
-  sync_validation_failed: "The latest PDB update failed validation",
-};
-
-const REVIEW_OBJECT_LABELS: Readonly<Record<string, [singular: string, plural: string]>> = {
-  entry: ["entry", "entries"],
-  model: ["model", "models"],
-  model_revision: ["model version", "model versions"],
-  polymer_entity: ["polymer entity", "polymer entities"],
-};
-
-/**
- * A result's open review flags as warning lines, one per issue and kind of
- * record: "Mutations need review (2 polymer entities)".
- */
-export function reviewFlagLines(flags: readonly Schemas["ReviewFlag"][]): string[] {
-  const counts = new Map<string, { issue: string; objectType: string; count: number }>();
-  for (const flag of flags) {
-    const key = `${flag.issue}\u0000${flag.object_type}`;
-    const current = counts.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      counts.set(key, { issue: flag.issue, objectType: flag.object_type, count: 1 });
-    }
+/** The count line above the results: "No models match these filters.", "1 model matches these filters". */
+export function modelTotalLine(total: Schemas["ModelSearchTotal"]): string {
+  if (total.count === 0) {
+    return "No models match these filters.";
   }
-  return [...counts.values()].map(({ issue, objectType, count }) => {
-    const issueLabel = REVIEW_ISSUE_LABELS[issue] ?? issue;
-    const [singular, plural] = REVIEW_OBJECT_LABELS[objectType] ?? [objectType, objectType];
-    return `${issueLabel} (${count === 1 ? singular : `${count} ${plural}`})`;
-  });
+  const verb = total.exact && total.count === 1 ? "matches" : "match";
+  return `${formatModelTotal(total)} ${verb} these filters`;
 }
 
 /** What a failed search tells the reader: a heading and what to do. */
 export type SearchFailure = {
   status: number | null;
-  /** The API's own explanation, for a 400. */
+  /** The API's own explanation, for a 400 or a 403. */
   detail?: string | null;
   retryAfterSeconds?: number | null;
 };
@@ -513,6 +520,15 @@ export function searchFailureMessage(failure: SearchFailure): SearchFailureMessa
     return {
       title: "This search could not run",
       body: failure.detail?.trim() || "The API refused one of the filters.",
+    };
+  }
+  if (failure.status === 403) {
+    // Today only the flagged filter, which is for reviewers and admins.
+    return {
+      title: "This search needs a reviewer or admin",
+      body:
+        failure.detail?.trim() ||
+        "One of the filters is for reviewers and admins. Sign in with such an account, or search without it.",
     };
   }
   if (failure.status === 429) {

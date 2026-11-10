@@ -9,7 +9,7 @@ import {
   browseSearchHref,
   criteriaFromPanel,
   FILTER_GROUPS,
-  MODEL_SEARCH_FILTERS,
+  offeredFilters,
   panelProblems,
   panelValuesFromCriteria,
   withDraftValues,
@@ -38,8 +38,19 @@ const GROUPS_OPEN_BY_DEFAULT = new Set(["entry", "model"]);
  *
  * Applying drops the text search (`query`): filters search models, the text
  * search finds entries, and the two do not combine.
+ *
+ * The flagged filter is offered to reviewers and admins only. For anyone else
+ * the Review group is left out, and Apply drops a flagged value that a shared
+ * URL brought.
  */
-export default function FilterPanel({ criteria }: { criteria: ModelSearchCriteria }) {
+export default function FilterPanel({
+  criteria,
+  canFilterReviewFlags,
+}: {
+  criteria: ModelSearchCriteria;
+  /** Whether the reader may use the flagged filter (review_flags.read). */
+  canFilterReviewFlags: boolean;
+}) {
   const router = useRouter();
   const bodyId = useId();
   const [values, setValues] = useState<PanelValues>(() => panelValuesFromCriteria(criteria));
@@ -49,6 +60,8 @@ export default function FilterPanel({ criteria }: { criteria: ModelSearchCriteri
   const [expanded, setExpanded] = useState(false);
   const [searching, startSearch] = useTransition();
   const activeCount = activeFilterCount(criteria);
+  const filters = offeredFilters(canFilterReviewFlags);
+  const groups = FILTER_GROUPS.filter((group) => filters.some((filter) => filter.group === group.id));
 
   function setParameter(parameter: ModelSearchParameter, list: string[]) {
     setValues((current) => ({ ...current, [parameter]: list }));
@@ -69,7 +82,7 @@ export default function FilterPanel({ criteria }: { criteria: ModelSearchCriteri
     if (found.length > 0) {
       return;
     }
-    startSearch(() => router.push(browseSearchHref(criteriaFromPanel(merged))));
+    startSearch(() => router.push(browseSearchHref(criteriaFromPanel(merged, filters))));
   }
 
   function renderFilter(filter: ModelSearchFilter) {
@@ -141,7 +154,7 @@ export default function FilterPanel({ criteria }: { criteria: ModelSearchCriteri
         </button>
       </div>
       <div id={bodyId} className={styles.panelBody} data-expanded={expanded ? "true" : undefined}>
-        {FILTER_GROUPS.map((group) => {
+        {groups.map((group) => {
           const groupCount = activeFilterCount(criteria, group.id);
           return (
             <details
@@ -159,7 +172,7 @@ export default function FilterPanel({ criteria }: { criteria: ModelSearchCriteri
                 ) : null}
               </summary>
               <div className={styles.groupBody} data-group={group.id}>
-                {MODEL_SEARCH_FILTERS.filter((filter) => filter.group === group.id).map(renderFilter)}
+                {filters.filter((filter) => filter.group === group.id).map(renderFilter)}
               </div>
             </details>
           );
@@ -307,14 +320,20 @@ function YesNoField({
   onChange: (value: string) => void;
 }) {
   const name = useId();
+  const helpId = useId();
   const options = [
     { value: "", label: filter.anyLabel },
     { value: "true", label: filter.yesLabel },
     { value: "false", label: filter.noLabel },
   ];
   return (
-    <fieldset className={styles.field}>
+    <fieldset className={styles.field} aria-describedby={filter.help ? helpId : undefined}>
       <legend className={styles.fieldLabel}>{filter.label}</legend>
+      {filter.help ? (
+        <p className={styles.fieldHelp} id={helpId}>
+          {filter.help}
+        </p>
+      ) : null}
       <div className={styles.choices}>
         {options.map((option) => (
           <label key={option.value || "any"} className={styles.choice}>
