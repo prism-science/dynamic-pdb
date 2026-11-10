@@ -380,7 +380,9 @@ export interface paths {
          * List and search models
          * @description Lists models from their current active revisions across active entries, oldest first. Each result is one model. Search filters narrow the list: entry filters apply to the model's entry (its active revision), model filters to that same model, never to another model of the entry. Different filters must all match; several values of one filter mean any of them. A missing value (no resolution, unknown Ligands and Cofactors, no metric value) never matches a filter that asks for a value or a range; metric_missing finds missing metric values.
          *
-         *     Search filters, meta.total, and the entry, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them. The protein chain filters (protein_chains_min, protein_chain_length_min, protein_chain_length_max, protein_chain_mode) have a switch of their own.
+         *     Search filters, meta.total, and the entry, flagged_for_review, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them. The protein chain filters (protein_chains_min, protein_chain_length_min, protein_chain_length_max, protein_chain_mode) have a switch of their own.
+         *
+         *     Review flags: every caller sees whether a result is flagged for review (flagged_for_review). The open issues (review_flags) and the flagged filter are only for signed-in users with the reviewer or admin role; signing in alone grants neither.
          */
         get: operations["listModelsAcrossEntries"];
         put?: never;
@@ -876,11 +878,14 @@ export interface components {
         ModelSearchAttributes: components["schemas"]["ModelAttributes"] & {
             /** @description The model's entry, from its active revision, with its related raw datasets. Present where the server enables model search. */
             entry?: components["schemas"]["EntryInfoAttributes"];
-            /** @description Open review flags on the model, its current revision, its entry or the entry's polymer entities. The record stays public; show the flags as a warning. Present (possibly empty) where the server enables model search. */
+            /** @description true when the model, its current revision, its entry or the entry's polymer entities have an open review flag. The record stays public; show a generic "flagged for review" badge. Present where the server enables model search. */
+            flagged_for_review?: boolean;
+            /** @description The open review flags flagged_for_review counts. Present (possibly empty) only for callers with the reviewer or admin role, where the server enables model search. */
             review_flags?: components["schemas"]["ReviewFlag"][];
             /** @description Compounds named in the compound filter that the coordinate-file reader marked "needs review" in this model's file (for example a possible chain residue). They still match. Present only when the request has a compound filter. */
             compounds_needing_review?: components["schemas"]["CompoundNeedingReview"][];
         };
+        /** @description One open review flag on a record. Only callers with the reviewer or admin role get these; everyone else sees flagged_for_review only. */
         ReviewFlag: {
             /** @description What the flag is on, for example entry, model, model_revision or polymer_entity. */
             object_type: string;
@@ -981,6 +986,10 @@ export interface components {
         /** @description A model as the model detail endpoint returns it: the list attributes plus where the values of its archive-synced fields came from, the compounds its file models, and the information it lacks. */
         ModelDetailAttributes: components["schemas"]["ModelAttributes"] & {
             field_sources: components["schemas"]["FieldSources"];
+            /** @description true when the model, its current revision, its entry or the entry's polymer entities have an open review flag. The record stays public; show a generic "flagged for review" badge. Omitted when it could not be worked out. */
+            flagged_for_review?: boolean;
+            /** @description The open review flags flagged_for_review counts. Present (possibly empty) only for callers with the reviewer or admin role. */
+            review_flags?: components["schemas"]["ReviewFlag"][];
             modeled_compounds: components["schemas"]["ModeledCompounds"];
             /** @description What this record lacks that a write would now be rejected for. Such records stay public; the website labels them "information missing". Empty when nothing is missing; omitted when it could not be worked out. */
             missing_info?: components["schemas"]["MissingInfo"][];
@@ -1202,7 +1211,7 @@ export interface components {
             name: string;
             email: string;
             login: string;
-            /** @description Permission keys the user holds. Users with `revisions.approve` also get `entries.delete` where the server allows entry deletion, and `revisions.approve_own` where it allows self-approval (dev only). */
+            /** @description Permission keys the user holds. Users with `revisions.approve` also get `entries.delete` where the server allows entry deletion, and `revisions.approve_own` where it allows self-approval (dev only). Users with the reviewer or admin role also get `review_flags.read`: they see review flag issues and may use the flagged filter. The API checks the role on every request; the key only tells the website what to offer. */
             permissions: string[];
         };
         EntryProperties: {
@@ -3414,7 +3423,7 @@ export interface operations {
                 rmsf_max?: number;
                 /** @description Model filter. Models that have no value for at least one of these metrics. */
                 metric_missing?: components["schemas"]["MetricKey"][];
-                /** @description true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. Results always list their flags in review_flags. */
+                /** @description Reviewers and admins only: where the server enables model search, anyone else gets 403 (elsewhere every filter gets 400). true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. */
                 flagged?: boolean;
             };
             header?: never;
@@ -3434,6 +3443,15 @@ export interface operations {
             };
             /** @description Invalid filters, or a filter parameter where the server does not enable model search. The detail names the parameter. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The flagged filter from a caller without the reviewer or admin role (code FORBIDDEN). The detail names the parameter; remove it. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3491,6 +3509,15 @@ export interface operations {
             };
             /** @description The body is not valid JSON, or a search has filters where the server does not enable model search. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A search has the flagged filter and the caller does not have the reviewer or admin role (code FORBIDDEN). The detail names the parameter and the search. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
