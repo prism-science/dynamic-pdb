@@ -116,6 +116,24 @@ func (s *Server) ListModelsAcrossEntries(
 		return
 	}
 
+	// Search results say what the caller may know about review flags, so they vary by caller.
+	// Without the flagged filter, a failed role lookup only costs the caller the flags' issues.
+	varyByCaller(w)
+	seesReviewFlags, err := s.seesReviewFlags(r.Context())
+	if err != nil {
+		if usesFlaggedFilter(search) {
+			slog.ErrorContext(r.Context(), "model search authorization failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
+			return
+		}
+		slog.ErrorContext(r.Context(), "review flag access check failed; answering as for the public", "err", err)
+		seesReviewFlags = false
+	}
+	if err := checkFlaggedFilter(search, seesReviewFlags); err != nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error()+"; remove flagged")
+		return
+	}
+
 	// The first page counts the whole result. It, and the pages of a search with few matches,
 	// which read every match, count against the search limit; other pages are cheap.
 	firstPage := page.Cursor == nil && page.Offset == nil
@@ -141,7 +159,7 @@ func (s *Server) ListModelsAcrossEntries(
 		s.writeModelSearchFailure(w, r, "list models", err)
 		return
 	}
-	s.writeModelSearchPage(w, r, revisions, page, search, total, filters.SearchMatchesFew)
+	s.writeModelSearchPage(w, r, revisions, page, search, seesReviewFlags, total, filters.SearchMatchesFew)
 }
 
 // writeModelSearchFailure answers a failed search: 400 for a search the database layer refuses,
@@ -165,19 +183,21 @@ func (s *Server) writeModelSearchFailure(w http.ResponseWriter, r *http.Request,
 }
 
 // writeModelSearchPage writes one page of model search results. revisions holds the extra row
-// requested by page.fetchLimit, if it exists; total is nil on pages after the first; matchesFew
-// goes into the next page's cursor.
+// requested by page.fetchLimit, if it exists; seesReviewFlags says whether results list their
+// review flags; total is nil on pages after the first; matchesFew goes into the next page's
+// cursor.
 func (s *Server) writeModelSearchPage(
 	w http.ResponseWriter,
 	r *http.Request,
 	revisions []domainmodels.ModelRevision,
 	page listPage,
 	search *parsedModelSearch,
+	seesReviewFlags bool,
 	total *ModelSearchTotal,
 	matchesFew bool,
 ) {
 	revisions, hasNextPage := trimToPage(revisions, page)
-	items, err := s.modelSearchItems(r.Context(), revisions, search)
+	items, err := s.modelSearchItems(r.Context(), revisions, search, seesReviewFlags)
 	if err != nil {
 		s.writeModelSearchFailure(w, r, "build model search results", err)
 		return
@@ -207,12 +227,13 @@ func (s *Server) writeModelSearchPage(
 }
 
 // modelSearchItems builds the search results of one page: each model with its entry's active
-// revision, its open review flags and, for a compound search, the matched compounds that need
-// review.
+// revision, whether it is flagged for review (with the flags themselves when seesReviewFlags)
+// and, for a compound search, the matched compounds that need review.
 func (s *Server) modelSearchItems(
 	ctx context.Context,
 	revisions []domainmodels.ModelRevision,
 	search *parsedModelSearch,
+	seesReviewFlags bool,
 ) ([]ModelSearchData, error) {
 	modelAttributes, err := s.modelAttributesFromRevisions(ctx, revisions)
 	if err != nil {
@@ -253,7 +274,9 @@ func (s *Server) modelSearchItems(
 		if entry, found := entries[revision.EntryID]; found {
 			attributes.Entry = &entry
 		}
-		attributes.ReviewFlags = ptr(reviewFlagsFromModels(flags[revision.ID]))
+		flagged, reviewFlags := reviewFlagFields(flags[revision.ID], seesReviewFlags)
+		attributes.FlaggedForReview = &flagged
+		attributes.ReviewFlags = reviewFlags
 		if compounds != nil {
 			attributes.CompoundsNeedingReview = ptr([]CompoundNeedingReview{})
 			if revision.PrimaryArtifactID != nil {
@@ -299,19 +322,6 @@ func modelSearchAttributesFromModel(model ModelAttributes) (ModelSearchAttribute
 		return ModelSearchAttributes{}, fmt.Errorf("unmarshal model for search result: %w", err)
 	}
 	return attributes, nil
-}
-
-func reviewFlagsFromModels(flags []domainmodels.ReviewFlag) []ReviewFlag {
-	items := make([]ReviewFlag, 0, len(flags))
-	for _, flag := range flags {
-		items = append(items, ReviewFlag{
-			ObjectType: flag.ObjectType,
-			ObjectId:   flag.ObjectID,
-			Issue:      flag.Issue,
-			FlaggedAt:  flag.FlaggedAt,
-		})
-	}
-	return items
 }
 
 func compoundsNeedingReviewFromModels(compounds []domainmodels.CompoundNeedingReview) []CompoundNeedingReview {

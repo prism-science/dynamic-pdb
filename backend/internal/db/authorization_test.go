@@ -118,6 +118,36 @@ func Test_should_remove_role_and_permissions_when_role_revoked_from_user(t *test
 	assert.False(t, canApprove)
 }
 
+func Test_should_find_any_of_the_roles_only_when_the_user_holds_one(t *testing.T) {
+	// given
+	ctx := context.Background()
+	authorizer := auth.NewAuthorizer(testDB)
+	reviewerOrAdmin := []models.RoleKey{models.RoleKeyReviewer, models.RoleKeyAdmin}
+	signedIn := createAuthorizationTestUser(t)
+	admin := createAuthorizationTestUser(t)
+	reviewer := createAuthorizationTestUser(t)
+	require.NoError(t, testDB.Roles.AssignToUser(ctx, admin.ID, getAuthorizationTestRole(t, models.RoleKeyAdmin).ID, nil))
+	require.NoError(t, testDB.Roles.AssignToUser(ctx, reviewer.ID, getAuthorizationTestRole(t, models.RoleKeyReviewer).ID, nil))
+
+	// when
+	signedInHasOne, signedInErr := authorizer.HasAnyRole(ctx, signedIn.ID, reviewerOrAdmin...)
+	adminHasOne, adminErr := authorizer.HasAnyRole(ctx, admin.ID, reviewerOrAdmin...)
+	reviewerHasOne, reviewerErr := authorizer.HasAnyRole(ctx, reviewer.ID, reviewerOrAdmin...)
+	adminIsReviewer, adminReviewerErr := authorizer.HasAnyRole(ctx, admin.ID, models.RoleKeyReviewer)
+	_, noRolesErr := authorizer.HasAnyRole(ctx, admin.ID)
+
+	// then
+	require.NoError(t, signedInErr)
+	assert.False(t, signedInHasOne)
+	require.NoError(t, adminErr)
+	assert.True(t, adminHasOne)
+	require.NoError(t, reviewerErr)
+	assert.True(t, reviewerHasOne)
+	require.NoError(t, adminReviewerErr)
+	assert.False(t, adminIsReviewer)
+	require.Error(t, noRolesErr)
+}
+
 func Test_should_return_empty_roles_when_role_key_does_not_exist(t *testing.T) {
 	// given / when
 	roles, err := testDB.Roles.List(context.Background(), db.RoleFilters{

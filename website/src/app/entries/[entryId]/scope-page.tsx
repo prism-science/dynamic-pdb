@@ -42,6 +42,7 @@ import { altlocEnsembleDpdbConfig, hetstarDpdbConfig } from "@/lib/hetstar";
 import { altlocEnsembleMembers, hasCoordinates, hetstarCanRender } from "@/lib/hetstar-support";
 import { modeledCompoundsView } from "@/lib/modeled-compounds";
 import { missingInfoLinesForPage, type MissingInfoRun } from "@/lib/missing-info";
+import { NOT_FLAGGED, reviewStatus, type ReviewStatus } from "@/lib/review-flags";
 import { detectStructureKind, type StructureKind } from "@/lib/structureKind";
 import EntryVersions from "@/app/components/EntryVersions";
 import GuidedTour from "@/app/components/GuidedTour";
@@ -146,7 +147,7 @@ export default async function ScopePage({
     data.entry.thumbnail_image_url,
   );
 
-  const { residueData, modeledCompounds, missingInfo, detailMetrics } = await loadModelDetail(
+  const { residueData, modeledCompounds, missingInfo, detailMetrics, review } = await loadModelDetail(
     session?.token,
     entryId,
     model,
@@ -216,6 +217,7 @@ export default async function ScopePage({
             metrics: detailMetrics,
             runs: modelRuns(data.entities, model.id),
           }),
+          review,
         };
 
   // Both routes render the same page, so the tab links have to hang off the
@@ -484,6 +486,9 @@ type ModelDetailBlocks = {
   missingInfo: MissingInfo[] | undefined;
   /** The metrics the missing info names, from the same response. */
   detailMetrics: Metric[];
+  /** Whether the model is flagged for review, with the issues where the API
+   *  shows them to this caller. */
+  review: ReviewStatus;
 };
 
 const NO_MODEL_DETAIL: ModelDetailBlocks = {
@@ -491,11 +496,13 @@ const NO_MODEL_DETAIL: ModelDetailBlocks = {
   modeledCompounds: undefined,
   missingInfo: undefined,
   detailMetrics: [],
+  review: NOT_FLAGGED,
 };
 
 // What only the model detail endpoint returns: the per-residue data, the
-// compounds the server read from the model's file and what the record lacks.
-// All are bonus blocks: if the request fails the page still renders, without them.
+// compounds the server read from the model's file, what the record lacks and
+// its review flags. All are bonus blocks: if the request fails the page still
+// renders, without them.
 async function loadModelDetail(
   token: string | undefined,
   entryId: string,
@@ -511,6 +518,7 @@ async function loadModelDetail(
       modeledCompounds: detail.modeled_compounds,
       missingInfo: detail.missing_info,
       detailMetrics: detail.metrics ?? [],
+      review: reviewStatus(detail),
     };
   } catch (error) {
     console.error("get model detail failed", error);

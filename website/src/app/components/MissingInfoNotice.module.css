@@ -1,5 +1,7 @@
 /* The "information missing" label: a warning like the "Needs review" badge,
-   because the record is still valid, only incomplete. */
+   because the record is still valid, only incomplete. ReviewFlagNotice uses
+   the same look for "flagged for review", which is also a warning on a record
+   that stays public. */
 .notice {
   margin-top: 18px;
   font-size: 13.5px;
