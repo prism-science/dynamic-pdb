@@ -1056,8 +1056,7 @@ func (s *EntriesSuite) Test_should_create_model_revision_when_active_revision_ha
 		},
 	})
 	duplicateMetricID := uuid.New()
-	rawDatabase, err := sqlx.Connect("postgres",
-		"host=localhost port=35432 dbname=dynamic_pdb_local user=postgres password=password sslmode=disable")
+	rawDatabase, err := sqlx.Connect("postgres", rawTestDatabaseDSN)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { s.NoError(rawDatabase.Close()) })
 	_, err = rawDatabase.Exec(`insert into metrics(id, key, value) values ($1, 'r_free', 0.3)`, duplicateMetricID)

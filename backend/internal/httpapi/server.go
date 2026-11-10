@@ -46,6 +46,8 @@ type Server struct {
 	archive ArchiveLookup
 	// modelSearch holds the search filters of GET /v1/models; see WithModelSearch.
 	modelSearch modelSearch
+	// selections holds frozen selections (/v1/selections); see WithSelections.
+	selections selections
 	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
 	extractionLimits *extractionLimits
 	// extractionTimeout is the longest one extraction may spend parsing; see
@@ -188,7 +190,13 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load user permissions")
 		return
 	}
-	permissionKeys := s.grantedPermissionKeys(effectivePermissions)
+	seesReviewFlags, err := s.userSeesReviewFlags(r.Context(), persisted.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "load user review flag access failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load user permissions")
+		return
+	}
+	permissionKeys := s.grantedPermissionKeys(effectivePermissions, seesReviewFlags)
 
 	token, expiresAt, err := s.jwt.Issue(persisted.ID)
 	if err != nil {
@@ -214,14 +222,20 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 }
 
 // grantedPermissionKeys returns the permission keys the sign-in response reports: the stored
-// ones, plus keys that are never stored but follow from the server's switches, for users who can
-// approve revisions. The website reads them to decide what to offer:
+// ones, plus keys that are never stored. The website reads them to decide what to offer:
+//   - review_flags.read for reviewers and admins (seesReviewFlags): review flag issues and the
+//     flagged filter;
+//
+// and, for users who can approve revisions, keys that follow from the server's switches:
 //   - entries.delete while entry deletion is on: the Delete entry button;
 //   - revisions.approve_own while self-approval is on: Approve on the reviewer's own revisions.
-func (s *Server) grantedPermissionKeys(stored []models.Permission) []string {
-	keys := make([]string, 0, len(stored)+2)
+func (s *Server) grantedPermissionKeys(stored []models.Permission, seesReviewFlags bool) []string {
+	keys := make([]string, 0, len(stored)+3)
 	for _, permission := range stored {
 		keys = append(keys, string(permission.Key))
+	}
+	if seesReviewFlags {
+		keys = append(keys, string(models.PermissionKeyReviewFlagsRead))
 	}
 	if !slices.Contains(keys, string(models.PermissionKeyRevisionsApprove)) {
 		return keys

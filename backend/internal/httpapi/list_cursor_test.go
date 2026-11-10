@@ -97,6 +97,20 @@ func Test_should_round_trip_exact_score_when_similar_entry_cursor_is_encoded_and
 	assert.Equal(t, "DPDB-0002", position.EntryID)
 }
 
+func Test_should_round_trip_ordinal_when_selection_model_cursor_is_encoded_and_decoded(t *testing.T) {
+	// given
+	cursor := listCursor{Kind: listCursorKindSelectionModels, Ordinal: 150000}
+
+	// when
+	encoded, err := encodeListCursor(cursor)
+	require.NoError(t, err)
+	decoded, err := decodeListCursor(encoded, listCursorKindSelectionModels)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, cursor, decoded)
+}
+
 func Test_should_reject_list_cursor_when_position_does_not_match_kind(t *testing.T) {
 	id := uuid.NewString()
 	cases := map[string]struct {
@@ -126,6 +140,22 @@ func Test_should_reject_list_cursor_when_position_does_not_match_kind(t *testing
 		"similar entry cursor with created_at": {
 			kind:  listCursorKindSimilarEntries,
 			value: rawCursor(`{"k":"similar_entries","c":0.5,"e":"DPDB-1","t":"2026-10-20T00:00:00Z"}`),
+		},
+		"row cursor with ordinal": {
+			kind:  listCursorKindModels,
+			value: rawCursor(`{"k":"models","t":"2026-10-20T00:00:00Z","i":"` + id + `","o":3}`),
+		},
+		"selection model cursor without ordinal": {
+			kind:  listCursorKindSelectionModels,
+			value: rawCursor(`{"k":"selection_models"}`),
+		},
+		"selection model cursor with negative ordinal": {
+			kind:  listCursorKindSelectionModels,
+			value: rawCursor(`{"k":"selection_models","o":-1}`),
+		},
+		"selection model cursor with row id": {
+			kind:  listCursorKindSelectionModels,
+			value: rawCursor(`{"k":"selection_models","o":3,"i":"` + id + `"}`),
 		},
 	}
 	for name, tc := range cases {

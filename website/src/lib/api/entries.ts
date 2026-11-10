@@ -60,13 +60,19 @@ export type ModeledCompounds = Schemas["ModeledCompounds"];
  *  rejected for. The backend works it out with the write rules themselves. */
 export type MissingInfo = Schemas["MissingInfo"];
 
+/** One open review flag; only reviewers and admins receive these. */
+export type ReviewFlag = Schemas["ReviewFlag"];
+
 /** A model as its own request returns it: a list item plus its field sources,
- *  the compounds its file models and what its record lacks. missing_info is
- *  absent when the backend could not work it out. */
+ *  the compounds its file models, what its record lacks and whether it is
+ *  flagged for review. missing_info is absent when the backend could not work
+ *  it out; review_flags is present only for reviewers and admins. */
 export type ModelDetail = Model & {
   field_sources: FieldSources;
   modeled_compounds?: ModeledCompounds;
   missing_info?: MissingInfo[];
+  flagged_for_review?: boolean;
+  review_flags?: ReviewFlag[];
 };
 
 export type EntityType = "data" | "metrics" | "model" | "program";

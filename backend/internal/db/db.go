@@ -31,6 +31,7 @@ type DB struct {
 	ArchiveRederivations        *ArchiveRederivationsRepository
 	ModeledCompounds            *ModeledCompoundsRepository
 	MigrationReviews            *MigrationReviewsRepository
+	Selections                  *SelectionsRepository
 
 	sqlx *sqlx.DB
 	// probe is a separate single-connection pool for Ping, so health checks never queue
@@ -102,6 +103,7 @@ func NewDB(cfg Config) (*DB, error) {
 		ArchiveRederivations:        NewArchiveRederivationsRepository(sqlxDB, queriers),
 		ModeledCompounds:            NewModeledCompoundsRepository(sqlxDB, queriers),
 		MigrationReviews:            NewMigrationReviewsRepository(sqlxDB, queriers),
+		Selections:                  NewSelectionsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		probe:                       probe,
 		txManager:                   txManager,

@@ -54,7 +54,7 @@ func Test_should_upload_computed_model_when_manifest_names_run_version_and_metri
 	// then
 	assert.Contains(t, uploadOutput, "Uploaded 1 entries, 1 models, 2 artifacts.")
 	activateUserRevisions(t, backend.URL, auth.AccessToken, auth.UserID, reviewer.AccessToken)
-	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
+	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries?pdb_id="+pdbID, auth.AccessToken)
 	entryInfo := entryForUser(t, entryList.Items, auth.UserID)
 	models := getJSON[modelListResponse](t, backend.URL+"/v1/entries/"+entryInfo.ID+"/models", auth.AccessToken)
 	require.Len(t, models.Items, 1)
@@ -119,7 +119,7 @@ func Test_should_stop_before_uploading_when_computed_model_has_no_run(t *testing
 	} else {
 		require.ErrorIs(t, err, os.ErrNotExist)
 	}
-	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries", auth.AccessToken)
+	entryList := getJSON[entryListResponse](t, backend.URL+"/v1/entries?pdb_id="+pdbID, auth.AccessToken)
 	for _, entry := range entryList.Items {
 		assert.NotEqual(t, auth.UserID, entry.CreatedBy, "no entry may be created")
 	}

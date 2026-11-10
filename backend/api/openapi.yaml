@@ -40,6 +40,10 @@ tags:
     description: Reading values out of uploaded artifact files.
   - name: Archive
     description: Looking up what the PDB archive says about an entry before it is imported.
+  - name: Selections
+    description: |
+      Frozen selections of models: saved with the revisions they had then, public by their
+      random ID. Downloads use them.
   - name: Health
     x-scalar-ignore: true
     description: Liveness and readiness probes.
@@ -1029,9 +1033,14 @@ paths:
         metric_missing finds missing metric values.
 
 
-        Search filters, meta.total, and the entry, review_flags and compounds_needing_review
-        fields are available only where the server enables model search; elsewhere a filter
-        parameter gets 400 and the response has none of them.
+        Search filters, meta.total, and the entry, flagged_for_review, review_flags and
+        compounds_needing_review fields are available only where the server enables model
+        search; elsewhere a filter parameter gets 400 and the response has none of them.
+
+
+        Review flags: every caller sees whether a result is flagged for review
+        (flagged_for_review). The open issues (review_flags) and the flagged filter are only for
+        signed-in users with the reviewer or admin role; signing in alone grants neither.
       security: []
       parameters:
         - name: limit
@@ -1406,9 +1415,10 @@ paths:
         - name: flagged
           in: query
           description: >
-            true returns only models with an open review flag (on the model, its current
-            revision, its entry or the entry's polymer entities); false returns only models
-            without one. Results always list their flags in review_flags.
+            Reviewers and admins only: where the server enables model search, anyone else gets
+            403 (elsewhere every filter gets 400). true returns only models with an open review
+            flag (on the model, its current revision, its entry or the entry's polymer
+            entities); false returns only models without one.
           required: false
           schema:
             type: boolean
@@ -1423,6 +1433,14 @@ paths:
           description: >
             Invalid filters, or a filter parameter where the server does not enable model
             search. The detail names the parameter.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >
+            The flagged filter from a caller without the reviewer or admin role (code
+            FORBIDDEN). The detail names the parameter; remove it.
           content:
             application/vnd.api+json:
               schema:
@@ -1451,6 +1469,201 @@ paths:
               description: Seconds to wait before trying again.
               schema:
                 type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/selections:
+    post:
+      tags: [Selections]
+      operationId: createSelection
+      summary: Save a frozen selection
+      description: >
+        Saves a selection of models with the model revision and entry revision each one has now.
+        Later changes to the catalog never change a saved selection: downloads of it name the same
+        revisions. The selection holds every model in model_ids, and every model matching one of
+        the searches, minus exclude_model_ids; a model is held once. A search is the query string
+        of a GET /v1/models request, so it holds every result of that search, however many pages
+        it has and whatever its meta.total shows.
+
+
+        Selections need no sign-in. Anyone with the ID can read one, so share the link to share
+        the selection. Selections are kept indefinitely.
+
+
+        Saving a large search takes seconds. Available only where the server enables selections;
+        elsewhere every selections route answers 404 with code SELECTIONS_OFF.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/CreateSelectionRequest"
+      responses:
+        "201":
+          description: Selection saved.
+          headers:
+            Location:
+              description: URL of the saved selection.
+              schema:
+                type: string
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SelectionDocument"
+        "400":
+          description: >
+            The body is not valid JSON, or a search has filters where the server does not enable
+            model search.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >
+            A search has the flagged filter and the caller does not have the reviewer or admin
+            role (code FORBIDDEN). The detail names the parameter and the search.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Selections are turned off on this server (code SELECTIONS_OFF).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            The request is invalid; each error points at its field (for example a model ID with no
+            active model, or an unknown search parameter). Code SELECTION_EMPTY: nothing matched.
+            Code SELECTION_TOO_LARGE: more models matched than one selection may hold; narrow the
+            searches.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >
+            Too many selections saved by this client (code RATE_LIMITED). Wait the number of
+            seconds in Retry-After.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >
+            The server is saving other selections (code SERVICE_UNAVAILABLE), or the space for
+            selections is used up (code SELECTIONS_FULL). Try again after Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: >
+            Saving did not finish within the server's time limit (code TIMEOUT). Narrow the
+            searches, for example with a model type or a resolution range, and try again after
+            Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/selections/{selection_id}:
+    get:
+      tags: [Selections]
+      operationId: getSelection
+      summary: Get a frozen selection
+      description: >
+        Returns a saved selection: how many models and entries it holds and what was asked for.
+        Its models, with their frozen revisions, are at links.models.
+      security: []
+      parameters:
+        - name: selection_id
+          in: path
+          description: Selection ID, as POST /v1/selections returned it.
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Selection found.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SelectionDocument"
+        "404":
+          description: No selection has this ID, or selections are turned off (code SELECTIONS_OFF).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/selections/{selection_id}/models:
+    get:
+      tags: [Selections]
+      operationId: listSelectionModels
+      summary: List the models of a frozen selection
+      description: >
+        Lists the models of a saved selection with the model revision and entry revision frozen
+        for each, in the order GET /v1/models lists models.
+      security: []
+      parameters:
+        - name: selection_id
+          in: path
+          description: Selection ID, as POST /v1/selections returned it.
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of models to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the models
+            that follow it. Follow `links.next` to page without building URLs.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: Models of the selection.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SelectionModelCollectionDocument"
+        "400":
+          description: Invalid limit or cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No selection has this ID, or selections are turned off (code SELECTIONS_OFF).
           content:
             application/vnd.api+json:
               schema:
@@ -2985,11 +3198,17 @@ components:
                 Present where the server enables model search.
               allOf:
                 - $ref: "#/components/schemas/EntryInfoAttributes"
+            flagged_for_review:
+              description: >
+                true when the model, its current revision, its entry or the entry's polymer
+                entities have an open review flag. The record stays public; show a generic
+                "flagged for review" badge. Present where the server enables model search.
+              type: boolean
             review_flags:
               description: >
-                Open review flags on the model, its current revision, its entry or the entry's
-                polymer entities. The record stays public; show the flags as a warning. Present
-                (possibly empty) where the server enables model search.
+                The open review flags flagged_for_review counts. Present (possibly empty) only
+                for callers with the reviewer or admin role, where the server enables model
+                search.
               type: array
               items:
                 $ref: "#/components/schemas/ReviewFlag"
@@ -3004,6 +3223,9 @@ components:
 
     ReviewFlag:
       type: object
+      description: >
+        One open review flag on a record. Only callers with the reviewer or admin role get
+        these; everyone else sees flagged_for_review only.
       required: [object_type, object_id, issue, flagged_at]
       properties:
         object_type:
@@ -3057,6 +3279,155 @@ components:
       enum: [pdb_archive, dynamic_pdb_deposit]
       x-enum-varnames: [ModelSearchSourcePDBArchive, ModelSearchSourceDynamicPDBDeposit]
 
+    CreateSelectionRequest:
+      type: object
+      description: >
+        Which models to save. Give model_ids, searches, or both; exclude_model_ids removes
+        models from the result.
+      properties:
+        model_ids:
+          type: array
+          description: >
+            Models to hold, by model ID. Each must be a published model of a published entry.
+          maxItems: 10000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+        searches:
+          type: array
+          description: >
+            Searches whose every result the selection holds. Each is the query string of a
+            GET /v1/models request (the part after "?"), with its filters only: no limit, offset
+            or cursor. An empty string holds every model. Filters work where the server enables
+            model search.
+          maxItems: 10
+          items:
+            type: string
+            maxLength: 8192
+        exclude_model_ids:
+          type: array
+          description: Models to leave out, by model ID. IDs of no model are ignored.
+          maxItems: 10000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+    SelectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SelectionData"
+
+    SelectionData:
+      type: object
+      required: [type, id, attributes, links]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/SelectionAttributes"
+        links:
+          $ref: "#/components/schemas/SelectionLinks"
+
+    SelectionAttributes:
+      type: object
+      required: [model_count, entry_count, created_at, request]
+      properties:
+        model_count:
+          type: integer
+          minimum: 1
+          description: How many models the selection holds.
+        entry_count:
+          type: integer
+          minimum: 1
+          description: How many entries the selection's models belong to.
+        created_at:
+          type: string
+          format: date-time
+          description: When the selection was saved; its revisions are the ones active then.
+        request:
+          $ref: "#/components/schemas/SelectionRequest"
+
+    SelectionRequest:
+      type: object
+      description: >
+        What was asked for when the selection was saved: model IDs trimmed and listed once, each
+        search's parameters in a fixed order.
+      required: [model_ids, searches, exclude_model_ids]
+      properties:
+        model_ids:
+          type: array
+          items:
+            type: string
+        searches:
+          type: array
+          items:
+            type: string
+        exclude_model_ids:
+          type: array
+          items:
+            type: string
+
+    SelectionLinks:
+      type: object
+      required: [self, models]
+      properties:
+        self:
+          type: string
+          description: Absolute URL of the selection.
+        models:
+          type: string
+          description: Absolute URL of the selection's models with their frozen revisions.
+
+    SelectionModelCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelectionModelData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    SelectionModelData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          description: The model ID.
+        attributes:
+          $ref: "#/components/schemas/SelectionModelAttributes"
+
+    SelectionModelAttributes:
+      type: object
+      required: [model_id, entry_id, model_revision_number, entry_revision_number]
+      properties:
+        model_id:
+          type: string
+        entry_id:
+          type: string
+        model_revision_number:
+          type: integer
+          description: >
+            Number of the model revision frozen in the selection (revision_number of the model
+            as it was then).
+        entry_revision_number:
+          type: integer
+          description: >
+            Number of the entry revision frozen in the selection (revision_number of the entry
+            as it was then).
+
     ModelDocument:
       type: object
       required: [data]
@@ -3087,6 +3458,19 @@ components:
           properties:
             field_sources:
               $ref: "#/components/schemas/FieldSources"
+            flagged_for_review:
+              description: >
+                true when the model, its current revision, its entry or the entry's polymer
+                entities have an open review flag. The record stays public; show a generic
+                "flagged for review" badge. Omitted when it could not be worked out.
+              type: boolean
+            review_flags:
+              description: >
+                The open review flags flagged_for_review counts. Present (possibly empty) only
+                for callers with the reviewer or admin role.
+              type: array
+              items:
+                $ref: "#/components/schemas/ReviewFlag"
             modeled_compounds:
               $ref: "#/components/schemas/ModeledCompounds"
             missing_info:
@@ -3562,6 +3946,10 @@ components:
             Permission keys the user holds. Users with `revisions.approve` also
             get `entries.delete` where the server allows entry deletion, and
             `revisions.approve_own` where it allows self-approval (dev only).
+            Users with the reviewer or admin role also get `review_flags.read`:
+            they see review flag issues and may use the flagged filter. The API
+            checks the role on every request; the key only tells the website
+            what to offer.
           items:
             type: string
 
