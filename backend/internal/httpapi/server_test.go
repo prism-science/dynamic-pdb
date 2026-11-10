@@ -250,11 +250,15 @@ func Test_should_check_matching_permission_when_entry_revision_state_updated(t *
 }
 
 type authorizerStub struct {
-	hasRoleResult bool
-	canResult     bool
-	userID        uuid.UUID
-	role          models.RoleKey
-	permission    models.PermissionKey
+	hasRoleResult    bool
+	hasAnyRoleResult bool
+	hasAnyRoleErr    error
+	canResult        bool
+	userID           uuid.UUID
+	role             models.RoleKey
+	anyRoles         []models.RoleKey
+	anyRoleCalls     int
+	permission       models.PermissionKey
 }
 
 func (s *authorizerStub) HasRole(
@@ -265,6 +269,17 @@ func (s *authorizerStub) HasRole(
 	s.userID = userID
 	s.role = role
 	return s.hasRoleResult, nil
+}
+
+func (s *authorizerStub) HasAnyRole(
+	_ context.Context,
+	userID uuid.UUID,
+	roles ...models.RoleKey,
+) (bool, error) {
+	s.userID = userID
+	s.anyRoles = roles
+	s.anyRoleCalls++
+	return s.hasAnyRoleResult, s.hasAnyRoleErr
 }
 
 func (s *authorizerStub) Can(
@@ -286,7 +301,7 @@ func Test_should_grant_entries_delete_when_deletion_is_on_and_user_can_approve(t
 	}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.approve", "revisions.reject", "entries.delete"}, keys)
@@ -298,7 +313,7 @@ func Test_should_not_grant_entries_delete_when_deletion_is_off(t *testing.T) {
 	stored := []models.Permission{{Key: models.PermissionKeyRevisionsApprove}}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.approve"}, keys)
@@ -310,7 +325,7 @@ func Test_should_not_grant_entries_delete_when_user_cannot_approve(t *testing.T)
 	stored := []models.Permission{{Key: models.PermissionKeyRevisionsReject}}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.reject"}, keys)
@@ -325,7 +340,7 @@ func Test_should_grant_revisions_approve_own_when_self_approval_is_on_and_user_c
 	}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.approve", "revisions.reject", "revisions.approve_own"}, keys)
@@ -337,7 +352,7 @@ func Test_should_not_grant_revisions_approve_own_when_self_approval_is_off(t *te
 	stored := []models.Permission{{Key: models.PermissionKeyRevisionsApprove}}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.approve", "entries.delete"}, keys)
@@ -349,8 +364,32 @@ func Test_should_not_grant_revisions_approve_own_when_user_cannot_approve(t *tes
 	stored := []models.Permission{{Key: models.PermissionKeyRevisionsReject}}
 
 	// when
-	keys := server.grantedPermissionKeys(stored)
+	keys := server.grantedPermissionKeys(stored, false)
 
 	// then
 	assert.Equal(t, []string{"revisions.reject"}, keys)
+}
+
+func Test_should_grant_review_flags_read_when_user_sees_review_flags(t *testing.T) {
+	// given
+	server := &Server{}
+	stored := []models.Permission{{Key: models.PermissionKeyRolesAssign}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored, true)
+
+	// then
+	assert.Equal(t, []string{"roles.assign", "review_flags.read"}, keys)
+}
+
+func Test_should_not_grant_review_flags_read_when_user_does_not_see_review_flags(t *testing.T) {
+	// given
+	server := (&Server{}).WithEntryDeletion(true)
+	stored := []models.Permission{{Key: models.PermissionKeyRevisionsApprove}}
+
+	// when
+	keys := server.grantedPermissionKeys(stored, false)
+
+	// then
+	assert.Equal(t, []string{"revisions.approve", "entries.delete"}, keys)
 }
