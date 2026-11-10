@@ -65,7 +65,7 @@ func (r *MigrationReviewsRepository) Resolve(ctx context.Context, resolution mod
 
 // ListOpenForModelRevisions lists, for each of the model revisions, the open review flags its
 // search result shows (researcher question 7): flags on its model, on the revision itself, on its
-// entry, and on the polymer entities of the entry's active revision. openReviewFlagCondition, the
+// entry, and on the polymer entities of the entry's active revision. flaggedModelIDsQuery, the
 // model search's flagged filter, uses the same objects. Flags come oldest first.
 func (r *MigrationReviewsRepository) ListOpenForModelRevisions(
 	ctx context.Context,
