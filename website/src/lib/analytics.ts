@@ -17,6 +17,7 @@ export type AnalyticsEvent =
   | "download-click"
   | "viewer-open"
   | "search"
+  | "model-search"
   | "outbound-click";
 
 type EventData = Record<string, string | number | boolean>;
