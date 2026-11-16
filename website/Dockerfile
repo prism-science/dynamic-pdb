@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM harbor.astera.sh/dockerhub-cache/node:22-alpine AS deps
+# Base-image registry. The default is Harbor's cache of Docker Hub; CI builds pass the
+# upstream registry.
+ARG DOCKERHUB_REGISTRY=harbor.astera.sh/dockerhub-cache
+
+FROM ${DOCKERHUB_REGISTRY}/node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # @dynamic-pdb/hetkit and @dynamic-pdb/hetstar are `file:` deps pointing into the
@@ -10,7 +14,7 @@ COPY vendor/hetstar/packages/hetkit/package.json ./vendor/hetstar/packages/hetki
 COPY vendor/hetstar/packages/hetstar/package.json ./vendor/hetstar/packages/hetstar/
 RUN npm ci
 
-FROM harbor.astera.sh/dockerhub-cache/node:22-alpine AS builder
+FROM ${DOCKERHUB_REGISTRY}/node:22-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_BASE_URL=https://dynamicpdb.com/api
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
@@ -19,7 +23,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM harbor.astera.sh/dockerhub-cache/node:22-alpine
+FROM ${DOCKERHUB_REGISTRY}/node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

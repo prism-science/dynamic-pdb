@@ -16,6 +16,11 @@ concurrency:
 env:
   REGISTRY: harbor.astera.sh
   IMAGE_PREFIX: library
+  # harbor.astera.sh is reachable only over the tailnet, so image builds take their base images
+  # from the upstream registries. These two are the mmseqs job image's, shared by the
+  # integration test and the deploy build.
+  DYNAMIC_PDB_MMSEQS_GO_IMAGE: golang:1.26-alpine
+  DYNAMIC_PDB_MMSEQS_RUNTIME_IMAGE: debian:bookworm-slim
   BACKEND_COVERAGE_THRESHOLD: "30"
   WEBSITE_COVERAGE_THRESHOLD: "45"
   GOLANGCI_LINT_VERSION: "v2.11"
@@ -336,11 +341,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
-    env:
-      # GitHub-hosted runners can't reach harbor.astera.sh (Tailscale only), so the mmseqs
-      # test builds its image from the same base images on Docker Hub.
-      DYNAMIC_PDB_MMSEQS_GO_IMAGE: golang:1.26-alpine
-      DYNAMIC_PDB_MMSEQS_RUNTIME_IMAGE: debian:bookworm-slim
     steps:
       - uses: actions/checkout@v4
 
@@ -379,6 +379,10 @@ jobs:
             exit 1
           fi
 
+  # Builds from upstream base images, then pushes over the tailnet: the job joins as an
+  # ephemeral tag:ci-n device, which reaches harbor.astera.sh and nothing else. The
+  # harbor-publish environment holds the Tailscale trust credential (TS_CI_CLIENT_ID,
+  # TS_CI_AUDIENCE) and the Harbor robot (HARBOR_USERNAME, HARBOR_PASSWORD).
   deploy-images:
     name: Build and push deploy images
     needs:
@@ -398,7 +402,11 @@ jobs:
       (needs.website.result == 'success' || needs.website.result == 'skipped') &&
       (needs.browser.result == 'success' || needs.browser.result == 'skipped') &&
       (needs.integration.result == 'success' || needs.integration.result == 'skipped')
-    runs-on: diffuse-sh-builder
+    runs-on: ubuntu-latest
+    environment: harbor-publish
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -416,6 +424,21 @@ jobs:
             echo "DEV_MOVING_IMAGE_TAG=dev-latest"
           } >> "${GITHUB_ENV}"
 
+      - name: Join tailnet
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.TS_CI_CLIENT_ID }}
+          audience: ${{ vars.TS_CI_AUDIENCE }}
+          tags: tag:ci-n
+
+      - name: Wait for Harbor
+        run: |
+          for _ in $(seq 1 12); do
+            curl -fsS --max-time 5 "https://${REGISTRY}/api/v2.0/ping" && exit 0
+            sleep 5
+          done
+          echo "::error::${REGISTRY} unreachable over the tailnet"; exit 1
+
       - name: Login to Harbor
         env:
           HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
@@ -431,6 +454,8 @@ jobs:
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-backend"
           docker buildx build --push \
             --build-context lib=lib \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
+            --build-arg GCR_REGISTRY=gcr.io \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
             -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
@@ -442,6 +467,7 @@ jobs:
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-migrations"
           docker buildx build --push \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
             -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
@@ -454,6 +480,8 @@ jobs:
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-mmseqs-job"
           docker buildx build --push \
             --build-context lib=lib \
+            --build-arg GO_IMAGE="${DYNAMIC_PDB_MMSEQS_GO_IMAGE}" \
+            --build-arg RUNTIME_IMAGE="${DYNAMIC_PDB_MMSEQS_RUNTIME_IMAGE}" \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
             -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
@@ -465,6 +493,7 @@ jobs:
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
           docker buildx build --push \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
             --build-arg NEXT_PUBLIC_API_BASE_URL="https://dynamicpdb.com/api" \
             -t "${IMAGE}:${DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${MOVING_IMAGE_TAG}" \
@@ -475,6 +504,7 @@ jobs:
           set -euo pipefail
           IMAGE="${REGISTRY}/${IMAGE_PREFIX}/dynamic-pdb-website"
           docker buildx build --push \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
             --build-arg NEXT_PUBLIC_API_BASE_URL="https://dev.dynamicpdb.com/api" \
             -t "${IMAGE}:${DEV_DEPLOY_IMAGE_TAG}" \
             -t "${IMAGE}:${DEV_MOVING_IMAGE_TAG}" \
@@ -487,6 +517,8 @@ jobs:
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker buildx build --push \
             --build-context lib=lib \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
+            --build-arg GCR_REGISTRY=gcr.io \
             --build-arg VERSION="${DEPLOY_IMAGE_TAG}" \
             --build-arg COMMIT="${GITHUB_SHA}" \
             --build-arg DATE="${DATE}" \
