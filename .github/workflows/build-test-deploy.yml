@@ -15,7 +15,7 @@ concurrency:
 
 env:
   REGISTRY: harbor.astera.sh
-  IMAGE_PREFIX: library
+  IMAGE_PREFIX: dynamicpdb
   # harbor.astera.sh is reachable only over the tailnet, so image builds take their base images
   # from the upstream registries. These two are the mmseqs job image's, shared by the
   # integration test and the deploy build.

@@ -3,7 +3,7 @@ host: dynamicpdb.com
 backend:
   configProfile: production
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-backend
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-backend
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -24,7 +24,7 @@ backend:
 
 website:
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-website
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-website
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -68,7 +68,7 @@ s3proxy:
 migrations:
   enabled: true
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-migrations
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-migrations
     tag: latest
     pullPolicy: IfNotPresent
   resources:
@@ -89,7 +89,7 @@ mmseqsJob:
   backoffLimit: 1
   activeDeadlineSeconds: 21600
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-mmseqs-job
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-mmseqs-job
     tag: latest
     pullPolicy: IfNotPresent
   cache:
