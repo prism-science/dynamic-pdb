@@ -34,6 +34,10 @@
 {{- printf "%s-model-compounds-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "dynamic-pdb.coordinateIndexJobName" -}}
+{{- printf "%s-coordinate-index-job" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "dynamic-pdb.mmseqsCacheName" -}}
 {{- printf "%s-mmseqs-cache" (include "dynamic-pdb.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -96,4 +100,9 @@ app.kubernetes.io/component: archive-rederive-job
 {{- define "dynamic-pdb.modelCompoundsJob.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "dynamic-pdb.modelCompoundsJobName" . }}
 app.kubernetes.io/component: model-compounds-job
+{{- end -}}
+
+{{- define "dynamic-pdb.coordinateIndexJob.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "dynamic-pdb.coordinateIndexJobName" . }}
+app.kubernetes.io/component: coordinate-index-job
 {{- end -}}

@@ -1,19 +1,15 @@
 package jobs
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/internal/modelfiles"
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/lib/cif"
 )
@@ -26,10 +22,6 @@ const (
 	// leaseMargin is how long a claim outlives the file timeout, so a file still being read
 	// is never claimed by the next run.
 	leaseMargin = 5 * time.Minute
-	// sniffBytes is how much of a file without a declared format is looked at to tell
-	// mmCIF from PDB format.
-	sniffBytes     = 4096
-	readBufferSize = 64 * 1024
 )
 
 // Queue is the modeled_compound_sets table as the job uses it.
@@ -52,12 +44,6 @@ type Queue interface {
 	// Save stores the copies, finishes the set and re-indexes the revisions with the file; it
 	// returns how many revisions it re-indexed.
 	Save(ctx context.Context, artifactID uuid.UUID, result cif.ModeledCompounds, readAt time.Time) (int, error)
-}
-
-// StoredFiles is our bucket: stored files are read by key.
-type StoredFiles interface {
-	StoredKey(uri string) (string, bool)
-	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 type Config struct {
@@ -107,14 +93,14 @@ func (c Config) validate() error {
 // compounds it models (cif.ReadModeledCompounds), one file at a time.
 type ModelCompoundsJob struct {
 	queue  Queue
-	files  StoredFiles
+	files  modelfiles.StoredFiles
 	cfg    Config
 	logger *slog.Logger
 	now    func() time.Time
 	sleep  func(ctx context.Context, pause time.Duration) error
 }
 
-func NewModelCompoundsJob(queue Queue, files StoredFiles, cfg Config, logger *slog.Logger) (*ModelCompoundsJob, error) {
+func NewModelCompoundsJob(queue Queue, files modelfiles.StoredFiles, cfg Config, logger *slog.Logger) (*ModelCompoundsJob, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("model compounds job config: %w", err)
 	}
@@ -280,19 +266,6 @@ func (j *ModelCompoundsJob) fillPages(
 	}
 }
 
-// permanentError is a reason no retry can change: the file is not ours, or not a structure file.
-type permanentError struct {
-	reason string
-}
-
-func (e *permanentError) Error() string {
-	return e.reason
-}
-
-func permanent(format string, arguments ...any) error {
-	return &permanentError{reason: fmt.Sprintf(format, arguments...)}
-}
-
 // readClaim reads one claimed file and records the outcome. It returns an error only when
 // recording fails.
 func (j *ModelCompoundsJob) readClaim(ctx context.Context, claim models.ModeledCompoundClaim) (outcome, error) {
@@ -332,10 +305,9 @@ func (j *ModelCompoundsJob) readClaim(ctx context.Context, claim models.ModeledC
 }
 
 func (j *ModelCompoundsJob) recordFailure(ctx context.Context, claim models.ModeledCompoundClaim, readErr error) (outcome, error) {
-	var final *permanentError
 	var retryAt *time.Time
 	result := outcomeFailed
-	if !errors.As(readErr, &final) && claim.Attempts < maxAttempts {
+	if !modelfiles.IsPermanent(readErr) && claim.Attempts < maxAttempts {
 		next := j.now().Add(firstRetryDelay << (claim.Attempts - 1))
 		retryAt = &next
 		result = outcomeRetryLater
@@ -351,53 +323,14 @@ func (j *ModelCompoundsJob) recordFailure(ctx context.Context, claim models.Mode
 	return result, nil
 }
 
-// readFrom names the object a file was read from: the artifact's own file in our bucket, or
-// the checksum job's copy of an external file (an archive model file on RCSB).
-type readFrom string
-
-const (
-	readFromOwnFile      readFrom = "own_file"
-	readFromChecksumCopy readFrom = "checksum_copy"
-)
-
-// storedObject returns the bucket key a claimed file is read from: the artifact's own file
-// when it is in our bucket, otherwise the checksum job's copy of the external file.
-func (j *ModelCompoundsJob) storedObject(claim models.ModeledCompoundClaim) (string, readFrom, error) {
-	if claim.URI == nil || strings.TrimSpace(*claim.URI) == "" {
-		return "", "", permanent("artifact has no uri")
-	}
-	if key, stored := j.files.StoredKey(*claim.URI); stored {
-		return key, readFromOwnFile, nil
-	}
-	if claim.CopyStatus == nil {
-		return "", "", permanent("the file is not in our bucket, and the checksum job has not copied it")
-	}
-	switch *claim.CopyStatus {
-	case models.CopyStatusCopied:
-		if claim.StoredURI == nil {
-			return "", "", permanent("the checksum job copied the file but recorded no uri for the copy")
-		}
-		key, stored := j.files.StoredKey(*claim.StoredURI)
-		if !stored {
-			return "", "", permanent("the checksum job's copy of the file is not in our bucket")
-		}
-		return key, readFromChecksumCopy, nil
-	case models.CopyStatusOwnStorage,
-		models.CopyStatusOverLimit,
-		models.CopyStatusMismatch,
-		models.CopyStatusCopyFailed,
-		models.CopyStatusCopyOff:
-		return "", "", permanent("the file is not in our bucket, and the checksum job kept no copy of it (copy status %s)",
-			*claim.CopyStatus)
-	default:
-		return "", "", fmt.Errorf("unknown copy status %q", *claim.CopyStatus)
-	}
-}
-
 // read opens a claimed file in our bucket, or our copy of it, and reads the compounds it
 // models.
-func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompoundClaim) (cif.ModeledCompounds, readFrom, error) {
-	key, from, err := j.storedObject(claim)
+func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompoundClaim) (cif.ModeledCompounds, modelfiles.ReadFrom, error) {
+	key, from, err := modelfiles.StoredKey(j.files, modelfiles.Location{
+		URI:        claim.URI,
+		CopyStatus: claim.CopyStatus,
+		StoredURI:  claim.StoredURI,
+	})
 	if err != nil {
 		return cif.ModeledCompounds{}, "", fmt.Errorf("locate the file: %w", err)
 	}
@@ -412,7 +345,7 @@ func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompou
 			j.logger.Warn("close model file failed", "artifact_id", claim.ArtifactID, "err", closeErr)
 		}
 	}()
-	body, format, err := openStructure(file, claim.Format)
+	body, format, err := modelfiles.OpenStructure(file, claim.Format)
 	if err != nil {
 		return cif.ModeledCompounds{}, from, fmt.Errorf("open the structure: %w", err)
 	}
@@ -421,75 +354,4 @@ func (j *ModelCompoundsJob) read(ctx context.Context, claim models.ModeledCompou
 		return cif.ModeledCompounds{}, from, fmt.Errorf("read the file: %w", err)
 	}
 	return result, from, nil
-}
-
-// openStructure returns the structure text of a file, gunzipped when its first bytes are a
-// gzip header, and its format: the declared one, or for a file without one, what its first
-// bytes show. A declared format that is not a structure format fails for good.
-func openStructure(file io.Reader, declared *string) (io.Reader, cif.StructureFormat, error) {
-	buffered := bufio.NewReaderSize(file, readBufferSize)
-	body := io.Reader(buffered)
-	if magic, err := buffered.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
-		unzipped, err := gzip.NewReader(buffered)
-		if err != nil {
-			return nil, 0, permanent("the file has a gzip header but cannot be unzipped: %v", err)
-		}
-		body = bufio.NewReaderSize(unzipped, readBufferSize)
-	}
-	if declared != nil && strings.TrimSpace(*declared) != "" {
-		format, err := declaredFormat(*declared)
-		if err != nil {
-			return nil, 0, fmt.Errorf("declared format: %w", err)
-		}
-		return body, format, nil
-	}
-	peeker, ok := body.(*bufio.Reader)
-	if !ok {
-		return nil, 0, errors.New("the file cannot be looked at before it is read")
-	}
-	head, err := peeker.Peek(sniffBytes)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
-		return nil, 0, fmt.Errorf("look at the start of the file: %w", err)
-	}
-	format, err := sniffFormat(head)
-	if err != nil {
-		return nil, 0, fmt.Errorf("first bytes: %w", err)
-	}
-	return body, format, nil
-}
-
-// declaredFormat reads an artifact's format as the website and the CLI write it.
-func declaredFormat(value string) (cif.StructureFormat, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "cif", "mmcif":
-		return cif.FormatMMCIF, nil
-	case "pdb", "ent":
-		return cif.FormatPDB, nil
-	default:
-		return 0, permanent("unknown model file format %q", value)
-	}
-}
-
-// pdbRecords are record names a PDB-format file starts with.
-var pdbRecords = []string{"HEADER", "TITLE ", "COMPND", "REMARK", "CRYST1", "ATOM  ", "HETATM", "MODEL ", "SEQRES", "EXPDTA", "AUTHOR"}
-
-// sniffFormat tells mmCIF (a data_ block header first) from PDB format (a known record name
-// first), skipping blank lines and, in mmCIF, comment lines.
-func sniffFormat(head []byte) (cif.StructureFormat, error) {
-	for _, line := range bytes.Split(head, []byte("\n")) {
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) == 0 || trimmed[0] == '#' {
-			continue
-		}
-		if len(trimmed) >= 5 && strings.EqualFold(string(trimmed[:5]), "data_") {
-			return cif.FormatMMCIF, nil
-		}
-		for _, record := range pdbRecords {
-			if bytes.HasPrefix(line, []byte(record)) {
-				return cif.FormatPDB, nil
-			}
-		}
-		return 0, permanent("the file starts like neither mmCIF nor PDB format")
-	}
-	return 0, permanent("the file is empty")
 }

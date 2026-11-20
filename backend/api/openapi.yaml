@@ -1035,7 +1035,9 @@ paths:
 
         Search filters, meta.total, and the entry, flagged_for_review, review_flags and
         compounds_needing_review fields are available only where the server enables model
-        search; elsewhere a filter parameter gets 400 and the response has none of them.
+        search; elsewhere a filter parameter gets 400 and the response has none of them. The
+        protein chain filters (protein_chains_min, protein_chain_length_min,
+        protein_chain_length_max, protein_chain_mode) have a switch of their own.
 
 
         Review flags: every caller sees whether a result is flagged for review
@@ -1220,6 +1222,60 @@ paths:
               type: string
               minLength: 1
               maxLength: 100
+        - name: protein_chains_min
+          in: query
+          description: >
+            Model filter. Models whose coordinate file has at least this many protein chains
+            (inclusive). With protein_chain_mode at_least (the default), only chains whose
+            deposited length is within protein_chain_length_min and protein_chain_length_max count
+            when either is given; all protein chains otherwise. Defaults to 1 when only a length
+            bound or the mode is given. Each copy of a chain counts. A chain is an author chain of
+            the file's first model; it is a protein chain when the file's _entity_poly.type for
+            its entity is polypeptide(L) or polypeptide(D), and, in a file that states no polymer
+            type for it (PDB format, most computed models), when more than half of its modeled
+            residues are amino acids. A file the server has not read yet never matches. Example:
+            "more than four protein chains, each longer than 300 residues" is
+            protein_chains_min=5&protein_chain_length_min=301. Available only where the server
+            enables the protein chain filters; elsewhere 400.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: protein_chain_length_min
+          in: query
+          description: >
+            Model filter, with protein_chains_min and protein_chain_mode. Lowest deposited sequence
+            length of a protein chain, in residues (inclusive); residues without coordinates count.
+            The length is the file's own (_entity_poly_seq, SEQRES), else the entry's FASTA record
+            for the chain. A chain whose length is unknown never satisfies a length bound.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: protein_chain_length_max
+          in: query
+          description: >
+            Model filter, with protein_chains_min and protein_chain_mode. Highest deposited
+            sequence length of a protein chain, in residues (inclusive). A chain whose length is
+            unknown never satisfies a length bound.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: protein_chain_mode
+          in: query
+          description: >
+            Model filter, with the protein chain length bounds. at_least (the default): at least
+            protein_chains_min protein chains have a deposited length within the bounds; other
+            protein chains may be shorter or longer. every: the file has at least
+            protein_chains_min protein chains, and every one of them has a deposited length within
+            the bounds, so a single chain outside them, or of unknown length, rules the model out.
+            every needs protein_chain_length_min or protein_chain_length_max. Example: "at least
+            two protein chains, all longer than 300 residues" is
+            protein_chain_mode=every&protein_chains_min=2&protein_chain_length_min=301.
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProteinChainMode'
         - name: r_work_min
           in: query
           description: >
@@ -3279,6 +3335,11 @@ components:
       enum: [pdb_archive, dynamic_pdb_deposit]
       x-enum-varnames: [ModelSearchSourcePDBArchive, ModelSearchSourceDynamicPDBDeposit]
 
+    ProteinChainMode:
+      type: string
+      enum: [at_least, every]
+      x-enum-varnames: [ProteinChainModeAtLeast, ProteinChainModeEvery]
+
     CreateSelectionRequest:
       type: object
       description: >
@@ -3300,7 +3361,8 @@ components:
             Searches whose every result the selection holds. Each is the query string of a
             GET /v1/models request (the part after "?"), with its filters only: no limit, offset
             or cursor. An empty string holds every model. Filters work where the server enables
-            model search.
+            model search, and the protein chain filters where it also enables them, as on
+            GET /v1/models.
           maxItems: 10
           items:
             type: string

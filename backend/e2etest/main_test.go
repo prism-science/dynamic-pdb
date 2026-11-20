@@ -83,7 +83,7 @@ type testRouterOptions struct {
 	entryDeletion bool
 	// selfApproval lets reviewers approve revisions they created.
 	selfApproval bool
-	// modelSearch turns the search filters of GET /v1/models on.
+	// modelSearch turns the search filters of GET /v1/models on, the protein chain filters included.
 	modelSearch bool
 	// selections turns the /v1/selections routes on.
 	selections bool
@@ -209,11 +209,12 @@ func TestMain(m *testing.M) {
 			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(options.extractionTimeout)
 		}
 		server.WithModelSearch(httpapi.ModelSearchPolicy{
-			FiltersEnabled:   options.modelSearch,
-			CountCap:         10000,
-			Requests:         1000,
-			InternalRequests: 1000,
-			Window:           time.Minute,
+			FiltersEnabled:      options.modelSearch,
+			ChainFiltersEnabled: options.modelSearch,
+			CountCap:            10000,
+			Requests:            1000,
+			InternalRequests:    1000,
+			Window:              time.Minute,
 		})
 		server.WithSelections(httpapi.SelectionsPolicy{
 			Enabled:          options.selections,

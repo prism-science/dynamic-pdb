@@ -40,6 +40,8 @@ type ModelSearch struct {
 	DataLevels []models.ArtifactLevel
 	// Compounds matches a chemical component ID in the model's coordinate file.
 	Compounds []string
+	// ProteinChains matches a coordinate file with enough protein chains in a length range (S2).
+	ProteinChains *ProteinChainFilter
 	// MetricBounds are inclusive bounds on metric values; each bound must hold.
 	MetricBounds []MetricBound
 	// MissingMetrics matches a model with no value for at least one of these metrics.
@@ -47,6 +49,30 @@ type ModelSearch struct {
 	// Flagged true matches models with an open review flag, false models without one.
 	Flagged *bool
 }
+
+// ProteinChainFilter matches a model by the protein chains of its coordinate file, as the
+// coordinate-index job stored them. MinLength and MaxLength bound a chain's deposited length
+// (inclusive; a nil end is open); a chain of unknown length is never within a bound. Mode says
+// which chains the bounds apply to.
+type ProteinChainFilter struct {
+	Mode      ProteinChainMode
+	MinChains int
+	MinLength *int
+	MaxLength *int
+}
+
+// ProteinChainMode says which protein chains of a file a ProteinChainFilter's length bounds apply
+// to.
+type ProteinChainMode string
+
+const (
+	// ProteinChainsAtLeast: at least MinChains protein chains are within the bounds; other protein
+	// chains may be outside them. Without a bound every protein chain counts.
+	ProteinChainsAtLeast ProteinChainMode = "at_least"
+	// ProteinChainsEvery: the file has at least MinChains protein chains and every one of them is
+	// within the bounds. It needs a bound.
+	ProteinChainsEvery ProteinChainMode = "every"
+)
 
 // MetricBound bounds one metric's value, inclusive. A nil end is open.
 type MetricBound struct {
@@ -96,6 +122,7 @@ func modelSearchConditions(search ModelSearch, args map[string]any) ([]string, e
 		polymerEntitySearchConditions,
 		modelMetadataSearchConditions,
 		modelFileSearchConditions,
+		proteinChainSearchConditions,
 		metricSearchConditions,
 		reviewFlagSearchConditions,
 	}
@@ -311,6 +338,71 @@ const compoundCondition = `exists (select 1
 		where search_compound_set.artifact_id = model_revisions.primary_artifact_id
 		  and search_compound_set.status = 'done'
 		  and search_compound.ccd_id = any(cast(:search_compounds as text[])))`
+
+// proteinChainSearchConditions counts the protein chains of the model's coordinate file, as the
+// coordinate-index job stored them (S2). A file the job has not read has no chains, so it never
+// matches; a file queued for a new read keeps the chains of its last read until the new read
+// replaces them. The subquery finds the matching files once; the length index serves a bounded
+// at_least search.
+func proteinChainSearchConditions(search ModelSearch, args map[string]any) ([]string, error) {
+	filter := search.ProteinChains
+	if filter == nil {
+		return nil, nil
+	}
+	if filter.MinChains < 1 {
+		return nil, fmt.Errorf("protein chain count %d is less than 1: %w", filter.MinChains, ErrInvalidModelSearch)
+	}
+	var withinBounds []string
+	for _, bound := range []struct {
+		value    *int
+		operator string
+		arg      string
+	}{
+		{filter.MinLength, ">=", "search_protein_chain_length_min"},
+		{filter.MaxLength, "<=", "search_protein_chain_length_max"},
+	} {
+		if bound.value == nil {
+			continue
+		}
+		if *bound.value < 1 {
+			return nil, fmt.Errorf("protein chain length %d is less than 1: %w", *bound.value, ErrInvalidModelSearch)
+		}
+		// bigint: a bound past the integer column's range would otherwise fail to bind.
+		withinBounds = append(withinBounds, fmt.Sprintf("search_chain.deposited_length %s cast(:%s as bigint)", bound.operator, bound.arg))
+		args[bound.arg] = *bound.value
+	}
+	if filter.MinLength != nil && filter.MaxLength != nil && *filter.MinLength > *filter.MaxLength {
+		return nil, fmt.Errorf("protein chain length range %d to %d is empty: %w",
+			*filter.MinLength, *filter.MaxLength, ErrInvalidModelSearch)
+	}
+	args["search_protein_chains_min"] = filter.MinChains
+	switch filter.Mode {
+	case ProteinChainsAtLeast:
+		lengthConditions := ""
+		for _, condition := range withinBounds {
+			lengthConditions += " and " + condition
+		}
+		return []string{`model_revisions.primary_artifact_id in (select search_chain.artifact_id
+			from coordinate_index_chains search_chain
+			where search_chain.protein` + lengthConditions + `
+			group by search_chain.artifact_id
+			having count(*) >= :search_protein_chains_min)`}, nil
+	case ProteinChainsEvery:
+		if len(withinBounds) == 0 {
+			return nil, fmt.Errorf("protein chain mode %s needs a length bound: %w", filter.Mode, ErrInvalidModelSearch)
+		}
+		// A chain of unknown length makes the bound null, so the filtered count leaves it out and
+		// the file does not match.
+		return []string{`model_revisions.primary_artifact_id in (select search_chain.artifact_id
+			from coordinate_index_chains search_chain
+			where search_chain.protein
+			group by search_chain.artifact_id
+			having count(*) >= :search_protein_chains_min
+			   and count(*) filter (where ` + strings.Join(withinBounds, " and ") + `) = count(*))`}, nil
+	default:
+		return nil, fmt.Errorf("unknown protein chain mode %q: %w", filter.Mode, ErrInvalidModelSearch)
+	}
+}
 
 // metricSearchConditions matches metric values by the metric's own key, as model responses list
 // them. A revision whose duplicate values of one key are quarantined (model_revision_metrics.metric_key
