@@ -164,8 +164,15 @@ type searchModel struct {
 }
 
 // model makes an active model of entry whose active revision has metadata and an L2 coordinate
-// file as its primary file. The file is not attached to the revision; attach adds files.
-func (f *modelSearchTestDB) model(t *testing.T, entry searchEntry, metadata map[string]any) searchModel {
+// file as its primary file. The primary file is not linked to the revision; each level in files
+// links one more file of that level. As in the app, files are linked before the revision is
+// published: a published revision's files cannot change (V20261110170100).
+func (f *modelSearchTestDB) model(
+	t *testing.T,
+	entry searchEntry,
+	metadata map[string]any,
+	files ...models.ArtifactLevel,
+) searchModel {
 	t.Helper()
 	f.models++
 	model := searchModel{
@@ -178,16 +185,14 @@ func (f *modelSearchTestDB) model(t *testing.T, entry searchEntry, metadata map[
 		model.id, entry.id, f.userID, createdAt)
 	f.exec(t, `insert into model_revisions (id, model_id, primary_artifact_id, revision_number, state, model_state,
 	                                         title, metadata, created_by, created_at, updated_at, published_at)
-	           values ($1, $2, $3, 1, 'active', 'active', 'search test model', $4, $5, $6, $6, $6)`,
+	           values ($1, $2, $3, 1, 'pending', 'active', 'search test model', $4, $5, $6, $6, $6)`,
 		model.revisionID, model.id, model.coordinateFile, jsonText(t, metadata), f.userID, createdAt)
+	for _, level := range files {
+		f.exec(t, `insert into model_revision_artifacts (model_revision_id, artifact_id) values ($1, $2)`,
+			model.revisionID, f.artifact(t, level, models.ArtifactTypeOther))
+	}
+	f.exec(t, `update model_revisions set state = 'active' where id = $1`, model.revisionID)
 	return model
-}
-
-func (f *modelSearchTestDB) attach(t *testing.T, model searchModel, level models.ArtifactLevel) {
-	t.Helper()
-	artifactID := f.artifact(t, level, models.ArtifactTypeOther)
-	f.exec(t, `insert into model_revision_artifacts (model_revision_id, artifact_id) values ($1, $2)`,
-		model.revisionID, artifactID)
 }
 
 func (f *modelSearchTestDB) metric(t *testing.T, model searchModel, key models.MetricKey, value float64) {
@@ -414,11 +419,9 @@ func Test_should_match_files_and_compounds_of_the_same_model_when_models_are_sea
 	// given
 	fixture := newModelSearchTestDB(t)
 	entry := fixture.entry(t, map[string]any{})
-	withADP := fixture.model(t, entry, map[string]any{})
-	fixture.attach(t, withADP, models.ArtifactLevelL1)
+	withADP := fixture.model(t, entry, map[string]any{}, models.ArtifactLevelL1)
 	fixture.compounds(t, withADP, "done", compoundRecord{ccdID: "ADP"}, compoundRecord{ccdID: "MG"})
-	needsReview := fixture.model(t, entry, map[string]any{})
-	fixture.attach(t, needsReview, models.ArtifactLevelL3)
+	needsReview := fixture.model(t, entry, map[string]any{}, models.ArtifactLevelL3)
 	fixture.compounds(t, needsReview, "done", compoundRecord{ccdID: "ADP", reviewReason: "possible chain residue"})
 	notRead := fixture.model(t, entry, map[string]any{})
 	fixture.compounds(t, notRead, "pending")
