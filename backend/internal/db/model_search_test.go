@@ -183,6 +183,18 @@ func (f *modelSearchTestDB) model(t *testing.T, entry searchEntry, metadata map[
 	return model
 }
 
+// inReviewRevision gives model a second revision, in review and so not active, and returns its ID.
+func (f *modelSearchTestDB) inReviewRevision(t *testing.T, model searchModel) uuid.UUID {
+	t.Helper()
+	revisionID := uuid.New()
+	createdAt := f.tick()
+	f.exec(t, `insert into model_revisions (id, model_id, primary_artifact_id, revision_number, state, model_state,
+	                                         title, metadata, created_by, created_at, updated_at)
+	           values ($1, $2, $3, 2, 'in_review', 'active', 'search test model', '{}', $4, $5, $5)`,
+		revisionID, model.id, model.coordinateFile, f.userID, createdAt)
+	return revisionID
+}
+
 func (f *modelSearchTestDB) attach(t *testing.T, model searchModel, level models.ArtifactLevel) {
 	t.Helper()
 	artifactID := f.artifact(t, level, models.ArtifactTypeOther)
@@ -517,11 +529,23 @@ func Test_should_find_models_by_open_review_flags_on_model_revision_entry_and_po
 	resolvedModel := fixture.model(t, plainEntry, map[string]any{})
 	fixture.review(t, "model", resolvedModel.id, "sync_validation_failed", true)
 	plainModel := fixture.model(t, plainEntry, map[string]any{})
+	// A flag on a revision that is not active, or on a polymer entity of an archived entry revision
+	// only, is not shown with the search result, so it does not make the model flagged.
+	pendingRevisionModel := fixture.model(t, plainEntry, map[string]any{})
+	pendingRevisionID := fixture.inReviewRevision(t, pendingRevisionModel)
+	fixture.review(t, "model_revision", pendingRevisionID.String(), "duplicate_metric_key:r_free", false)
+	archivedEntityEntry := fixture.entry(t, map[string]any{})
+	archivedRevisionID := uuid.New()
+	fixture.entryRevision(t, archivedEntityEntry, archivedRevisionID, 1, "archived", map[string]any{})
+	archivedEntityID := fixture.polymerEntity(t, archivedRevisionID, map[string]any{})
+	fixture.review(t, "polymer_entity", archivedEntityID.String(), "mutations_need_review", false)
+	archivedEntityModel := fixture.model(t, archivedEntityEntry, map[string]any{})
 
 	runModelSearchCases(t, fixture, []modelSearchCase{
 		{name: "only flagged", search: db.ModelSearch{Flagged: ptr(true)},
 			want: []string{flaggedEntryModel.id, flaggedEntityModel.id, flaggedModel.id, flaggedRevision.id}},
-		{name: "only not flagged", search: db.ModelSearch{Flagged: ptr(false)}, want: []string{resolvedModel.id, plainModel.id}},
+		{name: "only not flagged", search: db.ModelSearch{Flagged: ptr(false)},
+			want: []string{resolvedModel.id, plainModel.id, pendingRevisionModel.id, archivedEntityModel.id}},
 	})
 
 	t.Run("page flags name the same objects", func(t *testing.T) {
@@ -529,6 +553,7 @@ func Test_should_find_models_by_open_review_flags_on_model_revision_entry_and_po
 		flags, err := fixture.database.MigrationReviews.ListOpenForModelRevisions(context.Background(), []uuid.UUID{
 			flaggedEntryModel.revisionID, flaggedEntityModel.revisionID, flaggedModel.revisionID,
 			flaggedRevision.revisionID, resolvedModel.revisionID, plainModel.revisionID,
+			pendingRevisionModel.revisionID, archivedEntityModel.revisionID,
 		})
 
 		// then
@@ -546,6 +571,8 @@ func Test_should_find_models_by_open_review_flags_on_model_revision_entry_and_po
 		assert.Equal(t, []string{"model_revision:duplicate_metric_key:r_free"}, issuesOf(flaggedRevision.revisionID))
 		assert.Empty(t, issuesOf(resolvedModel.revisionID))
 		assert.Empty(t, issuesOf(plainModel.revisionID))
+		assert.Empty(t, issuesOf(pendingRevisionModel.revisionID))
+		assert.Empty(t, issuesOf(archivedEntityModel.revisionID))
 	})
 }
 
