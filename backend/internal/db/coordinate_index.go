@@ -24,6 +24,27 @@ const coordinateIndexChainInsertBatch = 2000
 const coordinateIndexChainColumns = `artifact_id, auth_asym_id, entity_id, deposited_length, length_source,
 	modeled_residues, protein, protein_source`
 
+// coordinateIndexResidueCountInsertBatch keeps one insert under PostgreSQL's limit of 65535 bind
+// parameters (4 columns per row).
+const coordinateIndexResidueCountInsertBatch = 10000
+
+// ensembleTypedFile is true when the latest revision using a model file (artifact id $1) of one of
+// the file's models is an Ensemble or has member_count, which validation allows only on Ensembles.
+// Rejected revisions never count. A model whose latest revision moved to another file is judged by
+// its latest revision that still uses this one.
+const ensembleTypedFile = `coalesce((
+	    select bool_or(latest.ensemble)
+	    from (
+	      select distinct on (typed.model_id)
+	             (coalesce(typed.metadata ->> 'model_type', '') = 'Ensemble'
+	              or jsonb_typeof(typed.metadata -> 'member_count') = 'number') as ensemble
+	      from model_revisions typed
+	      where typed.primary_artifact_id = %s
+	        and typed.state in ('pending', 'in_review', 'active', 'archived')
+	      order by typed.model_id, typed.created_at desc, typed.id desc
+	    ) latest
+	  ), false)`
+
 // CoordinateIndexRepository is the coordinate_index_sets and coordinate_index_chains tables:
 // what the coordinate-index job read from each model file in our bucket.
 type CoordinateIndexRepository struct {
@@ -256,6 +277,115 @@ func (r *CoordinateIndexRepository) RequeueForNewEntries(ctx context.Context, si
 	return queued, nil
 }
 
+// RequeueForEnsembleTypeChanges queues done sets again, ahead of the fill, whose last read with
+// conformer counts saw another Ensemble state than the file's models have now
+// (read_as_ensemble_type against ensembleTypedFile): ensembles get no counts, so that read stored
+// the wrong ones, or none. It looks at two groups:
+//   - the files of model revisions created since the given time, found as RequeueForNewEntries
+//     finds them: a new revision that changes the type;
+//   - every file read as an Ensemble's by its type (conformers 'ensemble_model_type'), whatever
+//     its age, through a partial index: a review decision (a rejected Ensemble revision) changes a
+//     revision's state, not its creation time, and such a file would otherwise keep no counts.
+//     There are few: single-frame Ensemble files.
+//
+// The job calls it only while it stores conformer counts: a read without them leaves
+// read_as_ensemble_type as it was, so the same files would be queued on every run. A counted
+// file whose model becomes an Ensemble by a review decision alone keeps its counts until its next
+// read; the residue filter leaves out Ensemble models by their type. It returns how many sets it
+// queued.
+func (r *CoordinateIndexRepository) RequeueForEnsembleTypeChanges(ctx context.Context, since time.Time, now time.Time) (int64, error) {
+	query := `with recent_files as (
+			    select distinct recent.primary_artifact_id as artifact_id
+			    from users
+			    join lateral (
+			      select model_revisions.primary_artifact_id
+			      from model_revisions
+			      where model_revisions.created_by = users.id and model_revisions.created_at >= $1
+			    ) recent on true
+			    where recent.primary_artifact_id is not null
+			  ), candidates as (
+			    select artifact_id from recent_files
+			    union
+			    select artifact_id from coordinate_index_sets
+			    where status = 'done' and conformers = 'ensemble_model_type'
+			  ), stale as (
+			    select sets.artifact_id
+			    from candidates
+			    join coordinate_index_sets sets on sets.artifact_id = candidates.artifact_id
+			    where sets.status = 'done'
+			      and sets.read_as_ensemble_type is not null
+			      and sets.read_as_ensemble_type <> ` + fmt.Sprintf(ensembleTypedFile, "sets.artifact_id") + `
+			  )
+			  update coordinate_index_sets
+			  set status = 'pending', fill = false, attempts = 0, next_attempt_at = $2, last_error = null
+			  from stale
+			  where coordinate_index_sets.artifact_id = stale.artifact_id`
+	result, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query, since, now)
+	if err != nil {
+		return 0, fmt.Errorf("queue coordinate index sets whose ensemble type changed since %s: %w", since.Format(time.RFC3339), err)
+	}
+	queued, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count queued coordinate index sets: %w", err)
+	}
+	return queued, nil
+}
+
+// RequeueForConformersAfter takes the next limit sets in artifact order after the given id and
+// sends each done one whose conformer counts are missing or from another cif.ResidueCountVersion
+// back to pending as a fill row: the file is read again, its chains as before, with conformer
+// counts. Attempts start over. Pending and failed sets are left as they are: a pending one is read
+// with counts anyway, and a failed one failed on a read limit or a file that cannot be read. One
+// page is one short statement; running it again is harmless.
+func (r *CoordinateIndexRepository) RequeueForConformersAfter(
+	ctx context.Context,
+	after uuid.UUID,
+	limit int,
+	version string,
+	now time.Time,
+) (models.RequeuedSetsPage, error) {
+	if limit <= 0 {
+		return models.RequeuedSetsPage{}, errors.New("page limit must be positive")
+	}
+	if version == "" {
+		return models.RequeuedSetsPage{}, errors.New("conformer count version must not be empty")
+	}
+	query := `with page as (
+			    select artifact_id from coordinate_index_sets where artifact_id > $1 order by artifact_id limit $2
+			  ), requeued as (
+			    update coordinate_index_sets sets
+			    set status = 'pending', fill = true, attempts = 0, next_attempt_at = $4, last_error = null
+			    from page
+			    where sets.artifact_id = page.artifact_id
+			      and sets.status = 'done'
+			      and sets.residues_version is distinct from $3
+			    returning sets.artifact_id
+			  )
+			  select (select count(*) from page) as scanned,
+			         (select count(*) from requeued) as requeued,
+			         coalesce((select artifact_id from page order by artifact_id desc limit 1), $5) as last_artifact_id`
+	var row struct {
+		Scanned        int       `db:"scanned"`
+		Requeued       int64     `db:"requeued"`
+		LastArtifactID uuid.UUID `db:"last_artifact_id"`
+	}
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, after, limit, version, now, uuid.Nil); err != nil {
+		return models.RequeuedSetsPage{}, fmt.Errorf("queue coordinate index sets for conformer counts after %s: %w", after, err)
+	}
+	return models.RequeuedSetsPage{Scanned: row.Scanned, Requeued: row.Requeued, LastArtifactID: row.LastArtifactID}, nil
+}
+
+// ModelFileEnsembleType reports whether the latest revision using a model file of one of the file's
+// models is an Ensemble or has member_count (ensembleTypedFile).
+func (r *CoordinateIndexRepository) ModelFileEnsembleType(ctx context.Context, artifactID uuid.UUID) (bool, error) {
+	var ensemble bool
+	query := `select ` + fmt.Sprintf(ensembleTypedFile, "$1")
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &ensemble, query, artifactID); err != nil {
+		return false, fmt.Errorf("read model types of model file %s: %w", artifactID, err)
+	}
+	return ensemble, nil
+}
+
 // RequeueEntry queues the model files of an entry's models again, ahead of the fill, after the API
 // changed the entry's active FASTA records (created or deleted some): a chain whose length came
 // from a record may now have another one, or none. Run it in the transaction that changes the
@@ -360,6 +490,19 @@ type coordinateIndexSetRow struct {
 	LastError     sql.NullString `db:"last_error"`
 	ReadAt        sql.NullTime   `db:"read_at"`
 	FASTAEntryIDs pq.StringArray `db:"fasta_entry_ids"`
+	// The conformer columns: all null until a read with conformer counts.
+	ResiduesVersion        sql.NullString `db:"residues_version"`
+	Conformers             sql.NullString `db:"conformers"`
+	ResidueKey             sql.NullString `db:"residue_key"`
+	Residues               sql.NullInt64  `db:"residues"`
+	MultiConformerResidues sql.NullInt64  `db:"multi_conformer_residues"`
+	ReadAsEnsembleType     sql.NullBool   `db:"read_as_ensemble_type"`
+}
+
+type coordinateIndexResidueCountRow struct {
+	ResidueType    string `db:"residue_type"`
+	ConformerCount int    `db:"conformer_count"`
+	Residues       int    `db:"residues"`
 }
 
 type coordinateIndexChainRow struct {
@@ -376,7 +519,8 @@ type coordinateIndexChainRow struct {
 // Get returns the set of a model file with its chains, or ErrCoordinateIndexSetNotFound when the
 // file has none.
 func (r *CoordinateIndexRepository) Get(ctx context.Context, artifactID uuid.UUID) (*models.CoordinateIndexSet, error) {
-	query := `select artifact_id, status, fill, reader_version, warnings, attempts, last_error, read_at, fasta_entry_ids
+	query := `select artifact_id, status, fill, reader_version, warnings, attempts, last_error, read_at, fasta_entry_ids,
+			         residues_version, conformers, residue_key, residues, multi_conformer_residues, read_as_ensemble_type
 			  from coordinate_index_sets
 			  where artifact_id = $1`
 	var row coordinateIndexSetRow
@@ -407,6 +551,22 @@ func (r *CoordinateIndexRepository) Get(ctx context.Context, artifactID uuid.UUI
 		}
 		set.Chains = append(set.Chains, chain)
 	}
+	if set.Conformers != nil {
+		counts := make([]coordinateIndexResidueCountRow, 0)
+		countsQuery := `select residue_type, conformer_count, residues
+				  from coordinate_index_residue_counts
+				  where artifact_id = $1
+				  order by residue_type, conformer_count`
+		if err := querier.SelectContext(ctx, &counts, countsQuery, artifactID); err != nil {
+			return nil, fmt.Errorf("list coordinate index residue counts: %w", err)
+		}
+		set.Conformers.Counts = make([]models.ResidueConformerCount, 0, len(counts))
+		for _, count := range counts {
+			set.Conformers.Counts = append(set.Conformers.Counts, models.ResidueConformerCount{
+				ResidueType: count.ResidueType, ConformerCount: count.ConformerCount, Residues: count.Residues,
+			})
+		}
+	}
 	return set, nil
 }
 
@@ -432,7 +592,46 @@ func (row coordinateIndexSetRow) toModel() (*models.CoordinateIndexSet, error) {
 		set.ReadAt = &row.ReadAt.Time
 	}
 	set.FASTAEntryIDs = append([]string{}, row.FASTAEntryIDs...)
+	conformers, err := row.conformers()
+	if err != nil {
+		return nil, err
+	}
+	set.Conformers = conformers
 	return set, nil
+}
+
+// conformers reads the conformer columns of a set; nil when it was never read with conformer
+// counts. The counts themselves are read separately.
+func (row coordinateIndexSetRow) conformers() (*models.FileConformers, error) {
+	if !row.ResiduesVersion.Valid {
+		return nil, nil
+	}
+	scope := models.ConformerScope(row.Conformers.String)
+	if err := scope.Validate(); err != nil {
+		return nil, fmt.Errorf("read conformer scope: %w", err)
+	}
+	conformers := &models.FileConformers{
+		Version:            row.ResiduesVersion.String,
+		Scope:              scope,
+		ReadAsEnsembleType: row.ReadAsEnsembleType.Bool,
+		Counts:             []models.ResidueConformerCount{},
+	}
+	if row.ResidueKey.Valid {
+		key := models.ResidueKey(row.ResidueKey.String)
+		if err := key.Validate(); err != nil {
+			return nil, fmt.Errorf("read residue key: %w", err)
+		}
+		conformers.Key = &key
+	}
+	if row.Residues.Valid {
+		residues := int(row.Residues.Int64)
+		conformers.Residues = &residues
+	}
+	if row.MultiConformerResidues.Valid {
+		multi := int(row.MultiConformerResidues.Int64)
+		conformers.MultiConformerResidues = &multi
+	}
+	return conformers, nil
 }
 
 func (row coordinateIndexChainRow) toModel() (models.IndexedChain, error) {
@@ -497,6 +696,53 @@ func (r *CoordinateIndexRepository) replaceChains(ctx context.Context, artifactI
 		if _, err := querier.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("insert coordinate index chains: %w", err)
 		}
+	}
+	return nil
+}
+
+// replaceConformers stores the conformer counts of one set and its conformer columns, replacing
+// what an earlier read stored. The set must be pending (locked by lockPending).
+func (r *CoordinateIndexRepository) replaceConformers(ctx context.Context, artifactID uuid.UUID, conformers models.FileConformers) error {
+	if err := conformers.Scope.Validate(); err != nil {
+		return fmt.Errorf("conformers: %w", err)
+	}
+	var key any
+	if conformers.Key != nil {
+		if err := conformers.Key.Validate(); err != nil {
+			return fmt.Errorf("conformers: %w", err)
+		}
+		key = string(*conformers.Key)
+	}
+	querier := r.queriers.Querier(ctx, r.db)
+	if _, err := querier.ExecContext(ctx, `delete from coordinate_index_residue_counts where artifact_id = $1`, artifactID); err != nil {
+		return fmt.Errorf("delete old coordinate index residue counts: %w", err)
+	}
+	for start := 0; start < len(conformers.Counts); start += coordinateIndexResidueCountInsertBatch {
+		batch := conformers.Counts[start:min(start+coordinateIndexResidueCountInsertBatch, len(conformers.Counts))]
+		args := make([]any, 0, len(batch)*4)
+		placeholders := make([]string, 0, len(batch))
+		for _, count := range batch {
+			next := len(args)
+			placeholders = append(placeholders, fmt.Sprintf("($%d, $%d, $%d, $%d)", next+1, next+2, next+3, next+4))
+			args = append(args, artifactID, count.ResidueType, count.ConformerCount, count.Residues)
+		}
+		query := "insert into coordinate_index_residue_counts(artifact_id, residue_type, conformer_count, residues) values " +
+			strings.Join(placeholders, ", ")
+		if _, err := querier.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("insert coordinate index residue counts: %w", err)
+		}
+	}
+	query := `update coordinate_index_sets
+			  set residues_version = $2, conformers = $3, residue_key = $4, residues = $5,
+			      multi_conformer_residues = $6, read_as_ensemble_type = $7
+			  where artifact_id = $1 and status = 'pending'`
+	updated, err := querier.ExecContext(ctx, query, artifactID, conformers.Version, string(conformers.Scope), key,
+		conformers.Residues, conformers.MultiConformerResidues, conformers.ReadAsEnsembleType)
+	if err != nil {
+		return fmt.Errorf("store conformer columns: %w", err)
+	}
+	if err := requireOneCoordinateIndexSet(updated, artifactID); err != nil {
+		return fmt.Errorf("store conformer columns: %w", err)
 	}
 	return nil
 }
@@ -571,11 +817,15 @@ type SaveCoordinateIndexParams struct {
 	// Resolve turns the read into what is stored, given the FASTA records of the entries of the
 	// file's models as the save transaction sees them.
 	Resolve func(fasta models.ModelFileFASTA) (ResolvedIndex, error)
+	// Conformers, when set, also replaces the file's conformer counts with what it returns, given
+	// whether a model using the file is an Ensemble as the save transaction sees it
+	// (ModelFileEnsembleType). When nil, the stored counts stay as they are.
+	Conformers func(ensembleType bool) (models.FileConformers, error)
 }
 
 // SaveCoordinateIndex locks the pending set of a model file, reads the entry FASTA records the
-// chains may take lengths from, replaces the file's chains and marks the set done with the entries
-// it read them from. It all commits together or not at all, so a search never sees a file half
+// chains may take lengths from, replaces the file's chains (and, with params.Conformers, its
+// conformer counts) and marks the set done with the entries it read them from. It all commits together or not at all, so a search never sees a file half
 // saved; until a set is saved again, the search keeps reading the chains of its last read. The
 // records are read after the lock: a save racing an API change to them either reads the new
 // records or finishes before the change queues the file again (RequeueEntry).
@@ -597,6 +847,19 @@ func (d *DB) SaveCoordinateIndex(ctx context.Context, params SaveCoordinateIndex
 		}
 		if err := d.CoordinateIndex.replaceChains(ctx, params.ArtifactID, resolved.Chains); err != nil {
 			return fmt.Errorf("store chains: %w", err)
+		}
+		if params.Conformers != nil {
+			ensembleType, err := d.CoordinateIndex.ModelFileEnsembleType(ctx, params.ArtifactID)
+			if err != nil {
+				return fmt.Errorf("read model types: %w", err)
+			}
+			conformers, err := params.Conformers(ensembleType)
+			if err != nil {
+				return fmt.Errorf("resolve conformers: %w", err)
+			}
+			if err := d.CoordinateIndex.replaceConformers(ctx, params.ArtifactID, conformers); err != nil {
+				return fmt.Errorf("store conformers: %w", err)
+			}
 		}
 		if err := d.CoordinateIndex.markDone(ctx, params, resolved.Warnings, fasta.EntryIDs); err != nil {
 			return fmt.Errorf("finish the set: %w", err)

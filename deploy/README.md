@@ -400,6 +400,48 @@ the job with `coordinateIndexJob.enabled: false`, and until that deploys:
 kubectl -n dynamicpdb patch cronjob dynamic-pdb-coordinate-index-job -p '{"spec":{"suspend":true}}'
 ```
 
+### Conformer counts
+
+Each read can also store the file's conformer counts (`ReadCoordinateIndex`, S3), for the
+residue filter of researcher example search 1 ("a lysine with more than three conformations"):
+one row per residue type and conformer count in `coordinate_index_residue_counts`, with the
+file's totals on its set (`residues`, `multi_conformer_residues`).
+
+- A residue is label chain + label residue number + residue type, or author chain + number +
+  insertion code + type where the file has no label numbering (`residue_key`: `label`, `author`,
+  `mixed`). Two residue types at one position stay two residues.
+- Its conformer count is the number of its altloc letters whose highest heavy-atom occupancy in
+  the residue is at least 0.1, minimum 1. Letters only on hydrogens never count.
+- Ensembles get no counts (`conformers`): a file with more than one model frame
+  (`ensemble_model_frames`), or one whose model's latest revision using it is an Ensemble or has
+  `member_count` (`ensemble_model_type`). While counts are on, each run reads a file again when a
+  new revision changes that, and re-checks every file stored as `ensemble_model_type`, so a
+  rejected Ensemble revision never leaves its file without counts. A counted file that a model starts using as an
+  Ensemble keeps its counts until its next read; the residue filter leaves out Ensemble models by
+  their type.
+
+They are merged off: `coordinate_index.residue_counts: false` in `backend/config/<env>.yml`
+(on locally), and `coordinateIndexJob.residueFill: false`. Off, a read stores chains only and keeps
+any counts an earlier read stored.
+
+Rollout, once the job runs (`coordinateIndexJob.enabled`) and its own fill is done:
+
+1. Switch-on PR: `residue_counts: true` in `backend/config/dev.yml` and `production.yml`, and
+   `coordinateIndexJob.residueFill: true`. The first run sends every done set without current
+   counts back to pending as a fill row (about 225,000 on prod, pages of 2,000), and reads them
+   after uploads. Failed sets are left as they are. A set queued again keeps its chains, so the
+   chain filter never loses a model meanwhile. At 500 files a run this takes 1 to 1.6 days.
+2. Fill-off PR: `residueFill: false` once a run logs `residue_fill_sets_requeued=0` and none are
+   pending:
+
+   ```sql
+   select conformers, residues_version, status, count(*) from coordinate_index_sets group by 1, 2, 3 order by 1, 2, 3;
+   ```
+
+The counts take about 866 MB with their index for all models (5.75 million rows, S3 spike), and
+the fill writes about 70 rows a second: watch RDS free storage, WAL and the EBS balances. The
+residue-level altloc fraction of a file is `multi_conformer_residues / residues`.
+
 ### Failures and reading again
 
 A file is retried after 10 and 20 minutes, then marked `failed` with the reason in

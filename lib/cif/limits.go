@@ -51,8 +51,11 @@ const (
 	// maxReviewReasonBytes bounds a review reason that quotes a file's value.
 	maxReviewReasonBytes = 240
 	// maxIndexedResidues bounds the polymer residues ReadCoordinateIndex keeps from a file's
-	// first model (3J3Q, the HIV capsid, has about 313,000). Each kept residue holds fields of at
-	// most maxCopyFieldBytes, about 300 bytes in all, so the limit keeps them under 300 MB.
+	// first model (3J3Q, the HIV capsid, has about 313,000), for its chains and again for its
+	// conformer counts. Each kept residue holds fields of at most maxCopyFieldBytes, about 300
+	// bytes for the chains and 150 more for the conformer counts, so the limit keeps them under
+	// about 450 MB. Altloc letters add about 20 bytes each, at most maxAltPositionsPerResidue per
+	// residue: real files have a few percent of residues with 2 to 6.
 	maxIndexedResidues = 1_000_000
 	// maxSequencePositions bounds the _entity_poly_seq positions ReadCoordinateIndex counts, over
 	// all entities (real files have a few thousand), about 200 bytes each.
@@ -60,8 +63,8 @@ const (
 	// maxPendingAtoms bounds the HETATM records of a PDB-format model that ReadCoordinateIndex
 	// holds until it knows whether they belong to their chain: those after a chain's last ATOM
 	// record in a file without TER records (ligands and modified residues, not water), about
-	// 400 bytes each. With the two limits above, one read keeps under about 450 MB; the job's pod
-	// has 1 GiB.
+	// 400 bytes each. With the two limits above, one read keeps under about 550 MB plus its
+	// altloc letters; the job's pod has 1 GiB.
 	maxPendingAtoms = 200_000
 )
 

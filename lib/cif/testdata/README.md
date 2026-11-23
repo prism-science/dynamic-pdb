@@ -70,3 +70,21 @@ they are.
 | no_entity_3CEB.cif | 3CEB.cif with its `_entity` category removed, as in a refinement program's output: MSE and LLP (with a `label_seq_id`) are flagged; sulfate and glycerol are sorted by the lists; PLP still comes from LLP through `_pdbx_struct_mod_residue`, which does not count as chain membership. Archive files always have `_entity` |
 | no_seqres_3CEB.pdb | 3CEB.pdb with its `SEQRES` and `MODRES` records removed, as in a refinement program's output: MSE and LLP in the chain are flagged, and no PLP is added without `MODRES`. Archive files always have `SEQRES` |
 | pdb_seqres_columns.pdb | a `SEQRES` record with a residue name past column 70, which is not read, so the free glutamate after `TER` is an ordinary ligand |
+
+## Conformer fixtures (`conformers/`)
+
+Real files cut to a few residues for the conformer counts of `ReadCoordinateIndex`
+(`conformers_test.go`). Only the `_atom_site` loop (mmCIF) or the coordinate,
+`MODEL` and `ENDMDL` records (PDB) are kept, rows verbatim. They are not in the
+parity golden: the website preview does not count conformers.
+
+| File | Source | Used for |
+| --- | --- | --- |
+| deposited_2CO3.cif | files.rcsb.org 2CO3, chain A 12–16 | ASP 14: letter B at 0.01 on every heavy atom (below the 0.1 floor) |
+| deposited_7TDY.cif | files.rcsb.org 7TDY, chain A 84–88 | GLU 86: letters only on hydrogens |
+| single_conformer_5RGD.cif | files.rcsb.org 5RGD (Single Conformer), chain A 5–9 and 234–235 | hydrogen-only letters; SER 234 and ILE 235 with B at 0.01–0.02 |
+| qfit_4hxp.cif | Dynamic PDB qFit model of 4HXP (mmCIF), chain A 51–61 | qFit letters on hydrogens only; ASN 61 with a heavy letter at 0.07 |
+| qfit_3sjm_dna.cif | Dynamic PDB qFit model of 3SJM (mmCIF), chain A 446–448 and DNA chain C 2–4 | DNA rows with label_seq_id "?": author key, so the file's key is `mixed` |
+| qfit_6llx.pdb | Dynamic PDB qFit model of 6LLX (PDB format), chain A 175–179 | SER 177: A 0.08 / B 0.92; author key |
+| ensemble_5ai3.pdb | Dynamic PDB ensemble of 5AI3 (PDB format), first 2 models, chain A 0–3 | model frames |
+| altloc_ensemble_44PS.cif | files.rcsb.org 44PS, chain A 5–7 | an ensemble stored as one model with six whole-chain letters |
