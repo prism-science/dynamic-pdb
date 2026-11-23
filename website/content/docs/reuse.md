@@ -1,12 +1,12 @@
 ## Open for reuse
 
-The Dynamic PDB is built as a community resource for dynamic structural biology. Data released by The Dynamic PDB are available under **CC0**, including for academic research, commercial applications, and machine-learning training.
+The Dynamic PDB is built as a community resource for dynamic structural biology. PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. That covers academic research, commercial applications, and machine-learning training.
 
-Files referenced in external repositories remain subject to their source terms.
+Files deposited by others: **Reuse terms not yet confirmed by the depositor**, until the depositor confirms them. Files referenced in external repositories remain subject to their source terms.
 
 ## Acknowledge the resource and contributors
 
-Acknowledgment is requested, but is not a condition of reuse under CC0. Please acknowledge The Dynamic PDB and the researchers whose data and models you use. Cite associated publications and dataset DOIs where available.
+We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use. This is a request, not a condition of reuse under CC0. Cite associated publications and dataset DOIs where available.
 
 To make your work traceable, include relevant entry and model identifiers, external accessions, and retrieval dates.
 
