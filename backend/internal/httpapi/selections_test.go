@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -372,4 +373,74 @@ func Test_should_build_absolute_links_when_a_selection_document_is_built(t *test
 	assert.Equal(t, self, document.Data.Links.Self)
 	assert.Equal(t, self+"/models", document.Data.Links.Models)
 	assert.Equal(t, []string{}, document.Data.Attributes.Request.Searches)
+}
+
+func Test_should_give_the_save_time_as_the_catalog_date_when_a_selection_document_is_built(t *testing.T) {
+	// given
+	savedAt := time.Date(2026, 11, 10, 9, 30, 0, 0, time.UTC)
+	selection := domainmodels.Selection{ModelCount: 1, EntryCount: 1, CreatedAt: savedAt}
+
+	// when
+	document := selectionsTestServer(true).selectionDocument(selection)
+
+	// then
+	assert.Equal(t, savedAt, document.Data.Attributes.CatalogDate)
+	assert.Equal(t, savedAt, document.Data.Attributes.CreatedAt)
+}
+
+func Test_should_map_every_role_and_source_when_selection_files_are_answered(t *testing.T) {
+	// given
+	sha256 := strings.Repeat("a", 64)
+	checkedAt := time.Date(2026, 11, 10, 9, 30, 0, 0, time.UTC)
+	file := domainmodels.SelectionFile{
+		ID: uuid.New(),
+		Roles: []domainmodels.SelectionFileRole{
+			domainmodels.SelectionFileRolePrimary, domainmodels.SelectionFileRoleModel,
+			domainmodels.SelectionFileRoleRunInput, domainmodels.SelectionFileRoleRunOutput,
+			domainmodels.SelectionFileRoleEntry,
+		},
+		Name: "1abc.cif", Level: domainmodels.ArtifactLevelL2, Type: domainmodels.ArtifactTypeModel,
+		RecordedSHA256: &sha256, RecordedSHA256Source: domainmodels.SelectionSHA256SourceComputed,
+		RecordedAfterSave: true,
+		Checksum: domainmodels.ArtifactChecksum{Status: domainmodels.ChecksumStatusVerified, SHA256: &sha256,
+			CheckedAt: &checkedAt},
+	}
+	sources := map[domainmodels.SelectionSHA256Source]SelectionSHA256Source{
+		domainmodels.SelectionSHA256SourceDeclared:    SelectionSHA256SourceDeclared,
+		domainmodels.SelectionSHA256SourceComputed:    SelectionSHA256SourceComputed,
+		domainmodels.SelectionSHA256SourceNotRecorded: SelectionSHA256SourceNotRecorded,
+	}
+
+	// when
+	response, err := selectionFilesResponse([]domainmodels.SelectionFile{file})
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, response, 1)
+	assert.Equal(t, []SelectionFileRole{SelectionFileRolePrimary, SelectionFileRoleModel, SelectionFileRoleRunInput,
+		SelectionFileRoleRunOutput, SelectionFileRoleEntry}, response[0].Roles)
+	assert.Equal(t, SelectionSHA256SourceComputed, response[0].RecordedSha256Source)
+	assert.True(t, response[0].RecordedAfterSave)
+	assert.Equal(t, ArtifactChecksumStatusVerified, response[0].Checksum.Status)
+	for source, want := range sources {
+		got, err := selectionSHA256SourceResponse(source)
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+}
+
+func Test_should_fail_when_a_selection_file_has_an_unknown_role_or_source(t *testing.T) {
+	// given
+	unknownRole := domainmodels.SelectionFile{ID: uuid.New(), Roles: []domainmodels.SelectionFileRole{"owner"},
+		RecordedSHA256Source: domainmodels.SelectionSHA256SourceDeclared}
+	unknownSource := domainmodels.SelectionFile{ID: uuid.New(), Roles: []domainmodels.SelectionFileRole{
+		domainmodels.SelectionFileRolePrimary}, RecordedSHA256Source: "guessed"}
+
+	// when
+	_, roleErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownRole})
+	_, sourceErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownSource})
+
+	// then
+	assert.ErrorContains(t, roleErr, "unknown selection file role: owner")
+	assert.ErrorContains(t, sourceErr, "unknown selection sha256 source: guessed")
 }

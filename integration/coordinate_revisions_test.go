@@ -222,13 +222,9 @@ func Test_should_create_one_model_sync_job_when_archive_deposited_model_is_activ
 	rcsb := newRCSBStub(t, pdbID)
 	defer rcsb.Close()
 	setRCSBURLs(t, rcsb.URL())
-	fixture := seedArchiveDepositedModel(t, database, auth.UserID, pdbID, rcsb.URL(), "pending")
+	fixture := seedArchiveDepositedModelInState(t, database, auth.UserID, pdbID, rcsb.URL(), "pending", "in_review")
 	_, err := database.Conn.ExecContext(t.Context(),
 		`delete from data_sync_jobs where model_id = $1`, fixture.ModelID)
-	require.NoError(t, err)
-	_, err = database.Conn.ExecContext(t.Context(),
-		`update model_revisions set state = 'in_review', revision_number = null, published_at = null where id = $1`,
-		fixture.RevisionID)
 	require.NoError(t, err)
 	s3 := newS3Stub(t)
 	defer s3.Close()
@@ -305,6 +301,32 @@ func seedArchiveDepositedModel(
 	checksumStatus string,
 ) archiveDepositedModel {
 	t.Helper()
+	return seedArchiveDepositedModelInState(t, database, createdBy, pdbID, filesURL, checksumStatus, "active")
+}
+
+// seedArchiveDepositedModelInState is seedArchiveDepositedModel with the model's first revision
+// in revisionState: "active", or "in_review" (waiting for review, so not numbered or published
+// yet). Files are linked while the revision is pending: a published revision's files cannot
+// change (V20261110170100).
+func seedArchiveDepositedModelInState(
+	t *testing.T,
+	database integrationDB,
+	createdBy string,
+	pdbID string,
+	filesURL string,
+	checksumStatus string,
+	revisionState string,
+) archiveDepositedModel {
+	t.Helper()
+	var publish string
+	switch revisionState {
+	case "active":
+		publish = `update model_revisions set state = 'active' where id = $1`
+	case "in_review":
+		publish = `update model_revisions set state = 'in_review', revision_number = null, published_at = null where id = $1`
+	default:
+		require.FailNow(t, "unknown seeded archive model revision state", revisionState)
+	}
 	now := time.Now().UTC()
 	fixture := archiveDepositedModel{
 		EntryID:                    "entry-" + uuid.NewString(),
@@ -353,10 +375,11 @@ func seedArchiveDepositedModel(
 		{`insert into model_revisions(
 		    id, model_id, primary_artifact_id, revision_number, state, model_state, published_at,
 		    title, metadata, created_by, created_at, updated_at
-		  ) values ($1, $2, $3, 1, 'active', 'active', $4, 'Deposited model', $5::jsonb, $6, $4, $4)`,
+		  ) values ($1, $2, $3, 1, 'pending', 'active', $4, 'Deposited model', $5::jsonb, $6, $4, $4)`,
 			[]any{fixture.RevisionID, fixture.ModelID, fixture.CoordinateArtifactID, now, modelMetadata, createdBy}},
 		{`insert into model_revision_artifacts(model_revision_id, artifact_id) values ($1, $2), ($1, $3)`,
 			[]any{fixture.RevisionID, fixture.CoordinateArtifactID, fixture.StructureFactorsArtifactID}},
+		{publish, []any{fixture.RevisionID}},
 		{`insert into data_sync_jobs(entry_id, model_id, scheduled_at, archive_revision_ordinal, archive_version)
 		  values ($1, $2, $3, 1, '1.0')`,
 			[]any{fixture.EntryID, fixture.ModelID, now.Add(-time.Hour)}},

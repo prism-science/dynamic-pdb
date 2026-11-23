@@ -39,7 +39,7 @@ func Test_should_store_the_compounds_of_uploaded_model_files_when_the_model_comp
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	backend := startBackendWithEnv(t, root, backendBinaryPath, s3.URL(), schemaEnv)
-	entryID, _ := seedEntryRevision(t, database, auth.UserID)
+	entryID, _ := seedEntryRevision(t, database, auth.UserID, "active")
 	readable := createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, entryID, "model.cif", "mmcif", mmcifWithGlycerol)
 	unreadable := createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, entryID, "map.ccp4", "ccp4", "not a structure")
 	assert.Equal(t, "pending", modeledCompoundStatus(t, database, readable), "the API adds the set with the artifact")
