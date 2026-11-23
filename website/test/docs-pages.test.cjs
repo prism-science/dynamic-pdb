@@ -99,3 +99,20 @@ test("should place every lineage example node below the nodes that feed it", () 
     }
   }
 });
+
+test("should scope CC0 on the reuse page to PDB archive files and Prism's own models (researchers' Q7)", () => {
+  // given
+  const reuse = fs.readFileSync(path.join(contentRoot, "reuse.md"), "utf8");
+
+  // then
+  // The sentences of the bulk-download archives' README and manifest, each whole and word for word.
+  for (const sentence of [
+    "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0.",
+    "We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.",
+  ]) {
+    assert.ok(reuse.includes(`${sentence} `) || reuse.includes(`${sentence}\n`), `the whole sentence, ending there: ${sentence}`);
+  }
+  assert.match(reuse, /Files deposited by others: \*\*Reuse terms not yet confirmed by the depositor\*\*/);
+  assert.match(reuse, /We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use\./);
+  assert.doesNotMatch(reuse, /Data released by The Dynamic PDB are available under/, "no blanket CC0");
+});

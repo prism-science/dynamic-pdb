@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -12,6 +13,8 @@ import (
 
 type Authorizer interface {
 	HasRole(ctx context.Context, userID uuid.UUID, role models.RoleKey) (bool, error)
+	// HasAnyRole reports whether the user holds at least one of the roles.
+	HasAnyRole(ctx context.Context, userID uuid.UUID, roles ...models.RoleKey) (bool, error)
 	Can(ctx context.Context, userID uuid.UUID, permission models.PermissionKey) (bool, error)
 }
 
@@ -36,6 +39,28 @@ func (a *authorizer) HasRole(
 	})
 	if err != nil {
 		return false, fmt.Errorf("auth: check user role: %w", err)
+	}
+	return len(roles) > 0, nil
+}
+
+// errNoRolesToCheck is a HasAnyRole call without roles. Listing a user's roles with no key would
+// list all of them, so any role would pass.
+var errNoRolesToCheck = errors.New("auth: no roles to check")
+
+func (a *authorizer) HasAnyRole(
+	ctx context.Context,
+	userID uuid.UUID,
+	roleKeys ...models.RoleKey,
+) (bool, error) {
+	if len(roleKeys) == 0 {
+		return false, errNoRolesToCheck
+	}
+	roles, err := a.database.Roles.List(ctx, db.RoleFilters{
+		UserID: &userID,
+		Keys:   roleKeys,
+	})
+	if err != nil {
+		return false, fmt.Errorf("auth: check user roles: %w", err)
 	}
 	return len(roles) > 0, nil
 }

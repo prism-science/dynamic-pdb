@@ -81,11 +81,10 @@ const (
 var taxonomyIDPattern = regexp.MustCompile(`^[0-9]+$`)
 
 // readsEntryRevision reports whether a condition reads the active entry_revisions row: the entry
-// and polymer entity filters, and the flags on the entry's polymer entities.
+// and polymer entity filters. The flagged filter finds the active entry revision on its own.
 func (search ModelSearch) readsEntryRevision() bool {
 	return len(search.Methods) > 0 || search.ResolutionMin != nil || search.ResolutionMax != nil ||
-		len(search.LigandsOrCofactors) > 0 || len(search.Organisms) > 0 || len(search.UniProtAccessions) > 0 ||
-		search.Flagged != nil
+		len(search.LigandsOrCofactors) > 0 || len(search.Organisms) > 0 || len(search.UniProtAccessions) > 0
 }
 
 // modelSearchConditions turns the search into SQL conditions on model_revisions, models and the
@@ -376,37 +375,52 @@ func reviewFlagSearchConditions(search ModelSearch, _ map[string]any) ([]string,
 		return nil, nil
 	}
 	if *search.Flagged {
-		return []string{openReviewFlagCondition}, nil
+		return []string{flaggedModelCondition}, nil
 	}
-	return []string{"not " + openReviewFlagCondition}, nil
+	return []string{"not " + flaggedModelCondition}, nil
 }
 
-// openReviewFlagCondition matches a model whose search result shows an open review flag
+// flaggedModelCondition matches a model listed by flaggedModelIDsQuery. The planner turns exists
+// into a semi join and "not exists" into an anti join, both of which handle any number of flags.
+// "not in" would not: once the flagged IDs outgrow work_mem, Postgres rescans the whole list for
+// every model (minutes with the 64,000 entry flags the archive re-derivation once opened).
+const flaggedModelCondition = `exists (select 1
+	from (` + flaggedModelIDsQuery + `) as flagged_models (model_id)
+	where flagged_models.model_id = models.id)`
+
+// flaggedModelIDsQuery lists the models whose search result shows an open review flag
 // (researcher question 7): a flag on the model, on its active revision, on its entry, or on a
 // polymer entity of the entry's active revision. MigrationReviewsRepository.ListOpenForModelRevisions
-// lists the same flags for one page of results. Each subquery depends on one column of the row, so
-// the planner hashes each object type's open flags once instead of probing per model. It is never
-// null, so "not flagged" is its negation.
-const openReviewFlagCondition = `(exists (select 1
-		from schema_migration_review flagged_model
-		where flagged_model.object_type = 'model' and flagged_model.object_id = models.id
-		  and flagged_model.resolved_at is null)
-	or exists (select 1
-		from schema_migration_review flagged_revision
-		where flagged_revision.object_type = 'model_revision'
-		  and flagged_revision.object_id = cast(model_revisions.id as text)
-		  and flagged_revision.resolved_at is null)
-	or exists (select 1
-		from schema_migration_review flagged_entry
-		where flagged_entry.object_type = 'entry' and flagged_entry.object_id = models.entry_id
-		  and flagged_entry.resolved_at is null)
-	or exists (select 1
-		from entry_revision_polymer_entities flagged_entity_link
-		join schema_migration_review flagged_entity
-		  on flagged_entity.object_type = 'polymer_entity'
-		 and flagged_entity.object_id = cast(flagged_entity_link.polymer_entity_id as text)
-		 and flagged_entity.resolved_at is null
-		where flagged_entity_link.entry_revision_id = entry_revisions.id))`
+// lists the same flags for one page of results.
+//
+// It starts from the open flags (schema_migration_review_open_idx) rather than testing each model:
+// flagged models are few, so a capped count of "only flagged" would otherwise read every active
+// model before it ends (more than 10 s on production, 10 Nov 2026).
+const flaggedModelIDsQuery = `select flagged_model.object_id
+	from schema_migration_review flagged_model
+	where flagged_model.object_type = 'model' and flagged_model.resolved_at is null
+	union all
+	select flagged_revision_model.model_id
+	from schema_migration_review flagged_revision
+	join model_revisions flagged_revision_model
+	  on cast(flagged_revision_model.id as text) = flagged_revision.object_id
+	 and flagged_revision_model.state = 'active'
+	where flagged_revision.object_type = 'model_revision' and flagged_revision.resolved_at is null
+	union all
+	select flagged_entry_model.id
+	from schema_migration_review flagged_entry
+	join models flagged_entry_model on flagged_entry_model.entry_id = flagged_entry.object_id
+	where flagged_entry.object_type = 'entry' and flagged_entry.resolved_at is null
+	union all
+	select flagged_entity_model.id
+	from schema_migration_review flagged_entity
+	join entry_revision_polymer_entities flagged_entity_link
+	  on cast(flagged_entity_link.polymer_entity_id as text) = flagged_entity.object_id
+	join entry_revisions flagged_entity_revision
+	  on flagged_entity_revision.id = flagged_entity_link.entry_revision_id
+	 and flagged_entity_revision.state = 'active'
+	join models flagged_entity_model on flagged_entity_model.entry_id = flagged_entity_revision.entry_id
+	where flagged_entity.object_type = 'polymer_entity' and flagged_entity.resolved_at is null`
 
 // ErrInvalidModelSearch marks a search the database layer refuses, for example an unknown
 // vocabulary value or a bound that is not a finite number.

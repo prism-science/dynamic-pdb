@@ -25,20 +25,28 @@ func TestModelSearch(t *testing.T) {
 	suite.Run(t, new(ModelSearchSuite))
 }
 
-func getModelSearchPageForTest(t *testing.T, path string) httpapi.ModelSearchCollectionDocument {
+func getModelSearchPageForTest(t *testing.T, path string, token string) httpapi.ModelSearchCollectionDocument {
 	t.Helper()
 	//nolint:bodyclose // decodeJSONResponse closes the response body.
-	response := jsonRequestToServerWithToken(t, modelSearchServer.URL, http.MethodGet, path, nil, "")
+	response := jsonRequestToServerWithToken(t, modelSearchServer.URL, http.MethodGet, path, nil, token)
 	return decodeJSONResponse[httpapi.ModelSearchCollectionDocument](t, response, http.StatusOK)
 }
 
-// walkModelSearchForTest follows links.next from firstPath and returns every page.
+// walkModelSearchForTest follows links.next from firstPath as an anonymous caller and returns
+// every page.
 func walkModelSearchForTest(t *testing.T, firstPath string) []httpapi.ModelSearchCollectionDocument {
+	t.Helper()
+	return walkModelSearchWithTokenForTest(t, firstPath, "")
+}
+
+// walkModelSearchWithTokenForTest follows links.next from firstPath as the token's user and
+// returns every page.
+func walkModelSearchWithTokenForTest(t *testing.T, firstPath string, token string) []httpapi.ModelSearchCollectionDocument {
 	t.Helper()
 	pages := make([]httpapi.ModelSearchCollectionDocument, 0)
 	path := firstPath
 	for range 50 {
-		page := getModelSearchPageForTest(t, path)
+		page := getModelSearchPageForTest(t, path, token)
 		pages = append(pages, page)
 		if page.Links == nil {
 			return pages
@@ -116,8 +124,9 @@ func (s *ModelSearchSuite) Test_should_return_models_of_entries_listing_adp_with
 	s.Equal(new("https://www.ebi.ac.uk/empiar/EMPIAR-10028/"), datasets[1].LandingUrl)
 	s.Equal(new(1), withDatasets.Entry.RevisionNumber)
 	s.Equal(new(1), withDatasets.RevisionNumber)
-	s.Require().NotNil(withDatasets.ReviewFlags)
-	s.Empty(*withDatasets.ReviewFlags)
+	s.Require().NotNil(withDatasets.FlaggedForReview)
+	s.False(*withDatasets.FlaggedForReview)
+	s.Nil(withDatasets.ReviewFlags, "an anonymous caller does not get the flags")
 	s.Require().NotNil(pages[0].Meta)
 	s.Require().NotNil(pages[0].Meta.Total)
 	s.True(pages[0].Meta.Total.Exact)
@@ -139,7 +148,7 @@ func (s *ModelSearchSuite) Test_should_keep_every_filter_in_next_link_when_searc
 	}, 3)
 
 	// when
-	page := getModelSearchPageForTest(s.T(), "/v1/models?ligand_or_cofactor=GTP&model_type=Deposited&limit=1")
+	page := getModelSearchPageForTest(s.T(), "/v1/models?ligand_or_cofactor=GTP&model_type=Deposited&limit=1", "")
 
 	// then
 	s.Require().NotNil(page.Links)
@@ -150,9 +159,10 @@ func (s *ModelSearchSuite) Test_should_keep_every_filter_in_next_link_when_searc
 	s.NotEmpty(next.Query().Get("cursor"))
 }
 
-func (s *ModelSearchSuite) Test_should_warn_about_an_open_review_flag_when_the_flagged_record_is_searched() {
+func (s *ModelSearchSuite) Test_should_list_an_open_review_flag_to_a_reviewer_when_the_flagged_record_is_searched() {
 	// given
 	token := issueEntryTokenForGitHubIDForTest(s.T(), "model-search-flag-owner", 8813)
+	reviewerToken := issueReviewerTokenForTest(s.T(), "model-search-flag-reviewer", 8818)
 	created := createAndActivateEntryForTest(s.T(), token, map[string]any{"entry": map[string]any{"title": "flagged entry"}})
 	model := createAndActivateModelForTest(s.T(), token, created.EntryId, map[string]any{
 		"model": map[string]any{"title": "flagged model", "metadata": map[string]any{"model_type": "Deposited"}},
@@ -162,11 +172,13 @@ func (s *ModelSearchSuite) Test_should_warn_about_an_open_review_flag_when_the_f
 	}))
 
 	// when
-	pages := walkModelSearchForTest(s.T(), "/v1/models?flagged=true&model_type=Deposited&limit=100")
+	pages := walkModelSearchWithTokenForTest(s.T(), "/v1/models?flagged=true&model_type=Deposited&limit=100", reviewerToken)
 
 	// then
 	results := modelSearchResultsByIDForTest(pages)
 	s.Require().Contains(results, model.ModelId)
+	s.Require().NotNil(results[model.ModelId].FlaggedForReview)
+	s.True(*results[model.ModelId].FlaggedForReview)
 	flags := results[model.ModelId].ReviewFlags
 	s.Require().NotNil(flags)
 	s.Require().Len(*flags, 1)
@@ -194,6 +206,7 @@ func (s *ModelSearchSuite) Test_should_refuse_filters_and_answer_as_before_when_
 	}
 	for _, item := range unfiltered.Data {
 		s.Nil(item.Attributes.Entry)
+		s.Nil(item.Attributes.FlaggedForReview)
 		s.Nil(item.Attributes.ReviewFlags)
 	}
 }

@@ -1501,6 +1501,9 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 		return
 	}
 	model.MissingInfo = s.missingInfoForRevision(r.Context(), *revision, metrics)
+	// The review flags the caller may see make the body depend on who is asking.
+	varyByCaller(w)
+	s.addModelReviewFlags(r.Context(), *revision, &model)
 	writeJSON(w, http.StatusOK, ModelDocument{
 		Data: ModelDetailData{
 			Type:       jsonAPITypeModels,
@@ -1508,6 +1511,25 @@ func (s *Server) GetModel(w http.ResponseWriter, r *http.Request, entryID, model
 			Attributes: model,
 		},
 	})
+}
+
+// addModelReviewFlags sets whether the model is flagged for review, the same objects a model
+// search result counts, and the flags themselves for a caller with the reviewer or admin role.
+// Like missing_info, they are left out when they cannot be read, so the rest of the model still
+// answers.
+func (s *Server) addModelReviewFlags(
+	ctx context.Context,
+	revision domainmodels.ModelRevision,
+	model *ModelDetailAttributes,
+) {
+	flags, err := s.database.MigrationReviews.ListOpenForModelRevisions(ctx, []uuid.UUID{revision.ID})
+	if err != nil {
+		slog.ErrorContext(ctx, "list model review flags failed", "err", err, "model_revision_id", revision.ID)
+		return
+	}
+	flagged, reviewFlags := reviewFlagFields(flags[revision.ID], s.seesReviewFlagsOrPublic(ctx))
+	model.FlaggedForReview = &flagged
+	model.ReviewFlags = reviewFlags
 }
 
 // modelDetailAttributesFromRevision is modelAttributesFromRevision plus what only the model
