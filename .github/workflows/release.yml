@@ -18,7 +18,7 @@ env:
   S3_BUCKETS: dynamic-pdb-dynamicpdb-com dev-dynamic-pdb-dynamicpdb-com
   AWS_DEPLOY_ROLE_ARN: arn:aws:iam::928648268654:role/astera-sh-dynamic-pdb-web-ci
   REGISTRY: harbor.astera.sh
-  IMAGE_PREFIX: library
+  IMAGE_PREFIX: dynamicpdb
 
 jobs:
   build:
@@ -169,12 +169,30 @@ jobs:
               --cache-control 'public, no-cache'
           done
 
+  # Builds from upstream base images, then pushes over the tailnet as an ephemeral tag:ci-n
+  # device (see deploy-images in build-test-deploy.yml).
   release-cli-image:
     needs: build
-    runs-on: diffuse-sh-builder
+    runs-on: ubuntu-latest
+    environment: harbor-publish
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Join tailnet
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.TS_CI_CLIENT_ID }}
+          audience: ${{ vars.TS_CI_AUDIENCE }}
+          tags: tag:ci-n
+
+      - name: Wait for Harbor
+        run: |
+          for _ in $(seq 1 12); do
+            curl -fsS --max-time 5 "https://${REGISTRY}/api/v2.0/ping" && exit 0
+            sleep 5
+          done
+          echo "::error::${REGISTRY} unreachable over the tailnet"; exit 1
 
       - name: Login to Harbor
         env:
@@ -194,6 +212,8 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           docker buildx build --push \
             --build-context lib=lib \
+            --build-arg DOCKERHUB_REGISTRY=docker.io \
+            --build-arg GCR_REGISTRY=gcr.io \
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${SHA}" \
             --build-arg DATE="${DATE}" \
