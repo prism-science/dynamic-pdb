@@ -22,6 +22,7 @@ RUN CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags='-s -w' -o /checksum-jo
 RUN CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags='-s -w' -o /archive-rederive-job ./cmd/archive-rederive-job
 RUN CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags='-s -w' -o /model-compounds-job ./cmd/model-compounds-job
 RUN CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags='-s -w' -o /coordinate-index-job ./cmd/coordinate-index-job
+RUN CGO_ENABLED=0 GOWORK=off go build -trimpath -ldflags='-s -w' -o /archive-worker ./cmd/archive-worker
 
 FROM ${GCR_REGISTRY}/distroless/static-debian13:nonroot
 WORKDIR /app
@@ -30,6 +31,7 @@ COPY --from=builder /checksum-job /app/checksum-job
 COPY --from=builder /archive-rederive-job /app/archive-rederive-job
 COPY --from=builder /model-compounds-job /app/model-compounds-job
 COPY --from=builder /coordinate-index-job /app/coordinate-index-job
+COPY --from=builder /archive-worker /app/archive-worker
 COPY --from=builder /src/backend/config /app/config
 EXPOSE 8080
 USER nonroot:nonroot

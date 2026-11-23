@@ -219,6 +219,26 @@ coordinateIndexJob:
       cpu: "1"
       memory: 1Gi
 
+# Builds bulk-download archives (B2): claims a queued job from POST /v1/downloads, reads the
+# selection's files from the data bucket, checks each against its recorded SHA-256 and writes one
+# zip plus manifest.tsv under downloads/ (expired by the bucket's lifecycle rule). One job at a
+# time per pod. Off until its switch-on PR, together with downloads.enabled in the backend config.
+archiveWorker:
+  enabled: false
+  replicaCount: 1
+  terminationGracePeriodSeconds: 60
+  # One file of at most 1 GiB is staged at a time, plus the manifest (about 400 bytes a row).
+  scratchSizeLimit: 2Gi
+  # A 16 MiB upload part, a 256 KiB-ish deflate window and the database client; files stream
+  # through the scratch disk, not memory.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
 # The archive re-derivation job (T1-C2): derives the ligands, cofactors, decision record and
 # glycans of archive entries, and their UniProt-numbered mutations, from the head of each RCSB
 # mmCIF, in place on the active revision. On for a planned run only; see the README. Prod's run

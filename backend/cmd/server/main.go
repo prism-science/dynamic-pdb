@@ -141,6 +141,18 @@ func run() int {
 	slog.Info("selections configured", "enabled", cfg.Selections.Enabled,
 		"max_models", cfg.Selections.MaxModels, "max_stored_models", cfg.Selections.MaxStoredModels,
 		"freeze_timeout", cfg.Selections.FreezeTimeout)
+	srv = srv.WithDownloads(httpapi.DownloadsPolicy{
+		Enabled:                   cfg.Downloads.Enabled,
+		MaxArchiveBytes:           cfg.Downloads.MaxArchiveBytes,
+		MaxUnfinished:             cfg.Downloads.MaxUnfinished,
+		MaxUnfinishedPerSelection: cfg.Downloads.MaxUnfinishedPerSelection,
+		Requests:                  cfg.Downloads.RateLimit.Requests,
+		InternalRequests:          cfg.Downloads.RateLimit.InternalRequests,
+		Window:                    cfg.Downloads.RateLimit.Window,
+		TrustedProxies:            trustedProxies,
+	})
+	slog.Info("downloads configured", "enabled", cfg.Downloads.Enabled,
+		"max_archive_bytes", cfg.Downloads.MaxArchiveBytes, "max_unfinished", cfg.Downloads.MaxUnfinished)
 
 	router := chi.NewRouter()
 	router.Use(httpapi.RequestLifecycleMiddlewares(logger, readRequestTimeout)...)
