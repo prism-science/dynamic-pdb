@@ -721,10 +721,11 @@ func Test_should_reject_new_violations_when_enforce_checks_exist(t *testing.T) {
 			where id = '` + plainRevision + `'`,
 		"model_revisions_purpose_chk": `update model_revisions set metadata = '{"purpose":"Bogus"}'
 			where id = '` + plainRevision + `'`,
-		"artifacts_sha256_format_chk": `update artifacts set sha256 = repeat('A', 64)
-			where id = '00000000-0000-0000-0000-0000000000b2'`,
-		"artifacts_size_bytes_chk": `update artifacts set size_bytes = -1
-			where id = '00000000-0000-0000-0000-0000000000b2'`,
+		// Artifacts are written once (V20261110170100), so a violation can only arrive in a new row.
+		"artifacts_sha256_format_chk": `insert into artifacts(id, name, level, sha256, created_by)
+			values (gen_random_uuid(), 'bad checksum', 'L2', repeat('A', 64), '` + fixtureUser + `')`,
+		"artifacts_size_bytes_chk": `insert into artifacts(id, name, level, size_bytes, created_by)
+			values (gen_random_uuid(), 'bad size', 'L2', -1, '` + fixtureUser + `')`,
 		"polymer_entities_uniprot_mappings_chk": `insert into polymer_entities(id, protein_sequence_id, metadata)
 			values (gen_random_uuid(), '` + fixtureSequenceBase + `01', '{"uniprot_mappings":[{"accession":"P1","source":"sifts"}]}')`,
 	}
@@ -765,8 +766,8 @@ func Test_should_accept_every_schema_value_when_enforce_checks_exist(t *testing.
 				jsonb_build_object('accession', 'P1', 'source', $2::text, 'unp_release', '2026_01'))))`,
 			fixtureSequenceBase+"01", source)
 	}
-	exec(`update artifacts set sha256 = repeat('0123456789abcdef', 4), size_bytes = 0
-		where id = '00000000-0000-0000-0000-0000000000b2'`)
+	exec(`insert into artifacts(id, name, level, sha256, size_bytes, created_by)
+		values (gen_random_uuid(), 'checked', 'L2', repeat('0123456789abcdef', 4), 0, $1)`, fixtureUser)
 
 	// then
 	for _, err := range errs {
@@ -799,7 +800,9 @@ func Test_should_accept_every_write_the_application_makes_when_kept_constraints_
 	fixture := newMigratedFixture(t)
 	appDB := fixture.appDatabase(t)
 	ctx := context.Background()
-	runID := uuid.MustParse(fixtureRunWithVersion)
+	// The app links files only to a run it has just created, never to a run a published revision
+	// uses (V20261110170100). fixtureRunNoVersion is linked to no revision.
+	runID := uuid.MustParse(fixtureRunNoVersion)
 	artifactID := uuid.MustParse("00000000-0000-0000-0000-0000000000b2")
 	emptyLigands := []string{}
 	cofactors := []string{"ZN"}
@@ -885,13 +888,17 @@ func Test_should_allow_artifact_as_input_and_output_when_run_artifacts_migrated(
 	// given
 	fixture := newMigratedFixture(t)
 
-	// when
+	// when: fixtureRunNoVersion is linked to no revision, so it can still get files
+	// (V20261110170100).
+	_, inputErr := fixture.database.Exec(`insert into run_artifacts(run_id, artifact_id, direction)
+		values ($1, '00000000-0000-0000-0000-0000000000b2', 'input')`, fixtureRunNoVersion)
 	_, outputErr := fixture.database.Exec(`insert into run_artifacts(run_id, artifact_id, direction, position)
-		values ($1, '00000000-0000-0000-0000-0000000000b2', 'output', 0)`, fixtureRunWithVersion)
+		values ($1, '00000000-0000-0000-0000-0000000000b2', 'output', 0)`, fixtureRunNoVersion)
 	_, duplicateErr := fixture.database.Exec(`insert into run_artifacts(run_id, artifact_id, direction)
-		values ($1, '00000000-0000-0000-0000-0000000000b2', 'output')`, fixtureRunWithVersion)
+		values ($1, '00000000-0000-0000-0000-0000000000b2', 'output')`, fixtureRunNoVersion)
 
 	// then
+	require.NoError(t, inputErr)
 	require.NoError(t, outputErr)
 	require.Error(t, duplicateErr)
 }
@@ -1031,9 +1038,9 @@ insert into models(id, entry_id, created_by) values
     ('m_prov_untyped', 'e_provenance', '00000000-0000-0000-0000-0000000000a1'),
     ('m_prov_deposited', 'e_provenance', '00000000-0000-0000-0000-0000000000a1');
 insert into model_revisions(id, model_id, state, title, metadata, created_by) values
-    ('00000000-0000-0000-0000-000000e2e001', 'm_prov_computed', 'active', 'm', '{"model_type":"Multiconformer"}', '00000000-0000-0000-0000-0000000000a1'),
-    ('00000000-0000-0000-0000-000000e2e002', 'm_prov_untyped', 'active', 'm', '{}', '00000000-0000-0000-0000-0000000000a1'),
-    ('00000000-0000-0000-0000-000000e2e003', 'm_prov_deposited', 'active', 'm', '{"model_type":"Deposited"}', '00000000-0000-0000-0000-0000000000a1');
+    ('00000000-0000-0000-0000-000000e2e001', 'm_prov_computed', 'pending', 'm', '{"model_type":"Multiconformer"}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e002', 'm_prov_untyped', 'pending', 'm', '{}', '00000000-0000-0000-0000-0000000000a1'),
+    ('00000000-0000-0000-0000-000000e2e003', 'm_prov_deposited', 'pending', 'm', '{"model_type":"Deposited"}', '00000000-0000-0000-0000-0000000000a1');
 insert into runs(id, name, software_name, software_version, created_by) values
     ('00000000-0000-0000-0000-000000e2e101', 'no version', 'PHENIX', null, '00000000-0000-0000-0000-0000000000a1'),
     ('00000000-0000-0000-0000-000000e2e102', 'blank version', 'PHENIX', ' ', '00000000-0000-0000-0000-0000000000a1'),
@@ -1058,6 +1065,8 @@ insert into model_revision_metrics(model_revision_id, metric_id) values
     ('00000000-0000-0000-0000-000000e2e001', '00000000-0000-0000-0000-000000e2e204'),
     ('00000000-0000-0000-0000-000000e2e002', '00000000-0000-0000-0000-000000e2e205'),
     ('00000000-0000-0000-0000-000000e2e003', '00000000-0000-0000-0000-000000e2e206');
+-- Runs are linked before the revisions are published, as in the app (V20261110170100).
+update model_revisions set state = 'active' where model_id like 'm_prov_%';
 `
 
 func Test_should_list_provenance_gaps_like_the_write_rules_when_inventory_runs(t *testing.T) {

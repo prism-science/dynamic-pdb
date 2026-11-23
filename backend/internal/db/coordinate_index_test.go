@@ -54,6 +54,38 @@ func longChains(count int, length int) []indexChain {
 	return chains
 }
 
+// modelUsingFile makes an active model of entry whose active revision's primary file is file. As in
+// the app, the file is set before the revision is published: a published revision's primary file
+// cannot change.
+func (f *modelSearchTestDB) modelUsingFile(t *testing.T, entry searchEntry, file uuid.UUID) {
+	t.Helper()
+	f.models++
+	modelID := fmt.Sprintf("%s_m_%03d", entry.id, f.models)
+	revisionID := uuid.New()
+	createdAt := f.tick()
+	f.exec(t, `insert into models (id, entry_id, created_by, created_at, state) values ($1, $2, $3, $4, 'active')`,
+		modelID, entry.id, f.userID, createdAt)
+	f.exec(t, `insert into model_revisions (id, model_id, primary_artifact_id, revision_number, state, model_state,
+	                                         title, metadata, created_by, created_at, updated_at, published_at)
+	           values ($1, $2, $3, 1, 'pending', 'active', 'search test model', '{}', $4, $5, $5, $5)`,
+		revisionID, modelID, file, f.userID, createdAt)
+	f.exec(t, `update model_revisions set state = 'active' where id = $1`, revisionID)
+}
+
+// newRevisionUsingFile publishes a second revision of model with file as its primary file, as an
+// approved edit does: the active revision is archived and the new one becomes active.
+func (f *modelSearchTestDB) newRevisionUsingFile(t *testing.T, model searchModel, file uuid.UUID) {
+	t.Helper()
+	revisionID := uuid.New()
+	createdAt := f.tick()
+	f.exec(t, `insert into model_revisions (id, model_id, primary_artifact_id, revision_number, state, model_state,
+	                                         title, metadata, created_by, created_at, updated_at, published_at)
+	           values ($1, $2, $3, 2, 'pending', 'active', 'search test model', '{}', $4, $5, $5, $5)`,
+		revisionID, model.id, file, f.userID, createdAt)
+	f.exec(t, `update model_revisions set state = 'archived' where id = $1`, model.revisionID)
+	f.exec(t, `update model_revisions set state = 'active' where id = $1`, revisionID)
+}
+
 // storedModelArtifact makes a model artifact in our bucket (a URI in its own folder) created at
 // createdAt, without the sets the API's Create adds.
 func (f *modelSearchTestDB) storedModelArtifact(t *testing.T, createdAt time.Time) uuid.UUID {
@@ -467,14 +499,13 @@ func Test_should_queue_a_done_set_again_when_the_entries_of_its_models_changed_s
 	firstEntry := fixture.entry(t, map[string]any{})
 	first := fixture.model(t, firstEntry, map[string]any{})
 	markDone(first.coordinateFile, firstEntry.id)
-	second := fixture.model(t, fixture.entry(t, map[string]any{}), map[string]any{})
-	fixture.exec(t, `update model_revisions set primary_artifact_id = $2 where id = $1`, second.revisionID, first.coordinateFile)
+	fixture.modelUsingFile(t, fixture.entry(t, map[string]any{}), first.coordinateFile)
 	// switched: an existing model's new revision switched to a file read with no model.
 	switchedEntry := fixture.entry(t, map[string]any{})
 	switched := fixture.model(t, switchedEntry, map[string]any{})
 	secondaryFile := fixture.artifact(t, models.ArtifactLevelL2, models.ArtifactTypeModel)
 	markDone(secondaryFile)
-	fixture.exec(t, `update model_revisions set primary_artifact_id = $2 where id = $1`, switched.revisionID, secondaryFile)
+	fixture.newRevisionUsingFile(t, switched, secondaryFile)
 	// oldRevision: no model used the file at the read, but the revision is older than the window.
 	oldRevision := fixture.model(t, fixture.entry(t, map[string]any{}), map[string]any{})
 	fixture.exec(t, `update model_revisions set created_at = $2 where id = $1`, oldRevision.revisionID, now.Add(-72*time.Hour))

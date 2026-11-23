@@ -10,6 +10,11 @@ import {
   fetchWithTimeout,
 } from "./timeout";
 import { formatEntryLabel } from "@/lib/entry-label";
+import {
+  modelSearchQuery,
+  type ModelSearchCriteria,
+  type SearchFailure,
+} from "@/lib/model-search";
 import { REVIEW_PAGE_SIZE } from "@/lib/reviewQueue";
 import type { components } from "./schema.gen";
 
@@ -306,22 +311,37 @@ export type ApiErrorObject = Schemas["ErrorObject"];
 export class ApiRequestError extends Error {
   readonly status: number | null;
   readonly errors: ApiErrorObject[];
+  /** The response's Retry-After in seconds (429 and 504 send it); null when absent. */
+  readonly retryAfterSeconds: number | null;
 
   constructor(
     message: string,
     status: number | null = null,
     errors: ApiErrorObject[] = [],
+    retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.errors = errors;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** Retry-After as a number of seconds. The HTTP-date form, which the backend
+ *  never sends, reads as absent. */
+export function retryAfterSeconds(value: string | null | undefined): number | null {
+  if (value == null || !/^\d+$/.test(value.trim())) {
+    return null;
+  }
+  return Number.parseInt(value.trim(), 10);
 }
 
 /** Reads the JSON:API error document the backend sends with a failed
  *  response; a body that is not one yields a message with the status only. */
 async function responseError(response: Response): Promise<ApiRequestError> {
+  // Test doubles of Response may come without headers.
+  const retryAfter = retryAfterSeconds(response.headers?.get("Retry-After"));
   const errors = await readErrorObjects(response);
   const described = errors
     .map((error) => {
@@ -335,6 +355,7 @@ async function responseError(response: Response): Promise<ApiRequestError> {
     described.length > 0 ? `${message}: ${described.join("; ")}` : message,
     response.status,
     errors,
+    retryAfter,
   );
 }
 
@@ -437,6 +458,61 @@ export async function listModels(
     token,
   );
   return attributesFromCollection(document);
+}
+
+/** One model search result: the model, its entry, its open review flags and,
+ *  for a compound search, the matched compounds that need review. */
+export type ModelSearchResult = Schemas["ModelSearchAttributes"];
+export type ModelSearchTotal = Schemas["ModelSearchTotal"];
+
+/** One page of a model search. total is set on the first page only. */
+export type ModelSearchPage = ListPage<ModelSearchResult> & {
+  total: ModelSearchTotal | null;
+};
+
+/** The page size of the model search on /browse. */
+export const MODEL_SEARCH_PAGE_SIZE = 50;
+
+/**
+ * Runs a model search: GET /v1/models with the search's own query string, then
+ * limit and cursor, as the signed-in reader when a token is given. The models
+ * found are the same for everyone; what a reader learns about their review
+ * flags is not. Throws ApiRequestError; a 429 or 504 carries
+ * retryAfterSeconds.
+ */
+export async function searchModels(
+  criteria: ModelSearchCriteria,
+  opts?: { token?: string | null; limit?: number | null; cursor?: string | null },
+): Promise<ModelSearchPage> {
+  const params = new URLSearchParams(modelSearchQuery(criteria));
+  params.set("limit", String(opts?.limit ?? MODEL_SEARCH_PAGE_SIZE));
+  if (opts?.cursor) {
+    params.set("cursor", opts.cursor);
+  }
+  // Signed in, the API answers as the reader: reviewers and admins get the
+  // review flags' issues and may use the flagged filter.
+  const document = await fetchBackend<Schemas["ModelSearchCollectionDocument"]>(
+    `/v1/models?${params.toString()}`,
+    opts?.token ?? undefined,
+  );
+  return {
+    items: document.data.map((item) => item.attributes),
+    nextCursor: document.meta?.next_cursor ?? null,
+    total: document.meta?.total ?? null,
+  };
+}
+
+/** A failed model search as the page and the scroll explain it. */
+export function searchFailureFromError(error: ApiRequestError): SearchFailure {
+  const detail = error.errors
+    .map((item) => item.detail ?? item.title)
+    .filter((text): text is string => Boolean(text?.trim()))
+    .join("; ");
+  return {
+    status: error.status,
+    detail: detail || null,
+    retryAfterSeconds: error.retryAfterSeconds,
+  };
 }
 
 // Entries whose protein sequences a similarity run matched against this

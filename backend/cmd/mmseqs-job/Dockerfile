@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Base images. The deploy build uses these defaults (Harbor's cache of Docker Hub). The
-# integration test overrides them where Harbor is unreachable, such as GitHub-hosted runners.
+# Base images. The defaults are Harbor's cache of Docker Hub; CI builds and the integration
+# test pass the Docker Hub images.
 ARG GO_IMAGE=harbor.astera.sh/dockerhub-cache/golang:1.26-alpine
 ARG RUNTIME_IMAGE=harbor.astera.sh/dockerhub-cache/debian:bookworm-slim
 

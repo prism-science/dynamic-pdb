@@ -76,7 +76,7 @@ func Test_should_find_models_by_their_protein_chains_when_the_coordinate_index_j
 	s3 := newS3Stub(t)
 	defer s3.Close()
 	backend := startBackendWithEnv(t, root, backendBinaryPath, s3.URL(), schemaEnv)
-	entryID, entryRevisionID := seedEntryRevision(t, database, auth.UserID)
+	entryID, entryRevisionID := seedEntryRevision(t, database, auth.UserID, "active")
 	seedFASTARecord(t, database, entryRevisionID, auth.UserID, "1ABC_1|Chains A, B, C, D, E|test protein", 350)
 	fiveLong := createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, entryID, "five.cif", "mmcif", mmcifWithChains(5, 400))
 	fiveFromFASTA := createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, entryID, "five.pdb", "pdb", pdbWithChains(5))

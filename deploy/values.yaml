@@ -3,7 +3,7 @@ host: dynamicpdb.com
 backend:
   configProfile: production
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-backend
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-backend
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -24,7 +24,7 @@ backend:
 
 website:
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-website
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-website
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -44,9 +44,12 @@ website:
       memory: 512Mi
 
 s3proxy:
+  # Custom Go S3 reverse proxy, built by astera-infra/docker-images
+  # (s3proxy/) into library. Tags there are immutable; bump `tag` (with
+  # its digest) by hand when there's a real reason to roll it.
   image:
     repository: harbor.astera.sh/library/s3proxy
-    tag: latest
+    tag: 2026-11-18@sha256:ae7b34a99189222779ba804834f2bbe0108f4732bf9f74f9e2c7286e0d80c866
     pullPolicy: IfNotPresent
   replicaCount: 2
   awsSecretName: ""
@@ -68,7 +71,7 @@ s3proxy:
 migrations:
   enabled: true
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-migrations
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-migrations
     tag: latest
     pullPolicy: IfNotPresent
   resources:
@@ -89,7 +92,7 @@ mmseqsJob:
   backoffLimit: 1
   activeDeadlineSeconds: 21600
   image:
-    repository: harbor.astera.sh/library/dynamic-pdb-mmseqs-job
+    repository: harbor.astera.sh/dynamicpdb/dynamic-pdb-mmseqs-job
     tag: latest
     pullPolicy: IfNotPresent
   cache:
