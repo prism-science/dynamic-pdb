@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -16,6 +17,10 @@ import (
 // objectWriterPartSize is the part size of uploads the backend streams itself. S3 needs parts
 // of at least 5 MiB except the last; 16 MiB keeps a 1 GiB file to 64 parts and a writer small.
 const objectWriterPartSize = 16 * 1024 * 1024
+
+// abortTimeout bounds discarding a multipart upload. Aborting runs on its own context, because
+// the writer's context is often the one that was just cancelled (a stopping job).
+const abortTimeout = 30 * time.Second
 
 // OpenObject streams a whole object. The caller closes the returned reader.
 func (b *RemoteBucket) OpenObject(ctx context.Context, key string) (io.ReadCloser, error) {
@@ -175,7 +180,9 @@ func (w *ObjectWriter) abortMultipart() error {
 	if w.uploadID == "" {
 		return nil
 	}
-	if err := w.bucket.AbortMultipartUpload(w.ctx, w.key, w.uploadID); err != nil {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(w.ctx), abortTimeout)
+	defer cancel()
+	if err := w.bucket.AbortMultipartUpload(ctx, w.key, w.uploadID); err != nil {
 		return fmt.Errorf("s3: discard upload of %q: %w", w.key, err)
 	}
 	return nil

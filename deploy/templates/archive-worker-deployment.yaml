@@ -1,0 +1,86 @@
+{{- if .Values.archiveWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dynamic-pdb.archiveWorkerName" . }}
+  labels:
+    {{- include "dynamic-pdb.labels" . | nindent 4 }}
+    {{- include "dynamic-pdb.archiveWorker.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.archiveWorker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dynamic-pdb.archiveWorker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dynamic-pdb.labels" . | nindent 8 }}
+        {{- include "dynamic-pdb.archiveWorker.selectorLabels" . | nindent 8 }}
+    spec:
+      # On SIGTERM the worker aborts the archive it is writing and puts the job back in the queue,
+      # so the next pod starts it again instead of waiting for the lease to run out.
+      terminationGracePeriodSeconds: {{ .Values.archiveWorker.terminationGracePeriodSeconds }}
+      containers:
+        - name: archive-worker
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command: ["/app/archive-worker"]
+          envFrom:
+            - secretRef:
+                name: {{ include "dynamic-pdb.s3SecretName" . }}
+          env:
+            - name: DYNAMIC_PDB_ENV
+              value: {{ .Values.backend.configProfile | quote }}
+            - name: DYNAMIC_PDB_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.dbSecretName" . }}
+                  key: host
+            - name: DYNAMIC_PDB_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.dbSecretName" . }}
+                  key: port
+            - name: DYNAMIC_PDB_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.dbSecretName" . }}
+                  key: database
+            - name: DYNAMIC_PDB_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.dbSecretName" . }}
+                  key: username
+            - name: DYNAMIC_PDB_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.dbSecretName" . }}
+                  key: password
+            # The bucket and region the API uses, from the same secret, so the worker reads the
+            # files and writes the archives where the API's URLs point.
+            - name: DYNAMIC_PDB_CDN_S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.s3SecretName" . }}
+                  key: AWS_REGION
+            - name: DYNAMIC_PDB_CDN_S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dynamic-pdb.s3SecretName" . }}
+                  key: S3_BUCKET
+            # A few connections are enough: one job at a time, short reads and one-row writes.
+            - name: DYNAMIC_PDB_DB_MAX_OPEN_CONNECTIONS
+              value: "4"
+            - name: DYNAMIC_PDB_ARCHIVE_WORKER_SCRATCH_DIR
+              value: /scratch
+          volumeMounts:
+            - name: scratch
+              mountPath: /scratch
+          resources:
+            {{- toYaml .Values.archiveWorker.resources | nindent 12 }}
+      volumes:
+        # One file of at most 1 GiB while it is checked, plus the manifest.
+        - name: scratch
+          emptyDir:
+            sizeLimit: {{ .Values.archiveWorker.scratchSizeLimit }}
+{{- end }}

@@ -81,3 +81,7 @@ model_search:
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR.
   enabled: false
+downloads:
+  # Bulk-download archives (/v1/downloads, B2) and the archive worker stay off until their own
+  # switch-on PR, which also turns on selections and the worker Deployment (archiveWorker.enabled).
+  enabled: false

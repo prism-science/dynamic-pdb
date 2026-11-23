@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -419,13 +420,16 @@ type s3Stub struct {
 	mu     sync.Mutex
 	paths  []string
 	bodies map[string][]byte
+	// parts holds each multipart upload's parts by number until it completes; completing writes
+	// them, in order, as the object's body.
+	parts map[string]map[int][]byte
 	// rejectParts answers every part upload with 400, which the CLI does not retry.
 	rejectParts bool
 }
 
 func newS3Stub(t *testing.T) *s3Stub {
 	t.Helper()
-	stub := &s3Stub{bodies: make(map[string][]byte)}
+	stub := &s3Stub{bodies: make(map[string][]byte), parts: make(map[string]map[int][]byte)}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.handle))
 	return stub
 }
@@ -461,6 +465,22 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.recordBody(r.URL.Path, body)
+		s.recordPart(r.URL.Path, r.URL.Query().Get("partNumber"), body)
+		w.Header().Set("ETag", `"etag"`)
+		w.WriteHeader(http.StatusOK)
+	case r.Method == http.MethodPut:
+		// PutObject: the S3 client sends an object of one part this way.
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read object body", http.StatusInternalServerError)
+			return
+		}
+		if err := r.Body.Close(); err != nil {
+			http.Error(w, "close object body", http.StatusInternalServerError)
+			return
+		}
+		s.recordPath(r.URL.Path)
+		s.recordBody(r.URL.Path, body)
 		w.Header().Set("ETag", `"etag"`)
 		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodPost && r.URL.Query().Get("uploadId") != "":
@@ -473,7 +493,13 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "close complete body", http.StatusInternalServerError)
 			return
 		}
+		s.completeParts(r.URL.Path)
 		writeXML(w, `<CompleteMultipartUploadResult></CompleteMultipartUploadResult>`)
+	case r.Method == http.MethodDelete && r.URL.Query().Get("uploadId") != "":
+		s.mu.Lock()
+		delete(s.parts, r.URL.Path)
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet:
 		s.mu.Lock()
 		body, found := s.bodies[r.URL.Path]
@@ -500,6 +526,49 @@ func (s *s3Stub) recordBody(key string, body []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.bodies[key] = append([]byte(nil), body...)
+}
+
+// recordPart keeps one part of a multipart upload by its number.
+func (s *s3Stub) recordPart(key string, partNumber string, body []byte) {
+	number, err := strconv.Atoi(partNumber)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.parts[key] == nil {
+		s.parts[key] = map[int][]byte{}
+	}
+	s.parts[key][number] = append([]byte(nil), body...)
+}
+
+// completeParts writes a multipart upload's parts, in number order, as the object's body.
+func (s *s3Stub) completeParts(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	parts := s.parts[key]
+	if len(parts) == 0 {
+		return
+	}
+	numbers := make([]int, 0, len(parts))
+	for number := range parts {
+		numbers = append(numbers, number)
+	}
+	sort.Ints(numbers)
+	var body []byte
+	for _, number := range numbers {
+		body = append(body, parts[number]...)
+	}
+	s.bodies[key] = body
+	delete(s.parts, key)
+}
+
+// body returns the object stored at a path, as the S3 client addresses it.
+func (s *s3Stub) body(path string) ([]byte, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	body, found := s.bodies[path]
+	return body, found
 }
 
 func (s *s3Stub) uploadFilenames() []string {

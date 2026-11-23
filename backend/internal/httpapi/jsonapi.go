@@ -85,4 +85,5 @@ const (
 	jsonAPITypeModelRevisions         = "model_revisions"
 	jsonAPITypeSelections             = "selections"
 	jsonAPITypeSelectionModels        = "selection_models"
+	jsonAPITypeDownloads              = "downloads"
 )

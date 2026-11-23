@@ -194,3 +194,21 @@ func Test_should_send_nothing_when_writer_aborted_before_a_full_part(t *testing.
 	require.NoError(t, err)
 	assert.Empty(t, store.requests)
 }
+
+func Test_should_still_abort_multipart_upload_when_writer_context_was_cancelled(t *testing.T) {
+	// given a writer whose context ends after its first part, as a stopping job's does
+	store, bucket := newFakeObjectStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	writer, err := bucket.newObjectWriter(ctx, "entry/artifacts/a/stopped.cif", 4)
+	require.NoError(t, err)
+	_, err = writer.Write([]byte("abcdef"))
+	require.NoError(t, err)
+	cancel()
+
+	// when
+	err = writer.Abort()
+
+	// then the upload is discarded all the same
+	require.NoError(t, err)
+	assert.Equal(t, []string{"create entry/artifacts/a/stopped.cif", "part 1", "abort entry/artifacts/a/stopped.cif"}, store.requests)
+}

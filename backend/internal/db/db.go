@@ -33,6 +33,7 @@ type DB struct {
 	CoordinateIndex             *CoordinateIndexRepository
 	MigrationReviews            *MigrationReviewsRepository
 	Selections                  *SelectionsRepository
+	Downloads                   *DownloadsRepository
 
 	sqlx *sqlx.DB
 	// probe is a separate single-connection pool for Ping, so health checks never queue
@@ -106,6 +107,7 @@ func NewDB(cfg Config) (*DB, error) {
 		CoordinateIndex:             NewCoordinateIndexRepository(sqlxDB, queriers),
 		MigrationReviews:            NewMigrationReviewsRepository(sqlxDB, queriers),
 		Selections:                  NewSelectionsRepository(sqlxDB, queriers),
+		Downloads:                   NewDownloadsRepository(sqlxDB, queriers),
 		sqlx:                        sqlxDB,
 		probe:                       probe,
 		txManager:                   txManager,

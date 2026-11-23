@@ -48,6 +48,9 @@ type Server struct {
 	modelSearch modelSearch
 	// selections holds frozen selections (/v1/selections); see WithSelections.
 	selections selections
+	// bulkDownloads is the bulk-download archives setup (/v1/downloads); downloads is the
+	// download counter.
+	bulkDownloads downloads
 	// extractionLimits bounds POST /v1/artifacts/{id}/extract.
 	extractionLimits *extractionLimits
 	// extractionTimeout is the longest one extraction may spend parsing; see

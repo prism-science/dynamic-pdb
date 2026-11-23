@@ -60,8 +60,8 @@ var (
 	entryDeletionServer *httptest.Server
 	// modelSearchServer shares the database with testServer and has the model search filters on.
 	modelSearchServer *httptest.Server
-	// selectionsServer shares the database with testServer and has selections and the model
-	// search filters on.
+	// selectionsServer shares the database with testServer and has selections, downloads and the
+	// model search filters on.
 	selectionsServer *httptest.Server
 	testDatabase     *db.DB
 	githubClient     *MockGitHubClient
@@ -87,6 +87,8 @@ type testRouterOptions struct {
 	modelSearch bool
 	// selections turns the /v1/selections routes on.
 	selections bool
+	// downloads turns the /v1/downloads routes on.
+	downloads bool
 }
 
 type MockGitHubClient struct {
@@ -226,6 +228,15 @@ func TestMain(m *testing.M) {
 			InternalRequests: 1000,
 			Window:           time.Minute,
 		})
+		server.WithDownloads(httpapi.DownloadsPolicy{
+			Enabled:                   options.downloads,
+			MaxArchiveBytes:           10_000_000_000,
+			MaxUnfinished:             1000,
+			MaxUnfinishedPerSelection: 3,
+			Requests:                  1000,
+			InternalRequests:          1000,
+			Window:                    time.Minute,
+		})
 		router := chi.NewRouter()
 		router.Use(corsMiddleware())
 		router.Use(httpapi.MediaTypeMiddleware())
@@ -271,6 +282,7 @@ func TestMain(m *testing.M) {
 		validation:  enforceAllValidation,
 		modelSearch: true,
 		selections:  true,
+		downloads:   true,
 	}))
 
 	code := m.Run()

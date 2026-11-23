@@ -33,6 +33,9 @@ type Config struct {
 	ModelSearch ModelSearchConfig `mapstructure:"model_search"`
 	// Selections holds the switch and limits of frozen selections (/v1/selections).
 	Selections SelectionsConfig `mapstructure:"selections"`
+	// Downloads holds the switch and limits of bulk-download archives (/v1/downloads). The archive
+	// worker reads the same section.
+	Downloads DownloadsConfig `mapstructure:"downloads"`
 }
 
 type ServerConfig struct {
@@ -105,6 +108,28 @@ type SelectionsConfig struct {
 	RateLimit RouteRateLimitConfig `mapstructure:"rate_limit"`
 }
 
+// DownloadsConfig holds bulk-download archives: POST /v1/downloads asks for a zip of a frozen
+// selection's files, the archive worker builds it into the data bucket, and GET /v1/downloads/{id}
+// reports it. The API and the archive worker read this section.
+type DownloadsConfig struct {
+	// Enabled turns the downloads routes on. Off, they answer 404. It needs selections.enabled.
+	Enabled bool `mapstructure:"enabled"`
+	// MaxArchiveBytes caps the bytes of the files one archive includes, before compression. The
+	// worker blocks a larger archive before it reads any file. 10 GB until the researchers say
+	// whether they mean GB or GiB.
+	MaxArchiveBytes int64 `mapstructure:"max_archive_bytes"`
+	// ArchiveTTL is how long a ready archive is offered. The bucket's lifecycle rule deletes it a
+	// day later; the job and its selection stay.
+	ArchiveTTL time.Duration `mapstructure:"archive_ttl"`
+	// MaxUnfinished caps the queued and running archives of all selections together; above it a
+	// request answers 503.
+	MaxUnfinished int `mapstructure:"max_unfinished"`
+	// MaxUnfinishedPerSelection caps them for one selection; above it a request answers 429.
+	MaxUnfinishedPerSelection int `mapstructure:"max_unfinished_per_selection"`
+	// RateLimit caps archive requests per client and server instance.
+	RateLimit RouteRateLimitConfig `mapstructure:"rate_limit"`
+}
+
 // RouteRateLimitConfig caps one route's requests per client, on top of the server's global
 // limit. Clients are told apart as for server.rate_limit.
 type RouteRateLimitConfig struct {
@@ -158,7 +183,28 @@ const (
 	defaultSelectionsRateLimitRequests         = 10
 	defaultSelectionsRateLimitInternalRequests = 100
 	defaultSelectionsRateLimitWindow           = time.Minute
+
+	defaultDownloadsMaxArchiveBytes           = int64(10_000_000_000)
+	defaultDownloadsArchiveTTL                = 7 * 24 * time.Hour
+	defaultDownloadsMaxUnfinished             = 20
+	defaultDownloadsMaxUnfinishedPerSelection = 3
+	defaultDownloadsRateLimitRequests         = 10
+	defaultDownloadsRateLimitInternalRequests = 100
+	defaultDownloadsRateLimitWindow           = time.Minute
 )
+
+// SetDownloadsDefaults gives the downloads section its defaults. The server and the archive
+// worker both call it, so they read the same limits.
+func SetDownloadsDefaults(v *viper.Viper) {
+	v.SetDefault("downloads::enabled", false)
+	v.SetDefault("downloads::max_archive_bytes", defaultDownloadsMaxArchiveBytes)
+	v.SetDefault("downloads::archive_ttl", defaultDownloadsArchiveTTL)
+	v.SetDefault("downloads::max_unfinished", defaultDownloadsMaxUnfinished)
+	v.SetDefault("downloads::max_unfinished_per_selection", defaultDownloadsMaxUnfinishedPerSelection)
+	v.SetDefault("downloads::rate_limit::requests", defaultDownloadsRateLimitRequests)
+	v.SetDefault("downloads::rate_limit::internal_requests", defaultDownloadsRateLimitInternalRequests)
+	v.SetDefault("downloads::rate_limit::window", defaultDownloadsRateLimitWindow)
+}
 
 func ReadFromFile(filename string) (Config, error) {
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
@@ -188,6 +234,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("selections::rate_limit::requests", defaultSelectionsRateLimitRequests)
 	v.SetDefault("selections::rate_limit::internal_requests", defaultSelectionsRateLimitInternalRequests)
 	v.SetDefault("selections::rate_limit::window", defaultSelectionsRateLimitWindow)
+	SetDownloadsDefaults(v)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)
@@ -253,6 +300,12 @@ func validate(cfg Config) error {
 	if err := validateSelections(cfg.Selections); err != nil {
 		return fmt.Errorf("selections.%w", err)
 	}
+	if err := ValidateDownloads(cfg.Downloads); err != nil {
+		return fmt.Errorf("downloads.%w", err)
+	}
+	if cfg.Downloads.Enabled && !cfg.Selections.Enabled {
+		return fmt.Errorf("downloads.enabled needs selections.enabled: archives are built from saved selections")
+	}
 	if err := validatePublicBaseURL(cfg.Server.PublicBaseURL); err != nil {
 		return fmt.Errorf("server.public_base_url: %w", err)
 	}
@@ -285,6 +338,32 @@ func validateSelections(selections SelectionsConfig) error {
 		return fmt.Errorf("rate_limit.internal_requests must be positive")
 	}
 	if selections.RateLimit.Window <= 0 {
+		return fmt.Errorf("rate_limit.window must be positive")
+	}
+	return nil
+}
+
+// ValidateDownloads checks the downloads section; the archive worker checks it too.
+func ValidateDownloads(downloads DownloadsConfig) error {
+	if downloads.MaxArchiveBytes <= 0 {
+		return fmt.Errorf("max_archive_bytes must be positive")
+	}
+	if downloads.ArchiveTTL <= 0 {
+		return fmt.Errorf("archive_ttl must be positive")
+	}
+	if downloads.MaxUnfinished <= 0 {
+		return fmt.Errorf("max_unfinished must be positive")
+	}
+	if downloads.MaxUnfinishedPerSelection <= 0 {
+		return fmt.Errorf("max_unfinished_per_selection must be positive")
+	}
+	if downloads.RateLimit.Requests <= 0 {
+		return fmt.Errorf("rate_limit.requests must be positive")
+	}
+	if downloads.RateLimit.InternalRequests <= 0 {
+		return fmt.Errorf("rate_limit.internal_requests must be positive")
+	}
+	if downloads.RateLimit.Window <= 0 {
 		return fmt.Errorf("rate_limit.window must be positive")
 	}
 	return nil

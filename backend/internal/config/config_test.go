@@ -735,3 +735,57 @@ func Test_should_reject_config_when_the_selections_budget_is_below_one_selection
 	// then
 	require.ErrorContains(t, err, "selections.max_stored_models must be at least max_models")
 }
+
+func Test_should_leave_downloads_off_with_their_default_limits_when_config_does_not_set_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, config.DownloadsConfig{
+		Enabled:                   false,
+		MaxArchiveBytes:           10_000_000_000,
+		ArchiveTTL:                7 * 24 * time.Hour,
+		MaxUnfinished:             20,
+		MaxUnfinishedPerSelection: 3,
+		RateLimit:                 config.RouteRateLimitConfig{Requests: 10, InternalRequests: 100, Window: time.Minute},
+	}, cfg.Downloads)
+}
+
+func Test_should_reject_config_when_downloads_are_on_and_selections_off(t *testing.T) {
+	// given
+	t.Chdir(writeConfig(t, "test", sampleYAML+"downloads:\n  enabled: true\n"))
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.ErrorContains(t, err, "downloads.enabled needs selections.enabled")
+}
+
+func Test_should_turn_downloads_on_with_selections_when_config_sets_both(t *testing.T) {
+	// given
+	t.Chdir(writeConfig(t, "test", sampleYAML+"selections:\n  enabled: true\ndownloads:\n  enabled: true\n  max_archive_bytes: 2000000000\n"))
+
+	// when
+	cfg, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.Downloads.Enabled)
+	assert.Equal(t, int64(2_000_000_000), cfg.Downloads.MaxArchiveBytes)
+}
+
+func Test_should_reject_config_when_a_downloads_limit_is_not_positive(t *testing.T) {
+	// given
+	t.Chdir(writeConfig(t, "test", sampleYAML+"downloads:\n  max_unfinished: 0\n"))
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.ErrorContains(t, err, "downloads.max_unfinished must be positive")
+}

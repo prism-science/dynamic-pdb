@@ -73,3 +73,7 @@ selections:
   # Frozen selections (/v1/selections, B1) are on locally, so the website's download panel can be
   # built against them before dev and production switch them on.
   enabled: true
+downloads:
+  # Bulk-download archives (/v1/downloads, B2) are on locally, with selections, so the website's
+  # download panel can be built against them. The archive worker runs as its own binary.
+  enabled: true
