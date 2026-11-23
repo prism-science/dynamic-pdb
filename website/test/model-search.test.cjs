@@ -16,6 +16,7 @@ const {
   MODEL_LIST_PAGING_PARAMETERS,
   MODEL_SEARCH_FILTERS,
   MODEL_SEARCH_PARAMETERS,
+  MODEL_SEARCH_PARAMETERS_NOT_OFFERED,
   modelSearchApiUrl,
   modelSearchQuery,
   modelTotalLine,
@@ -47,13 +48,14 @@ function apiModelListParameters() {
   return query.type.members.map((item) => item.name.getText(source));
 }
 
-test("should offer every filter parameter of GET /v1/models, and no other", () => {
+test("should offer every filter parameter of GET /v1/models but the ones not offered yet, and no other", () => {
   const apiFilters = apiModelListParameters().filter(
     (name) => !MODEL_LIST_PAGING_PARAMETERS.includes(name),
   );
+  const accountedFor = [...MODEL_SEARCH_PARAMETERS, ...MODEL_SEARCH_PARAMETERS_NOT_OFFERED];
 
-  assert.deepEqual([...MODEL_SEARCH_PARAMETERS].sort(), [...apiFilters].sort());
-  assert.equal(new Set(MODEL_SEARCH_PARAMETERS).size, MODEL_SEARCH_PARAMETERS.length);
+  assert.deepEqual([...accountedFor].sort(), [...apiFilters].sort());
+  assert.equal(new Set(accountedFor).size, accountedFor.length, "a parameter is both offered and not");
 });
 
 test("should give every filter a unique id and a group the panel shows", () => {

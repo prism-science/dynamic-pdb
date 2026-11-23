@@ -313,12 +313,14 @@ func (s *Server) reconcileProteinSequencesForActivation(
 	for _, sequence := range targetSequences {
 		sequenceIDsToDelete = append(sequenceIDsToDelete, sequence.ID)
 	}
+	removedActive := 0
 	for _, sequence := range previousSequences {
 		if _, retained := targetArtifactIDs[sequence.SourceArtifactID]; retained {
 			retainedArtifactIDs[sequence.SourceArtifactID] = struct{}{}
 			continue
 		}
 		sequenceIDsToDelete = append(sequenceIDsToDelete, sequence.ID)
+		removedActive++
 	}
 
 	if len(sequenceIDsToDelete) > 0 {
@@ -345,6 +347,7 @@ func (s *Server) reconcileProteinSequencesForActivation(
 		}
 	}
 
+	addedFASTA := 0
 	for _, artifact := range artifacts {
 		if _, retained := retainedArtifactIDs[artifact.ID]; retained {
 			continue
@@ -352,6 +355,23 @@ func (s *Server) reconcileProteinSequencesForActivation(
 		if err := s.saveProteinSequencesIfFASTA(ctx, target.ID, artifact); err != nil {
 			return fmt.Errorf("create activated protein sequences: %w", err)
 		}
+		if artifact.IsFASTA() {
+			addedFASTA++
+		}
+	}
+	return s.requeueCoordinateIndexOnFASTAChange(ctx, target.EntryID, removedActive, addedFASTA)
+}
+
+// requeueCoordinateIndexOnFASTAChange queues the model files of the entry's models for the
+// coordinate-index job again when the entry's active FASTA records changed: a chain whose length
+// came from a removed record, or a file that states no length where a new record does, needs the
+// read again. It runs in the transaction that changes the records.
+func (s *Server) requeueCoordinateIndexOnFASTAChange(ctx context.Context, entryID string, removed int, added int) error {
+	if removed == 0 && added == 0 {
+		return nil
+	}
+	if _, err := s.database.CoordinateIndex.RequeueEntry(ctx, entryID); err != nil {
+		return fmt.Errorf("queue the entry's model files for their chain lengths: %w", err)
 	}
 	return nil
 }
@@ -391,6 +411,7 @@ func (s *Server) reconcileProteinSequencesForActiveModels(
 			return fmt.Errorf("delete invalidated protein sequences: %w", err)
 		}
 	}
+	addedFASTA := 0
 	for _, artifact := range artifacts {
 		if _, retained := retainedArtifactIDs[artifact.ID]; retained {
 			continue
@@ -398,8 +419,11 @@ func (s *Server) reconcileProteinSequencesForActiveModels(
 		if err := s.saveProteinSequencesIfFASTA(ctx, activeEntry.ID, artifact); err != nil {
 			return fmt.Errorf("create active model protein sequences: %w", err)
 		}
+		if artifact.IsFASTA() {
+			addedFASTA++
+		}
 	}
-	return nil
+	return s.requeueCoordinateIndexOnFASTAChange(ctx, activeEntry.EntryID, len(sequenceIDsToDelete), addedFASTA)
 }
 
 func (s *Server) finalFASTAArtifacts(

@@ -346,3 +346,81 @@ One transaction is enough: 1,000 sets took 0.05 s on the prod copy, so all ~73,0
 The parser runs (`runs` named `modeled compound read`) stay. Nothing points at them once their
 sets are gone, and deleting them is slow: `metrics.run_id` and `model_revision_runs.run_id` have
 no index, so each deleted run scans both tables (1,000 runs took 49 s on the prod copy).
+
+## Coordinate index job
+
+The coordinate index job reads every model file in our bucket, and the checksum job's copy of
+each archive model file, and stores one row per author chain of the file's first model in
+`coordinate_index_chains`, one set per artifact in `coordinate_index_sets` (`lib/cif`
+`ReadCoordinateIndex`, S2): the chain's entity, its deposited sequence length and where that
+came from (`length_source`), its modeled residues, and whether it is a protein chain, with the
+test that decided (`protein_source`: the file's `_entity_poly.type`, else the residue majority).
+The model search's protein chain filters (`protein_chains_min`, `protein_chain_length_min`,
+`protein_chain_length_max`, `protein_chain_mode` on `GET /v1/models`) read them. It runs `/app/coordinate-index-job`
+from the backend image every 5 minutes, one file at a time, like the model compounds job.
+
+It is merged off (`coordinateIndexJob.enabled: false`). A new upload still gets a pending set
+when its artifact is created, so nothing is missed until it runs; each run also gives one to any
+model file of the last 48 hours that has none, and to archive files whose copy the checksum job
+recorded in that window, however old their artifact (`coordinate_index.archive_files` in
+`backend/config/<env>.yml`, on for dev and prod).
+
+A chain whose length the file does not state (`_entity_poly_seq` in archive mmCIF, `SEQRES` in
+PDB format) takes it from the entry's FASTA record that names it (`Chains A, B[auth C]`) as
+author chain, else as label chain. The job reads those records in the transaction that saves
+the chains. When an activation changes the entry's FASTA records (adds or removes some), the API
+queues the entry's model files again, ahead of the fill, in the same transaction. Each set records
+the entries its read used (`fasta_entry_ids`); each run queues a done file again when the entries
+of the models using it are no longer these (a file read before its model existed, a new model of
+another entry, a model revision that switched to the file), looking at model revisions of the last
+48 hours.
+
+### Rollout
+
+1. Switch-on PR: `coordinateIndexJob.enabled: true` and `coordinateIndexJob.fill: true`. The
+   first run queues every existing model file as a fill row (about 225,000 on prod, in pages of
+   2,000 artifacts, about 40 seconds). Later runs add nothing while fill rows are pending
+   (`fill_waiting_for_pending=true` in the `started` line). Uploads are always read before fill
+   rows. At 500 files a run the fill takes about 1 to 1.6 days.
+2. Fill-off PR: `fill: false` once a run logs `fill_sets_added=0` and no fill row is pending:
+
+   ```sql
+   select fill, status, count(*) from coordinate_index_sets group by 1, 2 order by 1, 2;
+   ```
+
+3. Chain filters PR: `model_search.chain_filters_enabled: true` in `backend/config/<env>.yml`.
+   Until then a chain parameter answers 400, so a search never silently misses a file that is
+   not read yet.
+
+The chain table holds about 2 rows per file (about 0.42 million rows, 55 MB on prod, plus about
+25 MB of sets). Watch RDS free storage and the EBS balances as for the model compounds job; stop
+the job with `coordinateIndexJob.enabled: false`, and until that deploys:
+
+```sh
+kubectl -n dynamicpdb patch cronjob dynamic-pdb-coordinate-index-job -p '{"spec":{"suspend":true}}'
+```
+
+### Failures and reading again
+
+A file is retried after 10 and 20 minutes, then marked `failed` with the reason in
+`last_error`; so is a file whose read ended the job three times, and at once a file that is not
+a structure file or is over a reader limit. Job alerts are muted for this namespace, so check:
+
+```sql
+select artifact_id, attempts, last_error from coordinate_index_sets where status = 'failed';
+```
+
+A file queued again keeps the chains of its last read until the new read replaces them, so the
+search never loses it in between. To read a file again (for example after a reader change that
+bumps `cif.CoordinateIndexVersion`):
+
+```sql
+update coordinate_index_sets set status = 'pending', attempts = 0, next_attempt_at = now()
+where artifact_id = '<artifact id>';
+```
+
+To run it manually:
+
+```sh
+kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-coordinate-index-job dynamic-pdb-coordinate-index-job-manual-$(date +%s)
+```

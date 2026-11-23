@@ -74,11 +74,19 @@ compounds:
   # the queue up each run (archive_fill). See deploy/README.md, "Archive model files".
   archive_files: true
   archive_fill: false
+coordinate_index:
+  # The coordinate-index job (S2) also reads archive model files, from the checksum job's copies,
+  # through its recent window and its fill. See deploy/README.md, "Coordinate index job".
+  archive_files: true
 model_search:
   # Search filters, the capped total and the entry and review warnings on GET /v1/models (S1) are
   # on. Rollback: false here, or DYNAMIC_PDB_MODEL_SEARCH_FILTERS_ENABLED=false. count_cap and
   # rate_limit keep their defaults.
   filters_enabled: true
+  # The protein chain filters (S2) stay off until the coordinate-index job's fill is done: before
+  # that they would miss every model whose file is not read yet. Their own switch-on PR turns them
+  # on. Off, a chain parameter gets 400.
+  chain_filters_enabled: false
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR. Rollback after
   # that: false here, or DYNAMIC_PDB_SELECTIONS_ENABLED=false. The limits keep their defaults.

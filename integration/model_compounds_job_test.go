@@ -60,7 +60,8 @@ func Test_should_store_the_compounds_of_uploaded_model_files_when_the_model_comp
 }
 
 // createModelWithStoredFile adds a model through the API whose model file is stored in the
-// S3 stub, the way a client registers an upload, and returns the artifact id.
+// S3 stub and is the revision's primary file, the way a client registers an upload, and returns
+// the artifact id.
 func createModelWithStoredFile(
 	t *testing.T,
 	backendURL string,
@@ -77,7 +78,8 @@ func createModelWithStoredFile(
 	s3.recordBody(objectPath, []byte(content))
 	body := map[string]any{
 		"model": map[string]any{
-			"title": "model compounds " + name,
+			"title":               "model compounds " + name,
+			"primary_artifact_id": artifactID.String(),
 			// A Deposited model needs no run recording how it was computed.
 			"metadata": map[string]any{"model_type": "Deposited"},
 			"artifacts": []map[string]any{{

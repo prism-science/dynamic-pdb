@@ -71,6 +71,10 @@ type ModelSearchConfig struct {
 	// FiltersEnabled turns on the filters, the capped total, and the entry and review warnings in
 	// each result. Off, a filter parameter gets 400 and the list answers as before.
 	FiltersEnabled bool `mapstructure:"filters_enabled"`
+	// ChainFiltersEnabled also turns on the protein chain filters (S2), which read what the
+	// coordinate-index job stored: on only once its fill is done, so they never miss models whose
+	// files are not read yet. Off, a chain parameter gets 400.
+	ChainFiltersEnabled bool `mapstructure:"chain_filters_enabled"`
 	// CountCap is where the total stops counting: above it the total is "CountCap+".
 	CountCap int `mapstructure:"count_cap"`
 	// RateLimit caps searches that count their results (requests without a cursor), per client
@@ -171,6 +175,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("revisions::self_approval_enabled", false)
 	v.SetDefault("artifact_extraction::uploads_enabled", false)
 	v.SetDefault("model_search::filters_enabled", false)
+	v.SetDefault("model_search::chain_filters_enabled", false)
 	v.SetDefault("model_search::count_cap", defaultModelSearchCountCap)
 	v.SetDefault("model_search::rate_limit::requests", defaultModelSearchRateLimitRequests)
 	v.SetDefault("model_search::rate_limit::internal_requests", defaultModelSearchRateLimitInternalRequests)
