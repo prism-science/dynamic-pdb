@@ -226,8 +226,10 @@ coordinateIndexJob:
 
 # Builds bulk-download archives (B2): claims a queued job from POST /v1/downloads, reads the
 # selection's files from the data bucket, checks each against its recorded SHA-256 and writes one
-# zip plus manifest.tsv under downloads/ (expired by the bucket's lifecycle rule). One job at a
-# time per pod. Off until its switch-on PR, together with downloads.enabled in the backend config.
+# zip plus manifest.tsv under downloads/ (expired by the bucket's lifecycle rule). It first plans
+# each job and records its preview (L1). One job at a time in each of its two lanes (planning,
+# building) per pod. Off until its switch-on PR, together with downloads.enabled in the backend
+# config.
 archiveWorker:
   enabled: false
   replicaCount: 1

@@ -10,21 +10,14 @@ import (
 )
 
 // availability is a manifest file row's status: whether the archive holds the file's recorded
-// bytes, and if not, why (researcher item 8). It is kept apart from verification.
-type availability string
+// bytes, and if not, how it is listed (researcher item 8). It is kept apart from verification.
+type availability = models.DownloadAvailability
 
 const (
-	// availabilityIncluded: the zip holds the file, read from Dynamic PDB's storage and checked
-	// against its recorded SHA-256 while the archive was prepared.
-	availabilityIncluded availability = "included"
-	// availabilityLinked: not in the zip; Dynamic PDB holds no copy (over 1 GiB, not copied, or
-	// not checked yet). The manifest gives the source URL and the recorded SHA-256.
-	availabilityLinked availability = "linked"
-	// availabilityUnavailable: the file cannot be read in its recorded form.
-	availabilityUnavailable availability = "unavailable"
-	// availabilityChangedAtSource: the source no longer serves the recorded bytes and no copy was
-	// kept.
-	availabilityChangedAtSource availability = "changed-at-source"
+	availabilityIncluded        = models.DownloadAvailabilityIncluded
+	availabilityLinked          = models.DownloadAvailabilityLinked
+	availabilityUnavailable     = models.DownloadAvailabilityUnavailable
+	availabilityChangedAtSource = models.DownloadAvailabilityChangedAtSource
 )
 
 // verification says whether bytes were checked against the recorded SHA-256, and with what result.
@@ -60,7 +53,8 @@ type fileState struct {
 	verification verification
 	// verifiedAt is the checksum job's last read, for a file checked there.
 	verifiedAt *time.Time
-	reason     string
+	// reasonCode says why the archive leaves the file out; empty when it can include it.
+	reasonCode models.DownloadReasonCode
 	// key is the bucket key of the bytes to include; set only when canInclude.
 	key        string
 	canInclude bool
@@ -91,14 +85,14 @@ func stateOf(file models.SelectionFile, bucket keyLocator) (fileState, error) {
 				availability: availabilityUnavailable,
 				verification: verificationMismatch,
 				verifiedAt:   checksum.CheckedAt,
-				reason:       "the file in Dynamic PDB's storage differs from its record",
+				reasonCode:   models.DownloadReasonStoredFileDiffers,
 			}, nil
 		case models.CopyStatusMismatch:
 			return fileState{
 				availability: availabilityChangedAtSource,
 				verification: verificationMismatch,
 				verifiedAt:   checksum.CheckedAt,
-				reason:       "the source no longer serves the recorded bytes, and no copy was kept",
+				reasonCode:   models.DownloadReasonChangedAtSource,
 			}, nil
 		case models.CopyStatusCopied, models.CopyStatusOverLimit, models.CopyStatusCopyFailed, models.CopyStatusCopyOff:
 			return fileState{}, fmt.Errorf("file %s: a mismatch result with copy status %s", file.ID, *checksum.CopyStatus)
@@ -109,14 +103,14 @@ func stateOf(file models.SelectionFile, bucket keyLocator) (fileState, error) {
 		return fileState{
 			availability: availabilityLinked,
 			verification: verificationNotVerified,
-			reason:       "not checked yet, so Dynamic PDB holds no copy yet",
+			reasonCode:   models.DownloadReasonNotCheckedYet,
 		}, nil
 	case models.ChecksumStatusFailed:
 		return fileState{
 			availability: availabilityUnavailable,
 			verification: verificationNotVerified,
 			verifiedAt:   checksum.CheckedAt,
-			reason:       "the file cannot be read at its source",
+			reasonCode:   models.DownloadReasonSourceUnreadable,
 		}, nil
 	default:
 		return fileState{}, fmt.Errorf("file %s: unknown checksum status: %s", file.ID, checksum.Status)
@@ -129,12 +123,12 @@ func verifiedState(file models.SelectionFile, bucket keyLocator) (fileState, err
 	if checksum.CopyStatus == nil {
 		return fileState{}, fmt.Errorf("file %s: a verified result has no copy status", file.ID)
 	}
-	linked := func(reason string) fileState {
+	linked := func(code models.DownloadReasonCode) fileState {
 		return fileState{
 			availability: availabilityLinked,
 			verification: verificationVerified,
 			verifiedAt:   checksum.CheckedAt,
-			reason:       reason,
+			reasonCode:   code,
 		}
 	}
 	var location string
@@ -150,11 +144,11 @@ func verifiedState(file models.SelectionFile, bucket keyLocator) (fileState, err
 		}
 		location = *checksum.StoredURI
 	case models.CopyStatusOverLimit:
-		return linked("larger than 1 GiB, so Dynamic PDB keeps only its link"), nil
+		return linked(models.DownloadReasonOverCopyLimit), nil
 	case models.CopyStatusCopyFailed:
-		return linked("Dynamic PDB could not keep a copy"), nil
+		return linked(models.DownloadReasonCopyFailed), nil
 	case models.CopyStatusCopyOff:
-		return linked("Dynamic PDB keeps no copy (copying was off)"), nil
+		return linked(models.DownloadReasonCopyOff), nil
 	case models.CopyStatusMismatch:
 		return fileState{}, fmt.Errorf("file %s: a verified result with copy status mismatch", file.ID)
 	default:
@@ -168,7 +162,7 @@ func verifiedState(file models.SelectionFile, bucket keyLocator) (fileState, err
 		return fileState{
 			availability: availabilityUnavailable,
 			verification: verificationNotVerified,
-			reason:       "the location of Dynamic PDB's copy is not in its storage",
+			reasonCode:   models.DownloadReasonCopyNotInStorage,
 		}, nil
 	}
 	return fileState{
@@ -272,4 +266,74 @@ func noMatchingFileReason(choice models.DownloadFileChoice) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown download file choice: %s", choice)
 	}
+}
+
+// reasonText is a reason code as the manifest's reason column says it; empty for no code.
+func reasonText(code models.DownloadReasonCode) (string, error) {
+	if code == "" {
+		return "", nil
+	}
+	text, err := code.Text()
+	if err != nil {
+		return "", fmt.Errorf("manifest reason: %w", err)
+	}
+	return text, nil
+}
+
+// selectedFile is one manifest file row of a model: a file of the file choice, with whether it
+// belongs to the model only through its entry.
+type selectedFile struct {
+	file      models.SelectionFile
+	entryFile bool
+}
+
+// modelWalk is what a walk over a selection's models has listed so far, so an entry's files and
+// related datasets are listed once per entry, as the manifest lists them.
+type modelWalk struct {
+	choice     models.DownloadFileChoice
+	entryFiles map[string]bool
+	entries    map[string]bool
+}
+
+func newModelWalk(choice models.DownloadFileChoice) *modelWalk {
+	return &modelWalk{choice: choice, entryFiles: map[string]bool{}, entries: map[string]bool{}}
+}
+
+// filesOf returns the model's manifest file rows, in the model's file order: its files of the file
+// choice, an entry file only the first time the entry lists it. matched reports whether the model
+// has any file of the choice, listed before or not.
+func (walk *modelWalk) filesOf(
+	model models.SelectionModel,
+	details models.DownloadSelectionModel,
+) (rows []selectedFile, matched bool, err error) {
+	for _, file := range model.Files {
+		selected, err := selectsFile(walk.choice, file, details)
+		if err != nil {
+			return nil, false, err
+		}
+		if !selected {
+			continue
+		}
+		matched = true
+		entryFile := isEntryFile(file)
+		if entryFile {
+			key := model.EntryID + "/" + file.ID.String()
+			if walk.entryFiles[key] {
+				continue
+			}
+			walk.entryFiles[key] = true
+		}
+		rows = append(rows, selectedFile{file: file, entryFile: entryFile})
+	}
+	return rows, matched, nil
+}
+
+// firstOfEntry reports whether the model is the first of its entry in the walk, whose related
+// datasets the manifest lists.
+func (walk *modelWalk) firstOfEntry(model models.SelectionModel) bool {
+	if walk.entries[model.EntryID] {
+		return false
+	}
+	walk.entries[model.EntryID] = true
+	return true
 }

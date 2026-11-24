@@ -123,10 +123,12 @@ func (w *fakeObjectWriter) Abort() error {
 	return nil
 }
 
-// fakeStore is one download job and its selection in memory. It records how the job ended.
+// fakeStore is one download job and its selection in memory. It moves the job through the lanes
+// as the database does and records how each step ended.
 type fakeStore struct {
-	mu        sync.Mutex
-	job       models.DownloadJob
+	mu  sync.Mutex
+	job models.DownloadJob
+	// claimed set means no job is waiting in either lane.
 	claimed   bool
 	selection models.Selection
 	models    []models.SelectionModel
@@ -137,6 +139,9 @@ type fakeStore struct {
 	heartbeat  func() error
 
 	plannedBytes  int64
+	preview       *models.DownloadPreview
+	planned       bool
+	planUpdated   bool
 	preparing     bool
 	blockedReason string
 	result        *db.DownloadResult
@@ -146,15 +151,28 @@ type fakeStore struct {
 	released      bool
 }
 
-func (s *fakeStore) Claim(_ context.Context, now, leaseUntil time.Time) (*models.DownloadJob, error) {
+func (s *fakeStore) Claim(_ context.Context, lane db.DownloadLane, now, leaseUntil time.Time) (*models.DownloadJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.claimed {
 		return nil, nil
 	}
-	s.claimed = true
+	switch lane {
+	case db.DownloadLanePlanning:
+		if s.job.Status != models.DownloadStatusQueued {
+			return nil, nil
+		}
+		s.job.Status = models.DownloadStatusPlanning
+	case db.DownloadLaneBuilding:
+		if s.job.Status != models.DownloadStatusPlanned || !s.job.PrepareRequested {
+			return nil, nil
+		}
+		s.job.Status = models.DownloadStatusPreparing
+		s.preparing = true
+	default:
+		return nil, fmt.Errorf("unknown download lane: %s", lane)
+	}
 	s.job.Attempts++
-	s.job.Status = models.DownloadStatusPlanning
 	s.job.StartedAt = &now
 	s.job.LeaseUntil = &leaseUntil
 	job := s.job
@@ -168,19 +186,46 @@ func (s *fakeStore) Heartbeat(context.Context, uuid.UUID, int, time.Time) error 
 	return nil
 }
 
-func (s *fakeStore) StartPreparing(_ context.Context, _ uuid.UUID, _ int, plannedBytes int64) error {
+func (s *fakeStore) FinishPlanning(_ context.Context, _ uuid.UUID, _ int, plannedBytes int64, preview models.DownloadPreview) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.plannedBytes = plannedBytes
-	s.preparing = true
+	s.preview = &preview
+	s.planned = true
+	s.job.Status = models.DownloadStatusPlanned
+	s.job.PlannedBytes = &plannedBytes
+	s.job.Preview = &preview
+	s.job.FailedAttempts = 0
+	s.job.LeaseUntil = nil
 	return nil
 }
 
-func (s *fakeStore) Block(_ context.Context, _ uuid.UUID, _ int, plannedBytes int64, reason string, _ time.Time) error {
+func (s *fakeStore) UpdatePlan(_ context.Context, _ uuid.UUID, _ int, plannedBytes int64, preview models.DownloadPreview) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.plannedBytes = plannedBytes
+	s.preview = &preview
+	s.planUpdated = true
+	s.job.PlannedBytes = &plannedBytes
+	s.job.Preview = &preview
+	return nil
+}
+
+func (s *fakeStore) Block(
+	_ context.Context,
+	_ uuid.UUID,
+	_ int,
+	plannedBytes int64,
+	preview models.DownloadPreview,
+	reason string,
+	_ time.Time,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.plannedBytes = plannedBytes
+	s.preview = &preview
 	s.blockedReason = reason
+	s.job.Status = models.DownloadStatusBlocked
 	return nil
 }
 
@@ -189,6 +234,7 @@ func (s *fakeStore) Finish(_ context.Context, _ uuid.UUID, _ int, result db.Down
 	defer s.mu.Unlock()
 	s.result = &result
 	s.expiresAt = expiresAt
+	s.job.Status = models.DownloadStatusReady
 	return nil
 }
 
@@ -196,13 +242,26 @@ func (s *fakeStore) Fail(_ context.Context, _ uuid.UUID, _ int, message string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failed = message
+	s.job.Status = models.DownloadStatusFailed
 	return nil
+}
+
+// backToWaiting is where a job held by a worker goes back to: queued for planning, planned for
+// building.
+func (s *fakeStore) backToWaiting() {
+	if s.job.Status == models.DownloadStatusPlanning {
+		s.job.Status = models.DownloadStatusQueued
+		return
+	}
+	s.job.Status = models.DownloadStatusPlanned
 }
 
 func (s *fakeStore) Requeue(_ context.Context, _ uuid.UUID, _ int, message string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requeued = message
+	s.job.FailedAttempts++
+	s.backToWaiting()
 	return nil
 }
 
@@ -210,6 +269,7 @@ func (s *fakeStore) Release(context.Context, uuid.UUID, int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.released = true
+	s.backToWaiting()
 	return nil
 }
 
@@ -275,4 +335,17 @@ func sha256Hex(content string) string {
 
 func ptr[T any](value T) *T {
 	return &value
+}
+
+// updateFile changes a pinned file in every model that lists it.
+func (s *fakeStore) updateFile(fileID uuid.UUID, change func(*models.SelectionFile)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for modelIndex := range s.models {
+		for fileIndex := range s.models[modelIndex].Files {
+			if s.models[modelIndex].Files[fileIndex].ID == fileID {
+				change(&s.models[modelIndex].Files[fileIndex])
+			}
+		}
+	}
 }

@@ -43,10 +43,13 @@ func (choice DownloadFileChoice) Validate() error {
 type DownloadStatus string
 
 const (
-	// DownloadStatusQueued waits for the archive worker.
+	// DownloadStatusQueued waits for the archive worker to plan it.
 	DownloadStatusQueued DownloadStatus = "queued"
 	// DownloadStatusPlanning means the worker reads the selection and adds up the bytes.
 	DownloadStatusPlanning DownloadStatus = "planning"
+	// DownloadStatusPlanned means the preview is ready: the job waits for the person to ask for the
+	// archive (PrepareRequested false), or for the worker to build it (PrepareRequested true).
+	DownloadStatusPlanned DownloadStatus = "planned"
 	// DownloadStatusPreparing means the worker writes the zip.
 	DownloadStatusPreparing DownloadStatus = "preparing"
 	// DownloadStatusReady means the zip and its manifest are in the bucket until the expiry.
@@ -60,12 +63,12 @@ const (
 	DownloadStatusExpired DownloadStatus = "expired"
 )
 
-// DownloadCounts are an archive manifest's file rows by availability.
+// DownloadCounts are an archive's distinct files by availability.
 type DownloadCounts struct {
-	Included        int
-	Linked          int
-	Unavailable     int
-	ChangedAtSource int
+	Included        int `json:"included"`
+	Linked          int `json:"linked"`
+	Unavailable     int `json:"unavailable"`
+	ChangedAtSource int `json:"changed_at_source"`
 }
 
 // DownloadJob is one request to build a bulk-download archive of a frozen selection.
@@ -81,8 +84,15 @@ type DownloadJob struct {
 	ExpiresAt       *time.Time
 	LeaseUntil      *time.Time
 	// Attempts counts the worker's claims of the job; each write of a worker names its attempt.
-	Attempts      int
-	PlannedBytes  *int64
+	Attempts int
+	// FailedAttempts counts the failed attempts of the current phase (planning, then building).
+	FailedAttempts int
+	// PrepareRequested is true once the archive is asked for; until then a planned job only shows
+	// its preview.
+	PrepareRequested bool
+	PlannedBytes     *int64
+	// Preview is set once the job is planned.
+	Preview       *DownloadPreview
 	ArchiveKey    *string
 	ArchiveURL    *string
 	ArchiveBytes  *int64
@@ -106,7 +116,7 @@ func (job DownloadJob) ReportedStatus(now time.Time) (DownloadStatus, error) {
 			return DownloadStatusExpired, nil
 		}
 		return DownloadStatusReady, nil
-	case DownloadStatusQueued, DownloadStatusPlanning, DownloadStatusPreparing,
+	case DownloadStatusQueued, DownloadStatusPlanning, DownloadStatusPlanned, DownloadStatusPreparing,
 		DownloadStatusBlocked, DownloadStatusFailed:
 		return job.Status, nil
 	case DownloadStatusExpired:

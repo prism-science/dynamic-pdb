@@ -1,5 +1,6 @@
-// Command archive-worker builds bulk-download archives (POST /v1/downloads) into the data bucket.
-// It runs as its own Deployment, one job at a time, until it is told to stop.
+// Command archive-worker plans bulk-download archives (POST /v1/downloads), recording each one's
+// preview, and builds the ones asked for into the data bucket. It runs as its own Deployment, one
+// job at a time in each of its two lanes (planning, building), until it is told to stop.
 package main
 
 import (

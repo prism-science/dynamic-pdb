@@ -6,9 +6,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -83,7 +85,11 @@ func Test_should_give_each_file_its_availability_and_verification_when_its_check
 			assert.Equal(t, tc.canInclude, state.canInclude)
 			assert.Equal(t, tc.key, state.key)
 			if !tc.canInclude {
-				assert.NotEmpty(t, state.reason, "a file left out says why")
+				availability, err := state.reasonCode.Availability()
+				require.NoError(t, err, "a file left out has a known reason code")
+				assert.Equal(t, tc.availability, availability, "the reason code is listed as the file is")
+			} else {
+				assert.Empty(t, state.reasonCode)
 			}
 		})
 	}
@@ -349,4 +355,46 @@ func Test_should_give_every_file_a_path_of_its_own_when_names_clash(t *testing.T
 		folder + "bbbbbbbb-0000-4000-8000-000000000004_model.cif",
 		folder + "model.cif",
 	}, paths)
+}
+
+func Test_should_keep_each_archive_file_name_within_255_bytes_when_a_name_is_long_or_clashes(t *testing.T) {
+	// given
+	long := strings.Repeat("a", 300) + ".cif"
+	accented := strings.Repeat("é", 200) + ".cif"
+	longExtension := "notes." + strings.Repeat("x", 300)
+	cases := []struct {
+		name, prefix, file string
+		keepsExtension     string
+	}{
+		{"short name unchanged", "", "1abc.cif", ".cif"},
+		{"long name", "", long, ".cif"},
+		{"long name with a clash prefix", "1234abcd_", strings.Repeat("b", 255), ""},
+		{"multibyte name", "", accented, ".cif"},
+		{"long extension", "", longExtension, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// when
+			bounded := boundedFileName(tc.prefix, tc.file)
+
+			// then
+			assert.LessOrEqual(t, len(bounded), maxFileNameBytes)
+			assert.True(t, utf8.ValidString(bounded), "cut at a character boundary")
+			assert.True(t, strings.HasPrefix(bounded, tc.prefix))
+			assert.True(t, strings.HasSuffix(bounded, tc.keepsExtension))
+		})
+	}
+	assert.Equal(t, "1abc.cif", boundedFileName("", "1abc.cif"))
+
+	// and two files with the same longest name in one folder get two paths, each within the limit
+	layout := newArchiveLayout(uuid.New())
+	model := models.SelectionModel{EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_001"}
+	name := strings.Repeat("c", 251) + ".cif"
+	first := layout.path(models.SelectionFile{ID: uuid.New(), Name: name}, model, false)
+	second := layout.path(models.SelectionFile{ID: uuid.New(), Name: name}, model, false)
+	assert.NotEqual(t, first, second)
+	for _, assigned := range []string{first, second} {
+		assert.LessOrEqual(t, len(path.Base(assigned)), maxFileNameBytes, assigned)
+		assert.True(t, strings.HasSuffix(assigned, ".cif"))
+	}
 }

@@ -52,9 +52,11 @@ func Test_should_answer_404_on_every_downloads_route_when_downloads_are_off(t *t
 	server.CreateDownload(create, newDownloadRequest(`{}`))
 	get := httptest.NewRecorder()
 	server.GetDownload(get, httptest.NewRequest(http.MethodGet, "/v1/downloads/x", nil), uuid.NewString())
+	prepare := httptest.NewRecorder()
+	server.PrepareDownload(prepare, httptest.NewRequest(http.MethodPost, "/v1/downloads/x/prepare", nil), uuid.NewString())
 
 	// then
-	for _, recorder := range []*httptest.ResponseRecorder{create, get} {
+	for _, recorder := range []*httptest.ResponseRecorder{create, get, prepare} {
 		assert.Equal(t, http.StatusNotFound, recorder.Code)
 		errs := decodeErrorObjects(t, recorder)
 		require.Len(t, errs, 1)
@@ -74,6 +76,8 @@ func Test_should_answer_422_naming_each_field_when_an_archive_request_is_invalid
 			[]string{"/file_choice"}},
 		"unknown key": {`{"selection_id":"` + uuid.NewString() + `","file_choice":"all_files","zip":true}`,
 			[]string{"/zip"}},
+		"prepare not a boolean": {`{"selection_id":"` + uuid.NewString() + `","file_choice":"all_files","prepare":"yes"}`,
+			[]string{"/prepare"}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -152,12 +156,15 @@ func Test_should_answer_each_status_and_code_when_an_archive_request_fails(t *te
 func Test_should_answer_404_when_a_download_id_is_not_a_uuid(t *testing.T) {
 	// given
 	recorder := httptest.NewRecorder()
+	prepare := httptest.NewRecorder()
 
 	// when
 	downloadsTestServer(1000).GetDownload(recorder, httptest.NewRequest(http.MethodGet, "/v1/downloads/x", nil), "not-a-uuid")
+	downloadsTestServer(1000).PrepareDownload(prepare, newDownloadRequest(``), "not-a-uuid")
 
 	// then
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
+	assert.Equal(t, http.StatusNotFound, prepare.Code)
 }
 
 func readyDownloadJob(expiresAt time.Time) domainmodels.DownloadJob {
@@ -269,4 +276,144 @@ func Test_should_use_the_documented_keys_when_a_download_document_is_serialized(
 		`"archive_sha256"`, `"changed_at_source":1`} {
 		assert.Contains(t, string(data), key)
 	}
+}
+
+func plannedDownloadJob() domainmodels.DownloadJob {
+	job := readyDownloadJob(downloadsTestNow.Add(time.Hour))
+	job.Status = domainmodels.DownloadStatusPlanned
+	job.FinishedAt, job.ExpiresAt, job.ArchiveURL, job.ManifestURL, job.Counts = nil, nil, nil, nil, nil
+	job.Preview = &domainmodels.DownloadPreview{
+		Entries: 2, Models: 6, ModelsWithoutMatchingFiles: 1, Files: 5,
+		FileTypes: []domainmodels.DownloadPreviewFileType{
+			{Type: domainmodels.ArtifactTypeModel, Files: 3, BytesKnown: 300},
+			{Type: domainmodels.ArtifactTypeStructureFactors, Files: 2, BytesKnown: 2_000_000_000, FilesSizeUnknown: 1},
+		},
+		Availability: domainmodels.DownloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1},
+		NotIncluded: []domainmodels.DownloadPreviewReason{
+			{Code: domainmodels.DownloadReasonOverCopyLimit, Files: 2},
+			{Code: domainmodels.DownloadReasonChangedAtSource, Files: 1},
+		},
+		Verification:           domainmodels.DownloadPreviewVerification{Verified: 4, Mismatch: 1},
+		IncludedBytes:          200,
+		ArchiveBytesUpperBound: 4000,
+		LinkedBytesKnown:       2_000_000_000, LinkedFilesSizeUnknown: 1,
+		RelatedDatasets: domainmodels.DownloadPreviewRelatedDatasets{Total: 2, WithDOI: 1, WithAccessionOnly: 1},
+	}
+	return job
+}
+
+func Test_should_show_what_the_archive_holds_and_how_sure_each_size_is_when_a_planned_download_is_answered(t *testing.T) {
+	// given
+	server := downloadsTestServer(1000)
+
+	// when
+	document, err := server.downloadDocument(plannedDownloadJob())
+
+	// then
+	require.NoError(t, err)
+	attributes := document.Data.Attributes
+	assert.Equal(t, DownloadStatusPlanned, attributes.Status)
+	assert.Nil(t, attributes.Message)
+	require.NotNil(t, attributes.Preview)
+	preview := attributes.Preview
+	assert.Equal(t, DownloadPreviewRecords{Entries: 2, Models: 6, ModelsWithoutMatchingFiles: 1}, preview.Records)
+	assert.Equal(t, DownloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1}, preview.Files.Availability)
+	assert.Equal(t, DownloadPreviewVerification{Verified: 4, Mismatch: 1}, preview.Files.Verification)
+	assert.Equal(t, []DownloadPreviewReason{
+		{Code: DownloadReasonCodeOverCopyLimit, Status: DownloadFileAvailabilityLinked, Files: 2,
+			Reason: "larger than 1 GiB, so Dynamic PDB keeps only its link"},
+		{Code: DownloadReasonCodeChangedAtSource, Status: DownloadFileAvailabilityChangedAtSource, Files: 1,
+			Reason: "the source no longer serves the recorded bytes, and no copy was kept"},
+	}, preview.Files.NotIncluded)
+	require.Len(t, preview.Files.ByType, 2)
+	assert.Equal(t, DownloadSizeKindExact, preview.Files.ByType[0].Size.Kind)
+	assert.Equal(t, int64(300), *preview.Files.ByType[0].Size.Bytes)
+	assert.Equal(t, DownloadSizeKindEstimate, preview.Files.ByType[1].Size.Kind, "1 of 2 sizes is unknown")
+	assert.Equal(t, "a lower bound: 1 of the 2 files have no recorded size", *preview.Files.ByType[1].Size.Tolerance)
+	assert.Equal(t, DownloadSizeKindExact, preview.Sizes.Included.Kind)
+	assert.Equal(t, int64(200), *preview.Sizes.Included.Bytes)
+	assert.Equal(t, DownloadSizeKindEstimate, preview.Sizes.Archive.Kind)
+	assert.Equal(t, int64(4000), *preview.Sizes.Archive.Bytes)
+	assert.Contains(t, *preview.Sizes.Archive.Tolerance, "upper bound")
+	assert.Equal(t, DownloadSizeKindEstimate, preview.Sizes.Linked.Kind)
+	assert.Equal(t, 1, *preview.Sizes.Linked.FilesSizeUnknown)
+	assert.Equal(t, DownloadPreviewRelatedDatasets{Total: 2, WithDoi: 1, WithAccessionOnly: 1}, preview.RelatedDatasets)
+	assert.False(t, preview.OverLimit)
+	assert.False(t, attributes.PrepareRequested)
+
+	// and the keys are the documented ones
+	data, err := json.Marshal(document)
+	require.NoError(t, err)
+	for _, key := range []string{`"status":"planned"`, `"prepare_requested":false`, `"preview":{`,
+		`"models_without_matching_files":1`, `"not_included":[`, `"code":"over_copy_limit"`, `"status":"changed-at-source"`,
+		`"kind":"estimate"`, `"with_accession_only":1`, `"over_limit":false`} {
+		assert.Contains(t, string(data), key)
+	}
+
+	// and a queued job has no preview yet
+	queued := plannedDownloadJob()
+	queued.Status, queued.Preview = domainmodels.DownloadStatusQueued, nil
+	document, err = server.downloadDocument(queued)
+	require.NoError(t, err)
+	assert.Nil(t, document.Data.Attributes.Preview)
+}
+
+func Test_should_say_exact_estimate_or_unknown_when_some_sizes_are_not_recorded(t *testing.T) {
+	// given
+	cases := []struct {
+		name        string
+		files       int
+		sizeUnknown int
+		kind        DownloadSizeKind
+		bytes       bool
+	}{
+		{"every size known", 3, 0, DownloadSizeKindExact, true},
+		{"no files", 0, 0, DownloadSizeKindExact, true},
+		{"some unknown", 3, 1, DownloadSizeKindEstimate, true},
+		{"all unknown", 3, 3, DownloadSizeKindUnknown, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// when
+			size := partialSize(tc.files, tc.sizeUnknown, 10, "files")
+
+			// then
+			assert.Equal(t, tc.kind, size.Kind)
+			assert.Equal(t, tc.bytes, size.Bytes != nil)
+			assert.Equal(t, "files", size.Measures)
+		})
+	}
+}
+
+func Test_should_fail_on_an_unknown_reason_or_file_type_when_a_preview_is_answered(t *testing.T) {
+	// given
+	server := downloadsTestServer(1000)
+	unknownReason := plannedDownloadJob()
+	unknownReason.Preview.NotIncluded = []domainmodels.DownloadPreviewReason{{Code: "lost", Files: 1}}
+	unknownType := plannedDownloadJob()
+	unknownType.Preview.FileTypes = []domainmodels.DownloadPreviewFileType{{Type: "image", Files: 1}}
+
+	// when
+	_, reasonErr := server.downloadDocument(unknownReason)
+	_, typeErr := server.downloadDocument(unknownType)
+
+	// then
+	require.ErrorContains(t, reasonErr, "unknown download reason code")
+	require.ErrorContains(t, typeErr, "unknown artifact type")
+}
+
+func Test_should_say_the_preview_is_over_the_limit_when_its_included_bytes_pass_it(t *testing.T) {
+	// given
+	blocked := plannedDownloadJob()
+	blocked.Status = domainmodels.DownloadStatusBlocked
+	finished := downloadsTestNow
+	blocked.FinishedAt = &finished
+	blocked.Preview.IncludedBytes = blocked.MaxArchiveBytes + 1
+
+	// when
+	document, err := downloadsTestServer(1000).downloadDocument(blocked)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, document.Data.Attributes.Preview.OverLimit)
 }

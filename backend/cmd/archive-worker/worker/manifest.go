@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -243,45 +244,94 @@ type archiveLayout struct {
 	root  string
 	paths map[uuid.UUID]string
 	used  map[string]uuid.UUID
+	// folders are the model folders: no file may take one's path, or the zip could not be
+	// unpacked (a file and a folder of the same name).
+	folders map[string]bool
 }
 
 func newArchiveLayout(selectionID uuid.UUID) *archiveLayout {
 	return &archiveLayout{
-		root:  "dynamic-pdb-" + selectionID.String(),
-		paths: map[uuid.UUID]string{},
-		used:  map[string]uuid.UUID{},
+		root:    "dynamic-pdb-" + selectionID.String(),
+		paths:   map[uuid.UUID]string{},
+		used:    map[string]uuid.UUID{},
+		folders: map[string]bool{},
 	}
 }
 
+// modelFolder is the folder of a model's files.
+func (l *archiveLayout) modelFolder(model models.SelectionModel) string {
+	return path.Join(l.root, model.EntryID, model.ModelID)
+}
+
+// reserveFolder keeps a model folder's path from every file.
+func (l *archiveLayout) reserveFolder(folder string) {
+	l.folders[folder] = true
+}
+
 // path returns the file's path, assigning one the first time: <root>/<entry>/<name> for an entry
-// file, <root>/<entry>/<model>/<name> otherwise. When another file holds that path, the file's
-// name gets the first 8 characters of its ID as a prefix, then its whole ID, then its whole ID
-// and a number, until the path is free: two files never share a path.
+// file, <root>/<entry>/<model>/<name> otherwise. When another file or a model folder holds that
+// path, the file's name gets the first 8 characters of its ID as a prefix, then its whole ID, then
+// its whole ID and a number, until the path is free: two files never share a path, and no file
+// takes a model folder's.
 func (l *archiveLayout) path(file models.SelectionFile, model models.SelectionModel, entryFile bool) string {
 	if assigned, found := l.paths[file.ID]; found {
 		return assigned
 	}
 	folder := path.Join(l.root, model.EntryID)
 	if !entryFile {
-		folder = path.Join(folder, model.ModelID)
+		folder = l.modelFolder(model)
 	}
 	name := safeFileName(file.Name, file.ID)
 	id := file.ID.String()
-	for _, candidate := range []string{name, id[:8] + "_" + name, id + "_" + name} {
-		if l.claim(path.Join(folder, candidate), file.ID) {
+	for _, prefix := range []string{"", id[:8] + "_", id + "_"} {
+		if l.claim(path.Join(folder, boundedFileName(prefix, name)), file.ID) {
 			return l.paths[file.ID]
 		}
 	}
 	for number := 2; ; number++ {
-		if l.claim(path.Join(folder, fmt.Sprintf("%s-%d_%s", id, number, name)), file.ID) {
+		if l.claim(path.Join(folder, boundedFileName(fmt.Sprintf("%s-%d_", id, number), name)), file.ID) {
 			return l.paths[file.ID]
 		}
 	}
 }
 
-// claim gives the file candidate as its path unless another file holds it.
+const (
+	// maxFileNameBytes is the longest file name common filesystems take (ext4, APFS, NTFS: 255
+	// bytes); a longer name in the zip could not be unpacked.
+	maxFileNameBytes = 255
+	// maxKeptExtensionBytes is the longest extension a shortened name keeps.
+	maxKeptExtensionBytes = 32
+)
+
+// boundedFileName is prefix and name within maxFileNameBytes: a longer name loses the end of its
+// stem, cut at a UTF-8 character boundary, and keeps its extension.
+func boundedFileName(prefix, name string) string {
+	room := maxFileNameBytes - len(prefix)
+	if len(name) <= room {
+		return prefix + name
+	}
+	extension := path.Ext(name)
+	if len(extension) > maxKeptExtensionBytes || len(extension) == len(name) {
+		extension = ""
+	}
+	stem := cutUTF8(strings.TrimSuffix(name, extension), room-len(extension))
+	return prefix + stem + extension
+}
+
+// cutUTF8 returns at most limit bytes of value, ending at a character boundary.
+func cutUTF8(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	for limit > 0 && !utf8.RuneStart(value[limit]) {
+		limit--
+	}
+	return value[:limit]
+}
+
+// claim gives the file candidate as its path unless another file holds it or it is a model folder.
 func (l *archiveLayout) claim(candidate string, fileID uuid.UUID) bool {
-	if owner, taken := l.used[candidate]; taken && owner != fileID {
+	if owner, taken := l.used[candidate]; (taken && owner != fileID) || l.folders[candidate] {
 		return false
 	}
 	l.paths[fileID] = candidate

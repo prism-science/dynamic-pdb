@@ -4,11 +4,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 
+	"dynamic-pdb/backend/internal/db"
 	"dynamic-pdb/backend/internal/httpapi"
+	"dynamic-pdb/backend/internal/models"
 )
 
 // DownloadsSuite covers archive requests on a server that has selections and downloads on. The
@@ -102,4 +105,77 @@ func (s *DownloadsSuite) Test_should_answer_404_when_an_archive_is_unknown_or_do
 		map[string]any{"selection_id": uuid.NewString(), "file_choice": "all_files"}, "")
 	document := decodeJSONResponse[httpapi.Error](s.T(), off, http.StatusNotFound)
 	s.Equal("DOWNLOADS_OFF", *document.Errors[0].Code)
+}
+
+func (s *DownloadsSuite) prepareArchive(id string) *http.Response {
+	//nolint:bodyclose // the callers decode and close the response body.
+	return jsonRequestToServerWithToken(s.T(), selectionsServer.URL, http.MethodPost,
+		"/v1/downloads/"+id+"/prepare", nil, "")
+}
+
+func (s *DownloadsSuite) Test_should_build_the_archive_only_once_prepared_when_its_preview_is_asked_for() {
+	// given a saved selection, and a request for the preview only
+	selectionID := s.savedSelectionForDownloadsTest("downloads-previewer", 8922)
+	preview := s.requestArchive(map[string]any{"selection_id": selectionID, "file_choice": "original_mmcif",
+		"prepare": false}, http.StatusAccepted)
+	s.False(preview.Data.Attributes.PrepareRequested)
+	s.Equal(httpapi.DownloadStatusQueued, preview.Data.Attributes.Status)
+	s.Nil(preview.Data.Attributes.Preview, "the worker has not planned it yet")
+
+	// when it is prepared
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	prepared := decodeJSONResponse[httpapi.DownloadDocument](s.T(), s.prepareArchive(preview.Data.Id),
+		http.StatusAccepted)
+
+	// then it is asked for once
+	s.Equal(preview.Data.Id, prepared.Data.Id)
+	s.True(prepared.Data.Attributes.PrepareRequested)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	again := decodeJSONResponse[httpapi.DownloadDocument](s.T(), s.prepareArchive(preview.Data.Id),
+		http.StatusOK)
+	s.True(again.Data.Attributes.PrepareRequested)
+
+	// and an unknown archive is not found
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	decodeJSONResponse[httpapi.Error](s.T(), s.prepareArchive(uuid.NewString()), http.StatusNotFound)
+}
+
+func (s *DownloadsSuite) Test_should_answer_409_when_a_blocked_archive_is_prepared() {
+	// given an archive whose planning blocked it
+	selectionID := s.savedSelectionForDownloadsTest("downloads-blocked", 8923)
+	request := s.requestArchive(map[string]any{"selection_id": selectionID, "file_choice": "all_files",
+		"prepare": false}, http.StatusAccepted)
+	ctx := s.T().Context()
+	now := time.Now().UTC()
+	var claimed *models.DownloadJob
+	for {
+		job, err := testDatabase.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
+		s.Require().NoError(err)
+		s.Require().NotNil(job, "the request is waiting to be planned")
+		if job.ID.String() == request.Data.Id {
+			claimed = job
+			break
+		}
+		s.Require().NoError(testDatabase.Downloads.Release(ctx, job.ID, job.Attempts))
+	}
+	s.Require().NoError(testDatabase.Downloads.Block(ctx, claimed.ID, claimed.Attempts, claimed.MaxArchiveBytes+1,
+		models.DownloadPreview{IncludedBytes: claimed.MaxArchiveBytes + 1, FileTypes: []models.DownloadPreviewFileType{},
+			NotIncluded: []models.DownloadPreviewReason{}},
+		"the files to include add up to 10.0 GB, more than the 10.0 GB one archive may hold", now))
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	document := decodeJSONResponse[httpapi.Error](s.T(), s.prepareArchive(request.Data.Id),
+		http.StatusConflict)
+
+	// then
+	s.Equal("DOWNLOAD_NOT_PREPARABLE", *document.Errors[0].Code)
+
+	// and reading it shows the blocked preview and why
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	read := decodeJSONResponse[httpapi.DownloadDocument](s.T(), jsonRequestToServerWithToken(s.T(), selectionsServer.URL,
+		http.MethodGet, "/v1/downloads/"+request.Data.Id, nil, ""), http.StatusOK)
+	s.Equal(httpapi.DownloadStatusBlocked, read.Data.Attributes.Status)
+	s.Require().NotNil(read.Data.Attributes.Preview)
+	s.True(read.Data.Attributes.Preview.OverLimit)
 }

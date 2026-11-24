@@ -28,6 +28,9 @@ var (
 	// ErrDownloadLeaseLost means the job is no longer held by the worker's attempt: its lease ran
 	// out and another attempt claimed it, or it already finished.
 	ErrDownloadLeaseLost = errors.New("db: the download is no longer held by this attempt")
+	// ErrDownloadNotPreparable means the archive can no longer be asked for: it is blocked, failed
+	// or expired. A new request (POST /v1/downloads) starts again.
+	ErrDownloadNotPreparable = errors.New("db: the download can no longer be prepared")
 )
 
 // DownloadCreate is one request for an archive of a frozen selection.
@@ -36,10 +39,33 @@ type DownloadCreate struct {
 	SelectionID     uuid.UUID
 	FileChoice      models.DownloadFileChoice
 	MaxArchiveBytes int64
-	// MaxUnfinished caps the queued, planning and preparing archives of all selections together.
+	// Prepare asks for the archive itself; false stops the job once its preview is planned.
+	Prepare bool
+	DownloadCaps
+	// Now decides whether a ready archive has expired.
+	Now time.Time
+}
+
+// DownloadCaps bound the unfinished archives: queued, planning, preparing, and planned ones whose
+// archive was asked for. A planned job that only shows its preview does not count.
+type DownloadCaps struct {
+	// MaxUnfinished caps them for all selections together.
 	MaxUnfinished int
 	// MaxUnfinishedPerSelection caps them for one selection.
 	MaxUnfinishedPerSelection int
+}
+
+func (caps DownloadCaps) validate() error {
+	if caps.MaxUnfinished <= 0 || caps.MaxUnfinishedPerSelection <= 0 {
+		return errors.New("download caps must be positive")
+	}
+	return nil
+}
+
+// DownloadPrepare asks for the archive of a job whose preview was shown.
+type DownloadPrepare struct {
+	ID uuid.UUID
+	DownloadCaps
 	// Now decides whether a ready archive has expired.
 	Now time.Time
 }
@@ -68,14 +94,18 @@ func NewDownloadsRepository(database *sqlx.DB, queriers *QuerierProvider) *Downl
 const downloadJobColumns = `download_jobs.id, download_jobs.selection_id, download_jobs.file_choice,
 	download_jobs.status, download_jobs.max_archive_bytes, download_jobs.created_at,
 	download_jobs.started_at, download_jobs.finished_at, download_jobs.expires_at,
-	download_jobs.lease_until, download_jobs.attempts, download_jobs.planned_bytes,
+	download_jobs.lease_until, download_jobs.attempts, download_jobs.failed_attempts,
+	download_jobs.prepare_requested, download_jobs.planned_bytes, download_jobs.preview,
 	download_jobs.archive_key, download_jobs.archive_url, download_jobs.archive_bytes,
 	download_jobs.archive_sha256, download_jobs.manifest_key, download_jobs.manifest_url,
 	download_jobs.files_included, download_jobs.files_linked, download_jobs.files_unavailable,
 	download_jobs.files_changed_at_source, download_jobs.blocked_reason, download_jobs.error`
 
-// unfinishedDownloadStatuses is the SQL list of the statuses a worker has not finished.
-const unfinishedDownloadStatuses = `('queued', 'planning', 'preparing')`
+// unfinishedDownload is the SQL condition of a job the worker has not finished and that counts
+// toward the caps: one waiting for or in a worker lane. A planned job that only shows its preview
+// waits for a person, not for the worker.
+const unfinishedDownload = `(download_jobs.status in ('queued', 'planning', 'preparing')
+	or (download_jobs.status = 'planned' and download_jobs.prepare_requested))`
 
 type downloadJobRow struct {
 	ID                   uuid.UUID      `db:"id"`
@@ -89,7 +119,10 @@ type downloadJobRow struct {
 	ExpiresAt            sql.NullTime   `db:"expires_at"`
 	LeaseUntil           sql.NullTime   `db:"lease_until"`
 	Attempts             int            `db:"attempts"`
+	FailedAttempts       int            `db:"failed_attempts"`
+	PrepareRequested     bool           `db:"prepare_requested"`
 	PlannedBytes         sql.NullInt64  `db:"planned_bytes"`
+	Preview              []byte         `db:"preview"`
 	ArchiveKey           sql.NullString `db:"archive_key"`
 	ArchiveURL           sql.NullString `db:"archive_url"`
 	ArchiveBytes         sql.NullInt64  `db:"archive_bytes"`
@@ -111,34 +144,47 @@ func (row downloadJobRow) job() (*models.DownloadJob, error) {
 	}
 	status := models.DownloadStatus(row.Status)
 	switch status {
-	case models.DownloadStatusQueued, models.DownloadStatusPlanning, models.DownloadStatusPreparing,
-		models.DownloadStatusReady, models.DownloadStatusBlocked, models.DownloadStatusFailed:
+	case models.DownloadStatusQueued, models.DownloadStatusPlanning, models.DownloadStatusPlanned,
+		models.DownloadStatusPreparing, models.DownloadStatusReady, models.DownloadStatusBlocked,
+		models.DownloadStatusFailed:
 	case models.DownloadStatusExpired:
 		return nil, fmt.Errorf("download %s: the reported-only status %s is stored", row.ID, status)
 	default:
 		return nil, fmt.Errorf("download %s: unknown download status: %s", row.ID, status)
 	}
+	preview, err := optionalJSONFromSQL[models.DownloadPreview](row.Preview)
+	if err != nil {
+		return nil, fmt.Errorf("download %s preview: %w", row.ID, err)
+	}
+	if preview != nil {
+		if err := preview.Validate(); err != nil {
+			return nil, fmt.Errorf("download %s: %w", row.ID, err)
+		}
+	}
 	job := &models.DownloadJob{
-		ID:              row.ID,
-		SelectionID:     row.SelectionID,
-		FileChoice:      choice,
-		Status:          status,
-		MaxArchiveBytes: row.MaxArchiveBytes,
-		CreatedAt:       row.CreatedAt,
-		StartedAt:       timePtrFromSQL(row.StartedAt),
-		FinishedAt:      timePtrFromSQL(row.FinishedAt),
-		ExpiresAt:       timePtrFromSQL(row.ExpiresAt),
-		LeaseUntil:      timePtrFromSQL(row.LeaseUntil),
-		Attempts:        row.Attempts,
-		PlannedBytes:    int64PtrFromSQL(row.PlannedBytes),
-		ArchiveKey:      stringPtrFromSQL(row.ArchiveKey),
-		ArchiveURL:      stringPtrFromSQL(row.ArchiveURL),
-		ArchiveBytes:    int64PtrFromSQL(row.ArchiveBytes),
-		ArchiveSHA256:   stringPtrFromSQL(row.ArchiveSHA256),
-		ManifestKey:     stringPtrFromSQL(row.ManifestKey),
-		ManifestURL:     stringPtrFromSQL(row.ManifestURL),
-		BlockedReason:   stringPtrFromSQL(row.BlockedReason),
-		Error:           stringPtrFromSQL(row.Error),
+		ID:               row.ID,
+		SelectionID:      row.SelectionID,
+		FileChoice:       choice,
+		Status:           status,
+		MaxArchiveBytes:  row.MaxArchiveBytes,
+		CreatedAt:        row.CreatedAt,
+		StartedAt:        timePtrFromSQL(row.StartedAt),
+		FinishedAt:       timePtrFromSQL(row.FinishedAt),
+		ExpiresAt:        timePtrFromSQL(row.ExpiresAt),
+		LeaseUntil:       timePtrFromSQL(row.LeaseUntil),
+		Attempts:         row.Attempts,
+		FailedAttempts:   row.FailedAttempts,
+		PrepareRequested: row.PrepareRequested,
+		PlannedBytes:     int64PtrFromSQL(row.PlannedBytes),
+		Preview:          preview,
+		ArchiveKey:       stringPtrFromSQL(row.ArchiveKey),
+		ArchiveURL:       stringPtrFromSQL(row.ArchiveURL),
+		ArchiveBytes:     int64PtrFromSQL(row.ArchiveBytes),
+		ArchiveSHA256:    stringPtrFromSQL(row.ArchiveSHA256),
+		ManifestKey:      stringPtrFromSQL(row.ManifestKey),
+		ManifestURL:      stringPtrFromSQL(row.ManifestURL),
+		BlockedReason:    stringPtrFromSQL(row.BlockedReason),
+		Error:            stringPtrFromSQL(row.Error),
 	}
 	if row.FilesIncluded.Valid && row.FilesLinked.Valid && row.FilesUnavailable.Valid && row.FilesChangedAtSource.Valid {
 		job.Counts = &models.DownloadCounts{
@@ -176,7 +222,7 @@ func (r *DownloadsRepository) lockCreates(ctx context.Context) error {
 	return nil
 }
 
-// reusable returns the selection's latest archive of the file choice that is unfinished, or
+// reusable returns the selection's latest job of the file choice that is unfinished, planned, or
 // ready and not expired at now; nil when there is none.
 func (r *DownloadsRepository) reusable(
 	ctx context.Context,
@@ -189,7 +235,7 @@ func (r *DownloadsRepository) reusable(
 		`select `+downloadJobColumns+`
 		 from download_jobs
 		 where download_jobs.selection_id = $1 and download_jobs.file_choice = $2
-		   and (download_jobs.status in `+unfinishedDownloadStatuses+`
+		   and (download_jobs.status in ('queued', 'planning', 'planned', 'preparing')
 		        or (download_jobs.status = 'ready' and download_jobs.expires_at > $3))
 		 order by download_jobs.created_at desc, download_jobs.id desc
 		 limit 1`, selectionID, string(choice), now)
@@ -202,16 +248,75 @@ func (r *DownloadsRepository) reusable(
 	return row.job()
 }
 
-// Create returns the selection's existing archive of the same file choice when one is unfinished
-// or ready (created false), or adds a queued job (created true). It returns
-// ErrDownloadSelectionNotFound, ErrDownloadSelectionBusy or ErrDownloadsBusy when it adds
-// nothing. Run it in a transaction (DB.CreateDownload).
+// checkCaps returns ErrDownloadSelectionBusy or ErrDownloadsBusy when one more unfinished job of
+// the selection would pass a cap.
+func (r *DownloadsRepository) checkCaps(ctx context.Context, selectionID uuid.UUID, caps DownloadCaps) error {
+	var unfinished struct {
+		Selection int `db:"selection"`
+		All       int `db:"all_selections"`
+	}
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &unfinished,
+		`select count(*) filter (where selection_id = $1) as selection, count(*) as all_selections
+		 from download_jobs where `+unfinishedDownload, selectionID); err != nil {
+		return fmt.Errorf("count unfinished downloads: %w", err)
+	}
+	if unfinished.Selection >= caps.MaxUnfinishedPerSelection {
+		return ErrDownloadSelectionBusy
+	}
+	if unfinished.All >= caps.MaxUnfinished {
+		return ErrDownloadsBusy
+	}
+	return nil
+}
+
+// requestPrepare asks for the archive of a job that has not been asked for yet. A planned job then
+// counts toward the caps, so they are checked first; a queued or planning job counts already.
+func (r *DownloadsRepository) requestPrepare(
+	ctx context.Context,
+	job *models.DownloadJob,
+	caps DownloadCaps,
+) (*models.DownloadJob, error) {
+	switch job.Status {
+	case models.DownloadStatusPlanned:
+		if err := r.checkCaps(ctx, job.SelectionID, caps); err != nil {
+			return nil, err
+		}
+	case models.DownloadStatusQueued, models.DownloadStatusPlanning:
+	case models.DownloadStatusPreparing, models.DownloadStatusReady, models.DownloadStatusBlocked,
+		models.DownloadStatusFailed, models.DownloadStatusExpired:
+		return nil, fmt.Errorf("request prepare: download %s is %s", job.ID, job.Status)
+	default:
+		return nil, fmt.Errorf("request prepare: unknown download status: %s", job.Status)
+	}
+	var row downloadJobRow
+	err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
+		`update download_jobs set prepare_requested = true
+		 where id = $1 and status in ('queued', 'planning', 'planned')
+		 returning `+downloadJobColumns, job.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A job that was not asked for moves on only to blocked or failed.
+		return nil, ErrDownloadNotPreparable
+	}
+	if err != nil {
+		return nil, fmt.Errorf("request prepare: %w", err)
+	}
+	return row.job()
+}
+
+// Create returns the selection's existing job of the same file choice when one is unfinished,
+// planned or ready (created false), or adds a queued job (created true). With Prepare it also asks
+// for the archive of an existing job that only showed its preview. It returns
+// ErrDownloadSelectionNotFound, ErrDownloadSelectionBusy or ErrDownloadsBusy when it adds or asks
+// for nothing. Run it in a transaction (DB.CreateDownload).
 func (r *DownloadsRepository) Create(ctx context.Context, create DownloadCreate) (*models.DownloadJob, bool, error) {
 	if err := create.FileChoice.Validate(); err != nil {
 		return nil, false, fmt.Errorf("create download: %w", err)
 	}
-	if create.MaxArchiveBytes <= 0 || create.MaxUnfinished <= 0 || create.MaxUnfinishedPerSelection <= 0 {
-		return nil, false, errors.New("create download: limits must be positive")
+	if create.MaxArchiveBytes <= 0 {
+		return nil, false, errors.New("create download: max archive bytes must be positive")
+	}
+	if err := create.validate(); err != nil {
+		return nil, false, fmt.Errorf("create download: %w", err)
 	}
 	if err := r.lockCreates(ctx); err != nil {
 		return nil, false, err
@@ -229,29 +334,29 @@ func (r *DownloadsRepository) Create(ctx context.Context, create DownloadCreate)
 		return nil, false, err
 	}
 	if existing != nil {
-		return existing, false, nil
+		if !create.Prepare || existing.PrepareRequested {
+			return existing, false, nil
+		}
+		prepared, err := r.requestPrepare(ctx, existing, create.DownloadCaps)
+		if errors.Is(err, ErrDownloadNotPreparable) {
+			// Its planning just blocked or failed it: that is this archive's answer.
+			finished, getErr := r.Get(ctx, existing.ID)
+			return finished, false, getErr
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		return prepared, false, nil
 	}
-	var unfinished struct {
-		Selection int `db:"selection"`
-		All       int `db:"all_selections"`
-	}
-	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &unfinished,
-		`select count(*) filter (where selection_id = $1) as selection, count(*) as all_selections
-		 from download_jobs where status in `+unfinishedDownloadStatuses, create.SelectionID); err != nil {
-		return nil, false, fmt.Errorf("count unfinished downloads: %w", err)
-	}
-	if unfinished.Selection >= create.MaxUnfinishedPerSelection {
-		return nil, false, ErrDownloadSelectionBusy
-	}
-	if unfinished.All >= create.MaxUnfinished {
-		return nil, false, ErrDownloadsBusy
+	if err := r.checkCaps(ctx, create.SelectionID, create.DownloadCaps); err != nil {
+		return nil, false, err
 	}
 	var row downloadJobRow
 	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
-		`insert into download_jobs (id, selection_id, file_choice, max_archive_bytes)
-		 values ($1, $2, $3, $4)
+		`insert into download_jobs (id, selection_id, file_choice, max_archive_bytes, prepare_requested)
+		 values ($1, $2, $3, $4, $5)
 		 returning `+downloadJobColumns,
-		create.ID, create.SelectionID, string(create.FileChoice), create.MaxArchiveBytes); err != nil {
+		create.ID, create.SelectionID, string(create.FileChoice), create.MaxArchiveBytes, create.Prepare); err != nil {
 		return nil, false, fmt.Errorf("insert download: %w", err)
 	}
 	job, err := row.job()
@@ -261,34 +366,96 @@ func (r *DownloadsRepository) Create(ctx context.Context, create DownloadCreate)
 	return job, true, nil
 }
 
-// Claim takes the oldest job a worker may start: a queued one, or one whose worker's lease ran
-// out by now. It sets status planning, a lease until leaseUntil, and counts the attempt. It
-// returns nil when no job is waiting.
-func (r *DownloadsRepository) Claim(ctx context.Context, now, leaseUntil time.Time) (*models.DownloadJob, error) {
+// Prepare asks for the archive of a job (changed true), or returns it unchanged when it was asked
+// for already (changed false). It returns ErrDownloadNotFound, ErrDownloadNotPreparable (blocked,
+// failed or expired), ErrDownloadSelectionBusy or ErrDownloadsBusy. Run it in a transaction
+// (DB.PrepareDownload).
+func (r *DownloadsRepository) Prepare(ctx context.Context, prepare DownloadPrepare) (*models.DownloadJob, bool, error) {
+	if err := prepare.validate(); err != nil {
+		return nil, false, fmt.Errorf("prepare download: %w", err)
+	}
+	if err := r.lockCreates(ctx); err != nil {
+		return nil, false, err
+	}
+	job, err := r.Get(ctx, prepare.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	reported, err := job.ReportedStatus(prepare.Now)
+	if err != nil {
+		return nil, false, fmt.Errorf("prepare download: %w", err)
+	}
+	switch reported {
+	case models.DownloadStatusQueued, models.DownloadStatusPlanning, models.DownloadStatusPlanned:
+		if job.PrepareRequested {
+			return job, false, nil
+		}
+		prepared, err := r.requestPrepare(ctx, job, prepare.DownloadCaps)
+		if err != nil {
+			return nil, false, err
+		}
+		return prepared, true, nil
+	case models.DownloadStatusPreparing, models.DownloadStatusReady:
+		return job, false, nil
+	case models.DownloadStatusBlocked, models.DownloadStatusFailed, models.DownloadStatusExpired:
+		return nil, false, ErrDownloadNotPreparable
+	default:
+		return nil, false, fmt.Errorf("prepare download: unknown download status: %s", reported)
+	}
+}
+
+// DownloadLane is the part of a job one worker loop takes: planning a queued job, or building a
+// planned job whose archive was asked for.
+type DownloadLane string
+
+const (
+	DownloadLanePlanning DownloadLane = "planning"
+	DownloadLaneBuilding DownloadLane = "building"
+)
+
+// Claim takes the oldest job the lane may start: for planning a queued job, for building a planned
+// job whose archive was asked for; in both, a job of the lane whose worker's lease ran out by now.
+// It sets the lane's working status (planning, preparing), a lease until leaseUntil, and counts
+// the claim in attempts. A lease that ran out counts as a failed attempt of the phase. It returns
+// nil when no job is waiting.
+func (r *DownloadsRepository) Claim(
+	ctx context.Context,
+	lane DownloadLane,
+	now, leaseUntil time.Time,
+) (*models.DownloadJob, error) {
 	if !leaseUntil.After(now) {
 		return nil, errors.New("claim download: the lease must end after now")
+	}
+	var waiting, working string
+	switch lane {
+	case DownloadLanePlanning:
+		waiting, working = `status = 'queued'`, "planning"
+	case DownloadLaneBuilding:
+		waiting, working = `(status = 'planned' and prepare_requested)`, "preparing"
+	default:
+		return nil, fmt.Errorf("claim download: unknown download lane: %s", lane)
 	}
 	var row downloadJobRow
 	err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
 		`with picked as (
 		   select id from download_jobs
-		   where status = 'queued'
-		      or (status in ('planning', 'preparing') and lease_until <= $1)
+		   where `+waiting+` or (status = $3 and lease_until <= $1)
 		   order by created_at, id
 		   limit 1
 		   for update skip locked
 		 )
 		 update download_jobs
-		 set status = 'planning', lease_until = $2, attempts = download_jobs.attempts + 1,
-		     started_at = coalesce(download_jobs.started_at, $1), planned_bytes = null
+		 set status = $3, lease_until = $2, attempts = download_jobs.attempts + 1,
+		     failed_attempts = download_jobs.failed_attempts + case when download_jobs.status = $3 then 1 else 0 end,
+		     started_at = coalesce(download_jobs.started_at, $1)
 		 from picked
 		 where download_jobs.id = picked.id
-		 returning `+downloadJobColumns, now, leaseUntil)
+		 returning `+downloadJobColumns, now, leaseUntil, working)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("claim download: %w", err)
+		return nil, fmt.Errorf("claim download for %s: %w", lane, err)
 	}
 	return row.job()
 }
@@ -315,6 +482,15 @@ func (r *DownloadsRepository) held(
 	return nil
 }
 
+// previewToSQL encodes a preview for the jsonb column.
+func previewToSQL(preview models.DownloadPreview) (string, error) {
+	encoded, err := optionalJSONToSQL(&preview)
+	if err != nil {
+		return "", fmt.Errorf("encode download preview: %w", err)
+	}
+	return *encoded, nil
+}
+
 // Heartbeat extends the lease of the job held by attempt.
 func (r *DownloadsRepository) Heartbeat(ctx context.Context, id uuid.UUID, attempt int, leaseUntil time.Time) error {
 	return r.held(ctx, "extend download lease",
@@ -323,28 +499,67 @@ func (r *DownloadsRepository) Heartbeat(ctx context.Context, id uuid.UUID, attem
 		id, attempt, leaseUntil)
 }
 
-// StartPreparing records the planned bytes and moves the job from planning to preparing.
-func (r *DownloadsRepository) StartPreparing(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64) error {
-	return r.held(ctx, "start preparing download",
-		`update download_jobs set status = 'preparing', planned_bytes = $3
+// FinishPlanning records the preview and moves the job from planning to planned, where it waits
+// for its archive to be asked for or, already asked for, for the building lane. The failed
+// attempts start again for building.
+func (r *DownloadsRepository) FinishPlanning(
+	ctx context.Context,
+	id uuid.UUID,
+	attempt int,
+	plannedBytes int64,
+	preview models.DownloadPreview,
+) error {
+	encoded, err := previewToSQL(preview)
+	if err != nil {
+		return err
+	}
+	return r.held(ctx, "finish planning download",
+		`update download_jobs
+		 set status = 'planned', planned_bytes = $3, preview = cast($4 as jsonb), lease_until = null,
+		     failed_attempts = 0, error = null
 		 where id = $1 and attempts = $2 and status = 'planning'`,
-		id, attempt, plannedBytes)
+		id, attempt, plannedBytes, encoded)
 }
 
-// Block finishes a planning job whose files add up to more than its limit.
+// UpdatePlan replaces the planned bytes and preview of a job being built, when its new plan
+// differs from the one shown (a file was copied in between).
+func (r *DownloadsRepository) UpdatePlan(
+	ctx context.Context,
+	id uuid.UUID,
+	attempt int,
+	plannedBytes int64,
+	preview models.DownloadPreview,
+) error {
+	encoded, err := previewToSQL(preview)
+	if err != nil {
+		return err
+	}
+	return r.held(ctx, "update download plan",
+		`update download_jobs set planned_bytes = $3, preview = cast($4 as jsonb)
+		 where id = $1 and attempts = $2 and status = 'preparing'`,
+		id, attempt, plannedBytes, encoded)
+}
+
+// Block finishes a job whose files add up to more than its limit, keeping its preview.
 func (r *DownloadsRepository) Block(
 	ctx context.Context,
 	id uuid.UUID,
 	attempt int,
 	plannedBytes int64,
+	preview models.DownloadPreview,
 	reason string,
 	now time.Time,
 ) error {
+	encoded, err := previewToSQL(preview)
+	if err != nil {
+		return err
+	}
 	return r.held(ctx, "block download",
 		`update download_jobs
-		 set status = 'blocked', planned_bytes = $3, blocked_reason = $4, finished_at = $5, lease_until = null
-		 where id = $1 and attempts = $2 and status = 'planning'`,
-		id, attempt, plannedBytes, reason, now)
+		 set status = 'blocked', planned_bytes = $3, preview = cast($4 as jsonb), blocked_reason = $5,
+		     finished_at = $6, lease_until = null
+		 where id = $1 and attempts = $2 and status in ('planning', 'preparing')`,
+		id, attempt, plannedBytes, encoded, reason, now)
 }
 
 // Finish records a written archive and makes the job ready until expiresAt.
@@ -377,22 +592,30 @@ func (r *DownloadsRepository) Fail(ctx context.Context, id uuid.UUID, attempt in
 		id, attempt, message, now)
 }
 
-// Requeue puts the job held by attempt back in the queue after a failed attempt, keeping the
-// attempt counted and its error, so the next claim tries again until the worker's attempts run out.
+// waitingStatus is the SQL status a job held by a worker goes back to: queued for planning,
+// planned (its archive still asked for) for building.
+const waitingStatus = `case download_jobs.status when 'planning' then 'queued' else 'planned' end`
+
+// Requeue puts the job held by attempt back in its lane's queue after a failed attempt, counting
+// the failure and keeping its error, so the next claim tries again until the phase's attempts run
+// out.
 func (r *DownloadsRepository) Requeue(ctx context.Context, id uuid.UUID, attempt int, message string) error {
 	return r.held(ctx, "requeue download",
 		`update download_jobs
-		 set status = 'queued', lease_until = null, planned_bytes = null, error = $3
+		 set status = `+waitingStatus+`, lease_until = null, error = $3,
+		     failed_attempts = download_jobs.failed_attempts + 1,
+		     planned_bytes = case download_jobs.status when 'planning' then null else download_jobs.planned_bytes end
 		 where id = $1 and attempts = $2 and status in ('planning', 'preparing')`,
 		id, attempt, message)
 }
 
-// Release puts the job held by attempt back in the queue without counting the attempt, for a
+// Release puts the job held by attempt back in its lane's queue without counting a failure, for a
 // worker that stops (a deploy) before it finished.
 func (r *DownloadsRepository) Release(ctx context.Context, id uuid.UUID, attempt int) error {
 	return r.held(ctx, "release download",
 		`update download_jobs
-		 set status = 'queued', lease_until = null, planned_bytes = null, attempts = attempts - 1
+		 set status = `+waitingStatus+`, lease_until = null,
+		     planned_bytes = case download_jobs.status when 'planning' then null else download_jobs.planned_bytes end
 		 where id = $1 and attempts = $2 and status in ('planning', 'preparing')`,
 		id, attempt)
 }
@@ -460,6 +683,22 @@ func decodeOptionalJSON(raw []byte, target any) error {
 		return fmt.Errorf("decode: %w", err)
 	}
 	return nil
+}
+
+// PrepareDownload runs DownloadsRepository.Prepare in a transaction.
+func (d *DB) PrepareDownload(ctx context.Context, prepare DownloadPrepare) (*models.DownloadJob, bool, error) {
+	var (
+		job     *models.DownloadJob
+		changed bool
+	)
+	if err := d.Do(ctx, func(ctx context.Context) error {
+		var err error
+		job, changed, err = d.Downloads.Prepare(ctx, prepare)
+		return err
+	}); err != nil {
+		return nil, false, fmt.Errorf("prepare download: %w", err)
+	}
+	return job, changed, nil
 }
 
 // CreateDownload runs DownloadsRepository.Create in a transaction.

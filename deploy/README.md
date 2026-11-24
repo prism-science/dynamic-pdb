@@ -483,16 +483,23 @@ kubectl -n dynamicpdb create job --from=cronjob/dynamic-pdb-coordinate-index-job
 
 ## Archive worker
 
-The archive worker builds bulk-download archives (B2). `POST /v1/downloads` adds a queued row to
-`download_jobs`; the worker (`/app/archive-worker` from the backend image, Deployment
-`<release>-archive-worker`) claims one job at a time and:
+The archive worker builds bulk-download archives (B2) and their previews (L1). `POST /v1/downloads`
+adds a queued row to `download_jobs`; the worker (`/app/archive-worker` from the backend image,
+Deployment `<release>-archive-worker`) runs two lanes, each one job at a time, so a long build
+never holds up a preview:
 
-1. **Plans** it: pages through the frozen selection's pinned models and files (100 models per
-   read) and adds up the bytes of the files the zip can include. Only files whose checksum
-   result is `verified` with copy status `own_storage` or `copied` can go in: the bytes we hold
-   match the record. Over `downloads::max_archive_bytes` (10 GB) the job is `blocked`, before any
-   file is read and with nothing written to S3.
-2. **Writes** it: streams one zip into the data bucket by multipart upload, at
+1. **Planning lane.** It pages through the frozen selection's pinned models and files (100 models
+   per read), lists them as the manifest will, and records the preview: record and file counts
+   by type, availability and reason, checksum status, sizes (exact, estimate or unknown) and
+   related datasets. It adds up the bytes of the files the zip can include: only files whose
+   checksum result is `verified` with copy status `own_storage` or `copied`, whose bytes we hold
+   and match the record. Over `downloads::max_archive_bytes` (10 GB) the job is `blocked`, with
+   its preview, before any file is read and with nothing written to S3. Otherwise it is
+   `planned`: a request with `prepare: false` (the website) waits there until
+   `POST /v1/downloads/{id}/prepare`; one with `prepare: true` (the default) goes on.
+2. **Building lane.** It plans the job again (a file copied since the preview replaces the
+   preview, so the job always reports what its archive holds), then writes it: streams one zip
+   into the data bucket by multipart upload, at
    `downloads/<job id>/<attempt>/dynamic-pdb-<selection id>-<file choice>.zip` (a folder per
    attempt, so an attempt that lost its lease never overwrites a later one's objects). Each
    included file is first
@@ -500,16 +507,18 @@ The archive worker builds bulk-download archives (B2). `POST /v1/downloads` adds
    recorded SHA-256 and size goes into the zip, and one that does not is listed as unavailable
    and logged as an ERROR. `README.txt` comes first and `manifest.tsv` last; the manifest is also
    stored on its own at `downloads/<job id>/<attempt>/manifest.tsv`.
-3. **Finishes** it: `ready` with the archive's size, SHA-256, URLs and counts, offered for
-   `downloads::archive_ttl` (7 days).
+3. **Finish.** The building lane marks it `ready` with the archive's size, SHA-256, URLs and
+   counts, offered for `downloads::archive_ttl` (7 days).
 
 The worker reads only our bucket; files we hold no matching copy of (over 1 GiB, changed at the
 source, not copied) are listed in the manifest with their source URL, never fetched from RCSB.
 
 **Leases.** A claim holds a job for `archive_worker::lease` (10 minutes) and a heartbeat extends
 it every minute. A pod that dies frees its job when the lease runs out; a pod that is stopped (a
-deploy) aborts its upload and puts the job back in the queue at once. A failed attempt is tried
-again, up to `archive_worker::max_attempts` (3), then the job is `failed`. One read of one file may take
+deploy) aborts its upload and puts the job back in its lane's queue at once (`queued` or
+`planned`). A failed attempt, or a lease that ran out, is tried again, up to
+`archive_worker::max_attempts` (3) in each lane (`failed_attempts` starts again at 0 once a job is
+planned), then the job is `failed`. One read of one file may take
 `archive_worker::file_timeout` (20 minutes) before it is tried again, and one attempt
 `archive_worker::job_timeout` (4 hours), so a stalled read never holds the queue while the heartbeat
 keeps the lease.
@@ -532,8 +541,8 @@ kubectl -n dynamicpdb scale deploy dynamic-pdb-archive-worker --replicas=0
 To read a job (read-only, through the tunnel):
 
 ```sql
-select id, status, file_choice, attempts, planned_bytes, archive_bytes, files_included,
-       files_linked, files_unavailable, files_changed_at_source, blocked_reason, error,
-       created_at, finished_at, expires_at
+select id, status, prepare_requested, file_choice, attempts, failed_attempts, planned_bytes,
+       archive_bytes, files_included, files_linked, files_unavailable, files_changed_at_source,
+       blocked_reason, error, created_at, finished_at, expires_at
 from download_jobs order by created_at desc limit 20;
 ```

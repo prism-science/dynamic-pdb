@@ -204,20 +204,72 @@ func runArchiveWorker(t *testing.T, root string, binaryPath string, s3URL string
 	return output.String()
 }
 
+// downloadCounts are an archive's or a preview's files by availability.
+type downloadCounts struct {
+	Included        int `json:"included"`
+	Linked          int `json:"linked"`
+	Unavailable     int `json:"unavailable"`
+	ChangedAtSource int `json:"changed_at_source"`
+}
+
 // downloadAttributes is what the tests read of GET /v1/downloads/{id}.
 type downloadAttributes struct {
-	Status        string  `json:"status"`
-	ArchiveURL    *string `json:"archive_url"`
-	ArchiveSHA256 *string `json:"archive_sha256"`
-	ArchiveBytes  *int64  `json:"archive_bytes"`
-	ManifestURL   *string `json:"manifest_url"`
-	Message       *string `json:"message"`
-	Counts        *struct {
-		Included        int `json:"included"`
-		Linked          int `json:"linked"`
-		Unavailable     int `json:"unavailable"`
-		ChangedAtSource int `json:"changed_at_source"`
-	} `json:"counts"`
+	Status           string           `json:"status"`
+	PrepareRequested bool             `json:"prepare_requested"`
+	ArchiveURL       *string          `json:"archive_url"`
+	ArchiveSHA256    *string          `json:"archive_sha256"`
+	ArchiveBytes     *int64           `json:"archive_bytes"`
+	ManifestURL      *string          `json:"manifest_url"`
+	Message          *string          `json:"message"`
+	Counts           *downloadCounts  `json:"counts"`
+	Preview          *downloadPreview `json:"preview"`
+}
+
+// downloadPreview is what the tests read of a download's preview.
+type downloadPreview struct {
+	Records struct {
+		Entries                    int `json:"entries"`
+		Models                     int `json:"models"`
+		ModelsWithoutMatchingFiles int `json:"models_without_matching_files"`
+	} `json:"records"`
+	Files struct {
+		Total        int            `json:"total"`
+		Availability downloadCounts `json:"availability"`
+		NotIncluded  []struct {
+			Code   string `json:"code"`
+			Status string `json:"status"`
+			Files  int    `json:"files"`
+		} `json:"not_included"`
+	} `json:"files"`
+	Sizes struct {
+		Included struct {
+			Bytes *int64 `json:"bytes"`
+			Kind  string `json:"kind"`
+		} `json:"included"`
+		Archive struct {
+			Bytes *int64 `json:"bytes"`
+			Kind  string `json:"kind"`
+		} `json:"archive"`
+	} `json:"sizes"`
+	OverLimit bool `json:"over_limit"`
+}
+
+// checkPreviewMatchesArchive requires a ready archive's preview to count what it holds.
+func checkPreviewMatchesArchive(t *testing.T, attributes downloadAttributes, rows []map[string]string) {
+	t.Helper()
+	require.NotNil(t, attributes.Preview)
+	require.NotNil(t, attributes.Counts)
+	assert.Equal(t, *attributes.Counts, attributes.Preview.Files.Availability)
+	files := map[string]bool{}
+	for _, row := range rows {
+		if row["record_type"] == "file" {
+			files[row["file_id"]] = true
+		}
+	}
+	assert.Len(t, files, attributes.Preview.Files.Total)
+	require.NotNil(t, attributes.Preview.Sizes.Archive.Bytes)
+	assert.LessOrEqual(t, *attributes.ArchiveBytes, *attributes.Preview.Sizes.Archive.Bytes, "the zip is within its bound")
+	assert.False(t, attributes.Preview.OverLimit)
 }
 
 func createdID(t *testing.T, response *http.Response, status int) string {
@@ -420,6 +472,7 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	// then all files: every held file once, each with its recorded bytes and the pinned version
 	all := readDownload(t, backend.URL, ids["all_files"])
 	entries, names, rows := openArchive(t, s3, all)
+	checkPreviewMatchesArchive(t, all, rows)
 	rootFolder := "dynamic-pdb-" + selectionID
 	assert.Equal(t, rootFolder+"/README.txt", names[0], output)
 	assert.Equal(t, rootFolder+"/manifest.tsv", names[len(names)-1])
@@ -455,7 +508,10 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	assert.Equal(t, 1, all.Counts.ChangedAtSource)
 
 	// and original mmCIF: the PDB coordinate files the selected models' records hold
-	_, names, rows = openArchive(t, s3, readDownload(t, backend.URL, ids["original_mmcif"]))
+	original := readDownload(t, backend.URL, ids["original_mmcif"])
+	_, names, rows = openArchive(t, s3, original)
+	checkPreviewMatchesArchive(t, original, rows)
+	assert.Equal(t, 3, original.Preview.Records.ModelsWithoutMatchingFiles, "the computed models hold no PDB mmCIF")
 	assert.Equal(t, []string{
 		rootFolder + "/README.txt",
 		included[coordinates],
@@ -466,7 +522,9 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	assert.Equal(t, "changed-at-source", status)
 
 	// and modified coordinates: the Dynamic PDB model files
-	_, names, _ = openArchive(t, s3, readDownload(t, backend.URL, ids["modified_coordinates"]))
+	modified := readDownload(t, backend.URL, ids["modified_coordinates"])
+	_, names, rows = openArchive(t, s3, modified)
+	checkPreviewMatchesArchive(t, modified, rows)
 	assert.Equal(t, []string{
 		rootFolder + "/README.txt",
 		included[qfit],
@@ -480,6 +538,9 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	assert.Equal(t, "blocked", blocked.Status)
 	require.NotNil(t, blocked.Message)
 	assert.Contains(t, *blocked.Message, "more than the 10 bytes one archive may hold")
+	require.NotNil(t, blocked.Preview, "a blocked archive keeps the preview that blocked it")
+	assert.True(t, blocked.Preview.OverLimit)
+	assert.Equal(t, 8, blocked.Preview.Files.Availability.Included)
 	s3.mu.Lock()
 	for path := range s3.bodies {
 		assert.NotContains(t, path, blockedID.String())
@@ -496,4 +557,46 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
 		`select count(*) from download_jobs where status in ('ready', 'blocked') and lease_until is null`).Scan(&finished))
 	assert.Equal(t, 4, finished)
+
+	// and a request for the preview of entry 2's Deposited and Single Conformer models stops at
+	// planned: nothing is written until it is prepared
+	//nolint:bodyclose // createdID closes the response body.
+	previewSelection := createdID(t, postJSON(t, backend.URL+"/v1/selections", auth.AccessToken,
+		map[string]any{"model_ids": []string{deposited2.id, singleConformer.id}}), http.StatusCreated)
+	//nolint:bodyclose // createdID closes the response body.
+	previewID := createdID(t, postJSON(t, backend.URL+"/v1/downloads", auth.AccessToken,
+		map[string]any{"selection_id": previewSelection, "file_choice": "all_files", "prepare": false}), http.StatusAccepted)
+	output = runArchiveWorker(t, root, workerBinaryPath, s3.URL(), schemaEnv)
+	planned := readDownload(t, backend.URL, previewID)
+	assert.Equal(t, "planned", planned.Status, output)
+	assert.False(t, planned.PrepareRequested)
+	require.NotNil(t, planned.Preview)
+	assert.Equal(t, 2, planned.Preview.Records.Models)
+	assert.Equal(t, 1, planned.Preview.Records.Entries)
+	assert.Equal(t, 5, planned.Preview.Files.Total)
+	assert.Equal(t, downloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1}, planned.Preview.Files.Availability)
+	codes := map[string]int{}
+	for _, reason := range planned.Preview.Files.NotIncluded {
+		codes[reason.Code] = reason.Files
+	}
+	assert.Equal(t, map[string]int{"over_copy_limit": 1, "not_checked_yet": 1, "changed_at_source": 1}, codes)
+	assert.Equal(t, "exact", planned.Preview.Sizes.Included.Kind)
+	require.NotNil(t, planned.Preview.Sizes.Included.Bytes)
+	assert.Equal(t, int64(len(seed.content[single])+len(seed.content[log])), *planned.Preview.Sizes.Included.Bytes)
+	s3.mu.Lock()
+	for path := range s3.bodies {
+		assert.NotContains(t, path, previewID, "nothing is written for a preview")
+	}
+	s3.mu.Unlock()
+
+	// and once prepared, the archive holds what the preview said
+	//nolint:bodyclose // createdID closes the response body.
+	prepared := createdID(t, postJSON(t, backend.URL+"/v1/downloads/"+previewID+"/prepare", auth.AccessToken, nil),
+		http.StatusAccepted)
+	assert.Equal(t, previewID, prepared)
+	output = runArchiveWorker(t, root, workerBinaryPath, s3.URL(), schemaEnv)
+	built := readDownload(t, backend.URL, previewID)
+	_, _, rows = openArchive(t, s3, built)
+	checkPreviewMatchesArchive(t, built, rows)
+	assert.True(t, built.PrepareRequested, output)
 }

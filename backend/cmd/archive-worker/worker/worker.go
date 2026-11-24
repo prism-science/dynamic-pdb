@@ -1,16 +1,21 @@
-// Package worker builds bulk-download archives: it claims a queued download job, plans the
-// archive from the frozen selection's pinned files, and either blocks it (over its size limit,
-// before any file is read) or writes the zip and its manifest into the data bucket.
+// Package worker builds bulk-download archives in two lanes. The planning lane claims a queued
+// download job, walks the frozen selection's pinned files and records the archive's preview, or
+// blocks it (over its size limit, before any file is read). The building lane claims a planned job
+// whose archive was asked for, plans it again and writes the zip and its manifest into the data
+// bucket.
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +34,8 @@ type Config struct {
 	Heartbeat time.Duration `mapstructure:"heartbeat"`
 	// PollInterval is the pause after finding no job.
 	PollInterval time.Duration `mapstructure:"poll_interval"`
-	// MaxAttempts is how many claims a job gets before it fails.
+	// MaxAttempts is how many failed attempts each phase of a job (planning, building) gets
+	// before the job fails.
 	MaxAttempts int `mapstructure:"max_attempts"`
 	// PageSize is how many selection models one database read takes.
 	PageSize int `mapstructure:"page_size"`
@@ -45,8 +51,9 @@ type Config struct {
 	FileTimeout time.Duration `mapstructure:"file_timeout"`
 	// JobTimeout bounds one attempt at one archive; past it the attempt fails and is tried again.
 	JobTimeout time.Duration `mapstructure:"job_timeout"`
-	// ExitWhenIdle stops the worker the first time it finds no job waiting, for tests and one-off
-	// runs. The Deployment leaves it off.
+	// ExitWhenIdle runs both lanes in turn in one loop and stops the first time neither finds a
+	// job waiting, for tests and one-off runs. The Deployment leaves it off: each lane then runs
+	// on its own, so a long build never holds up a preview.
 	ExitWhenIdle bool `mapstructure:"exit_when_idle"`
 	// ArchiveTTL is how long a ready archive is offered.
 	ArchiveTTL time.Duration `mapstructure:"-"`
@@ -79,10 +86,12 @@ func (c Config) validate() error {
 // JobStore is the download_jobs table as the worker uses it. Every write after the claim names
 // the claimed attempt and fails with db.ErrDownloadLeaseLost when the job moved on.
 type JobStore interface {
-	Claim(ctx context.Context, now, leaseUntil time.Time) (*models.DownloadJob, error)
+	Claim(ctx context.Context, lane db.DownloadLane, now, leaseUntil time.Time) (*models.DownloadJob, error)
 	Heartbeat(ctx context.Context, id uuid.UUID, attempt int, leaseUntil time.Time) error
-	StartPreparing(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64) error
-	Block(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, reason string, now time.Time) error
+	FinishPlanning(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview) error
+	UpdatePlan(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview) error
+	Block(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview,
+		reason string, now time.Time) error
 	Finish(ctx context.Context, id uuid.UUID, attempt int, result db.DownloadResult, now, expiresAt time.Time) error
 	Fail(ctx context.Context, id uuid.UUID, attempt int, message string, now time.Time) error
 	Requeue(ctx context.Context, id uuid.UUID, attempt int, message string) error
@@ -111,13 +120,13 @@ var errLeaseLost = errors.New("the job's lease was lost")
 // errJobTimedOut ends an attempt that ran past JobTimeout.
 var errJobTimedOut = errors.New("the archive took longer than one attempt may take")
 
-// errStopPaging ends a walk over a selection early.
-var errStopPaging = errors.New("stop paging")
-
 // releaseTimeout bounds putting a job back in the queue after the worker was told to stop.
 const releaseTimeout = 10 * time.Second
 
-// Worker builds archives one job at a time.
+// lanes are the worker's loops, in the order a one-off run takes them.
+var lanes = []db.DownloadLane{db.DownloadLanePlanning, db.DownloadLaneBuilding}
+
+// Worker plans and builds archives, one job at a time in each lane.
 type Worker struct {
 	jobs       JobStore
 	selections SelectionReader
@@ -147,43 +156,82 @@ func New(jobs JobStore, selections SelectionReader, bucket Bucket, cfg Config, l
 	}, nil
 }
 
-// Run claims and builds jobs until ctx ends. Errors of one job are recorded on the job; errors
+// Run plans and builds jobs until ctx ends. Errors of one job are recorded on the job; errors
 // reaching the queue are logged and tried again after the poll interval.
 func (w *Worker) Run(ctx context.Context) error {
-	w.logger.Info("archive worker started")
-	for ctx.Err() == nil {
-		worked, err := w.RunOnce(ctx)
-		if err != nil && ctx.Err() == nil {
-			w.logger.Error("archive worker could not take a job", "err", err)
+	w.logger.Info("archive worker started", "exit_when_idle", w.cfg.ExitWhenIdle)
+	if w.cfg.ExitWhenIdle {
+		w.poll(ctx, "both lanes", w.RunOnce, true)
+	} else {
+		var group sync.WaitGroup
+		for _, lane := range lanes {
+			group.Go(func() {
+				w.poll(ctx, string(lane), func(ctx context.Context) (bool, error) {
+					return w.runLaneOnce(ctx, lane)
+				}, false)
+			})
 		}
-		if worked && err == nil {
-			continue
-		}
-		if !worked && err == nil && w.cfg.ExitWhenIdle {
-			break
-		}
-		if err := sleepContext(ctx, w.cfg.PollInterval); err != nil {
-			break
-		}
+		group.Wait()
 	}
 	w.logger.Info("archive worker stopped")
 	return nil
 }
 
-// RunOnce claims one job and builds it. It reports whether there was a job.
+// poll runs once until ctx ends, straight on after a job and after the poll interval otherwise;
+// with stopWhenIdle it returns the first time once finds no job.
+func (w *Worker) poll(ctx context.Context, name string, once func(context.Context) (bool, error), stopWhenIdle bool) {
+	for ctx.Err() == nil {
+		worked, err := once(ctx)
+		if err != nil && ctx.Err() == nil {
+			w.logger.Error("archive worker could not take a job", "lane", name, "err", err)
+		}
+		if worked && err == nil {
+			continue
+		}
+		if !worked && err == nil && stopWhenIdle {
+			return
+		}
+		if err := sleepContext(ctx, w.cfg.PollInterval); err != nil {
+			return
+		}
+	}
+}
+
+// RunOnce plans one waiting job, then builds one. It reports whether either lane had a job.
 func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
-	now := w.now()
-	job, err := w.jobs.Claim(ctx, now, now.Add(w.cfg.Lease))
+	worked := false
+	for _, lane := range lanes {
+		if ctx.Err() != nil {
+			break
+		}
+		laneWorked, err := w.runLaneOnce(ctx, lane)
+		worked = worked || laneWorked
+		if err != nil {
+			return worked, err
+		}
+	}
+	return worked, nil
+}
+
+// runLaneOnce claims one job for the lane and plans or builds it. It reports whether there was a
+// job.
+func (w *Worker) runLaneOnce(ctx context.Context, lane db.DownloadLane) (bool, error) {
+	verb, err := laneVerb(lane)
 	if err != nil {
-		return false, fmt.Errorf("claim: %w", err)
+		return false, err
+	}
+	now := w.now()
+	job, err := w.jobs.Claim(ctx, lane, now, now.Add(w.cfg.Lease))
+	if err != nil {
+		return false, fmt.Errorf("claim for %s: %w", lane, err)
 	}
 	if job == nil {
 		return false, nil
 	}
 	logger := w.logger.With("download_id", job.ID, "selection_id", job.SelectionID,
-		"file_choice", job.FileChoice, "attempt", job.Attempts)
-	if job.Attempts > w.cfg.MaxAttempts {
-		message := fmt.Sprintf("the archive could not be built in %d attempts", w.cfg.MaxAttempts)
+		"file_choice", job.FileChoice, "lane", lane, "attempt", job.Attempts, "failed_attempts", job.FailedAttempts)
+	if job.FailedAttempts >= w.cfg.MaxAttempts {
+		message := fmt.Sprintf("the archive could not be %s in %d attempts", verb, w.cfg.MaxAttempts)
 		if job.Error != nil {
 			message += "; the last attempt failed: " + *job.Error
 		}
@@ -194,19 +242,32 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	logger.Info("archive claimed")
-	w.runJob(ctx, *job, logger)
+	w.runJob(ctx, lane, *job, logger)
 	return true, nil
 }
 
-// runJob builds a claimed job while a heartbeat holds its lease, then records how it ended when
-// the build itself did not: put back in the queue on shutdown, requeued or failed on an error.
-func (w *Worker) runJob(ctx context.Context, job models.DownloadJob, logger *slog.Logger) {
+// laneVerb is what a lane does to an archive, for messages.
+func laneVerb(lane db.DownloadLane) (string, error) {
+	switch lane {
+	case db.DownloadLanePlanning:
+		return "planned", nil
+	case db.DownloadLaneBuilding:
+		return "built", nil
+	default:
+		return "", fmt.Errorf("unknown download lane: %s", lane)
+	}
+}
+
+// runJob plans or builds a claimed job while a heartbeat holds its lease, then records how it
+// ended when the work itself did not: put back in its lane's queue on shutdown, requeued or failed
+// on an error.
+func (w *Worker) runJob(ctx context.Context, lane db.DownloadLane, job models.DownloadJob, logger *slog.Logger) {
 	jobCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	buildCtx, cancelBuild := context.WithTimeoutCause(jobCtx, w.cfg.JobTimeout, errJobTimedOut)
 	defer cancelBuild()
 	stopHeartbeat := w.startHeartbeat(jobCtx, cancel, job, logger)
-	err := w.build(buildCtx, job, logger)
+	err := w.work(buildCtx, lane, job, logger)
 	stopHeartbeat()
 	if err == nil {
 		return
@@ -225,7 +286,7 @@ func (w *Worker) runJob(ctx context.Context, job models.DownloadJob, logger *slo
 			return
 		}
 		logger.Info("archive put back in the queue: the worker is stopping")
-	case job.Attempts >= w.cfg.MaxAttempts:
+	case job.FailedAttempts+1 >= w.cfg.MaxAttempts:
 		logger.Error("archive failed", "err", err)
 		if failErr := w.jobs.Fail(ctx, job.ID, job.Attempts, publicError(err), w.now()); failErr != nil {
 			logger.Error("record failed archive", "err", failErr)
@@ -289,8 +350,52 @@ func (w *Worker) startHeartbeat(
 	}
 }
 
-// build plans the job and blocks it, or writes and finishes it.
-func (w *Worker) build(ctx context.Context, job models.DownloadJob, logger *slog.Logger) error {
+// work does the lane's part of the job.
+func (w *Worker) work(ctx context.Context, lane db.DownloadLane, job models.DownloadJob, logger *slog.Logger) error {
+	switch lane {
+	case db.DownloadLanePlanning:
+		return w.planJob(ctx, job, logger)
+	case db.DownloadLaneBuilding:
+		return w.buildJob(ctx, job, logger)
+	default:
+		return fmt.Errorf("unknown download lane: %s", lane)
+	}
+}
+
+// planJob plans the job and records its preview, or blocks it when its files add up to more than
+// its limit.
+func (w *Worker) planJob(ctx context.Context, job models.DownloadJob, logger *slog.Logger) error {
+	plan, err := w.plan(ctx, job)
+	if err != nil {
+		return fmt.Errorf("plan: %w", err)
+	}
+	if plan.overLimit() {
+		return w.block(ctx, job, plan, logger)
+	}
+	if err := w.jobs.FinishPlanning(ctx, job.ID, job.Attempts, plan.bytes, plan.preview); err != nil {
+		return fmt.Errorf("finish planning: %w", err)
+	}
+	logger.Info("archive planned", "planned_bytes", plan.bytes, "files", plan.preview.Files,
+		"prepare_requested", job.PrepareRequested)
+	return nil
+}
+
+// block finishes a job whose files add up to more than its limit, before any file is read.
+func (w *Worker) block(ctx context.Context, job models.DownloadJob, plan archivePlan, logger *slog.Logger) error {
+	reason := fmt.Sprintf("the files to include add up to %s, more than the %s one archive may hold",
+		formatBytes(plan.bytes), formatBytes(job.MaxArchiveBytes))
+	if err := w.jobs.Block(ctx, job.ID, job.Attempts, plan.bytes, plan.preview, reason, w.now()); err != nil {
+		return fmt.Errorf("block: %w", err)
+	}
+	logger.Info("archive blocked: over its size limit", "planned_bytes", plan.bytes,
+		"max_archive_bytes", job.MaxArchiveBytes)
+	return nil
+}
+
+// buildJob plans the job again, records the new plan when it differs from the preview shown (a
+// file was copied in between), and writes and finishes the archive, or blocks it when it now
+// passes its limit.
+func (w *Worker) buildJob(ctx context.Context, job models.DownloadJob, logger *slog.Logger) error {
 	selection, err := w.selections.Get(ctx, job.SelectionID)
 	if err != nil {
 		return fmt.Errorf("read selection: %w", err)
@@ -299,18 +404,18 @@ func (w *Worker) build(ctx context.Context, job models.DownloadJob, logger *slog
 	if err != nil {
 		return fmt.Errorf("plan: %w", err)
 	}
-	if plan.overLimit {
-		reason := fmt.Sprintf("the files to include add up to at least %s, more than the %s one archive may hold",
-			formatBytes(plan.bytes), formatBytes(job.MaxArchiveBytes))
-		if err := w.jobs.Block(ctx, job.ID, job.Attempts, plan.bytes, reason, w.now()); err != nil {
-			return fmt.Errorf("block: %w", err)
-		}
-		logger.Info("archive blocked: over its size limit", "planned_bytes", plan.bytes,
-			"max_archive_bytes", job.MaxArchiveBytes)
-		return nil
+	if plan.overLimit() {
+		return w.block(ctx, job, plan, logger)
 	}
-	if err := w.jobs.StartPreparing(ctx, job.ID, job.Attempts, plan.bytes); err != nil {
-		return fmt.Errorf("start preparing: %w", err)
+	same, err := samePlan(job, plan)
+	if err != nil {
+		return err
+	}
+	if !same {
+		if err := w.jobs.UpdatePlan(ctx, job.ID, job.Attempts, plan.bytes, plan.preview); err != nil {
+			return fmt.Errorf("update plan: %w", err)
+		}
+		logger.Info("archive plan changed since its preview", "planned_bytes", plan.bytes)
 	}
 	header := manifestHeader{
 		SelectionID: job.SelectionID,
@@ -332,48 +437,50 @@ func (w *Worker) build(ctx context.Context, job models.DownloadJob, logger *slog
 	return nil
 }
 
-// archivePlan is what the first walk over the selection decided: which files the zip includes
-// (by ID, with their size) and their total. The second walk includes exactly these files, so the
-// archive never passes the size limit it was checked against.
-type archivePlan struct {
-	include   map[uuid.UUID]int64
-	bytes     int64
-	overLimit bool
+// samePlan reports whether a new plan equals the one the job recorded when it was planned.
+func samePlan(job models.DownloadJob, plan archivePlan) (bool, error) {
+	if job.Preview == nil || job.PlannedBytes == nil || *job.PlannedBytes != plan.bytes {
+		return false, nil
+	}
+	recorded, err := json.Marshal(job.Preview)
+	if err != nil {
+		return false, fmt.Errorf("encode recorded preview: %w", err)
+	}
+	planned, err := json.Marshal(plan.preview)
+	if err != nil {
+		return false, fmt.Errorf("encode new preview: %w", err)
+	}
+	return bytes.Equal(recorded, planned), nil
 }
 
-// plan walks the selection's pinned files and adds up the bytes of the files the zip can include.
-// It stops as soon as the total passes the job's limit.
+// archivePlan is what the planning walk over the selection decided: which files the zip includes
+// (by ID, with their size), their total, and the preview. The writing walk includes exactly these
+// files, so the archive never passes the size limit it was checked against.
+type archivePlan struct {
+	include         map[uuid.UUID]int64
+	bytes           int64
+	maxArchiveBytes int64
+	preview         models.DownloadPreview
+	// modelFolders are every selected model's folder, reserved before the writing walk names any
+	// file.
+	modelFolders []string
+}
+
+func (plan archivePlan) overLimit() bool {
+	return plan.bytes > plan.maxArchiveBytes
+}
+
+// plan walks all of the selection's pinned files, as the writing walk will, and adds up the bytes
+// of the files the zip can include and the preview.
 func (w *Worker) plan(ctx context.Context, job models.DownloadJob) (archivePlan, error) {
-	plan := archivePlan{include: map[uuid.UUID]int64{}}
-	err := w.eachModel(ctx, job.SelectionID, func(model models.SelectionModel, details models.DownloadSelectionModel) error {
-		for _, file := range model.Files {
-			selected, err := selectsFile(job.FileChoice, file, details)
-			if err != nil {
-				return err
-			}
-			if _, planned := plan.include[file.ID]; !selected || planned {
-				continue
-			}
-			state, err := stateOf(file, w.bucket)
-			if err != nil {
-				return err
-			}
-			if !state.canInclude {
-				continue
-			}
-			plan.include[file.ID] = state.sizeBytes
-			plan.bytes += state.sizeBytes
-			if plan.bytes > job.MaxArchiveBytes {
-				plan.overLimit = true
-				return errStopPaging
-			}
-		}
-		return nil
-	})
-	if err != nil && !errors.Is(err, errStopPaging) {
+	collector, err := newPreviewCollector(job, w.bucket)
+	if err != nil {
 		return archivePlan{}, err
 	}
-	return plan, nil
+	if err := w.eachModel(ctx, job.SelectionID, collector.addModel); err != nil {
+		return archivePlan{}, err
+	}
+	return collector.plan()
 }
 
 // eachModel calls visit for every model of the selection in order, with its manifest details,
@@ -413,29 +520,39 @@ func (w *Worker) eachModel(
 	}
 }
 
-// fileOutcome is how an included file ended up: in the zip at path, or left out after staging.
+// fileOutcome is how a file is listed: in the zip at path, or left out with a reason code.
 type fileOutcome struct {
 	availability availability
 	verification verification
 	verifiedAt   *time.Time
-	reason       string
+	reasonCode   models.DownloadReasonCode
 	path         string
+}
+
+// stateOutcome is how a file the archive does not try to include is listed: as the checksum job
+// left it.
+func stateOutcome(state fileState) fileOutcome {
+	return fileOutcome{
+		availability: state.availability,
+		verification: state.verification,
+		verifiedAt:   state.verifiedAt,
+		reasonCode:   state.reasonCode,
+	}
 }
 
 // archiveWrite is the state of the second walk.
 type archiveWrite struct {
-	job        models.DownloadJob
-	header     manifestHeader
-	plan       archivePlan
-	zip        *zipArchive
-	manifest   *manifestWriter
-	scratch    *scratchFile
-	layout     *archiveLayout
-	outcomes   map[uuid.UUID]fileOutcome
-	statuses   map[uuid.UUID]availability
-	entryFiles map[string]bool
-	entries    map[string]bool
-	logger     *slog.Logger
+	job      models.DownloadJob
+	header   manifestHeader
+	plan     archivePlan
+	zip      *zipArchive
+	manifest *manifestWriter
+	scratch  *scratchFile
+	layout   *archiveLayout
+	outcomes map[uuid.UUID]fileOutcome
+	statuses map[uuid.UUID]availability
+	walk     *modelWalk
+	logger   *slog.Logger
 }
 
 // write streams the zip into the bucket: README.txt, every included file at its path, then
@@ -490,17 +607,19 @@ func (w *Worker) write(
 	}()
 
 	layout := newArchiveLayout(job.SelectionID)
+	for _, folder := range plan.modelFolders {
+		layout.reserveFolder(folder)
+	}
 	state := &archiveWrite{
 		job: job, header: header, plan: plan,
-		zip:        newZipArchive(upload, header.CatalogDate),
-		manifest:   manifest,
-		scratch:    scratch,
-		layout:     layout,
-		outcomes:   map[uuid.UUID]fileOutcome{},
-		statuses:   map[uuid.UUID]availability{},
-		entryFiles: map[string]bool{},
-		entries:    map[string]bool{},
-		logger:     logger,
+		zip:      newZipArchive(upload, header.CatalogDate),
+		manifest: manifest,
+		scratch:  scratch,
+		layout:   layout,
+		outcomes: map[uuid.UUID]fileOutcome{},
+		statuses: map[uuid.UUID]availability{},
+		walk:     newModelWalk(job.FileChoice),
+		logger:   logger,
 	}
 	if err := state.zip.add(layout.root+"/README.txt", strings.NewReader(readmeText(header))); err != nil {
 		return db.DownloadResult{}, err
@@ -580,34 +699,42 @@ func (w *Worker) writeModel(
 	model models.SelectionModel,
 	details models.DownloadSelectionModel,
 ) error {
-	matched := false
-	for _, file := range model.Files {
-		selected, err := selectsFile(state.job.FileChoice, file, details)
+	return modelRows(state.walk, model, details, func(row selectedFile) (manifestRow, error) {
+		outcome, err := w.outcomeOf(ctx, state, model, row)
+		if err != nil {
+			return nil, err
+		}
+		state.statuses[row.file.ID] = outcome.availability
+		return fileRow(model, details, row, outcome, w.bucket)
+	}, state.manifest.write)
+}
+
+// modelRows lists one model in the manifest: a row per file of the file choice (fileRowOf builds
+// it), a row saying why when the model has none, and its entry's related datasets for the first
+// model of an entry. The writing walk and the planning walk both list the selection with it, so the
+// preview counts what the manifest holds.
+func modelRows(
+	walk *modelWalk,
+	model models.SelectionModel,
+	details models.DownloadSelectionModel,
+	fileRowOf func(selectedFile) (manifestRow, error),
+	write func(manifestRow) error,
+) error {
+	rows, matched, err := walk.filesOf(model, details)
+	if err != nil {
+		return err
+	}
+	for _, selected := range rows {
+		row, err := fileRowOf(selected)
 		if err != nil {
 			return err
 		}
-		if !selected {
-			continue
-		}
-		matched = true
-		entryFile := isEntryFile(file)
-		if entryFile {
-			key := model.EntryID + "/" + file.ID.String()
-			if state.entryFiles[key] {
-				continue
-			}
-			state.entryFiles[key] = true
-		}
-		row, err := w.fileRow(ctx, state, model, details, file, entryFile)
-		if err != nil {
-			return err
-		}
-		if err := state.manifest.write(row); err != nil {
+		if err := write(row); err != nil {
 			return err
 		}
 	}
 	if !matched {
-		reason, err := noMatchingFileReason(state.job.FileChoice)
+		reason, err := noMatchingFileReason(walk.choice)
 		if err != nil {
 			return err
 		}
@@ -616,16 +743,14 @@ func (w *Worker) writeModel(
 				"record_type": string(recordNoMatchingFile),
 				"reason":      reason,
 			})
-			if err := state.manifest.write(row); err != nil {
+			if err := write(row); err != nil {
 				return err
 			}
 		}
 	}
-	if !state.entries[model.EntryID] {
-		state.entries[model.EntryID] = true
+	if walk.firstOfEntry(model) {
 		for _, dataset := range details.RelatedDatasets {
-			row := merge(recordValues(model, details, false), relatedDatasetRow(dataset))
-			if err := state.manifest.write(row); err != nil {
+			if err := write(merge(recordValues(model, details, false), relatedDatasetRow(dataset))); err != nil {
 				return err
 			}
 		}
@@ -633,58 +758,63 @@ func (w *Worker) writeModel(
 	return nil
 }
 
-// fileRow is a file's manifest row for the model it is listed with. A planned file is staged and
-// added to the zip the first time it appears; later rows point to the same path.
-func (w *Worker) fileRow(
+// outcomeOf is how the archive lists a file: a planned file is staged and added to the zip the
+// first time it appears, and later rows point to the same path; any other file is listed as the
+// checksum job left it.
+func (w *Worker) outcomeOf(
 	ctx context.Context,
 	state *archiveWrite,
 	model models.SelectionModel,
+	row selectedFile,
+) (fileOutcome, error) {
+	fileState, err := stateOf(row.file, w.bucket)
+	if err != nil {
+		return fileOutcome{}, err
+	}
+	if _, planned := state.plan.include[row.file.ID]; planned {
+		if done, seen := state.outcomes[row.file.ID]; seen {
+			return done, nil
+		}
+		done, err := w.includeFile(ctx, state, model, row.file, fileState, row.entryFile)
+		if err != nil {
+			return fileOutcome{}, err
+		}
+		state.outcomes[row.file.ID] = done
+		return done, nil
+	}
+	if fileState.canInclude {
+		// The checksum job copied the file after the archive was planned: the plan, and so the size
+		// limit, did not count it.
+		return fileOutcome{
+			availability: availabilityLinked,
+			verification: verificationVerified,
+			verifiedAt:   row.file.Checksum.CheckedAt,
+			reasonCode:   models.DownloadReasonCopiedAfterPlanning,
+		}, nil
+	}
+	return stateOutcome(fileState), nil
+}
+
+// fileRow is a file's manifest row for the model it is listed with.
+func fileRow(
+	model models.SelectionModel,
 	details models.DownloadSelectionModel,
-	file models.SelectionFile,
-	entryFile bool,
+	selected selectedFile,
+	outcome fileOutcome,
+	bucket keyLocator,
 ) (manifestRow, error) {
-	values, err := fileRowValues(file, sourceOf(file, w.bucket))
+	values, err := fileRowValues(selected.file, sourceOf(selected.file, bucket))
 	if err != nil {
 		return nil, err
 	}
-	row := merge(recordValues(model, details, !entryFile), values)
-	fileState, err := stateOf(file, w.bucket)
+	reason, err := reasonText(outcome.reasonCode)
 	if err != nil {
 		return nil, err
 	}
-	var outcome fileOutcome
-	if _, planned := state.plan.include[file.ID]; planned {
-		done, seen := state.outcomes[file.ID]
-		if !seen {
-			done, err = w.includeFile(ctx, state, model, file, fileState, entryFile)
-			if err != nil {
-				return nil, err
-			}
-			state.outcomes[file.ID] = done
-		}
-		outcome = done
-	} else {
-		outcome = fileOutcome{
-			availability: fileState.availability,
-			verification: fileState.verification,
-			verifiedAt:   fileState.verifiedAt,
-			reason:       fileState.reason,
-		}
-		if fileState.canInclude {
-			// The checksum job copied the file after the archive was planned: the plan, and so the
-			// size limit, did not count it.
-			outcome = fileOutcome{
-				availability: availabilityLinked,
-				verification: verificationVerified,
-				verifiedAt:   file.Checksum.CheckedAt,
-				reason:       "Dynamic PDB copied this file after the archive was planned; ask again to include it",
-			}
-		}
-	}
-	state.statuses[file.ID] = outcome.availability
+	row := merge(recordValues(model, details, !selected.entryFile), values)
 	row["status"] = string(outcome.availability)
 	row["verification"] = string(outcome.verification)
-	row["reason"] = outcome.reason
+	row["reason"] = reason
 	row["path_in_archive"] = outcome.path
 	if outcome.verifiedAt != nil {
 		row["verified_at"] = outcome.verifiedAt.UTC().Format(time.RFC3339)
@@ -710,7 +840,7 @@ func (w *Worker) includeFile(
 		return fileOutcome{
 			availability: availabilityUnavailable,
 			verification: verificationNotVerified,
-			reason:       "Dynamic PDB's copy of the file is missing",
+			reasonCode:   models.DownloadReasonCopyMissing,
 		}, nil
 	}
 	if err != nil {
@@ -725,7 +855,7 @@ func (w *Worker) includeFile(
 		return fileOutcome{
 			availability: availabilityUnavailable,
 			verification: verificationMismatch,
-			reason:       "Dynamic PDB's copy differs from the recorded SHA-256",
+			reasonCode:   models.DownloadReasonCopyDiffers,
 		}, nil
 	}
 	path := state.layout.path(file, model, entryFile)

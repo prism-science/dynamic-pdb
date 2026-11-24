@@ -20,16 +20,36 @@ func NewDatabaseStore(database *db.DB) *DatabaseStore {
 	return &DatabaseStore{database: database}
 }
 
-func (s *DatabaseStore) Claim(ctx context.Context, now, leaseUntil time.Time) (*models.DownloadJob, error) {
-	return s.database.Downloads.Claim(ctx, now, leaseUntil)
+func (s *DatabaseStore) Claim(
+	ctx context.Context,
+	lane db.DownloadLane,
+	now, leaseUntil time.Time,
+) (*models.DownloadJob, error) {
+	return s.database.Downloads.Claim(ctx, lane, now, leaseUntil)
 }
 
 func (s *DatabaseStore) Heartbeat(ctx context.Context, id uuid.UUID, attempt int, leaseUntil time.Time) error {
 	return s.database.Downloads.Heartbeat(ctx, id, attempt, leaseUntil)
 }
 
-func (s *DatabaseStore) StartPreparing(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64) error {
-	return s.database.Downloads.StartPreparing(ctx, id, attempt, plannedBytes)
+func (s *DatabaseStore) FinishPlanning(
+	ctx context.Context,
+	id uuid.UUID,
+	attempt int,
+	plannedBytes int64,
+	preview models.DownloadPreview,
+) error {
+	return s.database.Downloads.FinishPlanning(ctx, id, attempt, plannedBytes, preview)
+}
+
+func (s *DatabaseStore) UpdatePlan(
+	ctx context.Context,
+	id uuid.UUID,
+	attempt int,
+	plannedBytes int64,
+	preview models.DownloadPreview,
+) error {
+	return s.database.Downloads.UpdatePlan(ctx, id, attempt, plannedBytes, preview)
 }
 
 func (s *DatabaseStore) Block(
@@ -37,10 +57,11 @@ func (s *DatabaseStore) Block(
 	id uuid.UUID,
 	attempt int,
 	plannedBytes int64,
+	preview models.DownloadPreview,
 	reason string,
 	now time.Time,
 ) error {
-	return s.database.Downloads.Block(ctx, id, attempt, plannedBytes, reason, now)
+	return s.database.Downloads.Block(ctx, id, attempt, plannedBytes, preview, reason, now)
 }
 
 func (s *DatabaseStore) Finish(
