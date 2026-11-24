@@ -641,8 +641,20 @@ func (s *Server) UpdateModelRevisionState(
 			}
 			return nil
 		}
+		// The entry lock serializes this with entry activation, so the filing check below reads
+		// the entry's PDB ID as it is when the model goes live.
+		if err := s.lockEntry(ctx, entryID); err != nil {
+			return fmt.Errorf("lock entry for model activation: %w", err)
+		}
 		if err := s.ensureModelRevisionParentIsActive(ctx, *target); err != nil {
 			return fmt.Errorf("validate model revision parent: %w", err)
+		}
+		filing, err := s.crossEntryFilingOf(ctx, *target)
+		if err != nil {
+			return fmt.Errorf("check filing under another entry: %w", err)
+		}
+		if filing != nil {
+			return filing
 		}
 		activated, err := s.database.Models.ActivateRevision(ctx, revisionID)
 		if err != nil {
@@ -670,6 +682,11 @@ func (s *Server) UpdateModelRevisionState(
 		}
 		return nil
 	})
+	var filing *crossEntryFilingError
+	if errors.As(err, &filing) {
+		writeError(w, http.StatusConflict, groupingNotApprovedCode, filing.Error())
+		return
+	}
 	if s.writeMutationError(r.Context(), w, err, "update model revision") {
 		return
 	}
@@ -1201,6 +1218,16 @@ func (s *Server) writeModelRevision(
 		slog.ErrorContext(r.Context(), "build model revision response failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
 		return
+	}
+	if revision.State == domainmodels.RevisionStateInReview {
+		// Tells the reviewer before they press Approve that it would be refused.
+		filing, err := s.crossEntryFilingOf(r.Context(), *revision)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "check filing under another entry failed", "err", err)
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get model revision")
+			return
+		}
+		attributes.GroupingNotApproved = groupingNotApprovedFromFiling(filing)
 	}
 	writeJSON(w, http.StatusOK, ModelRevisionDocument{
 		Data: ModelRevisionData{

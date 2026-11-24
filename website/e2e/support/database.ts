@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { stack } from "./stack";
 
-// Writes to the browser stack's database what only a background job writes, and
-// no API can: the model-compounds job's read of a model file, and a review flag
-// the archive sync opens. It goes through the
-// compose project that `make browser-stack` started, the same way that target
-// loads e2e/stack/seed.sql (set COMPOSE_PROJECT_NAME for a stack under another
+// Writes to the browser stack's database what no API can: the model-compounds
+// job's read of a model file, a review flag the archive sync opens, and a model
+// approved before the grouping rule. It goes through the compose project that
+// `make browser-stack` started, the same way that target loads
+// e2e/stack/seed.sql (set COMPOSE_PROJECT_NAME for a stack under another
 // project name).
 
 const stackDirectory = path.join(__dirname, "../stack");
@@ -112,5 +112,41 @@ export function openReviewFlag(objectType: "model" | "entry", objectId: string, 
     insert into schema_migration_review (object_type, object_id, issue)
     values ('${objectType}', '${objectId}', '${issue}')
     on conflict (object_type, object_id, issue) do update set resolved_at = null, resolved_by = null;
+  `);
+}
+
+/**
+ * Makes an in-review model revision active the way an approval did before the
+ * grouping rule (researcher answer of 17 Nov, Q11), as db.ModelsRepository
+ * ActivateRevision does, and gives an archive model its data sync job, as
+ * ensureArchiveModelSyncJob does: the API now refuses to approve a PDB
+ * deposition filed under another entry, but the production data holds such
+ * models from before. The entry's search index is not rebuilt here; the next
+ * approval of any model of the entry rebuilds it.
+ */
+export function activateModelFiledBeforeTheRule(revisionId: string): void {
+  if (!UUID.test(revisionId)) {
+    throw new Error(`not a model revision id: ${revisionId}`);
+  }
+  runSql(`
+    begin;
+    update model_revisions set state = 'archived', updated_at = now()
+    where model_id = (select model_id from model_revisions where id = '${revisionId}') and state = 'active';
+    update model_revisions
+    set state = 'active', published_at = now(), updated_at = now(),
+        revision_number = coalesce(
+          (select max(previous.revision_number) from model_revisions previous
+           where previous.model_id = model_revisions.model_id), 0) + 1
+    where id = '${revisionId}' and state = 'in_review';
+    update models set state = model_revisions.model_state
+    from model_revisions where model_revisions.id = '${revisionId}' and models.id = model_revisions.model_id;
+    insert into data_sync_jobs (entry_id, model_id, scheduled_at)
+    select models.entry_id, models.id, now() + interval '7 days'
+    from model_revisions join models on models.id = model_revisions.model_id
+    where model_revisions.id = '${revisionId}'
+      and model_revisions.metadata #>> '{external_refs,pdb}' is not null
+      and (model_revisions.metadata ->> 'origin' = 'archive' or model_revisions.metadata ->> 'model_type' = 'Deposited')
+    on conflict on constraint data_sync_jobs_entry_model_key do nothing;
+    commit;
   `);
 }

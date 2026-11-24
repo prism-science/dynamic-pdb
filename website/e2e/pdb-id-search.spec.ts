@@ -1,6 +1,7 @@
 import type { APIRequestContext } from "@playwright/test";
 
 import { createActiveEntry, createActiveModel } from "./support/api";
+import { activateModelFiledBeforeTheRule } from "./support/database";
 import { freshPdbId } from "./support/fakeRcsb";
 import { expect, test } from "./support/fixtures";
 import { stack } from "./support/stack";
@@ -39,13 +40,18 @@ test("should open the model of the searched PDB ID, from the header search and f
     rFree: 0.21,
     pdbId: entryPdbId,
   });
-  const reRefinement = await createActiveModel(submitterApi, reviewerApi, entryId, {
+  // The re-refinement was filed under this entry before the grouping rule: the
+  // API no longer approves that, so it is made active in the database.
+  const { modelId: reRefinement, revisionId: reRefinementRevision } = await submitterApi.createModel(entryId, {
     title: `S8 re-refinement ${runTag}`,
     modelType: "Ensemble",
     rFree: 0.19,
     pdbId: reRefinementPdbId,
     archive: true,
   });
+  activateModelFiledBeforeTheRule(reRefinementRevision);
+  // Approving this model rebuilds the entry's search index, the re-refinement's
+  // PDB ID included, so the header search finds it.
   await createActiveModel(submitterApi, reviewerApi, entryId, {
     title: `S8 multiconformer ${runTag}`,
     modelType: "Multiconformer",

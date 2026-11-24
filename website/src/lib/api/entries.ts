@@ -794,6 +794,9 @@ export type ModelRevision = ModelRevisionSummary & {
   metrics: Metric[];
   artifacts: Artifact[];
   modeled_compounds?: ModeledCompounds;
+  /** Set on an in-review revision the API will not approve yet: it files a
+   *  PDB deposition under another entry (researcher answer of 17 Nov, Q11). */
+  grouping_not_approved?: Schemas["GroupingNotApproved"];
 };
 
 export type ReviewEntry = EntryRevision;
