@@ -2,6 +2,17 @@ package models
 
 import "time"
 
+// Stop reasons of data sync jobs whose entry or model has nothing left to sync.
+const (
+	// DataSyncStopReasonEntryDeleted stops the jobs of a deleted entry.
+	DataSyncStopReasonEntryDeleted = "entry deleted"
+	// DataSyncStopReasonEntryNeverApproved stops the job of an entry that was never approved and
+	// has no revision left in review: nothing can make one of its revisions active.
+	DataSyncStopReasonEntryNeverApproved = "entry was never approved and has no revision in review"
+	// DataSyncStopReasonModelDeleted stops the job of a deleted model.
+	DataSyncStopReasonModelDeleted = "model deleted"
+)
+
 type DataSyncJob struct {
 	EntryID     string
 	ModelID     *string
