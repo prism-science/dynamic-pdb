@@ -399,10 +399,143 @@ func Test_should_page_frozen_models_by_ordinal_when_selection_models_are_listed(
 	assert.Equal(t, entry.id, page[0].EntryID)
 }
 
+func Test_should_list_the_frozen_revisions_model_type_and_origin_when_selection_models_are_listed(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entry := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	deposited := fixture.model(t, entry, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	rerefined := fixture.model(t, entry, map[string]any{"model_type": "Ensemble", "origin": "archive"})
+	ensemble := fixture.model(t, entry, map[string]any{"model_type": "Ensemble"})
+	untyped := fixture.model(t, entry, map[string]any{})
+	selection, err := fixture.database.Selections.Freeze(context.Background(),
+		freezeRequest([]string{deposited.id, rerefined.id, ensemble.id, untyped.id}, nil, nil))
+	require.NoError(t, err)
+	// and the computed model gets a new active revision of another type after the save
+	fixture.exec(t, `update model_revisions set state = 'archived' where id = $1`, ensemble.revisionID)
+	fixture.exec(t, `insert into model_revisions (id, model_id, primary_artifact_id, revision_number, state, model_state,
+	                                               title, metadata, created_by, created_at, updated_at, published_at)
+	                 values ($1, $2, $3, 2, 'active', 'active', 'revised',
+	                         '{"model_type": "Deposited", "origin": "archive"}', $4, $5, $5, $5)`,
+		uuid.New(), ensemble.id, ensemble.coordinateFile, fixture.userID, fixture.tick())
+
+	// when
+	items, err := fixture.database.Selections.ListModels(context.Background(), selection.ID, 0, 10)
+
+	// then each model reports its frozen revision's values, not the newer revision's
+	require.NoError(t, err)
+	type typed struct {
+		modelID   string
+		modelType *string
+		origin    *string
+	}
+	listed := make([]typed, 0, len(items))
+	for _, item := range items {
+		listed = append(listed, typed{modelID: item.ModelID, modelType: item.ModelType, origin: item.Origin})
+	}
+	assert.Equal(t, []typed{
+		{modelID: deposited.id, modelType: ptr("Deposited"), origin: ptr("archive")},
+		{modelID: rerefined.id, modelType: ptr("Ensemble"), origin: ptr("archive")},
+		{modelID: ensemble.id, modelType: ptr("Ensemble")},
+		{modelID: untyped.id},
+	}, listed)
+}
+
 func Test_should_return_not_found_when_an_unknown_selection_is_read(t *testing.T) {
 	// when
 	_, err := testDB.Selections.Get(context.Background(), uuid.New())
 
 	// then
 	require.ErrorIs(t, err, db.ErrSelectionNotFound)
+}
+
+func Test_should_add_the_deposited_models_of_the_held_entries_when_a_selection_is_saved_with_add_deposited_models(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entryA := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	depositedA := fixture.model(t, entryA, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	singleConformerA := fixture.model(t, entryA, map[string]any{"model_type": "Single Conformer"})
+	multiconformerA := fixture.model(t, entryA, map[string]any{"model_type": "Multiconformer"})
+	ensembleA := fixture.model(t, entryA, map[string]any{"model_type": "Ensemble"})
+	rerefinedA := fixture.model(t, entryA, map[string]any{"model_type": "Single Conformer", "origin": "archive"})
+	// Entry B holds two depositions: both Deposited models are added.
+	entryB := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	firstDepositedB := fixture.model(t, entryB, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	secondDepositedB := fixture.model(t, entryB, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	ensembleB := fixture.model(t, entryB, map[string]any{"model_type": "Ensemble"})
+	// Entry C has no held model, so its Deposited model stays out.
+	entryC := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	fixture.model(t, entryC, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	fixture.model(t, entryC, map[string]any{"model_type": "Multiconformer"})
+	request := freezeRequest(
+		[]string{singleConformerA.id, rerefinedA.id},
+		[]db.ModelSearch{{ModelTypes: []models.StructureModelType{models.StructureModelTypeEnsemble}}},
+		nil,
+	)
+	request.ModelIDs = append(request.ModelIDs, multiconformerA.id)
+	request.Request.ModelIDs = request.ModelIDs
+	request.AddDepositedModels = true
+	request.Request.AddDepositedModels = true
+
+	// when
+	selection, err := fixture.database.Selections.Freeze(context.Background(), request)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, 8, selection.ModelCount)
+	assert.Equal(t, 2, selection.EntryCount)
+	frozen := fixture.frozenModels(t, selection.ID)
+	assert.Equal(t, []string{
+		depositedA.id, singleConformerA.id, multiconformerA.id, ensembleA.id, rerefinedA.id,
+		firstDepositedB.id, secondDepositedB.id, ensembleB.id,
+	}, frozenModelIDs(frozen))
+	assert.Equal(t, frozenModel{modelID: depositedA.id, modelRevisionID: depositedA.revisionID, modelRevisionNumber: 1,
+		entryRevisionID: entryA.revisionID, entryRevisionNumber: 2}, frozen[0],
+		"an added Deposited model is frozen with its revisions like any other model")
+	stored, err := fixture.database.Selections.Get(context.Background(), selection.ID)
+	require.NoError(t, err)
+	assert.True(t, stored.Request.AddDepositedModels)
+}
+
+func Test_should_keep_excluded_models_out_when_a_selection_is_saved_with_add_deposited_models(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entryA := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	depositedA := fixture.model(t, entryA, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	ensembleA := fixture.model(t, entryA, map[string]any{"model_type": "Ensemble"})
+	// Entry B's only held model is excluded, so the selection holds nothing of entry B.
+	entryB := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	fixture.model(t, entryB, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	ensembleB := fixture.model(t, entryB, map[string]any{"model_type": "Ensemble"})
+	request := freezeRequest(nil,
+		[]db.ModelSearch{{ModelTypes: []models.StructureModelType{models.StructureModelTypeEnsemble}}},
+		[]string{depositedA.id, ensembleB.id},
+	)
+	request.AddDepositedModels = true
+	request.Request.AddDepositedModels = true
+
+	// when
+	selection, err := fixture.database.Selections.Freeze(context.Background(), request)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{ensembleA.id}, frozenModelIDs(fixture.frozenModels(t, selection.ID)))
+}
+
+func Test_should_not_add_deposited_models_when_a_selection_is_saved_without_add_deposited_models(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entry := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	fixture.model(t, entry, map[string]any{"model_type": "Deposited", "origin": "archive"})
+	ensemble := fixture.model(t, entry, map[string]any{"model_type": "Ensemble"})
+	request := freezeRequest([]string{ensemble.id}, nil, nil)
+
+	// when
+	selection, err := fixture.database.Selections.Freeze(context.Background(), request)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []string{ensemble.id}, frozenModelIDs(fixture.frozenModels(t, selection.ID)))
+	stored, err := fixture.database.Selections.Get(context.Background(), selection.ID)
+	require.NoError(t, err)
+	assert.False(t, stored.Request.AddDepositedModels)
 }

@@ -18,6 +18,7 @@ generate:
 build:
 	@mkdir -p bin "$(GOCACHE)"
 	GOCACHE="$(GOCACHE)" $(GO) build -o bin/server ./cmd/server
+	GOCACHE="$(GOCACHE)" $(GO) build -o bin/archive-worker ./cmd/archive-worker
 
 test:
 	@mkdir -p "$(GOCACHE)"

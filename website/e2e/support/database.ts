@@ -5,11 +5,11 @@ import path from "node:path";
 import { stack } from "./stack";
 
 // Writes to the browser stack's database what no API can: the model-compounds
-// job's read of a model file, a review flag the archive sync opens, and a model
-// approved before the grouping rule. It goes through the compose project that
-// `make browser-stack` started, the same way that target loads
-// e2e/stack/seed.sql (set COMPOSE_PROJECT_NAME for a stack under another
-// project name).
+// job's read of a model file, the checksum job's check of a stored file, a review
+// flag the archive sync opens, and a model approved before the grouping rule. It
+// goes through the compose project that `make browser-stack` started, the same
+// way that target loads e2e/stack/seed.sql (set COMPOSE_PROJECT_NAME for a
+// stack under another project name).
 
 const stackDirectory = path.join(__dirname, "../stack");
 
@@ -148,5 +148,25 @@ export function activateModelFiledBeforeTheRule(revisionId: string): void {
       and (model_revisions.metadata ->> 'origin' = 'archive' or model_revisions.metadata ->> 'model_type' = 'Deposited')
     on conflict on constraint data_sync_jobs_entry_model_key do nothing;
     commit;
+  `);
+}
+
+const SHA256 = /^[0-9a-f]{64}$/;
+
+/**
+ * Records that the checksum job read an uploaded file in our storage and found
+ * the recorded SHA-256, as it does for own uploads: the archive worker includes
+ * only files checked this way.
+ */
+export function markStoredFileVerified(artifactId: string, sha256: string, sizeBytes: number): void {
+  if (!UUID.test(artifactId) || !SHA256.test(sha256) || !Number.isInteger(sizeBytes) || sizeBytes < 0) {
+    throw new Error(`not a stored file this helper marks: ${artifactId} ${sha256} ${sizeBytes}`);
+  }
+  runSql(`
+    insert into artifact_checksums (artifact_id, status, sha256, size_bytes, copy_status, checked_at)
+    values ('${artifactId}', 'verified', '${sha256}', ${sizeBytes}, 'own_storage', now())
+    on conflict (artifact_id) do update
+      set status = 'verified', sha256 = excluded.sha256, size_bytes = excluded.size_bytes,
+          copy_status = 'own_storage', checked_at = excluded.checked_at;
   `);
 }

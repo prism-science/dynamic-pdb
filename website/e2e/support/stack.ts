@@ -76,6 +76,31 @@ export function backendEnvironment(): Record<string, string> {
   };
 }
 
+/**
+ * The archive worker (backend/bin/archive-worker, built by `make browser-stack`)
+ * against the same database and S3 stand-in as the backend. It builds the
+ * waiting archives, then exits, so a test runs it when it needs an archive.
+ */
+export function archiveWorkerEnvironment(): Record<string, string> {
+  const backend = backendEnvironment();
+  return {
+    DYNAMIC_PDB_ENV: backend.DYNAMIC_PDB_ENV,
+    DYNAMIC_PDB_DB_HOST: backend.DYNAMIC_PDB_DB_HOST,
+    DYNAMIC_PDB_DB_PORT: backend.DYNAMIC_PDB_DB_PORT,
+    DYNAMIC_PDB_DB_NAME: backend.DYNAMIC_PDB_DB_NAME,
+    DYNAMIC_PDB_DB_USERNAME: backend.DYNAMIC_PDB_DB_USERNAME,
+    DYNAMIC_PDB_DB_PASSWORD: backend.DYNAMIC_PDB_DB_PASSWORD,
+    DYNAMIC_PDB_CDN_S3_ENDPOINT: backend.DYNAMIC_PDB_CDN_S3_ENDPOINT,
+    DYNAMIC_PDB_CDN_S3_BUCKET: backend.DYNAMIC_PDB_CDN_S3_BUCKET,
+    DYNAMIC_PDB_CDN_S3_REGION: backend.DYNAMIC_PDB_CDN_S3_REGION,
+    DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID: backend.DYNAMIC_PDB_CDN_S3_ACCESS_KEY_ID,
+    DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY: backend.DYNAMIC_PDB_CDN_S3_SECRET_ACCESS_KEY,
+    AWS_EC2_METADATA_DISABLED: "true",
+    DYNAMIC_PDB_ARCHIVE_WORKER_EXIT_WHEN_IDLE: "true",
+    DYNAMIC_PDB_ARCHIVE_WORKER_POLL_INTERVAL: "1s",
+  };
+}
+
 /** Runtime settings for `next start`. NEXT_PUBLIC_API_BASE_URL is baked in by `make browser-stack`. */
 export function websiteEnvironment(): Record<string, string> {
   return {

@@ -1029,14 +1029,19 @@ export interface components {
         ModelSearchSource: "pdb_archive" | "dynamic_pdb_deposit";
         /** @enum {string} */
         ProteinChainMode: "at_least" | "every";
-        /** @description Which models to save. Give model_ids, searches, or both; exclude_model_ids removes models from the result. */
+        /** @description Which models to save. Give model_ids, searches, or both; exclude_model_ids removes models from the result, and add_deposited_models adds the Deposited models of their entries. */
         CreateSelectionRequest: {
             /** @description Models to hold, by model ID. Each must be a published model of a published entry. */
             model_ids?: string[];
             /** @description Searches whose every result the selection holds. Each is the query string of a GET /v1/models request (the part after "?"), with its filters only: no limit, offset or cursor. An empty string holds every model. Filters work where the server enables model search, and the protein chain filters where it also enables them, as on GET /v1/models. */
             searches?: string[];
-            /** @description Models to leave out, by model ID. IDs of no model are ignored. */
+            /** @description Models to leave out, by model ID. IDs of no model are ignored. An excluded model stays out even when add_deposited_models would add it. */
             exclude_model_ids?: string[];
+            /**
+             * @description true also holds every published Deposited model of each entry the selection holds a model of, frozen at the same moment as the others. The PDB's original mmCIF belongs to the Deposited model, so an original_mmcif archive of computed models (for example qFit or ensembles) gets it only this way.
+             * @default false
+             */
+            add_deposited_models: boolean;
         };
         SelectionDocument: {
             data: components["schemas"]["SelectionData"];
@@ -1069,6 +1074,8 @@ export interface components {
             model_ids: string[];
             searches: string[];
             exclude_model_ids: string[];
+            /** @description Whether the Deposited models of the held entries were added. false for selections saved before the option existed. */
+            add_deposited_models: boolean;
         };
         SelectionLinks: {
             /** @description Absolute URL of the selection. */
@@ -1092,6 +1099,10 @@ export interface components {
             entry_id: string;
             /** @description Number of the model revision frozen in the selection (revision_number of the model as it was then). */
             model_revision_number: number;
+            /** @description The frozen model revision's metadata.model_type (see StructureModelType), as it was when the selection was saved; null when that revision has none. With origin, it says whether the model is a computed Dynamic PDB model (Single Conformer, Multiconformer or Ensemble without origin archive), which the modified_coordinates file choice holds. */
+            model_type: string | null;
+            /** @description The frozen model revision's metadata.origin (see ModelMetadata.origin), as it was when the selection was saved; null when that revision has none. */
+            origin: string | null;
             /** @description Number of the entry revision frozen in the selection (revision_number of the entry as it was then). */
             entry_revision_number: number;
             /** @description The files of the two frozen revisions, each once, ordered by first role, then name. A published revision's files, and each file's location, size and declared SHA-256, never change, so these are the files the selection named when it was saved; a newer file is never listed in their place. Files of the entry revision repeat on every model of that entry. */

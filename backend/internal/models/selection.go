@@ -8,11 +8,13 @@ import (
 
 // SelectionRequest is what a client asked a frozen selection to hold: models by ID, every model
 // matching a search, minus excluded models. Each search is a GET /v1/models query string, "" for
-// every model.
+// every model. AddDepositedModels also holds the Deposited models of the entries held; a request
+// stored before it existed reads as false.
 type SelectionRequest struct {
-	ModelIDs        []string `json:"model_ids"`
-	Searches        []string `json:"searches"`
-	ExcludeModelIDs []string `json:"exclude_model_ids"`
+	ModelIDs           []string `json:"model_ids"`
+	Searches           []string `json:"searches"`
+	ExcludeModelIDs    []string `json:"exclude_model_ids"`
+	AddDepositedModels bool     `json:"add_deposited_models"`
 }
 
 // Selection is a frozen selection: the models a request matched when it was saved, each with
@@ -26,15 +28,18 @@ type Selection struct {
 }
 
 // SelectionModel is one model of a frozen selection with its frozen revisions. Ordinal numbers
-// the models from 1, in the order GET /v1/models lists them. Files are the files of the two
-// revisions; a published revision's files never change, so they are the files the selection
-// pinned when it was saved.
+// the models from 1, in the order GET /v1/models lists them. ModelType and Origin are the frozen
+// model revision's metadata values, nil when it has none; they say whether the model is computed,
+// which the archive's file choices need. Files are the files of the two revisions; a published
+// revision's files never change, so they are the files the selection pinned when it was saved.
 type SelectionModel struct {
 	Ordinal             int
 	ModelID             string
 	EntryID             string
 	ModelRevisionID     uuid.UUID
 	ModelRevisionNumber int
+	ModelType           *string
+	Origin              *string
 	EntryRevisionID     uuid.UUID
 	EntryRevisionNumber int
 	Files               []SelectionFile

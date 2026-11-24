@@ -18,6 +18,7 @@ import {
   type SimilarEntry,
 } from "@/lib/api/entries";
 import { getAuthSession } from "@/lib/auth/session";
+import { bulkDownloadAvailable } from "@/lib/api/downloads";
 import { canDeleteEntries } from "@/lib/auth/permissions";
 import {
   getEntityFileURL,
@@ -51,6 +52,11 @@ import {
   CoordinateSequencePanel,
 } from "@/app/components/CoordinatePanels";
 import DownloadFiles from "@/app/components/DownloadFiles";
+import DownloadSelectionProvider from "@/app/components/download-selection/DownloadSelectionProvider";
+import EntrySelectMenu, {
+  type EntrySelectModel,
+} from "@/app/components/download-selection/EntrySelectMenu";
+import SelectionBar from "@/app/components/download-selection/SelectionBar";
 import EntryOverview, {
   type SummaryModel,
 } from "@/app/components/EntryOverview";
@@ -106,9 +112,10 @@ export default async function ScopePage({
   changeSubmitted?: boolean;
 }) {
   const session = await getAuthSession();
-  const [data, similarEntries] = await Promise.all([
+  const [data, similarEntries, bulkDownload] = await Promise.all([
     loadEntry(session?.token, entryId),
     loadSimilarEntries(session?.token, entryId),
+    bulkDownloadAvailable(),
   ]);
 
   const model =
@@ -263,7 +270,7 @@ export default async function ScopePage({
 
   const entryBase = `/entries/${encodeURIComponent(data.entry.id)}`;
 
-  return (
+  const page = (
     <main
       className={`${styles.page} ${styles.scopePage}`}
       aria-label={`${entryLabel} entry`}
@@ -321,6 +328,9 @@ export default async function ScopePage({
               tabs={tabs.map((tab) => tab.id)}
               hetstar={useHetstar}
             />
+            {bulkDownload ? (
+              <EntrySelectMenu models={entrySelectModels(data, identity)} />
+            ) : null}
             <DownloadFiles
               groups={downloadGroups(data.entities, model?.id ?? null)}
             />
@@ -442,8 +452,25 @@ export default async function ScopePage({
           </div>
         </div>
       </div>
+      {bulkDownload ? <SelectionBar /> : null}
     </main>
   );
+  return bulkDownload ? <DownloadSelectionProvider>{page}</DownloadSelectionProvider> : page;
+}
+
+/** The entry's models as the "Select for download" menu lists them. */
+function entrySelectModels(
+  data: EntryPageData,
+  identity: { name: string | null; id: string },
+): EntrySelectModel[] {
+  const entryLabel = identity.name ? `${identity.name} (${identity.id})` : identity.id;
+  return data.models.map((item) => ({
+    id: item.id,
+    title: modelTitle(item),
+    entryId: data.entry.id,
+    entryLabel,
+    deposited: item.metadata?.model_type === "Deposited",
+  }));
 }
 
 /**
