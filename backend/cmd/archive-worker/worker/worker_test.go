@@ -178,7 +178,8 @@ func newArchiveFixture(t *testing.T, choice models.DownloadFileChoice) *archiveF
 			1: {Ordinal: 1, ModelType: ptr("Deposited"), ModelPDBID: ptr("1ABC"), EntryPDBID: ptr("1ABC"),
 				Authors: []string{"Smith, R.D.", "Olson, J.S."},
 				RelatedDatasets: []models.RelatedDataset{{DOI: "10.15785/SBGRID/1", DataType: "diffraction image data",
-					Repository: ptr("SBGrid Data Bank")}}},
+					Repository: ptr("SBGrid Data Bank"), Relation: ptr(models.RelatedDatasetRelationSimilarSample),
+					LinkEvidence: ptr(models.RelatedDatasetLinkEvidenceRepositoryText)}}},
 			2: {Ordinal: 2, ModelType: ptr("Multiconformer"), EntryPDBID: ptr("1ABC")},
 			3: {Ordinal: 3, ModelType: ptr("Ensemble"), Origin: ptr("archive"), ModelPDBID: ptr("2DEF"), EntryPDBID: ptr("1ABC")},
 			4: {Ordinal: 4, ModelType: ptr("Deposited"), ModelPDBID: ptr("3GHI"), EntryPDBID: ptr("3GHI")},
@@ -366,6 +367,8 @@ func Test_should_include_every_held_file_and_list_the_rest_when_all_files_of_fiv
 	assert.Equal(t, "10.15785/SBGRID/1", datasets[0]["dataset_id"])
 	assert.Equal(t, "https://doi.org/10.15785/SBGRID/1", datasets[0]["source_url"])
 	assert.Equal(t, "See the repository's terms", datasets[0]["license"])
+	assert.Equal(t, "similar_sample", datasets[0]["relation"])
+	assert.Equal(t, "repository_text", datasets[0]["link_evidence"])
 
 	deposited := fileRows(rows, f.files["coord1"].ID)[0]
 	assert.Equal(t, "Smith, R.D.; Olson, J.S.", deposited["authors"])

@@ -412,7 +412,8 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	// re-refinement deposited as an Ensemble (origin archive)
 	fasta1 := seed.file("e1", "1abc.fasta", "fasta", "L1", "copied", "https://www.rcsb.org/fasta/entry/1ABC", ">1ABC\nMKV\n")
 	entry1 := seed.entry(map[string]any{"external_refs": map[string]any{"pdb": "1ABC"},
-		"related_datasets": []map[string]any{{"doi": "10.15785/SBGRID/1", "data_type": "diffraction image data"}}}, fasta1)
+		"related_datasets": []map[string]any{{"doi": "10.15785/SBGRID/1", "data_type": "diffraction image data",
+			"relation": "similar_sample", "link_evidence": "repository_text"}}}, fasta1)
 	coordinates := seed.file(entry1, "1abc.cif", "model", "L2", "copied", "https://files.rcsb.org/download/1ABC.cif", "data_1ABC v1\n")
 	structureFactors := seed.file(entry1, "1abc-sf.cif", "structure_factors", "L1", "copied",
 		"https://files.rcsb.org/download/1ABC-sf.cif", "data_r1abcsf\n")
@@ -496,6 +497,15 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 		assert.Equal(t, path, manifestPath)
 	}
 	assert.Len(t, names, len(included)+2)
+	var relatedRows []map[string]string
+	for _, row := range rows {
+		if row["record_type"] == "related_dataset" {
+			relatedRows = append(relatedRows, row)
+		}
+	}
+	require.Len(t, relatedRows, 1, "entry 1's related dataset is listed once")
+	assert.Equal(t, "similar_sample", relatedRows[0]["relation"])
+	assert.Equal(t, "repository_text", relatedRows[0]["link_evidence"])
 	assert.Equal(t, "data_1ABC v1\n", entries[included[coordinates]], "the archive holds the pinned version, not the revised one")
 	status, _ := manifestStatus(rows, revisedCoordinates)
 	assert.Empty(t, status, "the revised file is not part of the selection")
