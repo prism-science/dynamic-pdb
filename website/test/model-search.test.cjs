@@ -18,6 +18,7 @@ const {
   MODEL_SEARCH_PARAMETERS,
   MODEL_SEARCH_PARAMETERS_NOT_OFFERED,
   modelSearchApiUrl,
+  optionApplies,
   modelSearchQuery,
   modelTotalLine,
   offeredFilters,
@@ -277,4 +278,71 @@ test("should explain each failed search with what to do next", () => {
   assert.match(searchFailureMessage({ status: 504 }).body, /in a few seconds/);
   assert.equal(searchFailureMessage({ status: 500 }).title, "Search failed");
   assert.equal(searchFailureMessage({ status: null }).title, "Search failed");
+});
+
+const excludeNeedsReview = MODEL_SEARCH_FILTERS.find((filter) => filter.id === "exclude_compounds_needing_review");
+
+test("should offer the exclude-needs-review option under the compound filter, off unless the URL ticks it", () => {
+  const compoundIndex = MODEL_SEARCH_FILTERS.findIndex((filter) => filter.id === "compound");
+
+  assert.equal(excludeNeedsReview.kind, "option");
+  assert.equal(excludeNeedsReview.modifies, "compound");
+  assert.equal(excludeNeedsReview.group, "model");
+  assert.equal(MODEL_SEARCH_FILTERS[compoundIndex + 1], excludeNeedsReview);
+  assert.deepEqual(filterParameters(excludeNeedsReview), ["exclude_compounds_needing_review"]);
+  assert.deepEqual(readModelSearch(new URLSearchParams("compound=ADP")), [["compound", "ADP"]]);
+});
+
+test("should keep the option in the URL with a compound and drop it on Apply without one", () => {
+  assert.deepEqual(
+    criteriaFromPanel({ compound: ["ADP"], exclude_compounds_needing_review: ["true"] }),
+    [
+      ["compound", "ADP"],
+      ["exclude_compounds_needing_review", "true"],
+    ],
+  );
+  assert.deepEqual(
+    criteriaFromPanel({ compound: ["  "], model_type: ["Ensemble"], exclude_compounds_needing_review: ["true"] }),
+    [["model_type", "Ensemble"]],
+  );
+  assert.deepEqual(panelProblems({ exclude_compounds_needing_review: ["true"] }), []);
+});
+
+test("should restore a shared URL with the option and a PDB ID, in the website's order", () => {
+  const url = new URLSearchParams("exclude_compounds_needing_review=true&compound=ADP&pdb_id=44PS&source=pdb_archive");
+
+  const criteria = readModelSearch(url);
+
+  assert.deepEqual(criteria, [
+    ["source", "pdb_archive"],
+    ["pdb_id", "44PS"],
+    ["compound", "ADP"],
+    ["exclude_compounds_needing_review", "true"],
+  ]);
+  assert.equal(
+    browseSearchHref(criteria),
+    "/browse?source=pdb_archive&pdb_id=44PS&compound=ADP&exclude_compounds_needing_review=true",
+  );
+  assert.deepEqual(criteriaFromPanel(panelValuesFromCriteria(criteria)), criteria);
+});
+
+test("should let the option be used once the compound filter has a value, added or being typed", () => {
+  assert.equal(optionApplies(excludeNeedsReview, {}, {}), false);
+  assert.equal(optionApplies(excludeNeedsReview, { compound: [" "] }, { compound: "  " }), false);
+  assert.equal(optionApplies(excludeNeedsReview, { compound: ["ADP"] }, {}), true);
+  assert.equal(optionApplies(excludeNeedsReview, {}, { compound: "ADP" }), true);
+});
+
+test("should offer the PDB ID filter as a list of model PDB IDs with the API's limits", () => {
+  const pdbID = MODEL_SEARCH_FILTERS.find((filter) => filter.id === "pdb_id");
+
+  assert.equal(pdbID.kind, "text_list");
+  assert.equal(pdbID.group, "model");
+  assert.deepEqual(panelProblems({ pdb_id: ["44PS", "7KR0"] }), []);
+  assert.deepEqual(
+    panelProblems({ pdb_id: Array.from({ length: MAX_FILTER_VALUES + 1 }, (_, index) => `${index}ABC`) }).map(
+      (problem) => problem.parameter,
+    ),
+    ["pdb_id"],
+  );
 });

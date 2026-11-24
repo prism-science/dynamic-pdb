@@ -886,7 +886,16 @@ export interface components {
         EntryInfoData: {
             type: string;
             id: string;
-            attributes: components["schemas"]["EntryInfoAttributes"];
+            attributes: components["schemas"]["EntryListAttributes"];
+        };
+        EntryListAttributes: components["schemas"]["EntryInfoAttributes"] & {
+            /** @description The entry's active models whose own PDB ID (external_refs.pdb) is one of the request's pdb_id values or its whole query, ignoring case: the model a PDB ID search selects. Archive models (model type Deposited, or origin archive) first, then in the order GET /v1/models lists them. Empty when the entry matched by its own PDB ID only, or by other text. Present only when the request has pdb_id or query. Nothing is merged: each model keeps its entry. */
+            matched_models?: components["schemas"]["MatchedModel"][];
+        };
+        MatchedModel: {
+            model_id: string;
+            /** @description The model's PDB ID as stored. */
+            pdb_id: string;
         };
         SimilarEntryCollectionDocument: {
             data: components["schemas"]["SimilarEntryData"][];
@@ -926,7 +935,7 @@ export interface components {
             flagged_for_review?: boolean;
             /** @description The open review flags flagged_for_review counts. Present (possibly empty) only for callers with the reviewer or admin role, where the server enables model search. */
             review_flags?: components["schemas"]["ReviewFlag"][];
-            /** @description Compounds named in the compound filter that the coordinate-file reader marked "needs review" in this model's file (for example a possible chain residue). They still match. Present only when the request has a compound filter. */
+            /** @description Compounds named in the compound filter that the coordinate-file reader marked "needs review" in this model's file (for example a possible chain residue). They still match. Present only when the request has a compound filter; empty when the request sets exclude_compounds_needing_review, as those copies did not count. */
             compounds_needing_review?: components["schemas"]["CompoundNeedingReview"][];
         };
         /** @description One open review flag on a record. Only callers with the reviewer or admin role get these; everyone else sees flagged_for_review only. */
@@ -3371,9 +3380,9 @@ export interface operations {
                 offset?: number;
                 /** @description Opaque cursor from the previous page's `meta.next_cursor`. Returns the entries that follow it. Follow `links.next` to page without building URLs. Cannot be combined with `offset`. */
                 cursor?: string;
-                /** @description Text to search across entries, models, artifacts, and artifact metadata. */
+                /** @description Text to search across entries, models, artifacts, and artifact metadata. When the whole text is the PDB ID of one of an entry's active models, the result names that model in matched_models. */
                 query?: string;
-                /** @description PDB IDs to match against external_refs.pdb of an entry or of one of its active models. */
+                /** @description PDB IDs to match against external_refs.pdb of an entry or of one of its active models. Each result names the models whose own PDB ID matched in matched_models, so a search for any PDB ID of an entry that holds several depositions selects that model. */
                 pdb_id?: string[];
             };
             header?: never;
@@ -3543,10 +3552,14 @@ export interface operations {
                 purpose?: components["schemas"]["ModelPurpose"][];
                 /** @description Model filter. Where the model comes from: pdb_archive is a model taken unchanged from a PDB deposition (model type Deposited, or origin archive, which includes re-refinements filed under the entry of their experimental data); dynamic_pdb_deposit is every other model. */
                 source?: components["schemas"]["ModelSearchSource"][];
+                /** @description Model filter. Models whose own PDB ID (external_refs.pdb) is one of these, ignoring case: a deposited model, or a re-refinement filed under the entry of its experimental data. Each result is that model with its entry, so searching any PDB ID of an entry that holds several depositions selects the model with that PDB ID. Computed models carry no PDB ID and never match. */
+                pdb_id?: string[];
                 /** @description Model filter. Models with at least one file of one of these levels attached to the model. Levels belong to files, not to models. */
                 data_level?: components["schemas"]["ArtifactLevel"][];
-                /** @description Model filter. Models whose coordinate file contains one of these chemical component IDs (for example ADP), ignoring case. A file the server has not read yet never matches. Compounds the reader marked "needs review" match too; the result lists them in compounds_needing_review. */
+                /** @description Model filter. Models whose coordinate file contains one of these chemical component IDs (for example ADP), ignoring case. A file the server has not read yet never matches. Compounds the reader marked "needs review" match too, unless exclude_compounds_needing_review is true; the result lists them in compounds_needing_review. */
                 compound?: string[];
+                /** @description Model filter option, only with compound (400 without it). true: a copy of a compound the coordinate-file reader marked "needs review" no longer counts, so a model matches only through a copy that does not need review, and compounds_needing_review is empty. A file with both kinds of copies still matches. false (the default): copies that need review match too. A file the server has not read yet never matches either way. */
+                exclude_compounds_needing_review?: boolean;
                 /** @description Model filter. Models whose coordinate file has at least this many protein chains (inclusive). With protein_chain_mode at_least (the default), only chains whose deposited length is within protein_chain_length_min and protein_chain_length_max count when either is given; all protein chains otherwise. Defaults to 1 when only a length bound or the mode is given. Each copy of a chain counts. A chain is an author chain of the file's first model; it is a protein chain when the file's _entity_poly.type for its entity is polypeptide(L) or polypeptide(D), and, in a file that states no polymer type for it (PDB format, most computed models), when more than half of its modeled residues are amino acids. A file the server has not read yet never matches. Example: "more than four protein chains, each longer than 300 residues" is protein_chains_min=5&protein_chain_length_min=301. Available only where the server enables the protein chain filters; elsewhere 400. */
                 protein_chains_min?: number;
                 /** @description Model filter, with protein_chains_min and protein_chain_mode. Lowest deposited sequence length of a protein chain, in residues (inclusive); residues without coordinates count. The length is the file's own (_entity_poly_seq, SEQRES), else the entry's FASTA record for the chain. A chain whose length is unknown never satisfies a length bound. */

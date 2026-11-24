@@ -36,6 +36,9 @@ export type FieldSources = Schemas["FieldSources"];
 export type FieldSource = Schemas["FieldSource"];
 
 export type Entry = Schemas["EntryInfoAttributes"] & {
+  /** Only in GET /v1/entries results of a pdb_id or query search: the
+   *  models whose own PDB ID matched, the one to open first. */
+  matched_models?: Schemas["MatchedModel"][];
   idempotency_key?: string | null;
   protein_sequences?: ProteinSequence[];
   polymer_entities?: PolymerEntity[];

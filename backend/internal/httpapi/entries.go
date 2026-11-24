@@ -75,20 +75,13 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request, params List
 	}
 	revisions, hasNextPage := trimToPage(revisions, page)
 
-	document := EntryCollectionDocument{Data: make([]EntryInfoData, 0, len(revisions))}
-	for _, revision := range revisions {
-		item, err := entryInfoAttributesFromRevision(revision)
-		if err != nil {
-			slog.ErrorContext(r.Context(), "build entry info response failed", "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
-			return
-		}
-		document.Data = append(document.Data, EntryInfoData{
-			Type:       jsonAPITypeEntries,
-			Id:         item.Id,
-			Attributes: item,
-		})
+	items, err := s.entryListItems(r.Context(), revisions, filters, params)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "build entry list response failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to build entry list response")
+		return
 	}
+	document := EntryCollectionDocument{Data: items}
 	if hasNextPage && len(revisions) > 0 {
 		last := revisions[len(revisions)-1]
 		document.Links, document.Meta, err = s.nextPageLinks(r, listCursor{

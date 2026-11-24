@@ -18,6 +18,14 @@ export type TestModel = {
   title: string;
   modelType: "Single Conformer" | "Multiconformer" | "Ensemble" | "Deposited";
   rFree: number;
+  /** The model's own PDB ID (external_refs.pdb). */
+  pdbId?: string;
+  /**
+   * An unchanged archive deposition, such as a re-refinement filed under the
+   * entry of its experimental data: origin archive, and its model file links
+   * the (fake) RCSB coordinate file of pdbId.
+   */
+  archive?: true;
 };
 
 export type CreatedModel = { modelId: string; revisionId: string };
@@ -158,19 +166,27 @@ export class BackendClient {
     const inputArtifactId = randomUUID();
     const runId = randomUUID();
     const fileBase = `${stack.s3URL}/${stack.s3Bucket}/browser-tests/${modelArtifactId}`;
+    if (model.archive && !model.pdbId) {
+      throw new Error("an archive test model needs its PDB ID");
+    }
     const response = await this.post(`/v1/entries/${entryId}/models`, {
       model: {
         title: model.title,
         primary_artifact_id: modelArtifactId,
-        metadata: { model_type: model.modelType, purpose: "Refinement" },
+        metadata: {
+          model_type: model.modelType,
+          purpose: "Refinement",
+          ...(model.pdbId ? { external_refs: { pdb: model.pdbId } } : {}),
+          ...(model.archive ? { origin: "archive" } : {}),
+        },
         artifacts: [
           {
             id: modelArtifactId,
-            name: "model.pdb",
+            name: model.archive ? `${model.pdbId}.cif` : "model.pdb",
             level: "L2",
             type: "model",
-            format: "pdb",
-            uri: `${fileBase}/model.pdb`,
+            format: model.archive ? "mmcif" : "pdb",
+            uri: model.archive ? `${stack.rcsbURL}/download/${model.pdbId}.cif` : `${fileBase}/model.pdb`,
             sha256: "a".repeat(64),
             size_bytes: 100,
             metadata: {},
@@ -278,7 +294,7 @@ export async function createActiveEntry(
   submitter: BackendClient,
   reviewer: BackendClient,
   title: string,
-  fields: { resolution?: number } = {},
+  fields: { resolution?: number; external_refs?: Record<string, string> } = {},
 ): Promise<string> {
   const { entryId, revisionId } = await submitter.createEntry({
     title,

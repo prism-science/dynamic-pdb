@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { Entry } from "@/lib/api/entries";
 import { formatEntryLabel } from "@/lib/entry-label";
+import { entryCardHref, selectedModelLine } from "@/lib/entry-search-match";
 
 import EntriesInfiniteScroll from "./EntriesInfiniteScroll";
 import styles from "./EntriesBrowser.module.css";
@@ -59,9 +60,10 @@ export default function EntriesBrowser({
         <ul className={styles.grid}>
           {entries.map((entry) => {
             const updated = formatDate(entry.updated_at);
+            const matchLine = selectedModelLine(entry);
             return (
               <li key={entry.id} className={styles.cardItem}>
-                <Link className={styles.card} href={`/entries/${entry.id}`}>
+                <Link className={styles.card} href={entryCardHref(entry)}>
                   <span
                     className={styles.thumb}
                     data-empty={entry.thumbnail_image_url ? undefined : "true"}
@@ -77,6 +79,7 @@ export default function EntriesBrowser({
                     <span className={styles.cardName}>
                       {formatEntryLabel(entry)}
                     </span>
+                    {matchLine ? <span className={styles.cardMatch}>{matchLine}</span> : null}
                     <span className={styles.cardDesc}>
                       {entry.title?.trim()
                         ? entry.title

@@ -10,6 +10,7 @@ import {
   criteriaFromPanel,
   FILTER_GROUPS,
   offeredFilters,
+  optionApplies,
   panelProblems,
   panelValuesFromCriteria,
   withDraftValues,
@@ -17,6 +18,7 @@ import {
   type ModelSearchCriteria,
   type ModelSearchFilter,
   type ModelSearchParameter,
+  type OptionFilter,
   type PanelProblem,
   type PanelValues,
   type RangeFilter,
@@ -126,6 +128,16 @@ export default function FilterPanel({
             filter={filter}
             value={values[filter.parameter]?.[0] ?? ""}
             onChange={(value) => setParameter(filter.parameter, value === "" ? [] : [value])}
+          />
+        );
+      case "option":
+        return (
+          <OptionField
+            key={filter.id}
+            filter={filter}
+            checked={values[filter.parameter]?.[0] === "true"}
+            applies={optionApplies(filter, values, drafts)}
+            onChange={(checked) => setParameter(filter.parameter, checked ? ["true"] : [])}
           />
         );
       default:
@@ -349,5 +361,40 @@ function YesNoField({
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/**
+ * A checkbox that changes how another filter matches. It stays visible but
+ * disabled while that filter is empty, saying why; Apply drops it then.
+ */
+function OptionField({
+  filter,
+  checked,
+  applies,
+  onChange,
+}: {
+  filter: OptionFilter;
+  checked: boolean;
+  applies: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const helpId = useId();
+  return (
+    <div className={styles.option}>
+      <label className={styles.choice} data-disabled={applies ? undefined : "true"}>
+        <input
+          type="checkbox"
+          checked={checked && applies}
+          disabled={!applies}
+          aria-describedby={helpId}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>{filter.label}</span>
+      </label>
+      <p className={styles.fieldHelp} id={helpId}>
+        {applies ? filter.help : filter.needsValueHint}
+      </p>
+    </div>
   );
 }
