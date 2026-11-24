@@ -289,28 +289,3 @@ func listEntryIDsForTest(t *testing.T, query string) []string {
 	}
 	return ids
 }
-
-// unusedPDBIDForTest returns a PDB ID that no active revision holds. The tests of a run share its
-// schema, and the unique index on active PDB IDs would otherwise make creates collide.
-func unusedPDBIDForTest(t *testing.T) string {
-	t.Helper()
-	const symbols = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	active := models.RevisionStateActive
-	for range 50 {
-		random := uuid.New()
-		pdbID := []byte{'9'}
-		for _, value := range random[:3] {
-			pdbID = append(pdbID, symbols[int(value)%len(symbols)])
-		}
-		revisions, err := testDatabase.Entries.List(t.Context(), db.EntryRevisionFilters{
-			State:  &active,
-			PDBIDs: []string{string(pdbID)},
-		})
-		require.NoError(t, err)
-		if len(revisions) == 0 {
-			return string(pdbID)
-		}
-	}
-	require.FailNow(t, "no unused test PDB ID after 50 tries")
-	return ""
-}
