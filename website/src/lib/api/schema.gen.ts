@@ -2221,7 +2221,7 @@ export interface components {
             id: string;
             name: string;
             level: components["schemas"]["ArtifactLevel"];
-            /** @description Required by Dynamic PDB Schema v0.2.0. A request without it gets 422. */
+            /** @description Required since Dynamic PDB Schema v0.2.0. A request without it gets 422. */
             type?: components["schemas"]["ArtifactType"];
             uri?: string | null;
             sha256?: string | null;

@@ -1616,7 +1616,7 @@ function createRunRequest(
   const payload = objectRecord(entity.payload);
   const name = stringOrNull(payload.name) ?? entity.name;
   const description = stringOrNull(payload.description);
-  // Schema v0.2.0 gives a run no description field, so the form's text goes
+  // The schema (v0.3.0) gives a run no description field, so the form's text goes
   // under extensions; runDescription reads it back.
   const metadata: Schemas["RunMetadata"] = description
     ? { extensions: { description } }

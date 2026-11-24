@@ -1,7 +1,11 @@
 openapi: 3.0.3
 info:
   title: Dynamic PDB API
-  version: 1.0.0
+  version: 1.1.0
+  # The Dynamic PDB Schema version this API enforces (docs/schema/dynamic-pdb-schema-v<version>.md).
+  # Every response carries it in Dynamic-PDB-Schema-Version, and info.version in
+  # Dynamic-PDB-API-Version. A test keeps it equal to the schema doc's title and change log.
+  x-dynamic-pdb-schema-version: "0.3.0"
   description: |
     Dynamic PDB exposes deposited structural biology data, derived models, the
     programs that produced them, and evaluation metrics through a versioned
@@ -6429,7 +6433,7 @@ components:
         type:
           allOf:
             - $ref: "#/components/schemas/ArtifactType"
-          description: Required by Dynamic PDB Schema v0.2.0. A request without it gets 422.
+          description: Required since Dynamic PDB Schema v0.2.0. A request without it gets 422.
         uri:
           type: string
           nullable: true

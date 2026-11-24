@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/api"
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -81,7 +82,8 @@ func (header manifestHeader) retryLine() string {
 		*header.RetryOf)
 }
 
-// manifestWriter writes manifest.tsv: three comment lines with the terms, a header row, then one
+// manifestWriter writes manifest.tsv: comment lines naming the archive, the schema and API versions
+// and the terms, a header row, then one
 // row per file, related dataset or model without a file of the choice.
 type manifestWriter struct {
 	out  *bufio.Writer
@@ -89,11 +91,16 @@ type manifestWriter struct {
 }
 
 func newManifestWriter(out io.Writer, header manifestHeader) (*manifestWriter, error) {
+	apiVersion, schemaVersion, err := api.Versions()
+	if err != nil {
+		return nil, fmt.Errorf("read versions for the manifest header: %w", err)
+	}
 	writer := &manifestWriter{out: bufio.NewWriter(out)}
 	lines := []string{
 		fmt.Sprintf("# Dynamic PDB archive manifest. Selection %s, catalog date %s, file choice %s, prepared %s.",
 			header.SelectionID, header.CatalogDate.UTC().Format(time.RFC3339), header.FileChoice,
 			header.PreparedAt.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("# Dynamic PDB Schema v%s; API %s.", schemaVersion, apiVersion),
 		"# " + cc0Statement + " " + cc0Name + ": " + cc0URL + ".",
 		"# Files deposited by others: " + notConfirmedTerms + ", until they confirm. Related datasets and files " +
 			"held elsewhere: " + externalTerms + ". Each file's license column says which applies.",
