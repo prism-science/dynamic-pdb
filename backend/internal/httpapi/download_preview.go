@@ -173,6 +173,8 @@ func downloadReasonCodeResponse(code domainmodels.DownloadReasonCode) (DownloadR
 		return DownloadReasonCodeCopyMissing, nil
 	case domainmodels.DownloadReasonCopyDiffers:
 		return DownloadReasonCodeCopyDiffers, nil
+	case domainmodels.DownloadReasonReadFailed:
+		return DownloadReasonCodeReadFailed, nil
 	default:
 		return "", fmt.Errorf("unknown download reason code: %s", code)
 	}

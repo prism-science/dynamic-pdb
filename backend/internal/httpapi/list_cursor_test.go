@@ -111,6 +111,20 @@ func Test_should_round_trip_ordinal_when_selection_model_cursor_is_encoded_and_d
 	assert.Equal(t, cursor, decoded)
 }
 
+func Test_should_round_trip_ordinal_and_file_when_download_failure_cursor_is_encoded_and_decoded(t *testing.T) {
+	// given
+	cursor := listCursor{Kind: listCursorKindDownloadFailures, Ordinal: 12, ID: uuid.New()}
+
+	// when
+	encoded, err := encodeListCursor(cursor)
+	require.NoError(t, err)
+	decoded, err := decodeListCursor(encoded, listCursorKindDownloadFailures)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, cursor, decoded)
+}
+
 func Test_should_reject_list_cursor_when_position_does_not_match_kind(t *testing.T) {
 	id := uuid.NewString()
 	cases := map[string]struct {
@@ -156,6 +170,18 @@ func Test_should_reject_list_cursor_when_position_does_not_match_kind(t *testing
 		"selection model cursor with row id": {
 			kind:  listCursorKindSelectionModels,
 			value: rawCursor(`{"k":"selection_models","o":3,"i":"` + id + `"}`),
+		},
+		"download failure cursor without file id": {
+			kind:  listCursorKindDownloadFailures,
+			value: rawCursor(`{"k":"download_failures","o":3}`),
+		},
+		"download failure cursor without ordinal": {
+			kind:  listCursorKindDownloadFailures,
+			value: rawCursor(`{"k":"download_failures","i":"` + id + `"}`),
+		},
+		"download failure cursor with created_at": {
+			kind:  listCursorKindDownloadFailures,
+			value: rawCursor(`{"k":"download_failures","o":3,"i":"` + id + `","t":"2026-10-20T00:00:00Z"}`),
 		},
 	}
 	for name, tc := range cases {

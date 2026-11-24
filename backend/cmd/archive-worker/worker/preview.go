@@ -65,20 +65,23 @@ type previewCollector struct {
 	bytes   int64
 	// entriesBound bounds the zip entries of the included files.
 	entriesBound int64
-	// seen holds the files counted in the preview, which counts each file once.
+	// seen holds the files counted in the preview, which counts each file once; entries the
+	// entries counted.
 	seen      map[uuid.UUID]bool
+	entries   map[string]bool
 	folders   []string
 	fileTypes map[models.ArtifactType]*models.DownloadPreviewFileType
 	reasons   map[models.DownloadReasonCode]int
 	preview   models.DownloadPreview
 }
 
-func newPreviewCollector(job models.DownloadJob, bucket keyLocator) (*previewCollector, error) {
+func newPreviewCollector(job models.DownloadJob, bucket keyLocator, only map[uuid.UUID]bool) (*previewCollector, error) {
 	header := manifestHeader{
 		SelectionID: job.SelectionID,
 		CatalogDate: placeholderTime,
 		FileChoice:  job.FileChoice,
 		PreparedAt:  placeholderTime,
+		RetryOf:     job.RetryOf,
 	}
 	counter := &byteCounter{}
 	manifest, err := newManifestWriter(counter, header)
@@ -88,14 +91,15 @@ func newPreviewCollector(job models.DownloadJob, bucket keyLocator) (*previewCol
 	return &previewCollector{
 		job:       job,
 		bucket:    bucket,
-		walk:      newModelWalk(job.FileChoice),
-		layout:    newArchiveLayout(job.SelectionID),
+		walk:      newModelWalk(job.FileChoice, only),
+		layout:    newArchiveLayout(archiveRoot(job)),
 		header:    header,
 		counter:   counter,
 		manifest:  manifest,
 		include:   map[uuid.UUID]int64{},
 		paths:     map[uuid.UUID]string{},
 		seen:      map[uuid.UUID]bool{},
+		entries:   map[string]bool{},
 		fileTypes: map[models.ArtifactType]*models.DownloadPreviewFileType{},
 		reasons:   map[models.DownloadReasonCode]int{},
 	}, nil
@@ -103,16 +107,23 @@ func newPreviewCollector(job models.DownloadJob, bucket keyLocator) (*previewCol
 
 // addModel lists one model as the writing walk will, and counts it.
 func (c *previewCollector) addModel(model models.SelectionModel, details models.DownloadSelectionModel) error {
-	c.preview.Models++
 	// The writing walk reserves every model folder before it names a file; this walk learns them as
 	// it goes, so an entry file named after a later model may get a slightly shorter path here: the
 	// zip's bound keeps far more room per entry than that.
 	folder := c.layout.modelFolder(model)
 	c.layout.reserveFolder(folder)
 	c.folders = append(c.folders, folder)
-	if !c.walk.entries[model.EntryID] {
+	if c.walk.only != nil && !listsAny(model, c.walk.only) {
+		// A retry counts only the records of the files it asks for again.
+		return nil
+	}
+	c.preview.Models++
+	if !c.entries[model.EntryID] {
+		c.entries[model.EntryID] = true
 		c.preview.Entries++
-		c.countRelatedDatasets(details.RelatedDatasets)
+		if c.walk.only == nil {
+			c.countRelatedDatasets(details.RelatedDatasets)
+		}
 	}
 	return modelRows(c.walk, model, details, func(row selectedFile) (manifestRow, error) {
 		outcome, err := c.outcomeOf(model, row)
@@ -129,6 +140,16 @@ func (c *previewCollector) write(row manifestRow) error {
 		c.preview.ModelsWithoutMatchingFiles++
 	}
 	return c.manifest.write(row)
+}
+
+// listsAny reports whether the model lists one of the files.
+func listsAny(model models.SelectionModel, files map[uuid.UUID]bool) bool {
+	for _, file := range model.Files {
+		if files[file.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 // outcomeOf is how the archive will list the file if every planned file reads back as recorded:

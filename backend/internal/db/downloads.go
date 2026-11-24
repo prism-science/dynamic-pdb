@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,7 +32,15 @@ var (
 	// ErrDownloadNotPreparable means the archive can no longer be asked for: it is blocked, failed
 	// or expired. A new request (POST /v1/downloads) starts again.
 	ErrDownloadNotPreparable = errors.New("db: the download can no longer be prepared")
+	// ErrDownloadNotRetryable means the archive is not ready (or expired), so its failed files
+	// cannot be asked for again.
+	ErrDownloadNotRetryable = errors.New("db: the download is not ready, so its failed files cannot be retried")
+	// ErrDownloadNothingToRetry means the ready archive has no failed file a retry may fix.
+	ErrDownloadNothingToRetry = errors.New("db: the download has no failed file to retry")
 )
+
+// failureInsertBatch is how many failure rows one insert writes.
+const failureInsertBatch = 1000
 
 // DownloadCreate is one request for an archive of a frozen selection.
 type DownloadCreate struct {
@@ -79,6 +88,23 @@ type DownloadResult struct {
 	ManifestKey   string
 	ManifestURL   string
 	Counts        models.DownloadCounts
+	// Failures are the files listed as unavailable or changed-at-source, one row per file.
+	Failures []models.DownloadFailure
+}
+
+// DownloadRetry asks for the failed files of a ready archive again.
+type DownloadRetry struct {
+	ID       uuid.UUID
+	ParentID uuid.UUID
+	DownloadCaps
+	// Now decides whether the parent archive has expired.
+	Now time.Time
+}
+
+// DownloadFailurePosition is where a page of failures starts: after this file of this ordinal.
+type DownloadFailurePosition struct {
+	Ordinal int
+	FileID  uuid.UUID
 }
 
 type DownloadsRepository struct {
@@ -99,7 +125,8 @@ const downloadJobColumns = `download_jobs.id, download_jobs.selection_id, downlo
 	download_jobs.archive_key, download_jobs.archive_url, download_jobs.archive_bytes,
 	download_jobs.archive_sha256, download_jobs.manifest_key, download_jobs.manifest_url,
 	download_jobs.files_included, download_jobs.files_linked, download_jobs.files_unavailable,
-	download_jobs.files_changed_at_source, download_jobs.blocked_reason, download_jobs.error`
+	download_jobs.files_changed_at_source, download_jobs.files_retryable, download_jobs.retry_of,
+	download_jobs.blocked_reason, download_jobs.error`
 
 // unfinishedDownload is the SQL condition of a job the worker has not finished and that counts
 // toward the caps: one waiting for or in a worker lane. A planned job that only shows its preview
@@ -133,6 +160,8 @@ type downloadJobRow struct {
 	FilesLinked          sql.NullInt64  `db:"files_linked"`
 	FilesUnavailable     sql.NullInt64  `db:"files_unavailable"`
 	FilesChangedAtSource sql.NullInt64  `db:"files_changed_at_source"`
+	FilesRetryable       sql.NullInt64  `db:"files_retryable"`
+	RetryOf              uuid.NullUUID  `db:"retry_of"`
 	BlockedReason        sql.NullString `db:"blocked_reason"`
 	Error                sql.NullString `db:"error"`
 }
@@ -186,6 +215,14 @@ func (row downloadJobRow) job() (*models.DownloadJob, error) {
 		BlockedReason:    stringPtrFromSQL(row.BlockedReason),
 		Error:            stringPtrFromSQL(row.Error),
 	}
+	if row.FilesRetryable.Valid {
+		retryable := int(row.FilesRetryable.Int64)
+		job.RetryableFiles = &retryable
+	}
+	if row.RetryOf.Valid {
+		parent := row.RetryOf.UUID
+		job.RetryOf = &parent
+	}
 	if row.FilesIncluded.Valid && row.FilesLinked.Valid && row.FilesUnavailable.Valid && row.FilesChangedAtSource.Valid {
 		job.Counts = &models.DownloadCounts{
 			Included:        int(row.FilesIncluded.Int64),
@@ -235,6 +272,7 @@ func (r *DownloadsRepository) reusable(
 		`select `+downloadJobColumns+`
 		 from download_jobs
 		 where download_jobs.selection_id = $1 and download_jobs.file_choice = $2
+		   and download_jobs.retry_of is null
 		   and (download_jobs.status in ('queued', 'planning', 'planned', 'preparing')
 		        or (download_jobs.status = 'ready' and download_jobs.expires_at > $3))
 		 order by download_jobs.created_at desc, download_jobs.id desc
@@ -562,7 +600,8 @@ func (r *DownloadsRepository) Block(
 		id, attempt, plannedBytes, encoded, reason, now)
 }
 
-// Finish records a written archive and makes the job ready until expiresAt.
+// Finish records a written archive and its failures and makes the job ready until expiresAt.
+// Run it in a transaction (DB.FinishDownload), so a job is never ready without its failures.
 func (r *DownloadsRepository) Finish(
 	ctx context.Context,
 	id uuid.UUID,
@@ -571,17 +610,183 @@ func (r *DownloadsRepository) Finish(
 	now time.Time,
 	expiresAt time.Time,
 ) error {
-	return r.held(ctx, "finish download",
+	retryable := 0
+	for _, failure := range result.Failures {
+		if failure.JobID != id {
+			return fmt.Errorf("finish download %s: a failure of job %s", id, failure.JobID)
+		}
+		if failure.Retryable {
+			retryable++
+		}
+	}
+	if err := r.held(ctx, "finish download",
 		`update download_jobs
 		 set status = 'ready', finished_at = $3, expires_at = $4, lease_until = null,
 		     archive_key = $5, archive_url = $6, archive_bytes = $7, archive_sha256 = $8,
 		     manifest_key = $9, manifest_url = $10,
-		     files_included = $11, files_linked = $12, files_unavailable = $13, files_changed_at_source = $14
+		     files_included = $11, files_linked = $12, files_unavailable = $13, files_changed_at_source = $14,
+		     files_retryable = $15
 		 where id = $1 and attempts = $2 and status = 'preparing'`,
 		id, attempt, now, expiresAt,
 		result.ArchiveKey, result.ArchiveURL, result.ArchiveBytes, result.ArchiveSHA256,
 		result.ManifestKey, result.ManifestURL,
-		result.Counts.Included, result.Counts.Linked, result.Counts.Unavailable, result.Counts.ChangedAtSource)
+		result.Counts.Included, result.Counts.Linked, result.Counts.Unavailable, result.Counts.ChangedAtSource,
+		retryable); err != nil {
+		return err
+	}
+	for start := 0; start < len(result.Failures); start += failureInsertBatch {
+		end := min(start+failureInsertBatch, len(result.Failures))
+		if err := r.insertFailures(ctx, result.Failures[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insertFailures writes one batch of failure rows.
+func (r *DownloadsRepository) insertFailures(ctx context.Context, failures []models.DownloadFailure) error {
+	columns := 8
+	values := make([]string, 0, len(failures))
+	args := make([]any, 0, len(failures)*columns)
+	for index, failure := range failures {
+		if _, err := failure.ReasonCode.Availability(); err != nil {
+			return fmt.Errorf("insert download failure: %w", err)
+		}
+		base := index * columns
+		values = append(values, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8))
+		args = append(args, failure.JobID, failure.FileID, failure.Ordinal, failure.EntryID, failure.ModelID,
+			failure.FileName, string(failure.ReasonCode), failure.Retryable)
+	}
+	if _, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx,
+		`insert into download_failures
+		   (job_id, file_id, ordinal, entry_id, model_id, file_name, reason_code, retryable)
+		 values `+strings.Join(values, ", "), args...); err != nil {
+		return fmt.Errorf("insert download failures: %w", err)
+	}
+	return nil
+}
+
+// Failures returns up to limit of the job's failures in selection order, after position.
+func (r *DownloadsRepository) Failures(
+	ctx context.Context,
+	jobID uuid.UUID,
+	after *DownloadFailurePosition,
+	limit int,
+) ([]models.DownloadFailure, error) {
+	afterOrdinal, afterFile := 0, uuid.Nil
+	if after != nil {
+		afterOrdinal, afterFile = after.Ordinal, after.FileID
+	}
+	var rows []struct {
+		JobID      uuid.UUID `db:"job_id"`
+		FileID     uuid.UUID `db:"file_id"`
+		Ordinal    int       `db:"ordinal"`
+		EntryID    string    `db:"entry_id"`
+		ModelID    string    `db:"model_id"`
+		FileName   string    `db:"file_name"`
+		ReasonCode string    `db:"reason_code"`
+		Retryable  bool      `db:"retryable"`
+	}
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows,
+		`select job_id, file_id, ordinal, entry_id, model_id, file_name, reason_code, retryable
+		 from download_failures
+		 where job_id = $1 and (ordinal, file_id) > ($2, $3)
+		 order by ordinal, file_id
+		 limit $4`, jobID, afterOrdinal, afterFile, limit); err != nil {
+		return nil, fmt.Errorf("list download failures: %w", err)
+	}
+	failures := make([]models.DownloadFailure, 0, len(rows))
+	for _, row := range rows {
+		code := models.DownloadReasonCode(row.ReasonCode)
+		if _, err := code.Availability(); err != nil {
+			return nil, fmt.Errorf("download %s failure %s: %w", jobID, row.FileID, err)
+		}
+		failures = append(failures, models.DownloadFailure{
+			JobID: row.JobID, FileID: row.FileID, Ordinal: row.Ordinal, EntryID: row.EntryID, ModelID: row.ModelID,
+			FileName: row.FileName, ReasonCode: code, Retryable: row.Retryable,
+		})
+	}
+	return failures, nil
+}
+
+// RetryFileIDs returns the files of the job a retry asks for again: its retryable failures.
+func (r *DownloadsRepository) RetryFileIDs(ctx context.Context, jobID uuid.UUID) (map[uuid.UUID]bool, error) {
+	var ids []uuid.UUID
+	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &ids,
+		`select file_id from download_failures where job_id = $1 and retryable`, jobID); err != nil {
+		return nil, fmt.Errorf("list retryable download failures: %w", err)
+	}
+	files := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		files[id] = true
+	}
+	return files, nil
+}
+
+// CreateRetry asks again for the retryable failed files of a ready archive: it returns the
+// parent's latest retry when one is unfinished, planned or ready (created false), or adds a queued
+// job (created true) of the same selection and file choice whose retry_of names the parent. It
+// returns ErrDownloadNotFound, ErrDownloadNotRetryable, ErrDownloadNothingToRetry,
+// ErrDownloadSelectionBusy or ErrDownloadsBusy. Run it in a transaction (DB.CreateDownloadRetry).
+func (r *DownloadsRepository) CreateRetry(ctx context.Context, retry DownloadRetry) (*models.DownloadJob, bool, error) {
+	if err := retry.validate(); err != nil {
+		return nil, false, fmt.Errorf("retry download: %w", err)
+	}
+	if err := r.lockCreates(ctx); err != nil {
+		return nil, false, err
+	}
+	parent, err := r.Get(ctx, retry.ParentID)
+	if err != nil {
+		return nil, false, err
+	}
+	reported, err := parent.ReportedStatus(retry.Now)
+	if err != nil {
+		return nil, false, fmt.Errorf("retry download: %w", err)
+	}
+	switch reported {
+	case models.DownloadStatusReady:
+	case models.DownloadStatusQueued, models.DownloadStatusPlanning, models.DownloadStatusPlanned,
+		models.DownloadStatusPreparing, models.DownloadStatusBlocked, models.DownloadStatusFailed,
+		models.DownloadStatusExpired:
+		return nil, false, ErrDownloadNotRetryable
+	default:
+		return nil, false, fmt.Errorf("retry download: unknown download status: %s", reported)
+	}
+	if parent.RetryableFiles == nil || *parent.RetryableFiles == 0 {
+		return nil, false, ErrDownloadNothingToRetry
+	}
+	var row downloadJobRow
+	err = r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
+		`select `+downloadJobColumns+`
+		 from download_jobs
+		 where download_jobs.retry_of = $1
+		   and (download_jobs.status in ('queued', 'planning', 'planned', 'preparing')
+		        or (download_jobs.status = 'ready' and download_jobs.expires_at > $2))
+		 order by download_jobs.created_at desc, download_jobs.id desc
+		 limit 1`, parent.ID, retry.Now)
+	switch {
+	case err == nil:
+		existing, err := row.job()
+		return existing, false, err
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, false, fmt.Errorf("find retry of download %s: %w", parent.ID, err)
+	}
+	if err := r.checkCaps(ctx, parent.SelectionID, retry.DownloadCaps); err != nil {
+		return nil, false, err
+	}
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
+		`insert into download_jobs (id, selection_id, file_choice, max_archive_bytes, prepare_requested, retry_of)
+		 values ($1, $2, $3, $4, true, $5)
+		 returning `+downloadJobColumns,
+		retry.ID, parent.SelectionID, string(parent.FileChoice), parent.MaxArchiveBytes, parent.ID); err != nil {
+		return nil, false, fmt.Errorf("insert download retry: %w", err)
+	}
+	job, err := row.job()
+	if err != nil {
+		return nil, false, err
+	}
+	return job, true, nil
 }
 
 // Fail finishes the job held by attempt with the error.
@@ -683,6 +888,38 @@ func decodeOptionalJSON(raw []byte, target any) error {
 		return fmt.Errorf("decode: %w", err)
 	}
 	return nil
+}
+
+// FinishDownload runs DownloadsRepository.Finish in a transaction.
+func (d *DB) FinishDownload(
+	ctx context.Context,
+	id uuid.UUID,
+	attempt int,
+	result DownloadResult,
+	now, expiresAt time.Time,
+) error {
+	if err := d.Do(ctx, func(ctx context.Context) error {
+		return d.Downloads.Finish(ctx, id, attempt, result, now, expiresAt)
+	}); err != nil {
+		return fmt.Errorf("finish download: %w", err)
+	}
+	return nil
+}
+
+// CreateDownloadRetry runs DownloadsRepository.CreateRetry in a transaction.
+func (d *DB) CreateDownloadRetry(ctx context.Context, retry DownloadRetry) (*models.DownloadJob, bool, error) {
+	var (
+		job     *models.DownloadJob
+		created bool
+	)
+	if err := d.Do(ctx, func(ctx context.Context) error {
+		var err error
+		job, created, err = d.Downloads.CreateRetry(ctx, retry)
+		return err
+	}); err != nil {
+		return nil, false, fmt.Errorf("retry download: %w", err)
+	}
+	return job, created, nil
 }
 
 // PrepareDownload runs DownloadsRepository.Prepare in a transaction.

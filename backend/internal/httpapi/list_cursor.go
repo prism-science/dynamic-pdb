@@ -27,6 +27,8 @@ const (
 	listCursorKindRevisionGroups  listCursorKind = "revision_groups"
 	listCursorKindSimilarEntries  listCursorKind = "similar_entries"
 	listCursorKindSelectionModels listCursorKind = "selection_models"
+	// listCursorKindDownloadFailures pages an archive's failures by Ordinal and ID (the file's).
+	listCursorKindDownloadFailures listCursorKind = "download_failures"
 )
 
 // maxListCursorLength bounds the cursor query value before it is decoded.
@@ -42,6 +44,7 @@ var errInvalidListCursor = errors.New("invalid list cursor")
 //   - revision groups: CreatedAt (of the group's newest revision) and EntryID
 //   - similar entries: Score and EntryID
 //   - selection models: Ordinal
+//   - download failures: Ordinal and ID (the file's)
 type listCursor struct {
 	Kind      listCursorKind `json:"k"`
 	CreatedAt time.Time      `json:"t,omitzero"`
@@ -134,6 +137,10 @@ func (c listCursor) validatePosition() error {
 	case listCursorKindSelectionModels:
 		if c.Ordinal < 1 || hasCreatedAt || hasID || hasEntryID || hasScore {
 			return errors.New("selection model position needs a positive ordinal only")
+		}
+	case listCursorKindDownloadFailures:
+		if c.Ordinal < 1 || !hasID || hasCreatedAt || hasEntryID || hasScore {
+			return errors.New("download failure position needs a positive ordinal and id only")
 		}
 	default:
 		return fmt.Errorf("unknown kind: %s", c.Kind)

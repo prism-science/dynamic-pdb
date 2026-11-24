@@ -100,7 +100,11 @@ type DownloadJob struct {
 	ManifestKey   *string
 	ManifestURL   *string
 	// Counts is set on a ready archive.
-	Counts        *DownloadCounts
+	Counts *DownloadCounts
+	// RetryableFiles counts a ready archive's failures a retry may fix.
+	RetryableFiles *int
+	// RetryOf names the archive whose failed files this one asks for again.
+	RetryOf       *uuid.UUID
 	BlockedReason *string
 	Error         *string
 }

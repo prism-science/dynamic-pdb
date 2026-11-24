@@ -147,17 +147,7 @@ func (s *DownloadsSuite) Test_should_answer_409_when_a_blocked_archive_is_prepar
 		"prepare": false}, http.StatusAccepted)
 	ctx := s.T().Context()
 	now := time.Now().UTC()
-	var claimed *models.DownloadJob
-	for {
-		job, err := testDatabase.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
-		s.Require().NoError(err)
-		s.Require().NotNil(job, "the request is waiting to be planned")
-		if job.ID.String() == request.Data.Id {
-			claimed = job
-			break
-		}
-		s.Require().NoError(testDatabase.Downloads.Release(ctx, job.ID, job.Attempts))
-	}
+	claimed := s.claimFor(db.DownloadLanePlanning, request.Data.Id, now)
 	s.Require().NoError(testDatabase.Downloads.Block(ctx, claimed.ID, claimed.Attempts, claimed.MaxArchiveBytes+1,
 		models.DownloadPreview{IncludedBytes: claimed.MaxArchiveBytes + 1, FileTypes: []models.DownloadPreviewFileType{},
 			NotIncluded: []models.DownloadPreviewReason{}},
@@ -178,4 +168,97 @@ func (s *DownloadsSuite) Test_should_answer_409_when_a_blocked_archive_is_prepar
 	s.Equal(httpapi.DownloadStatusBlocked, read.Data.Attributes.Status)
 	s.Require().NotNil(read.Data.Attributes.Preview)
 	s.True(read.Data.Attributes.Preview.OverLimit)
+}
+
+// claimFor claims jobs in the lane, oldest first, until it holds the given one. Other tests' jobs
+// it claimed on the way are held until then, so no claim takes them again, and then put back.
+func (s *DownloadsSuite) claimFor(lane db.DownloadLane, id string, now time.Time) *models.DownloadJob {
+	ctx := s.T().Context()
+	var others []*models.DownloadJob
+	defer func() {
+		for _, other := range others {
+			s.Require().NoError(testDatabase.Downloads.Release(ctx, other.ID, other.Attempts))
+		}
+	}()
+	for {
+		job, err := testDatabase.Downloads.Claim(ctx, lane, now, now.Add(time.Minute))
+		s.Require().NoError(err)
+		s.Require().NotNil(job, "job %s is waiting in the %s lane", id, lane)
+		if job.ID.String() == id {
+			return job
+		}
+		others = append(others, job)
+	}
+}
+
+// finishWithFailures takes an asked-for archive through both lanes and finishes it with failures.
+func (s *DownloadsSuite) finishWithFailures(id string, failures []models.DownloadFailure) {
+	ctx := s.T().Context()
+	now := time.Now().UTC()
+	planning := s.claimFor(db.DownloadLanePlanning, id, now)
+	s.Require().NoError(testDatabase.Downloads.FinishPlanning(ctx, planning.ID, planning.Attempts, 10,
+		models.DownloadPreview{FileTypes: []models.DownloadPreviewFileType{}, NotIncluded: []models.DownloadPreviewReason{}}))
+	building := s.claimFor(db.DownloadLaneBuilding, id, now)
+	s.Require().NoError(testDatabase.FinishDownload(ctx, building.ID, building.Attempts, db.DownloadResult{
+		ArchiveKey: "downloads/" + id + "/2/a.zip", ArchiveURL: "https://files.example.org/downloads/" + id + "/2/a.zip",
+		ArchiveBytes: 100, ArchiveSHA256: strings.Repeat("a", 64),
+		ManifestKey: "downloads/" + id + "/2/manifest.tsv", ManifestURL: "https://files.example.org/downloads/" + id + "/2/manifest.tsv",
+		Counts:   models.DownloadCounts{Included: 1, Unavailable: 2},
+		Failures: failures,
+	}, now, now.Add(time.Hour)))
+}
+
+func (s *DownloadsSuite) Test_should_list_the_failures_and_retry_only_the_unread_files_when_an_archive_has_some() {
+	// given a ready archive that could not read one file and found another's copy missing
+	selectionID := s.savedSelectionForDownloadsTest("downloads-retrier", 8924)
+	archive := s.requestArchive(map[string]any{"selection_id": selectionID, "file_choice": "all_files"}, http.StatusAccepted)
+	jobID := uuid.MustParse(archive.Data.Id)
+	unread := models.DownloadFailure{JobID: jobID, FileID: uuid.New(), Ordinal: 1, EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_001",
+		FileName: "refine.log", ReasonCode: models.DownloadReasonReadFailed, Retryable: true}
+	missing := models.DownloadFailure{JobID: jobID, FileID: uuid.New(), Ordinal: 2, EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_002",
+		FileName: "model.cif", ReasonCode: models.DownloadReasonCopyMissing}
+	s.finishWithFailures(archive.Data.Id, []models.DownloadFailure{missing, unread})
+
+	// when the failures are listed one per page
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	first := decodeJSONResponse[httpapi.DownloadFailureCollectionDocument](s.T(), jsonRequestToServerWithToken(s.T(),
+		selectionsServer.URL, http.MethodGet, "/v1/downloads/"+archive.Data.Id+"/failures?limit=1", nil, ""), http.StatusOK)
+
+	// then they come in selection order, with the reason and whether a retry fetches them
+	s.Require().Len(first.Data, 1)
+	s.Equal(unread.FileID.String(), first.Data[0].Id)
+	s.Equal(httpapi.DownloadReasonCodeReadFailed, first.Data[0].Attributes.ReasonCode)
+	s.True(first.Data[0].Attributes.Retryable)
+	s.Require().NotNil(first.Links)
+	s.Require().NotEmpty(first.Links.Next)
+	next := strings.TrimPrefix(first.Links.Next, testPublicBaseURL)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	second := decodeJSONResponse[httpapi.DownloadFailureCollectionDocument](s.T(), jsonRequestToServerWithToken(s.T(),
+		selectionsServer.URL, http.MethodGet, next, nil, ""), http.StatusOK)
+	s.Require().Len(second.Data, 1)
+	s.Equal(httpapi.DownloadReasonCodeCopyMissing, second.Data[0].Attributes.ReasonCode)
+	s.False(second.Data[0].Attributes.Retryable)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	read := decodeJSONResponse[httpapi.DownloadDocument](s.T(), jsonRequestToServerWithToken(s.T(), selectionsServer.URL,
+		http.MethodGet, "/v1/downloads/"+archive.Data.Id, nil, ""), http.StatusOK)
+	s.Equal(1, *read.Data.Attributes.RetryableFiles)
+	s.Equal(testPublicBaseURL+"/v1/downloads/"+archive.Data.Id+"/failures", *read.Data.Links.Failures)
+
+	// and a retry asks for the unread file again, once
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	retry := decodeJSONResponse[httpapi.DownloadDocument](s.T(), jsonRequestToServerWithToken(s.T(), selectionsServer.URL,
+		http.MethodPost, "/v1/downloads/"+archive.Data.Id+"/retry", nil, ""), http.StatusAccepted)
+	s.Require().NotNil(retry.Data.Attributes.RetryOf)
+	s.Equal(archive.Data.Id, retry.Data.Attributes.RetryOf.String())
+	s.Equal(httpapi.DownloadStatusQueued, retry.Data.Attributes.Status)
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	again := decodeJSONResponse[httpapi.DownloadDocument](s.T(), jsonRequestToServerWithToken(s.T(), selectionsServer.URL,
+		http.MethodPost, "/v1/downloads/"+archive.Data.Id+"/retry", nil, ""), http.StatusOK)
+	s.Equal(retry.Data.Id, again.Data.Id)
+
+	// and the retry, not ready yet, cannot be retried
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	notReady := decodeJSONResponse[httpapi.Error](s.T(), jsonRequestToServerWithToken(s.T(), selectionsServer.URL,
+		http.MethodPost, "/v1/downloads/"+retry.Data.Id+"/retry", nil, ""), http.StatusConflict)
+	s.Equal("DOWNLOAD_NOT_RETRYABLE", *notReady.Errors[0].Code)
 }

@@ -333,7 +333,7 @@ func Test_should_write_zip64_offsets_when_an_archive_passes_4_GiB(t *testing.T) 
 func Test_should_give_every_file_a_path_of_its_own_when_names_clash(t *testing.T) {
 	// given four files of one model folder: two named model.cif, one named as the second one's
 	// short fallback, and one sharing the second one's short ID prefix
-	layout := newArchiveLayout(uuid.MustParse("6f1c4a2e-0000-4000-8000-000000000001"))
+	layout := newArchiveLayout("dynamic-pdb-6f1c4a2e-0000-4000-8000-000000000001")
 	model := models.SelectionModel{EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_001"}
 	first := models.SelectionFile{ID: uuid.MustParse("aaaaaaaa-0000-4000-8000-000000000001"), Name: "model.cif"}
 	squatter := models.SelectionFile{ID: uuid.MustParse("cccccccc-0000-4000-8000-000000000003"), Name: "bbbbbbbb_model.cif"}
@@ -387,7 +387,7 @@ func Test_should_keep_each_archive_file_name_within_255_bytes_when_a_name_is_lon
 	assert.Equal(t, "1abc.cif", boundedFileName("", "1abc.cif"))
 
 	// and two files with the same longest name in one folder get two paths, each within the limit
-	layout := newArchiveLayout(uuid.New())
+	layout := newArchiveLayout("dynamic-pdb-" + uuid.NewString())
 	model := models.SelectionModel{EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_001"}
 	name := strings.Repeat("c", 251) + ".cif"
 	first := layout.path(models.SelectionFile{ID: uuid.New(), Name: name}, model, false)

@@ -505,10 +505,20 @@ never holds up a preview:
    included file is first
    copied to the scratch disk while its SHA-256 is computed; only a file that matches its
    recorded SHA-256 and size goes into the zip, and one that does not is listed as unavailable
-   and logged as an ERROR. `README.txt` comes first and `manifest.tsv` last; the manifest is also
-   stored on its own at `downloads/<job id>/<attempt>/manifest.tsv`.
+   and logged as an ERROR. A file still unreadable after `archive_worker::file_read_attempts` (3)
+   is listed as unavailable with reason `read_failed` and the archive goes on; only when
+   `archive_worker::max_consecutive_read_failures` (5) files fail in a row is the bucket taken for
+   down and the whole attempt tried again. `README.txt` comes first and `manifest.tsv` last (its
+   `reason_code` column says why a file is not included); the manifest is also stored on its own
+   at `downloads/<job id>/<attempt>/manifest.tsv`.
 3. **Finish.** The building lane marks it `ready` with the archive's size, SHA-256, URLs and
-   counts, offered for `downloads::archive_ttl` (7 days).
+   counts, offered for `downloads::archive_ttl` (7 days), and, in the same transaction, writes a
+   `download_failures` row for each file it listed as unavailable or changed-at-source (L2).
+   `GET /v1/downloads/{id}/failures` lists them; `POST /v1/downloads/{id}/retry` builds a second,
+   small archive of the `read_failed` ones only (a job whose `retry_of` names the first; its
+   README says so). Its top folder is `dynamic-pdb-<selection id>-retry-<its id>`, so unpacking it
+   next to the first replaces nothing there. A write error on the worker's scratch disk (full, for
+   example) is not a `read_failed` file: it fails the attempt, which is tried again.
 
 The worker reads only our bucket; files we hold no matching copy of (over 1 GiB, changed at the
 source, not copied) are listed in the manifest with their source URL, never fetched from RCSB.
@@ -541,8 +551,12 @@ kubectl -n dynamicpdb scale deploy dynamic-pdb-archive-worker --replicas=0
 To read a job (read-only, through the tunnel):
 
 ```sql
-select id, status, prepare_requested, file_choice, attempts, failed_attempts, planned_bytes,
-       archive_bytes, files_included, files_linked, files_unavailable, files_changed_at_source,
-       blocked_reason, error, created_at, finished_at, expires_at
+select id, status, prepare_requested, retry_of, file_choice, attempts, failed_attempts,
+       planned_bytes, archive_bytes, files_included, files_linked, files_unavailable,
+       files_changed_at_source, files_retryable, blocked_reason, error, created_at, finished_at,
+       expires_at
 from download_jobs order by created_at desc limit 20;
+
+select reason_code, retryable, count(*) from download_failures
+where job_id = '<job id>' group by 1, 2 order by 1;
 ```

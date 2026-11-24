@@ -2016,6 +2016,143 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /v1/downloads/{download_id}/failures:
+    get:
+      tags: [Downloads]
+      operationId: listDownloadFailures
+      summary: List the files an archive could not vouch for
+      description: >
+        Lists, in selection order, the selected files a ready archive lists as unavailable or
+        changed-at-source, each with the model that first lists it, the reason and its code, and
+        whether a retry may fetch it (retryable: only read_failed, a copy that could not be read
+        while the archive was prepared). Linked files are not failures. An archive that is not
+        ready yet has none. Needs no sign-in.
+      security: []
+      parameters:
+        - name: download_id
+          in: path
+          description: Archive request ID, as POST /v1/downloads returned it.
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of failures to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: cursor
+          in: query
+          description: >
+            Opaque cursor from the previous page's `meta.next_cursor`. Returns the failures that
+            follow it. Follow `links.next` to page without building URLs.
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: The archive's failures.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DownloadFailureCollectionDocument"
+        "400":
+          description: Invalid limit or cursor.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/downloads/{download_id}/retry:
+    post:
+      tags: [Downloads]
+      operationId: retryDownload
+      summary: Ask again for the files a ready archive could not read
+      description: >
+        Builds a second, small archive of the ready archive's retryable failures (read_failed)
+        only, with its own manifest.tsv and a README naming the archive it completes. Its top
+        folder is its own (dynamic-pdb-{selection id}-retry-{its id}), so unpacking it next to that
+        archive replaces nothing there. The new
+        request's retry_of names this one; poll it like any archive. Asking again while a retry is
+        waiting, being built or ready returns that retry (200). A retry that fails to read a file
+        again can itself be retried. Needs no sign-in and no body.
+      security: []
+      parameters:
+        - name: download_id
+          in: path
+          description: Archive request ID of the ready archive, as POST /v1/downloads returned it.
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A retry of this archive is already waiting, being built or ready; this is it.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DownloadDocument"
+        "202":
+          description: Retry requested; poll links.self.
+          headers:
+            Location:
+              description: URL of the retry's archive request.
+              schema:
+                type: string
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DownloadDocument"
+        "404":
+          description: No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >
+            The archive is not ready or has expired (code DOWNLOAD_NOT_RETRYABLE), or it has no
+            failed file a retry may fetch (code NOTHING_TO_RETRY).
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >
+            Too many archive requests from this client (code RATE_LIMITED), or the selection
+            already has as many archives being built as one selection may have (code
+            SELECTION_BUSY). Wait the number of seconds in Retry-After.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >
+            The server is building as many archives as it takes (code DOWNLOADS_BUSY). Try again
+            after Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before trying again.
+              schema:
+                type: integer
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/entries/{entry_id}/models:
     post:
       tags: [Entries]
@@ -4040,7 +4177,8 @@ components:
           type: string
           description: >
             Where to download the zip while it is ready. Resumable: the server answers Range
-            requests.
+            requests, so a transfer that breaks can go on from where it stopped, or start again,
+            until expires_at; archive_sha256 checks the result.
         manifest_url:
           type: string
           description: >
@@ -4051,6 +4189,17 @@ components:
           $ref: "#/components/schemas/DownloadCounts"
         preview:
           $ref: "#/components/schemas/DownloadPreview"
+        retryable_files:
+          type: integer
+          description: >
+            On a ready archive: how many of its failures a retry may fetch (read_failed). Above 0,
+            POST /v1/downloads/{download_id}/retry asks for them; links.failures lists them.
+        retry_of:
+          type: string
+          format: uuid
+          description: >
+            Set on a retry: the archive whose failed files this one asks for again. A retry holds
+            only those files.
         message:
           type: string
           description: Why the archive is blocked or failed, and what to do instead.
@@ -4246,16 +4395,67 @@ components:
       description: >
         Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off,
         not_checked_yet and copied_after_planning are linked; stored_file_differs,
-        source_unreadable, copy_not_in_storage, copy_missing and copy_differs are unavailable;
-        changed_at_source is changed-at-source.
+        source_unreadable, copy_not_in_storage, copy_missing, copy_differs and read_failed are
+        unavailable; changed_at_source is changed-at-source. Only read_failed (Dynamic PDB's copy
+        could not be read while the archive was prepared) may be fetched by a retry.
       enum:
         [over_copy_limit, copy_failed, copy_off, not_checked_yet, copied_after_planning, stored_file_differs,
-         changed_at_source, source_unreadable, copy_not_in_storage, copy_missing, copy_differs]
+         changed_at_source, source_unreadable, copy_not_in_storage, copy_missing, copy_differs, read_failed]
       x-enum-varnames:
         [DownloadReasonCodeOverCopyLimit, DownloadReasonCodeCopyFailed, DownloadReasonCodeCopyOff,
          DownloadReasonCodeNotCheckedYet, DownloadReasonCodeCopiedAfterPlanning, DownloadReasonCodeStoredFileDiffers,
          DownloadReasonCodeChangedAtSource, DownloadReasonCodeSourceUnreadable, DownloadReasonCodeCopyNotInStorage,
-         DownloadReasonCodeCopyMissing, DownloadReasonCodeCopyDiffers]
+         DownloadReasonCodeCopyMissing, DownloadReasonCodeCopyDiffers, DownloadReasonCodeReadFailed]
+
+    DownloadFailureCollectionDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DownloadFailureData"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
+        meta:
+          $ref: "#/components/schemas/CursorPageMeta"
+
+    DownloadFailureData:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          description: The file ID.
+        attributes:
+          $ref: "#/components/schemas/DownloadFailureAttributes"
+
+    DownloadFailureAttributes:
+      type: object
+      required: [file_id, file_name, entry_id, model_id, status, reason_code, reason, retryable]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+        entry_id:
+          type: string
+        model_id:
+          type: string
+          description: The first selected model that lists the file.
+        status:
+          $ref: "#/components/schemas/DownloadFileAvailability"
+        reason_code:
+          $ref: "#/components/schemas/DownloadReasonCode"
+        reason:
+          type: string
+          description: The reason as the manifest says it.
+        retryable:
+          type: boolean
+          description: Whether POST /v1/downloads/{download_id}/retry asks for this file again.
 
     DownloadLinks:
       type: object
@@ -4267,6 +4467,9 @@ components:
         selection:
           type: string
           description: Absolute URL of the selection the archive is built from.
+        failures:
+          type: string
+          description: Absolute URL of the files the archive could not vouch for (GET).
 
     ModelDocument:
       type: object

@@ -42,7 +42,7 @@ const (
 var manifestColumns = []string{
 	"record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "pdb_id",
 	"file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes",
-	"recorded_sha256", "sha256_source", "recorded_after_save", "status", "reason", "verification",
+	"recorded_sha256", "sha256_source", "recorded_after_save", "status", "reason", "reason_code", "verification",
 	"verified_at", "source", "source_url", "license", "license_url", "authors", "affiliation",
 	"citation_link", "dataset_id",
 }
@@ -56,6 +56,20 @@ type manifestHeader struct {
 	CatalogDate time.Time
 	FileChoice  models.DownloadFileChoice
 	PreparedAt  time.Time
+	// RetryOf names the archive whose failed files this one holds again; nil for an archive of the
+	// whole selection.
+	RetryOf *uuid.UUID
+}
+
+// retryLine says which archive a retry archive completes; empty for an archive of the whole
+// selection.
+func (header manifestHeader) retryLine() string {
+	if header.RetryOf == nil {
+		return ""
+	}
+	return fmt.Sprintf("This archive completes archive %s: it holds only the files that archive could not read, "+
+		"asked for again. Its top folder is its own, so unpacking it next to that archive replaces nothing there.",
+		*header.RetryOf)
 }
 
 // manifestWriter writes manifest.tsv: three comment lines with the terms, a header row, then one
@@ -74,8 +88,11 @@ func newManifestWriter(out io.Writer, header manifestHeader) (*manifestWriter, e
 		"# " + cc0Statement,
 		"# License of Dynamic PDB and PDB archive files: " + cc0Name + " " + cc0URL +
 			". Related datasets and files held elsewhere: " + externalTerms + ".",
-		strings.Join(manifestColumns, "\t"),
 	}
+	if retry := header.retryLine(); retry != "" {
+		lines = append(lines, "# "+retry)
+	}
+	lines = append(lines, strings.Join(manifestColumns, "\t"))
 	for _, line := range lines {
 		if _, err := writer.out.WriteString(line + "\n"); err != nil {
 			return nil, fmt.Errorf("write manifest header: %w", err)
@@ -249,9 +266,23 @@ type archiveLayout struct {
 	folders map[string]bool
 }
 
-func newArchiveLayout(selectionID uuid.UUID) *archiveLayout {
+// archiveRoot is the job's top folder in the zip: dynamic-pdb-<selection id>. A retry's is
+// dynamic-pdb-<selection id>-retry-<its own job id>, so unpacking it next to the archive it
+// completes replaces nothing there: not its README.txt or manifest.tsv, and not a file that
+// archive holds at the path the retried file would take.
+func archiveRoot(job models.DownloadJob) string {
+	root := "dynamic-pdb-" + job.SelectionID.String()
+	if job.RetryOf != nil {
+		root += "-retry-" + job.ID.String()
+	}
+	return root
+}
+
+// newArchiveLayout lays files out under root, archiveRoot of the job; planning and writing use the
+// same root, so the model folders planning reserves are the folders writing uses.
+func newArchiveLayout(root string) *archiveLayout {
 	return &archiveLayout{
-		root:    "dynamic-pdb-" + selectionID.String(),
+		root:    root,
 		paths:   map[uuid.UUID]string{},
 		used:    map[string]uuid.UUID{},
 		folders: map[string]bool{},
@@ -358,15 +389,20 @@ func safeFileName(name string, id uuid.UUID) string {
 // readmeText is README.txt: how the archive is laid out, what the statuses mean, how to check the
 // files, and the reuse terms.
 func readmeText(header manifestHeader) string {
-	return strings.Join([]string{
+	lines := []string{
 		"Dynamic PDB archive",
 		"",
 		fmt.Sprintf("Selection %s, catalog date %s, file choice %s.", header.SelectionID,
 			header.CatalogDate.UTC().Format(time.RFC3339), header.FileChoice),
+	}
+	if retry := header.retryLine(); retry != "" {
+		lines = append(lines, retry)
+	}
+	return strings.Join(append(lines,
 		"",
 		cc0Statement,
-		"License of Dynamic PDB and PDB archive files: " + cc0Name + " " + cc0URL + ".",
-		"Related datasets and files held elsewhere: " + externalTerms + " (the manifest links each one).",
+		"License of Dynamic PDB and PDB archive files: "+cc0Name+" "+cc0URL+".",
+		"Related datasets and files held elsewhere: "+externalTerms+" (the manifest links each one).",
 		"",
 		"Layout",
 		"  <entry id>/<file>             files of the entry (for example its sequence)",
@@ -390,6 +426,9 @@ func readmeText(header manifestHeader) string {
 		"    from source_url and check it against recorded_sha256.",
 		"  changed-at-source: the source no longer serves the recorded bytes, and no copy was kept.",
 		"  unavailable: the file cannot be read in its recorded form.",
+		"  reason says why a file is not included; reason_code is the same as a code (for example",
+		"    over_copy_limit, changed_at_source, read_failed). Only read_failed files may be fetched",
+		"    by asking again: POST /v1/downloads/<archive id>/retry builds an archive of just those.",
 		"  verification is kept apart from status: verified, mismatch or not_verified, with verified_at.",
 		"  sha256_source: declared (recorded when the file was added) or computed (Dynamic PDB's first",
 		"    read of a file added without one); recorded_after_save is true when that read came after",
@@ -398,5 +437,5 @@ func readmeText(header manifestHeader) string {
 		"Checking the files",
 		"  sha256sum <path_in_archive> must print the row's recorded_sha256.",
 		"",
-	}, "\n")
+	), "\n")
 }
