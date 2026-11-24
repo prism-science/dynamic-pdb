@@ -404,15 +404,54 @@ func entryMetadataErrors(
 	return append(fieldErrors, validation.DepositorMethod(at, metadata, archiveMethod)...)
 }
 
+// WithRelatedDatasetRelation turns relation and link_evidence on related datasets on or off
+// (default off). Off, a request that sends either gets 422 UNKNOWN_FIELD at that field, as
+// before the fields existed. They are merged dark and switched on per environment
+// (entries.related_dataset_relation_enabled), dev first.
+func (s *Server) WithRelatedDatasetRelation(enabled bool) *Server {
+	s.relatedDatasetRelationEnabled = enabled
+	return s
+}
+
 // checkRelatedDatasets refuses malformed related datasets in every validation mode, not only
 // in enforce mode: no client sent them before their rules existed, so enforcing them breaks
 // no one, and prod never stores a DOI that does not resolve.
-func checkRelatedDatasets(at validation.Pointer, datasets *[]RelatedDataset) error {
-	fieldErrors := validation.RelatedDatasets(at, relatedDatasetsFromRequest(datasets))
+func (s *Server) checkRelatedDatasets(at validation.Pointer, datasets *[]RelatedDataset) error {
+	var fieldErrors []validation.FieldError
+	if !s.relatedDatasetRelationEnabled {
+		fieldErrors = relatedDatasetRelationOffErrors(at, datasets)
+	}
+	if len(fieldErrors) == 0 {
+		fieldErrors = validation.RelatedDatasets(at, relatedDatasetsFromRequest(datasets))
+	}
 	if len(fieldErrors) == 0 {
 		return nil
 	}
 	return &validation.Error{Fields: fieldErrors}
+}
+
+// relatedDatasetRelationOffErrors refuses relation and link_evidence while the server has them
+// off, so nothing stores them before the environment switches them on.
+func relatedDatasetRelationOffErrors(at validation.Pointer, datasets *[]RelatedDataset) []validation.FieldError {
+	if datasets == nil {
+		return nil
+	}
+	const detail = "is not accepted yet: related dataset relations are off on this server"
+	var fieldErrors []validation.FieldError
+	for index, dataset := range *datasets {
+		item := at.Index(index)
+		if dataset.Relation != nil {
+			fieldErrors = append(fieldErrors, validation.FieldError{
+				Pointer: item.Field("relation"), Code: validation.CodeUnknownField, Detail: detail,
+			})
+		}
+		if dataset.LinkEvidence != nil {
+			fieldErrors = append(fieldErrors, validation.FieldError{
+				Pointer: item.Field("link_evidence"), Code: validation.CodeUnknownField, Detail: detail,
+			})
+		}
+	}
+	return fieldErrors
 }
 
 // relatedDatasetsFromRequest maps and normalizes related datasets the way
@@ -430,6 +469,8 @@ func relatedDatasetsFromRequest(datasets *[]RelatedDataset) []domainmodels.Relat
 		result = append(result, domainmodels.RelatedDataset{
 			DOI: doi, Accession: dataset.Accession, LandingURL: dataset.LandingUrl,
 			DataType: dataset.DataType, Repository: dataset.Repository, Details: dataset.Details,
+			Relation:     (*domainmodels.RelatedDatasetRelation)(dataset.Relation),
+			LinkEvidence: (*domainmodels.RelatedDatasetLinkEvidence)(dataset.LinkEvidence),
 		})
 	}
 	return domainmodels.NormalizeRelatedDatasets(result)

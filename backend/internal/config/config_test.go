@@ -577,6 +577,39 @@ func Test_should_turn_entry_deletion_on_only_in_dev_and_local_configs(t *testing
 	}
 }
 
+func Test_should_leave_related_dataset_relation_off_unless_config_or_env_var_sets_it(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	defaults, err := config.ReadFromFile("test")
+	require.NoError(t, err)
+	t.Setenv("DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED", "true")
+	withEnv, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, defaults.Entries.RelatedDatasetRelationEnabled)
+	assert.True(t, withEnv.Entries.RelatedDatasetRelationEnabled)
+}
+
+func Test_should_turn_related_dataset_relation_on_only_in_local_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
+	expected := map[string]bool{"local": true, "dev": false, "production": false}
+
+	for name, enabled := range expected {
+		// when
+		cfg, err := config.ReadFromFile(name)
+
+		// then: dev and production turn it on in their own switch-on PRs, dev first.
+		require.NoError(t, err, name)
+		assert.Equal(t, enabled, cfg.Entries.RelatedDatasetRelationEnabled, name)
+	}
+}
+
 func Test_should_leave_self_approval_off_when_config_does_not_set_it(t *testing.T) {
 	// given
 	t.Chdir(writeSampleConfig(t))

@@ -60,6 +60,11 @@ data_sync:
 entries:
   # Entry deletion is for testing on dev only; production keeps every entry.
   delete_enabled: false
+  # relation and link_evidence on related datasets stay off until their switch-on PR, after dev.
+  # Off, a request that sends either gets 422 at that field. Rollback after the switch-on: false
+  # here, or DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED=false. Data saved while on keeps
+  # the fields; do not roll the code back once production records carry them.
+  related_dataset_relation_enabled: false
 artifact_extraction:
   # The deposition forms read an uploaded mmCIF through the server before saving (G5), as on dev,
   # where it was tried on 2026-11-05. Rollback: false here, or

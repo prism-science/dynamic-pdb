@@ -59,6 +59,9 @@ var (
 	selfApprovalServer *httptest.Server
 	// entryDeletionServer shares the database with testServer and has entry deletion turned on.
 	entryDeletionServer *httptest.Server
+	// relatedDatasetRelationServer shares the database with testServer and accepts relation and
+	// link_evidence on related datasets, as local does.
+	relatedDatasetRelationServer *httptest.Server
 	// modelSearchServer shares the database with testServer and has the model search filters on.
 	modelSearchServer *httptest.Server
 	// selectionsServer shares the database with testServer and has selections, downloads and the
@@ -98,6 +101,8 @@ type testRouterOptions struct {
 	entryDeletion bool
 	// selfApproval lets reviewers approve revisions they created.
 	selfApproval bool
+	// relatedDatasetRelation accepts relation and link_evidence on related datasets.
+	relatedDatasetRelation bool
 	// modelSearch turns the search filters of GET /v1/models on, the protein chain filters included.
 	modelSearch bool
 	// selections turns the /v1/selections routes on.
@@ -232,7 +237,7 @@ func TestMain(m *testing.M) {
 			githubClient, fileCDN, authConfig, jwt, testDatabase, analytics.New(analytics.Config{}), testPublicBaseURL,
 			options.validation,
 		).WithArchiveLookup(archiveLookup).WithEntryDeletion(options.entryDeletion).WithSelfApproval(options.selfApproval).
-			WithUploadExtraction(true)
+			WithUploadExtraction(true).WithRelatedDatasetRelation(options.relatedDatasetRelation)
 		if options.limitExtraction {
 			server.WithExtractionLimits(1, 3, time.Minute)
 		}
@@ -302,6 +307,10 @@ func TestMain(m *testing.M) {
 		validation:    enforceAllValidation,
 		entryDeletion: true,
 	}))
+	relatedDatasetRelationServer = httptest.NewServer(newTestRouter(testRouterOptions{
+		validation:             enforceAllValidation,
+		relatedDatasetRelation: true,
+	}))
 	selfApprovalServer = httptest.NewServer(newTestRouter(testRouterOptions{
 		validation:   enforceAllValidation,
 		selfApproval: true,
@@ -325,6 +334,7 @@ func TestMain(m *testing.M) {
 	limitedExtractionServer.Close()
 	timeoutExtractionServer.Close()
 	entryDeletionServer.Close()
+	relatedDatasetRelationServer.Close()
 	selfApprovalServer.Close()
 	modelSearchServer.Close()
 	selectionsServer.Close()

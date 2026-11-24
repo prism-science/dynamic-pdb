@@ -116,8 +116,10 @@ func run() int {
 		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
 		sifts.NewClient(),
 	)).WithEntryDeletion(cfg.Entries.DeleteEnabled).WithSelfApproval(cfg.Revisions.SelfApprovalEnabled).
-		WithUploadExtraction(cfg.ArtifactExtraction.UploadsEnabled)
+		WithUploadExtraction(cfg.ArtifactExtraction.UploadsEnabled).
+		WithRelatedDatasetRelation(cfg.Entries.RelatedDatasetRelationEnabled)
 	slog.Info("entry deletion configured", "enabled", cfg.Entries.DeleteEnabled)
+	slog.Info("related dataset relation configured", "enabled", cfg.Entries.RelatedDatasetRelationEnabled)
 	slog.Info("upload extraction configured", "enabled", cfg.ArtifactExtraction.UploadsEnabled)
 	slog.Info("self-approval configured", "enabled", cfg.Revisions.SelfApprovalEnabled)
 

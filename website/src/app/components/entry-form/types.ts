@@ -127,6 +127,10 @@ export type RelatedDatasetDraft = {
   dataType: string;
   repository: string;
   details: string;
+  /** Kept from the stored dataset so an edit does not drop them. The form has
+   *  no control for them until related dataset relations are switched on. */
+  relation: string;
+  linkEvidence: string;
 };
 
 /**

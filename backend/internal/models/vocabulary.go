@@ -212,6 +212,46 @@ func (source EntrySource) Validate() error {
 	}
 }
 
+// RelatedDatasetRelations are the relations a related dataset may state (Dynamic PDB
+// extension; mmCIF has no item for it).
+var RelatedDatasetRelations = []RelatedDatasetRelation{
+	RelatedDatasetRelationSourceData,
+	RelatedDatasetRelationSimilarSample,
+	RelatedDatasetRelationOther,
+}
+
+func (relation RelatedDatasetRelation) Validate() error {
+	switch relation {
+	case RelatedDatasetRelationSourceData, RelatedDatasetRelationSimilarSample, RelatedDatasetRelationOther:
+		return nil
+	default:
+		return unknownValueError("related dataset relation", relation, RelatedDatasetRelations)
+	}
+}
+
+// RelatedDatasetLinkEvidences are what may show that a related dataset relates to the entry
+// (Dynamic PDB extension; mmCIF has no item for it).
+var RelatedDatasetLinkEvidences = []RelatedDatasetLinkEvidence{
+	RelatedDatasetLinkEvidencePDBRecord,
+	RelatedDatasetLinkEvidenceRepositoryRecord,
+	RelatedDatasetLinkEvidenceRepositoryText,
+	RelatedDatasetLinkEvidencePublication,
+	RelatedDatasetLinkEvidenceDepositorStatement,
+}
+
+func (evidence RelatedDatasetLinkEvidence) Validate() error {
+	switch evidence {
+	case RelatedDatasetLinkEvidencePDBRecord,
+		RelatedDatasetLinkEvidenceRepositoryRecord,
+		RelatedDatasetLinkEvidenceRepositoryText,
+		RelatedDatasetLinkEvidencePublication,
+		RelatedDatasetLinkEvidenceDepositorStatement:
+		return nil
+	default:
+		return unknownValueError("related dataset link evidence", evidence, RelatedDatasetLinkEvidences)
+	}
+}
+
 func unknownValueError[T ~string](kind string, value T, allowed []T) error {
 	quoted := make([]string, 0, len(allowed))
 	for _, allowedValue := range allowed {

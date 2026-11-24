@@ -60,6 +60,43 @@ func RelatedDatasets(at Pointer, datasets []models.RelatedDataset) []FieldError 
 		fieldErrors = append(fieldErrors, maxChars(item.Field("data_type"), &dataset.DataType, MaxRelatedDatasetLabelChars)...)
 		fieldErrors = append(fieldErrors, maxChars(item.Field("repository"), dataset.Repository, MaxRelatedDatasetLabelChars)...)
 		fieldErrors = append(fieldErrors, maxChars(item.Field("details"), dataset.Details, MaxRelatedDatasetDetailChars)...)
+		fieldErrors = append(fieldErrors, relatedDatasetRelation(item, dataset)...)
+	}
+	return fieldErrors
+}
+
+// relatedDatasetRelation checks the optional relation and link evidence: both come from closed
+// lists, a stated relation needs the evidence for it, and "other" needs details saying what the
+// relation is. Link evidence alone, with no relation, is allowed.
+func relatedDatasetRelation(item Pointer, dataset models.RelatedDataset) []FieldError {
+	var fieldErrors []FieldError
+	relationKnown := false
+	if dataset.Relation != nil {
+		if err := dataset.Relation.Validate(); err != nil {
+			fieldErrors = append(fieldErrors, FieldError{
+				Pointer: item.Field("relation"), Code: CodeInvalidValue, Detail: err.Error(),
+			})
+		} else {
+			relationKnown = true
+		}
+	}
+	if dataset.LinkEvidence != nil {
+		if err := dataset.LinkEvidence.Validate(); err != nil {
+			fieldErrors = append(fieldErrors, FieldError{
+				Pointer: item.Field("link_evidence"), Code: CodeInvalidValue, Detail: err.Error(),
+			})
+		}
+	} else if dataset.Relation != nil {
+		fieldErrors = append(fieldErrors, FieldError{
+			Pointer: item.Field("link_evidence"), Code: CodeRequired,
+			Detail: "is required when relation is set: say what shows the link",
+		})
+	}
+	if relationKnown && *dataset.Relation == models.RelatedDatasetRelationOther && dataset.Details == nil {
+		fieldErrors = append(fieldErrors, FieldError{
+			Pointer: item.Field("details"), Code: CodeRequired,
+			Detail: "is required when relation is other: say what the relation is",
+		})
 	}
 	return fieldErrors
 }

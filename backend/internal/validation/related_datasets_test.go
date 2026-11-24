@@ -179,3 +179,58 @@ func Test_should_report_landing_url_longer_than_the_url_limit(t *testing.T) {
 		Pointer: "/related_datasets/0/landing_url", Code: CodeOutOfRange, Detail: "must be at most 2048 characters",
 	}}, fieldErrors)
 }
+
+func Test_should_accept_relation_with_link_evidence_and_link_evidence_alone(t *testing.T) {
+	// given
+	datasets := []models.RelatedDataset{
+		{
+			DOI: "10.15785/SBGRID/1301", DataType: "diffraction image data",
+			Relation:     new(models.RelatedDatasetRelationSimilarSample),
+			LinkEvidence: new(models.RelatedDatasetLinkEvidenceRepositoryText),
+		},
+		{
+			DOI: "10.15785/SBGRID/1302", DataType: "diffraction image data", Details: new("Background frames."),
+			Relation:     new(models.RelatedDatasetRelationOther),
+			LinkEvidence: new(models.RelatedDatasetLinkEvidenceDepositorStatement),
+		},
+		{
+			DOI: "10.15785/SBGRID/1303", DataType: "diffraction image data",
+			LinkEvidence: new(models.RelatedDatasetLinkEvidencePDBRecord),
+		},
+	}
+
+	// when
+	fieldErrors := RelatedDatasets(Root.Field("related_datasets"), datasets)
+
+	// then
+	assert.Empty(t, fieldErrors)
+}
+
+func Test_should_report_relation_rules_with_their_pointers_when_relation_or_evidence_is_wrong(t *testing.T) {
+	// given
+	datasets := []models.RelatedDataset{
+		{DOI: "10.15785/SBGRID/1", DataType: "diffraction image data", Relation: new(models.RelatedDatasetRelation("sibling")),
+			LinkEvidence: new(models.RelatedDatasetLinkEvidencePDBRecord)},
+		{DOI: "10.15785/SBGRID/2", DataType: "diffraction image data", Relation: new(models.RelatedDatasetRelationSourceData)},
+		{DOI: "10.15785/SBGRID/3", DataType: "diffraction image data", Relation: new(models.RelatedDatasetRelationOther),
+			LinkEvidence: new(models.RelatedDatasetLinkEvidencePublication)},
+		{DOI: "10.15785/SBGRID/4", DataType: "diffraction image data",
+			LinkEvidence: new(models.RelatedDatasetLinkEvidence("curator"))},
+	}
+
+	// when
+	fieldErrors := RelatedDatasets(Root.Field("related_datasets"), datasets)
+
+	// then
+	assert.Equal(t, []FieldError{
+		{Pointer: "/related_datasets/0/relation", Code: CodeInvalidValue,
+			Detail: `related dataset relation "sibling" is not one of "source_data", "similar_sample", "other"`},
+		{Pointer: "/related_datasets/1/link_evidence", Code: CodeRequired,
+			Detail: "is required when relation is set: say what shows the link"},
+		{Pointer: "/related_datasets/2/details", Code: CodeRequired,
+			Detail: "is required when relation is other: say what the relation is"},
+		{Pointer: "/related_datasets/3/link_evidence", Code: CodeInvalidValue,
+			Detail: `related dataset link evidence "curator" is not one of "pdb_record", "repository_record", ` +
+				`"repository_text", "publication", "depositor_statement"`},
+	}, fieldErrors)
+}

@@ -3,6 +3,7 @@ import {
   landingUrl,
   relatedDatasetKey,
   relatedDatasetName,
+  relatedDatasetRelationSummary,
   relatedDatasetSummary,
 } from "@/lib/related-datasets";
 
@@ -20,6 +21,7 @@ export default function RelatedDatasets({ datasets }: { datasets: RelatedDataset
         const name = relatedDatasetName(dataset);
         // Without a DOI the name already links to the landing page.
         const landing = dataset.doi ? landingUrl(dataset) : null;
+        const relation = relatedDatasetRelationSummary(dataset);
         return (
           <li key={relatedDatasetKey(dataset)} className={styles.item}>
             {name.href ? (
@@ -35,6 +37,7 @@ export default function RelatedDatasets({ datasets }: { datasets: RelatedDataset
                 Landing page
               </a>
             ) : null}
+            {relation ? <span className={styles.relation}>{relation}</span> : null}
             {dataset.details ? <p className={styles.details}>{dataset.details}</p> : null}
           </li>
         );

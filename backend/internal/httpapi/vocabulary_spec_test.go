@@ -19,14 +19,16 @@ func Test_should_list_the_openapi_enum_values_when_domain_vocabularies_are_read(
 	spec, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
 	require.NoError(t, err)
 	vocabularies := map[string][]string{
-		"StructureMethod":      stringsOf(domainmodels.StructureMethods),
-		"ModelPurpose":         stringsOf(domainmodels.ModelPurposes),
-		"StructureModelType":   stringsOf(domainmodels.StructureModelTypes),
-		"ModelSearchSource":    stringsOf(domainmodels.ModelSearchSources),
-		"MetricKey":            stringsOf(domainmodels.MetricKeys),
-		"ArtifactLevel":        stringsOf(domainmodels.ArtifactLevels),
-		"ArtifactType":         stringsOf(domainmodels.ArtifactTypes),
-		"RunArtifactDirection": stringsOf(domainmodels.RunArtifactDirections),
+		"StructureMethod":            stringsOf(domainmodels.StructureMethods),
+		"ModelPurpose":               stringsOf(domainmodels.ModelPurposes),
+		"StructureModelType":         stringsOf(domainmodels.StructureModelTypes),
+		"ModelSearchSource":          stringsOf(domainmodels.ModelSearchSources),
+		"MetricKey":                  stringsOf(domainmodels.MetricKeys),
+		"ArtifactLevel":              stringsOf(domainmodels.ArtifactLevels),
+		"ArtifactType":               stringsOf(domainmodels.ArtifactTypes),
+		"RunArtifactDirection":       stringsOf(domainmodels.RunArtifactDirections),
+		"RelatedDatasetRelation":     stringsOf(domainmodels.RelatedDatasetRelations),
+		"RelatedDatasetLinkEvidence": stringsOf(domainmodels.RelatedDatasetLinkEvidences),
 	}
 
 	for name, domainValues := range vocabularies {
