@@ -75,6 +75,14 @@ func (q *DatabaseQueue) RequeueForConformersAfter(
 	return page, nil
 }
 
+func (q *DatabaseQueue) DepositedFileOf(ctx context.Context, artifactID uuid.UUID) (*models.DepositedFile, error) {
+	file, err := q.database.CoordinateIndex.DepositedFileOf(ctx, artifactID)
+	if err != nil {
+		return nil, fmt.Errorf("coordinate index queue: %w", err)
+	}
+	return file, nil
+}
+
 func (q *DatabaseQueue) ClaimDue(
 	ctx context.Context,
 	now time.Time,

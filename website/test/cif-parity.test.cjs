@@ -57,6 +57,9 @@ for (const [name, expected] of Object.entries(golden)) {
     assert.equal(facts.metadata.atom_count ?? 0, expected.atom_count);
     assert.equal(facts.metadata.modeled_residues ?? 0, expected.modeled_residues);
     assert.equal(facts.metadata.unique_protein_chains ?? 0, expected.unique_protein_chains);
+    // One rule for conformer_count and altloc_fraction (researchers, 17 Nov, Q1): the preview counts
+    // conformers as lib/cif does, so the fraction is the same number.
+    assert.equal(facts.metadata.altloc_fraction ?? 0, expected.altloc_fraction);
     // The header values the server returns for an uploaded mmCIF. The server
     // gives the method as the file writes it; the form shows it canonical.
     if (expected.header) {

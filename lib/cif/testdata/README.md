@@ -75,8 +75,10 @@ they are.
 
 Real files cut to a few residues for the conformer counts of `ReadCoordinateIndex`
 (`conformers_test.go`). Only the `_atom_site` loop (mmCIF) or the coordinate,
-`MODEL` and `ENDMDL` records (PDB) are kept, rows verbatim. They are not in the
-parity golden: the website preview does not count conformers.
+`MODEL` and `ENDMDL` records (PDB) are kept, rows verbatim. They are in the
+parity golden: `altloc_fraction` comes from the same conformer counts in Go and in
+the website preview (one rule for `conformer_count` and `altloc_fraction`, the
+researchers' answer of 17 Nov).
 
 | File | Source | Used for |
 | --- | --- | --- |

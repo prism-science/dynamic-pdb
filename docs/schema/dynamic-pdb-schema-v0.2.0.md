@@ -94,18 +94,21 @@ Specific ligand instances belong to model revisions: modeled compounds and resid
 | authors, affiliation | Attribution from the archive or depositor. |
 | atom_count | Non-hydrogen atoms. |
 | modeled_residues | Polymer residues with coordinates, across chains. |
-| unique_protein_chains | Distinct protein chains in the coordinates. |
-| altloc_fraction | Fraction of modeled residues with alternate positions; count a second position only at occupancy ≥0.1. Count residues, not atoms. |
+| unique_protein_chains | Polymer chain copies; archive models: chains in the deposition; files: chains with ATOM coordinates in the first model. (Researchers' amendment, 17 Nov; the protein chain filter does not use this field.) |
+| altloc_fraction | Fraction of the first model's polymer residues whose conformer_count is 2 or more. One rule with conformer_count (below): the same residues, residue key, hydrogen test and occupancy floor. Count residues, not atoms. |
 | member_count | Optional, at least 2, Ensemble only. MODEL frames when the file has several; otherwise the altloc letters on every polymer residue. Omitted when the coordinates could not be read to the end, so large files may have none. Never a quality measure. |
 | unmodeled_fraction | One minus modeled residues divided by full deposited sequence length, matching each chain to its entity sequence. |
 
 Counts and fractions are optional registry calculations. Fractions range from 0 to 1. Prefer mmCIF coordinates; use legacy PDB files only within that format's limits.
 
 Residue data are optional and embedded on the model revision:
-- Identify polymer residues by label_asym_id (chain), label_seq_id (sequence position), and label_comp_id (CCD residue identity).
-- Preserve author chain/residue numbering (auth_asym_id, auth_seq_id) and insertion codes (pdbx_pdb_ins_code) where available.
+- Identify polymer residues by label_asym_id (chain), label_seq_id (sequence position), and label_comp_id (CCD residue identity). Two residue types at one position (microheterogeneity) are two residues.
+- In files without label numbering (PDB format, and mmCIF rows without label_seq_id), map author chain, residue number, insertion code and residue name to label numbering through the entry's deposited mmCIF (_pdbx_poly_seq_scheme). Use the author key only when that fails. Record which key was used: label (from the file), mapped, or author.
+- Preserve author chain/residue numbering (auth_asym_id, auth_seq_id) and insertion codes (pdbx_pdb_ins_code) with every residue record.
 - Use label_alt_id for conformer-specific values. A residue key alone cannot distinguish alternate conformers.
 - Supported values: rscc, b_iso (mean atomic displacement parameter), occupancy (of the identified conformer), conformer_count, rmsf (ensemble positional spread), and uniprot_position.
+- conformer_count: the residue's alternate positions (altloc letters) whose highest heavy-atom occupancy in the residue is 0.1 or more; minimum 1. Letters found only on hydrogens never count. Null for ensembles (model_type Ensemble, member_count set, or more than one model frame). altloc_fraction uses the same rule.
+- Differences from hetstar's conformer track have three known causes: the occupancy floor, microheterogeneity (hetstar merges residue types at one position), and numbering (hetstar matches residues on author numbering).
 - Do not infer local measurements from global averages. Ensemble-member identity and aggregation rules remain to be specified.
 
 Modeled compounds record what the coordinate file contains, as mmCIF keeps _pdbx_nonpoly_scheme complete and records roles elsewhere:

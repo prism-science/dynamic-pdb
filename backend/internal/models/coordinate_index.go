@@ -162,18 +162,22 @@ type ResidueKey string
 const (
 	// ResidueKeyLabel: label chain + label residue number + residue type.
 	ResidueKeyLabel ResidueKey = "label"
+	// ResidueKeyMapped: the file's residues without label numbering were given it through the
+	// entry's deposited mmCIF (_pdbx_poly_seq_scheme); every residue is keyed by label numbering.
+	ResidueKeyMapped ResidueKey = "mapped"
 	// ResidueKeyAuthor: author chain + residue number + insertion code + residue type, for files
-	// without label numbering.
+	// without label numbering that no mapping covered.
 	ResidueKeyAuthor ResidueKey = "author"
-	// ResidueKeyMixed: label numbering, except residues whose rows have none.
+	// ResidueKeyMixed: some residues by label numbering (from the file or mapped), some by author
+	// numbering.
 	ResidueKeyMixed ResidueKey = "mixed"
 )
 
-var ResidueKeys = []ResidueKey{ResidueKeyLabel, ResidueKeyAuthor, ResidueKeyMixed}
+var ResidueKeys = []ResidueKey{ResidueKeyLabel, ResidueKeyMapped, ResidueKeyAuthor, ResidueKeyMixed}
 
 func (key ResidueKey) Validate() error {
 	switch key {
-	case ResidueKeyLabel, ResidueKeyAuthor, ResidueKeyMixed:
+	case ResidueKeyLabel, ResidueKeyMapped, ResidueKeyAuthor, ResidueKeyMixed:
 		return nil
 	default:
 		return unknownValueError("residue key", key, ResidueKeys)
@@ -211,6 +215,19 @@ type RequeuedSetsPage struct {
 	Scanned        int
 	Requeued       int64
 	LastArtifactID uuid.UUID
+}
+
+// DepositedFile is the deposited mmCIF of the entry of a model file's models: the active Deposited
+// model's file, with the checksum job's copy of it when there is one. The job reads its
+// _pdbx_poly_seq_scheme to give residues without label numbering their label numbering
+// (researchers' answer of 17 Nov, Q2).
+type DepositedFile struct {
+	ArtifactID uuid.UUID
+	EntryID    string
+	URI        *string
+	Format     *string
+	CopyStatus *CopyStatus
+	StoredURI  *string
 }
 
 // CoordinateIndexClaim is a pending set the job took, with what it needs to read the file.

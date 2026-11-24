@@ -5,6 +5,7 @@ import {
   parseCifLoops,
   type CifLoop,
 } from "@/lib/mmcif";
+import { conformerCount, isHydrogenAtom, occupancyValue } from "@/lib/parse/conformers";
 import { oneLetter } from "@/lib/residue-codes";
 import type { StructureKind } from "@/lib/structureKind";
 import type { Point } from "@/lib/superpose";
@@ -102,6 +103,9 @@ export type Conformer = {
 export type Span = { start: number; end: number };
 
 type Mean = { total: number; count: number };
+/** A conformer's mean occupancy, shown in the track, and its highest heavy-atom occupancy, which
+ *  decides whether it counts (the shared rule in `parse/conformers.ts`). */
+type ConformerOccupancy = Mean & { highest: number };
 
 type PositionSums = {
   count: number;
@@ -175,7 +179,7 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
   }
 
   const sums = new Map<string, Map<number, { total: number; count: number }>>();
-  const conformers = new Map<string, Map<number, Map<string, Mean>>>();
+  const conformers = new Map<string, Map<number, Map<string, ConformerOccupancy>>>();
   const firstMemberResidues = new Map<string, Set<number>>();
   const firstMemberAtoms = new Map<string, Map<number, Set<string>>>();
   const atomPositions = new Map<string, Map<string, PositionSums>>();
@@ -250,12 +254,15 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
 
     const element =
       elementAt === -1 ? null : cifValue(row[elementAt])?.toUpperCase();
-    const isHeavyAtom = element !== "H" && element !== "D";
+    const isHeavyAtom = !isHydrogenAtom(
+      element ?? "",
+      atomAt === -1 ? "" : (cifValue(row[atomAt]) ?? ""),
+    );
     if (belongsToFirstMember && isHeavyAtom && alternateID !== null) {
       const perResidue =
-        conformers.get(key) ?? new Map<number, Map<string, Mean>>();
-      const letters = perResidue.get(seq) ?? new Map<string, Mean>();
-      const held = letters.get(alternateID) ?? { total: 0, count: 0 };
+        conformers.get(key) ?? new Map<number, Map<string, ConformerOccupancy>>();
+      const letters = perResidue.get(seq) ?? new Map<string, ConformerOccupancy>();
+      const held = letters.get(alternateID) ?? { total: 0, count: 0, highest: 0 };
       // Averaged over the conformer's own atoms rather than taken from the
       // first of them: a file may refine them separately, and one atom's
       // number would then stand for the whole side chain.
@@ -265,6 +272,11 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
         held.total += occupancy;
         held.count += 1;
       }
+      // A missing occupancy is full occupancy, as lib/cif reads it.
+      held.highest = Math.max(
+        held.highest,
+        occupancyAt === -1 ? 1 : occupancyValue(row[occupancyAt] ?? ""),
+      );
       letters.set(alternateID, held);
       perResidue.set(seq, letters);
       conformers.set(key, perResidue);
@@ -358,7 +370,16 @@ function readStructureLoops(loops: Map<string, CifLoop>): StructureResidues[] {
     const perResidue = conformers.get(key);
     for (const seq of residues) {
       const letters = perResidue?.get(seq);
-      entity.conformerCount.set(seq, Math.max(1, letters?.size ?? 0));
+      // The same rule as conformer_count and altloc_fraction: a letter counts at a highest
+      // heavy-atom occupancy of 0.1 or more.
+      entity.conformerCount.set(
+        seq,
+        conformerCount(
+          new Map([...(letters ?? new Map<string, ConformerOccupancy>()).entries()].map(
+            ([id, held]) => [id, held.highest],
+          )),
+        ),
+      );
       if (letters && letters.size > 0) {
         entity.conformers.set(
           seq,

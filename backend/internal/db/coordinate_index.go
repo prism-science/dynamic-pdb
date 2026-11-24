@@ -386,6 +386,64 @@ func (r *CoordinateIndexRepository) ModelFileEnsembleType(ctx context.Context, a
 	return ensemble, nil
 }
 
+type depositedFileRow struct {
+	ArtifactID uuid.UUID      `db:"artifact_id"`
+	EntryID    string         `db:"entry_id"`
+	URI        sql.NullString `db:"uri"`
+	Format     sql.NullString `db:"format"`
+	CopyStatus sql.NullString `db:"copy_status"`
+	StoredURI  sql.NullString `db:"stored_uri"`
+}
+
+// DepositedFileOf returns the deposited mmCIF of the entry of a model file's models: the file of the
+// entry's active Deposited model, with the checksum job's copy of it. Nil when the file's models
+// belong to no entry or to several, when the entry has no active Deposited model, or when that
+// model's file is the file itself. With several Deposited models (re-refinements), the oldest
+// active revision's file. The job maps residues without label numbering through its
+// _pdbx_poly_seq_scheme (researchers' answer of 17 Nov, Q2).
+func (r *CoordinateIndexRepository) DepositedFileOf(ctx context.Context, artifactID uuid.UUID) (*models.DepositedFile, error) {
+	query := `with entries as (
+			    select distinct models.entry_id
+			    from model_revisions
+			    join models on models.id = model_revisions.model_id
+			    where model_revisions.primary_artifact_id = $1
+			  )
+			  select deposited.primary_artifact_id as artifact_id, models.entry_id, artifacts.uri, artifacts.format,
+			         artifact_checksums.copy_status, artifact_checksums.stored_uri
+			  from entries
+			  join models on models.entry_id = entries.entry_id
+			  join model_revisions deposited on deposited.model_id = models.id and deposited.state = 'active'
+			  join artifacts on artifacts.id = deposited.primary_artifact_id
+			  left join artifact_checksums on artifact_checksums.artifact_id = artifacts.id
+			  where (select count(*) from entries) = 1
+			    and deposited.metadata ->> 'model_type' = 'Deposited'
+			    and deposited.primary_artifact_id <> $1
+			  order by deposited.created_at, deposited.id
+			  limit 1`
+	var row depositedFileRow
+	if err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row, query, artifactID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find the deposited file for model file %s: %w", artifactID, err)
+	}
+	file := &models.DepositedFile{
+		ArtifactID: row.ArtifactID,
+		EntryID:    row.EntryID,
+		URI:        stringPtrFromSQL(row.URI),
+		Format:     stringPtrFromSQL(row.Format),
+		StoredURI:  stringPtrFromSQL(row.StoredURI),
+	}
+	if row.CopyStatus.Valid {
+		copyStatus := models.CopyStatus(row.CopyStatus.String)
+		if err := copyStatus.Validate(); err != nil {
+			return nil, fmt.Errorf("deposited file %s: %w", row.ArtifactID, err)
+		}
+		file.CopyStatus = &copyStatus
+	}
+	return file, nil
+}
+
 // RequeueEntry queues the model files of an entry's models again, ahead of the fill, after the API
 // changed the entry's active FASTA records (created or deleted some): a chain whose length came
 // from a record may now have another one, or none. Run it in the transaction that changes the

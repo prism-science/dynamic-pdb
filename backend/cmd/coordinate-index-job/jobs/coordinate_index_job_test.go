@@ -79,6 +79,11 @@ type fakeQueue struct {
 	conformerVersion []string
 	// ensembleTypeSince records each RequeueForEnsembleTypeChanges call.
 	ensembleTypeSince []time.Time
+	// deposited is what DepositedFileOf answers for each model file; depositedErr fails it;
+	// depositedAsked records each call.
+	deposited      map[uuid.UUID]*models.DepositedFile
+	depositedErr   error
+	depositedAsked []uuid.UUID
 }
 
 func (q *fakeQueue) AddMissingSince(_ context.Context, since time.Time, archiveFiles bool) (int64, error) {
@@ -106,6 +111,14 @@ func (q *fakeQueue) RequeueForNewEntries(_ context.Context, since time.Time, now
 	q.requeueSince = since
 	q.requeueNow = now
 	return 0, nil
+}
+
+func (q *fakeQueue) DepositedFileOf(_ context.Context, artifactID uuid.UUID) (*models.DepositedFile, error) {
+	q.depositedAsked = append(q.depositedAsked, artifactID)
+	if q.depositedErr != nil {
+		return nil, q.depositedErr
+	}
+	return q.deposited[artifactID], nil
 }
 
 func (q *fakeQueue) RequeueForEnsembleTypeChanges(_ context.Context, since time.Time, _ time.Time) (int64, error) {
@@ -164,6 +177,10 @@ func (q *fakeQueue) Save(_ context.Context, artifactID uuid.UUID, read cif.Coord
 type fakeFiles struct {
 	contents map[string][]byte
 	openErr  error
+	// opened counts the opens of each key; delay makes opening a key take that long, or until the
+	// context ends.
+	opened map[string]int
+	delay  map[string]time.Duration
 }
 
 func (f *fakeFiles) StoredKey(uri string) (string, bool) {
@@ -177,6 +194,17 @@ func (f *fakeFiles) Open(ctx context.Context, key string) (io.ReadCloser, error)
 	}
 	if f.openErr != nil {
 		return nil, f.openErr
+	}
+	if f.opened == nil {
+		f.opened = map[string]int{}
+	}
+	f.opened[key]++
+	if delay, slow := f.delay[key]; slow {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	contents, ok := f.contents[key]
 	if !ok {
@@ -760,4 +788,238 @@ func Test_should_look_for_ensemble_type_changes_only_when_residue_counts_are_on(
 			assert.Empty(t, queue.ensembleTypeSince)
 		}
 	}
+}
+
+// pdbWithAlternates is a qFit-style PDB-format file: LYS 10 of chain A with letters A and B.
+const pdbWithAlternates = "ATOM      1  CB ALYS A  10       1.000   2.000   3.000  0.50 20.00           C\n" +
+	"ATOM      2  CB BLYS A  10       1.500   2.000   3.000  0.50 20.00           C\n" +
+	"ATOM      3  CB  ARG A  11       1.000   2.000   3.000  1.00 20.00           C\n" +
+	"END\n"
+
+// depositedWithScheme is the deposited mmCIF of the same entry: its _pdbx_poly_seq_scheme maps chain
+// A residues 10 and 11 to label chain A residues 1 and 2.
+const depositedWithScheme = "data_DEP\nloop_\n_pdbx_poly_seq_scheme.asym_id\n_pdbx_poly_seq_scheme.seq_id\n" +
+	"_pdbx_poly_seq_scheme.mon_id\n_pdbx_poly_seq_scheme.pdb_seq_num\n_pdbx_poly_seq_scheme.pdb_mon_id\n" +
+	"_pdbx_poly_seq_scheme.pdb_strand_id\n_pdbx_poly_seq_scheme.pdb_ins_code\n" +
+	"A 1 LYS 10 LYS A .\nA 2 ARG 11 ARG A .\n#\n"
+
+func depositedFile(key string) *models.DepositedFile {
+	uri := bucketPrefix + key
+	return &models.DepositedFile{ArtifactID: uuid.New(), EntryID: "entry-1", URI: &uri, Format: ptr("mmcif")}
+}
+
+func Test_should_key_residues_by_mapped_label_numbering_when_the_entry_has_a_deposited_mmcif(t *testing.T) {
+	// given: two PDB-format files of one entry; its deposited mmCIF maps their residues.
+	first, second := storedClaim("first.pdb", ptr("pdb"), 1), storedClaim("second.pdb", ptr("pdb"), 1)
+	deposited := depositedFile("deposited.cif")
+	queue := &fakeQueue{
+		claims:    []models.CoordinateIndexClaim{first, second},
+		deposited: map[uuid.UUID]*models.DepositedFile{first.ArtifactID: deposited, second.ArtifactID: deposited},
+	}
+	files := &fakeFiles{contents: map[string][]byte{
+		"first.pdb": []byte(pdbWithAlternates), "second.pdb": []byte(pdbWithAlternates), "deposited.cif": []byte(depositedWithScheme),
+	}}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	job := newTestJob(t, queue, files, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: both keyed by mapped label numbering, counts unchanged; the deposited file read once.
+	require.NoError(t, err)
+	for _, claim := range []models.CoordinateIndexClaim{first, second} {
+		conformers := queue.saved[claim.ArtifactID].index.Conformers
+		require.NotNil(t, conformers)
+		assert.Equal(t, ptr(models.ResidueKeyMapped), conformers.Key)
+		assert.Equal(t, []string{"ARG 1 x1", "LYS 2 x1"}, conformerSummaries(conformers))
+		assert.Empty(t, queue.saved[claim.ArtifactID].index.Warnings)
+	}
+	assert.Equal(t, 1, files.opened["deposited.cif"])
+}
+
+func Test_should_save_the_mapping_warning_when_the_mapping_leaves_a_residue_by_author_numbering(t *testing.T) {
+	// given: a deposited scheme that gives LYS 10 and LYS 12 of chain A the same label residue.
+	claim := storedClaim("model.pdb", ptr("pdb"), 1)
+	queue := &fakeQueue{
+		claims:    []models.CoordinateIndexClaim{claim},
+		deposited: map[uuid.UUID]*models.DepositedFile{claim.ArtifactID: depositedFile("deposited.cif")},
+	}
+	model := "ATOM      1  CB  LYS A  10       1.000   2.000   3.000  1.00 20.00           C\n" +
+		"ATOM      2  CB  LYS A  12       1.000   2.000   3.000  1.00 20.00           C\n" +
+		"END\n"
+	scheme := "data_DEP\nloop_\n_pdbx_poly_seq_scheme.asym_id\n_pdbx_poly_seq_scheme.seq_id\n" +
+		"_pdbx_poly_seq_scheme.mon_id\n_pdbx_poly_seq_scheme.pdb_seq_num\n_pdbx_poly_seq_scheme.pdb_mon_id\n" +
+		"_pdbx_poly_seq_scheme.pdb_strand_id\n_pdbx_poly_seq_scheme.pdb_ins_code\n" +
+		"A 1 LYS 10 LYS A .\nA 1 LYS 12 LYS A .\n#\n"
+	files := &fakeFiles{contents: map[string][]byte{"model.pdb": []byte(model), "deposited.cif": []byte(scheme)}}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	job := newTestJob(t, queue, files, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: two residues, one mapped and one by author numbering, with the reason.
+	require.NoError(t, err)
+	saved := queue.saved[claim.ArtifactID].index
+	require.NotNil(t, saved.Conformers)
+	assert.Equal(t, ptr(models.ResidueKeyMixed), saved.Conformers.Key)
+	assert.Equal(t, []string{"LYS 1 x2"}, conformerSummaries(saved.Conformers))
+	assert.Equal(t, []string{"1 residues kept author numbering: the deposited mmCIF gives each the label numbering of a different residue in this file"}, saved.Warnings)
+}
+
+func Test_should_keep_author_numbering_with_a_warning_when_no_mapping_can_be_read(t *testing.T) {
+	cases := map[string]struct {
+		deposited   *models.DepositedFile
+		contents    string
+		wantWarning string
+	}{
+		"no deposited model":    {wantWarning: "has no active Deposited model"},
+		"no scheme in the file": {deposited: depositedFile("deposited.cif"), contents: "data_DEP\n_entry.id DEP\n", wantWarning: "has no _pdbx_poly_seq_scheme"},
+		"file missing":          {deposited: depositedFile("missing.cif"), wantWarning: "could not be opened"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			claim := storedClaim("model.pdb", ptr("pdb"), 1)
+			queue := &fakeQueue{
+				claims:    []models.CoordinateIndexClaim{claim},
+				deposited: map[uuid.UUID]*models.DepositedFile{claim.ArtifactID: testCase.deposited},
+			}
+			contents := map[string][]byte{"model.pdb": []byte(pdbWithAlternates)}
+			if testCase.contents != "" {
+				contents["deposited.cif"] = []byte(testCase.contents)
+			}
+			cfg := testConfig()
+			cfg.ResidueCounts = true
+			job := newTestJob(t, queue, &fakeFiles{contents: contents}, cfg)
+
+			// when
+			err := job.Run(context.Background())
+
+			// then: saved, keyed by author numbering, with the reason.
+			require.NoError(t, err)
+			saved := queue.saved[claim.ArtifactID].index
+			require.NotNil(t, saved.Conformers)
+			assert.Equal(t, ptr(models.ResidueKeyAuthor), saved.Conformers.Key)
+			require.Len(t, saved.Warnings, 1)
+			assert.Contains(t, saved.Warnings[0], testCase.wantWarning)
+		})
+	}
+}
+
+func Test_should_retry_the_file_when_the_deposited_file_lookup_fails(t *testing.T) {
+	// given
+	claim := storedClaim("model.pdb", ptr("pdb"), 1)
+	queue := &fakeQueue{claims: []models.CoordinateIndexClaim{claim}, depositedErr: errors.New("connection reset")}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	job := newTestJob(t, queue, &fakeFiles{contents: map[string][]byte{"model.pdb": []byte(pdbWithAlternates)}}, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: nothing saved; retried later.
+	require.NoError(t, err)
+	assert.NotContains(t, queue.saved, claim.ArtifactID)
+	require.Len(t, queue.failures, 1)
+	assert.Contains(t, queue.failures[0].message, "connection reset")
+	assert.NotNil(t, queue.failures[0].retryAt)
+}
+
+func Test_should_not_look_for_a_mapping_when_it_cannot_change_the_counts_or_counts_are_off(t *testing.T) {
+	cases := map[string]struct {
+		key      string
+		contents string
+		format   string
+		counts   bool
+	}{
+		"counts off":                    {key: "model.pdb", contents: pdbWithAlternates, format: "pdb", counts: false},
+		"mmCIF with label numbering":    {key: "model.cif", contents: mmcifWithAlternates, format: "mmcif", counts: true},
+		"an ensemble with model frames": {key: "model.pdb", contents: pdbEnsemble, format: "pdb", counts: true},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			claim := storedClaim(testCase.key, ptr(testCase.format), 1)
+			queue := &fakeQueue{claims: []models.CoordinateIndexClaim{claim}}
+			cfg := testConfig()
+			cfg.ResidueCounts = testCase.counts
+			job := newTestJob(t, queue, &fakeFiles{contents: map[string][]byte{testCase.key: []byte(testCase.contents)}}, cfg)
+
+			// when
+			err := job.Run(context.Background())
+
+			// then
+			require.NoError(t, err)
+			assert.Empty(t, queue.depositedAsked)
+			assert.Contains(t, queue.saved, claim.ArtifactID)
+		})
+	}
+}
+
+func Test_should_retry_the_file_when_the_claim_deadline_ends_while_the_deposited_mmcif_is_read(t *testing.T) {
+	// given: one deadline covers the claim's reads; the deposited file takes longer than it.
+	claim := storedClaim("model.pdb", ptr("pdb"), 1)
+	deposited := depositedFile("deposited.cif")
+	queue := &fakeQueue{
+		claims:    []models.CoordinateIndexClaim{claim},
+		deposited: map[uuid.UUID]*models.DepositedFile{claim.ArtifactID: deposited},
+	}
+	files := &fakeFiles{
+		contents: map[string][]byte{"model.pdb": []byte(pdbWithAlternates), "deposited.cif": []byte(depositedWithScheme)},
+		delay:    map[string]time.Duration{"deposited.cif": time.Second},
+	}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	cfg.FileTimeout = 50 * time.Millisecond
+	job := newTestJob(t, queue, files, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: not saved without its mapping, retried later, and no failed mapping kept for the run.
+	require.NoError(t, err)
+	assert.NotContains(t, queue.saved, claim.ArtifactID)
+	require.Len(t, queue.failures, 1)
+	assert.Contains(t, queue.failures[0].message, "deadline exceeded")
+	assert.NotNil(t, queue.failures[0].retryAt)
+	_, cached := job.mappings.get(deposited.ArtifactID)
+	assert.False(t, cached)
+}
+
+func Test_should_start_the_mapping_cache_over_when_it_would_hold_too_many_residues(t *testing.T) {
+	// given: two mappings that fit together, then one that does not fit with them.
+	mappingOf := func(residues int) residueMapping {
+		var scheme strings.Builder
+		scheme.WriteString("data_X\nloop_\n_pdbx_poly_seq_scheme.asym_id\n_pdbx_poly_seq_scheme.seq_id\n" +
+			"_pdbx_poly_seq_scheme.mon_id\n_pdbx_poly_seq_scheme.pdb_seq_num\n_pdbx_poly_seq_scheme.pdb_mon_id\n" +
+			"_pdbx_poly_seq_scheme.pdb_strand_id\n_pdbx_poly_seq_scheme.pdb_ins_code\n")
+		for number := 1; number <= residues; number++ {
+			fmt.Fprintf(&scheme, "A %d ALA %d ALA A .\n", number, number)
+		}
+		mapping, err := cif.ReadResidueMapping(context.Background(), strings.NewReader(scheme.String()))
+		require.NoError(t, err)
+		return residueMapping{mapping: mapping}
+	}
+	cache := newResidueMappings()
+	first, second, third := uuid.New(), uuid.New(), uuid.New()
+	half := maxCachedMappedResidues / 2
+
+	// when
+	cache.put(first, mappingOf(half))
+	cache.put(second, mappingOf(half))
+	_, firstKept := cache.get(first)
+	cache.put(third, mappingOf(10))
+
+	// then
+	assert.True(t, firstKept, "two halves fit")
+	_, firstAfter := cache.get(first)
+	_, secondAfter := cache.get(second)
+	_, thirdAfter := cache.get(third)
+	assert.False(t, firstAfter)
+	assert.False(t, secondAfter)
+	assert.True(t, thirdAfter)
+	assert.Equal(t, 10, cache.residues)
 }
