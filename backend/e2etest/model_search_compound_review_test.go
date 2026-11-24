@@ -71,8 +71,9 @@ func (s *ModelSearchSuite) createModelWithOwnFileForTest(
 }
 
 // createArchiveReRefinementWithCopyForTest adds a re-refinement deposited as an Ensemble (origin
-// archive, its file on files.rcsb.org, which is its primary file) whose file the checksum job copied
-// into our bucket, so the model-compounds job reads that copy. It returns the model ID and its file's ID.
+// archive, its file on files.rcsb.org, which is its primary file), filed under the entry before
+// the grouping rule, whose file the checksum job copied into our bucket, so the model-compounds job
+// reads that copy. It returns the model ID and its file's ID.
 func (s *ModelSearchSuite) createArchiveReRefinementWithCopyForTest(token, entryID, originalPDBID string) (string, uuid.UUID) {
 	ctx := context.Background()
 	windowStart := time.Now().UTC().Add(-time.Minute)
@@ -85,7 +86,7 @@ func (s *ModelSearchSuite) createArchiveReRefinementWithCopyForTest(token, entry
 	artifactID, ok := artifacts[0]["id"].(uuid.UUID)
 	s.Require().True(ok)
 	model["primary_artifact_id"] = artifactID
-	created := createAndActivateModelForTest(s.T(), token, entryID, request)
+	created := createModelFiledBeforeTheRuleForTest(s.T(), token, entryID, request)
 	recordChecksumCopyForTest(s.T(), artifactID)
 	_, err := testDatabase.ModeledCompounds.AddMissingSince(ctx, windowStart, true)
 	s.Require().NoError(err)

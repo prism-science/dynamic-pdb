@@ -75,6 +75,11 @@ function Changes({
     reviewPermissions
       ? ownRevisionReason(reviewPermissions, viewerId, createdBy)
       : null;
+  // A PDB deposition filed under another entry waits for the grouping rules
+  // (researcher answer of 17 Nov, Q11). The API says so on the revision and
+  // refuses the approval, so the block shows it before Approve is pressed.
+  const groupingReason = (model: ReviewModel) =>
+    reviewPermissions ? (model.grouping_not_approved?.detail ?? null) : null;
 
   return (
     <>
@@ -137,7 +142,10 @@ function Changes({
             sections={diffModel(model.active, model.proposed)}
             target={model.target}
             blockedReason={modelsBlockedReason}
-            approveBlockedReason={approveBlockedFor(model.proposed.created_by)}
+            approveNotice={groupingReason(model.proposed)}
+            approveBlockedReason={
+              approveBlockedFor(model.proposed.created_by) ?? groupingReason(model.proposed)
+            }
             previewHref={`/review/preview/${encodeURIComponent(
               review.entry_id,
             )}/models/${encodeURIComponent(
@@ -238,6 +246,7 @@ function DiffBlock({
   previewHref,
   blockedReason,
   approveBlockedReason,
+  approveNotice,
   reviewPermissions,
 }: {
   title: string;
@@ -247,6 +256,8 @@ function DiffBlock({
   previewHref: string;
   blockedReason?: string | null;
   approveBlockedReason?: string | null;
+  /** Why Approve is held back, shown in the block, not only as a tooltip. */
+  approveNotice?: string | null;
   reviewPermissions: ReviewPermissions | null;
 }) {
   const visible = sections
@@ -268,6 +279,11 @@ function DiffBlock({
     >
       {blockedReason ? (
         <div className={styles.blocked}>{blockedReason}</div>
+      ) : null}
+      {approveNotice ? (
+        <div className={styles.blocked} role="note">
+          {approveNotice}
+        </div>
       ) : null}
       {visible.length === 0 ? (
         <div className={styles.note}>Nothing changed here.</div>

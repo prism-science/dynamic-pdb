@@ -2319,6 +2319,15 @@ export interface components {
             artifacts: components["schemas"]["ArtifactAttributes"][];
             field_sources?: components["schemas"]["FieldSources"];
             modeled_compounds: components["schemas"]["ModeledCompounds"];
+            grouping_not_approved?: components["schemas"]["GroupingNotApproved"];
+        };
+        /** @description Present on a model revision in review whose approval is refused (409 GROUPING_NOT_APPROVED): its own PDB ID differs from its entry's, or the entry has none, and approving it would file that PDB deposition under the entry for the first time. Reviewers don't approve such a filing until the grouping rules (same experimental data) pass; it can still be rejected. A model already filed under the entry with the same PDB ID is not refused. */
+        GroupingNotApproved: {
+            model_pdb_id: string;
+            /** @description The entry's PDB ID; absent when the entry has none. */
+            entry_pdb_id?: string;
+            /** @description Why approving is refused, in the words of the 409 error. */
+            detail: string;
         };
         /**
          * @description The decision record of the revision's ligands and cofactors, as the mmCIF extraction derived them: the groups ligands, cofactors and excluded (compounds left out of both lists), each mapping a CCD ID to the rule that placed it. Water and polymer residues are never recorded. A compound a person added to a list has rule depositor; one they removed is no longer in its group. Null when the lists were not derived from a file. Read-only.
@@ -4767,7 +4776,7 @@ export interface operations {
                     "application/vnd.api+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Model revision changed since it was loaded. */
+            /** @description Model revision changed since it was loaded, or (code GROUPING_NOT_APPROVED) approving it would file a PDB deposition under an entry with another PDB ID before the grouping rules pass; the detail names both PDB IDs. Rejecting is not affected. */
             409: {
                 headers: {
                     [name: string]: unknown;
