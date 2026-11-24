@@ -22,6 +22,9 @@ const (
 	downloadsBusyCode         = "DOWNLOADS_BUSY"
 	selectionBusyCode         = "SELECTION_BUSY"
 	downloadNotPreparableCode = "DOWNLOAD_NOT_PREPARABLE"
+	downloadNotRetryableCode  = "DOWNLOAD_NOT_RETRYABLE"
+	nothingToRetryCode        = "NOTHING_TO_RETRY"
+	downloadRetryAction       = "retry archive"
 	downloadNotFoundDetail    = "archive request not found"
 	downloadCreateAction      = "request archive"
 	downloadPrepareAction     = "prepare archive"
@@ -342,6 +345,8 @@ func (s *Server) downloadDocument(job domainmodels.DownloadJob) (DownloadDocumen
 		attributes.ArchiveUrl = job.ArchiveURL
 		attributes.ManifestUrl = job.ManifestURL
 	}
+	attributes.RetryableFiles = job.RetryableFiles
+	attributes.RetryOf = job.RetryOf
 	if job.Counts != nil {
 		attributes.Counts = &DownloadCounts{
 			Included:        job.Counts.Included,
@@ -358,6 +363,7 @@ func (s *Server) downloadDocument(job domainmodels.DownloadJob) (DownloadDocumen
 		Links: DownloadLinks{
 			Self:      self,
 			Selection: s.publicBaseURL + "/v1/selections/" + job.SelectionID.String(),
+			Failures:  ptr(self + "/failures"),
 		},
 	}}, nil
 }

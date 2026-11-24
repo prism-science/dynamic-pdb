@@ -523,6 +523,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/downloads/{download_id}/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the files an archive could not vouch for
+         * @description Lists, in selection order, the selected files a ready archive lists as unavailable or changed-at-source, each with the model that first lists it, the reason and its code, and whether a retry may fetch it (retryable: only read_failed, a copy that could not be read while the archive was prepared). Linked files are not failures. An archive that is not ready yet has none. Needs no sign-in.
+         */
+        get: operations["listDownloadFailures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/downloads/{download_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask again for the files a ready archive could not read
+         * @description Builds a second, small archive of the ready archive's retryable failures (read_failed) only, with its own manifest.tsv and a README naming the archive it completes. Its top folder is its own (dynamic-pdb-{selection id}-retry-{its id}), so unpacking it next to that archive replaces nothing there. The new request's retry_of names this one; poll it like any archive. Asking again while a retry is waiting, being built or ready returns that retry (200). A retry that fails to read a file again can itself be retried. Needs no sign-in and no body.
+         */
+        post: operations["retryDownload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entries/{entry_id}/models": {
         parameters: {
             query?: never;
@@ -1162,12 +1202,19 @@ export interface components {
             archive_bytes?: number;
             /** @description SHA-256 of the zip, to check the download. */
             archive_sha256?: string;
-            /** @description Where to download the zip while it is ready. Resumable: the server answers Range requests. */
+            /** @description Where to download the zip while it is ready. Resumable: the server answers Range requests, so a transfer that breaks can go on from where it stopped, or start again, until expires_at; archive_sha256 checks the result. */
             archive_url?: string;
             /** @description The archive's manifest.tsv on its own: one row per file with its record revisions, recorded SHA-256, status (included, linked, unavailable, changed-at-source), verification and reuse terms. The zip holds the same file. */
             manifest_url?: string;
             counts?: components["schemas"]["DownloadCounts"];
             preview?: components["schemas"]["DownloadPreview"];
+            /** @description On a ready archive: how many of its failures a retry may fetch (read_failed). Above 0, POST /v1/downloads/{download_id}/retry asks for them; links.failures lists them. */
+            retryable_files?: number;
+            /**
+             * Format: uuid
+             * @description Set on a retry: the archive whose failed files this one asks for again. A retry holds only those files.
+             */
+            retry_of?: string;
             /** @description Why the archive is blocked or failed, and what to do instead. */
             message?: string;
         };
@@ -1256,15 +1303,42 @@ export interface components {
          */
         DownloadFileAvailability: "included" | "linked" | "unavailable" | "changed-at-source";
         /**
-         * @description Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off, not_checked_yet and copied_after_planning are linked; stored_file_differs, source_unreadable, copy_not_in_storage, copy_missing and copy_differs are unavailable; changed_at_source is changed-at-source.
+         * @description Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off, not_checked_yet and copied_after_planning are linked; stored_file_differs, source_unreadable, copy_not_in_storage, copy_missing, copy_differs and read_failed are unavailable; changed_at_source is changed-at-source. Only read_failed (Dynamic PDB's copy could not be read while the archive was prepared) may be fetched by a retry.
          * @enum {string}
          */
-        DownloadReasonCode: "over_copy_limit" | "copy_failed" | "copy_off" | "not_checked_yet" | "copied_after_planning" | "stored_file_differs" | "changed_at_source" | "source_unreadable" | "copy_not_in_storage" | "copy_missing" | "copy_differs";
+        DownloadReasonCode: "over_copy_limit" | "copy_failed" | "copy_off" | "not_checked_yet" | "copied_after_planning" | "stored_file_differs" | "changed_at_source" | "source_unreadable" | "copy_not_in_storage" | "copy_missing" | "copy_differs" | "read_failed";
+        DownloadFailureCollectionDocument: {
+            data: components["schemas"]["DownloadFailureData"][];
+            links?: components["schemas"]["CollectionLinks"];
+            meta?: components["schemas"]["CursorPageMeta"];
+        };
+        DownloadFailureData: {
+            type: string;
+            /** @description The file ID. */
+            id: string;
+            attributes: components["schemas"]["DownloadFailureAttributes"];
+        };
+        DownloadFailureAttributes: {
+            /** Format: uuid */
+            file_id: string;
+            file_name: string;
+            entry_id: string;
+            /** @description The first selected model that lists the file. */
+            model_id: string;
+            status: components["schemas"]["DownloadFileAvailability"];
+            reason_code: components["schemas"]["DownloadReasonCode"];
+            /** @description The reason as the manifest says it. */
+            reason: string;
+            /** @description Whether POST /v1/downloads/{download_id}/retry asks for this file again. */
+            retryable: boolean;
+        };
         DownloadLinks: {
             /** @description Absolute URL of the archive request. */
             self: string;
             /** @description Absolute URL of the selection the archive is built from. */
             selection: string;
+            /** @description Absolute URL of the files the archive could not vouch for (GET). */
+            failures?: string;
         };
         ModelDocument: {
             data: components["schemas"]["ModelDetailData"];
@@ -4136,6 +4210,126 @@ export interface operations {
             };
         };
     };
+    listDownloadFailures: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of failures to return. */
+                limit?: number;
+                /** @description Opaque cursor from the previous page's `meta.next_cursor`. Returns the failures that follow it. Follow `links.next` to page without building URLs. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Archive request ID, as POST /v1/downloads returned it. */
+                download_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive's failures. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["DownloadFailureCollectionDocument"];
+                };
+            };
+            /** @description Invalid limit or cursor. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    retryDownload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Archive request ID of the ready archive, as POST /v1/downloads returned it. */
+                download_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A retry of this archive is already waiting, being built or ready; this is it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["DownloadDocument"];
+                };
+            };
+            /** @description Retry requested; poll links.self. */
+            202: {
+                headers: {
+                    /** @description URL of the retry's archive request. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["DownloadDocument"];
+                };
+            };
+            /** @description No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The archive is not ready or has expired (code DOWNLOAD_NOT_RETRYABLE), or it has no failed file a retry may fetch (code NOTHING_TO_RETRY). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many archive requests from this client (code RATE_LIMITED), or the selection already has as many archives being built as one selection may have (code SELECTION_BUSY). Wait the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The server is building as many archives as it takes (code DOWNLOADS_BUSY). Try again after Retry-After seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listModels: {
         parameters: {
             query?: {
@@ -5382,7 +5576,7 @@ export const downloadFileChoiceValues: ReadonlyArray<FlattenedDeepRequired<compo
 export const downloadStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadStatus"]> = ["queued", "planning", "planned", "preparing", "ready", "blocked", "failed", "expired"];
 export const downloadSizeKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadSizeKind"]> = ["exact", "estimate", "unknown"];
 export const downloadFileAvailabilityValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileAvailability"]> = ["included", "linked", "unavailable", "changed-at-source"];
-export const downloadReasonCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadReasonCode"]> = ["over_copy_limit", "copy_failed", "copy_off", "not_checked_yet", "copied_after_planning", "stored_file_differs", "changed_at_source", "source_unreadable", "copy_not_in_storage", "copy_missing", "copy_differs"];
+export const downloadReasonCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadReasonCode"]> = ["over_copy_limit", "copy_failed", "copy_off", "not_checked_yet", "copied_after_planning", "stored_file_differs", "changed_at_source", "source_unreadable", "copy_not_in_storage", "copy_missing", "copy_differs", "read_failed"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];

@@ -29,6 +29,8 @@ type archiveSeed struct {
 	userID   string
 	clock    time.Time
 	content  map[uuid.UUID]string
+	// objects holds the S3 stub path of each file stored there.
+	objects map[uuid.UUID]string
 }
 
 func (a *archiveSeed) tick() time.Time {
@@ -83,6 +85,9 @@ func (a *archiveSeed) file(entryID, name, fileType, level, where, rcsbURL, conte
 		require.FailNow(a.t, "unknown seeded file location", where)
 	}
 	a.content[id] = content
+	if a.objects != nil && (where == "upload" || where == "copied") {
+		a.objects[id] = objectPath
+	}
 	return id
 }
 
@@ -599,4 +604,139 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	_, _, rows = openArchive(t, s3, built)
 	checkPreviewMatchesArchive(t, built, rows)
 	assert.True(t, built.PrepareRequested, output)
+}
+
+// downloadFailure is what the tests read of GET /v1/downloads/{id}/failures.
+type downloadFailure struct {
+	ID         string `json:"id"`
+	Attributes struct {
+		FileName   string `json:"file_name"`
+		ModelID    string `json:"model_id"`
+		Status     string `json:"status"`
+		ReasonCode string `json:"reason_code"`
+		Retryable  bool   `json:"retryable"`
+	} `json:"attributes"`
+}
+
+func readDownloadFailures(t *testing.T, baseURL string, id string) []downloadFailure {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/v1/downloads/"+id+"/failures", nil)
+	require.NoError(t, err)
+	request.Header.Set("Accept", jsonAPIMediaType)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, response.Body.Close()) }()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode, string(body))
+	var document struct {
+		Data []downloadFailure `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &document))
+	return document.Data
+}
+
+func Test_should_name_the_unread_file_and_retry_only_it_when_a_read_from_storage_fails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if os.Getenv(integrationRunEnv) != "1" {
+		t.Skip("set " + integrationRunEnv + "=1 to run integration tests")
+	}
+
+	// given the backend and the archive worker on a schema of their own, and an S3 stub
+	root := repoRoot(t)
+	backendBinaryPath := buildBackend(t, root)
+	workerBinaryPath := buildArchiveWorker(t, root)
+	database, schemaEnv := setupMigratedSchema(t, root)
+	auth := seedUserAndIssueToken(t, database)
+	s3 := newS3Stub(t)
+	defer s3.Close()
+	seed := &archiveSeed{t: t, database: database, s3: s3, userID: auth.UserID,
+		clock: time.Now().UTC().Add(-time.Hour), content: map[uuid.UUID]string{}, objects: map[uuid.UUID]string{}}
+
+	// and an entry with a Deposited model (coordinates, structure factors) and a Single Conformer
+	// model with its refinement log, whose copy in storage cannot be read for now
+	fasta := seed.file("e1", "4xyz.fasta", "fasta", "L1", "copied", "https://www.rcsb.org/fasta/entry/4XYZ", ">4XYZ\nMKV\n")
+	entry := seed.entry(map[string]any{"external_refs": map[string]any{"pdb": "4XYZ"}}, fasta)
+	coordinates := seed.file(entry, "4xyz.cif", "model", "L2", "copied", "https://files.rcsb.org/download/4XYZ.cif", "data_4XYZ\n")
+	structureFactors := seed.file(entry, "4xyz-sf.cif", "structure_factors", "L1", "copied",
+		"https://files.rcsb.org/download/4XYZ-sf.cif", "data_r4xyzsf\n")
+	deposited := seed.model(entry, 1, map[string]any{"model_type": "Deposited", "purpose": "Reference",
+		"external_refs": map[string]any{"pdb": "4XYZ"}}, coordinates, []uuid.UUID{structureFactors}, nil, nil)
+	single := seed.file(entry, "model.cif", "model", "L2", "upload", "", "data_single\n")
+	refineLog := seed.file(entry, "refine.log", "other", "L3", "upload", "", "refinement done\n")
+	singleConformer := seed.model(entry, 2, map[string]any{"model_type": "Single Conformer", "purpose": "Refinement"},
+		single, nil, nil, []uuid.UUID{single, refineLog})
+	s3.failReads(seed.objects[refineLog], true)
+
+	// and a saved selection of both models
+	backend := startBackendWithEnv(t, root, backendBinaryPath, s3.URL(), schemaEnv)
+	//nolint:bodyclose // createdID closes the response body.
+	selectionID := createdID(t, postJSON(t, backend.URL+"/v1/selections", auth.AccessToken,
+		map[string]any{"model_ids": []string{deposited.id, singleConformer.id}}), http.StatusCreated)
+	workerEnv := append([]string{"DYNAMIC_PDB_ARCHIVE_WORKER_FILE_READ_ATTEMPTS=1"}, schemaEnv...)
+
+	// when an archive of all files is built while the log cannot be read
+	//nolint:bodyclose // createdID closes the response body.
+	archiveID := createdID(t, postJSON(t, backend.URL+"/v1/downloads", auth.AccessToken,
+		map[string]any{"selection_id": selectionID, "file_choice": "all_files"}), http.StatusAccepted)
+	output := runArchiveWorker(t, root, workerBinaryPath, s3.URL(), workerEnv)
+
+	// then the archive is ready without the log, and names it as a file a retry can fetch
+	archive := readDownload(t, backend.URL, archiveID)
+	entries, _, rows := openArchive(t, s3, archive)
+	status, path := manifestStatus(rows, refineLog)
+	assert.Equal(t, "unavailable", status, output)
+	assert.Empty(t, path)
+	assert.Len(t, entries, 6, "README, the four other files and the manifest")
+	for _, row := range rows {
+		if row["file_id"] == refineLog.String() {
+			assert.Equal(t, "read_failed", row["reason_code"])
+		}
+	}
+	failures := readDownloadFailures(t, backend.URL, archiveID)
+	require.Len(t, failures, 1)
+	assert.Equal(t, refineLog.String(), failures[0].ID)
+	assert.Equal(t, "refine.log", failures[0].Attributes.FileName)
+	assert.Equal(t, singleConformer.id, failures[0].Attributes.ModelID)
+	assert.Equal(t, "read_failed", failures[0].Attributes.ReasonCode)
+	assert.True(t, failures[0].Attributes.Retryable)
+
+	// and the manifest accounts for every selected file
+	listed := map[string]bool{}
+	for _, row := range rows {
+		if row["record_type"] == "file" {
+			listed[row["file_id"]] = true
+		}
+	}
+	assert.Equal(t, map[string]bool{fasta.String(): true, coordinates.String(): true, structureFactors.String(): true,
+		single.String(): true, refineLog.String(): true}, listed)
+
+	// when storage answers again and the failed files are asked for again
+	s3.failReads(seed.objects[refineLog], false)
+	//nolint:bodyclose // createdID closes the response body.
+	retryID := createdID(t, postJSON(t, backend.URL+"/v1/downloads/"+archiveID+"/retry", auth.AccessToken, nil),
+		http.StatusAccepted)
+	output = runArchiveWorker(t, root, workerBinaryPath, s3.URL(), workerEnv)
+
+	// then the retry holds the log only, under a top folder of its own, and its manifest lists only it
+	retry := readDownload(t, backend.URL, retryID)
+	retryEntries, retryNames, retryRows := openArchive(t, s3, retry)
+	rootFolder := "dynamic-pdb-" + selectionID + "-retry-" + retryID
+	logPath := rootFolder + "/" + entry + "/" + singleConformer.id + "/refine.log"
+	assert.Equal(t, []string{rootFolder + "/README.txt", logPath, rootFolder + "/manifest.tsv"}, retryNames, output)
+	assert.Equal(t, "refinement done\n", retryEntries[logPath])
+	assert.Contains(t, retryEntries[rootFolder+"/README.txt"], "This archive completes archive "+archiveID)
+	require.Len(t, retryRows, 1)
+	assert.Equal(t, refineLog.String(), retryRows[0]["file_id"])
+	assert.Equal(t, "included", retryRows[0]["status"])
+	checkPreviewMatchesArchive(t, retry, retryRows)
+	assert.Empty(t, readDownloadFailures(t, backend.URL, retryID))
+
+	// and a request for the selection's archive still returns the first one
+	//nolint:bodyclose // createdID closes the response body.
+	again := createdID(t, postJSON(t, backend.URL+"/v1/downloads", auth.AccessToken,
+		map[string]any{"selection_id": selectionID, "file_choice": "all_files"}), http.StatusOK)
+	assert.Equal(t, archiveID, again)
 }

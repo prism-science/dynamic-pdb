@@ -425,11 +425,13 @@ type s3Stub struct {
 	parts map[string]map[int][]byte
 	// rejectParts answers every part upload with 400, which the CLI does not retry.
 	rejectParts bool
+	// failGets answers every read of these paths with 500, as a storage outage of one object.
+	failGets map[string]bool
 }
 
 func newS3Stub(t *testing.T) *s3Stub {
 	t.Helper()
-	stub := &s3Stub{bodies: make(map[string][]byte), parts: make(map[string]map[int][]byte)}
+	stub := &s3Stub{bodies: make(map[string][]byte), parts: make(map[string]map[int][]byte), failGets: map[string]bool{}}
 	stub.server = httptest.NewServer(http.HandlerFunc(stub.handle))
 	return stub
 }
@@ -503,7 +505,14 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet:
 		s.mu.Lock()
 		body, found := s.bodies[r.URL.Path]
+		failing := s.failGets[r.URL.Path]
 		s.mu.Unlock()
+		if failing {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusInternalServerError)
+			writeBody(w, `<Error><Code>InternalError</Code><Message>try again</Message></Error>`)
+			return
+		}
 		if !found {
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusNotFound)
@@ -514,6 +523,13 @@ func (s *s3Stub) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// failReads makes reads of the path answer 500 (fail true) or its body again (fail false).
+func (s *s3Stub) failReads(path string, fail bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failGets[path] = fail
 }
 
 func (s *s3Stub) recordPath(value string) {

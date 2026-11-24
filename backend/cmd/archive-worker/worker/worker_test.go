@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -188,7 +189,7 @@ func testConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
 		Lease: time.Minute, Heartbeat: 30 * time.Second, PollInterval: 10 * time.Millisecond, MaxAttempts: 3,
-		PageSize: 2, ScratchDir: t.TempDir(), ArchivePrefix: "downloads/", FileReadAttempts: 2,
+		PageSize: 2, ScratchDir: t.TempDir(), ArchivePrefix: "downloads/", FileReadAttempts: 2, MaxConsecutiveReadFailures: 5,
 		FileTimeout: time.Minute, JobTimeout: time.Hour, ArchiveTTL: 7 * 24 * time.Hour,
 	}
 }
@@ -233,8 +234,7 @@ func readArchive(t *testing.T, f *archiveFixture) ([]string, map[string]string, 
 	}
 	manifest, found := f.bucket.object(f.store.result.ManifestKey)
 	require.True(t, found)
-	root := "dynamic-pdb-" + f.store.job.SelectionID.String()
-	assert.Equal(t, string(manifest), files[root+"/manifest.tsv"], "the stored manifest equals the zip's")
+	assert.Equal(t, string(manifest), files[archiveRoot(f.store.job)+"/manifest.tsv"], "the stored manifest equals the zip's")
 	assert.Equal(t, int64(len(content)), f.store.result.ArchiveBytes)
 	assert.Equal(t, sha256Hex(string(content)), f.store.result.ArchiveSHA256)
 	return names, files, parseManifest(t, string(manifest))
@@ -696,7 +696,7 @@ func Test_should_stop_when_idle_only_when_asked_to(t *testing.T) {
 	assert.GreaterOrEqual(t, time.Since(started), 40*time.Millisecond, "without it the worker keeps polling until stopped")
 }
 
-func Test_should_try_the_read_again_and_then_requeue_the_job_when_a_read_stalls(t *testing.T) {
+func Test_should_try_the_read_again_and_then_list_the_file_as_read_failed_when_a_read_stalls(t *testing.T) {
 	// given a copy whose read answers and then sends nothing
 	f := newArchiveFixture(t, models.DownloadFileChoiceOriginalMMCIF)
 	copyKey, _ := f.bucket.StoredKey(*f.files["coord1"].Checksum.StoredURI)
@@ -708,9 +708,29 @@ func Test_should_try_the_read_again_and_then_requeue_the_job_when_a_read_stalls(
 	// when
 	runOnce(t, newTestWorker(t, f, cfg))
 
-	// then each read gave up after its timeout, and the attempt was requeued
+	// then each read gave up after its timeout, and the archive was built without that file
 	assert.Less(t, time.Since(started), 5*time.Second)
-	assert.Equal(t, "the archive could not be written to storage", f.store.requeued)
+	_, _, rows := readArchive(t, f)
+	row := fileRows(rows, f.files["coord1"].ID)[0]
+	assert.Equal(t, "unavailable", row["status"])
+	assert.Equal(t, "read_failed", row["reason_code"])
+	assert.Equal(t, 1, f.store.result.Counts.Included, "the other files are still included")
+}
+
+func Test_should_requeue_the_job_when_files_fail_to_read_too_many_times_in_a_row(t *testing.T) {
+	// given a bucket whose reads all stall, and a worker that takes 1 failure in a row for down
+	f := newArchiveFixture(t, models.DownloadFileChoiceOriginalMMCIF)
+	copyKey, _ := f.bucket.StoredKey(*f.files["coord1"].Checksum.StoredURI)
+	f.bucket.stalled[copyKey] = true
+	cfg := testConfig(t)
+	cfg.FileTimeout = 20 * time.Millisecond
+	cfg.MaxConsecutiveReadFailures = 1
+
+	// when
+	runOnce(t, newTestWorker(t, f, cfg))
+
+	// then the whole attempt is tried again later
+	assert.Equal(t, "the archive's files could not be read from Dynamic PDB's storage", f.store.requeued)
 	assert.Nil(t, f.store.result)
 }
 
@@ -731,4 +751,63 @@ func Test_should_requeue_the_job_saying_so_when_an_attempt_runs_past_its_time(t 
 	// then
 	assert.Equal(t, "the archive took longer than one attempt may take", f.store.requeued)
 	assert.False(t, f.store.released, "a timed-out attempt counts, unlike a stopped worker's")
+}
+
+// fullDisk is a scratch file whose disk takes no more bytes: every write fails as a full disk does.
+type fullDisk struct {
+	scratchStore
+}
+
+func (fullDisk) Write([]byte) (int, error) {
+	return 0, syscall.ENOSPC
+}
+
+// countingBucket serves the same bytes at every key and counts the reads.
+type countingBucket struct {
+	content []byte
+	opens   int
+}
+
+func (b *countingBucket) Open(context.Context, string) (io.ReadCloser, error) {
+	b.opens++
+	return io.NopCloser(bytes.NewReader(b.content)), nil
+}
+
+func Test_should_fail_staging_at_once_without_reading_again_when_the_scratch_disk_is_full(t *testing.T) {
+	// given a scratch file on a full disk, and a bucket that serves the file
+	scratch, err := newScratchFile(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, scratch.close()) })
+	scratch.file = fullDisk{scratchStore: scratch.file}
+	bucket := &countingBucket{content: []byte("coordinates")}
+
+	// when
+	_, err = scratch.stage(context.Background(), bucket, "models/1abc.cif", 3, time.Minute, time.Millisecond)
+
+	// then the error is the disk's, and the bucket was read once
+	require.ErrorIs(t, err, errScratchDisk)
+	require.ErrorIs(t, err, syscall.ENOSPC)
+	assert.Equal(t, 1, bucket.opens, "a full disk is not the read's fault, so the read is not tried again")
+}
+
+func Test_should_requeue_the_job_and_list_no_file_as_read_failed_when_the_scratch_disk_is_full(t *testing.T) {
+	// given a bucket that serves every file, and a worker whose scratch disk is full
+	f := newArchiveFixture(t, models.DownloadFileChoiceOriginalMMCIF)
+	worker := newTestWorker(t, f, testConfig(t))
+	worker.newScratch = func(dir string) (*scratchFile, error) {
+		scratch, err := newScratchFile(dir)
+		if err != nil {
+			return nil, err
+		}
+		scratch.file = fullDisk{scratchStore: scratch.file}
+		return scratch, nil
+	}
+
+	// when
+	runOnce(t, worker)
+
+	// then the attempt is tried again later, saying why; no archive is ready with a read_failed file
+	assert.Equal(t, "the archive worker could not hold a file on its disk", f.store.requeued)
+	assert.Nil(t, f.store.result)
+	assert.Equal(t, 1, f.store.job.FailedAttempts)
 }

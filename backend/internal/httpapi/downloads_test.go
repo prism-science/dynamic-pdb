@@ -54,9 +54,14 @@ func Test_should_answer_404_on_every_downloads_route_when_downloads_are_off(t *t
 	server.GetDownload(get, httptest.NewRequest(http.MethodGet, "/v1/downloads/x", nil), uuid.NewString())
 	prepare := httptest.NewRecorder()
 	server.PrepareDownload(prepare, httptest.NewRequest(http.MethodPost, "/v1/downloads/x/prepare", nil), uuid.NewString())
+	failures := httptest.NewRecorder()
+	server.ListDownloadFailures(failures, httptest.NewRequest(http.MethodGet, "/v1/downloads/x/failures", nil),
+		uuid.NewString(), ListDownloadFailuresParams{})
+	retry := httptest.NewRecorder()
+	server.RetryDownload(retry, httptest.NewRequest(http.MethodPost, "/v1/downloads/x/retry", nil), uuid.NewString())
 
 	// then
-	for _, recorder := range []*httptest.ResponseRecorder{create, get, prepare} {
+	for _, recorder := range []*httptest.ResponseRecorder{create, get, prepare, failures, retry} {
 		assert.Equal(t, http.StatusNotFound, recorder.Code)
 		errs := decodeErrorObjects(t, recorder)
 		require.Len(t, errs, 1)
@@ -161,10 +166,16 @@ func Test_should_answer_404_when_a_download_id_is_not_a_uuid(t *testing.T) {
 	// when
 	downloadsTestServer(1000).GetDownload(recorder, httptest.NewRequest(http.MethodGet, "/v1/downloads/x", nil), "not-a-uuid")
 	downloadsTestServer(1000).PrepareDownload(prepare, newDownloadRequest(``), "not-a-uuid")
+	failures := httptest.NewRecorder()
+	downloadsTestServer(1000).ListDownloadFailures(failures, httptest.NewRequest(http.MethodGet, "/v1/downloads/x/failures", nil),
+		"not-a-uuid", ListDownloadFailuresParams{})
+	retry := httptest.NewRecorder()
+	downloadsTestServer(1000).RetryDownload(retry, newDownloadRequest(``), "not-a-uuid")
 
 	// then
-	assert.Equal(t, http.StatusNotFound, recorder.Code)
-	assert.Equal(t, http.StatusNotFound, prepare.Code)
+	for _, answered := range []*httptest.ResponseRecorder{recorder, prepare, failures, retry} {
+		assert.Equal(t, http.StatusNotFound, answered.Code)
+	}
 }
 
 func readyDownloadJob(expiresAt time.Time) domainmodels.DownloadJob {
@@ -416,4 +427,84 @@ func Test_should_say_the_preview_is_over_the_limit_when_its_included_bytes_pass_
 	// then
 	require.NoError(t, err)
 	assert.True(t, document.Data.Attributes.Preview.OverLimit)
+}
+
+func Test_should_answer_each_status_and_code_when_a_retry_fails(t *testing.T) {
+	// given
+	cases := []struct {
+		err        error
+		status     int
+		code       string
+		retryAfter bool
+	}{
+		{fmt.Errorf("retry download: %w", db.ErrDownloadNotFound), http.StatusNotFound, "NOT_FOUND", false},
+		{fmt.Errorf("retry download: %w", db.ErrDownloadNotRetryable), http.StatusConflict, "DOWNLOAD_NOT_RETRYABLE", false},
+		{fmt.Errorf("retry download: %w", db.ErrDownloadNothingToRetry), http.StatusConflict, "NOTHING_TO_RETRY", false},
+		{fmt.Errorf("retry download: %w", db.ErrDownloadSelectionBusy), http.StatusTooManyRequests, "SELECTION_BUSY", true},
+		{fmt.Errorf("retry download: %w", db.ErrDownloadsBusy), http.StatusServiceUnavailable, "DOWNLOADS_BUSY", true},
+		{errors.New("connection refused"), http.StatusInternalServerError, "INTERNAL_ERROR", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			// when
+			recorder := httptest.NewRecorder()
+			downloadsTestServer(1000).writeDownloadRetryError(recorder, newDownloadRequest(``), tc.err)
+
+			// then
+			assert.Equal(t, tc.status, recorder.Code)
+			assert.Equal(t, tc.code, *decodeErrorObjects(t, recorder)[0].Code)
+			assert.Equal(t, tc.retryAfter, recorder.Header().Get("Retry-After") != "")
+		})
+	}
+}
+
+func Test_should_show_the_reason_and_whether_a_retry_fetches_it_when_a_failure_is_answered(t *testing.T) {
+	// given
+	failure := domainmodels.DownloadFailure{
+		JobID: uuid.New(), FileID: uuid.MustParse("6f1c4a2e-0000-4000-8000-0000000000cc"), Ordinal: 3,
+		EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_003", FileName: "refine.log",
+		ReasonCode: domainmodels.DownloadReasonReadFailed, Retryable: true,
+	}
+
+	// when
+	data, err := downloadFailureData(failure)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "download-failures", data.Type)
+	assert.Equal(t, "6f1c4a2e-0000-4000-8000-0000000000cc", data.Id)
+	assert.Equal(t, DownloadFailureAttributes{
+		FileId: failure.FileID, FileName: "refine.log", EntryId: "dpdb_e1", ModelId: "dpdb_e1_m_003",
+		Status: DownloadFileAvailabilityUnavailable, ReasonCode: DownloadReasonCodeReadFailed,
+		Reason:    "Dynamic PDB's copy could not be read while the archive was prepared; ask for the failed files again",
+		Retryable: true,
+	}, data.Attributes)
+
+	// and an unknown code fails loudly
+	failure.ReasonCode = "lost"
+	_, err = downloadFailureData(failure)
+	require.ErrorContains(t, err, "unknown download reason code")
+}
+
+func Test_should_link_the_failures_and_name_the_parent_when_a_retry_is_answered(t *testing.T) {
+	// given a ready retry with no retryable failure left
+	job := readyDownloadJob(downloadsTestNow.Add(time.Hour))
+	parent := uuid.MustParse("6f1c4a2e-0000-4000-8000-0000000000dd")
+	job.RetryOf = &parent
+	job.RetryableFiles = ptr(0)
+
+	// when
+	document, err := downloadsTestServer(1000).downloadDocument(job)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, &parent, document.Data.Attributes.RetryOf)
+	assert.Equal(t, 0, *document.Data.Attributes.RetryableFiles)
+	assert.Equal(t, "https://dynamicpdb.test/api/v1/downloads/6f1c4a2e-0000-4000-8000-0000000000aa/failures",
+		*document.Data.Links.Failures)
+	data, err := json.Marshal(document)
+	require.NoError(t, err)
+	for _, key := range []string{`"retry_of":"6f1c4a2e-0000-4000-8000-0000000000dd"`, `"retryable_files":0`, `"failures":"`} {
+		assert.Contains(t, string(data), key)
+	}
 }

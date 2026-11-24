@@ -149,6 +149,17 @@ type fakeStore struct {
 	failed        string
 	requeued      string
 	released      bool
+	// retryFiles are what RetryFileIDs answers for the job's retry_of.
+	retryFiles map[uuid.UUID]bool
+}
+
+func (s *fakeStore) RetryFileIDs(_ context.Context, jobID uuid.UUID) (map[uuid.UUID]bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.job.RetryOf == nil || jobID != *s.job.RetryOf {
+		return nil, fmt.Errorf("download %s has no retry here", jobID)
+	}
+	return s.retryFiles, nil
 }
 
 func (s *fakeStore) Claim(_ context.Context, lane db.DownloadLane, now, leaseUntil time.Time) (*models.DownloadJob, error) {

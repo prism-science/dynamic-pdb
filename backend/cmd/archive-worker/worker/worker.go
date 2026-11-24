@@ -44,8 +44,12 @@ type Config struct {
 	ScratchDir string `mapstructure:"scratch_dir"`
 	// ArchivePrefix is the bucket folder of the archives; the lifecycle rule expires it.
 	ArchivePrefix string `mapstructure:"archive_prefix"`
-	// FileReadAttempts is how many times reading one file from the bucket is tried.
+	// FileReadAttempts is how many times reading one file from the bucket is tried. A file still
+	// unreadable after them is listed as read_failed, and a retry may fetch it.
 	FileReadAttempts int `mapstructure:"file_read_attempts"`
+	// MaxConsecutiveReadFailures is how many files in a row may fail to read before the worker
+	// takes the bucket for down and tries the whole attempt again later.
+	MaxConsecutiveReadFailures int `mapstructure:"max_consecutive_read_failures"`
 	// FileTimeout bounds one read of one file from the bucket, so a stalled read is tried again
 	// instead of holding the job while its heartbeat keeps the lease.
 	FileTimeout time.Duration `mapstructure:"file_timeout"`
@@ -75,6 +79,8 @@ func (c Config) validate() error {
 		return errors.New("archive_prefix must be a folder ending in /")
 	case c.FileReadAttempts <= 0:
 		return errors.New("file_read_attempts must be positive")
+	case c.MaxConsecutiveReadFailures <= 0:
+		return errors.New("max_consecutive_read_failures must be positive")
 	case c.FileTimeout <= 0 || c.JobTimeout <= c.FileTimeout:
 		return errors.New("file_timeout must be positive and shorter than job_timeout")
 	case c.ArchiveTTL <= 0:
@@ -90,6 +96,8 @@ type JobStore interface {
 	Heartbeat(ctx context.Context, id uuid.UUID, attempt int, leaseUntil time.Time) error
 	FinishPlanning(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview) error
 	UpdatePlan(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview) error
+	// RetryFileIDs returns the files a retry of the job asks for again.
+	RetryFileIDs(ctx context.Context, jobID uuid.UUID) (map[uuid.UUID]bool, error)
 	Block(ctx context.Context, id uuid.UUID, attempt int, plannedBytes int64, preview models.DownloadPreview,
 		reason string, now time.Time) error
 	Finish(ctx context.Context, id uuid.UUID, attempt int, result db.DownloadResult, now, expiresAt time.Time) error
@@ -120,6 +128,10 @@ var errLeaseLost = errors.New("the job's lease was lost")
 // errJobTimedOut ends an attempt that ran past JobTimeout.
 var errJobTimedOut = errors.New("the archive took longer than one attempt may take")
 
+// errStorageUnreadable ends an attempt whose files failed to read MaxConsecutiveReadFailures times in
+// a row: the bucket is taken for down, and the whole attempt is tried again later.
+var errStorageUnreadable = errors.New("the archive's files could not be read from Dynamic PDB's storage")
+
 // releaseTimeout bounds putting a job back in the queue after the worker was told to stop.
 const releaseTimeout = 10 * time.Second
 
@@ -136,6 +148,8 @@ type Worker struct {
 	now        func() time.Time
 	// firstReadPause is the pause before retrying a failed read from the bucket.
 	firstReadPause time.Duration
+	// newScratch creates the scratch file an attempt stages each file in.
+	newScratch func(dir string) (*scratchFile, error)
 }
 
 func New(jobs JobStore, selections SelectionReader, bucket Bucket, cfg Config, logger *slog.Logger) (*Worker, error) {
@@ -153,6 +167,7 @@ func New(jobs JobStore, selections SelectionReader, bucket Bucket, cfg Config, l
 		logger:         logger,
 		now:            func() time.Time { return time.Now().UTC() },
 		firstReadPause: time.Second,
+		newScratch:     newScratchFile,
 	}, nil
 }
 
@@ -305,6 +320,10 @@ func publicError(err error) string {
 	switch {
 	case errors.Is(err, errJobTimedOut):
 		return errJobTimedOut.Error()
+	case errors.Is(err, errStorageUnreadable):
+		return errStorageUnreadable.Error()
+	case errors.Is(err, errScratchDisk):
+		return errScratchDisk.Error()
 	case errors.Is(err, db.ErrSelectionNotFound):
 		return "the selection could not be read"
 	default:
@@ -365,7 +384,11 @@ func (w *Worker) work(ctx context.Context, lane db.DownloadLane, job models.Down
 // planJob plans the job and records its preview, or blocks it when its files add up to more than
 // its limit.
 func (w *Worker) planJob(ctx context.Context, job models.DownloadJob, logger *slog.Logger) error {
-	plan, err := w.plan(ctx, job)
+	only, err := w.retryFiles(ctx, job)
+	if err != nil {
+		return err
+	}
+	plan, err := w.plan(ctx, job, only)
 	if err != nil {
 		return fmt.Errorf("plan: %w", err)
 	}
@@ -400,7 +423,11 @@ func (w *Worker) buildJob(ctx context.Context, job models.DownloadJob, logger *s
 	if err != nil {
 		return fmt.Errorf("read selection: %w", err)
 	}
-	plan, err := w.plan(ctx, job)
+	only, err := w.retryFiles(ctx, job)
+	if err != nil {
+		return err
+	}
+	plan, err := w.plan(ctx, job, only)
 	if err != nil {
 		return fmt.Errorf("plan: %w", err)
 	}
@@ -422,8 +449,9 @@ func (w *Worker) buildJob(ctx context.Context, job models.DownloadJob, logger *s
 		CatalogDate: selection.CreatedAt,
 		FileChoice:  job.FileChoice,
 		PreparedAt:  w.now(),
+		RetryOf:     job.RetryOf,
 	}
-	result, err := w.write(ctx, job, header, plan, logger)
+	result, err := w.write(ctx, job, header, plan, only, logger)
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -433,8 +461,22 @@ func (w *Worker) buildJob(ctx context.Context, job models.DownloadJob, logger *s
 	}
 	logger.Info("archive ready", "archive_bytes", result.ArchiveBytes, "planned_bytes", plan.bytes,
 		"included", result.Counts.Included, "linked", result.Counts.Linked,
-		"unavailable", result.Counts.Unavailable, "changed_at_source", result.Counts.ChangedAtSource)
+		"unavailable", result.Counts.Unavailable, "changed_at_source", result.Counts.ChangedAtSource,
+		"failures", len(result.Failures))
 	return nil
+}
+
+// retryFiles returns the files a retry job asks for again, or nil for a job of the whole
+// selection.
+func (w *Worker) retryFiles(ctx context.Context, job models.DownloadJob) (map[uuid.UUID]bool, error) {
+	if job.RetryOf == nil {
+		return nil, nil
+	}
+	files, err := w.jobs.RetryFileIDs(ctx, *job.RetryOf)
+	if err != nil {
+		return nil, fmt.Errorf("read the files to retry: %w", err)
+	}
+	return files, nil
 }
 
 // samePlan reports whether a new plan equals the one the job recorded when it was planned.
@@ -470,10 +512,10 @@ func (plan archivePlan) overLimit() bool {
 	return plan.bytes > plan.maxArchiveBytes
 }
 
-// plan walks all of the selection's pinned files, as the writing walk will, and adds up the bytes
-// of the files the zip can include and the preview.
-func (w *Worker) plan(ctx context.Context, job models.DownloadJob) (archivePlan, error) {
-	collector, err := newPreviewCollector(job, w.bucket)
+// plan walks all of the selection's pinned files (only those of a retry), as the writing walk will,
+// and adds up the bytes of the files the zip can include and the preview.
+func (w *Worker) plan(ctx context.Context, job models.DownloadJob, only map[uuid.UUID]bool) (archivePlan, error) {
+	collector, err := newPreviewCollector(job, w.bucket, only)
 	if err != nil {
 		return archivePlan{}, err
 	}
@@ -553,6 +595,11 @@ type archiveWrite struct {
 	statuses map[uuid.UUID]availability
 	walk     *modelWalk
 	logger   *slog.Logger
+	// failures are the files listed as unavailable or changed-at-source, in the order they first
+	// appear.
+	failures []models.DownloadFailure
+	// readFailuresInARow counts the files that failed to read since the last one that did not.
+	readFailuresInARow int
 }
 
 // write streams the zip into the bucket: README.txt, every included file at its path, then
@@ -562,6 +609,7 @@ func (w *Worker) write(
 	job models.DownloadJob,
 	header manifestHeader,
 	plan archivePlan,
+	only map[uuid.UUID]bool,
 	logger *slog.Logger,
 ) (db.DownloadResult, error) {
 	// Each attempt writes under a folder of its own: an attempt that lost its lease but still
@@ -583,7 +631,7 @@ func (w *Worker) write(
 	if err != nil {
 		return db.DownloadResult{}, err
 	}
-	scratch, err := newScratchFile(w.cfg.ScratchDir)
+	scratch, err := w.newScratch(w.cfg.ScratchDir)
 	if err != nil {
 		return db.DownloadResult{}, err
 	}
@@ -606,7 +654,7 @@ func (w *Worker) write(
 		}
 	}()
 
-	layout := newArchiveLayout(job.SelectionID)
+	layout := newArchiveLayout(archiveRoot(job))
 	for _, folder := range plan.modelFolders {
 		layout.reserveFolder(folder)
 	}
@@ -618,7 +666,7 @@ func (w *Worker) write(
 		layout:   layout,
 		outcomes: map[uuid.UUID]fileOutcome{},
 		statuses: map[uuid.UUID]availability{},
-		walk:     newModelWalk(job.FileChoice),
+		walk:     newModelWalk(job.FileChoice, only),
 		logger:   logger,
 	}
 	if err := state.zip.add(layout.root+"/README.txt", strings.NewReader(readmeText(header))); err != nil {
@@ -670,6 +718,7 @@ func (w *Worker) write(
 		ManifestKey:   manifestKey,
 		ManifestURL:   manifestURL,
 		Counts:        counts,
+		Failures:      state.failures,
 	}, nil
 }
 
@@ -704,9 +753,35 @@ func (w *Worker) writeModel(
 		if err != nil {
 			return nil, err
 		}
+		if _, listed := state.statuses[row.file.ID]; !listed {
+			if err := state.recordFailure(model, row.file, outcome); err != nil {
+				return nil, err
+			}
+		}
 		state.statuses[row.file.ID] = outcome.availability
 		return fileRow(model, details, row, outcome, w.bucket)
 	}, state.manifest.write)
+}
+
+// recordFailure keeps a file the archive lists as unavailable or changed-at-source, the first
+// time it appears; included and linked files are not failures.
+func (state *archiveWrite) recordFailure(model models.SelectionModel, file models.SelectionFile, outcome fileOutcome) error {
+	switch outcome.availability {
+	case availabilityIncluded, availabilityLinked:
+		return nil
+	case availabilityUnavailable, availabilityChangedAtSource:
+	default:
+		return fmt.Errorf("file %s: unknown availability: %s", file.ID, outcome.availability)
+	}
+	retryable, err := outcome.reasonCode.Retryable()
+	if err != nil {
+		return fmt.Errorf("file %s: %w", file.ID, err)
+	}
+	state.failures = append(state.failures, models.DownloadFailure{
+		JobID: state.job.ID, FileID: file.ID, Ordinal: model.Ordinal, EntryID: model.EntryID, ModelID: model.ModelID,
+		FileName: file.Name, ReasonCode: outcome.reasonCode, Retryable: retryable,
+	})
+	return nil
 }
 
 // modelRows lists one model in the manifest: a row per file of the file choice (fileRowOf builds
@@ -732,6 +807,10 @@ func modelRows(
 		if err := write(row); err != nil {
 			return err
 		}
+	}
+	if walk.only != nil {
+		// A retry lists only the files it asks for again.
+		return nil
 	}
 	if !matched {
 		reason, err := noMatchingFileReason(walk.choice)
@@ -815,6 +894,7 @@ func fileRow(
 	row["status"] = string(outcome.availability)
 	row["verification"] = string(outcome.verification)
 	row["reason"] = reason
+	row["reason_code"] = string(outcome.reasonCode)
 	row["path_in_archive"] = outcome.path
 	if outcome.verifiedAt != nil {
 		row["verified_at"] = outcome.verifiedAt.UTC().Format(time.RFC3339)
@@ -836,6 +916,7 @@ func (w *Worker) includeFile(
 	staged, err := state.scratch.stage(ctx, w.bucket, fileState.key, w.cfg.FileReadAttempts, w.cfg.FileTimeout,
 		w.firstReadPause)
 	if errors.Is(err, errStoredCopyMissing) {
+		state.readFailuresInARow = 0
 		state.logger.Error("archive left out a file: our copy is missing", "file_id", file.ID, "key", fileState.key)
 		return fileOutcome{
 			availability: availabilityUnavailable,
@@ -843,9 +924,29 @@ func (w *Worker) includeFile(
 			reasonCode:   models.DownloadReasonCopyMissing,
 		}, nil
 	}
-	if err != nil {
+	if errors.Is(err, errScratchDisk) {
+		// The worker's own disk failed, not our copy: the attempt fails and is tried again, and a
+		// file the bucket served is never listed as read_failed.
 		return fileOutcome{}, err
 	}
+	if err != nil {
+		if ctx.Err() != nil {
+			// The worker is stopping, lost its lease or ran out of time: not this file's fault.
+			return fileOutcome{}, err
+		}
+		state.readFailuresInARow++
+		if state.readFailuresInARow >= w.cfg.MaxConsecutiveReadFailures {
+			return fileOutcome{}, fmt.Errorf("%w: %d files in a row: %w", errStorageUnreadable, state.readFailuresInARow, err)
+		}
+		state.logger.Error("archive left out a file: our copy could not be read", "file_id", file.ID,
+			"key", fileState.key, "err", err)
+		return fileOutcome{
+			availability: availabilityUnavailable,
+			verification: verificationNotVerified,
+			reasonCode:   models.DownloadReasonReadFailed,
+		}, nil
+	}
+	state.readFailuresInARow = 0
 	recorded := strings.ToLower(strings.TrimSpace(stringValue(file.RecordedSHA256)))
 	if staged.sha256 != recorded || staged.size != fileState.sizeBytes {
 		state.logger.Error("archive left out a file: our copy differs from its record",

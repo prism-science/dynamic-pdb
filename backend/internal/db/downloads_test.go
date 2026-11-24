@@ -533,3 +533,121 @@ func Test_should_read_the_pinned_revisions_values_when_manifest_details_are_read
 	assert.Equal(t, ptr("2DEF"), details[2].ModelPDBID)
 	assert.Nil(t, details[2].Authors)
 }
+
+// finishWithFailures takes an asked-for job through both lanes and finishes it with failures.
+func (f *downloadsTestDB) finishWithFailures(
+	t *testing.T,
+	jobID uuid.UUID,
+	now, expiresAt time.Time,
+	failures []models.DownloadFailure,
+) {
+	t.Helper()
+	ctx := context.Background()
+	f.plan(t, jobID, now)
+	claimed, err := f.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, jobID, claimed.ID)
+	result := archiveResult()
+	result.Failures = failures
+	require.NoError(t, f.database.FinishDownload(ctx, jobID, claimed.Attempts, result, now, expiresAt))
+}
+
+func failureOf(jobID uuid.UUID, ordinal int, code models.DownloadReasonCode) models.DownloadFailure {
+	retryable, _ := code.Retryable()
+	return models.DownloadFailure{
+		JobID: jobID, FileID: uuid.New(), Ordinal: ordinal, EntryID: "dpdb_e1", ModelID: "dpdb_e1_m_001",
+		FileName: "file.cif", ReasonCode: code, Retryable: retryable,
+	}
+}
+
+func Test_should_list_the_failures_in_selection_order_when_an_archive_finished_with_some(t *testing.T) {
+	// given a ready archive with three failures, one retryable
+	fixture := newDownloadsTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	job, _, err := fixture.create(t, fixture.selection(t), models.DownloadFileChoiceAllFiles, now)
+	require.NoError(t, err)
+	failures := []models.DownloadFailure{
+		failureOf(job.ID, 3, models.DownloadReasonChangedAtSource),
+		failureOf(job.ID, 1, models.DownloadReasonReadFailed),
+		failureOf(job.ID, 2, models.DownloadReasonCopyDiffers),
+	}
+	fixture.finishWithFailures(t, job.ID, now, now.Add(time.Hour), failures)
+
+	// when
+	first, err := fixture.database.Downloads.Failures(ctx, job.ID, nil, 2)
+	require.NoError(t, err)
+	rest, err := fixture.database.Downloads.Failures(ctx, job.ID,
+		&db.DownloadFailurePosition{Ordinal: first[1].Ordinal, FileID: first[1].FileID}, 2)
+	require.NoError(t, err)
+
+	// then
+	require.Len(t, first, 2)
+	assert.Equal(t, failures[1], first[0])
+	assert.Equal(t, failures[2], first[1])
+	assert.Equal(t, []models.DownloadFailure{failures[0]}, rest)
+	ready, err := fixture.database.Downloads.Get(ctx, job.ID)
+	require.NoError(t, err)
+	require.NotNil(t, ready.RetryableFiles)
+	assert.Equal(t, 1, *ready.RetryableFiles)
+	retry, err := fixture.database.Downloads.RetryFileIDs(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, map[uuid.UUID]bool{failures[1].FileID: true}, retry)
+
+	// and a failure whose retryable flag contradicts its code is refused
+	_, err = fixture.sql.Exec(`insert into download_failures
+	    (job_id, file_id, ordinal, entry_id, model_id, file_name, reason_code, retryable)
+	    values ($1, $2, 1, 'e', 'm', 'f', 'copy_missing', true)`, job.ID, uuid.New())
+	require.ErrorContains(t, err, "download_failures_retryable_check")
+}
+
+func Test_should_build_a_retry_of_the_failed_files_only_when_a_ready_archive_has_some(t *testing.T) {
+	// given a ready archive with a retryable failure
+	fixture := newDownloadsTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	selectionID := fixture.selection(t)
+	parent, _, err := fixture.create(t, selectionID, models.DownloadFileChoiceAllFiles, now)
+	require.NoError(t, err)
+	fixture.finishWithFailures(t, parent.ID, now, now.Add(time.Hour),
+		[]models.DownloadFailure{failureOf(parent.ID, 1, models.DownloadReasonReadFailed)})
+	clean, _, err := fixture.create(t, selectionID, models.DownloadFileChoiceOriginalMMCIF, now)
+	require.NoError(t, err)
+	fixture.finishWithFailures(t, clean.ID, now, now.Add(time.Hour),
+		[]models.DownloadFailure{failureOf(clean.ID, 1, models.DownloadReasonCopyMissing)})
+	retry := func(parentID uuid.UUID, at time.Time) (*models.DownloadJob, bool, error) {
+		return fixture.database.CreateDownloadRetry(ctx, db.DownloadRetry{
+			ID: uuid.New(), ParentID: parentID, DownloadCaps: testDownloadCaps, Now: at})
+	}
+
+	// when
+	created, isNew, err := retry(parent.ID, now)
+
+	// then a queued job of the same selection and choice names its parent, and asking again returns it
+	require.NoError(t, err)
+	assert.True(t, isNew)
+	require.NotNil(t, created.RetryOf)
+	assert.Equal(t, parent.ID, *created.RetryOf)
+	assert.Equal(t, selectionID, created.SelectionID)
+	assert.Equal(t, models.DownloadFileChoiceAllFiles, created.FileChoice)
+	assert.True(t, created.PrepareRequested)
+	again, isNewAgain, err := retry(parent.ID, now)
+	require.NoError(t, err)
+	assert.False(t, isNewAgain)
+	assert.Equal(t, created.ID, again.ID)
+
+	// and a request for the selection's archive still returns the parent, never the retry
+	same, _, err := fixture.create(t, selectionID, models.DownloadFileChoiceAllFiles, now)
+	require.NoError(t, err)
+	assert.Equal(t, parent.ID, same.ID)
+
+	// and a retry is refused for an unknown, unready, expired or failure-free archive
+	_, _, err = retry(uuid.New(), now)
+	require.ErrorIs(t, err, db.ErrDownloadNotFound)
+	_, _, err = retry(created.ID, now)
+	require.ErrorIs(t, err, db.ErrDownloadNotRetryable, "the retry itself is not ready yet")
+	_, _, err = retry(parent.ID, now.Add(2*time.Hour))
+	require.ErrorIs(t, err, db.ErrDownloadNotRetryable, "expired")
+	_, _, err = retry(clean.ID, now)
+	require.ErrorIs(t, err, db.ErrDownloadNothingToRetry)
+}

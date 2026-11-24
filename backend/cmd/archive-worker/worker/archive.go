@@ -96,10 +96,36 @@ type objectReader interface {
 // errStoredCopyMissing means the bucket has no object at a key the record names.
 var errStoredCopyMissing = errors.New("our copy of the file is missing")
 
+// errScratchDisk means the worker's own scratch disk failed (full, for example) while it held a
+// file. It is not the file's fault: the attempt fails, and the file is never listed as read_failed.
+var errScratchDisk = errors.New("the archive worker could not hold a file on its disk")
+
+// scratchStore is where a scratch file's bytes live: an *os.File, or one that fails in tests.
+type scratchStore interface {
+	io.ReadWriteSeeker
+	Truncate(size int64) error
+	Close() error
+	Name() string
+}
+
 // scratchFile holds one file's bytes on local disk while they are checked, so a file whose bytes
 // differ from its record never reaches the zip.
 type scratchFile struct {
-	file *os.File
+	file scratchStore
+}
+
+// scratchWriter writes to the scratch file and marks its errors errScratchDisk, so a failing disk
+// is told apart from a failing read of the object.
+type scratchWriter struct {
+	file scratchStore
+}
+
+func (w scratchWriter) Write(p []byte) (int, error) {
+	written, err := w.file.Write(p)
+	if err != nil {
+		return written, fmt.Errorf("%w: write scratch file: %w", errScratchDisk, err)
+	}
+	return written, nil
 }
 
 func newScratchFile(dir string) (*scratchFile, error) {
@@ -117,8 +143,9 @@ type stagedBytes struct {
 }
 
 // stage copies the object at key into the scratch file and hashes it. A missing object is
-// errStoredCopyMissing at once; any other read error, a read that takes longer than timeout
-// included, is tried again, attempts times in all, with a pause that doubles from firstPause.
+// errStoredCopyMissing and a failing scratch disk errScratchDisk, both at once; any other read
+// error, a read that takes longer than timeout included, is tried again, attempts times in all,
+// with a pause that doubles from firstPause.
 func (s *scratchFile) stage(
 	ctx context.Context,
 	bucket objectReader,
@@ -136,6 +163,8 @@ func (s *scratchFile) stage(
 			return staged, nil
 		case errors.Is(err, cdn.ErrObjectNotFound):
 			return stagedBytes{}, fmt.Errorf("%w: %s", errStoredCopyMissing, key)
+		case errors.Is(err, errScratchDisk):
+			return stagedBytes{}, fmt.Errorf("stage %s: %w", key, err)
 		case ctx.Err() != nil:
 			return stagedBytes{}, fmt.Errorf("stage %s: %w", key, ctx.Err())
 		}
@@ -161,10 +190,10 @@ func (s *scratchFile) stageOnce(ctx context.Context, bucket objectReader, key st
 		return stagedBytes{}, fmt.Errorf("open object: %w", err)
 	}
 	hasher := sha256.New()
-	size, copyErr := io.Copy(io.MultiWriter(s.file, hasher), reader)
+	size, copyErr := io.Copy(io.MultiWriter(scratchWriter{file: s.file}, hasher), reader)
 	closeErr := reader.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
-		return stagedBytes{}, fmt.Errorf("read object: %w", err)
+		return stagedBytes{}, fmt.Errorf("copy object to scratch file: %w", err)
 	}
 	if err := s.rewind(false); err != nil {
 		return stagedBytes{}, err
@@ -176,11 +205,11 @@ func (s *scratchFile) stageOnce(ctx context.Context, bucket objectReader, key st
 func (s *scratchFile) rewind(truncate bool) error {
 	if truncate {
 		if err := s.file.Truncate(0); err != nil {
-			return fmt.Errorf("empty scratch file: %w", err)
+			return fmt.Errorf("%w: empty scratch file: %w", errScratchDisk, err)
 		}
 	}
 	if _, err := s.file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("rewind scratch file: %w", err)
+		return fmt.Errorf("%w: rewind scratch file: %w", errScratchDisk, err)
 	}
 	return nil
 }

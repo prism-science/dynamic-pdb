@@ -36,6 +36,7 @@ func readConfig(filename string) (config, error) {
 	v.SetDefault("archive_worker::scratch_dir", "")
 	v.SetDefault("archive_worker::archive_prefix", "downloads/")
 	v.SetDefault("archive_worker::file_read_attempts", 3)
+	v.SetDefault("archive_worker::max_consecutive_read_failures", 5)
 	v.SetDefault("archive_worker::exit_when_idle", false)
 	v.SetDefault("archive_worker::file_timeout", 20*time.Minute)
 	v.SetDefault("archive_worker::job_timeout", 4*time.Hour)

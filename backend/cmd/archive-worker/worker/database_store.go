@@ -71,7 +71,11 @@ func (s *DatabaseStore) Finish(
 	result db.DownloadResult,
 	now, expiresAt time.Time,
 ) error {
-	return s.database.Downloads.Finish(ctx, id, attempt, result, now, expiresAt)
+	return s.database.FinishDownload(ctx, id, attempt, result, now, expiresAt)
+}
+
+func (s *DatabaseStore) RetryFileIDs(ctx context.Context, jobID uuid.UUID) (map[uuid.UUID]bool, error) {
+	return s.database.Downloads.RetryFileIDs(ctx, jobID)
 }
 
 func (s *DatabaseStore) Fail(ctx context.Context, id uuid.UUID, attempt int, message string, now time.Time) error {

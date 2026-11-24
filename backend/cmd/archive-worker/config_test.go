@@ -25,6 +25,8 @@ func Test_should_share_the_downloads_limits_with_the_server_when_a_profile_is_re
 			assert.Equal(t, time.Minute, cfg.Worker.Heartbeat)
 			assert.Equal(t, "downloads/", cfg.Worker.ArchivePrefix)
 			assert.Equal(t, 3, cfg.Worker.MaxAttempts)
+			assert.Equal(t, 3, cfg.Worker.FileReadAttempts)
+			assert.Equal(t, 5, cfg.Worker.MaxConsecutiveReadFailures)
 			assert.Equal(t, 20*time.Minute, cfg.Worker.FileTimeout)
 			assert.Equal(t, 4*time.Hour, cfg.Worker.JobTimeout)
 			assert.Equal(t, 7*24*time.Hour, cfg.Worker.ArchiveTTL, "the worker offers archives as long as the API says")

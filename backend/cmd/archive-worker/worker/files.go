@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -290,13 +292,16 @@ type selectedFile struct {
 // modelWalk is what a walk over a selection's models has listed so far, so an entry's files and
 // related datasets are listed once per entry, as the manifest lists them.
 type modelWalk struct {
-	choice     models.DownloadFileChoice
+	choice models.DownloadFileChoice
+	// only, for a retry, holds the files it asks for again: the walk lists those files and nothing
+	// else. nil lists the whole selection.
+	only       map[uuid.UUID]bool
 	entryFiles map[string]bool
 	entries    map[string]bool
 }
 
-func newModelWalk(choice models.DownloadFileChoice) *modelWalk {
-	return &modelWalk{choice: choice, entryFiles: map[string]bool{}, entries: map[string]bool{}}
+func newModelWalk(choice models.DownloadFileChoice, only map[uuid.UUID]bool) *modelWalk {
+	return &modelWalk{choice: choice, only: only, entryFiles: map[string]bool{}, entries: map[string]bool{}}
 }
 
 // filesOf returns the model's manifest file rows, in the model's file order: its files of the file
@@ -311,7 +316,7 @@ func (walk *modelWalk) filesOf(
 		if err != nil {
 			return nil, false, err
 		}
-		if !selected {
+		if !selected || (walk.only != nil && !walk.only[file.ID]) {
 			continue
 		}
 		matched = true

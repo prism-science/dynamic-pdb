@@ -1,6 +1,10 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+)
 
 // DownloadAvailability is whether an archive holds a selected file's recorded bytes, and if not,
 // how its manifest lists the file (researcher item 8). It is kept apart from verification.
@@ -50,6 +54,9 @@ const (
 	// DownloadReasonCopyDiffers: our copy did not match the recorded SHA-256 or size when the
 	// archive was prepared.
 	DownloadReasonCopyDiffers DownloadReasonCode = "copy_differs"
+	// DownloadReasonReadFailed: our copy could not be read while the archive was prepared, after
+	// every try. The only reason a retry may fix.
+	DownloadReasonReadFailed DownloadReasonCode = "read_failed"
 )
 
 // DownloadReasonCodes lists every reason code, in the order previews and the API list them.
@@ -65,6 +72,7 @@ var DownloadReasonCodes = []DownloadReasonCode{
 	DownloadReasonCopyNotInStorage,
 	DownloadReasonCopyMissing,
 	DownloadReasonCopyDiffers,
+	DownloadReasonReadFailed,
 }
 
 // Availability is how the manifest lists a file left out for this reason.
@@ -74,7 +82,7 @@ func (code DownloadReasonCode) Availability() (DownloadAvailability, error) {
 		DownloadReasonNotCheckedYet, DownloadReasonCopiedAfterPlanning:
 		return DownloadAvailabilityLinked, nil
 	case DownloadReasonStoredFileDiffers, DownloadReasonSourceUnreadable, DownloadReasonCopyNotInStorage,
-		DownloadReasonCopyMissing, DownloadReasonCopyDiffers:
+		DownloadReasonCopyMissing, DownloadReasonCopyDiffers, DownloadReasonReadFailed:
 		return DownloadAvailabilityUnavailable, nil
 	case DownloadReasonChangedAtSource:
 		return DownloadAvailabilityChangedAtSource, nil
@@ -108,9 +116,40 @@ func (code DownloadReasonCode) Text() (string, error) {
 		return "Dynamic PDB's copy of the file is missing", nil
 	case DownloadReasonCopyDiffers:
 		return "Dynamic PDB's copy differs from the recorded SHA-256", nil
+	case DownloadReasonReadFailed:
+		return "Dynamic PDB's copy could not be read while the archive was prepared; ask for the failed files again", nil
 	default:
 		return "", unknownValueError("download reason code", code, DownloadReasonCodes)
 	}
+}
+
+// Retryable reports whether asking again may include a file left out for this reason: only a
+// copy that could not be read. Every other reason is a fact about the file or its source.
+func (code DownloadReasonCode) Retryable() (bool, error) {
+	switch code {
+	case DownloadReasonReadFailed:
+		return true, nil
+	case DownloadReasonOverCopyLimit, DownloadReasonCopyFailed, DownloadReasonCopyOff, DownloadReasonNotCheckedYet,
+		DownloadReasonCopiedAfterPlanning, DownloadReasonStoredFileDiffers, DownloadReasonChangedAtSource,
+		DownloadReasonSourceUnreadable, DownloadReasonCopyNotInStorage, DownloadReasonCopyMissing,
+		DownloadReasonCopyDiffers:
+		return false, nil
+	default:
+		return false, unknownValueError("download reason code", code, DownloadReasonCodes)
+	}
+}
+
+// DownloadFailure is a selected file a finished archive could not vouch for: listed as unavailable
+// or changed-at-source, never a linked file. It names the first selected model that lists it.
+type DownloadFailure struct {
+	JobID      uuid.UUID
+	FileID     uuid.UUID
+	Ordinal    int
+	EntryID    string
+	ModelID    string
+	FileName   string
+	ReasonCode DownloadReasonCode
+	Retryable  bool
 }
 
 // DownloadPreview is what an archive of a selection and file choice holds, as the worker planned
