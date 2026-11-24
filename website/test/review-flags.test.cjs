@@ -7,7 +7,6 @@ const { renderToStaticMarkup } = require("react-dom/server");
 
 const {
   NOT_FLAGGED,
-  canSeeReviewFlags,
   reviewFlagLines,
   reviewStatus,
 } = require("../src/lib/review-flags.ts");
@@ -84,11 +83,4 @@ test("an issue or record type the website does not know is shown by its code", (
 
   // then
   assert.deepEqual(lines, ["metric_key_conflict (run)"]);
-});
-
-test("only users granted review_flags.read are offered the flagged filter", () => {
-  // given / when / then
-  assert.equal(canSeeReviewFlags(["revisions.approve", "review_flags.read"]), true);
-  assert.equal(canSeeReviewFlags(["revisions.approve", "revisions.reject"]), false);
-  assert.equal(canSeeReviewFlags([]), false);
 });

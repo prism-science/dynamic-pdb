@@ -28,8 +28,8 @@ const (
 	// their own revisions.
 	PermissionKeyRevisionsApproveOwn PermissionKey = "revisions.approve_own"
 	// PermissionKeyReviewFlagsRead is never stored. The sign-in response adds it for users with
-	// the reviewer or admin role, who see review flag issues and may use the flagged filter, so
-	// the website knows to offer that filter. The API checks the role on every request.
+	// the reviewer or admin role, who see review flag issues. The API checks the role on every
+	// request; the key only tells a client what the user will see.
 	PermissionKeyReviewFlagsRead PermissionKey = "review_flags.read"
 )
 

@@ -226,8 +226,7 @@ func (s *Server) exchangeGithubAccessToken(w http.ResponseWriter, r *http.Reques
 
 // grantedPermissionKeys returns the permission keys the sign-in response reports: the stored
 // ones, plus keys that are never stored. The website reads them to decide what to offer:
-//   - review_flags.read for reviewers and admins (seesReviewFlags): review flag issues and the
-//     flagged filter;
+//   - review_flags.read for reviewers and admins (seesReviewFlags): review flag issues;
 //
 // and, for users who can approve revisions, keys that follow from the server's switches:
 //   - entries.delete while entry deletion is on: the Delete entry button;

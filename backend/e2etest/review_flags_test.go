@@ -18,8 +18,9 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-// ReviewFlagsSuite covers who sees review flags (researcher answer 7): everyone sees whether a
-// record is flagged; only reviewers and admins see the issues and may use the flagged filter.
+// ReviewFlagsSuite covers who sees review flags (researcher answers of 10 Nov, item 7, and 17 Nov,
+// Q4): everyone sees whether a record is flagged and may filter by it; only reviewers and admins
+// see the issues.
 type ReviewFlagsSuite struct {
 	baseSuite
 }
@@ -191,7 +192,9 @@ func (s *ReviewFlagsSuite) Test_should_show_flag_issues_only_to_reviewers_and_ad
 	}
 }
 
-func (s *ReviewFlagsSuite) Test_should_let_only_reviewers_and_admins_filter_by_flags_when_each_representation_is_searched() {
+// Researcher answer of 17 Nov, Q4: every caller may filter by flags, on every representation;
+// the flags' issues still reach only reviewers and admins.
+func (s *ReviewFlagsSuite) Test_should_let_every_caller_filter_by_flags_and_show_issues_only_to_reviewers_and_admins_when_each_representation_is_searched() {
 	// given
 	callers := reviewFlagCallersForTest(s.T(), "review-flags-filter", 8763)
 	ligand, representations := flaggedEntryForTest(s.T(), callers[1].token)
@@ -200,24 +203,31 @@ func (s *ReviewFlagsSuite) Test_should_let_only_reviewers_and_admins_filter_by_f
 		for _, representation := range representations {
 			s.Run(caller.name+"/"+representation.name, func() {
 				// when
-				path := "/v1/models?flagged=true&limit=100&ligand_or_cofactor=" + ligand + "&model_type=" + url.QueryEscape(representation.modelType)
-				//nolint:bodyclose // decodeJSONResponse closes the response body.
-				response := jsonRequestToServerWithToken(s.T(), modelSearchServer.URL, http.MethodGet, path, nil, caller.token)
+				search := "&limit=100&ligand_or_cofactor=" + ligand + "&model_type=" + url.QueryEscape(representation.modelType)
+				flaggedStatus, flaggedBody := getRawForTest(s.T(), modelSearchServer.URL, "/v1/models?flagged=true"+search, caller.token)
+				unflaggedStatus, unflaggedBody := getRawForTest(s.T(), modelSearchServer.URL, "/v1/models?flagged=false"+search, caller.token)
 
 				// then
+				s.Require().Equal(http.StatusOK, flaggedStatus, string(flaggedBody))
+				s.Require().Equal(http.StatusOK, unflaggedStatus, string(unflaggedBody))
+				var flagged, unflagged httpapi.ModelSearchCollectionDocument
+				s.Require().NoError(json.Unmarshal(flaggedBody, &flagged))
+				s.Require().NoError(json.Unmarshal(unflaggedBody, &unflagged))
+				index := slices.IndexFunc(flagged.Data, func(item httpapi.ModelSearchData) bool { return item.Id == representation.modelID })
+				s.Require().GreaterOrEqual(index, 0, "flagged=true finds the flagged model")
+				s.False(slices.ContainsFunc(unflagged.Data, func(item httpapi.ModelSearchData) bool { return item.Id == representation.modelID }),
+					"flagged=false leaves the flagged model out")
+				result := flagged.Data[index].Attributes
+				s.Require().NotNil(result.FlaggedForReview)
+				s.True(*result.FlaggedForReview)
 				if !caller.seesReviewFlags {
-					refused := decodeJSONResponse[httpapi.Error](s.T(), response, http.StatusForbidden)
-					s.Require().Len(refused.Errors, 1)
-					s.Require().NotNil(refused.Errors[0].Detail)
-					s.Contains(*refused.Errors[0].Detail, "flagged")
+					s.Nil(result.ReviewFlags)
+					s.NotContains(string(flaggedBody), reviewFlagIssueForTest)
+					s.NotContains(string(flaggedBody), "review_flags")
 					return
 				}
-				found := decodeJSONResponse[httpapi.ModelSearchCollectionDocument](s.T(), response, http.StatusOK)
-				ids := make([]string, 0, len(found.Data))
-				for _, item := range found.Data {
-					ids = append(ids, item.Id)
-				}
-				s.Contains(ids, representation.modelID)
+				s.Require().NotNil(result.ReviewFlags)
+				s.Contains(string(flaggedBody), reviewFlagIssueForTest)
 			})
 		}
 	}
@@ -238,7 +248,7 @@ func (s *ReviewFlagsSuite) Test_should_grant_review_flags_read_only_to_reviewers
 	}
 }
 
-func (s *ReviewFlagsSuite) Test_should_refuse_a_flagged_selection_search_from_anyone_but_reviewers_and_admins_when_a_selection_is_saved() {
+func (s *ReviewFlagsSuite) Test_should_save_a_flagged_selection_search_from_every_caller_when_a_selection_is_saved() {
 	// given
 	callers := reviewFlagCallersForTest(s.T(), "review-flags-selection", 8769)
 	ligand, _ := flaggedEntryForTest(s.T(), callers[1].token)
@@ -251,13 +261,6 @@ func (s *ReviewFlagsSuite) Test_should_refuse_a_flagged_selection_search_from_an
 			response := jsonRequestToServerWithToken(s.T(), selectionsServer.URL, http.MethodPost, "/v1/selections", body, caller.token)
 
 			// then
-			if !caller.seesReviewFlags {
-				refused := decodeJSONResponse[httpapi.Error](s.T(), response, http.StatusForbidden)
-				s.Require().Len(refused.Errors, 1)
-				s.Require().NotNil(refused.Errors[0].Detail)
-				s.Contains(*refused.Errors[0].Detail, "remove flagged from search 0")
-				return
-			}
 			saved := decodeJSONResponse[httpapi.SelectionDocument](s.T(), response, http.StatusCreated)
 			s.NotEmpty(saved.Data.Id)
 		})

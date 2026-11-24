@@ -5,7 +5,8 @@ import path from "node:path";
 import { stack } from "./stack";
 
 // Writes to the browser stack's database what only a background job writes, and
-// no API can: the model-compounds job's read of a model file. It goes through the
+// no API can: the model-compounds job's read of a model file, and a review flag
+// the archive sync opens. It goes through the
 // compose project that `make browser-stack` started, the same way that target
 // loads e2e/stack/seed.sql (set COMPOSE_PROJECT_NAME for a stack under another
 // project name).
@@ -92,5 +93,24 @@ export function saveModelFileCompounds(modelFileId: string, copies: readonly Com
         : ""
     }
     commit;
+  `);
+}
+
+const ISSUE_CODE = /^[a-z_]{1,64}$/;
+const OBJECT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Opens a review flag on a record, as the archive sync or a migration does
+ * (db.MigrationReviews.Open): a schema_migration_review row without a
+ * resolution.
+ */
+export function openReviewFlag(objectType: "model" | "entry", objectId: string, issue: string): void {
+  if (!OBJECT_ID.test(objectId) || !ISSUE_CODE.test(issue)) {
+    throw new Error(`not a review flag this helper writes: ${objectType} ${objectId} ${issue}`);
+  }
+  runSql(`
+    insert into schema_migration_review (object_type, object_id, issue)
+    values ('${objectType}', '${objectId}', '${issue}')
+    on conflict (object_type, object_id, issue) do update set resolved_at = null, resolved_by = null;
   `);
 }
