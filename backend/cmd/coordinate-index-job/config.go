@@ -33,6 +33,10 @@ func readConfig(filename string) (config, error) {
 	v.SetDefault("coordinate_index::fill_batch_size", 2000)
 	// Archive model files are read only where config/<env>.yml turns them on.
 	v.SetDefault("coordinate_index::archive_files", false)
+	// Conformer counts (S3) are stored only where config/<env>.yml turns them on; the conformer
+	// fill only where the deploy's values do.
+	v.SetDefault("coordinate_index::residue_counts", false)
+	v.SetDefault("coordinate_index::residue_fill", false)
 	v.SetConfigType("yaml")
 	v.AddConfigPath("config")
 	v.SetConfigName(filename)

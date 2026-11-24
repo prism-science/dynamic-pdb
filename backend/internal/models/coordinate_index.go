@@ -123,6 +123,94 @@ type CoordinateIndexSet struct {
 	FASTAEntryIDs []string
 	// Chains are in AuthAsymID order.
 	Chains []IndexedChain
+	// Conformers is nil until the file is read with conformer counts.
+	Conformers *FileConformers
+}
+
+// ConformerScope says whether a model file got conformer counts (cif.ConformerCounts).
+type ConformerScope string
+
+const (
+	// ConformerScopeCounted: the file's residues were counted.
+	ConformerScopeCounted ConformerScope = "counted"
+	// ConformerScopeEnsembleModelFrames: the file has more than one model frame. Ensembles get no
+	// conformer counts.
+	ConformerScopeEnsembleModelFrames ConformerScope = "ensemble_model_frames"
+	// ConformerScopeEnsembleModelType: the latest revision using the file of one of its models is an
+	// Ensemble or has member_count.
+	ConformerScopeEnsembleModelType ConformerScope = "ensemble_model_type"
+)
+
+var ConformerScopes = []ConformerScope{
+	ConformerScopeCounted,
+	ConformerScopeEnsembleModelFrames,
+	ConformerScopeEnsembleModelType,
+}
+
+func (scope ConformerScope) Validate() error {
+	switch scope {
+	case ConformerScopeCounted, ConformerScopeEnsembleModelFrames, ConformerScopeEnsembleModelType:
+		return nil
+	default:
+		return unknownValueError("conformer scope", scope, ConformerScopes)
+	}
+}
+
+// ResidueKey names how a model file's residues were told apart (cif.ResidueKey).
+type ResidueKey string
+
+const (
+	// ResidueKeyLabel: label chain + label residue number + residue type.
+	ResidueKeyLabel ResidueKey = "label"
+	// ResidueKeyAuthor: author chain + residue number + insertion code + residue type, for files
+	// without label numbering.
+	ResidueKeyAuthor ResidueKey = "author"
+	// ResidueKeyMixed: label numbering, except residues whose rows have none.
+	ResidueKeyMixed ResidueKey = "mixed"
+)
+
+var ResidueKeys = []ResidueKey{ResidueKeyLabel, ResidueKeyAuthor, ResidueKeyMixed}
+
+func (key ResidueKey) Validate() error {
+	switch key {
+	case ResidueKeyLabel, ResidueKeyAuthor, ResidueKeyMixed:
+		return nil
+	default:
+		return unknownValueError("residue key", key, ResidueKeys)
+	}
+}
+
+// ResidueConformerCount is how many residues of a type have a number of conformers in a model file.
+type ResidueConformerCount struct {
+	ResidueType    string
+	ConformerCount int
+	Residues       int
+}
+
+// FileConformers is what the coordinate-index job stored about the conformers of a model file at
+// its last read with conformer counts.
+type FileConformers struct {
+	// Version is cif.ResidueCountVersion of that read.
+	Version string
+	Scope   ConformerScope
+	// Key, Residues and MultiConformerResidues are nil for an ensemble; Key also when the file has
+	// no polymer residues.
+	Key                    *ResidueKey
+	Residues               *int
+	MultiConformerResidues *int
+	// ReadAsEnsembleType is set when a model using the file was an Ensemble at that read.
+	ReadAsEnsembleType bool
+	// Counts are in (ResidueType, ConformerCount) order; empty for an ensemble.
+	Counts []ResidueConformerCount
+}
+
+// RequeuedSetsPage is one page of coordinate index sets, in artifact order, that the conformer
+// fill sent back to pending. Scanned counts the sets in the page, Requeued those sent back, and
+// LastArtifactID is where the next page starts; it is uuid.Nil for an empty page.
+type RequeuedSetsPage struct {
+	Scanned        int
+	Requeued       int64
+	LastArtifactID uuid.UUID
 }
 
 // CoordinateIndexClaim is a pending set the job took, with what it needs to read the file.

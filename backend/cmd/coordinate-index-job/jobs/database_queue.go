@@ -53,6 +53,28 @@ func (q *DatabaseQueue) RequeueForNewEntries(ctx context.Context, since time.Tim
 	return queued, nil
 }
 
+func (q *DatabaseQueue) RequeueForEnsembleTypeChanges(ctx context.Context, since time.Time, now time.Time) (int64, error) {
+	queued, err := q.database.CoordinateIndex.RequeueForEnsembleTypeChanges(ctx, since, now)
+	if err != nil {
+		return 0, fmt.Errorf("coordinate index queue: %w", err)
+	}
+	return queued, nil
+}
+
+func (q *DatabaseQueue) RequeueForConformersAfter(
+	ctx context.Context,
+	after uuid.UUID,
+	limit int,
+	version string,
+	now time.Time,
+) (models.RequeuedSetsPage, error) {
+	page, err := q.database.CoordinateIndex.RequeueForConformersAfter(ctx, after, limit, version, now)
+	if err != nil {
+		return models.RequeuedSetsPage{}, fmt.Errorf("coordinate index queue: %w", err)
+	}
+	return page, nil
+}
+
 func (q *DatabaseQueue) ClaimDue(
 	ctx context.Context,
 	now time.Time,
@@ -74,9 +96,16 @@ func (q *DatabaseQueue) RecordFailure(ctx context.Context, artifactID uuid.UUID,
 	return nil
 }
 
-func (q *DatabaseQueue) Save(ctx context.Context, artifactID uuid.UUID, read cif.CoordinateIndex, readAt time.Time) (SavedIndex, error) {
+func (q *DatabaseQueue) Save(
+	ctx context.Context,
+	artifactID uuid.UUID,
+	read cif.CoordinateIndex,
+	readAt time.Time,
+	conformers bool,
+) (SavedIndex, error) {
 	var saved SavedIndex
-	err := q.database.SaveCoordinateIndex(ctx, db.SaveCoordinateIndexParams{
+	var stored *models.FileConformers
+	params := db.SaveCoordinateIndexParams{
 		ArtifactID:    artifactID,
 		ReaderVersion: cif.CoordinateIndexVersion,
 		ReadAt:        readAt,
@@ -88,9 +117,20 @@ func (q *DatabaseQueue) Save(ctx context.Context, artifactID uuid.UUID, read cif
 			saved = resolved
 			return db.ResolvedIndex{Chains: resolved.Chains, Warnings: resolved.Warnings}, nil
 		},
-	})
-	if err != nil {
+	}
+	if conformers {
+		params.Conformers = func(ensembleType bool) (models.FileConformers, error) {
+			resolved, err := fileConformers(read.Conformers, ensembleType)
+			if err != nil {
+				return models.FileConformers{}, err
+			}
+			stored = &resolved
+			return resolved, nil
+		}
+	}
+	if err := q.database.SaveCoordinateIndex(ctx, params); err != nil {
 		return SavedIndex{}, fmt.Errorf("coordinate index queue: %w", err)
 	}
+	saved.Conformers = stored
 	return saved, nil
 }

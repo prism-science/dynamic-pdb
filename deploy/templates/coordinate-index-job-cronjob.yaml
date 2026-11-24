@@ -69,6 +69,8 @@ spec:
                   value: {{ .Values.coordinateIndexJob.fileTimeout | quote }}
                 - name: DYNAMIC_PDB_COORDINATE_INDEX_FILL
                   value: {{ .Values.coordinateIndexJob.fill | quote }}
+                - name: DYNAMIC_PDB_COORDINATE_INDEX_RESIDUE_FILL
+                  value: {{ .Values.coordinateIndexJob.residueFill | quote }}
               resources:
                 {{- toYaml .Values.coordinateIndexJob.resources | nindent 16 }}
 {{- end }}

@@ -31,6 +31,8 @@ type SavedIndex struct {
 	Warnings []string
 	// Entries counts the entries of the file's models.
 	Entries int
+	// Conformers is what the save stored about conformers; nil when it stored none.
+	Conformers *models.FileConformers
 }
 
 // Queue is the coordinate_index_sets table as the job uses it.
@@ -47,14 +49,22 @@ type Queue interface {
 	// RequeueForNewEntries queues done sets again of files whose models now belong to other entries
 	// than when they were read, looking at model revisions created since a time.
 	RequeueForNewEntries(ctx context.Context, since time.Time, now time.Time) (int64, error)
+	// RequeueForEnsembleTypeChanges queues done sets again whose last read with conformer counts saw
+	// another Ensemble state than the file's models have now: files of model revisions created since
+	// a time, and every file read as an Ensemble's by its type.
+	RequeueForEnsembleTypeChanges(ctx context.Context, since time.Time, now time.Time) (int64, error)
+	// RequeueForConformersAfter sends the done sets in the next page after an artifact id whose
+	// conformer counts are missing or from another version back to pending as fill rows.
+	RequeueForConformersAfter(ctx context.Context, after uuid.UUID, limit int, version string, now time.Time) (models.RequeuedSetsPage, error)
 	// ClaimDue fails, instead of claiming, a set already claimed maxAttempts times.
 	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration, maxAttempts int) ([]models.CoordinateIndexClaim, error)
 	// RecordFailure keeps the set pending until retryAt, or fails it for good when retryAt is nil.
 	RecordFailure(ctx context.Context, artifactID uuid.UUID, message string, retryAt *time.Time) error
 	// Save takes the lengths the file does not state from the FASTA records of the entries of its
 	// models, as the save transaction sees them (resolveIndex), replaces the file's chains and
-	// finishes its set.
-	Save(ctx context.Context, artifactID uuid.UUID, read cif.CoordinateIndex, readAt time.Time) (SavedIndex, error)
+	// finishes its set. With conformers it also replaces the file's conformer counts
+	// (fileConformers), with the models' types as the save transaction sees them.
+	Save(ctx context.Context, artifactID uuid.UUID, read cif.CoordinateIndex, readAt time.Time, conformers bool) (SavedIndex, error)
 }
 
 type Config struct {
@@ -77,6 +87,15 @@ type Config struct {
 	// ArchiveFiles lets the recent window and the fill take archive model files (on RCSB) once the
 	// checksum job has copied them into our bucket; the job reads the copy.
 	ArchiveFiles bool `mapstructure:"archive_files"`
+	// ResidueCounts stores each read's conformer counts (cif.ConformerCounts) with its chains. Off,
+	// a read stores its chains only and leaves any stored counts as they are.
+	ResidueCounts bool `mapstructure:"residue_counts"`
+	// ResidueFill turns on the paced conformer fill: done sets whose counts are missing or from
+	// another cif.ResidueCountVersion go back to pending as fill rows, so their files are read
+	// again. Like Fill, a run adds nothing while fill rows are pending. It needs ResidueCounts:
+	// without it the reads would store no counts and the fill would queue the files forever. Off
+	// once a run requeues none.
+	ResidueFill bool `mapstructure:"residue_fill"`
 }
 
 func (c Config) validate() error {
@@ -91,6 +110,8 @@ func (c Config) validate() error {
 		return errors.New("recent_window must be positive")
 	case c.FillBatchSize <= 0:
 		return errors.New("fill_batch_size must be positive")
+	case c.ResidueFill && !c.ResidueCounts:
+		return errors.New("residue_fill needs residue_counts")
 	}
 	return nil
 }
@@ -168,6 +189,15 @@ func (j *CoordinateIndexJob) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("queue model files whose models changed entries: %w", err)
 	}
+	// Only while counts are stored: a read without them keeps the Ensemble state it found, so the
+	// same files would be queued on every run.
+	ensembleTypeChanges := int64(0)
+	if j.cfg.ResidueCounts {
+		ensembleTypeChanges, err = j.queue.RequeueForEnsembleTypeChanges(ctx, windowStart, started)
+		if err != nil {
+			return fmt.Errorf("queue model files whose ensemble type changed: %w", err)
+		}
+	}
 	fill, fillWaiting := int64(0), false
 	if j.cfg.Fill {
 		fill, fillWaiting, err = j.fill(ctx)
@@ -175,11 +205,22 @@ func (j *CoordinateIndexJob) Run(ctx context.Context) error {
 			return fmt.Errorf("add sets for stored model files: %w", err)
 		}
 	}
+	residueFill, residueFillWaiting := int64(0), false
+	if j.cfg.ResidueFill {
+		residueFill, residueFillWaiting, err = j.residueFill(ctx)
+		if err != nil {
+			return fmt.Errorf("queue model files for conformer counts: %w", err)
+		}
+	}
 	j.logger.Info("coordinate index job started",
 		"recent_sets_added", recent,
 		"new_entry_sets_requeued", requeued,
+		"ensemble_type_sets_requeued", ensembleTypeChanges,
 		"fill_sets_added", fill,
-		"fill_waiting_for_pending", fillWaiting)
+		"fill_waiting_for_pending", fillWaiting,
+		"residue_counts", j.cfg.ResidueCounts,
+		"residue_fill_sets_requeued", residueFill,
+		"residue_fill_waiting_for_pending", residueFillWaiting)
 	summary := runSummary{outcomes: map[outcome]int{}}
 	for (j.cfg.MaxFilesPerRun == 0 || summary.files < j.cfg.MaxFilesPerRun) && j.now().Before(claimUntil) {
 		claims, err := j.queue.ClaimDue(ctx, j.now(), 1, j.cfg.FileTimeout+leaseMargin, maxAttempts)
@@ -247,6 +288,42 @@ func (j *CoordinateIndexJob) fill(ctx context.Context) (int64, bool, error) {
 	}
 }
 
+// residueFill sends every done set whose conformer counts are missing or from another
+// cif.ResidueCountVersion back to pending as a fill row, and returns how many it sent. While fill
+// rows are pending (from this fill or the set fill) it sends none and reports waiting, as fill does:
+// after its first run the queue holds every such file, which the job reads over a day or more.
+//
+// It walks pages of FillBatchSize sets in artifact order and pauses after each full page as long as
+// the page took, as fill does. Each page commits on its own. A set whose read with counts fails is
+// marked failed; its chains stay, and a later run of this fill leaves it alone.
+func (j *CoordinateIndexJob) residueFill(ctx context.Context) (int64, bool, error) {
+	waiting, err := j.queue.HasPendingFill(ctx)
+	if err != nil {
+		return 0, false, fmt.Errorf("check pending fill sets: %w", err)
+	}
+	if waiting {
+		return 0, true, nil
+	}
+	var requeued int64
+	// uuid.Nil sorts before every real artifact id, so the first page starts at the beginning.
+	after := uuid.Nil
+	for {
+		pageStarted := j.now()
+		page, err := j.queue.RequeueForConformersAfter(ctx, after, j.cfg.FillBatchSize, cif.ResidueCountVersion, pageStarted)
+		if err != nil {
+			return requeued, false, fmt.Errorf("page after artifact %s: %w", after, err)
+		}
+		requeued += page.Requeued
+		if page.Scanned < j.cfg.FillBatchSize {
+			return requeued, false, nil
+		}
+		after = page.LastArtifactID
+		if err := j.sleep(ctx, j.now().Sub(pageStarted)); err != nil {
+			return requeued, false, fmt.Errorf("pause after artifact %s: %w", after, err)
+		}
+	}
+}
+
 // readClaim reads one claimed file and records the outcome. It returns an error only when
 // recording fails.
 func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.CoordinateIndexClaim) (outcome, error) {
@@ -258,7 +335,7 @@ func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.Coordin
 	if readErr != nil {
 		return j.recordFailure(ctx, claim, readErr)
 	}
-	saved, err := j.queue.Save(ctx, claim.ArtifactID, read, j.now())
+	saved, err := j.queue.Save(ctx, claim.ArtifactID, read, j.now(), j.cfg.ResidueCounts)
 	if err != nil {
 		if ctx.Err() != nil {
 			return outcomeStopped, nil
@@ -276,7 +353,7 @@ func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.Coordin
 			withLength++
 		}
 	}
-	j.logger.Info("model file read",
+	attributes := []any{
 		"artifact_id", claim.ArtifactID,
 		"read_from", from,
 		"chains", len(saved.Chains),
@@ -284,7 +361,17 @@ func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.Coordin
 		"chains_with_length", withLength,
 		"entries", saved.Entries,
 		"warnings", len(saved.Warnings),
-		"duration", j.now().Sub(started).String())
+	}
+	if conformers := saved.Conformers; conformers != nil {
+		attributes = append(attributes, "conformers", string(conformers.Scope), "residue_count_rows", len(conformers.Counts))
+		if conformers.Residues != nil && conformers.MultiConformerResidues != nil {
+			attributes = append(attributes,
+				"residues", *conformers.Residues,
+				"multi_conformer_residues", *conformers.MultiConformerResidues)
+		}
+	}
+	attributes = append(attributes, "duration", j.now().Sub(started).String())
+	j.logger.Info("model file read", attributes...)
 	return outcomeDone, nil
 }
 

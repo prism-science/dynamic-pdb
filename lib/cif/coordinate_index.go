@@ -68,21 +68,25 @@ type IndexedChain struct {
 // CoordinateIndex is what ReadCoordinateIndex found in one file.
 type CoordinateIndex struct {
 	// Chains are in AuthAsymID order.
-	Chains   []IndexedChain
-	Warnings []string
+	Chains []IndexedChain
+	// Conformers counts the alternate conformations of the first model's polymer residues.
+	Conformers ConformerCounts
+	Warnings   []string
 }
 
 const (
-	noGroupIndexWarning        = "the coordinates have no group_PDB column: only rows with a label_seq_id were counted as polymer residues"
-	unexpectedGroupRowsWarning = "%d coordinate rows have a group_PDB value other than ATOM or HETATM: they were skipped"
-	skippedRowsWarning         = "%d coordinate rows were skipped: a chain, residue or compound field is not plain text of at most %d bytes"
-	skippedSequenceRowsWarning = "%d _entity_poly_seq rows were skipped: an entity or position is not plain text of at most %d bytes"
-	skippedPolymerRowsWarning  = "%d _entity_poly rows were skipped: an entity or type is not plain text of at most %d bytes"
-	noPolymerWarning           = "the first model has no polymer residues"
-	cutOffFileError            = "the %s loop ended inside a row: the file is cut off"
-	tooManyResiduesError       = "more than %d polymer residues in the first model"
-	tooManyPolymerEntityError  = "more than %d _entity_poly entities"
-	tooManyPendingAtomError    = "more than %d HETATM records wait to be sorted into or out of their chain"
+	noGroupIndexWarning         = "the coordinates have no group_PDB column: only rows with a label_seq_id were counted as polymer residues"
+	unexpectedGroupRowsWarning  = "%d coordinate rows have a group_PDB value other than ATOM or HETATM: they were skipped"
+	skippedRowsWarning          = "%d coordinate rows were skipped: a chain, residue or compound field is not plain text of at most %d bytes"
+	skippedSequenceRowsWarning  = "%d _entity_poly_seq rows were skipped: an entity or position is not plain text of at most %d bytes"
+	skippedPolymerRowsWarning   = "%d _entity_poly rows were skipped: an entity or type is not plain text of at most %d bytes"
+	noPolymerWarning            = "the first model has no polymer residues"
+	cutOffFileError             = "the %s loop ended inside a row: the file is cut off"
+	tooManyResiduesError        = "more than %d polymer residues in the first model"
+	tooManyPolymerEntityError   = "more than %d _entity_poly entities"
+	tooManyPendingAtomError     = "more than %d HETATM records wait to be sorted into or out of their chain"
+	tooManyLettersWarning       = "%d alternate location letters were left out of conformer counts: a residue has more than %d"
+	skippedConformerRowsWarning = "%d coordinate rows were left out of conformer counts: a label, altloc, atom or element field is not plain text of at most %d bytes"
 )
 
 // ErrCoordinateIndexLimit marks a file over one of ReadCoordinateIndex's memory limits: reading it
@@ -111,7 +115,8 @@ func ReadCoordinateIndex(ctx context.Context, source io.Reader, format Structure
 		return CoordinateIndex{}, fmt.Errorf("load reference list: %w", err)
 	}
 	chains := newChainAccumulator()
-	sinks := []polymerAtomSink{chains}
+	conformers := newConformerAccumulator()
+	sinks := []polymerAtomSink{chains, conformers}
 	var read fileFacts
 	switch format {
 	case FormatMMCIF:
@@ -124,18 +129,27 @@ func ReadCoordinateIndex(ctx context.Context, source io.Reader, format Structure
 	if err != nil {
 		return CoordinateIndex{}, err
 	}
-	if chains.overflow {
+	if chains.overflow || conformers.overflow {
 		return CoordinateIndex{}, fmt.Errorf(tooManyResiduesError+": %w", maxIndexedResidues, ErrCoordinateIndexLimit)
 	}
-	index := CoordinateIndex{Chains: chains.indexedChains(read, reference), Warnings: read.warnings}
+	index := CoordinateIndex{
+		Chains:     chains.indexedChains(read, reference),
+		Conformers: conformers.counts(read.multipleModelFrames),
+		Warnings:   read.warnings,
+	}
+	if conformers.skipped > 0 {
+		index.Warnings = append(index.Warnings, fmt.Sprintf(skippedConformerRowsWarning, conformers.skipped, maxCopyFieldBytes))
+	}
+	if conformers.lettersDropped > 0 {
+		index.Warnings = append(index.Warnings, fmt.Sprintf(tooManyLettersWarning, conformers.lettersDropped, maxAltPositionsPerResidue))
+	}
 	if len(index.Chains) == 0 {
 		index.Warnings = append(index.Warnings, noPolymerWarning)
 	}
 	return index, nil
 }
 
-// polymerAtom is one coordinate row of a polymer residue. Each accumulator takes what it needs;
-// a later reader (per-residue rows) adds the fields it reads.
+// polymerAtom is one coordinate row of a polymer residue. Each accumulator takes what it needs.
 type polymerAtom struct {
 	// firstModel is set for the rows of the file's first model.
 	firstModel bool
@@ -145,6 +159,17 @@ type polymerAtom struct {
 	authSeqID string
 	insCode   string
 	compound  string
+	// labelAsymID and labelSeqID are the mmCIF label chain and residue number; empty in PDB
+	// format, and labelSeqID where the file writes none.
+	labelAsymID string
+	labelSeqID  string
+	// altID is the alternate location letter, empty for none.
+	altID    string
+	atomName string
+	// element is upper case, empty when the file gives none.
+	element string
+	// occupancy is the raw value; parseOccupancy reads it.
+	occupancy string
 }
 
 // polymerAtomSink takes the polymer-residue atoms of one read. The strings of an atom may share
@@ -162,7 +187,10 @@ type fileFacts struct {
 	entityLengths map[string]int
 	// seqresLengths counts the SEQRES residue names of each chain.
 	seqresLengths map[string]int
-	warnings      []string
+	// multipleModelFrames is set when coordinate rows of a model after the first were read,
+	// whatever they hold (polymer, ligands or water).
+	multipleModelFrames bool
+	warnings            []string
 }
 
 // residuePosition is one residue of a chain: author residue number and insertion code.
@@ -274,11 +302,14 @@ var coordinateIndexCategories = []string{"_atom_site", "_entity_poly", "_entity_
 type indexAtomSite struct {
 	columns struct {
 		group, labelCompound, authCompound, authAsymID, labelAsymID, authSeqID, labelSeqID, insCode, entityID, model int
+		altID, labelAtom, authAtom, element, occupancy                                                               int
 	}
 	sinks []polymerAtomSink
-	// firstModel is the pdbx_PDB_model_num of the first row.
+	// firstModel is the pdbx_PDB_model_num of the first row; laterModel is set once a row of
+	// another model was read, whatever it holds.
 	firstModel    string
 	modelSeen     bool
+	laterModel    bool
 	unknownGroups int
 	skipped       int
 	// noGroupColumn is set when the loop has no group_PDB column.
@@ -297,6 +328,11 @@ func newIndexAtomSite(columns []string, sinks []polymerAtomSink) *indexAtomSite 
 	site.columns.insCode = slices.Index(columns, "pdbx_pdb_ins_code")
 	site.columns.entityID = slices.Index(columns, "label_entity_id")
 	site.columns.model = slices.Index(columns, "pdbx_pdb_model_num")
+	site.columns.altID = slices.Index(columns, "label_alt_id")
+	site.columns.labelAtom = slices.Index(columns, "label_atom_id")
+	site.columns.authAtom = slices.Index(columns, "auth_atom_id")
+	site.columns.element = slices.Index(columns, "type_symbol")
+	site.columns.occupancy = slices.Index(columns, "occupancy")
 	site.noGroupColumn = site.columns.group < 0
 	return site
 }
@@ -308,6 +344,9 @@ func (s *indexAtomSite) add(row []string) {
 	if !s.modelSeen {
 		s.firstModel = strings.Clone(model)
 		s.modelSeen = true
+	}
+	if model != s.firstModel {
+		s.laterModel = true
 	}
 	labelSeqID := cell(row, s.columns.labelSeqID)
 	if !s.isPolymerRow(row, labelSeqID != "") {
@@ -324,6 +363,13 @@ func (s *indexAtomSite) add(row []string) {
 		authSeqID:  firstNonEmpty(cell(row, s.columns.authSeqID), labelSeqID),
 		insCode:    cell(row, s.columns.insCode),
 		compound:   compound,
+
+		labelAsymID: cell(row, s.columns.labelAsymID),
+		labelSeqID:  labelSeqID,
+		altID:       cell(row, s.columns.altID),
+		atomName:    firstNonEmpty(cell(row, s.columns.labelAtom), cell(row, s.columns.authAtom)),
+		element:     strings.ToUpper(cell(row, s.columns.element)),
+		occupancy:   cell(row, s.columns.occupancy),
 	}
 	if atom.chain == "" || atom.authSeqID == "" ||
 		!plainCopyText(atom.chain, atom.entityID, atom.authSeqID, atom.insCode, atom.compound) {
@@ -528,6 +574,7 @@ func readIndexMMCIF(ctx context.Context, source io.Reader, atoms []polymerAtomSi
 		}
 	}
 	if site := categories.atomSite; site != nil {
+		read.multipleModelFrames = site.laterModel
 		if site.noGroupColumn {
 			read.warnings = append(read.warnings, noGroupIndexWarning)
 		}
@@ -649,6 +696,11 @@ func (r *pdbIndexReader) addCoordinate(record string, line string) {
 		authSeqID:  slice(line, 22, 26),
 		insCode:    slice(line, 26, 27),
 		compound:   compound,
+
+		altID:     slice(line, 16, 17),
+		atomName:  slice(line, 12, 16),
+		element:   upperSlice(line, 76, 78),
+		occupancy: slice(line, 54, 60),
 	}
 	r.lastChain = atom.chain
 	if compound == "" || isWater(compound) {
@@ -676,6 +728,10 @@ func (r *pdbIndexReader) addCoordinate(record string, line string) {
 		atom.authSeqID = strings.Clone(atom.authSeqID)
 		atom.insCode = strings.Clone(atom.insCode)
 		atom.compound = strings.Clone(atom.compound)
+		atom.altID = strings.Clone(atom.altID)
+		atom.atomName = strings.Clone(atom.atomName)
+		atom.element = strings.Clone(atom.element)
+		atom.occupancy = strings.Clone(atom.occupancy)
 		r.pending[atom.chain] = append(r.pending[atom.chain], pendingAtom{atom: atom, afterAtom: r.chainHasAtoms[atom.chain]})
 		r.pendingCount++
 	default:
@@ -746,7 +802,9 @@ func readIndexPDB(ctx context.Context, source io.Reader, atoms []polymerAtomSink
 		entityTypes:   map[string]string{},
 		entityLengths: map[string]int{},
 		seqresLengths: reader.seqresLengths,
-		warnings:      []string{},
+		// member counts the models with a coordinate record of any kind.
+		multipleModelFrames: reader.member > 1,
+		warnings:            []string{},
 	}
 	for _, note := range notes.messages {
 		read.warnings = append(read.warnings, "parser limit: "+note)

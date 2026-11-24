@@ -207,6 +207,11 @@ coordinateIndexJob:
   # first. The first run with it queues them all; later runs add nothing while fill rows are
   # pending. Off again once a run logs fill_sets_added=0 and none are pending.
   fill: false
+  # Sends every done file whose conformer counts are missing or from an older reader back to
+  # pending as a fill row, so it is read again with counts (S3). Needs
+  # coordinate_index.residue_counts on in backend/config/<env>.yml. Waits while fill rows are
+  # pending. Off again once a run logs residue_fill_sets_requeued=0 and none are pending.
+  residueFill: false
   # The largest statement stores the chains of one file (2,000 per insert).
   statementTimeout: 30s
   # The largest file (538 MB, 100 members) streamed with a 40 MB peak in the S3 spike; the limit

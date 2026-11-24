@@ -41,6 +41,8 @@ cdn:
 	assert.False(t, cfg.CoordinateIndex.Fill)
 	assert.Equal(t, 2000, cfg.CoordinateIndex.FillBatchSize)
 	assert.False(t, cfg.CoordinateIndex.ArchiveFiles)
+	assert.False(t, cfg.CoordinateIndex.ResidueCounts)
+	assert.False(t, cfg.CoordinateIndex.ResidueFill)
 	assert.Equal(t, "localhost", cfg.DB.Host)
 }
 
@@ -64,6 +66,42 @@ coordinate_index:
 	assert.True(t, cfg.CoordinateIndex.ArchiveFiles)
 	assert.True(t, cfg.CoordinateIndex.Fill)
 	assert.Equal(t, 500, cfg.CoordinateIndex.MaxFilesPerRun)
+}
+
+func Test_should_read_the_conformer_switches_from_the_section_and_the_environment_when_both_set_them(t *testing.T) {
+	// given: the section turns conformer counts on; the CronJob's environment turns their fill on.
+	writeTestConfig(t, `
+db:
+  host: localhost
+coordinate_index:
+  residue_counts: true
+`)
+	t.Setenv("DYNAMIC_PDB_COORDINATE_INDEX_RESIDUE_FILL", "true")
+
+	// when
+	cfg, err := readConfig("test")
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, cfg.CoordinateIndex.ResidueCounts)
+	assert.True(t, cfg.CoordinateIndex.ResidueFill)
+}
+
+func Test_should_count_conformers_locally_only_when_the_repository_configs_are_read(t *testing.T) {
+	for env, want := range map[string]bool{"local": true, "dev": false, "production": false} {
+		t.Run(env, func(t *testing.T) {
+			// given
+			t.Chdir("../..")
+
+			// when
+			cfg, err := readConfig(env)
+
+			// then
+			require.NoError(t, err)
+			assert.Equal(t, want, cfg.CoordinateIndex.ResidueCounts)
+			assert.False(t, cfg.CoordinateIndex.ResidueFill, "the conformer fill is turned on in deploy/values.yaml only")
+		})
+	}
 }
 
 func Test_should_turn_archive_files_on_in_dev_and_production_only_when_the_repository_configs_are_read(t *testing.T) {

@@ -68,6 +68,17 @@ type fakeQueue struct {
 	// pendingFill is what HasPendingFill answers.
 	pendingFill bool
 	maxAttempts int
+	// ensembleType is what the save transaction sees of each file's models; saveConformers records
+	// whether each save was asked to store conformer counts.
+	ensembleType   map[uuid.UUID]bool
+	saveConformers []bool
+	// conformerPages are the conformer fill's pages, served in order; conformerAfter and
+	// conformerVersion record each request.
+	conformerPages   []models.RequeuedSetsPage
+	conformerAfter   []uuid.UUID
+	conformerVersion []string
+	// ensembleTypeSince records each RequeueForEnsembleTypeChanges call.
+	ensembleTypeSince []time.Time
 }
 
 func (q *fakeQueue) AddMissingSince(_ context.Context, since time.Time, archiveFiles bool) (int64, error) {
@@ -97,6 +108,22 @@ func (q *fakeQueue) RequeueForNewEntries(_ context.Context, since time.Time, now
 	return 0, nil
 }
 
+func (q *fakeQueue) RequeueForEnsembleTypeChanges(_ context.Context, since time.Time, _ time.Time) (int64, error) {
+	q.ensembleTypeSince = append(q.ensembleTypeSince, since)
+	return 0, nil
+}
+
+func (q *fakeQueue) RequeueForConformersAfter(_ context.Context, after uuid.UUID, _ int, version string, _ time.Time) (models.RequeuedSetsPage, error) {
+	q.conformerAfter = append(q.conformerAfter, after)
+	q.conformerVersion = append(q.conformerVersion, version)
+	if len(q.conformerPages) == 0 {
+		return models.RequeuedSetsPage{}, nil
+	}
+	page := q.conformerPages[0]
+	q.conformerPages = q.conformerPages[1:]
+	return page, nil
+}
+
 func (q *fakeQueue) ClaimDue(_ context.Context, _ time.Time, limit int, _ time.Duration, maxAttempts int) ([]models.CoordinateIndexClaim, error) {
 	q.maxAttempts = maxAttempts
 	taken := q.claims[:min(limit, len(q.claims))]
@@ -109,9 +136,10 @@ func (q *fakeQueue) RecordFailure(_ context.Context, artifactID uuid.UUID, messa
 	return nil
 }
 
-// Save resolves the read against the file's FASTA records as DatabaseQueue.Save does inside its
-// transaction.
-func (q *fakeQueue) Save(_ context.Context, artifactID uuid.UUID, read cif.CoordinateIndex, readAt time.Time) (SavedIndex, error) {
+// Save resolves the read against the file's FASTA records, and its conformer counts against the
+// file's model types, as DatabaseQueue.Save does inside its transaction.
+func (q *fakeQueue) Save(_ context.Context, artifactID uuid.UUID, read cif.CoordinateIndex, readAt time.Time, conformers bool) (SavedIndex, error) {
+	q.saveConformers = append(q.saveConformers, conformers)
 	if q.saveErr != nil {
 		return SavedIndex{}, q.saveErr
 	}
@@ -121,6 +149,13 @@ func (q *fakeQueue) Save(_ context.Context, artifactID uuid.UUID, read cif.Coord
 	index, err := resolveIndex(read, q.fasta[artifactID])
 	if err != nil {
 		return SavedIndex{}, err
+	}
+	if conformers {
+		stored, err := fileConformers(read.Conformers, q.ensembleType[artifactID])
+		if err != nil {
+			return SavedIndex{}, err
+		}
+		index.Conformers = &stored
 	}
 	q.saved[artifactID] = savedIndex{index: index, readAt: readAt}
 	return index, nil
@@ -535,4 +570,194 @@ func Test_should_skip_the_fill_scan_when_sets_it_queued_are_still_pending(t *tes
 	// then
 	require.NoError(t, err)
 	assert.Empty(t, queue.pageAfter)
+}
+
+// mmcifWithAlternates has LYS 1 with letters A 0.6 and B 0.4, and LYS 2 with B at 0.05.
+const mmcifWithAlternates = "data_TEST\nloop_\n_atom_site.group_PDB\n_atom_site.type_symbol\n_atom_site.label_atom_id\n" +
+	"_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_seq_id\n" +
+	"_atom_site.occupancy\n_atom_site.auth_seq_id\n_atom_site.auth_asym_id\n_atom_site.pdbx_PDB_model_num\n" +
+	"ATOM C CB A LYS A 1 0.60 1 A 1\nATOM C CB B LYS A 1 0.40 1 A 1\n" +
+	"ATOM C CB A LYS A 2 0.95 2 A 1\nATOM C CB B LYS A 2 0.05 2 A 1\n#\n"
+
+// pdbEnsemble is a PDB-format file with two MODEL frames of one residue.
+const pdbEnsemble = "MODEL        1\n" +
+	"ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C\n" +
+	"ENDMDL\nMODEL        2\n" +
+	"ATOM      1  CA  ALA A   1       1.500   2.000   3.000  1.00 20.00           C\n" +
+	"ENDMDL\nEND\n"
+
+func conformerSummaries(conformers *models.FileConformers) []string {
+	summaries := make([]string, 0, len(conformers.Counts))
+	for _, count := range conformers.Counts {
+		summaries = append(summaries, fmt.Sprintf("%s %d x%d", count.ResidueType, count.ConformerCount, count.Residues))
+	}
+	return summaries
+}
+
+func Test_should_store_no_conformer_counts_when_residue_counts_are_off(t *testing.T) {
+	// given
+	claim := storedClaim("k", ptr("mmcif"), 1)
+	queue := &fakeQueue{claims: []models.CoordinateIndexClaim{claim}}
+	files := &fakeFiles{contents: map[string][]byte{"k": []byte(mmcifWithAlternates)}}
+	job := newTestJob(t, queue, files, testConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: the chains are saved as before, without counts.
+	require.NoError(t, err)
+	assert.Equal(t, []bool{false}, queue.saveConformers)
+	assert.Nil(t, queue.saved[claim.ArtifactID].index.Conformers)
+	assert.Len(t, queue.saved[claim.ArtifactID].index.Chains, 1)
+}
+
+func Test_should_store_the_conformer_counts_with_the_chains_when_residue_counts_are_on(t *testing.T) {
+	// given
+	claim := storedClaim("k", ptr("mmcif"), 1)
+	queue := &fakeQueue{claims: []models.CoordinateIndexClaim{claim}}
+	files := &fakeFiles{contents: map[string][]byte{"k": []byte(mmcifWithAlternates)}}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	job := newTestJob(t, queue, files, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, []bool{true}, queue.saveConformers)
+	conformers := queue.saved[claim.ArtifactID].index.Conformers
+	require.NotNil(t, conformers)
+	assert.Equal(t, models.ConformerScopeCounted, conformers.Scope)
+	assert.Equal(t, cif.ResidueCountVersion, conformers.Version)
+	assert.Equal(t, []string{"LYS 1 x1", "LYS 2 x1"}, conformerSummaries(conformers))
+	assert.Equal(t, ptr(models.ResidueKeyLabel), conformers.Key)
+	assert.Equal(t, ptr(2), conformers.Residues)
+	assert.Equal(t, ptr(1), conformers.MultiConformerResidues)
+	assert.False(t, conformers.ReadAsEnsembleType)
+}
+
+func Test_should_store_no_conformer_counts_when_the_file_is_an_ensemble(t *testing.T) {
+	cases := map[string]struct {
+		contents     string
+		format       string
+		ensembleType bool
+		want         models.ConformerScope
+	}{
+		"model frames":               {contents: pdbEnsemble, format: "pdb", want: models.ConformerScopeEnsembleModelFrames},
+		"model frames, Ensemble too": {contents: pdbEnsemble, format: "pdb", ensembleType: true, want: models.ConformerScopeEnsembleModelFrames},
+		"one frame of an Ensemble":   {contents: mmcifWithAlternates, format: "mmcif", ensembleType: true, want: models.ConformerScopeEnsembleModelType},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			claim := storedClaim("k", ptr(testCase.format), 1)
+			queue := &fakeQueue{
+				claims:       []models.CoordinateIndexClaim{claim},
+				ensembleType: map[uuid.UUID]bool{claim.ArtifactID: testCase.ensembleType},
+			}
+			files := &fakeFiles{contents: map[string][]byte{"k": []byte(testCase.contents)}}
+			cfg := testConfig()
+			cfg.ResidueCounts = true
+			job := newTestJob(t, queue, files, cfg)
+
+			// when
+			err := job.Run(context.Background())
+
+			// then: no counts and no totals; the chains are saved.
+			require.NoError(t, err)
+			conformers := queue.saved[claim.ArtifactID].index.Conformers
+			require.NotNil(t, conformers)
+			assert.Equal(t, testCase.want, conformers.Scope)
+			assert.Empty(t, conformers.Counts)
+			assert.Nil(t, conformers.Key)
+			assert.Nil(t, conformers.Residues)
+			assert.Nil(t, conformers.MultiConformerResidues)
+			assert.Equal(t, testCase.ensembleType, conformers.ReadAsEnsembleType)
+			assert.Len(t, queue.saved[claim.ArtifactID].index.Chains, 1)
+		})
+	}
+}
+
+func Test_should_queue_every_page_for_conformer_counts_when_the_residue_fill_is_on(t *testing.T) {
+	// given: two full pages and a short one.
+	first, second := uuid.New(), uuid.New()
+	queue := &fakeQueue{conformerPages: []models.RequeuedSetsPage{
+		{Scanned: 2, Requeued: 2, LastArtifactID: first},
+		{Scanned: 2, Requeued: 1, LastArtifactID: second},
+		{Scanned: 1, Requeued: 0, LastArtifactID: uuid.New()},
+	}}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	cfg.ResidueFill = true
+	job := newTestJob(t, queue, &fakeFiles{}, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then: each page starts after the last one, for the current counts.
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{uuid.Nil, first, second}, queue.conformerAfter)
+	assert.Equal(t, []string{cif.ResidueCountVersion, cif.ResidueCountVersion, cif.ResidueCountVersion}, queue.conformerVersion)
+}
+
+func Test_should_queue_nothing_for_conformer_counts_when_fill_rows_are_pending(t *testing.T) {
+	// given
+	queue := &fakeQueue{pendingFill: true, conformerPages: []models.RequeuedSetsPage{{Scanned: 1, Requeued: 1}}}
+	cfg := testConfig()
+	cfg.ResidueCounts = true
+	cfg.ResidueFill = true
+	job := newTestJob(t, queue, &fakeFiles{}, cfg)
+
+	// when
+	err := job.Run(context.Background())
+
+	// then
+	require.NoError(t, err)
+	assert.Empty(t, queue.conformerAfter)
+}
+
+func Test_should_refuse_the_residue_fill_when_residue_counts_are_off(t *testing.T) {
+	// given
+	cfg := testConfig()
+	cfg.ResidueFill = true
+
+	// when
+	_, err := NewCoordinateIndexJob(&fakeQueue{}, &fakeFiles{}, cfg, nil)
+
+	// then
+	require.ErrorContains(t, err, "residue_fill needs residue_counts")
+}
+
+func Test_should_fail_when_a_read_names_an_unknown_residue_key(t *testing.T) {
+	// given
+	counts := cif.ConformerCounts{Residues: 1, Key: cif.ResidueKey("sequence"), Rows: []cif.ResidueConformers{{ResidueType: "LYS", ConformerCount: 1, Residues: 1}}}
+
+	// when
+	_, err := fileConformers(counts, false)
+
+	// then
+	require.ErrorContains(t, err, `unknown residue key "sequence"`)
+}
+
+func Test_should_look_for_ensemble_type_changes_only_when_residue_counts_are_on(t *testing.T) {
+	for _, countsOn := range []bool{false, true} {
+		// given
+		queue := &fakeQueue{}
+		cfg := testConfig()
+		cfg.ResidueCounts = countsOn
+		job := newTestJob(t, queue, &fakeFiles{}, cfg)
+
+		// when
+		err := job.Run(context.Background())
+
+		// then: off, a read keeps the Ensemble state it found, so the same files would be queued
+		// on every run.
+		require.NoError(t, err)
+		if countsOn {
+			assert.Equal(t, []time.Time{testNow.Add(-cfg.RecentWindow)}, queue.ensembleTypeSince)
+		} else {
+			assert.Empty(t, queue.ensembleTypeSince)
+		}
+	}
 }

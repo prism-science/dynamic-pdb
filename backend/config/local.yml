@@ -62,6 +62,9 @@ coordinate_index:
   # The coordinate-index job (S2) also reads archive model files, from the checksum job's copies,
   # through its recent window and its fill. See deploy/README.md, "Coordinate index job".
   archive_files: false
+  # Each read also stores the file's conformer counts (S3). On locally; dev and production switch
+  # them on in their own PR. See deploy/README.md, "Conformer counts".
+  residue_counts: true
 model_search:
   # Search filters on GET /v1/models (S1) are on locally, so the website's search can be built
   # against them before dev and production switch them on.
