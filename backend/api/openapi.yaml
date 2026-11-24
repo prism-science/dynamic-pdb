@@ -1316,6 +1316,52 @@ paths:
           required: false
           schema:
             $ref: '#/components/schemas/ProteinChainMode'
+        - name: residue_type
+          in: query
+          description: >
+            Model filter. Models whose coordinate file has residues of one of these chemical
+            component IDs (for example LYS), ignoring case, with at least residue_conformers_min
+            conformers each, and at least residues_min of them. Several values: a residue of any of
+            them counts. Required when residue_conformers_min or residues_min is given. A residue is
+            label chain + label residue number + residue type (author chain + residue number +
+            insertion code + residue type in files without label numbering), so two residue types
+            at one position are two residues. Its conformer count is the number of its alternate
+            location letters whose highest occupancy on a heavy atom of the residue is at least
+            0.1; letters found only on hydrogens never count, and a residue without letters has
+            one conformer. Ensembles never match: a model of type Ensemble or with member_count,
+            or whose file has more than one model, has no conformer count. A file the server has
+            not read yet never matches. Example: "a lysine with more than three conformations" is
+            residue_type=LYS&residue_conformers_min=4. Available only where the server enables the
+            residue filters; elsewhere 400.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+        - name: residue_conformers_min
+          in: query
+          description: >
+            Model filter, with residue_type. Residues with at least this many conformers
+            (inclusive), from 1 to 16. Defaults to 1: every residue of the type counts.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 16
+        - name: residues_min
+          in: query
+          description: >
+            Model filter, with residue_type. At least this many residues of the type with at least
+            residue_conformers_min conformers, in the same model. Defaults to 1.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
         - name: r_work_min
           in: query
           description: >

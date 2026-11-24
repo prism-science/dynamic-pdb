@@ -82,6 +82,10 @@ model_search:
   # that they would miss every model whose file is not read yet. Their own switch-on PR turns them
   # on. Off, a chain parameter gets 400.
   chain_filters_enabled: false
+  # The residue filters (S4) stay off until the conformer fill (S3) is done: before that they would
+  # miss every model whose file is not counted yet. Their own switch-on PR turns them on, with the
+  # website's residue controls. Off, a residue parameter gets 400.
+  residue_filters_enabled: false
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR.
   enabled: false

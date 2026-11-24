@@ -42,6 +42,9 @@ type ModelSearchPolicy struct {
 	// ChainFiltersEnabled also turns on the protein chain filters, which read the coordinate-index
 	// job's chains. Off, a chain parameter gets 400.
 	ChainFiltersEnabled bool
+	// ResidueFiltersEnabled also turns on the residue filters, which read the coordinate-index job's
+	// conformer counts. Off, a residue parameter gets 400.
+	ResidueFiltersEnabled bool
 	// CountCap is where the total stops counting.
 	CountCap int
 	// Requests and InternalRequests cap counted searches per client per Window, for clients
@@ -58,21 +61,28 @@ type ModelSearchPolicy struct {
 // GET /v1/models and saved selections both refuse such a search.
 var errChainFiltersOff = errors.New("protein chain filters are not enabled on this server yet")
 
+// errResidueFiltersOff marks a search with residue filters where they are off: until the
+// coordinate-index job has counted the conformers of every model file, they would miss the models of
+// uncounted files. GET /v1/models and saved selections both refuse such a search.
+var errResidueFiltersOff = errors.New("residue filters are not enabled on this server yet")
+
 // modelSearch is the server's model search setup; the zero value has the filters off.
 type modelSearch struct {
-	enabled       bool
-	chainsEnabled bool
-	countCap      int
-	limiter       *routeRateLimiter
+	enabled         bool
+	chainsEnabled   bool
+	residuesEnabled bool
+	countCap        int
+	limiter         *routeRateLimiter
 }
 
 // WithModelSearch configures the search filters of GET /v1/models.
 func (s *Server) WithModelSearch(policy ModelSearchPolicy) *Server {
 	s.modelSearch = modelSearch{
-		enabled:       policy.FiltersEnabled,
-		chainsEnabled: policy.ChainFiltersEnabled,
-		countCap:      policy.CountCap,
-		limiter:       newModelSearchLimiter(policy),
+		enabled:         policy.FiltersEnabled,
+		chainsEnabled:   policy.ChainFiltersEnabled,
+		residuesEnabled: policy.ResidueFiltersEnabled,
+		countCap:        policy.CountCap,
+		limiter:         newModelSearchLimiter(policy),
 	}
 	return s
 }
@@ -129,6 +139,11 @@ func (s *Server) ListModelsAcrossEntries(
 	if search != nil && len(search.chainParameters) > 0 && !s.modelSearch.chainsEnabled {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
 			errChainFiltersOff.Error()+"; remove "+strings.Join(search.chainParameters, ", "))
+		return
+	}
+	if search != nil && len(search.residueParameters) > 0 && !s.modelSearch.residuesEnabled {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
+			errResidueFiltersOff.Error()+"; remove "+strings.Join(search.residueParameters, ", "))
 		return
 	}
 
@@ -341,11 +356,13 @@ func compoundsNeedingReviewFromModels(compounds []domainmodels.CompoundNeedingRe
 }
 
 // parsedModelSearch is a request's search filters and the parameters that set them;
-// chainParameters are the protein chain ones, which have a switch of their own.
+// chainParameters are the protein chain ones and residueParameters the residue ones, each with a
+// switch of its own.
 type parsedModelSearch struct {
-	filters         db.ModelSearch
-	parameters      []string
-	chainParameters []string
+	filters           db.ModelSearch
+	parameters        []string
+	chainParameters   []string
+	residueParameters []string
 }
 
 // modelSearchParamError is a search parameter the request got wrong.
@@ -430,6 +447,9 @@ func modelSearchFromParams(params ListModelsAcrossEntriesParams) (*parsedModelSe
 		}
 	}
 	if search.filters.ProteinChains, err = search.proteinChains(params); err != nil {
+		return nil, err
+	}
+	if search.filters.Residues, err = search.residues(params); err != nil {
 		return nil, err
 	}
 	if params.Flagged != nil {
@@ -668,6 +688,48 @@ func (search *parsedModelSearch) proteinChains(params ListModelsAcrossEntriesPar
 			parameter: "protein_chain_mode",
 			problem:   "every needs protein_chain_length_min or protein_chain_length_max",
 		}
+	}
+	return filter, nil
+}
+
+// residues reads residue_type, residue_conformers_min and residues_min: a type is required when
+// either number is given, the conformer count is 1 to 16 and the residue count at least 1. Both
+// numbers default to 1.
+func (search *parsedModelSearch) residues(params ListModelsAcrossEntriesParams) (*db.ResidueFilter, error) {
+	if params.ResidueType == nil && params.ResidueConformersMin == nil && params.ResiduesMin == nil {
+		return nil, nil
+	}
+	if params.ResidueType == nil {
+		parameter := "residue_conformers_min"
+		if params.ResidueConformersMin == nil {
+			parameter = "residues_min"
+		}
+		return nil, &modelSearchParamError{parameter: parameter, problem: "needs residue_type"}
+	}
+	types, err := search.texts("residue_type", params.ResidueType)
+	if err != nil {
+		return nil, err
+	}
+	search.residueParameters = append(search.residueParameters, "residue_type")
+	filter := &db.ResidueFilter{Types: types, MinConformers: 1, MinResidues: 1}
+	if params.ResidueConformersMin != nil {
+		if *params.ResidueConformersMin < 1 || *params.ResidueConformersMin > db.MaxResidueConformers {
+			return nil, &modelSearchParamError{
+				parameter: "residue_conformers_min",
+				problem:   fmt.Sprintf("must be from 1 to %d", db.MaxResidueConformers),
+			}
+		}
+		filter.MinConformers = *params.ResidueConformersMin
+		search.parameters = append(search.parameters, "residue_conformers_min")
+		search.residueParameters = append(search.residueParameters, "residue_conformers_min")
+	}
+	if params.ResiduesMin != nil {
+		if *params.ResiduesMin < 1 {
+			return nil, &modelSearchParamError{parameter: "residues_min", problem: "must be at least 1"}
+		}
+		filter.MinResidues = *params.ResiduesMin
+		search.parameters = append(search.parameters, "residues_min")
+		search.residueParameters = append(search.residueParameters, "residues_min")
 	}
 	return filter, nil
 }
