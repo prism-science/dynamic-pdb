@@ -3,21 +3,12 @@ import type { components } from "@/lib/api/schema.gen";
 type ReviewFlag = components["schemas"]["ReviewFlag"];
 
 /**
- * Review flags (researcher answer 7). Everyone sees whether a record is
- * flagged for review. Only reviewers and admins see which issues: the API
- * sends `review_flags` to them alone, so the website shows the issues exactly
- * when the response carries them, and never decides that itself.
+ * Review flags (researcher answers of 10 Nov, item 7, and 17 Nov, Q4).
+ * Everyone sees whether a record is flagged for review, and may filter by it.
+ * Only reviewers and admins see which issues: the API sends `review_flags` to
+ * them alone, so the website shows the issues exactly when the response
+ * carries them, and never decides that itself.
  */
-
-/** The never-stored permission key the sign-in response adds for reviewers
- *  and admins. It only says what to offer (the flagged filter); the API
- *  checks the role on every request. */
-const reviewFlagsRead = "review_flags.read";
-
-/** Whether to offer the flagged filter to the signed-in user. */
-export function canSeeReviewFlags(permissions: readonly string[]): boolean {
-  return permissions.includes(reviewFlagsRead);
-}
 
 /** What a page shows about a record's review flags. */
 export type ReviewStatus = {

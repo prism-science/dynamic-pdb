@@ -35,7 +35,7 @@ export default function SearchHelp({ open = false }: { open?: boolean }) {
         </li>
         <li>
           Records flagged for review stay in the results, with a &ldquo;Flagged for review&rdquo;
-          badge. Reviewers and admins also see which issues, and can filter by flags.
+          badge. Anyone can filter by flags; reviewers and admins also see which issues.
         </li>
         <li>Counts are exact up to 10,000; above that they show as 10,000+.</li>
         <li>

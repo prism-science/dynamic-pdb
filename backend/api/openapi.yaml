@@ -1051,8 +1051,8 @@ paths:
 
 
         Review flags: every caller sees whether a result is flagged for review
-        (flagged_for_review). The open issues (review_flags) and the flagged filter are only for
-        signed-in users with the reviewer or admin role; signing in alone grants neither.
+        (flagged_for_review) and may filter by it (flagged). The open issues (review_flags) are
+        only for signed-in users with the reviewer or admin role; signing in alone grants neither.
       security: []
       parameters:
         - name: limit
@@ -1511,10 +1511,10 @@ paths:
         - name: flagged
           in: query
           description: >
-            Reviewers and admins only: where the server enables model search, anyone else gets
-            403 (elsewhere every filter gets 400). true returns only models with an open review
-            flag (on the model, its current revision, its entry or the entry's polymer
-            entities); false returns only models without one.
+            Open to every caller where the server enables model search (elsewhere every filter
+            gets 400). true returns only models with an open review flag (on the model, its current
+            revision, its entry or the entry's polymer entities); false returns only models without
+            one. The flags' issues (review_flags) stay for reviewers and admins only.
           required: false
           schema:
             type: boolean
@@ -1529,14 +1529,6 @@ paths:
           description: >
             Invalid filters, or a filter parameter where the server does not enable model
             search. The detail names the parameter.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "403":
-          description: >
-            The flagged filter from a caller without the reviewer or admin role (code
-            FORBIDDEN). The detail names the parameter; remove it.
           content:
             application/vnd.api+json:
               schema:
@@ -1613,14 +1605,6 @@ paths:
           description: >
             The body is not valid JSON, or a search has filters where the server does not enable
             model search.
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "403":
-          description: >
-            A search has the flagged filter and the caller does not have the reviewer or admin
-            role (code FORBIDDEN). The detail names the parameter and the search.
           content:
             application/vnd.api+json:
               schema:
@@ -4477,9 +4461,8 @@ components:
             get `entries.delete` where the server allows entry deletion, and
             `revisions.approve_own` where it allows self-approval (dev only).
             Users with the reviewer or admin role also get `review_flags.read`:
-            they see review flag issues and may use the flagged filter. The API
-            checks the role on every request; the key only tells the website
-            what to offer.
+            they see review flag issues. The API checks the role on every
+            request; the key only tells the website what to show.
           items:
             type: string
 

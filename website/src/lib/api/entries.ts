@@ -493,7 +493,7 @@ export async function searchModels(
     params.set("cursor", opts.cursor);
   }
   // Signed in, the API answers as the reader: reviewers and admins get the
-  // review flags' issues and may use the flagged filter.
+  // review flags' issues.
   const document = await fetchBackend<Schemas["ModelSearchCollectionDocument"]>(
     `/v1/models?${params.toString()}`,
     opts?.token ?? undefined,

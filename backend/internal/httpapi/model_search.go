@@ -133,22 +133,9 @@ func (s *Server) ListModelsAcrossEntries(
 	}
 
 	// Search results say what the caller may know about review flags, so they vary by caller.
-	// Without the flagged filter, a failed role lookup only costs the caller the flags' issues.
+	// Every caller may filter by flags; a failed role lookup only costs the caller the issues.
 	varyByCaller(w)
-	seesReviewFlags, err := s.seesReviewFlags(r.Context())
-	if err != nil {
-		if usesFlaggedFilter(search) {
-			slog.ErrorContext(r.Context(), "model search authorization failed", "err", err)
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to authorize request")
-			return
-		}
-		slog.ErrorContext(r.Context(), "review flag access check failed; answering as for the public", "err", err)
-		seesReviewFlags = false
-	}
-	if err := checkFlaggedFilter(search, seesReviewFlags); err != nil {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", err.Error()+"; remove flagged")
-		return
-	}
+	seesReviewFlags := s.seesReviewFlagsOrPublic(r.Context())
 
 	// The first page counts the whole result. It, and the pages of a search with few matches,
 	// which read every match, count against the search limit; other pages are cheap.

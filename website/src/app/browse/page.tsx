@@ -17,12 +17,9 @@ import {
   modelSearchApiUrl,
   modelSearchQuery,
   readModelSearch,
-  usesReviewerFilters,
-  withoutReviewerFilters,
   type ModelSearchCriteria,
   type SearchFailure,
 } from "@/lib/model-search";
-import { canSeeReviewFlags } from "@/lib/review-flags";
 import EntriesBrowser from "@/app/components/EntriesBrowser";
 import SearchTracker, { ModelSearchTracker } from "@/app/components/SearchTracker";
 import FilterPanel from "@/app/components/model-search/FilterPanel";
@@ -49,8 +46,9 @@ type BrowseProps = {
  * which the header's text search also lands on. With one, it is the model
  * search: one row per model, labelled with its entry, for exactly the filters
  * in the URL (GET /v1/models with the same query string), so a shared URL
- * restores the search. Searches run as the signed-in reader, so reviewers and
- * admins also see which issues a flagged model has, and may filter by flags.
+ * restores the search. Anyone may filter by review flags; searches run as the
+ * signed-in reader, so reviewers and admins also see which issues a flagged
+ * model has.
  */
 export default async function Browse({ searchParams }: BrowseProps) {
   const session = await getAuthSession();
@@ -63,7 +61,6 @@ export default async function Browse({ searchParams }: BrowseProps) {
       ? firstQueryValue(resolvedSearchParams[ENTRY_DELETED_PARAM])
       : undefined;
   const criteria = readModelSearch(resolvedSearchParams);
-  const canFilterReviewFlags = session !== null && canSeeReviewFlags(session.permissions);
 
   return (
     <main className={styles.page} aria-label="dynamic-pdb entries">
@@ -75,11 +72,7 @@ export default async function Browse({ searchParams }: BrowseProps) {
       <div className={styles.layout}>
         <aside className={styles.filters}>
           {/* Remounted per search, so Back and Forward show the URL's filters. */}
-          <FilterPanel
-            key={modelSearchQuery(criteria)}
-            criteria={criteria}
-            canFilterReviewFlags={canFilterReviewFlags}
-          />
+          <FilterPanel key={modelSearchQuery(criteria)} criteria={criteria} />
         </aside>
         <section className={styles.entriesShell}>
           {criteria.length > 0 ? (
@@ -157,8 +150,7 @@ async function ModelSearch({
 
 /**
  * What a reader can do about a failed search. A 400 or 403 fails the same way
- * again, so only the others offer Try again; a 403 for a filter only reviewers
- * may use (a shared link) offers the rest of the search.
+ * again, so only the others offer Try again.
  */
 function FailureActions({
   failure,
@@ -168,17 +160,11 @@ function FailureActions({
   criteria: ModelSearchCriteria;
 }) {
   const retryHelps = failure.status !== 400 && failure.status !== 403;
-  const publicSearch = withoutReviewerFilters(criteria);
-  const offerPublicSearch =
-    failure.status === 403 && usesReviewerFilters(criteria) && publicSearch.length > 0;
   return (
     <>
       {retryHelps ? (
         // A full reload: the search runs again on the server.
         <a href={browseSearchHref(criteria)}>Try again</a>
-      ) : null}
-      {offerPublicSearch ? (
-        <Link href={browseSearchHref(publicSearch)}>Search without the review filter</Link>
       ) : null}
       <Link href="/browse">Clear filters</Link>
     </>

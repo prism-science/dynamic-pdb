@@ -2,7 +2,7 @@ import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
 import { createActiveEntry, createActiveModel } from "./support/api";
 import { reviewer, signIn } from "./support/auth";
-import { saveModelFileCompounds } from "./support/database";
+import { openReviewFlag, saveModelFileCompounds } from "./support/database";
 import { expect, test } from "./support/fixtures";
 import { stack } from "./support/stack";
 
@@ -197,41 +197,55 @@ test("should stop a range whose minimum is above its maximum, and show the API's
   await expect(notice.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/browse");
 });
 
-test("should offer the review flag filter to reviewers only, and explain a shared flagged link to anyone else", async ({
+// Researcher answer of 17 Nov, Q4: anyone may filter by review flags; only
+// reviewers and admins see which issues a flag names.
+test("should let every reader filter by review flags, and show the issues to reviewers only", async ({
   page,
   browser,
+  request,
   submitterApi,
   reviewerApi,
   runTag,
 }) => {
-  // given three models, none flagged, and a link that filters by flags
+  // given three models, one of them flagged
   const records = await createSearchRecords(submitterApi, reviewerApi, runTag);
+  openReviewFlag("model", records.ensembleA, "sync_validation_failed");
   const resolutionQuery = `resolution_min=${records.resolution}&resolution_max=${records.resolution}`;
 
-  // when an anonymous visitor opens it
-  await page.goto(`/browse?${resolutionQuery}&flagged=false`);
-
-  // then the panel has no Review group, and the page says why the API refused
+  // when an anonymous visitor filters by flags in the panel
+  await page.goto(`/browse?${resolutionQuery}`);
   const panel = page.getByRole("search", { name: "Filter models" });
-  await expect(panel.locator("summary", { hasText: "Review" })).toHaveCount(0);
-  const notice = page.getByRole("alert").filter({ hasText: "This search needs a reviewer or admin" });
-  await expect(notice).toContainText("the flagged filter is for reviewers and admins");
-  await expect(notice.getByRole("link", { name: "Search without the review filter" })).toHaveAttribute(
-    "href",
-    `/browse?${resolutionQuery}`,
-  );
+  await openGroup(panel, "Review");
+  await panel.getByRole("radio", { name: "Only flagged records" }).check();
+  await panel.getByRole("button", { name: "Apply filters" }).click();
 
-  // when a reviewer opens the same link
+  // then the flagged model is found, with the badge and without the issue
+  await expect(page).toHaveURL(`/browse?${resolutionQuery}&flagged=true`);
+  await expect(page.getByText("1 model matches these filters", { exact: true })).toBeVisible();
+  expect(await resultModelIds(page)).toEqual([records.ensembleA]);
+  const row = page.locator(`[data-model-id="${records.ensembleA}"]`);
+  await expect(row.getByText("Flagged for review", { exact: true })).toBeVisible();
+  await expect(row.getByText("The latest PDB update failed validation")).toHaveCount(0);
+  expect(await resultModelIds(page)).toEqual((await apiSearch(request, searchQuery(page))).ids);
+
+  // and "only records without flags" leaves it out
+  await page.goto(`/browse?${resolutionQuery}&flagged=false`);
+  await expect(page.getByText("2 models match these filters", { exact: true })).toBeVisible();
+  expect((await resultModelIds(page)).sort()).toEqual([records.multiconformerA, records.multiconformerB].sort());
+
+  // when a reviewer opens the flagged search
   const reviewerContext = await browser.newContext();
   try {
     await signIn(reviewerContext, { ...reviewer, permissions: [...reviewer.permissions, "review_flags.read"] });
     const reviewerPage = await reviewerContext.newPage();
-    await reviewerPage.goto(`/browse?${resolutionQuery}&flagged=false`);
+    await reviewerPage.goto(`/browse?${resolutionQuery}&flagged=true`);
 
-    // then the search runs as the reviewer, with the filter set in the panel
-    await expect(reviewerPage.getByText("3 models match these filters", { exact: true })).toBeVisible();
+    // then the same model is found, and the reviewer sees the issue
+    await expect(reviewerPage.getByText("1 model matches these filters", { exact: true })).toBeVisible();
+    const reviewerRow = reviewerPage.locator(`[data-model-id="${records.ensembleA}"]`);
+    await expect(reviewerRow.getByText(/The latest PDB update failed validation/)).toBeVisible();
     const reviewerPanel = reviewerPage.getByRole("search", { name: "Filter models" });
-    await expect(reviewerPanel.getByRole("radio", { name: "Only records without flags" })).toBeChecked();
+    await expect(reviewerPanel.getByRole("radio", { name: "Only flagged records" })).toBeChecked();
   } finally {
     await reviewerContext.close();
   }

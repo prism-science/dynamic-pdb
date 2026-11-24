@@ -67,8 +67,6 @@ type FilterBase = {
   label: string;
   /** One line under the label, when the label alone could mislead. */
   help?: string;
-  /** Offered only to reviewers and admins; the API answers 403 to anyone else. */
-  reviewersOnly?: true;
 };
 
 /** Free text values, each its own repeated parameter (organism=A&organism=B). */
@@ -296,8 +294,7 @@ export const MODEL_SEARCH_FILTERS: readonly ModelSearchFilter[] = [
     parameter: "flagged",
     group: "review",
     label: "Review flags",
-    help: "Shown to reviewers and admins only.",
-    reviewersOnly: true,
+    help: "Anyone can filter by flags; only reviewers and admins see which issues.",
     anyLabel: "Any",
     yesLabel: "Only flagged records",
     noLabel: "Only records without flags",
@@ -328,31 +325,6 @@ export const MODEL_SEARCH_PARAMETERS: readonly ModelSearchParameter[] =
   MODEL_SEARCH_FILTERS.flatMap(filterParameters);
 
 const KNOWN_PARAMETERS = new Set<string>(MODEL_SEARCH_PARAMETERS);
-
-/**
- * The filters the panel offers this reader. The flagged filter is for
- * reviewers and admins (researcher answer 7), whose sign-in carries the
- * review_flags.read permission; the API checks the role on every request.
- */
-export function offeredFilters(canFilterReviewFlags: boolean): readonly ModelSearchFilter[] {
-  return canFilterReviewFlags
-    ? MODEL_SEARCH_FILTERS
-    : MODEL_SEARCH_FILTERS.filter((filter) => !filter.reviewersOnly);
-}
-
-const REVIEWER_ONLY_PARAMETERS = new Set<string>(
-  MODEL_SEARCH_FILTERS.filter((filter) => filter.reviewersOnly).flatMap(filterParameters),
-);
-
-/** Whether a search uses a filter that only reviewers and admins may use. */
-export function usesReviewerFilters(criteria: ModelSearchCriteria): boolean {
-  return criteria.some(([parameter]) => REVIEWER_ONLY_PARAMETERS.has(parameter));
-}
-
-/** The same search without the filters only reviewers and admins may use. */
-export function withoutReviewerFilters(criteria: ModelSearchCriteria): ModelSearchCriteria {
-  return criteria.filter(([parameter]) => !REVIEWER_ONLY_PARAMETERS.has(parameter));
-}
 
 /** One filter value as the URL holds it: [parameter, value]. */
 export type ModelSearchCriterion = readonly [ModelSearchParameter, string];
@@ -441,8 +413,7 @@ export function panelValuesFromCriteria(criteria: ModelSearchCriteria): PanelVal
 
 /**
  * The search the panel describes, empty values left out. Only the given
- * filters' parameters count, so a filter the panel does not offer this reader
- * (one only reviewers may use, kept from a shared URL) is dropped on Apply.
+ * filters' parameters count.
  */
 export function criteriaFromPanel(
   values: PanelValues,
@@ -599,15 +570,6 @@ export function searchFailureMessage(failure: SearchFailure): SearchFailureMessa
     return {
       title: "This search could not run",
       body: failure.detail?.trim() || "The API refused one of the filters.",
-    };
-  }
-  if (failure.status === 403) {
-    // Today only the flagged filter, which is for reviewers and admins.
-    return {
-      title: "This search needs a reviewer or admin",
-      body:
-        failure.detail?.trim() ||
-        "One of the filters is for reviewers and admins. Sign in with such an account, or search without it.",
     };
   }
   if (failure.status === 429) {

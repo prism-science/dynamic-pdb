@@ -382,7 +382,7 @@ export interface paths {
          *
          *     Search filters, meta.total, and the entry, flagged_for_review, review_flags and compounds_needing_review fields are available only where the server enables model search; elsewhere a filter parameter gets 400 and the response has none of them. The protein chain filters (protein_chains_min, protein_chain_length_min, protein_chain_length_max, protein_chain_mode) have a switch of their own.
          *
-         *     Review flags: every caller sees whether a result is flagged for review (flagged_for_review). The open issues (review_flags) and the flagged filter are only for signed-in users with the reviewer or admin role; signing in alone grants neither.
+         *     Review flags: every caller sees whether a result is flagged for review (flagged_for_review) and may filter by it (flagged). The open issues (review_flags) are only for signed-in users with the reviewer or admin role; signing in alone grants neither.
          */
         get: operations["listModelsAcrossEntries"];
         put?: never;
@@ -1394,7 +1394,7 @@ export interface components {
             name: string;
             email: string;
             login: string;
-            /** @description Permission keys the user holds. Users with `revisions.approve` also get `entries.delete` where the server allows entry deletion, and `revisions.approve_own` where it allows self-approval (dev only). Users with the reviewer or admin role also get `review_flags.read`: they see review flag issues and may use the flagged filter. The API checks the role on every request; the key only tells the website what to offer. */
+            /** @description Permission keys the user holds. Users with `revisions.approve` also get `entries.delete` where the server allows entry deletion, and `revisions.approve_own` where it allows self-approval (dev only). Users with the reviewer or admin role also get `review_flags.read`: they see review flag issues. The API checks the role on every request; the key only tells the website what to show. */
             permissions: string[];
         };
         EntryProperties: {
@@ -3610,7 +3610,7 @@ export interface operations {
                 rmsf_max?: number;
                 /** @description Model filter. Models that have no value for at least one of these metrics. */
                 metric_missing?: components["schemas"]["MetricKey"][];
-                /** @description Reviewers and admins only: where the server enables model search, anyone else gets 403 (elsewhere every filter gets 400). true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. */
+                /** @description Open to every caller where the server enables model search (elsewhere every filter gets 400). true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. The flags' issues (review_flags) stay for reviewers and admins only. */
                 flagged?: boolean;
             };
             header?: never;
@@ -3630,15 +3630,6 @@ export interface operations {
             };
             /** @description Invalid filters, or a filter parameter where the server does not enable model search. The detail names the parameter. */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/vnd.api+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The flagged filter from a caller without the reviewer or admin role (code FORBIDDEN). The detail names the parameter; remove it. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3696,15 +3687,6 @@ export interface operations {
             };
             /** @description The body is not valid JSON, or a search has filters where the server does not enable model search. */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/vnd.api+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A search has the flagged filter and the caller does not have the reviewer or admin role (code FORBIDDEN). The detail names the parameter and the search. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
