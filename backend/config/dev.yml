@@ -90,6 +90,10 @@ model_search:
   # miss every model whose file is not counted yet. Their own switch-on PR turns them on, with the
   # website's residue controls. Off, a residue parameter gets 400.
   residue_filters_enabled: false
+  # has_related_datasets and related_dataset_relation stay off until their switch-on PR (dev first).
+  # Off, either parameter gets 400. Rollback after the switch-on: false here, or
+  # DYNAMIC_PDB_MODEL_SEARCH_RELATED_DATASET_FILTERS_ENABLED=false.
+  related_dataset_filters_enabled: false
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR.
   enabled: false
