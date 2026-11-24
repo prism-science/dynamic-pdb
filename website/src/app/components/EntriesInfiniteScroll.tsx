@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatEntryLabel } from "@/lib/entry-label";
+import { entryCardHref, selectedModelLine } from "@/lib/entry-search-match";
 
 import styles from "./EntriesBrowser.module.css";
 
@@ -124,10 +125,11 @@ function EntryCard({
   entry: Entry;
 }) {
   const updated = formatDate(entry.updated_at);
+  const matchLine = selectedModelLine(entry);
 
   return (
     <li className={styles.cardItem}>
-      <Link className={styles.card} href={`/entries/${entry.id}`}>
+      <Link className={styles.card} href={entryCardHref(entry)}>
         <span
           className={styles.thumb}
           data-empty={entry.thumbnail_image_url ? undefined : "true"}
@@ -141,6 +143,7 @@ function EntryCard({
         </span>
         <span className={styles.cardBody}>
           <span className={styles.cardName}>{formatEntryLabel(entry)}</span>
+          {matchLine ? <span className={styles.cardMatch}>{matchLine}</span> : null}
           <span className={styles.cardDesc}>
             {entry.title?.trim() ? entry.title : "No description yet."}
           </span>

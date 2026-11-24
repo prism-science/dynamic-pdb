@@ -22,21 +22,23 @@ import (
 func Test_should_read_every_filter_when_model_search_params_are_given(t *testing.T) {
 	// given
 	params := ListModelsAcrossEntriesParams{
-		Method:           &[]string{" X-ray crystallography "},
-		ResolutionMin:    ptr(1.0),
-		ResolutionMax:    ptr(2.5),
-		Organism:         &[]string{"Homo sapiens", "562"},
-		Uniprot:          &[]string{"P69905"},
-		LigandOrCofactor: &[]string{"ADP"},
-		ModelType:        &[]StructureModelType{StructureModelTypeEnsemble},
-		Purpose:          &[]ModelPurpose{ModelPurposeRefinement},
-		Source:           &[]ModelSearchSource{ModelSearchSourcePDBArchive},
-		DataLevel:        &[]ArtifactLevel{L2},
-		Compound:         &[]string{"ATP"},
-		RFreeMax:         ptr(0.25),
-		ClashscoreMin:    ptr(1.0),
-		MetricMissing:    &[]MetricKey{MetricKeyRMSF},
-		Flagged:          ptr(true),
+		Method:                        &[]string{" X-ray crystallography "},
+		ResolutionMin:                 ptr(1.0),
+		ResolutionMax:                 ptr(2.5),
+		Organism:                      &[]string{"Homo sapiens", "562"},
+		Uniprot:                       &[]string{"P69905"},
+		LigandOrCofactor:              &[]string{"ADP"},
+		ModelType:                     &[]StructureModelType{StructureModelTypeEnsemble},
+		Purpose:                       &[]ModelPurpose{ModelPurposeRefinement},
+		Source:                        &[]ModelSearchSource{ModelSearchSourcePDBArchive},
+		DataLevel:                     &[]ArtifactLevel{L2},
+		Compound:                      &[]string{"ATP"},
+		ExcludeCompoundsNeedingReview: ptr(true),
+		PdbId:                         &[]string{" 44ps "},
+		RFreeMax:                      ptr(0.25),
+		ClashscoreMin:                 ptr(1.0),
+		MetricMissing:                 &[]MetricKey{MetricKeyRMSF},
+		Flagged:                       ptr(true),
 	}
 
 	// when
@@ -46,17 +48,19 @@ func Test_should_read_every_filter_when_model_search_params_are_given(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, search)
 	assert.Equal(t, db.ModelSearch{
-		Methods:            []string{"X-ray crystallography"},
-		ResolutionMin:      ptr(1.0),
-		ResolutionMax:      ptr(2.5),
-		Organisms:          []string{"Homo sapiens", "562"},
-		UniProtAccessions:  []string{"P69905"},
-		LigandsOrCofactors: []string{"ADP"},
-		ModelTypes:         []domainmodels.StructureModelType{domainmodels.StructureModelTypeEnsemble},
-		Purposes:           []domainmodels.ModelPurpose{domainmodels.ModelPurposeRefinement},
-		Sources:            []domainmodels.ModelSearchSource{domainmodels.ModelSearchSourcePDBArchive},
-		DataLevels:         []domainmodels.ArtifactLevel{domainmodels.ArtifactLevelL2},
-		Compounds:          []string{"ATP"},
+		Methods:                       []string{"X-ray crystallography"},
+		ResolutionMin:                 ptr(1.0),
+		ResolutionMax:                 ptr(2.5),
+		Organisms:                     []string{"Homo sapiens", "562"},
+		UniProtAccessions:             []string{"P69905"},
+		LigandsOrCofactors:            []string{"ADP"},
+		ModelTypes:                    []domainmodels.StructureModelType{domainmodels.StructureModelTypeEnsemble},
+		Purposes:                      []domainmodels.ModelPurpose{domainmodels.ModelPurposeRefinement},
+		Sources:                       []domainmodels.ModelSearchSource{domainmodels.ModelSearchSourcePDBArchive},
+		DataLevels:                    []domainmodels.ArtifactLevel{domainmodels.ArtifactLevelL2},
+		Compounds:                     []string{"ATP"},
+		ExcludeCompoundsNeedingReview: true,
+		PDBIDs:                        []string{"44ps"},
 		MetricBounds: []db.MetricBound{
 			{Key: domainmodels.MetricKeyRFree, Max: ptr(0.25)},
 			{Key: domainmodels.MetricKeyClashscore, Min: ptr(1.0)},
@@ -66,8 +70,8 @@ func Test_should_read_every_filter_when_model_search_params_are_given(t *testing
 	}, search.filters)
 	assert.ElementsMatch(t, []string{
 		"method", "resolution_min", "resolution_max", "organism", "uniprot", "ligand_or_cofactor",
-		"model_type", "purpose", "source", "data_level", "compound", "r_free_max", "clashscore_min",
-		"metric_missing", "flagged",
+		"model_type", "purpose", "source", "data_level", "compound", "exclude_compounds_needing_review", "pdb_id",
+		"r_free_max", "clashscore_min", "metric_missing", "flagged",
 	}, search.parameters)
 }
 
@@ -106,6 +110,9 @@ func Test_should_name_the_parameter_when_model_search_params_are_invalid(t *test
 		{name: "metric not finite", params: ListModelsAcrossEntriesParams{RmsfMax: ptr(math.Inf(1))}, wantParameter: "rmsf_max"},
 		{name: "resolution not a number", params: ListModelsAcrossEntriesParams{ResolutionMax: ptr(math.NaN())}, wantParameter: "resolution_max"},
 		{name: "taxonomy ID of zero", params: ListModelsAcrossEntriesParams{Organism: &[]string{"Homo sapiens", "000"}}, wantParameter: "organism"},
+		{name: "exclusion without compounds", params: ListModelsAcrossEntriesParams{ExcludeCompoundsNeedingReview: ptr(true)}, wantParameter: "exclude_compounds_needing_review"},
+		{name: "exclusion off without compounds", params: ListModelsAcrossEntriesParams{ExcludeCompoundsNeedingReview: ptr(false)}, wantParameter: "exclude_compounds_needing_review"},
+		{name: "empty PDB ID", params: ListModelsAcrossEntriesParams{PdbId: &[]string{"  "}}, wantParameter: "pdb_id"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -304,4 +311,41 @@ func Test_should_answer_400_when_the_database_layer_refuses_the_search(t *testin
 
 	// then
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
+func Test_should_keep_the_exclusion_off_and_count_it_as_a_filter_when_it_is_false(t *testing.T) {
+	// given
+	params := ListModelsAcrossEntriesParams{Compound: &[]string{"ADP"}, ExcludeCompoundsNeedingReview: ptr(false)}
+
+	// when
+	search, err := modelSearchFromParams(params)
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, search)
+	assert.False(t, search.filters.ExcludeCompoundsNeedingReview)
+	assert.Equal(t, []string{"compound", "exclude_compounds_needing_review"}, search.parameters)
+}
+
+func Test_should_refuse_the_new_filters_and_name_them_when_model_search_is_off(t *testing.T) {
+	// given
+	server := &Server{}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet,
+		"/v1/models?compound=ADP&exclude_compounds_needing_review=true&pdb_id=44PS", nil)
+
+	// when
+	server.ListModelsAcrossEntries(recorder, request, ListModelsAcrossEntriesParams{
+		Compound:                      &[]string{"ADP"},
+		ExcludeCompoundsNeedingReview: ptr(true),
+		PdbId:                         &[]string{"44PS"},
+	})
+
+	// then
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	errorObject := decodeSingleErrorObject(t, recorder)
+	require.NotNil(t, errorObject.Detail)
+	assert.Contains(t, *errorObject.Detail, "not enabled")
+	assert.Contains(t, *errorObject.Detail, "exclude_compounds_needing_review")
+	assert.Contains(t, *errorObject.Detail, "pdb_id")
 }

@@ -27,6 +27,7 @@ func TestModelSearchIndexExpressions(t *testing.T) {
 		{"V20261109120500__entry_revisions_active_cofactors_idx.sql", "entry_revisions", entryCofactorsExpression},
 		{"V20261109120600__polymer_entities_source_organisms_idx.sql", "polymer_entities", sourceOrganismsExpression},
 		{"V20261109120700__polymer_entities_uniprot_mappings_idx.sql", "polymer_entities", uniProtMappingsExpression},
+		{"V20261105120200__model_revisions_active_pdb_ref_idx.sql", "model_revisions", modelPDBIDExpression},
 	}
 	for _, tc := range cases {
 		t.Run(tc.migration, func(t *testing.T) {

@@ -2,6 +2,7 @@ import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
 import { createActiveEntry, createActiveModel } from "./support/api";
 import { reviewer, signIn } from "./support/auth";
+import { saveModelFileCompounds } from "./support/database";
 import { expect, test } from "./support/fixtures";
 import { stack } from "./support/stack";
 
@@ -233,5 +234,119 @@ test("should offer the review flag filter to reviewers only, and explain a share
     await expect(reviewerPanel.getByRole("radio", { name: "Only records without flags" })).toBeChecked();
   } finally {
     await reviewerContext.close();
+  }
+});
+
+/** A chemical component ID no other record has: Z and four random letters. */
+function unusedCompoundId(): string {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let id = "Z";
+  for (let index = 0; index < 4; index++) {
+    id += letters[Math.floor(Math.random() * letters.length)];
+  }
+  return id;
+}
+
+/** The ID of a model's coordinate file (its primary file). */
+async function modelFileId(request: APIRequestContext, entryId: string, modelId: string): Promise<string> {
+  const response = await request.get(`${stack.backendURL}/v1/entries/${entryId}/models/${modelId}`);
+  expect(response.status(), await response.text()).toBe(200);
+  const body = (await response.json()) as { data: { attributes: { primary_artifact_id: string | null } } };
+  const fileId = body.data.attributes.primary_artifact_id;
+  if (!fileId) {
+    throw new Error(`model ${modelId} has no coordinate file`);
+  }
+  return fileId;
+}
+
+const EXCLUDE_NEEDS_REVIEW = "Leave out compounds marked “needs review”";
+const REVIEW_REASON = "could be a chain residue";
+
+test("should leave out models whose compound copies all need review only when the reader ticks it, as the API does", async ({
+  page,
+  browser,
+  request,
+  submitterApi,
+  reviewerApi,
+  runTag,
+}) => {
+  // given: three models whose files the model-compounds job has read: a confirmed
+  // copy, only copies that need review, and both
+  const compound = unusedCompoundId();
+  const entryId = await createActiveEntry(submitterApi, reviewerApi, `S8 compound review ${runTag}`);
+  const confirmed = await createActiveModel(submitterApi, reviewerApi, entryId, {
+    title: `S8 confirmed ${runTag}`,
+    modelType: "Deposited",
+    rFree: 0.2,
+  });
+  const needsReviewOnly = await createActiveModel(submitterApi, reviewerApi, entryId, {
+    title: `S8 needs review ${runTag}`,
+    modelType: "Multiconformer",
+    rFree: 0.2,
+  });
+  const both = await createActiveModel(submitterApi, reviewerApi, entryId, {
+    title: `S8 both ${runTag}`,
+    modelType: "Ensemble",
+    rFree: 0.2,
+  });
+  saveModelFileCompounds(await modelFileId(request, entryId, confirmed), [{ ccdId: compound }]);
+  saveModelFileCompounds(await modelFileId(request, entryId, needsReviewOnly), [
+    { ccdId: compound, reviewReason: REVIEW_REASON },
+  ]);
+  saveModelFileCompounds(await modelFileId(request, entryId, both), [
+    { ccdId: compound },
+    { ccdId: compound, reviewReason: REVIEW_REASON },
+  ]);
+
+  // when the reader searches the compound
+  await page.goto("/browse");
+  const panel = page.getByRole("search", { name: "Filter models" });
+  const option = panel.getByRole("checkbox", { name: EXCLUDE_NEEDS_REVIEW });
+
+  // then the option is off by default and waits for a compound
+  await expect(option).not.toBeChecked();
+  await expect(option).toBeDisabled();
+  await expect(panel.getByText("Add a compound first.", { exact: true })).toBeVisible();
+  await panel.getByLabel("Compound in the coordinate file", { exact: true }).fill(compound);
+  await panel.getByRole("button", { name: "Apply filters" }).click();
+
+  // and by default copies that need review match too, and are named
+  await expect(page).toHaveURL(`/browse?compound=${compound}`);
+  await expect(page.getByText("3 models match these filters", { exact: true })).toBeVisible();
+  expect((await resultModelIds(page)).sort()).toEqual([confirmed, needsReviewOnly, both].sort());
+  await expect(
+    page.locator(`[data-model-id="${needsReviewOnly}"]`).getByText(`needs review: ${REVIEW_REASON}`),
+  ).toBeVisible();
+  expect(await resultModelIds(page)).toEqual((await apiSearch(request, searchQuery(page))).ids);
+
+  // when the reader ticks the option
+  await expect(option).toBeEnabled();
+  await option.check();
+  await panel.getByRole("button", { name: "Apply filters" }).click();
+
+  // then only models with a copy that needs no review remain, and none is marked
+  await expect(page).toHaveURL(`/browse?compound=${compound}&exclude_compounds_needing_review=true`);
+  await expect(page.getByText("2 models match these filters", { exact: true })).toBeVisible();
+  expect((await resultModelIds(page)).sort()).toEqual([confirmed, both].sort());
+  await expect(page.getByText(`needs review: ${REVIEW_REASON}`)).toHaveCount(0);
+  const api = await apiSearch(request, searchQuery(page));
+  expect(await resultModelIds(page)).toEqual(api.ids);
+  expect(api.total).toEqual({ count: 2, exact: true });
+
+  // and a new visitor with the same URL gets the same search, the option ticked
+  const shared = await browser.newPage();
+  try {
+    await shared.goto(`/browse?${searchQuery(page)}`);
+    const sharedPanel = shared.getByRole("search", { name: "Filter models" });
+    await expect(sharedPanel.getByRole("checkbox", { name: EXCLUDE_NEEDS_REVIEW })).toBeChecked();
+    expect(await resultModelIds(shared)).toEqual(api.ids);
+
+    // when the compound is removed, Apply drops the option the API would refuse alone
+    await sharedPanel.getByRole("button", { name: `Remove ${compound} from Compound in the coordinate file` }).click();
+    await expect(sharedPanel.getByRole("checkbox", { name: EXCLUDE_NEEDS_REVIEW })).toBeDisabled();
+    await sharedPanel.getByRole("button", { name: "Apply filters" }).click();
+    await expect(shared).toHaveURL("/browse");
+  } finally {
+    await shared.close();
   }
 });

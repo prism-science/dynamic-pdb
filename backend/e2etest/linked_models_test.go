@@ -2,8 +2,12 @@ package e2etest
 
 import (
 	"net/http"
+	"strings"
+	"testing"
 
 	"github.com/google/uuid"
+
+	"dynamic-pdb/backend/internal/httpapi"
 )
 
 func coordinateFileForTest(pdbID string) string {
@@ -136,4 +140,93 @@ func (s *SchemaValidationSuite) Test_should_name_the_entry_when_a_model_takes_a_
 	errors := decodeErrorResponseForTest(s.T(), response, http.StatusConflict)
 	s.Equal("/model/metadata/external_refs/pdb", errors[0].Source.Pointer)
 	s.Contains(stringValue(errors[0].Detail), holder.EntryId)
+}
+
+// matchedModelsForTest lists GET /v1/entries for query and returns each result's matched_models
+// (nil when the response has none), by entry ID.
+func matchedModelsForTest(t *testing.T, query string) map[string]*[]httpapi.MatchedModel {
+	t.Helper()
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := getWithToken(t, "/v1/entries?"+query, "")
+	document := decodeJSONResponse[httpapi.EntryCollectionDocument](t, response, http.StatusOK)
+	matched := make(map[string]*[]httpapi.MatchedModel, len(document.Data))
+	for _, resource := range document.Data {
+		matched[resource.Id] = resource.Attributes.MatchedModels
+	}
+	return matched
+}
+
+// Researcher question 4: searching any PDB ID of an entry that holds several depositions returns
+// that entry with the model of that PDB ID selected, on every search path. Nothing is merged.
+func (s *SchemaValidationSuite) Test_should_select_the_model_of_the_pdb_id_when_an_entry_with_several_depositions_is_searched() {
+	// given: one entry with a computed Single Conformer that names a PDB ID (made first), its
+	// Deposited model, a re-refinement deposited as an Ensemble, and computed models without one.
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "linked-model-select-owner", 9106)
+	originalPDBID, reRefinementPDBID, singleConformerPDBID :=
+		unusedPDBIDForTest(s.T()), unusedPDBIDForTest(s.T()), unusedPDBIDForTest(s.T())
+	entryFileID := uuid.New()
+	entry := createAndActivateEntryForTest(s.T(), token, map[string]any{"entry": map[string]any{
+		"title": "several depositions", "external_refs": map[string]string{"pdb": originalPDBID},
+		"artifacts": []map[string]any{
+			artifactRequest(entryFileID, "data", "L0", "structure_factors_cif", "s3://entry/linked-select-sf.cif", nil),
+		},
+	}})
+	computedModel := func(modelType string, externalRefs map[string]string) string {
+		modelFileID := uuid.New()
+		metadata := map[string]any{"model_type": modelType}
+		if externalRefs != nil {
+			metadata["external_refs"] = externalRefs
+		}
+		return createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{"model": map[string]any{
+			"title": modelType + " model", "metadata": metadata,
+			"artifacts": []map[string]any{artifactRequest(modelFileID, "model", "L2", "cif", "s3://model/linked-select.cif", nil)},
+			"runs":      []map[string]any{refinementRunForTest(uuid.New(), entryFileID, modelFileID)},
+		}}).ModelId
+	}
+	singleConformer := computedModel("Single Conformer", map[string]string{"pdb": singleConformerPDBID})
+	deposited := createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{"model": map[string]any{
+		"title": "deposited model", "metadata": map[string]any{
+			"model_type": "Deposited", "external_refs": map[string]string{"pdb": originalPDBID}},
+	}}).ModelId
+	rerefined := createAndActivateModelForTest(s.T(), token, entry.EntryId,
+		archiveEnsembleForTest(reRefinementPDBID, originalPDBID, coordinateFileForTest(reRefinementPDBID))).ModelId
+	computedModel("Multiconformer", nil)
+	computedModel("Ensemble", nil)
+	other := createAndActivateEntryForTest(s.T(), token, map[string]any{"entry": map[string]any{"title": "unrelated entry"}})
+
+	// when
+	byReRefinement := matchedModelsForTest(s.T(), "pdb_id="+reRefinementPDBID)
+	byQuery := matchedModelsForTest(s.T(), "query="+strings.ToLower(reRefinementPDBID))
+	byEntryPDBID := matchedModelsForTest(s.T(), "pdb_id="+originalPDBID)
+	bySeveral := matchedModelsForTest(s.T(), "pdb_id="+singleConformerPDBID+"&pdb_id="+originalPDBID)
+	byText := matchedModelsForTest(s.T(), "query=several+depositions")
+	unsearched := matchedModelsForTest(s.T(), "limit=100")
+	modelSearch := getModelSearchPageForTest(s.T(), "/v1/models?pdb_id="+strings.ToLower(reRefinementPDBID), "")
+
+	// then
+	s.Equal(map[string]*[]httpapi.MatchedModel{
+		entry.EntryId: {{ModelId: rerefined, PdbId: reRefinementPDBID}},
+	}, byReRefinement)
+	s.Equal(byReRefinement, byQuery)
+	s.Equal(map[string]*[]httpapi.MatchedModel{
+		entry.EntryId: {{ModelId: deposited, PdbId: originalPDBID}},
+	}, byEntryPDBID)
+	s.Equal(map[string]*[]httpapi.MatchedModel{entry.EntryId: {
+		{ModelId: deposited, PdbId: originalPDBID},
+		{ModelId: singleConformer, PdbId: singleConformerPDBID},
+	}}, bySeveral, "archive models first, then in list order")
+	s.Require().Contains(byText, entry.EntryId)
+	s.Equal(&[]httpapi.MatchedModel{}, byText[entry.EntryId], "text that is no PDB ID selects nothing")
+	for entryID, matched := range unsearched {
+		s.Nil(matched, "a list without pdb_id or query has no matched_models (%s)", entryID)
+	}
+	s.Require().Len(modelSearch.Data, 1)
+	s.Equal(rerefined, modelSearch.Data[0].Id)
+	s.Require().NotNil(modelSearch.Data[0].Attributes.Entry)
+	s.Equal(entry.EntryId, modelSearch.Data[0].Attributes.Entry.Id)
+	// Nothing merged or re-anchored: every model is still a model of its own entry.
+	for _, modelID := range []string{deposited, rerefined, singleConformer} {
+		s.Equal(entry.EntryId, getModelForTest(s.T(), entry.EntryId, modelID).EntryId)
+	}
+	s.Empty(listEntryModelsForTest(s.T(), other.EntryId))
 }

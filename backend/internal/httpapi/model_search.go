@@ -273,11 +273,16 @@ func (s *Server) modelSearchItems(
 	if err != nil {
 		return nil, fmt.Errorf("list review flags of model search results: %w", err)
 	}
+	// With the option to exclude them, copies that need review did not count, so no result lists
+	// any (researcher question 6, user decision of 13 Nov): the field is present and empty.
 	var compounds map[uuid.UUID][]domainmodels.CompoundNeedingReview
 	if search != nil && len(search.filters.Compounds) > 0 {
-		compounds, err = s.database.ModeledCompounds.ListNeedingReview(ctx, primaryArtifactIDs, search.filters.Compounds)
-		if err != nil {
-			return nil, fmt.Errorf("list compounds needing review of model search results: %w", err)
+		compounds = map[uuid.UUID][]domainmodels.CompoundNeedingReview{}
+		if !search.filters.ExcludeCompoundsNeedingReview {
+			compounds, err = s.database.ModeledCompounds.ListNeedingReview(ctx, primaryArtifactIDs, search.filters.Compounds)
+			if err != nil {
+				return nil, fmt.Errorf("list compounds needing review of model search results: %w", err)
+			}
 		}
 	}
 
@@ -387,6 +392,14 @@ func modelSearchFromParams(params ListModelsAcrossEntriesParams) (*parsedModelSe
 		return nil, err
 	}
 	if search.filters.Compounds, err = search.texts("compound", params.Compound); err != nil {
+		return nil, err
+	}
+	if search.filters.ExcludeCompoundsNeedingReview, err = search.excludeCompoundsNeedingReview(
+		params.ExcludeCompoundsNeedingReview, search.filters.Compounds,
+	); err != nil {
+		return nil, err
+	}
+	if search.filters.PDBIDs, err = search.texts("pdb_id", params.PdbId); err != nil {
 		return nil, err
 	}
 	if search.filters.ResolutionMin, search.filters.ResolutionMax, err = search.bounds(
@@ -578,6 +591,20 @@ func (search *parsedModelSearch) texts(parameter string, values *[]string) ([]st
 	}
 	search.parameters = append(search.parameters, parameter)
 	return texts, nil
+}
+
+// excludeCompoundsNeedingReview reads the compound filter's option to leave out copies the reader
+// marked needs review. It only changes how compounds match, so it needs compounds.
+func (search *parsedModelSearch) excludeCompoundsNeedingReview(value *bool, compounds []string) (bool, error) {
+	const parameter = "exclude_compounds_needing_review"
+	if value == nil {
+		return false, nil
+	}
+	if len(compounds) == 0 {
+		return false, &modelSearchParamError{parameter: parameter, problem: "it needs the compound filter"}
+	}
+	search.parameters = append(search.parameters, parameter)
+	return *value, nil
 }
 
 // bounds reads the <name>_min and <name>_max pair of a numeric filter.

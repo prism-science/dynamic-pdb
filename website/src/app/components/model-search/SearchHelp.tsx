@@ -26,7 +26,12 @@ export default function SearchHelp({ open = false }: { open?: boolean }) {
         </li>
         <li>
           Compounds the file reader marked &ldquo;needs review&rdquo; still match, and the result
-          names them.
+          names them. Tick &ldquo;Leave out compounds marked needs review&rdquo; to count only the
+          copies it is sure of. A file not read yet never matches.
+        </li>
+        <li>
+          A PDB ID finds the model with that PDB ID: a deposited model, or a re-refinement filed
+          under the entry of its experimental data.
         </li>
         <li>
           Records flagged for review stay in the results, with a &ldquo;Flagged for review&rdquo;

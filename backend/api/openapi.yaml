@@ -872,14 +872,20 @@ paths:
             maxLength: 512
         - name: query
           in: query
-          description: Text to search across entries, models, artifacts, and artifact metadata.
+          description: >
+            Text to search across entries, models, artifacts, and artifact metadata. When the whole
+            text is the PDB ID of one of an entry's active models, the result names that model in
+            matched_models.
           required: false
           schema:
             type: string
             maxLength: 256
         - name: pdb_id
           in: query
-          description: PDB IDs to match against external_refs.pdb of an entry or of one of its active models.
+          description: >
+            PDB IDs to match against external_refs.pdb of an entry or of one of its active models.
+            Each result names the models whose own PDB ID matched in matched_models, so a search for
+            any PDB ID of an entry that holds several depositions selects that model.
           required: false
           schema:
             type: array
@@ -1196,6 +1202,24 @@ paths:
             maxItems: 20
             items:
               $ref: "#/components/schemas/ModelSearchSource"
+        - name: pdb_id
+          in: query
+          description: >
+            Model filter. Models whose own PDB ID (external_refs.pdb) is one of these, ignoring
+            case: a deposited model, or a re-refinement filed under the entry of its experimental
+            data. Each result is that model with its entry, so searching any PDB ID of an entry
+            that holds several depositions selects the model with that PDB ID. Computed models
+            carry no PDB ID and never match.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
         - name: data_level
           in: query
           description: >
@@ -1214,8 +1238,9 @@ paths:
           description: >
             Model filter. Models whose coordinate file contains one of these chemical component
             IDs (for example ADP), ignoring case. A file the server has not read yet never
-            matches. Compounds the reader marked "needs review" match too; the result lists them
-            in compounds_needing_review.
+            matches. Compounds the reader marked "needs review" match too, unless
+            exclude_compounds_needing_review is true; the result lists them in
+            compounds_needing_review.
           required: false
           style: form
           explode: true
@@ -1226,6 +1251,17 @@ paths:
               type: string
               minLength: 1
               maxLength: 100
+        - name: exclude_compounds_needing_review
+          in: query
+          description: >
+            Model filter option, only with compound (400 without it). true: a copy of a compound
+            the coordinate-file reader marked "needs review" no longer counts, so a model matches
+            only through a copy that does not need review, and compounds_needing_review is empty.
+            A file with both kinds of copies still matches. false (the default): copies that need
+            review match too. A file the server has not read yet never matches either way.
+          required: false
+          schema:
+            type: boolean
         - name: protein_chains_min
           in: query
           description: >
@@ -3308,7 +3344,35 @@ components:
         id:
           type: string
         attributes:
-          $ref: "#/components/schemas/EntryInfoAttributes"
+          $ref: "#/components/schemas/EntryListAttributes"
+
+    EntryListAttributes:
+      allOf:
+        - $ref: "#/components/schemas/EntryInfoAttributes"
+        - type: object
+          properties:
+            matched_models:
+              description: >
+                The entry's active models whose own PDB ID (external_refs.pdb) is one of the
+                request's pdb_id values or its whole query, ignoring case: the model a PDB ID
+                search selects. Archive models (model type Deposited, or origin archive) first,
+                then in the order GET /v1/models lists them. Empty when the entry matched by its
+                own PDB ID only, or by other
+                text. Present only when the request has pdb_id or query. Nothing is merged: each
+                model keeps its entry.
+              type: array
+              items:
+                $ref: "#/components/schemas/MatchedModel"
+
+    MatchedModel:
+      type: object
+      required: [model_id, pdb_id]
+      properties:
+        model_id:
+          type: string
+        pdb_id:
+          type: string
+          description: The model's PDB ID as stored.
 
     SimilarEntryCollectionDocument:
       type: object
@@ -3413,7 +3477,9 @@ components:
               description: >
                 Compounds named in the compound filter that the coordinate-file reader marked
                 "needs review" in this model's file (for example a possible chain residue).
-                They still match. Present only when the request has a compound filter.
+                They still match. Present only when the request has a compound filter; empty
+                when the request sets exclude_compounds_needing_review, as those copies did not
+                count.
               type: array
               items:
                 $ref: "#/components/schemas/CompoundNeedingReview"

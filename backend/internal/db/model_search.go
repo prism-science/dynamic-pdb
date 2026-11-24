@@ -36,10 +36,16 @@ type ModelSearch struct {
 	ModelTypes []models.StructureModelType
 	Purposes   []models.ModelPurpose
 	Sources    []models.ModelSearchSource
+	// PDBIDs matches the model's own PDB ID (external_refs.pdb), ignoring case: a deposited
+	// model or an archive re-refinement. Computed models carry none (researcher question 4).
+	PDBIDs []string
 	// DataLevels matches a file of one of these levels attached to the model revision.
 	DataLevels []models.ArtifactLevel
 	// Compounds matches a chemical component ID in the model's coordinate file.
 	Compounds []string
+	// ExcludeCompoundsNeedingReview makes Compounds count only copies the reader did not mark
+	// needs_review (researcher question 6). It needs Compounds.
+	ExcludeCompoundsNeedingReview bool
 	// ProteinChains matches a coordinate file with enough protein chains in a length range (S2).
 	ProteinChains *ProteinChainFilter
 	// MetricBounds are inclusive bounds on metric values; each bound must hold.
@@ -269,8 +275,21 @@ func modelMetadataSearchConditions(search ModelSearch, args map[string]any) ([]s
 			conditions = append(conditions, condition)
 		}
 	}
+	if len(search.PDBIDs) > 0 {
+		conditions = append(conditions, modelPDBIDCondition)
+		args["search_pdb_ids"] = pq.StringArray(normalizedPDBIDs(search.PDBIDs))
+	}
 	return conditions, nil
 }
+
+// modelPDBIDExpression and the "is not null" below are written like the partial index
+// model_revisions_active_pdb_ref_idx (V20261105120200), which serves the pdb_id filter: the search
+// reads active model revisions only.
+const (
+	modelPDBIDExpression = `upper(model_revisions.metadata #>> '{external_refs,pdb}')`
+	modelPDBIDCondition  = `(model_revisions.metadata #>> '{external_refs,pdb}' is not null
+		and ` + modelPDBIDExpression + ` = any(cast(:search_pdb_ids as text[])))`
+)
 
 // modelSourceCondition matches models from any of sources; asking for both sources is no filter.
 func modelSourceCondition(sources []models.ModelSearchSource) (string, error) {
@@ -305,12 +324,19 @@ func modelFileSearchConditions(search ModelSearch, args map[string]any) ([]strin
 		conditions = append(conditions, dataLevelCondition)
 		args["search_data_levels"] = pq.StringArray(levels)
 	}
+	if search.ExcludeCompoundsNeedingReview && len(search.Compounds) == 0 {
+		return nil, fmt.Errorf("excluding compounds that need review needs a compound filter: %w", ErrInvalidModelSearch)
+	}
 	if len(search.Compounds) > 0 {
 		compounds := make([]string, 0, len(search.Compounds))
 		for _, compound := range search.Compounds {
 			compounds = append(compounds, normalizedCompoundID(compound))
 		}
-		conditions = append(conditions, compoundCondition)
+		condition := compoundCondition
+		if search.ExcludeCompoundsNeedingReview {
+			condition = confirmedCompoundCondition
+		}
+		conditions = append(conditions, condition)
 		args["search_compounds"] = pq.StringArray(compounds)
 	}
 	return conditions, nil
@@ -337,6 +363,17 @@ const compoundCondition = `exists (select 1
 		where search_compound_set.artifact_id = model_revisions.primary_artifact_id
 		  and search_compound_set.status = 'done'
 		  and search_compound.ccd_id = any(cast(:search_compounds as text[])))`
+
+// confirmedCompoundCondition is compoundCondition counting only copies the reader did not mark
+// needs_review: the user's option to leave those out (researcher question 6). A file with both
+// kinds of copies of a compound still matches; a file not read yet still never does.
+const confirmedCompoundCondition = `exists (select 1
+		from modeled_compound_sets search_compound_set
+		join modeled_compound_records search_compound on search_compound.artifact_id = search_compound_set.artifact_id
+		where search_compound_set.artifact_id = model_revisions.primary_artifact_id
+		  and search_compound_set.status = 'done'
+		  and search_compound.ccd_id = any(cast(:search_compounds as text[]))
+		  and not search_compound.needs_review)`
 
 // proteinChainSearchConditions counts the protein chains of the model's coordinate file, as the
 // coordinate-index job stored them (S2). A file the job has not read has no chains, so it never

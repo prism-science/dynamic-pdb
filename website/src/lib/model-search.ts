@@ -104,7 +104,27 @@ export type YesNoFilter = FilterBase & {
   noLabel: string;
 };
 
-export type ModelSearchFilter = TextListFilter | ChoiceListFilter | RangeFilter | YesNoFilter;
+/**
+ * A checkbox that changes how another filter matches: ticked sends
+ * <parameter>=true, unticked leaves it out. It means nothing without the other
+ * filter's values (the API answers 400), so the panel offers it only once that
+ * filter has a value and drops it on Apply otherwise.
+ */
+export type OptionFilter = FilterBase & {
+  kind: "option";
+  parameter: ModelSearchParameter;
+  /** The text-list filter whose matching the option changes. */
+  modifies: ModelSearchParameter;
+  /** Shown while the modified filter has no value. */
+  needsValueHint: string;
+};
+
+export type ModelSearchFilter =
+  | TextListFilter
+  | ChoiceListFilter
+  | RangeFilter
+  | YesNoFilter
+  | OptionFilter;
 
 /** Most values one list filter takes, and longest value, as GET /v1/models allows. */
 export const MAX_FILTER_VALUES = 20;
@@ -224,6 +244,15 @@ export const MODEL_SEARCH_FILTERS: readonly ModelSearchFilter[] = [
     choices: choices(modelSearchSourceValues, (value) => SOURCE_LABELS[value]),
   },
   {
+    kind: "text_list",
+    id: "pdb_id",
+    parameter: "pdb_id",
+    group: "model",
+    label: "PDB ID",
+    help: "The model's own PDB ID: a deposited model, or a re-refinement filed under its entry. Computed models have none.",
+    placeholder: "7KR0",
+  },
+  {
     kind: "choice_list",
     id: "data_level",
     parameter: "data_level",
@@ -240,6 +269,16 @@ export const MODEL_SEARCH_FILTERS: readonly ModelSearchFilter[] = [
     label: "Compound in the coordinate file",
     help: "Chemical component ID read from the model's file.",
     placeholder: "ADP",
+  },
+  {
+    kind: "option",
+    id: "exclude_compounds_needing_review",
+    parameter: "exclude_compounds_needing_review",
+    modifies: "compound",
+    group: "model",
+    label: "Leave out compounds marked “needs review”",
+    help: "Only copies the file reader is sure of count. Off by default.",
+    needsValueHint: "Add a compound first.",
   },
   ...metricKeyValues.map(metricRange),
   {
@@ -271,6 +310,7 @@ export function filterParameters(filter: ModelSearchFilter): ModelSearchParamete
     case "text_list":
     case "choice_list":
     case "yes_no":
+    case "option":
       return [filter.parameter];
     case "range":
       return [filter.minParameter, filter.maxParameter];
@@ -408,12 +448,38 @@ export function criteriaFromPanel(
   values: PanelValues,
   filters: readonly ModelSearchFilter[] = MODEL_SEARCH_FILTERS,
 ): ModelSearchCriteria {
-  return filters.flatMap(filterParameters).flatMap((parameter) =>
+  const criteria = filters.flatMap(filterParameters).flatMap((parameter) =>
     (values[parameter] ?? [])
       .map((value) => value.trim())
       .filter((value) => value !== "")
       .map((value): ModelSearchCriterion => [parameter, value]),
   );
+  // An option without the filter it modifies would only get the API's 400.
+  const set = new Set(criteria.map(([parameter]) => parameter));
+  const idleOptions = new Set(
+    filters
+      .filter((filter): filter is OptionFilter => filter.kind === "option" && !set.has(filter.modifies))
+      .map((filter) => filter.parameter),
+  );
+  return criteria.filter(([parameter]) => !idleOptions.has(parameter));
+}
+
+/**
+ * Whether an option filter can be used: the filter it modifies has a value,
+ * added or still being typed (Apply adds a typed value).
+ */
+export function optionApplies(
+  option: OptionFilter,
+  values: PanelValues,
+  drafts: Readonly<Record<string, string>>,
+): boolean {
+  if ((values[option.modifies] ?? []).some((value) => value.trim() !== "")) {
+    return true;
+  }
+  const modified = MODEL_SEARCH_FILTERS.find(
+    (filter) => filter.kind === "text_list" && filter.parameter === option.modifies,
+  );
+  return modified !== undefined && (drafts[modified.id] ?? "").trim() !== "";
 }
 
 /** Something in the panel the API would refuse, on the parameter to show it at. */
@@ -445,6 +511,7 @@ function filterProblems(filter: ModelSearchFilter, values: PanelValues): PanelPr
     case "range":
       return rangeProblems(filter, values);
     case "yes_no":
+    case "option":
       return [];
     default:
       return unknownFilterKind(filter);

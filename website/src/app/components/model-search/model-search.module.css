@@ -245,6 +245,20 @@
   accent-color: var(--accent);
 }
 
+/* An option under the filter it modifies (compound: leave out "needs review"). */
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: -4px;
+  padding-left: 2px;
+}
+
+.choice[data-disabled="true"] {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
 .range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 150px;

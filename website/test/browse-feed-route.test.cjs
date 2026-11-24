@@ -55,3 +55,29 @@ test("should end the browse feed when the backend rejects the cursor", async () 
     process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;
   }
 });
+
+test("should pass each later entry's matched models through, so its card opens the selected model", async () => {
+  const previousFetch = global.fetch;
+  const previousApiBaseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://backend.example/";
+    const matched = [{ model_id: "entry-3_m_002", pdb_id: "44PS" }];
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [{ type: "entries", id: "entry-3", attributes: { id: "entry-3", matched_models: matched } }],
+      }),
+    });
+
+    const response = await GET(new Request("http://localhost/browse/feed?query=44PS&cursor=c"));
+
+    assert.deepEqual(await response.json(), {
+      items: [{ id: "entry-3", matched_models: matched }],
+      nextCursor: null,
+    });
+  } finally {
+    global.fetch = previousFetch;
+    process.env.NEXT_PUBLIC_API_BASE_URL = previousApiBaseURL;
+  }
+});

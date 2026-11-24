@@ -453,6 +453,78 @@ func Test_should_match_files_and_compounds_of_the_same_model_when_models_are_sea
 	})
 }
 
+// Researcher question 6: the user may leave out compound copies the reader marked needs review.
+// Every model representation is covered; a model matches through any copy that does not need review.
+func Test_should_leave_out_only_copies_needing_review_when_models_are_searched_without_them(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entry := fixture.entry(t, map[string]any{"ligands": []string{"ADP"}, "cofactors": []string{}})
+	needsReview := compoundRecord{ccdID: "ADP", reviewReason: "possible chain residue"}
+	deposited := fixture.model(t, entry, map[string]any{"model_type": "Deposited"})
+	fixture.compounds(t, deposited, "done", compoundRecord{ccdID: "ADP"})
+	multiconformer := fixture.model(t, entry, map[string]any{"model_type": "Multiconformer"})
+	fixture.compounds(t, multiconformer, "done", needsReview)
+	ensemble := fixture.model(t, entry, map[string]any{"model_type": "Ensemble"})
+	fixture.compounds(t, ensemble, "done", needsReview, compoundRecord{ccdID: "ADP"})
+	singleConformer := fixture.model(t, entry, map[string]any{"model_type": "Single Conformer"})
+	fixture.compounds(t, singleConformer, "done", compoundRecord{ccdID: "ADP"},
+		compoundRecord{ccdID: "MG", reviewReason: "metal ion without a link"})
+	rerefined := fixture.model(t, entry, map[string]any{"model_type": "Ensemble", "origin": "archive"})
+	fixture.compounds(t, rerefined, "done", needsReview)
+	notRead := fixture.model(t, entry, map[string]any{"model_type": "Multiconformer"})
+	fixture.compounds(t, notRead, "pending")
+
+	runModelSearchCases(t, fixture, []modelSearchCase{
+		{name: "by default copies needing review match too", search: db.ModelSearch{Compounds: []string{"ADP"}},
+			want: []string{deposited.id, multiconformer.id, ensemble.id, singleConformer.id, rerefined.id}},
+		{name: "the option removes only models whose copies all need review",
+			search: db.ModelSearch{Compounds: []string{"adp"}, ExcludeCompoundsNeedingReview: true},
+			want:   []string{deposited.id, ensemble.id, singleConformer.id}},
+		{name: "a compound only needing review drops out",
+			search: db.ModelSearch{Compounds: []string{"MG"}, ExcludeCompoundsNeedingReview: true}, want: nil},
+		{name: "several compounds mean any confirmed one",
+			search: db.ModelSearch{Compounds: []string{"MG", "ADP"}, ExcludeCompoundsNeedingReview: true},
+			want:   []string{deposited.id, ensemble.id, singleConformer.id}},
+		{name: "the curated filter is not changed by the inventory",
+			search: db.ModelSearch{LigandsOrCofactors: []string{"ADP"}},
+			want:   []string{deposited.id, multiconformer.id, ensemble.id, singleConformer.id, rerefined.id, notRead.id}},
+	})
+}
+
+// Researcher question 4: a PDB ID search selects the model whose own PDB ID it is. Computed models
+// carry none; an inactive revision's PDB ID does not count.
+func Test_should_match_the_model_with_that_pdb_id_when_models_are_searched_by_pdb_id(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	entry := fixture.entry(t, map[string]any{"external_refs": map[string]string{"pdb": "7KR0"}})
+	deposited := fixture.model(t, entry, map[string]any{"model_type": "Deposited", "external_refs": map[string]string{"pdb": "7KR0"}})
+	rerefined := fixture.model(t, entry, map[string]any{
+		"model_type": "Ensemble", "origin": "archive", "external_refs": map[string]string{"pdb": "44PS"}})
+	fixture.model(t, entry, map[string]any{"model_type": "Multiconformer"})
+	fixture.model(t, entry, map[string]any{"model_type": "Ensemble"})
+	singleConformer := fixture.model(t, entry, map[string]any{
+		"model_type": "Single Conformer", "external_refs": map[string]string{"pdb": "8SC1"}})
+	other := fixture.entry(t, map[string]any{})
+	otherDeposited := fixture.model(t, other, map[string]any{"model_type": "Deposited", "external_refs": map[string]string{"pdb": "1ABC"}})
+	inReview := fixture.inReviewRevision(t, otherDeposited)
+	fixture.exec(t, `update model_revisions set metadata = $1 where id = $2`,
+		jsonText(t, map[string]any{"model_type": "Deposited", "external_refs": map[string]string{"pdb": "9ZZZ"}}), inReview)
+
+	runModelSearchCases(t, fixture, []modelSearchCase{
+		{name: "the entry's PDB ID selects its deposited model", search: db.ModelSearch{PDBIDs: []string{"7kr0"}},
+			want: []string{deposited.id}},
+		{name: "a re-refinement's PDB ID selects that model", search: db.ModelSearch{PDBIDs: []string{" 44ps "}},
+			want: []string{rerefined.id}},
+		{name: "several PDB IDs mean any", search: db.ModelSearch{PDBIDs: []string{"44PS", "8SC1", "1ABC"}},
+			want: []string{rerefined.id, singleConformer.id, otherDeposited.id}},
+		{name: "an in-review revision's PDB ID does not count", search: db.ModelSearch{PDBIDs: []string{"9ZZZ"}}, want: nil},
+		{name: "with another filter, the same model", search: db.ModelSearch{
+			PDBIDs: []string{"7KR0", "44PS"}, Sources: []models.ModelSearchSource{models.ModelSearchSourcePDBArchive},
+			ModelTypes: []models.StructureModelType{models.StructureModelTypeEnsemble}},
+			want: []string{rerefined.id}},
+	})
+}
+
 func Test_should_compare_metric_values_and_find_missing_ones_when_models_are_searched_by_metrics(t *testing.T) {
 	// given
 	fixture := newModelSearchTestDB(t)
@@ -675,16 +747,17 @@ func Test_should_refuse_a_search_the_database_cannot_run_when_models_are_searche
 	// given
 	fixture := newModelSearchTestDB(t)
 	cases := map[string]db.ModelSearch{
-		"unknown model type":       {ModelTypes: []models.StructureModelType{"Hologram"}},
-		"unknown source":           {Sources: []models.ModelSearchSource{"elsewhere"}},
-		"metric bounded twice":     {MetricBounds: []db.MetricBound{{Key: models.MetricKeyRFree, Max: ptr(0.2)}, {Key: models.MetricKeyRFree, Min: ptr(0.1)}}},
-		"unknown metric":           {MetricBounds: []db.MetricBound{{Key: "r_factor", Max: ptr(0.2)}}},
-		"taxonomy ID of zero":      {Organisms: []string{"000"}},
-		"resolution not a number":  {ResolutionMin: ptr(nan())},
-		"unknown missing metric":   {MissingMetrics: []models.MetricKey{"r_factor"}},
-		"unknown data level":       {DataLevels: []models.ArtifactLevel{"L9"}},
-		"unknown purpose":          {Purposes: []models.ModelPurpose{"Decoration"}},
-		"metric bound not a value": {MetricBounds: []db.MetricBound{{Key: models.MetricKeyRFree, Max: ptr(inf())}}},
+		"unknown model type":          {ModelTypes: []models.StructureModelType{"Hologram"}},
+		"unknown source":              {Sources: []models.ModelSearchSource{"elsewhere"}},
+		"metric bounded twice":        {MetricBounds: []db.MetricBound{{Key: models.MetricKeyRFree, Max: ptr(0.2)}, {Key: models.MetricKeyRFree, Min: ptr(0.1)}}},
+		"unknown metric":              {MetricBounds: []db.MetricBound{{Key: "r_factor", Max: ptr(0.2)}}},
+		"taxonomy ID of zero":         {Organisms: []string{"000"}},
+		"resolution not a number":     {ResolutionMin: ptr(nan())},
+		"unknown missing metric":      {MissingMetrics: []models.MetricKey{"r_factor"}},
+		"unknown data level":          {DataLevels: []models.ArtifactLevel{"L9"}},
+		"unknown purpose":             {Purposes: []models.ModelPurpose{"Decoration"}},
+		"exclusion without compounds": {ExcludeCompoundsNeedingReview: true},
+		"metric bound not a value":    {MetricBounds: []db.MetricBound{{Key: models.MetricKeyRFree, Max: ptr(inf())}}},
 	}
 	for name, search := range cases {
 		t.Run(name, func(t *testing.T) {
