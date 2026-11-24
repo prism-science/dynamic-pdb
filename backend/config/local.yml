@@ -36,7 +36,7 @@ cdn:
   cloudfront:
     base_url: ""
 validation:
-  # Reject requests that break Dynamic PDB Schema v0.2.0 (HTTP 422).
+  # Reject requests that break the Dynamic PDB Schema (HTTP 422).
   mode: enforce
   # Reject request keys the API does not define, and keys starting with "__" (HTTP 422).
   request_keys: enforce

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chicors "github.com/go-chi/cors"
 
+	"dynamic-pdb/backend/api"
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/config"
 	"dynamic-pdb/backend/internal/db"
@@ -172,8 +173,15 @@ func run() int {
 	slog.Info("downloads configured", "enabled", cfg.Downloads.Enabled,
 		"max_archive_bytes", cfg.Downloads.MaxArchiveBytes, "max_unfinished", cfg.Downloads.MaxUnfinished)
 
+	apiVersion, schemaVersion, err := api.Versions()
+	if err != nil {
+		slog.Error("read versions from the embedded spec", "err", err)
+		return 1
+	}
+	slog.Info("versions", "api", apiVersion, "schema", schemaVersion)
 	router := chi.NewRouter()
 	router.Use(httpapi.RequestLifecycleMiddlewares(logger, readRequestTimeout)...)
+	router.Use(httpapi.VersionHeadersMiddleware(apiVersion, schemaVersion))
 	router.Use(corsMiddleware(env))
 	router.Use(httpapi.GlobalRateLimitMiddleware(httpapi.RateLimitPolicy{
 		Requests:         cfg.Server.RateLimit.Requests,
@@ -294,6 +302,8 @@ func corsMiddleware(env string) func(http.Handler) http.Handler {
 			"Content-Type",
 			"Accept",
 		},
-		MaxAge: 300,
+		// A page on another origin may read which API and schema versions a response follows.
+		ExposedHeaders: httpapi.VersionHeaders,
+		MaxAge:         300,
 	})
 }

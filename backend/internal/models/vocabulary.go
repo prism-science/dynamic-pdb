@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// The lists below are the controlled vocabularies of Dynamic PDB Schema v0.2.0
-// (docs/schema/dynamic-pdb-schema-v0.2.0.md), in the schema's order. Each Validate
+// The lists below are the controlled vocabularies of Dynamic PDB Schema v0.3.0
+// (docs/schema/dynamic-pdb-schema-v0.3.0.md), in the schema's order. Each Validate
 // method accepts exactly the values in its list.
 
 // StructureMethods are the methods a depositor may give an entry. Entries the
