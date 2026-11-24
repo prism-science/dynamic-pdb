@@ -70,6 +70,16 @@ func Test_should_store_conformer_counts_for_every_model_type_when_the_coordinate
 		files = append(files, artifactID)
 	}
 	activateModelsOfEntry(t, database, entryID)
+	// A second entry for 6LLX: its deposited mmCIF maps the qFit PDB file's author numbering to label
+	// numbering (researchers' answer of 17 Nov, Q2). In the first entry, the oldest Deposited model's
+	// file (2CO3, cut to _atom_site) has no scheme, so 6LLX stays keyed by author numbering there.
+	mappedEntryID, _ := seedEntryRevision(t, database, auth.UserID, "active")
+	createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, mappedEntryID, "6llx.cif", "mmcif", depositedSchemeFor6LLX)
+	qfit6LLX, err := os.ReadFile(filepath.Join(root, "lib", "cif", "testdata", "conformers", "qfit_6llx.pdb"))
+	require.NoError(t, err)
+	mappedFile := createModelWithStoredFile(t, backend.URL, auth.AccessToken, s3, mappedEntryID, "6llx_qfit.pdb", "pdb", string(qfit6LLX))
+	setModelType(t, database, mappedFile, "Multiconformer")
+	activateModelsOfEntry(t, database, mappedEntryID)
 	countsOff := append(append([]string{}, schemaEnv...), "DYNAMIC_PDB_COORDINATE_INDEX_RESIDUE_COUNTS=false")
 	firstOutput := runCoordinateIndexJob(t, root, jobBinaryPath, s3.URL(), countsOff)
 	for _, artifactID := range files {
@@ -82,7 +92,7 @@ func Test_should_store_conformer_counts_for_every_model_type_when_the_coordinate
 	output := runCoordinateIndexJob(t, root, jobBinaryPath, s3.URL(), fillOn)
 
 	// then: every file read again, with counts for the non-ensembles only, and its chains kept.
-	assert.Contains(t, output, "residue_fill_sets_requeued=7")
+	assert.Contains(t, output, "residue_fill_sets_requeued=9")
 	for index, model := range conformerModels {
 		artifactID := files[index]
 		assert.Equal(t, "done", coordinateIndexStatus(t, database, artifactID), model.file)
@@ -94,6 +104,9 @@ func Test_should_store_conformer_counts_for_every_model_type_when_the_coordinate
 
 	// and example search 1's residue part, as S4 will ask it: models with a residue of a type with
 	// more than k conformations, never an Ensemble.
+	assert.Equal(t, "mapped", residueKey(t, database, mappedFile), "6LLX through its entry's deposited mmCIF")
+	assert.Equal(t, conformerModels[4].rows, residueCounts(t, database, mappedFile), "mapping renames residues, never recounts them")
+	assert.Contains(t, setWarnings(t, database, files[4]), "has no _pdbx_poly_seq_scheme", "6LLX in the first entry")
 	assert.ElementsMatch(t, []uuid.UUID{files[0]}, filesWithConformers(t, database, "VAL", 1))
 	assert.ElementsMatch(t, []uuid.UUID{files[0], files[1], files[2]}, filesWithConformers(t, database, "ILE", 0))
 	assert.ElementsMatch(t, []uuid.UUID{files[3]}, filesWithConformers(t, database, "ASN", 1))
@@ -140,6 +153,51 @@ func Test_should_store_conformer_counts_for_every_model_type_when_the_coordinate
 		heldFiles = append(heldFiles, artifactID)
 	}
 	assert.ElementsMatch(t, []uuid.UUID{files[0], files[2]}, heldFiles)
+}
+
+// depositedSchemeFor6LLX is a deposited mmCIF for the 6LLX qFit fixture's residues A 175–179: one
+// atom each, and the _pdbx_poly_seq_scheme mapping them to label chain A residues 1–5.
+const depositedSchemeFor6LLX = `data_6LLX
+loop_
+_pdbx_poly_seq_scheme.asym_id
+_pdbx_poly_seq_scheme.entity_id
+_pdbx_poly_seq_scheme.seq_id
+_pdbx_poly_seq_scheme.mon_id
+_pdbx_poly_seq_scheme.pdb_seq_num
+_pdbx_poly_seq_scheme.auth_seq_num
+_pdbx_poly_seq_scheme.pdb_mon_id
+_pdbx_poly_seq_scheme.pdb_strand_id
+_pdbx_poly_seq_scheme.pdb_ins_code
+A 1 1 LEU 175 175 LEU A .
+A 1 2 LEU 176 176 LEU A .
+A 1 3 SER 177 177 SER A .
+A 1 4 ALA 178 178 ALA A .
+A 1 5 TYR 179 179 TYR A .
+#
+loop_
+_atom_site.group_PDB
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.auth_seq_id
+_atom_site.auth_asym_id
+_atom_site.pdbx_PDB_model_num
+ATOM C CA LEU A 1 175 A 1
+ATOM C CA LEU A 2 176 A 1
+ATOM C CA SER A 3 177 A 1
+ATOM C CA ALA A 4 178 A 1
+ATOM C CA TYR A 5 179 A 1
+#
+`
+
+func setWarnings(t *testing.T, database integrationDB, artifactID uuid.UUID) string {
+	t.Helper()
+	var warnings string
+	require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+		`select warnings::text from coordinate_index_sets where artifact_id = $1`, artifactID).Scan(&warnings))
+	return warnings
 }
 
 // setModelType gives the pending revision of the model using a file a model type, as an upload of

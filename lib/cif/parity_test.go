@@ -25,9 +25,13 @@ var parityFiles = []string{
 	"parity/no_entity_chem_comp.cif", "parity/metal_partner_flags.cif", "parity/pair_form_layout.cif",
 	"parity/two_data_blocks.cif", "parity/no_atom_site.cif", "parity/unlocated_metalc.cif",
 	"parity/no_entity_3CEB.cif",
+	// Alternate conformations (one rule for conformer_count and altloc_fraction, 17 Nov Q1).
+	"conformers/deposited_2CO3.cif", "conformers/deposited_7TDY.cif", "conformers/single_conformer_5RGD.cif",
+	"conformers/qfit_4hxp.cif", "conformers/qfit_3sjm_dna.cif", "conformers/altloc_ensemble_44PS.cif",
 	"1A62.pdb", "3CLN.pdb", "3CEB.pdb", "1II5.pdb", "7LTB.pdb", "6OIM.pdb", "2HQZ.pdb",
 	"parity/pdb_rules.pdb", "parity/pdb_no_metal_link.pdb", "parity/pdb_seqres_columns.pdb",
 	"parity/pdb_blank_chain.pdb", "parity/no_seqres_3CEB.pdb",
+	"conformers/qfit_6llx.pdb", "conformers/ensemble_5ai3.pdb",
 }
 
 // parityExcluded is the list name the golden gives a compound left out.
@@ -47,6 +51,7 @@ type parityEntry struct {
 	AtomCount           int              `json:"atom_count"`
 	ModeledResidues     int              `json:"modeled_residues"`
 	UniqueProteinChains int              `json:"unique_protein_chains"`
+	AltlocFraction      float64          `json:"altloc_fraction"`
 	Compounds           []parityCompound `json:"compounds"`
 	Glycans             []Glycan         `json:"glycans,omitempty"`
 	// Header is read from mmCIF only: a PDB-format file's header stays the preview's.
@@ -72,6 +77,7 @@ func parityExtraction(t *testing.T, name string) Result {
 		result.Atoms = &AtomStats{AtomCount: count}
 		result.Atoms.ModeledResidues, _ = extraction.Fields["modeled_residues"].(int)
 		result.Atoms.ProteinChains, _ = extraction.Fields["unique_protein_chains"].(int)
+		result.Atoms.AltlocFraction, _ = extraction.Fields["altloc_fraction"].(float64)
 	}
 	reviews := map[string]ReviewItem{}
 	for _, item := range extraction.Review {
@@ -103,6 +109,7 @@ func parityGolden(t *testing.T) map[string]parityEntry {
 			entry.AtomCount = result.Atoms.AtomCount
 			entry.ModeledResidues = result.Atoms.ModeledResidues
 			entry.UniqueProteinChains = result.Atoms.ProteinChains
+			entry.AltlocFraction = result.Atoms.AltlocFraction
 		}
 		for _, group := range []struct {
 			list      string

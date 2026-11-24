@@ -54,6 +54,10 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	tally := newCoordinateTally()
 	notes := limitNotes{}
 	chains := newPDBChains(&notes)
+	// The first model's polymer residues, read as the coordinate index reads them, give
+	// altloc_fraction: the same counting as conformer_count.
+	conformers := newConformerAccumulator()
+	polymer := newPDBIndexReader([]polymerAtomSink{conformers}, &notes)
 	modelStarted := false
 	firstModelDone := false
 	coordinatesEnded := false
@@ -83,6 +87,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 			continue
 		case "SEQRES":
 			chains.addSeqres(line)
+			polymer.addSeqres(line)
 			continue
 		case "MODRES":
 			chains.addModres(line)
@@ -93,6 +98,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 		case "TER":
 			if !firstModelDone {
 				chains.addTer(line, lineNumber)
+				polymer.addTer(line)
 			}
 			continue
 		case "MODEL":
@@ -126,6 +132,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 			insCode:    slice(line, 26, 27),
 		}
 		chains.addCoordinate(record, line, lineNumber, instance)
+		polymer.addCoordinate(record, line)
 		if record == "HETATM" && compound != "" {
 			tally.addHetero(instance, heteroAtom{name: slice(line, 12, 16), element: element})
 		}
@@ -145,6 +152,7 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 			return parseOccupancy(slice(line, 54, 60))
 		})
 	}
+	polymer.endModel()
 	coordinatesRead := (!truncated || coordinatesEnded) && check.err == nil
 	instances := tally.instanceFacts(coordinatesRead)
 	for instance, facts := range instances {
@@ -156,12 +164,15 @@ func pdbExtraction(ctx context.Context, text string, truncated bool, reference *
 	case tally.overflow != "":
 		coordinatesRead = false
 		warnings = append(warnings, fmt.Sprintf("PDB has more distinct %s than the parser limit allows: atom counts, residue counts and altloc fraction not extracted", tally.overflow))
+	case conformers.overflow || polymer.overflow:
+		coordinatesRead = false
+		warnings = append(warnings, "PDB has more polymer residues or pending HETATM records than the parser limits allow: atom counts, residue counts and altloc fraction not extracted")
 	case coordinatesRead:
 		addPositiveInt(fields, "atom_count", tally.atomCount)
 		addPositiveInt(fields, "modeled_residues", len(tally.residues))
 		addPositiveInt(fields, "unique_protein_chains", len(tally.chains))
-		if len(tally.residues) > 0 {
-			addField(fields, "altloc_fraction", float64(countAltlocResidues(tally.positions))/float64(len(tally.residues)))
+		if fraction, counted := conformers.counts(false, nil).AltlocFraction(); counted && len(tally.residues) > 0 {
+			addField(fields, "altloc_fraction", fraction)
 		}
 		if members := wholeModelStates(tally.modelCount, tally); members != nil {
 			addPositiveInt(fields, "member_count", *members)

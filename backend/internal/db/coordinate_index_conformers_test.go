@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,8 +202,17 @@ func Test_should_refuse_conformer_columns_with_a_null_where_a_value_is_needed(t 
 			accepted: true,
 		},
 		{
+			name:     "a counted read with every value and mapped residues",
+			set:      `residues_version = '1.1.0', conformers = 'counted', residue_key = 'mapped', residues = 2, multi_conformer_residues = 1, read_as_ensemble_type = false`,
+			accepted: true,
+		},
+		{
 			name: "a counted read without residues",
 			set:  `residues_version = '1.0.0', conformers = 'counted', residue_key = 'label', residues = null, multi_conformer_residues = 0, read_as_ensemble_type = false`,
+		},
+		{
+			name: "a counted read with mapped residues but no residue totals",
+			set:  `residues_version = '1.1.0', conformers = 'counted', residue_key = 'mapped', residues = null, multi_conformer_residues = null, read_as_ensemble_type = false`,
 		},
 		{
 			name: "a counted read without multi-conformer residues",
@@ -482,4 +492,57 @@ func Test_should_queue_a_file_read_as_an_ensemble_again_when_its_ensemble_revisi
 	for _, model := range []searchModel{stillEnsemble, counted} {
 		assert.Equal(t, models.CoordinateIndexStatusDone, fixture.coordinateIndexSet(t, model.coordinateFile).Status, model.id)
 	}
+}
+
+func Test_should_find_the_deposited_mmcif_of_the_entry_when_a_model_file_needs_its_residue_numbering_mapped(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	ctx := context.Background()
+	entry := fixture.entry(t, map[string]any{})
+	deposited := fixture.model(t, entry, map[string]any{"model_type": "Deposited"})
+	fixture.exec(t, `insert into artifact_checksums (artifact_id, status, sha256, size_bytes, checked_at, copy_status, stored_uri)
+	                 values ($1, 'verified', $2, 100, now(), 'copied', 'https://bucket.example.org/copies/7ABC.cif')`,
+		deposited.coordinateFile, strings.Repeat("a", 64))
+	qfit := fixture.model(t, entry, map[string]any{"model_type": "Multiconformer"})
+	// A file used by models of two entries, and an entry without a Deposited model.
+	shared := fixture.model(t, entry, map[string]any{"model_type": "Multiconformer"})
+	other := fixture.model(t, fixture.entry(t, map[string]any{}), map[string]any{"model_type": "Multiconformer"})
+	fixture.revisionOf(t, other, shared.coordinateFile, "pending", map[string]any{"model_type": "Multiconformer"}, fixture.tick())
+	lonely := fixture.model(t, fixture.entry(t, map[string]any{}), map[string]any{"model_type": "Multiconformer"})
+
+	// when
+	found, err := fixture.database.CoordinateIndex.DepositedFileOf(ctx, qfit.coordinateFile)
+	require.NoError(t, err)
+	forShared, err := fixture.database.CoordinateIndex.DepositedFileOf(ctx, shared.coordinateFile)
+	require.NoError(t, err)
+	forLonely, err := fixture.database.CoordinateIndex.DepositedFileOf(ctx, lonely.coordinateFile)
+	require.NoError(t, err)
+	forItself, err := fixture.database.CoordinateIndex.DepositedFileOf(ctx, deposited.coordinateFile)
+	require.NoError(t, err)
+
+	// then
+	require.NotNil(t, found)
+	assert.Equal(t, deposited.coordinateFile, found.ArtifactID)
+	assert.Equal(t, entry.id, found.EntryID)
+	assert.Equal(t, ptr(models.CopyStatusCopied), found.CopyStatus)
+	assert.Equal(t, ptr("https://bucket.example.org/copies/7ABC.cif"), found.StoredURI)
+	assert.Nil(t, forShared, "models of two entries: no single deposition")
+	assert.Nil(t, forLonely, "no Deposited model in the entry")
+	assert.Nil(t, forItself, "the deposited file needs no mapping of its own")
+}
+
+func Test_should_store_the_mapped_residue_key_when_a_read_mapped_its_residues(t *testing.T) {
+	// given
+	fixture := newModelSearchTestDB(t)
+	artifactID := fixture.storedModelArtifact(t, time.Now().UTC())
+	fixture.exec(t, `insert into coordinate_index_sets (artifact_id) values ($1)`, artifactID)
+	mapped := countedConformers(models.ResidueConformerCount{ResidueType: "LYS", ConformerCount: 2, Residues: 1})
+	mapped.Key = ptr(models.ResidueKeyMapped)
+
+	// when
+	err := fixture.saveWithConformers(t, artifactID, storeConformers(mapped))
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, ptr(models.ResidueKeyMapped), fixture.coordinateIndexSet(t, artifactID).Conformers.Key)
 }

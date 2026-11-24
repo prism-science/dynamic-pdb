@@ -3,6 +3,7 @@
     "atom_count": 142,
     "modeled_residues": 7,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -43,6 +44,7 @@
     "atom_count": 86,
     "modeled_residues": 11,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.36363636363636365,
     "compounds": [
       {
         "list": "cofactors",
@@ -76,6 +78,7 @@
     "atom_count": 88,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [],
     "header": {
       "entry_id": "1A62",
@@ -98,12 +101,14 @@
     "atom_count": 88,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": []
   },
   "1AKE.cif": {
     "atom_count": 251,
     "modeled_residues": 17,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0.058823529411764705,
     "compounds": [
       {
         "list": "ligands",
@@ -127,6 +132,7 @@
     "atom_count": 223,
     "modeled_residues": 2,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0.07142857142857142,
     "compounds": [
       {
         "list": "ligands",
@@ -186,6 +192,7 @@
     "atom_count": 62,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -200,6 +207,7 @@
     "atom_count": 165,
     "modeled_residues": 15,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.6,
     "compounds": [
       {
         "list": "excluded",
@@ -235,6 +243,7 @@
     "atom_count": 215,
     "modeled_residues": 21,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.6363636363636364,
     "compounds": [
       {
         "list": "cofactors",
@@ -254,6 +263,7 @@
     "atom_count": 98,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -301,6 +311,7 @@
     "atom_count": 161,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.07692307692307693,
     "compounds": [
       {
         "list": "cofactors",
@@ -336,6 +347,7 @@
     "atom_count": 161,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.07692307692307693,
     "compounds": [
       {
         "list": "cofactors",
@@ -360,6 +372,7 @@
     "atom_count": 71,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -383,6 +396,7 @@
     "atom_count": 71,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -395,6 +409,7 @@
     "atom_count": 51,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -423,6 +438,7 @@
     "atom_count": 420,
     "modeled_residues": 32,
     "unique_protein_chains": 4,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -453,6 +469,7 @@
     "atom_count": 132,
     "modeled_residues": 16,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0.0625,
     "compounds": [
       {
         "list": "cofactors",
@@ -495,6 +512,7 @@
     "atom_count": 134,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -528,6 +546,7 @@
     "atom_count": 134,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -550,6 +569,7 @@
     "atom_count": 136,
     "modeled_residues": 16,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -575,6 +595,7 @@
     "atom_count": 236,
     "modeled_residues": 2,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -637,6 +658,7 @@
     "atom_count": 236,
     "modeled_residues": 2,
     "unique_protein_chains": 2,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "excluded",
@@ -669,6 +691,7 @@
     "atom_count": 77,
     "modeled_residues": 4,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [],
     "header": {
       "entry_id": "9A8B",
@@ -680,10 +703,89 @@
       ]
     }
   },
+  "conformers/altloc_ensemble_44PS.cif": {
+    "atom_count": 126,
+    "modeled_residues": 3,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 1,
+    "compounds": [],
+    "header": {
+      "entry_id": "44PS",
+      "authors": []
+    }
+  },
+  "conformers/deposited_2CO3.cif": {
+    "atom_count": 59,
+    "modeled_residues": 5,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0.4,
+    "compounds": [],
+    "header": {
+      "entry_id": "2CO3",
+      "authors": []
+    }
+  },
+  "conformers/deposited_7TDY.cif": {
+    "atom_count": 44,
+    "modeled_residues": 5,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0.2,
+    "compounds": [],
+    "header": {
+      "entry_id": "7TDY",
+      "authors": []
+    }
+  },
+  "conformers/ensemble_5ai3.pdb": {
+    "atom_count": 36,
+    "modeled_residues": 4,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0,
+    "compounds": []
+  },
+  "conformers/qfit_3sjm_dna.cif": {
+    "atom_count": 95,
+    "modeled_residues": 6,
+    "unique_protein_chains": 2,
+    "altloc_fraction": 0.16666666666666666,
+    "compounds": [],
+    "header": {
+      "authors": []
+    }
+  },
+  "conformers/qfit_4hxp.cif": {
+    "atom_count": 134,
+    "modeled_residues": 11,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0.6363636363636364,
+    "compounds": [],
+    "header": {
+      "authors": []
+    }
+  },
+  "conformers/qfit_6llx.pdb": {
+    "atom_count": 42,
+    "modeled_residues": 5,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0,
+    "compounds": []
+  },
+  "conformers/single_conformer_5RGD.cif": {
+    "atom_count": 73,
+    "modeled_residues": 7,
+    "unique_protein_chains": 1,
+    "altloc_fraction": 0.14285714285714285,
+    "compounds": [],
+    "header": {
+      "entry_id": "5RGD",
+      "authors": []
+    }
+  },
   "parity/entity_rules.cif": {
     "atom_count": 19,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -760,6 +862,7 @@
     "atom_count": 6,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -785,6 +888,7 @@
     "atom_count": 11,
     "modeled_residues": 3,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -829,6 +933,7 @@
     "atom_count": 10,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -878,6 +983,7 @@
     "atom_count": 0,
     "modeled_residues": 0,
     "unique_protein_chains": 0,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -912,6 +1018,7 @@
     "atom_count": 161,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0.07692307692307693,
     "compounds": [
       {
         "list": "cofactors",
@@ -961,6 +1068,7 @@
     "atom_count": 11,
     "modeled_residues": 1,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -995,6 +1103,7 @@
     "atom_count": 9,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -1038,6 +1147,7 @@
     "atom_count": 161,
     "modeled_residues": 8,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "excluded",
@@ -1071,6 +1181,7 @@
     "atom_count": 3,
     "modeled_residues": 1,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -1086,6 +1197,7 @@
     "atom_count": 3,
     "modeled_residues": 1,
     "unique_protein_chains": 0,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -1105,6 +1217,7 @@
     "atom_count": 4,
     "modeled_residues": 1,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -1124,6 +1237,7 @@
     "atom_count": 11,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -1171,6 +1285,7 @@
     "atom_count": 4,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -1183,6 +1298,7 @@
     "atom_count": 3,
     "modeled_residues": 1,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -1198,6 +1314,7 @@
     "atom_count": 4,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "ligands",
@@ -1213,6 +1330,7 @@
     "atom_count": 3,
     "modeled_residues": 1,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",
@@ -1228,6 +1346,7 @@
     "atom_count": 4,
     "modeled_residues": 2,
     "unique_protein_chains": 1,
+    "altloc_fraction": 0,
     "compounds": [
       {
         "list": "cofactors",

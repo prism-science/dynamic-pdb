@@ -1,4 +1,5 @@
 import { cifCategory, cifLoop, cifValue, firstDataBlock, loopColumn, loopValue, type CifLoop } from "./cif";
+import { ConformerTally, MmcifPolymerReader, PdbPolymerReader } from "./conformers";
 import { PdbChains } from "./pdbChains";
 import {
   CompoundTally,
@@ -118,6 +119,10 @@ function parsePdb(text: string): StructureFacts {
   let firstModelDone = false;
 
   const chains = new PdbChains();
+  // altloc_fraction comes from the first model's polymer residues, read and counted as lib/cif's
+  // coordinate index does (one rule with conformer_count).
+  const conformers = new ConformerTally();
+  const polymer = new PdbPolymerReader(conformers);
   for (const [index, line] of lines.entries()) {
     const lineNumber = index + 1;
     const record = line.slice(0, 6);
@@ -141,6 +146,7 @@ function parsePdb(text: string): StructureFacts {
     switch (record.trim()) {
       case "SEQRES":
         chains.addSeqres(line);
+        polymer.addSeqres(line);
         continue;
       case "MODRES":
         chains.addModres(line);
@@ -151,6 +157,7 @@ function parsePdb(text: string): StructureFacts {
       case "TER":
         if (!firstModelDone) {
           chains.addTer(line, lineNumber);
+          polymer.addTer(line);
         }
         continue;
       default:
@@ -184,6 +191,7 @@ function parsePdb(text: string): StructureFacts {
         ins: line.slice(26, 27).trim(),
       };
       chains.addCoordinate(record, line, lineNumber, instance);
+      polymer.addCoordinate(record === "ATOM  " ? "ATOM" : "HETATM", line);
       if (record === "HETATM" && compound) {
         compounds.addAtom(instance, {
           name: line.slice(12, 16).trim(),
@@ -285,6 +293,8 @@ function parsePdb(text: string): StructureFacts {
     instanceFacts.chain = chains.position(instanceFacts.instance);
     instanceFacts.chainsUndeclared = chains.chainsUndeclared(instanceFacts.instance);
   }
+  polymer.endModel();
+  residueTally.altlocFraction = polymer.overflow ? null : conformers.altlocFraction();
   applyCounts(facts, atomCount, residueTally, instances, chains.metalcLinks(isMetalIon), annotations);
   return facts;
 }
@@ -405,12 +415,15 @@ function parseMmcif(fileText: string): StructureFacts {
   let atomCount = 0;
   const residueTally = new ResidueTally();
   const compounds = new CompoundTally();
+  const conformers = new ConformerTally();
   if (atomSite) {
+    const polymer = new MmcifPolymerReader(atomSite, conformers);
     // Only the first model counts, as in lib/cif.
     let firstModel: string | null | undefined;
     let lastModel: string | null | undefined;
 
     for (const row of atomSite.rows) {
+      polymer.add(row);
       const model = loopValue(atomSite, row, "pdbx_pdb_model_num");
       if (firstModel === undefined) {
         firstModel = model;
@@ -486,6 +499,9 @@ function parseMmcif(fileText: string): StructureFacts {
       instanceFacts.chainsUndeclared = true;
     }
   }
+  // As lib/cif's mmCIF extraction: with modeled residues, altloc_fraction is reported, 0 when no
+  // polymer residue was counted.
+  residueTally.altlocFraction = conformers.altlocFraction() ?? 0;
   applyCounts(facts, atomCount, residueTally, instances, readMetalcLinks(text), annotations);
   facts.glycans = annotations.glycans;
 
@@ -549,11 +565,10 @@ function numberOf(value: string | null): number | null {
 
 /* -------------------------------------------------------------- shared -- */
 
-/** Residues and alternate locations, as lib/cif counts them: a residue is
- *  altloc when two alternate positions each reach this occupancy. */
-const MIN_ALTLOC_OCCUPANCY = 0.1;
-
 class ResidueTally {
+  /** The file's altloc_fraction from the conformer counts (`conformers.ts`); null when it is not
+   *  reported. */
+  altlocFraction: number | null = null;
   /** How many coordinate models the file lists. */
   modelCount = 0;
   readonly residues = new Set<string>();
@@ -587,22 +602,6 @@ class ResidueTally {
       : [];
     return shared.length >= 2 ? shared.length : null;
   }
-
-  altlocResidueCount(): number {
-    let count = 0;
-    for (const byAltID of this.positions.values()) {
-      let occupied = 0;
-      for (const occupancy of byAltID.values()) {
-        if (occupancy >= MIN_ALTLOC_OCCUPANCY) {
-          occupied += 1;
-        }
-      }
-      if (occupied >= 2) {
-        count += 1;
-      }
-    }
-    return count;
-  }
 }
 
 function applyCounts(
@@ -623,8 +622,8 @@ function applyCounts(
   if (residueTally.chains.size > 0) {
     facts.metadata.unique_protein_chains = residueTally.chains.size;
   }
-  if (residueCount > 0) {
-    facts.metadata.altloc_fraction = residueTally.altlocResidueCount() / residueCount;
+  if (residueCount > 0 && residueTally.altlocFraction !== null) {
+    facts.metadata.altloc_fraction = residueTally.altlocFraction;
   }
   const memberCount = residueTally.memberCount();
   if (memberCount !== null) {

@@ -50,6 +50,8 @@ func residueKey(key cif.ResidueKey) (models.ResidueKey, error) {
 	switch key {
 	case cif.ResidueKeyLabel:
 		return models.ResidueKeyLabel, nil
+	case cif.ResidueKeyMapped:
+		return models.ResidueKeyMapped, nil
 	case cif.ResidueKeyAuthor:
 		return models.ResidueKeyAuthor, nil
 	case cif.ResidueKeyMixed:

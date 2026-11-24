@@ -69,9 +69,23 @@ type IndexedChain struct {
 type CoordinateIndex struct {
 	// Chains are in AuthAsymID order.
 	Chains []IndexedChain
-	// Conformers counts the alternate conformations of the first model's polymer residues.
+	// Conformers counts the alternate conformations of the first model's polymer residues, residues
+	// without label numbering keyed by author numbering; ConformersMapped recounts with a mapping.
 	Conformers ConformerCounts
 	Warnings   []string
+
+	conformerTally      *conformerAccumulator
+	multipleModelFrames bool
+}
+
+// ConformersMapped recounts the conformers with the residues the file keys by author numbering given
+// label numbering where mapping knows them (the researchers' answer of 17 Nov, Q2). The counts of a
+// residue do not change; its identity, the row it may merge with and the recorded key do.
+func (index CoordinateIndex) ConformersMapped(mapping ResidueMapping) ConformerCounts {
+	if index.conformerTally == nil {
+		return index.Conformers
+	}
+	return index.conformerTally.counts(index.multipleModelFrames, &mapping)
 }
 
 const (
@@ -133,9 +147,11 @@ func ReadCoordinateIndex(ctx context.Context, source io.Reader, format Structure
 		return CoordinateIndex{}, fmt.Errorf(tooManyResiduesError+": %w", maxIndexedResidues, ErrCoordinateIndexLimit)
 	}
 	index := CoordinateIndex{
-		Chains:     chains.indexedChains(read, reference),
-		Conformers: conformers.counts(read.multipleModelFrames),
-		Warnings:   read.warnings,
+		Chains:              chains.indexedChains(read, reference),
+		Conformers:          conformers.counts(read.multipleModelFrames, nil),
+		Warnings:            read.warnings,
+		conformerTally:      conformers,
+		multipleModelFrames: read.multipleModelFrames,
 	}
 	if conformers.skipped > 0 {
 		index.Warnings = append(index.Warnings, fmt.Sprintf(skippedConformerRowsWarning, conformers.skipped, maxCopyFieldBytes))
@@ -643,7 +659,7 @@ func (r *pdbIndexReader) startModel() {
 // addSeqres reads a SEQRES record: the chain and the residue names in columns 20 to 70.
 func (r *pdbIndexReader) addSeqres(line string) {
 	chain := slice(line, 11, 12)
-	for _, name := range strings.Fields(slice(line, 19, 70)) {
+	for name := range strings.FieldsSeq(slice(line, 19, 70)) {
 		r.seqresLengths[chain]++
 		name = strings.ToUpper(name)
 		names := r.seqresNames[chain]

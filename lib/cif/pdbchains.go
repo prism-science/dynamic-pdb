@@ -58,7 +58,7 @@ func newPDBChains(notes *limitNotes) *pdbChains {
 // 20 to 70 (13 slots); anything past column 70 is not a residue name.
 func (c *pdbChains) addSeqres(line string) {
 	chain := slice(line, 11, 12)
-	for _, name := range strings.Fields(slice(line, 19, 70)) {
+	for name := range strings.FieldsSeq(slice(line, 19, 70)) {
 		name = strings.ToUpper(name)
 		names := c.seqres[chain]
 		if names[name] {

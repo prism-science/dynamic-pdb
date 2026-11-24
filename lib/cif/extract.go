@@ -198,6 +198,10 @@ type residueKey struct {
 type atomSiteReader struct {
 	columns atomSiteColumns
 	tally   *coordinateTally
+	// polymer feeds the polymer-residue atoms to conformers, as the coordinate index reads them:
+	// altloc_fraction comes from the same counting as conformer_count.
+	polymer    *indexAtomSite
+	conformers *conformerAccumulator
 	// started is set after the first row; firstModel is that row's model number.
 	started    bool
 	firstModel string
@@ -212,6 +216,7 @@ type atomSiteColumns struct {
 }
 
 func newAtomSiteReader(columns []string) *atomSiteReader {
+	conformers := newConformerAccumulator()
 	index := func(name string) int {
 		for position, candidate := range columns {
 			if candidate == name {
@@ -236,7 +241,9 @@ func newAtomSiteReader(columns []string) *atomSiteReader {
 			occupancy:  index("occupancy"),
 			entityID:   index("label_entity_id"),
 		},
-		tally: newCoordinateTally(),
+		tally:      newCoordinateTally(),
+		polymer:    newIndexAtomSite(columns, []polymerAtomSink{conformers}),
+		conformers: conformers,
 	}
 }
 
@@ -248,6 +255,7 @@ func cell(row []string, index int) string {
 }
 
 func (r *atomSiteReader) add(row []string) {
+	r.polymer.add(row)
 	columns := r.columns
 	tally := r.tally
 	model := cell(row, columns.model)
@@ -330,8 +338,11 @@ func (r *atomSiteReader) result(complete bool) (*AtomStats, map[compoundInstance
 		ModeledResidues: len(tally.residues),
 		ProteinChains:   len(tally.chains),
 	}
-	if stats.ModeledResidues > 0 {
-		stats.AltlocFraction = float64(countAltlocResidues(tally.positions)) / float64(stats.ModeledResidues)
+	if r.conformers.overflow {
+		return nil, instances, fmt.Sprintf("atom_site has more than %d polymer residues: atom counts, residue counts and altloc fraction not extracted", maxIndexedResidues)
+	}
+	if fraction, counted := r.conformers.counts(false, nil).AltlocFraction(); counted {
+		stats.AltlocFraction = fraction
 	}
 	stats.MemberCount = wholeModelStates(tally.modelCount, tally)
 	if stats.AtomCount == 0 {
@@ -368,8 +379,6 @@ func readAtomSite(document *Document) (*AtomStats, map[compoundInstance]instance
 	return reader.result(table.Complete && !document.timedOut)
 }
 
-const minAltlocOccupancy = 0.1
-
 // wholeModelStates returns how many whole-model states the coordinates hold, nil when fewer than
 // two: the coordinate models when there are several, otherwise the altloc letters on every polymer
 // residue. Whether such letters make an ensemble is for the model's type to say.
@@ -401,24 +410,6 @@ func wholeModelStates(modelCount int, tally *coordinateTally) *int {
 	}
 	count := len(shared)
 	return &count
-}
-
-// countAltlocResidues counts residues with at least two alternate positions
-// that each reach the minimum occupancy.
-func countAltlocResidues(positions map[residueKey]map[string]float64) int {
-	count := 0
-	for _, byAltID := range positions {
-		occupied := 0
-		for _, occupancy := range byAltID {
-			if occupancy >= minAltlocOccupancy {
-				occupied++
-			}
-		}
-		if occupied >= 2 {
-			count++
-		}
-	}
-	return count
 }
 
 func isWater(compound string) bool {

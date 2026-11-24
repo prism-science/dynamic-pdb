@@ -12,8 +12,8 @@ ligand rule with the same reference lists (generated from the JSON files, see
 | --- | --- |
 | `atom_count` | Heavy atoms of the first model (for PDB files, up to the first `ENDMDL` or second `MODEL`); hydrogens, deuterium and water are not counted. |
 | `modeled_residues` | Distinct residues (chain, number, insertion code) of `ATOM` records. |
-| `unique_protein_chains` | Distinct chains of `ATOM` records. |
-| `altloc_fraction` | Residues with at least two alternate positions that each have occupancy >= 0.1, divided by modeled residues. Residues are counted, not atoms. |
+| `unique_protein_chains` | Distinct chains of `ATOM` records: polymer chain copies of the first model, DNA and RNA included (schema amendment of 17 Nov). |
+| `altloc_fraction` | Polymer residues of the first model with a conformer count of 2 or more, divided by those residues: one rule with the coordinate index's `conformer_count`. Polymer residues are `ATOM` rows and `HETATM` rows inside a chain (mmCIF: with a `label_seq_id`; PDB: between `ATOM` residues of the chain, or named in its `SEQRES` before its `TER`). A residue is label chain + label number + residue type (author chain + number + insertion code + type without label numbering), so two residue types at one position are two residues. Its conformer count is the number of altloc letters whose highest heavy-atom occupancy is >= 0.1, minimum 1; letters only on hydrogens (element H or D, or a name starting with H or D) never count. Residues are counted, not atoms. The website preview counts the same way (`website/src/lib/parse/conformers.ts`, checked by the parity golden). |
 | `ligands`, `cofactors` | The ligand rule below. |
 | `compound_sources` | The decision record: the rule that placed each compound, including the ones left out (see "Decision record"). |
 | `glycans` | One record per branched entity (a glycan): its sugars and its WURCS descriptors. |

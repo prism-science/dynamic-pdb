@@ -407,9 +407,18 @@ residue filter of researcher example search 1 ("a lysine with more than three co
 one row per residue type and conformer count in `coordinate_index_residue_counts`, with the
 file's totals on its set (`residues`, `multi_conformer_residues`).
 
-- A residue is label chain + label residue number + residue type, or author chain + number +
-  insertion code + type where the file has no label numbering (`residue_key`: `label`, `author`,
-  `mixed`). Two residue types at one position stay two residues.
+- A residue is label chain + label residue number + residue type. Where the file has no label
+  numbering (PDB format), the job maps author chain + number + insertion code + type to label
+  numbering through the entry's deposited mmCIF (`_pdbx_poly_seq_scheme`, read from our copy of
+  the entry's active Deposited model's file, once per run); residues no mapping covers stay keyed
+  by author numbering, with a warning on the set saying why (`residue_key`: `label`, `mapped`,
+  `author`, `mixed`). Two residue types at one position stay two residues. Mapping renames
+  residues. A mapped residue merges with the file's own label rows only when those rows give the
+  same author numbering (at most 16 letters together; more are left out with a warning); where the
+  deposited numbering names a different residue of the file, it keeps its author key, with a
+  warning.
+- The model's `altloc_fraction` (upload extraction, API and CLI, and the website preview) uses
+  the same residues and rule: residues with 2 or more conformers ÷ residues.
 - Its conformer count is the number of its altloc letters whose highest heavy-atom occupancy in
   the residue is at least 0.1, minimum 1. Letters only on hydrogens never count.
 - Ensembles get no counts (`conformers`): a file with more than one model frame

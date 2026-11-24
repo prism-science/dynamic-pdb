@@ -56,6 +56,9 @@ type Queue interface {
 	// RequeueForConformersAfter sends the done sets in the next page after an artifact id whose
 	// conformer counts are missing or from another version back to pending as fill rows.
 	RequeueForConformersAfter(ctx context.Context, after uuid.UUID, limit int, version string, now time.Time) (models.RequeuedSetsPage, error)
+	// DepositedFileOf returns the deposited mmCIF of the entry of a model file's models, nil when
+	// there is none to map residue numbering through.
+	DepositedFileOf(ctx context.Context, artifactID uuid.UUID) (*models.DepositedFile, error)
 	// ClaimDue fails, instead of claiming, a set already claimed maxAttempts times.
 	ClaimDue(ctx context.Context, now time.Time, limit int, lease time.Duration, maxAttempts int) ([]models.CoordinateIndexClaim, error)
 	// RecordFailure keeps the set pending until retryAt, or fails it for good when retryAt is nil.
@@ -72,7 +75,8 @@ type Config struct {
 	MaxFilesPerRun int `mapstructure:"max_files_per_run"`
 	// ClaimFor is how long after its start a run keeps claiming files.
 	ClaimFor time.Duration `mapstructure:"claim_for"`
-	// FileTimeout bounds the read of one file, from opening it to its last line.
+	// FileTimeout bounds the reads of one claim, from opening the file to its last line, together
+	// with the read of the entry's deposited mmCIF when its residues need mapping.
 	FileTimeout time.Duration `mapstructure:"file_timeout"`
 	// RecentWindow is how far back each run looks for new model files without a set (an upload
 	// an older backend stored while a deploy was rolling out, an archive file copied since), and
@@ -126,6 +130,8 @@ type CoordinateIndexJob struct {
 	logger *slog.Logger
 	now    func() time.Time
 	sleep  func(ctx context.Context, pause time.Duration) error
+	// mappings caches the deposited mmCIFs' residue mappings read this run, by deposited file.
+	mappings *residueMappings
 }
 
 func NewCoordinateIndexJob(queue Queue, files modelfiles.StoredFiles, cfg Config, logger *slog.Logger) (*CoordinateIndexJob, error) {
@@ -136,12 +142,13 @@ func NewCoordinateIndexJob(queue Queue, files modelfiles.StoredFiles, cfg Config
 		logger = slog.Default()
 	}
 	return &CoordinateIndexJob{
-		queue:  queue,
-		files:  files,
-		cfg:    cfg,
-		logger: logger,
-		now:    func() time.Time { return time.Now().UTC() },
-		sleep:  sleepContext,
+		queue:    queue,
+		files:    files,
+		cfg:      cfg,
+		logger:   logger,
+		now:      func() time.Time { return time.Now().UTC() },
+		sleep:    sleepContext,
+		mappings: newResidueMappings(),
 	}, nil
 }
 
@@ -328,7 +335,14 @@ func (j *CoordinateIndexJob) residueFill(ctx context.Context) (int64, bool, erro
 // recording fails.
 func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.CoordinateIndexClaim) (outcome, error) {
 	started := j.now()
-	read, from, readErr := j.read(ctx, claim)
+	// One deadline for every read of the claim, so a claim never outlives its lease (FileTimeout +
+	// leaseMargin) or the run's deadline.
+	readCtx, cancel := context.WithTimeout(ctx, j.cfg.FileTimeout)
+	defer cancel()
+	read, from, readErr := j.read(readCtx, claim)
+	if readErr == nil {
+		read, readErr = j.mapResidues(readCtx, claim, read)
+	}
 	if ctx.Err() != nil {
 		return outcomeStopped, nil
 	}
@@ -364,6 +378,9 @@ func (j *CoordinateIndexJob) readClaim(ctx context.Context, claim models.Coordin
 	}
 	if conformers := saved.Conformers; conformers != nil {
 		attributes = append(attributes, "conformers", string(conformers.Scope), "residue_count_rows", len(conformers.Counts))
+		if conformers.Key != nil {
+			attributes = append(attributes, "residue_key", string(*conformers.Key))
+		}
 		if conformers.Residues != nil && conformers.MultiConformerResidues != nil {
 			attributes = append(attributes,
 				"residues", *conformers.Residues,
@@ -407,9 +424,7 @@ func (j *CoordinateIndexJob) read(ctx context.Context, claim models.CoordinateIn
 	if err != nil {
 		return cif.CoordinateIndex{}, "", fmt.Errorf("locate the file: %w", err)
 	}
-	fileCtx, cancel := context.WithTimeout(ctx, j.cfg.FileTimeout)
-	defer cancel()
-	file, err := j.files.Open(fileCtx, key)
+	file, err := j.files.Open(ctx, key)
 	if err != nil {
 		return cif.CoordinateIndex{}, from, fmt.Errorf("open the file: %w", err)
 	}
@@ -422,7 +437,7 @@ func (j *CoordinateIndexJob) read(ctx context.Context, claim models.CoordinateIn
 	if err != nil {
 		return cif.CoordinateIndex{}, from, fmt.Errorf("open the structure: %w", err)
 	}
-	index, err := cif.ReadCoordinateIndex(fileCtx, body, format)
+	index, err := cif.ReadCoordinateIndex(ctx, body, format)
 	if err != nil {
 		return cif.CoordinateIndex{}, from, fmt.Errorf("read the file: %w", err)
 	}

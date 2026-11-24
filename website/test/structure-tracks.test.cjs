@@ -643,3 +643,36 @@ test("should read occupancy out of a legacy PDB file", () => {
   ]);
   assert.equal(chain.bFactor.get(9), 20);
 });
+
+test("should leave a conformer under a tenth occupancy or only on hydrogens out of the conformer count", () => {
+  // given: residue 1 has A 0.95 and B 0.05; residue 2 has A 0.6 and B only on a hydrogen; residue 3
+  // has A 0.5 and B 0.5.
+  const cif = `data_TEST
+loop_
+_atom_site.group_PDB
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.label_alt_id
+_atom_site.occupancy
+ATOM C CB A 1 1 A 0.95
+ATOM C CB A 1 1 B 0.05
+ATOM C CB A 1 2 A 0.60
+ATOM H HB2 A 1 2 B 0.40
+ATOM C CB A 1 3 A 0.50
+ATOM C CB A 1 3 B 0.50
+#
+`;
+
+  // when
+  const entity = chainsOfEntity(readStructure(cif), "1")[0];
+
+  // then: the same rule as conformer_count and altloc_fraction.
+  assert.deepEqual([...entity.conformerCount], [
+    [1, 1],
+    [2, 1],
+    [3, 2],
+  ]);
+});
