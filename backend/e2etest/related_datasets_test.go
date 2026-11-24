@@ -207,6 +207,118 @@ func (s *RelatedDatasetsSuite) Test_should_return_422_when_dataset_has_no_name_o
 	s.Empty(s.relatedDatasets(entry.EntryId))
 }
 
+func (s *RelatedDatasetsSuite) Test_should_return_422_unknown_field_when_relation_is_sent_while_it_is_off() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-relation-off-owner", 8718)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry on a server with relations off"},
+	})
+	dataset := sbgridDatasetForTest("10.15785/SBGRID/1303")
+	dataset["relation"], dataset["link_evidence"] = "similar_sample", "repository_text"
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := postJSONWithToken(s.T(), "/v1/entries/"+entry.EntryId+"/revisions", map[string]any{
+		"entry": map[string]any{"related_datasets": []map[string]any{dataset}},
+	}, ownerToken)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 2)
+	s.Equal("/entry/related_datasets/0/relation", errors[0].Source.Pointer)
+	s.Equal("/entry/related_datasets/0/link_evidence", errors[1].Source.Pointer)
+	s.Equal("UNKNOWN_FIELD", stringValue(errors[0].Code))
+	s.Empty(s.relatedDatasets(entry.EntryId))
+}
+
+func (s *RelatedDatasetsSuite) Test_should_store_relation_and_link_evidence_when_relations_are_on() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-relation-on-owner", 8719)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry gaining a qualified related dataset"},
+	})
+	dataset := sbgridDatasetForTest("10.15785/SBGRID/1303")
+	dataset["relation"], dataset["link_evidence"] = " similar_sample ", "repository_text"
+
+	// when
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), relatedDatasetRelationServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/revisions",
+		map[string]any{"entry": map[string]any{"related_datasets": []map[string]any{dataset}}},
+		ownerToken,
+	)
+	created := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](s.T(), response, http.StatusCreated)
+	activateEntryRevisionForTest(s.T(), created.Data.Attributes)
+
+	// then
+	s.Equal([]httpapi.RelatedDataset{{
+		Doi: new("10.15785/SBGRID/1303"), DataType: "diffraction image data",
+		Repository: new("SBGrid Data Bank"), Details: new("Similar crystals, collected in October 2025."),
+		Relation:     new(httpapi.SimilarSample),
+		LinkEvidence: new(httpapi.RepositoryText),
+	}}, s.relatedDatasets(entry.EntryId))
+}
+
+func (s *RelatedDatasetsSuite) Test_should_return_422_with_pointers_when_relation_rules_are_broken() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-relation-rules-owner", 8720)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry refusing bad relations"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), relatedDatasetRelationServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/revisions",
+		map[string]any{"entry": map[string]any{"related_datasets": []map[string]any{
+			{"doi": "10.15785/SBGRID/1", "data_type": "diffraction image data", "relation": "sibling",
+				"link_evidence": "pdb_record"},
+			{"doi": "10.15785/SBGRID/2", "data_type": "diffraction image data", "relation": "source_data"},
+			{"doi": "10.15785/SBGRID/3", "data_type": "diffraction image data", "relation": "other",
+				"link_evidence": "publication"},
+		}}},
+		ownerToken,
+	)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	pointers := make([]string, 0, len(errors))
+	for _, fieldError := range errors {
+		pointers = append(pointers, fieldError.Source.Pointer)
+	}
+	s.ElementsMatch([]string{
+		"/entry/related_datasets/0/relation",
+		"/entry/related_datasets/1/link_evidence",
+		"/entry/related_datasets/2/details",
+	}, pointers)
+	s.Empty(s.relatedDatasets(entry.EntryId))
+}
+
+func (s *RelatedDatasetsSuite) Test_should_return_422_unknown_field_when_relation_key_is_misspelled() {
+	// given
+	ownerToken := issueEntryTokenForGitHubIDForTest(s.T(), "related-datasets-relation-typo-owner", 8721)
+	entry := createAndActivateEntryForTest(s.T(), ownerToken, map[string]any{
+		"entry": map[string]any{"title": "entry refusing a misspelled relation"},
+	})
+
+	// when
+	//nolint:bodyclose // decodeErrorResponseForTest closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), relatedDatasetRelationServer.URL, http.MethodPost, "/v1/entries/"+entry.EntryId+"/revisions",
+		map[string]any{"entry": map[string]any{"related_datasets": []map[string]any{
+			{"doi": "10.15785/SBGRID/4", "data_type": "diffraction image data", "relaton": "other"},
+		}}},
+		ownerToken,
+	)
+
+	// then
+	errors := decodeErrorResponseForTest(s.T(), response, http.StatusUnprocessableEntity)
+	s.Require().Len(errors, 1)
+	s.Equal("/entry/related_datasets/0/relaton", errors[0].Source.Pointer)
+	s.Equal("UNKNOWN_FIELD", stringValue(errors[0].Code))
+	s.Empty(s.relatedDatasets(entry.EntryId))
+}
+
 // relatedDatasets reads the entry's related datasets as the public API returns them.
 func (s *RelatedDatasetsSuite) relatedDatasets(entryID string) []httpapi.RelatedDataset {
 	s.T().Helper()

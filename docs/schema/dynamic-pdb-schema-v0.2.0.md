@@ -55,7 +55,42 @@ Extract metadata from files and archives where possible. Depositors supply title
 | resolution | Optional positive number in ångströms, describing highest measured resolution. Omit when undefined for the method. |
 | space_group | Optional crystallographic symmetry in Hermann–Mauguin notation, such as P 21 21 21. |
 | crystallography.crystals[] | Per-crystal growth.ph, growth.temperature_kelvin, and diffractions[].temperature_kelvin. Keep growth and collection conditions separate; do not flatten multiple crystals into one value. |
-| related_datasets[] | Optional datasets held elsewhere that relate to this entry, as mmCIF _pdbx_related_exp_data_set records them: required data_type; a doi, an accession (the repository's own ID, for datasets without a DOI) or both; optional landing_url (an http or https page), repository and details. References, not artifacts: no copy and no checksum. Set by people only; archive synchronisation never changes them. They do not record which data a model was refined against. |
+| related_datasets[] | Optional datasets held elsewhere that relate to this entry, as mmCIF _pdbx_related_exp_data_set records them: required data_type; a doi, an accession (the repository's own ID, for datasets without a DOI) or both; optional landing_url (an http or https page), repository and details; optional relation and link_evidence (unreleased, v0.3.0; see Related dataset relation). References, not artifacts: no copy and no checksum. Set by people only; archive synchronisation never changes them. They do not record which data a model was refined against. Cite a dataset's version DOI, not a concept DOI that moves to the newest version. related_datasets is for data; related entries (_pdbx_database_related, on models) are for structures. |
+
+### Related dataset relation (unreleased, v0.3.0)
+
+Each related dataset may state how it relates to the experiment the entry describes, and what shows the link. Both are optional; absent means not stated. Both are off on dev and production until their switch-on (entries.related_dataset_relation_enabled); a server with them off refuses either key with 422.
+
+| relation | Meaning |
+|---|---|
+| source_data | The deposited coordinates were refined against data reduced from this dataset. |
+| similar_sample | Collected from comparable crystals or samples, not the deposited one. If the collection temperature differs from the entry's, details says so. |
+| other | Any other relationship; details must say what it is. |
+
+| link_evidence | Meaning |
+|---|---|
+| pdb_record | The PDB entry cites the dataset. |
+| repository_record | The repository's metadata names the PDB ID. |
+| repository_text | The repository's page text names the PDB ID. |
+| publication | A paper's data availability statement names both. |
+| depositor_statement | The depositor states it. |
+
+- link_evidence is required when relation is set; link_evidence alone is allowed.
+- pdb_record does not imply source_data: a PDB entry can cite a control sample or one of several collections. Reviewers confirm the relation row by row.
+- Values are closed on write (422 at the field's pointer). Readers must accept values added later and show an unknown one as text.
+- When the entry has no PDB ID, compare against the experiment the entry describes.
+- A revision's timestamps record when a person confirmed the list, not that a DOI still resolves.
+
+mmCIF has no item for either field: _pdbx_related_exp_data_set (PDBx v5.419) holds ordinal, data_reference, metadata_reference, data_set_type, details and db_source, and IHM (v1.29) records how data were used (_ihm_dataset_group.application) and derivation between datasets (_ihm_related_datasets), not same or similar sample. Both are Dynamic PDB extensions in their own category, so no wwPDB-owned category gains items:
+
+| Field | mmCIF (extension) | DataCite relationType | PROV |
+|---|---|---|---|
+| relation source_data | _dpdb_related_exp_data_set.relation | IsDerivedFrom | prov:wasDerivedFrom |
+| relation similar_sample | _dpdb_related_exp_data_set.relation | References | none |
+| relation other | _dpdb_related_exp_data_set.relation | no mapping | none |
+| link_evidence | _dpdb_related_exp_data_set.link_evidence | none | none |
+
+_dpdb_related_exp_data_set.ordinal points to _pdbx_related_exp_data_set.ordinal. The existing mapping (doi to data_reference, data_type to data_set_type, repository to db_source, details to details) does not change.
 
 A polymer entity is a distinct sequence or construct; multiple chains may share it. Preserve registry id and source label_entity_id; link entities to entry revisions.
 

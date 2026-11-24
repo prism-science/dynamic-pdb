@@ -61,3 +61,40 @@ export function relatedDatasetSummary(dataset: RelatedDataset): string {
     .filter((part): part is string => Boolean(part?.trim()))
     .join(" · ");
 }
+
+/** Labels for how a dataset relates to the experiment the entry describes
+ *  (RelatedDatasetRelation in backend/api/openapi.yaml). */
+const RELATION_LABELS: Record<string, string> = {
+  source_data: "Source data",
+  similar_sample: "Similar sample",
+  other: "Other relation",
+};
+
+/** Labels for what shows the link (RelatedDatasetLinkEvidence). */
+const LINK_EVIDENCE_LABELS: Record<string, string> = {
+  pdb_record: "cited by the PDB entry",
+  repository_record: "named in the repository's record",
+  repository_text: "named on the repository's page",
+  publication: "named in a publication",
+  depositor_statement: "stated by the depositor",
+};
+
+/** A value's label, or the value itself: the API may add values, and an
+ *  older page shows a new one as text rather than hiding it. */
+function labelOf(labels: Record<string, string>, value: string | undefined): string | null {
+  if (!value?.trim()) {
+    return null;
+  }
+  return Object.hasOwn(labels, value) ? labels[value] : value;
+}
+
+/** "Similar sample · named on the repository's page": the stated relation and
+ *  what shows it, or null when the dataset states neither. */
+export function relatedDatasetRelationSummary(dataset: RelatedDataset): string | null {
+  const relation = labelOf(RELATION_LABELS, dataset.relation);
+  const evidence = labelOf(LINK_EVIDENCE_LABELS, dataset.link_evidence);
+  if (!relation && !evidence) {
+    return null;
+  }
+  return [relation, evidence].filter(Boolean).join(" · ");
+}

@@ -52,6 +52,10 @@ type EntriesConfig struct {
 	// DeleteEnabled lets reviewers soft-delete entries with DELETE /v1/entries/{entry_id}. It is
 	// on only on dev, so researchers can delete their test entries and retest the deposition forms.
 	DeleteEnabled bool `mapstructure:"delete_enabled"`
+	// RelatedDatasetRelationEnabled accepts relation and link_evidence on an entry's related
+	// datasets. Merged dark: on locally, off on dev and production until their switch-on PRs,
+	// dev first. Off, a request that sends either field gets 422.
+	RelatedDatasetRelationEnabled bool `mapstructure:"related_dataset_relation_enabled"`
 }
 
 // ArtifactExtractionConfig holds the switches for reading values from structure files.
@@ -243,6 +247,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("validation::request_keys", string(validation.ModeLogOnly))
 	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetDefault("entries::delete_enabled", false)
+	v.SetDefault("entries::related_dataset_relation_enabled", false)
 	v.SetDefault("revisions::self_approval_enabled", false)
 	v.SetDefault("artifact_extraction::uploads_enabled", false)
 	v.SetDefault("model_search::filters_enabled", false)

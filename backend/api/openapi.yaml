@@ -5176,6 +5176,36 @@ components:
           maxLength: 2000
           description: >
             mmCIF details: what the dataset contains and how it relates to this entry.
+        relation:
+          $ref: "#/components/schemas/RelatedDatasetRelation"
+        link_evidence:
+          $ref: "#/components/schemas/RelatedDatasetLinkEvidence"
+
+    RelatedDatasetRelation:
+      type: string
+      description: >
+        Optional. How the dataset relates to the experiment the entry describes. source_data:
+        the deposited coordinates were refined against data reduced from this dataset.
+        similar_sample: collected from comparable crystals or samples, not the deposited one.
+        other: any other relationship, which details must state. Absent means not stated. A
+        dataset the PDB entry cites (link_evidence pdb_record) is not source_data by that alone:
+        it can be a control sample or one of several collections. A Dynamic PDB extension:
+        mmCIF _pdbx_related_exp_data_set has no such item. Requests outside this list get 422;
+        responses may gain values, so show an unknown value as text. Refused with 422 until the
+        environment turns related dataset relations on (entries.related_dataset_relation_enabled).
+      enum: [source_data, similar_sample, other]
+
+    RelatedDatasetLinkEvidence:
+      type: string
+      description: >
+        What shows the dataset relates to the entry; required when relation is set.
+        pdb_record: the PDB entry cites the dataset. repository_record: the repository's
+        metadata names the PDB ID. repository_text: the repository's page text names the PDB ID.
+        publication: a paper's data availability statement names both. depositor_statement:
+        the depositor states it. A Dynamic PDB extension, like relation. Requests outside this
+        list get 422; responses may gain values. Refused with 422 until the environment turns
+        related dataset relations on.
+      enum: [pdb_record, repository_record, repository_text, publication, depositor_statement]
 
     EntryCrystallography:
       type: object
