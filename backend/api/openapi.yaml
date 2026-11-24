@@ -3805,7 +3805,8 @@ components:
       type: object
       description: >
         Which models to save. Give model_ids, searches, or both; exclude_model_ids removes
-        models from the result.
+        models from the result, and add_deposited_models adds the Deposited models of their
+        entries.
       properties:
         model_ids:
           type: array
@@ -3830,12 +3831,22 @@ components:
             maxLength: 8192
         exclude_model_ids:
           type: array
-          description: Models to leave out, by model ID. IDs of no model are ignored.
+          description: >
+            Models to leave out, by model ID. IDs of no model are ignored. An excluded model stays
+            out even when add_deposited_models would add it.
           maxItems: 10000
           items:
             type: string
             minLength: 1
             maxLength: 100
+        add_deposited_models:
+          type: boolean
+          default: false
+          description: >
+            true also holds every published Deposited model of each entry the selection holds a
+            model of, frozen at the same moment as the others. The PDB's original mmCIF belongs to
+            the Deposited model, so an original_mmcif archive of computed models (for example qFit
+            or ensembles) gets it only this way.
 
     SelectionDocument:
       type: object
@@ -3888,7 +3899,7 @@ components:
       description: >
         What was asked for when the selection was saved: model IDs trimmed and listed once, each
         search's parameters in a fixed order.
-      required: [model_ids, searches, exclude_model_ids]
+      required: [model_ids, searches, exclude_model_ids, add_deposited_models]
       properties:
         model_ids:
           type: array
@@ -3902,6 +3913,11 @@ components:
           type: array
           items:
             type: string
+        add_deposited_models:
+          type: boolean
+          description: >
+            Whether the Deposited models of the held entries were added. false for selections
+            saved before the option existed.
 
     SelectionLinks:
       type: object
@@ -3941,7 +3957,8 @@ components:
 
     SelectionModelAttributes:
       type: object
-      required: [model_id, entry_id, model_revision_number, entry_revision_number, files]
+      required:
+        [model_id, entry_id, model_revision_number, model_type, origin, entry_revision_number, files]
       properties:
         model_id:
           type: string
@@ -3952,6 +3969,20 @@ components:
           description: >
             Number of the model revision frozen in the selection (revision_number of the model
             as it was then).
+        model_type:
+          type: string
+          nullable: true
+          description: >
+            The frozen model revision's metadata.model_type (see StructureModelType), as it was
+            when the selection was saved; null when that revision has none. With origin, it says
+            whether the model is a computed Dynamic PDB model (Single Conformer, Multiconformer or
+            Ensemble without origin archive), which the modified_coordinates file choice holds.
+        origin:
+          type: string
+          nullable: true
+          description: >
+            The frozen model revision's metadata.origin (see ModelMetadata.origin), as it was when
+            the selection was saved; null when that revision has none.
         entry_revision_number:
           type: integer
           description: >

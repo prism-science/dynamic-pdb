@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ModelSearchResult } from "@/lib/api/entries";
 import type { SearchFailure } from "@/lib/model-search";
+import SelectModelCheckbox from "@/app/components/download-selection/SelectModelCheckbox";
+import { selectedModelFromResult } from "@/lib/download-selection";
 
 import ModelResultRow from "./ModelResultRow";
 import SearchErrorNotice from "./SearchErrorNotice";
@@ -20,11 +22,14 @@ type FeedFailure = { error: SearchFailure };
 export default function ModelResultsScroll({
   searchQuery,
   initialCursor,
+  selectable = false,
 }: {
   /** The search's query string, as modelSearchQuery writes it. */
   searchQuery: string;
   /** Cursor of the page after the server-rendered one; null when there is none. */
   initialCursor: string | null;
+  /** Rows get the bulk-download checkbox. */
+  selectable?: boolean;
 }) {
   const [results, setResults] = useState<ModelSearchResult[]>([]);
   const [cursor, setCursor] = useState(initialCursor);
@@ -111,7 +116,15 @@ export default function ModelResultsScroll({
       {results.length > 0 ? (
         <ol className={styles.rows}>
           {results.map((result) => (
-            <ModelResultRow key={result.id} result={result} />
+            <ModelResultRow
+              key={result.id}
+              result={result}
+              leading={
+                selectable ? (
+                  <SelectModelCheckbox model={selectedModelFromResult(result)} searchQuery={searchQuery} />
+                ) : undefined
+              }
+            />
           ))}
         </ol>
       ) : null}

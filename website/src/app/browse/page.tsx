@@ -10,6 +10,7 @@ import {
   searchModels,
 } from "@/lib/api/entries";
 import { getApiBaseUrl } from "@/lib/api/baseUrl";
+import { bulkDownloadAvailable } from "@/lib/api/downloads";
 import { getAuthSession } from "@/lib/auth/session";
 import { canDeleteEntries } from "@/lib/auth/permissions";
 import {
@@ -21,6 +22,8 @@ import {
   type SearchFailure,
 } from "@/lib/model-search";
 import EntriesBrowser from "@/app/components/EntriesBrowser";
+import DownloadSelectionProvider from "@/app/components/download-selection/DownloadSelectionProvider";
+import SelectionBar from "@/app/components/download-selection/SelectionBar";
 import SearchTracker, { ModelSearchTracker } from "@/app/components/SearchTracker";
 import FilterPanel from "@/app/components/model-search/FilterPanel";
 import ModelResults from "@/app/components/model-search/ModelResults";
@@ -49,6 +52,9 @@ type BrowseProps = {
  * restores the search. Anyone may filter by review flags; searches run as the
  * signed-in reader, so reviewers and admins also see which issues a flagged
  * model has.
+ *
+ * Where the server offers bulk download, model rows have checkboxes, a search
+ * can be selected whole, and the selection bar sits at the bottom.
  */
 export default async function Browse({ searchParams }: BrowseProps) {
   const session = await getAuthSession();
@@ -61,8 +67,9 @@ export default async function Browse({ searchParams }: BrowseProps) {
       ? firstQueryValue(resolvedSearchParams[ENTRY_DELETED_PARAM])
       : undefined;
   const criteria = readModelSearch(resolvedSearchParams);
+  const bulkDownload = await bulkDownloadAvailable();
 
-  return (
+  const page = (
     <main className={styles.page} aria-label="dynamic-pdb entries">
       {deletedEntryId ? (
         <p className={styles.deletedNotice} role="status">
@@ -76,14 +83,21 @@ export default async function Browse({ searchParams }: BrowseProps) {
         </aside>
         <section className={styles.entriesShell}>
           {criteria.length > 0 ? (
-            <ModelSearch token={session?.token} criteria={criteria} textQuery={query} />
+            <ModelSearch
+              token={session?.token}
+              criteria={criteria}
+              textQuery={query}
+              selectable={bulkDownload}
+            />
           ) : (
             <Entries token={session?.token} query={query} />
           )}
         </section>
       </div>
+      {bulkDownload ? <SelectionBar /> : null}
     </main>
   );
+  return bulkDownload ? <DownloadSelectionProvider>{page}</DownloadSelectionProvider> : page;
 }
 
 async function Entries({ token, query }: { token?: string; query: string }) {
@@ -105,10 +119,12 @@ async function ModelSearch({
   token,
   criteria,
   textQuery,
+  selectable,
 }: {
   token?: string;
   criteria: ModelSearchCriteria;
   textQuery: string;
+  selectable: boolean;
 }) {
   const searchQuery = modelSearchQuery(criteria);
   const outcome = await runModelSearch(criteria, token);
@@ -136,6 +152,7 @@ async function ModelSearch({
             page={outcome.page}
             searchQuery={searchQuery}
             apiUrl={modelSearchApiUrl(getApiBaseUrl(), criteria)}
+            selectable={selectable}
           />
           <ModelSearchTracker
             filters={[...new Set(criteria.map(([parameter]) => parameter))].join(",")}

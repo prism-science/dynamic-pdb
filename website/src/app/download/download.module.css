@@ -60,6 +60,82 @@
   box-shadow: var(--ring);
 }
 
+/* Bulk download instructions (B4). */
+.section {
+  margin-top: 36px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.subheading {
+  margin: 24px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.text {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.steps,
+.list,
+.choices {
+  margin: 12px 0 0;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.steps li + li,
+.list li + li,
+.choices li + li {
+  margin-top: 6px;
+}
+
+.choices {
+  color: var(--text-secondary);
+}
+
+.choiceName {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.pre {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.prose a:not(.email) {
+  color: var(--accent);
+}
+
 @media (max-width: 720px) {
   .page {
     width: calc(100% - 28px);

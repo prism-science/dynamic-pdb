@@ -51,6 +51,10 @@ type SelectionFreeze struct {
 	ModelIDs        []string
 	Searches        []ModelSearch
 	ExcludeModelIDs []string
+	// AddDepositedModels also freezes every Deposited model of each entry the other parts hold a
+	// model of, so "original mmCIF" archives get the PDB's coordinate file of computed models'
+	// entries. Excluded models stay out.
+	AddDepositedModels bool
 	// Request is saved with the selection as what the client asked for.
 	Request models.SelectionRequest
 	// MaxModels is the most models the selection may hold.
@@ -198,48 +202,62 @@ func (r *SelectionsRepository) Freeze(ctx context.Context, freeze SelectionFreez
 // Each search's conditions are model search conditions, the SQL GET /v1/models runs for the same
 // filters. They name their arguments the same way in every search, so each search's fragment is
 // bound by itself to positional arguments, and the statement is numbered once at the end.
+//
+// With AddDepositedModels, held_entries first collects the entries of the models the parts hold
+// (minus excluded models); frozen then also takes every Deposited model of those entries.
 func selectionFreezeQuery(freeze SelectionFreeze) (string, []any, error) {
 	request, err := marshalJSON(freeze.Request)
 	if err != nil {
 		return "", nil, fmt.Errorf("encode selection request: %w", err)
 	}
+	parts, err := freezeParts(freeze)
+	if err != nil {
+		return "", nil, err
+	}
+	excluded := map[string]any{"exclude_model_ids": textArray(freeze.ExcludeModelIDs)}
 	statement := positionalStatement{}
 	if err := statement.add(`with missing as (
 			select requested.model_id, requested.position
 			from unnest(cast(:model_ids as text[])) with ordinality as requested(model_id, position)
 			where not exists (select 1 `+selectableModelsFromWhere+`
 				and models.id = requested.model_id)
-		), frozen as materialized (
-			select row_number() over (order by model_revisions.created_at, model_revisions.id) as ordinal,
-			       model_revisions.id as model_revision_id, entry_revisions.id as entry_revision_id, models.entry_id
-			`+selectableModelsFromWhere+`
-			  and (`, map[string]any{"model_ids": textArray(freeze.ModelIDs)}); err != nil {
+		),`, map[string]any{"model_ids": textArray(freeze.ModelIDs)}); err != nil {
 		return "", nil, err
 	}
-	// alternatives counts the parts of the selection; each part after the first starts with "or".
-	alternatives := 0
-	separator := func() string {
-		alternatives++
-		if alternatives == 1 {
-			return ""
+	if freeze.AddDepositedModels {
+		if err := statement.add(` held_entries as materialized (
+			select distinct models.entry_id
+			`+selectableModelsFromWhere+`
+			  and (`, nil); err != nil {
+			return "", nil, err
 		}
-		return " or "
-	}
-	if len(freeze.ModelIDs) > 0 {
-		if err := statement.add(separator()+"models.id = any(cast(:model_ids as text[]))",
-			map[string]any{"model_ids": textArray(freeze.ModelIDs)}); err != nil {
+		if err := parts.addTo(&statement); err != nil {
+			return "", nil, err
+		}
+		if err := statement.add(`)
+			  and not (models.id = any(cast(:exclude_model_ids as text[])))
+		),`, excluded); err != nil {
 			return "", nil, err
 		}
 	}
-	for index, search := range freeze.Searches {
-		searchArgs := map[string]any{}
-		conditions, err := modelSearchConditions(search, searchArgs)
-		if err != nil {
-			return "", nil, fmt.Errorf("build conditions of search %d: %w", index, err)
-		}
-		fragment := "(" + strings.Join(append([]string{"true"}, conditions...), "\n  and ") + ")"
-		if err := statement.add(separator()+fragment, searchArgs); err != nil {
-			return "", nil, fmt.Errorf("bind conditions of search %d: %w", index, err)
+	if err := statement.add(` frozen as materialized (
+			select row_number() over (order by model_revisions.created_at, model_revisions.id) as ordinal,
+			       model_revisions.id as model_revision_id, entry_revisions.id as entry_revision_id, models.entry_id
+			`+selectableModelsFromWhere+`
+			  and ((`, nil); err != nil {
+		return "", nil, err
+	}
+	if err := parts.addTo(&statement); err != nil {
+		return "", nil, err
+	}
+	if err := statement.add(`)`, nil); err != nil {
+		return "", nil, err
+	}
+	if freeze.AddDepositedModels {
+		if err := statement.add(` or (`+modelTypeExpression+` = :deposited_model_type
+			  and models.entry_id in (select held_entries.entry_id from held_entries))`,
+			map[string]any{"deposited_model_type": string(models.StructureModelTypeDeposited)}); err != nil {
+			return "", nil, err
 		}
 	}
 	if err := statement.add(`)
@@ -279,10 +297,56 @@ func selectionFreezeQuery(freeze SelectionFreeze) (string, []any, error) {
 	}); err != nil {
 		return "", nil, err
 	}
-	if alternatives == 0 {
-		return "", nil, errors.New("selection freeze needs model IDs or a search")
-	}
 	return sqlx.Rebind(sqlx.DOLLAR, statement.text.String()), statement.args, nil
+}
+
+// selectionFreezeParts are the alternatives a selection holds models by: the named models, then
+// each search's conditions. Each is bound by itself, so a part can be written into a statement
+// more than once.
+type selectionFreezeParts []selectionFreezePart
+
+type selectionFreezePart struct {
+	fragment string
+	args     map[string]any
+}
+
+func freezeParts(freeze SelectionFreeze) (selectionFreezeParts, error) {
+	parts := selectionFreezeParts{}
+	if len(freeze.ModelIDs) > 0 {
+		parts = append(parts, selectionFreezePart{
+			fragment: "models.id = any(cast(:model_ids as text[]))",
+			args:     map[string]any{"model_ids": textArray(freeze.ModelIDs)},
+		})
+	}
+	for index, search := range freeze.Searches {
+		searchArgs := map[string]any{}
+		conditions, err := modelSearchConditions(search, searchArgs)
+		if err != nil {
+			return nil, fmt.Errorf("build conditions of search %d: %w", index, err)
+		}
+		parts = append(parts, selectionFreezePart{
+			fragment: "(" + strings.Join(append([]string{"true"}, conditions...), "\n  and ") + ")",
+			args:     searchArgs,
+		})
+	}
+	if len(parts) == 0 {
+		return nil, errors.New("selection freeze needs model IDs or a search")
+	}
+	return parts, nil
+}
+
+// addTo writes the parts joined by "or".
+func (parts selectionFreezeParts) addTo(statement *positionalStatement) error {
+	for index, part := range parts {
+		separator := ""
+		if index > 0 {
+			separator = " or "
+		}
+		if err := statement.add(separator+part.fragment, part.args); err != nil {
+			return fmt.Errorf("bind selection part %d: %w", index, err)
+		}
+	}
+	return nil
 }
 
 // selectionRowBytes is about what one frozen row costs on disk, with its primary key entry.
@@ -356,9 +420,9 @@ func (r *SelectionsRepository) Get(ctx context.Context, id uuid.UUID) (*models.S
 	return &selection, nil
 }
 
-// ListModels returns up to limit models of a selection with their frozen revisions and the
-// files of those revisions, in ordinal order, starting after afterOrdinal (0 for the first page).
-// It does not check that the selection exists.
+// ListModels returns up to limit models of a selection with their frozen revisions, the frozen
+// model revision's model type and origin, and the files of those revisions, in ordinal order,
+// starting after afterOrdinal (0 for the first page). It does not check that the selection exists.
 func (r *SelectionsRepository) ListModels(
 	ctx context.Context,
 	selectionID uuid.UUID,
@@ -369,18 +433,22 @@ func (r *SelectionsRepository) ListModels(
 		return nil, errors.New("selection model list needs a non-negative position and limit")
 	}
 	var rows []struct {
-		Ordinal             int           `db:"ordinal"`
-		ModelID             string        `db:"model_id"`
-		EntryID             string        `db:"entry_id"`
-		ModelRevisionID     uuid.UUID     `db:"model_revision_id"`
-		ModelRevisionNumber sql.NullInt64 `db:"model_revision_number"`
-		EntryRevisionID     uuid.UUID     `db:"entry_revision_id"`
-		EntryRevisionNumber sql.NullInt64 `db:"entry_revision_number"`
+		Ordinal             int            `db:"ordinal"`
+		ModelID             string         `db:"model_id"`
+		EntryID             string         `db:"entry_id"`
+		ModelRevisionID     uuid.UUID      `db:"model_revision_id"`
+		ModelRevisionNumber sql.NullInt64  `db:"model_revision_number"`
+		ModelType           sql.NullString `db:"model_type"`
+		Origin              sql.NullString `db:"origin"`
+		EntryRevisionID     uuid.UUID      `db:"entry_revision_id"`
+		EntryRevisionNumber sql.NullInt64  `db:"entry_revision_number"`
 	}
 	if err := r.queriers.Querier(ctx, r.db).SelectContext(ctx, &rows,
 		`select selection_models.ordinal,
 		        model_revisions.model_id, entry_revisions.entry_id,
 		        model_revisions.id as model_revision_id, model_revisions.revision_number as model_revision_number,
+		        model_revisions.metadata ->> 'model_type' as model_type,
+		        model_revisions.metadata ->> 'origin' as origin,
 		        entry_revisions.id as entry_revision_id, entry_revisions.revision_number as entry_revision_number
 		 from selection_models
 		 join model_revisions on model_revisions.id = selection_models.model_revision_id
@@ -402,6 +470,8 @@ func (r *SelectionsRepository) ListModels(
 			EntryID:             row.EntryID,
 			ModelRevisionID:     row.ModelRevisionID,
 			ModelRevisionNumber: int(row.ModelRevisionNumber.Int64),
+			ModelType:           stringPtrFromSQL(row.ModelType),
+			Origin:              stringPtrFromSQL(row.Origin),
 			EntryRevisionID:     row.EntryRevisionID,
 			EntryRevisionNumber: int(row.EntryRevisionNumber.Int64),
 		})

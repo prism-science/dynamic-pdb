@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { request, type APIRequestContext, type APIResponse } from "@playwright/test";
 
@@ -26,9 +26,23 @@ export type TestModel = {
    * the (fake) RCSB coordinate file of pdbId.
    */
   archive?: true;
+  /**
+   * The model file's bytes, for a test that reads them back (a bulk-download
+   * archive): its SHA-256 and size are recorded from them. Without it the file
+   * is a record only. Not for archive models, whose file is RCSB's.
+   */
+  modelFileContent?: string;
+  /**
+   * A recorded size for a file whose bytes are never read (an archive blocked
+   * by the size limit before it is built). Not with modelFileContent.
+   */
+  modelFileSizeBytes?: number;
 };
 
-export type CreatedModel = { modelId: string; revisionId: string };
+export type CreatedModel = { modelId: string; revisionId: string; modelFile: ModelFileRecord };
+
+/** The model file as createModel recorded it: where it lives and what it should hold. */
+export type ModelFileRecord = { artifactId: string; uri: string; sha256: string; sizeBytes: number };
 
 type CreateEntryResult = {
   data: { attributes: { entry_id: string; revision_id: string; state: RevisionState } };
@@ -169,6 +183,24 @@ export class BackendClient {
     if (model.archive && !model.pdbId) {
       throw new Error("an archive test model needs its PDB ID");
     }
+    if (model.archive && (model.modelFileContent !== undefined || model.modelFileSizeBytes !== undefined)) {
+      throw new Error("an archive test model's file is RCSB's; it takes no content or size");
+    }
+    if (model.modelFileContent !== undefined && model.modelFileSizeBytes !== undefined) {
+      throw new Error("a test model's file has content or a recorded size, not both");
+    }
+    const modelFile: ModelFileRecord = {
+      artifactId: modelArtifactId,
+      uri: model.archive ? `${stack.rcsbURL}/download/${model.pdbId}.cif` : `${fileBase}/model.pdb`,
+      sha256:
+        model.modelFileContent === undefined
+          ? "a".repeat(64)
+          : createHash("sha256").update(model.modelFileContent).digest("hex"),
+      sizeBytes:
+        model.modelFileContent !== undefined
+          ? Buffer.byteLength(model.modelFileContent)
+          : (model.modelFileSizeBytes ?? 100),
+    };
     const response = await this.post(`/v1/entries/${entryId}/models`, {
       model: {
         title: model.title,
@@ -186,9 +218,9 @@ export class BackendClient {
             level: "L2",
             type: "model",
             format: model.archive ? "mmcif" : "pdb",
-            uri: model.archive ? `${stack.rcsbURL}/download/${model.pdbId}.cif` : `${fileBase}/model.pdb`,
-            sha256: "a".repeat(64),
-            size_bytes: 100,
+            uri: modelFile.uri,
+            sha256: modelFile.sha256,
+            size_bytes: modelFile.sizeBytes,
             metadata: {},
           },
           {
@@ -223,6 +255,7 @@ export class BackendClient {
     return {
       modelId: body.data.attributes.model_id,
       revisionId: body.data.attributes.revision_id,
+      modelFile,
     };
   }
 
@@ -313,9 +346,19 @@ export async function createActiveModel(
   entryId: string,
   model: TestModel,
 ): Promise<string> {
-  const { modelId, revisionId } = await submitter.createModel(entryId, model);
+  return (await createActiveModelWithFile(submitter, reviewer, entryId, model)).modelId;
+}
+
+/** createActiveModel, also returning the model file as it was recorded. */
+export async function createActiveModelWithFile(
+  submitter: BackendClient,
+  reviewer: BackendClient,
+  entryId: string,
+  model: TestModel,
+): Promise<{ modelId: string; modelFile: ModelFileRecord }> {
+  const { modelId, revisionId, modelFile } = await submitter.createModel(entryId, model);
   await reviewer.approveModelRevision(entryId, modelId, revisionId);
-  return modelId;
+  return { modelId, modelFile };
 }
 
 export async function expectStatus<Body = unknown>(

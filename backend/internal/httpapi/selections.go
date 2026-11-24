@@ -189,15 +189,18 @@ func (s *Server) selectionFreezeFromRequest(ctx context.Context, request CreateS
 	if len(fieldErrors) > 0 {
 		return db.SelectionFreeze{}, &validation.Error{Fields: fieldErrors}
 	}
+	addDepositedModels := request.AddDepositedModels != nil && *request.AddDepositedModels
 	return db.SelectionFreeze{
-		ID:              uuid.New(),
-		ModelIDs:        modelIDs,
-		Searches:        searches,
-		ExcludeModelIDs: excluded,
+		ID:                 uuid.New(),
+		ModelIDs:           modelIDs,
+		Searches:           searches,
+		ExcludeModelIDs:    excluded,
+		AddDepositedModels: addDepositedModels,
 		Request: domainmodels.SelectionRequest{
-			ModelIDs:        modelIDs,
-			Searches:        searchTexts,
-			ExcludeModelIDs: excluded,
+			ModelIDs:           modelIDs,
+			Searches:           searchTexts,
+			ExcludeModelIDs:    excluded,
+			AddDepositedModels: addDepositedModels,
 		},
 		MaxModels:        s.selections.maxModels,
 		MaxStoredModels:  s.selections.maxStoredModels,
@@ -457,6 +460,8 @@ func (s *Server) ListSelectionModels(
 				ModelId:             item.ModelID,
 				EntryId:             item.EntryID,
 				ModelRevisionNumber: item.ModelRevisionNumber,
+				ModelType:           item.ModelType,
+				Origin:              item.Origin,
 				EntryRevisionNumber: item.EntryRevisionNumber,
 				Files:               files,
 			},
@@ -562,9 +567,10 @@ func (s *Server) selectionDocument(selection domainmodels.Selection) SelectionDo
 			// The freeze is one statement, so the save time is the catalog moment it read.
 			CatalogDate: selection.CreatedAt,
 			Request: SelectionRequest{
-				ModelIds:        nonNilStrings(selection.Request.ModelIDs),
-				Searches:        nonNilStrings(selection.Request.Searches),
-				ExcludeModelIds: nonNilStrings(selection.Request.ExcludeModelIDs),
+				ModelIds:           nonNilStrings(selection.Request.ModelIDs),
+				Searches:           nonNilStrings(selection.Request.Searches),
+				ExcludeModelIds:    nonNilStrings(selection.Request.ExcludeModelIDs),
+				AddDepositedModels: selection.Request.AddDepositedModels,
 			},
 		},
 		Links: SelectionLinks{Self: self, Models: self + "/models"},

@@ -81,15 +81,19 @@ func (s *SelectionsSuite) Test_should_keep_the_frozen_revisions_when_a_model_and
 	s.Equal(1, saved.Data.Attributes.EntryCount)
 	frozen, _ := selectionModelsForTest(s.T(), saved.Data.Id, 100)
 	noFiles := []httpapi.SelectionFile{}
+	deposited := "Deposited"
 	s.Equal([]httpapi.SelectionModelAttributes{
-		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1, Files: noFiles},
-		{ModelId: unchanged.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, EntryRevisionNumber: 1, Files: noFiles},
+		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, ModelType: &deposited,
+			EntryRevisionNumber: 1, Files: noFiles},
+		{ModelId: unchanged.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 1, ModelType: &deposited,
+			EntryRevisionNumber: 1, Files: noFiles},
 	}, frozen)
 	// and a new selection freezes the new revisions
 	resaved := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{revised.ModelId}})
 	refrozen, _ := selectionModelsForTest(s.T(), resaved.Data.Id, 100)
 	s.Equal([]httpapi.SelectionModelAttributes{
-		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 2, EntryRevisionNumber: 2, Files: noFiles},
+		{ModelId: revised.ModelId, EntryId: entry.EntryId, ModelRevisionNumber: 2, ModelType: &deposited,
+			EntryRevisionNumber: 2, Files: noFiles},
 	}, refrozen)
 }
 
@@ -236,4 +240,53 @@ func (s *SelectionsSuite) Test_should_answer_404_when_a_selection_is_unknown_or_
 	s.Require().Len(offErrors, 1)
 	s.Require().NotNil(offErrors[0].Code)
 	s.Equal("SELECTIONS_OFF", *offErrors[0].Code)
+}
+
+func (s *SelectionsSuite) Test_should_hold_the_entry_deposited_model_too_when_a_selection_is_saved_with_add_deposited_models() {
+	// given an entry with a Deposited model and a computed model refined from the entry's data
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "selection-deposited-owner", 8913)
+	entryFileID, computedFileID := uuid.New(), uuid.New()
+	entry := createAndActivateEntryForTest(s.T(), token, map[string]any{"entry": map[string]any{
+		"title": "deposited entry",
+		"artifacts": []map[string]any{
+			artifactRequest(entryFileID, "data", "L0", "structure_factors_cif", "s3://entry/deposited-sf.cif", nil),
+		},
+	}})
+	deposited := createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{
+		"model": map[string]any{"title": "deposited model", "metadata": map[string]any{"model_type": "Deposited"}},
+	})
+	computed := createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{"model": map[string]any{
+		"title": "single conformer model", "primary_artifact_id": computedFileID,
+		"metadata": map[string]any{"model_type": "Single Conformer"},
+		"artifacts": []map[string]any{{
+			"id": computedFileID, "name": "model.cif", "level": "L2", "type": "model", "format": "mmcif",
+			"uri": storedModelURI(computedFileID),
+		}},
+		"runs": []map[string]any{refinementRunForTest(uuid.New(), entryFileID, computedFileID)},
+	}})
+
+	// when the computed model is saved with add_deposited_models
+	saved := saveSelectionForTest(s.T(), map[string]any{
+		"model_ids": []string{computed.ModelId}, "add_deposited_models": true,
+	})
+
+	// then the selection holds the Deposited model too, and says it was asked for
+	s.Equal(2, saved.Data.Attributes.ModelCount)
+	s.True(saved.Data.Attributes.Request.AddDepositedModels)
+	frozen, _ := selectionModelsForTest(s.T(), saved.Data.Id, 100)
+	frozenIDs := make([]string, 0, len(frozen))
+	frozenTypes := make([]*string, 0, len(frozen))
+	for _, model := range frozen {
+		frozenIDs = append(frozenIDs, model.ModelId)
+		frozenTypes = append(frozenTypes, model.ModelType)
+		s.Nil(model.Origin, "neither model is an archive deposition with an origin")
+	}
+	s.Equal([]string{deposited.ModelId, computed.ModelId}, frozenIDs)
+	depositedType, computedType := "Deposited", "Single Conformer"
+	s.Equal([]*string{&depositedType, &computedType}, frozenTypes,
+		"each model says its frozen revision's type, so a script can tell computed models apart")
+	// and a save without the option holds only the named model
+	plain := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{computed.ModelId}})
+	s.Equal(1, plain.Data.Attributes.ModelCount)
+	s.False(plain.Data.Attributes.Request.AddDepositedModels)
 }

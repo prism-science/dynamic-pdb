@@ -1184,13 +1184,33 @@ export async function getModelRevision(
 }
 
 
+/**
+ * POSTs a JSON:API body to a backend path, as the signed-in reader when a token
+ * is given, and returns the response document. Throws ApiRequestError.
+ */
+export function postBackendJSON<T>(path: string, input: unknown, token?: string): Promise<T> {
+  return sendJSON<T>("POST", path, token, input);
+}
+
+/** GETs a backend path, as the signed-in reader when a token is given. Throws ApiRequestError. */
+export function getBackendJSON<T>(path: string, token?: string): Promise<T> {
+  return fetchBackend<T>(path, token);
+}
+
 async function sendJSON<T>(
   method: string,
   path: string,
-  token: string,
+  token: string | undefined,
   input: unknown,
 ): Promise<T> {
   const baseUrl = getServerApiBaseUrl().replace(/\/+$/, "");
+  const headers: Record<string, string> = {
+    Accept: jsonApiMediaType,
+    "Content-Type": jsonApiMediaType,
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -1198,11 +1218,7 @@ async function sendJSON<T>(
       {
         method,
         cache: "no-store",
-        headers: {
-          Accept: jsonApiMediaType,
-          "Content-Type": jsonApiMediaType,
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
         body: JSON.stringify(input),
       },
       backendWriteTimeoutMs,
