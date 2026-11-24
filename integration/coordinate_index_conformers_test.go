@@ -2,6 +2,8 @@ package integration
 
 import (
 	"database/sql"
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,6 +98,48 @@ func Test_should_store_conformer_counts_for_every_model_type_when_the_coordinate
 	assert.ElementsMatch(t, []uuid.UUID{files[0], files[1], files[2]}, filesWithConformers(t, database, "ILE", 0))
 	assert.ElementsMatch(t, []uuid.UUID{files[3]}, filesWithConformers(t, database, "ASN", 1))
 	assert.Empty(t, filesWithConformers(t, database, "SER", 1), "44PS's serine has six letters, but it is an Ensemble")
+
+	// and the same through GET /v1/models, where the residue filters are on (local config, S4):
+	// deposited and multiconformer models match, an Ensemble never does.
+	search := func(query string) []uuid.UUID {
+		return searchModelFiles(t, database, backend.URL, auth.AccessToken, "/v1/models?"+query)
+	}
+	assert.ElementsMatch(t, []uuid.UUID{files[0]}, search("residue_type=VAL&residue_conformers_min=2"))
+	assert.ElementsMatch(t, []uuid.UUID{files[0], files[1], files[2]}, search("residue_type=ile"))
+	assert.ElementsMatch(t, []uuid.UUID{files[1]}, search("residue_type=MET&residue_conformers_min=2"), "the re-refinement")
+	assert.ElementsMatch(t, []uuid.UUID{files[0], files[2]}, search("residue_type=GLN&residue_type=ILE&residue_conformers_min=2"))
+	assert.ElementsMatch(t, []uuid.UUID{files[3]}, search("residue_type=ASN&residue_conformers_min=2&residues_min=2"))
+	assert.Empty(t, search("residue_type=LEU&residue_conformers_min=2"), "6LLX's leucines have one conformer each")
+	assert.Empty(t, search("residue_type=SER&residue_conformers_min=2"), "no ensemble ever matches")
+	assert.Empty(t, search("residue_type=PHE"), "44PS's phenylalanine: its model is an Ensemble")
+
+	// and a saved selection of that search holds the same models.
+	selectionResponse := postJSON(t, backend.URL+"/v1/selections", "",
+		map[string]any{"searches": []string{"residue_type=GLN&residue_type=ILE&residue_conformers_min=2"}})
+	defer func() {
+		assert.NoError(t, selectionResponse.Body.Close())
+	}()
+	require.Equal(t, http.StatusCreated, selectionResponse.StatusCode)
+	var selection struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(selectionResponse.Body).Decode(&selection))
+	type selectionModels struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	held := getJSON[selectionModels](t, backend.URL+"/v1/selections/"+selection.Data.ID+"/models", "")
+	heldFiles := make([]uuid.UUID, 0, len(held.Data))
+	for _, model := range held.Data {
+		var artifactID uuid.UUID
+		require.NoError(t, database.Conn.QueryRowContext(t.Context(),
+			`select primary_artifact_id from model_revisions where model_id = $1 and state = 'active'`, model.ID).Scan(&artifactID))
+		heldFiles = append(heldFiles, artifactID)
+	}
+	assert.ElementsMatch(t, []uuid.UUID{files[0], files[2]}, heldFiles)
 }
 
 // setModelType gives the pending revision of the model using a file a model type, as an upload of

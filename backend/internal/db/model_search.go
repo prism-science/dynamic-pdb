@@ -48,6 +48,8 @@ type ModelSearch struct {
 	ExcludeCompoundsNeedingReview bool
 	// ProteinChains matches a coordinate file with enough protein chains in a length range (S2).
 	ProteinChains *ProteinChainFilter
+	// Residues matches a coordinate file with enough residues of a type with enough conformers (S4).
+	Residues *ResidueFilter
 	// MetricBounds are inclusive bounds on metric values; each bound must hold.
 	MetricBounds []MetricBound
 	// MissingMetrics matches a model with no value for at least one of these metrics.
@@ -55,6 +57,19 @@ type ModelSearch struct {
 	// Flagged true matches models with an open review flag, false models without one.
 	Flagged *bool
 }
+
+// ResidueFilter matches a model by the conformer counts of its coordinate file, as the
+// coordinate-index job stored them (S3): at least MinResidues residues of one of Types, each with at
+// least MinConformers conformers. Ensembles never match.
+type ResidueFilter struct {
+	Types         []string
+	MinConformers int
+	MinResidues   int
+}
+
+// MaxResidueConformers is the highest conformer count the coordinate-index job stores: the reader
+// keeps at most 16 alternate location letters a residue (coordinate_index_residue_counts' check).
+const MaxResidueConformers = 16
 
 // ProteinChainFilter matches a model by the protein chains of its coordinate file, as the
 // coordinate-index job stored them. MinLength and MaxLength bound a chain's deposited length
@@ -128,6 +143,7 @@ func modelSearchConditions(search ModelSearch, args map[string]any) ([]string, e
 		modelMetadataSearchConditions,
 		modelFileSearchConditions,
 		proteinChainSearchConditions,
+		residueSearchConditions,
 		metricSearchConditions,
 		reviewFlagSearchConditions,
 	}
@@ -439,6 +455,50 @@ func proteinChainSearchConditions(search ModelSearch, args map[string]any) ([]st
 		return nil, fmt.Errorf("unknown protein chain mode %q: %w", filter.Mode, ErrInvalidModelSearch)
 	}
 }
+
+// residueSearchConditions matches the model's coordinate file by its conformer counts (S3): residues
+// of the given types with at least the given conformers, at least the given number of them, added
+// up over the types. The covering index on (residue_type, conformer_count, artifact_id) serves the
+// subquery. Ensembles never match (researchers' item 1): the job stores no counts for a file with
+// more than one model or the file of an Ensemble, and a revision that is an Ensemble or has
+// member_count is left out here too, since a review decision can make a model an Ensemble after its
+// file was counted. A file the job has not read with counts has none, so it never matches.
+func residueSearchConditions(search ModelSearch, args map[string]any) ([]string, error) {
+	filter := search.Residues
+	if filter == nil {
+		return nil, nil
+	}
+	if len(filter.Types) == 0 {
+		return nil, fmt.Errorf("residue filter without a residue type: %w", ErrInvalidModelSearch)
+	}
+	if filter.MinConformers < 1 || filter.MinConformers > MaxResidueConformers {
+		return nil, fmt.Errorf("residue conformer count %d is not within 1 to %d: %w",
+			filter.MinConformers, MaxResidueConformers, ErrInvalidModelSearch)
+	}
+	if filter.MinResidues < 1 {
+		return nil, fmt.Errorf("residue count %d is less than 1: %w", filter.MinResidues, ErrInvalidModelSearch)
+	}
+	types := make([]string, 0, len(filter.Types))
+	for _, residueType := range filter.Types {
+		types = append(types, normalizedCompoundID(residueType))
+	}
+	args["search_residue_types"] = pq.StringArray(types)
+	args["search_residue_conformers_min"] = filter.MinConformers
+	args["search_residues_min"] = filter.MinResidues
+	return []string{residueCondition, notEnsembleCondition}, nil
+}
+
+const residueCondition = `model_revisions.primary_artifact_id in (select search_residues.artifact_id
+		from coordinate_index_residue_counts search_residues
+		where search_residues.residue_type = any(cast(:search_residue_types as text[]))
+		  and search_residues.conformer_count >= :search_residue_conformers_min
+		group by search_residues.artifact_id
+		having sum(search_residues.residues) >= :search_residues_min)`
+
+// notEnsembleCondition leaves out a revision that is an Ensemble or has member_count, which
+// validation allows only on Ensembles.
+const notEnsembleCondition = `coalesce(model_revisions.metadata ->> 'model_type', '') <> 'Ensemble'
+	and jsonb_typeof(model_revisions.metadata -> 'member_count') is distinct from 'number'`
 
 // metricSearchConditions matches metric values by the metric's own key, as model responses list
 // them. A revision whose duplicate values of one key are quarantined (model_revision_metrics.metric_key

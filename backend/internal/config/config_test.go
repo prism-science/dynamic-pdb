@@ -635,6 +635,39 @@ func Test_should_turn_model_search_on_when_env_var_sets_it(t *testing.T) {
 	assert.True(t, cfg.ModelSearch.FiltersEnabled)
 }
 
+func Test_should_leave_residue_filters_off_unless_config_or_env_var_sets_them(t *testing.T) {
+	// given
+	t.Chdir(writeSampleConfig(t))
+
+	// when
+	defaults, err := config.ReadFromFile("test")
+	require.NoError(t, err)
+	t.Setenv("DYNAMIC_PDB_MODEL_SEARCH_RESIDUE_FILTERS_ENABLED", "true")
+	withEnv, err := config.ReadFromFile("test")
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, defaults.ModelSearch.ResidueFiltersEnabled)
+	assert.True(t, withEnv.ModelSearch.ResidueFiltersEnabled)
+}
+
+func Test_should_turn_residue_filters_on_only_in_local_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
+	expected := map[string]bool{"local": true, "dev": false, "production": false}
+
+	for name, enabled := range expected {
+		// when
+		cfg, err := config.ReadFromFile(name)
+
+		// then: dev and production turn them on in their own switch-on PR, after the conformer fill.
+		require.NoError(t, err, name)
+		assert.Equal(t, enabled, cfg.ModelSearch.ResidueFiltersEnabled, name)
+	}
+}
+
 func Test_should_reject_config_when_model_search_count_cap_is_not_positive(t *testing.T) {
 	// given
 	t.Chdir(writeSampleConfig(t))

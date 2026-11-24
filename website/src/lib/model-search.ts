@@ -39,14 +39,17 @@ export type ModelSearchParameter = Exclude<
 
 /**
  * GET /v1/models filters the panel does not offer yet. The protein chain
- * filters have a server switch of their own and answer 400 until it is on;
- * their panel controls come with that switch-on.
+ * filters and the residue filters each have a server switch of their own and
+ * answer 400 until it is on; their panel controls come with that switch-on.
  */
 export const MODEL_SEARCH_PARAMETERS_NOT_OFFERED = [
   "protein_chains_min",
   "protein_chain_length_min",
   "protein_chain_length_max",
   "protein_chain_mode",
+  "residue_type",
+  "residue_conformers_min",
+  "residues_min",
 ] as const satisfies readonly ModelSearchParameter[];
 
 export type FilterGroupId = "entry" | "model" | "scores" | "review";

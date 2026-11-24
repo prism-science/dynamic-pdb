@@ -438,6 +438,11 @@ Rollout, once the job runs (`coordinateIndexJob.enabled`) and its own fill is do
    select conformers, residues_version, status, count(*) from coordinate_index_sets group by 1, 2, 3 order by 1, 2, 3;
    ```
 
+3. Residue filters PR (S4): `model_search.residue_filters_enabled: true` in `backend/config/<env>.yml`,
+   with the website's residue controls. Until then `residue_type`, `residue_conformers_min` and
+   `residues_min` on `GET /v1/models` (and in saved selections) answer 400, so a search never
+   silently misses a file that is not counted yet.
+
 The counts take about 866 MB with their index for all models (5.75 million rows, S3 spike), and
 the fill writes about 70 rows a second: watch RDS free storage, WAL and the EBS balances. The
 residue-level altloc fraction of a file is `multi_conformer_residues / residues`.
