@@ -494,3 +494,27 @@ func Test_should_list_a_file_once_when_two_runs_of_a_model_wrote_it(t *testing.T
 		declaredFile(coordinates, sha256Of("1"), models.SelectionFileRolePrimary, models.SelectionFileRoleRunOutput),
 	}}, fixture.pinnedFiles(t, saved.ID))
 }
+
+func Test_should_name_who_added_each_file_and_the_size_its_source_reported_when_a_selection_is_read(t *testing.T) {
+	// given a model file the checksum job could not read, whose source reported its size
+	fixture := newModelSearchTestDB(t)
+	entry := fixture.entry(t, map[string]any{"method": "X-ray crystallography"})
+	coordinates := fixture.file(t, "1abc_qfit.cif", models.ArtifactLevelL2, models.ArtifactTypeModel, sha256Of("2"))
+	model := fixture.filedModel(t, entry, map[string]any{"model_type": "Multiconformer"}, coordinates, nil, testRun{})
+	fixture.exec(t, `insert into artifact_checksums (artifact_id, status, last_error, source_size_bytes, source_size_checked_at)
+	                 values ($1, 'failed', 'http status 404', 2048, now())`, coordinates)
+	saved, err := fixture.database.Selections.Freeze(context.Background(), freezeRequest([]string{model.id}, nil, nil))
+	require.NoError(t, err)
+
+	// when
+	items, err := fixture.database.Selections.ListModels(context.Background(), saved.ID, 0, 10)
+
+	// then
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Len(t, items[0].Files, 1)
+	file := items[0].Files[0]
+	assert.Equal(t, fixture.userID, file.UploadedBy)
+	assert.Equal(t, ptr(int64(2048)), file.Checksum.SourceSizeBytes)
+	assert.NotNil(t, file.Checksum.SourceSizeCheckedAt)
+}

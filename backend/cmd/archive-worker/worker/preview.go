@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -10,22 +11,8 @@ import (
 	"dynamic-pdb/backend/internal/models"
 )
 
-const (
-	// zipEntryHeaderBound bounds the bytes archive/zip writes for one entry besides its data and
-	// its name (written twice): the local header (30), the zip64 data descriptor (24), the central
-	// directory record (46), a zip64 extra field in each (20 and 28) and an extended timestamp in
-	// each (9 and 9) add up to 166.
-	zipEntryHeaderBound = 256
-	// zipEndBound bounds the end of central directory records: 22, plus 56 and 20 for zip64.
-	zipEndBound = 1024
-	// deflateBoundDivisor and deflateBoundExtra bound what deflate adds to data it cannot shrink:
-	// about 5 bytes per 16 KiB stored block, plus a few bytes for a short input.
-	deflateBoundDivisor = 2000
-	deflateBoundExtra   = 64
-)
-
-// placeholderTime stands in for the manifest's dates while it is counted: the planning walk does
-// not know when the archive will be prepared, and every RFC 3339 date in UTC has the same length.
+// placeholderTime stands in for the manifest's dates while the planning walk lists the rows: it
+// does not know when the archive will be prepared.
 var placeholderTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // previewFileTypes is the order the preview lists file types in.
@@ -33,38 +20,19 @@ var previewFileTypes = []models.ArtifactType{
 	models.ArtifactTypeModel, models.ArtifactTypeStructureFactors, models.ArtifactTypeFASTA, models.ArtifactTypeOther,
 }
 
-// zipEntryBound bounds the bytes a file of size bytes takes in the zip under name.
-func zipEntryBound(size int64, name string) int64 {
-	return size + size/deflateBoundDivisor + deflateBoundExtra + zipEntryHeaderBound + 2*int64(len(name))
-}
-
-// byteCounter counts what is written to it.
-type byteCounter struct {
-	bytes int64
-}
-
-func (c *byteCounter) Write(data []byte) (int, error) {
-	c.bytes += int64(len(data))
-	return len(data), nil
-}
-
 // previewCollector walks a selection as the archive's writing walk will (modelRows, the same
-// layout) and counts what the archive will hold: the files it includes and their bytes, and the
-// preview. Its manifest goes to a byte counter, so the zip's size bound counts the real rows.
+// rows) and counts what the archive will hold: the files it includes and their bytes, and the
+// preview. Its manifest rows are checked like the real ones, then dropped.
 type previewCollector struct {
-	job      models.DownloadJob
-	bucket   keyLocator
-	walk     *modelWalk
-	layout   *archiveLayout
-	header   manifestHeader
-	counter  *byteCounter
-	manifest *manifestWriter
-	// include holds the files the zip includes, with their size; paths their path in it.
+	job           models.DownloadJob
+	bucket        keyLocator
+	cc0Depositors map[uuid.UUID]bool
+	walk          *modelWalk
+	layout        *archiveLayout
+	manifest      *manifestWriter
+	// include holds the files the zip includes, with their size.
 	include map[uuid.UUID]int64
-	paths   map[uuid.UUID]string
 	bytes   int64
-	// entriesBound bounds the zip entries of the included files.
-	entriesBound int64
 	// seen holds the files counted in the preview, which counts each file once; entries the
 	// entries counted.
 	seen      map[uuid.UUID]bool
@@ -75,7 +43,12 @@ type previewCollector struct {
 	preview   models.DownloadPreview
 }
 
-func newPreviewCollector(job models.DownloadJob, bucket keyLocator, only map[uuid.UUID]bool) (*previewCollector, error) {
+func newPreviewCollector(
+	job models.DownloadJob,
+	bucket keyLocator,
+	cc0Depositors map[uuid.UUID]bool,
+	only map[uuid.UUID]bool,
+) (*previewCollector, error) {
 	header := manifestHeader{
 		SelectionID: job.SelectionID,
 		CatalogDate: placeholderTime,
@@ -83,33 +56,28 @@ func newPreviewCollector(job models.DownloadJob, bucket keyLocator, only map[uui
 		PreparedAt:  placeholderTime,
 		RetryOf:     job.RetryOf,
 	}
-	counter := &byteCounter{}
-	manifest, err := newManifestWriter(counter, header)
+	manifest, err := newManifestWriter(io.Discard, header)
 	if err != nil {
 		return nil, err
 	}
 	return &previewCollector{
-		job:       job,
-		bucket:    bucket,
-		walk:      newModelWalk(job.FileChoice, only),
-		layout:    newArchiveLayout(archiveRoot(job)),
-		header:    header,
-		counter:   counter,
-		manifest:  manifest,
-		include:   map[uuid.UUID]int64{},
-		paths:     map[uuid.UUID]string{},
-		seen:      map[uuid.UUID]bool{},
-		entries:   map[string]bool{},
-		fileTypes: map[models.ArtifactType]*models.DownloadPreviewFileType{},
-		reasons:   map[models.DownloadReasonCode]int{},
+		job:           job,
+		bucket:        bucket,
+		cc0Depositors: cc0Depositors,
+		walk:          newModelWalk(job.FileChoice, only),
+		layout:        newArchiveLayout(archiveRoot(job)),
+		manifest:      manifest,
+		include:       map[uuid.UUID]int64{},
+		seen:          map[uuid.UUID]bool{},
+		entries:       map[string]bool{},
+		fileTypes:     map[models.ArtifactType]*models.DownloadPreviewFileType{},
+		reasons:       map[models.DownloadReasonCode]int{},
 	}, nil
 }
 
 // addModel lists one model as the writing walk will, and counts it.
 func (c *previewCollector) addModel(model models.SelectionModel, details models.DownloadSelectionModel) error {
-	// The writing walk reserves every model folder before it names a file; this walk learns them as
-	// it goes, so an entry file named after a later model may get a slightly shorter path here: the
-	// zip's bound keeps far more room per entry than that.
+	// The writing walk reserves every model folder before it names a file.
 	folder := c.layout.modelFolder(model)
 	c.layout.reserveFolder(folder)
 	c.folders = append(c.folders, folder)
@@ -126,11 +94,11 @@ func (c *previewCollector) addModel(model models.SelectionModel, details models.
 		}
 	}
 	return modelRows(c.walk, model, details, func(row selectedFile) (manifestRow, error) {
-		outcome, err := c.outcomeOf(model, row)
+		outcome, err := c.outcomeOf(row)
 		if err != nil {
 			return nil, err
 		}
-		return fileRow(model, details, row, outcome, c.bucket)
+		return fileRow(model, details, row, outcome, c.bucket, c.cc0Depositors)
 	}, c.write)
 }
 
@@ -153,9 +121,9 @@ func listsAny(model models.SelectionModel, files map[uuid.UUID]bool) bool {
 }
 
 // outcomeOf is how the archive will list the file if every planned file reads back as recorded:
-// a file it can include is included, the first time at a new path; any other file as the checksum
-// job left it. It counts a file in the preview the first time it appears.
-func (c *previewCollector) outcomeOf(model models.SelectionModel, row selectedFile) (fileOutcome, error) {
+// a file it can include is included; any other file as the checksum job left it. It counts a file
+// in the preview the first time it appears.
+func (c *previewCollector) outcomeOf(row selectedFile) (fileOutcome, error) {
 	state, err := stateOf(row.file, c.bucket)
 	if err != nil {
 		return fileOutcome{}, err
@@ -169,39 +137,29 @@ func (c *previewCollector) outcomeOf(model models.SelectionModel, row selectedFi
 	if !state.canInclude {
 		return stateOutcome(state), nil
 	}
-	path, planned := c.paths[row.file.ID]
-	if !planned {
-		path = c.layout.path(row.file, model, row.entryFile)
-		c.paths[row.file.ID] = path
+	if _, planned := c.include[row.file.ID]; !planned {
 		c.include[row.file.ID] = state.sizeBytes
 		c.bytes += state.sizeBytes
-		c.entriesBound += zipEntryBound(state.sizeBytes, path)
 	}
 	return fileOutcome{
 		availability: availabilityIncluded,
 		verification: verificationVerified,
 		verifiedAt:   &placeholderTime,
-		path:         path,
 	}, nil
 }
 
 // previewSize is the size the preview counts for a file: the size the checksum job read of a file
-// the zip includes, else the recorded size, else the read size of a verified file; known false
-// when there is none.
+// the zip includes, else the file's known size (knownSize); known false when there is none.
 func previewSize(file models.SelectionFile, state fileState) (size int64, known bool) {
-	switch {
-	case state.canInclude:
+	if state.canInclude {
 		return state.sizeBytes, true
-	case file.SizeBytes != nil:
-		return *file.SizeBytes, true
-	case state.verification == verificationVerified && file.Checksum.SizeBytes != nil:
-		return *file.Checksum.SizeBytes, true
-	default:
-		return 0, false
 	}
+	size, _, known = knownSize(file)
+	return size, known
 }
 
-// countFile counts one distinct file by type, availability, reason and verification.
+// countFile counts one distinct file by type, availability, reason, verification, reuse terms and
+// whether it is verified against the bytes at save time.
 func (c *previewCollector) countFile(file models.SelectionFile, state fileState) error {
 	c.preview.Files++
 	fileType := c.fileTypes[file.Type]
@@ -228,10 +186,29 @@ func (c *previewCollector) countFile(file models.SelectionFile, state fileState)
 		}
 	case availabilityUnavailable:
 		c.preview.Availability.Unavailable++
-	case availabilityChangedAtSource:
-		c.preview.Availability.ChangedAtSource++
 	default:
 		return fmt.Errorf("file %s: unknown availability: %s", file.ID, state.availability)
+	}
+	terms, err := reuseTermsOf(file, sourceOf(file, c.bucket), c.cc0Depositors)
+	if err != nil {
+		return err
+	}
+	switch terms {
+	case models.DownloadReuseTermsCC0:
+		c.preview.ReuseTerms.CC0++
+	case models.DownloadReuseTermsNotConfirmed:
+		c.preview.ReuseTerms.NotConfirmed++
+	case models.DownloadReuseTermsRepository:
+		c.preview.ReuseTerms.Repository++
+	default:
+		return fmt.Errorf("file %s: unknown reuse terms: %s", file.ID, terms)
+	}
+	atSave, err := verifiedAtSave(file)
+	if err != nil {
+		return err
+	}
+	if !atSave {
+		c.preview.NotVerifiedAtSave++
 	}
 	if state.reasonCode != "" {
 		c.reasons[state.reasonCode]++
@@ -265,8 +242,7 @@ func (c *previewCollector) countRelatedDatasets(datasets []models.RelatedDataset
 	}
 }
 
-// plan finishes the walk: the files to include, their bytes, and the preview with the zip's size
-// bound.
+// plan finishes the walk: the files to include, their bytes, and the preview.
 func (c *previewCollector) plan() (archivePlan, error) {
 	if err := c.manifest.flush(); err != nil {
 		return archivePlan{}, err
@@ -296,12 +272,7 @@ func (c *previewCollector) plan() (archivePlan, error) {
 	if listed != len(c.reasons) {
 		return archivePlan{}, fmt.Errorf("the preview counted a reason code that is not listed: %v", c.reasons)
 	}
-	readme := int64(len(readmeText(c.header)))
 	c.preview.IncludedBytes = c.bytes
-	c.preview.ArchiveBytesUpperBound = c.entriesBound +
-		zipEntryBound(readme, c.layout.root+"/README.txt") +
-		zipEntryBound(c.counter.bytes, c.layout.root+"/manifest.tsv") +
-		zipEndBound
 	return archivePlan{
 		include:         c.include,
 		bytes:           c.bytes,

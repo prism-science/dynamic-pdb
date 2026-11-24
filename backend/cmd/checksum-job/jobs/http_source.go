@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -28,6 +29,8 @@ var (
 	errNotRetryable = errors.New("not retryable")
 	// errBlockedAddress is a connection to an address the job must not reach.
 	errBlockedAddress = errors.New("address is not allowed")
+	// errLandingPage is an OK answer that is an HTML page, not the file.
+	errLandingPage = errors.New("landing page, not a file")
 )
 
 // blockedPrefixes are the addresses a client-sent URI must not make the job reach: the
@@ -144,6 +147,43 @@ func (s *HTTPSource) Open(ctx context.Context, uri string) (io.ReadCloser, error
 	return nil, errors.Join(statusErr, closeErr)
 }
 
+// Size asks uri's server for the file's size with a HEAD request (researchers' Q9). known is false
+// when the answer is not 200, is an HTML page, or has no usable Content-Length: the size is then
+// unknown, never estimated.
+func (s *HTTPSource) Size(ctx context.Context, uri string) (size int64, known bool, err error) {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return 0, false, fmt.Errorf("parse uri: %w", err)
+	}
+	if err := checkScheme(parsed); err != nil {
+		return 0, false, fmt.Errorf("check uri: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, parsed.String(), http.NoBody)
+	if err != nil {
+		return 0, false, fmt.Errorf("build request: %w", err)
+	}
+	request.Header.Set("User-Agent", userAgent)
+	response, err := s.client.Do(request)
+	if err != nil {
+		return 0, false, fmt.Errorf("head %s: %w", parsed.Host, err)
+	}
+	if closeErr := response.Body.Close(); closeErr != nil {
+		return 0, false, fmt.Errorf("head %s: close body: %w", parsed.Host, closeErr)
+	}
+	if response.StatusCode != http.StatusOK {
+		return 0, false, nil
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err == nil && (mediaType == "text/html" || mediaType == "application/xhtml+xml") {
+		return 0, false, nil
+	}
+	size, err = strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
+	if err != nil || size < 0 {
+		return 0, false, nil
+	}
+	return size, true, nil
+}
+
 // sniffBytes is how much of a body is read ahead to tell an HTML page from a file.
 const sniffBytes = 512
 
@@ -160,7 +200,7 @@ func refuseLandingPage(response *http.Response) (io.ReadCloser, error) {
 	if err == nil && (mediaType == "text/html" || mediaType == "application/xhtml+xml") {
 		closeErr := response.Body.Close()
 		return nil, errors.Join(
-			fmt.Errorf("landing page, not a file (content type %s): %w", mediaType, errNotRetryable),
+			fmt.Errorf("%w (content type %s): %w", errLandingPage, mediaType, errNotRetryable),
 			closeErr)
 	}
 	buffered := bufio.NewReaderSize(response.Body, sniffBytes)
@@ -172,7 +212,7 @@ func refuseLandingPage(response *http.Response) (io.ReadCloser, error) {
 	if startsLikeHTML(start) {
 		closeErr := response.Body.Close()
 		return nil, errors.Join(
-			fmt.Errorf("landing page, not a file (body starts as HTML): %w", errNotRetryable),
+			fmt.Errorf("%w (body starts as HTML): %w", errLandingPage, errNotRetryable),
 			closeErr)
 	}
 	return bufferedBody{Reader: buffered, Closer: response.Body}, nil

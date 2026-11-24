@@ -119,3 +119,23 @@ func Test_should_return_cloudfront_url_when_cloudfront_configured(t *testing.T) 
 	require.NoError(t, err)
 	assert.Equal(t, "https://files.dynamicpdb.com/entry-1/artifacts/a1/1abc-sf.cif", url)
 }
+
+func Test_should_find_files_in_our_bucket_by_its_public_or_bucket_address_when_located_without_the_bucket(t *testing.T) {
+	// given
+	locator, err := NewObjectLocator(Config{
+		S3:         s3.BucketConfig{Bucket: "dynamic-pdb-data", Region: "us-west-1"},
+		CloudFront: CloudFrontConfig{BaseURL: "https://files.dynamicpdb.com"},
+	})
+	require.NoError(t, err)
+
+	// then
+	for uri, wantKey := range map[string]string{
+		"https://files.dynamicpdb.com/e1/model.cif":                        "e1/model.cif",
+		"https://dynamic-pdb-data.s3.us-west-1.amazonaws.com/e1/model.cif": "e1/model.cif",
+		"https://files.rcsb.org/download/1ABC.cif":                         "",
+	} {
+		key, found := locator.StoredKey(uri)
+		assert.Equal(t, wantKey != "", found, uri)
+		assert.Equal(t, wantKey, key, uri)
+	}
+}

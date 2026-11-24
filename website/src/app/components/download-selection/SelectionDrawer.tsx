@@ -22,6 +22,7 @@ import {
 
 import { useDownloadSelection } from "./DownloadSelectionProvider";
 import FollowedArchives, { ProblemNotice, SELECTION_REVIEW_ID } from "./FollowedArchives";
+import SelectionFileChecks from "./SelectionFileChecks";
 import styles from "./download-selection.module.css";
 
 /** Models listed before "Show all". */
@@ -213,6 +214,7 @@ function SelectionReview() {
           <Link href={scriptPageHref(frozen.id)}>Use the script</Link> for any size
         </p>
       ) : null}
+      {frozen !== null ? <SelectionFileChecks key={frozen.id} selectionId={frozen.id} picked={selection.picked} /> : null}
 
       {selection.searches.length > 0 ? (
         <section className={styles.section}>

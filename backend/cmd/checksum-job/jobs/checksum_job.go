@@ -50,10 +50,14 @@ type ArtifactFiles interface {
 	URL(key string) (string, error)
 }
 
-// ExternalFiles reads files that live outside our bucket.
+// ExternalFiles reads files that live outside our bucket, and asks their servers for their size.
 type ExternalFiles interface {
 	Open(ctx context.Context, uri string) (io.ReadCloser, error)
+	Size(ctx context.Context, uri string) (size int64, known bool, err error)
 }
+
+// sourceSizeTimeout bounds the HEAD request that asks a source for a file's size.
+const sourceSizeTimeout = 30 * time.Second
 
 type Config struct {
 	Concurrency int `mapstructure:"concurrency"`
@@ -328,9 +332,38 @@ func (j *ChecksumJob) checkGroup(
 		return nil
 	}
 	if err != nil {
-		return j.unreadResults(group, err)
+		return j.unreadResults(group, err, j.sourceSize(ctx, group, err))
 	}
 	return j.readResults(group, digest)
+}
+
+// sourceSize asks the source of a file the job could not read for its size (researchers' Q9): one
+// HEAD request, only for a file outside our bucket whose read was not refused as a landing page or
+// a blocked address. It returns nil when the source gives no usable size; a failed HEAD changes
+// nothing else.
+func (j *ChecksumJob) sourceSize(ctx context.Context, group uriGroup, readErr error) *int64 {
+	if group.uri == nil || errors.Is(readErr, errLandingPage) || errors.Is(readErr, errBlockedAddress) {
+		return nil
+	}
+	if _, stored := j.files.StoredKey(*group.uri); stored {
+		return nil
+	}
+	release, err := j.acquireHost(ctx, *group.uri)
+	if err != nil {
+		return nil
+	}
+	defer release()
+	headCtx, cancel := context.WithTimeout(ctx, sourceSizeTimeout)
+	defer cancel()
+	size, known, err := j.external.Size(headCtx, *group.uri)
+	if err != nil {
+		j.logger.Info("source did not report the file's size", "uri", *group.uri, "err", err)
+		return nil
+	}
+	if !known {
+		return nil
+	}
+	return &size
 }
 
 // fileDigest is what one read of a URI found. copyStatus says whether storedURI holds our copy
@@ -611,13 +644,16 @@ func (j *ChecksumJob) readResults(group uriGroup, digest fileDigest) []models.Ch
 }
 
 // unreadResults marks a file that could not be read: failed at once when it will not change,
-// otherwise retried later until the last attempt.
-func (j *ChecksumJob) unreadResults(group uriGroup, readErr error) []models.ChecksumResult {
+// otherwise retried later until the last attempt. sourceSize, when known, is the size the file's
+// source reported.
+func (j *ChecksumJob) unreadResults(group uriGroup, readErr error, sourceSize *int64) []models.ChecksumResult {
 	now := j.now()
 	message := readErr.Error()
 	results := make([]models.ChecksumResult, 0, len(group.claims))
 	for _, claim := range group.claims {
-		result := models.ChecksumResult{ArtifactID: claim.ArtifactID, Error: &message, CheckedAt: now}
+		result := models.ChecksumResult{
+			ArtifactID: claim.ArtifactID, Error: &message, CheckedAt: now, SourceSizeBytes: sourceSize,
+		}
 		if errors.Is(readErr, errNotRetryable) || claim.Attempts >= maxAttempts {
 			result.Status = models.ChecksumStatusFailed
 			j.logger.Info("artifact bytes cannot be read", "artifact_id", claim.ArtifactID, "attempts", claim.Attempts, "err", message)

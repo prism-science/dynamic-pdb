@@ -163,6 +163,13 @@ backend's database and `-s3-data` secrets.
 Each verified or mismatch row also records its copy status, which the API returns as
 `checksum.copy_status`. Pending and failed rows have none.
 
+When an external file can't be read, the job sends its server one HEAD request (same per-host
+limit) and keeps the reported `Content-Length` in `source_size_bytes`, with
+`source_size_checked_at`. That way archives can list the size of a file they link (researchers'
+Q9: sizes are never estimated). The job skips it for a landing page, an HTML answer, or no usable
+length, and a later try without an answer keeps the earlier size. A verified or mismatch row has
+its size from the bytes, and B1b's trigger keeps it.
+
 | Copy status | Meaning |
 |---|---|
 | `copied` | Our copy of the external file is at `stored_uri`. |
@@ -532,6 +539,16 @@ planned), then the job is `failed`. One read of one file may take
 `archive_worker::file_timeout` (20 minutes) before it is tried again, and one attempt
 `archive_worker::job_timeout` (4 hours), so a stalled read never holds the queue while the heartbeat
 keeps the lease.
+
+**Reuse terms** (researchers' Q7). Each manifest row's `license` is:
+- `CC0 1.0` for PDB archive files, and for files that the PDB sync's system account or one of
+  Prism's accounts added (`downloads::cc0_depositors` in `backend/config/<env>.yml`: production
+  lists `5b8670ac-…`, dev none yet);
+- "Reuse terms not yet confirmed by the depositor" for files other accounts added;
+- "See the repository's terms" for files another repository holds.
+
+A new Prism account is a one-line config PR. Until a depositor confirms the CC0 notice (next
+sprint: the notice version per submission), their files keep the second line.
 
 **Storage.** The worker uses the backend's `-s3-data` secret: its IAM user can already write and
 abort multipart uploads. The `expire-downloads` lifecycle rule in astera-k3s deletes objects under

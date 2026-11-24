@@ -216,18 +216,34 @@ func (w *fakeWriter) Abort() error {
 	return w.abortErr
 }
 
-// rcsbServer serves files by path and counts requests per path.
+// rcsbServer serves files by path and counts GET requests per path. HEAD requests to a path in
+// heads get those headers with 200, and are counted apart.
 type rcsbServer struct {
-	server   *httptest.Server
-	files    map[string]string
-	statuses map[string]int
-	requests sync.Map
+	server       *httptest.Server
+	files        map[string]string
+	statuses     map[string]int
+	heads        map[string]map[string]string
+	requests     sync.Map
+	headRequests atomic.Int32
 }
 
 func newRCSBServer(t *testing.T) *rcsbServer {
 	t.Helper()
-	rcsb := &rcsbServer{files: map[string]string{}, statuses: map[string]int{}}
+	rcsb := &rcsbServer{files: map[string]string{}, statuses: map[string]int{}, heads: map[string]map[string]string{}}
 	rcsb.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			rcsb.headRequests.Add(1)
+			headers, ok := rcsb.heads[r.URL.Path]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			for name, value := range headers {
+				w.Header().Set(name, value)
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		counter, _ := rcsb.requests.LoadOrStore(r.URL.Path, new(atomic.Int32))
 		counter.(*atomic.Int32).Add(1)
 		if status, ok := rcsb.statuses[r.URL.Path]; ok {
@@ -972,4 +988,75 @@ func Test_should_not_count_waiting_for_a_host_slot_against_file_timeout_when_hos
 	require.NoError(t, err)
 	assert.Equal(t, models.ChecksumStatusVerified, queue.result(t, first.ArtifactID).Status)
 	assert.Equal(t, models.ChecksumStatusVerified, queue.result(t, second.ArtifactID).Status)
+}
+
+func Test_should_keep_the_size_the_source_reports_when_a_file_cannot_be_read(t *testing.T) {
+	// given a file whose GET fails but whose server answers a HEAD request with its size
+	rcsb := newRCSBServer(t)
+	rcsb.statuses["/download/busy.cif"] = http.StatusServiceUnavailable
+	rcsb.heads["/download/busy.cif"] = map[string]string{"Content-Length": "123456", "Content-Type": "chemical/x-cif"}
+	claim := claimFor(rcsb.uri("/download/busy.cif"), nil, nil, 1)
+	queue := newFakeQueue(claim)
+	job := newTestJob(t, queue, newFakeFiles(), rcsb, testJobConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then the read is retried later, and the reported size is kept meanwhile
+	require.NoError(t, err)
+	result := queue.result(t, claim.ArtifactID)
+	assert.Equal(t, models.ChecksumStatusPending, result.Status)
+	assert.Equal(t, ptr(int64(123456)), result.SourceSizeBytes)
+	assert.Nil(t, result.SizeBytes, "the read size stays for bytes actually read")
+}
+
+func Test_should_keep_no_size_when_the_source_gives_none(t *testing.T) {
+	cases := map[string]map[string]string{
+		"no answer to HEAD":    nil,
+		"an HTML page":         {"Content-Length": "5000", "Content-Type": "text/html; charset=utf-8"},
+		"a size that is wrong": {"Content-Length": "-3"},
+	}
+	for name, headers := range cases {
+		t.Run(name, func(t *testing.T) {
+			// given
+			rcsb := newRCSBServer(t)
+			if headers != nil {
+				rcsb.heads["/download/gone.cif"] = headers
+			}
+			claim := claimFor(rcsb.uri("/download/gone.cif"), nil, nil, 1)
+			queue := newFakeQueue(claim)
+			job := newTestJob(t, queue, newFakeFiles(), rcsb, testJobConfig())
+
+			// when
+			err := job.Run(context.Background())
+
+			// then the file fails as before, with no size
+			require.NoError(t, err)
+			result := queue.result(t, claim.ArtifactID)
+			assert.Equal(t, models.ChecksumStatusFailed, result.Status)
+			assert.Nil(t, result.SourceSizeBytes)
+		})
+	}
+}
+
+func Test_should_not_ask_the_size_when_the_read_was_a_landing_page_or_a_verified_file(t *testing.T) {
+	// given a DOI that resolves to an HTML page, and a file that reads fine
+	rcsb := newRCSBServer(t)
+	rcsb.files["/doi/landing"] = "<!DOCTYPE html><html><body>dataset page</body></html>"
+	rcsb.heads["/doi/landing"] = map[string]string{"Content-Length": "60"}
+	rcsb.files["/download/1abc.cif"] = "data_1ABC\n"
+	landing := claimFor(rcsb.uri("/doi/landing"), nil, nil, 1)
+	readable := claimFor(rcsb.uri("/download/1abc.cif"), nil, nil, 1)
+	queue := newFakeQueue(landing, readable)
+	job := newTestJob(t, queue, newFakeFiles(), rcsb, testJobConfig())
+
+	// when
+	err := job.Run(context.Background())
+
+	// then no HEAD request was sent: a page is not the file, and a read file has its read size
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), rcsb.headRequests.Load())
+	assert.Nil(t, queue.result(t, landing.ArtifactID).SourceSizeBytes)
+	assert.Nil(t, queue.result(t, readable.ArtifactID).SourceSizeBytes)
+	assert.Equal(t, models.ChecksumStatusVerified, queue.result(t, readable.ArtifactID).Status)
 }

@@ -23,6 +23,7 @@ const {
 } = require("../src/app/components/download-selection/actions.ts");
 const { GET: getArchiveStatus } = require("../src/app/download/archives/[downloadId]/route.ts");
 const { GET: getArchiveFailures } = require("../src/app/download/archives/[downloadId]/failures/route.ts");
+const { GET: getSelectionFiles } = require("../src/app/download/selections/[selectionId]/files/route.ts");
 const { __setCookieValues } = require("next/headers");
 const { authTokenCookieName } = require("../src/lib/auth/session.ts");
 
@@ -567,6 +568,84 @@ test("should pass a page of failures to the panel, and a problem with the backen
       assert.equal((await unknown.json()).problem.code, "not_found");
       assert.equal(notAnId.status, 404);
       assert.equal(requests.length, 2);
+    },
+  );
+});
+
+test("should pass a page of a saved selection's files with their last check, and a problem with the backend's status", async () => {
+  const page = {
+    data: [
+      {
+        type: "selection-models",
+        id: "m1",
+        attributes: {
+          model_id: "m1",
+          entry_id: "e1",
+          model_revision_number: 1,
+          model_type: "Ensemble",
+          origin: null,
+          entry_revision_number: 1,
+          files: [
+            {
+              id: "f1",
+              roles: ["primary"],
+              name: "model.cif",
+              level: "L2",
+              type: "model",
+              format: "mmcif",
+              uri: "https://files.example/model.cif",
+              size_bytes: 10,
+              recorded_sha256: null,
+              recorded_sha256_source: "not_recorded",
+              recorded_after_save: false,
+              checksum: { status: "failed", sha256: null, size_bytes: null, stored_uri: null, copy_status: null, checked_at: "2026-11-15T09:30:00Z" },
+              reuse_terms: "cc0",
+              source_size_bytes: null,
+            },
+          ],
+        },
+      },
+    ],
+    meta: { next_cursor: "c2" },
+  };
+  await withBackend(
+    (request) =>
+      request.url.includes(`/v1/selections/${selectionId}/models`) ? jsonResponse(page) : errorResponse(404, "SELECTIONS_OFF"),
+    async (requests) => {
+      // when
+      const found = await getSelectionFiles(new Request("http://site/x?cursor=c1"), {
+        params: Promise.resolve({ selectionId }),
+      });
+      const off = await getSelectionFiles(new Request("http://site/x"), {
+        params: Promise.resolve({ selectionId: "1b6e4a52-8f0a-4b8e-9d1c-2f6a3e4b5c6d" }),
+      });
+      const notAnId = await getSelectionFiles(new Request("http://site/x"), { params: Promise.resolve({ selectionId: "../x" }) });
+
+      // then
+      assert.equal(found.status, 200);
+      assert.deepEqual(await found.json(), {
+        models: [
+          {
+            modelId: "m1",
+            entryId: "e1",
+            files: [
+              {
+                fileId: "f1",
+                name: "model.cif",
+                check: "Checked 2026-11-15 09:30 UTC: could not be read",
+                notVerifiedAtSave: true,
+                terms: "CC0 1.0",
+              },
+            ],
+          },
+        ],
+        nextCursor: "c2",
+      });
+      assert.match(requests[0].url, /\/v1\/selections\/[0-9a-f-]+\/models\?limit=10&cursor=c1$/);
+      assert.equal(off.status, 404);
+      assert.equal((await off.json()).problem.code, "off");
+      assert.equal(notAnId.status, 404);
+      assert.equal(requests.length, 2, "an ID that is not a UUID never reaches the backend");
     },
   );
 });

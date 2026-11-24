@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +28,12 @@ func Test_should_share_the_downloads_limits_with_the_server_when_a_profile_is_re
 			assert.Equal(t, 3, cfg.Worker.MaxAttempts)
 			assert.Equal(t, 3, cfg.Worker.FileReadAttempts)
 			assert.Equal(t, 5, cfg.Worker.MaxConsecutiveReadFailures)
+			if profile == "production" {
+				assert.Equal(t, []uuid.UUID{uuid.MustParse("5b8670ac-41c9-4e1d-a436-da6daa2a8c22")}, cfg.Worker.CC0Depositors,
+					"the worker reads Prism's accounts from the downloads section")
+			} else {
+				assert.Empty(t, cfg.Worker.CC0Depositors, profile)
+			}
 			assert.Equal(t, 20*time.Minute, cfg.Worker.FileTimeout)
 			assert.Equal(t, 4*time.Hour, cfg.Worker.JobTimeout)
 			assert.Equal(t, 7*24*time.Hour, cfg.Worker.ArchiveTTL, "the worker offers archives as long as the API says")

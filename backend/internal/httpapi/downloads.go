@@ -349,10 +349,9 @@ func (s *Server) downloadDocument(job domainmodels.DownloadJob) (DownloadDocumen
 	attributes.RetryOf = job.RetryOf
 	if job.Counts != nil {
 		attributes.Counts = &DownloadCounts{
-			Included:        job.Counts.Included,
-			Linked:          job.Counts.Linked,
-			Unavailable:     job.Counts.Unavailable,
-			ChangedAtSource: job.Counts.ChangedAtSource,
+			Included:    job.Counts.Included,
+			Linked:      job.Counts.Linked,
+			Unavailable: job.Counts.Unavailable,
 		}
 	}
 	self := s.publicBaseURL + "/v1/downloads/" + job.ID.String()

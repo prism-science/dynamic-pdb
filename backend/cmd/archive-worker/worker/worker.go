@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/downloadfiles"
 	"dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/services/cdn"
 )
@@ -61,6 +62,9 @@ type Config struct {
 	ExitWhenIdle bool `mapstructure:"exit_when_idle"`
 	// ArchiveTTL is how long a ready archive is offered.
 	ArchiveTTL time.Duration `mapstructure:"-"`
+	// CC0Depositors are Prism's accounts: files they added are CC0 (downloads::cc0_depositors,
+	// researchers' Q7). Files Dynamic PDB's own system account added are CC0 as well.
+	CC0Depositors []uuid.UUID `mapstructure:"-"`
 }
 
 func (c Config) validate() error {
@@ -150,6 +154,8 @@ type Worker struct {
 	firstReadPause time.Duration
 	// newScratch creates the scratch file an attempt stages each file in.
 	newScratch func(dir string) (*scratchFile, error)
+	// cc0Depositors is Config.CC0Depositors as a set.
+	cc0Depositors map[uuid.UUID]bool
 }
 
 func New(jobs JobStore, selections SelectionReader, bucket Bucket, cfg Config, logger *slog.Logger) (*Worker, error) {
@@ -168,6 +174,7 @@ func New(jobs JobStore, selections SelectionReader, bucket Bucket, cfg Config, l
 		now:            func() time.Time { return time.Now().UTC() },
 		firstReadPause: time.Second,
 		newScratch:     newScratchFile,
+		cc0Depositors:  depositorSet(cfg.CC0Depositors),
 	}, nil
 }
 
@@ -461,7 +468,7 @@ func (w *Worker) buildJob(ctx context.Context, job models.DownloadJob, logger *s
 	}
 	logger.Info("archive ready", "archive_bytes", result.ArchiveBytes, "planned_bytes", plan.bytes,
 		"included", result.Counts.Included, "linked", result.Counts.Linked,
-		"unavailable", result.Counts.Unavailable, "changed_at_source", result.Counts.ChangedAtSource,
+		"unavailable", result.Counts.Unavailable,
 		"failures", len(result.Failures))
 	return nil
 }
@@ -515,7 +522,7 @@ func (plan archivePlan) overLimit() bool {
 // plan walks all of the selection's pinned files (only those of a retry), as the writing walk will,
 // and adds up the bytes of the files the zip can include and the preview.
 func (w *Worker) plan(ctx context.Context, job models.DownloadJob, only map[uuid.UUID]bool) (archivePlan, error) {
-	collector, err := newPreviewCollector(job, w.bucket, only)
+	collector, err := newPreviewCollector(job, w.bucket, w.cc0Depositors, only)
 	if err != nil {
 		return archivePlan{}, err
 	}
@@ -759,7 +766,7 @@ func (w *Worker) writeModel(
 			}
 		}
 		state.statuses[row.file.ID] = outcome.availability
-		return fileRow(model, details, row, outcome, w.bucket)
+		return fileRow(model, details, row, outcome, w.bucket, w.cc0Depositors)
 	}, state.manifest.write)
 }
 
@@ -769,7 +776,7 @@ func (state *archiveWrite) recordFailure(model models.SelectionModel, file model
 	switch outcome.availability {
 	case availabilityIncluded, availabilityLinked:
 		return nil
-	case availabilityUnavailable, availabilityChangedAtSource:
+	case availabilityUnavailable:
 	default:
 		return fmt.Errorf("file %s: unknown availability: %s", file.ID, outcome.availability)
 	}
@@ -881,8 +888,9 @@ func fileRow(
 	selected selectedFile,
 	outcome fileOutcome,
 	bucket keyLocator,
+	cc0Depositors map[uuid.UUID]bool,
 ) (manifestRow, error) {
-	values, err := fileRowValues(selected.file, sourceOf(selected.file, bucket))
+	values, err := fileRowValues(selected.file, sourceOf(selected.file, bucket), cc0Depositors)
 	if err != nil {
 		return nil, err
 	}
@@ -983,8 +991,6 @@ func countStatuses(statuses map[uuid.UUID]availability) (models.DownloadCounts, 
 			counts.Linked++
 		case availabilityUnavailable:
 			counts.Unavailable++
-		case availabilityChangedAtSource:
-			counts.ChangedAtSource++
 		default:
 			return models.DownloadCounts{}, fmt.Errorf("file %s: unknown availability: %s", fileID, status)
 		}
@@ -1002,4 +1008,9 @@ func formatBytes(value int64) string {
 	default:
 		return fmt.Sprintf("%d bytes", value)
 	}
+}
+
+// depositorSet is a list of accounts as a set.
+func depositorSet(accounts []uuid.UUID) map[uuid.UUID]bool {
+	return downloadfiles.DepositorSet(accounts)
 }

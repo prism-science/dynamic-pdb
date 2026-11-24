@@ -1822,9 +1822,16 @@ paths:
         The archive holds files only from Dynamic PDB's own storage, each checked against the
         SHA-256 recorded for it, and always the version the selection pinned, never a newer one.
         Files it cannot vouch for are listed in its manifest.tsv instead: linked (no copy here,
-        for example over 1 GiB), changed-at-source (the source's file no longer matches the record
-        and no copy was kept) or unavailable. An archive whose files add up to more than
-        max_archive_bytes is blocked before any file is read.
+        for example over 1 GiB) or unavailable (for example "original bytes unavailable": the
+        source now serves other bytes and no copy was kept). A file whose size is unknown is
+        never in the zip, so the size limit is always checked on exact sizes. An archive whose
+        files add up to more than max_archive_bytes is blocked before any file is read.
+
+
+        Reuse terms: PDB archive files and Prism's own models are CC0 1.0; files other people
+        deposited say "Reuse terms not yet confirmed by the depositor" until they confirm; files
+        another repository holds are under that repository's terms. The manifest's license column
+        and preview.reuse_terms say which applies.
 
 
         Asking again for the same selection and file choice while an archive is waiting, planned,
@@ -2023,8 +2030,8 @@ paths:
       operationId: listDownloadFailures
       summary: List the files an archive could not vouch for
       description: >
-        Lists, in selection order, the selected files a ready archive lists as unavailable or
-        changed-at-source, each with the model that first lists it, the reason and its code, and
+        Lists, in selection order, the selected files a ready archive lists as unavailable, each
+        with the model that first lists it, the reason and its code, and
         whether a retry may fetch it (retryable: only read_failed, a copy that could not be read
         while the archive was prepared). Linked files are not failures. An archive that is not
         ready yet has none. Needs no sign-in.
@@ -4020,6 +4027,8 @@ components:
           recorded_sha256_source,
           recorded_after_save,
           checksum,
+          reuse_terms,
+          source_size_bytes,
         ]
       properties:
         id:
@@ -4066,6 +4075,26 @@ components:
             known at the save.
         checksum:
           $ref: "#/components/schemas/ArtifactChecksum"
+        reuse_terms:
+          $ref: "#/components/schemas/ReuseTerms"
+        source_size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: >
+            The size the file's source reported when the checksum job could not read the file
+            (an HTTP HEAD request); null when none was reported. Never an estimate. An archive
+            uses it as the file's size only when neither a read nor a declared size exists.
+
+    ReuseTerms:
+      type: string
+      description: >
+        What a file may be reused under, as an archive's manifest says it. cc0: PDB archive files,
+        and files Dynamic PDB or one of Prism's accounts added, CC0 1.0. not_confirmed: files
+        other people deposited, "Reuse terms not yet confirmed by the depositor" until they
+        confirm. repository: files another repository holds, under that repository's terms.
+      enum: [cc0, not_confirmed, repository]
+      x-enum-varnames: [ReuseTermsCc0, ReuseTermsNotConfirmed, ReuseTermsRepository]
 
     SelectionFileRole:
       type: string
@@ -4195,7 +4224,7 @@ components:
           format: int64
           description: >
             What the files the archive includes add up to, before compression. Files listed as
-            linked, changed-at-source or unavailable are not counted.
+            linked or unavailable are not counted.
         archive_bytes:
           type: integer
           format: int64
@@ -4214,8 +4243,9 @@ components:
           type: string
           description: >
             The archive's manifest.tsv on its own: one row per file with its record revisions,
-            recorded SHA-256, status (included, linked, unavailable, changed-at-source),
-            verification and reuse terms. The zip holds the same file.
+            recorded SHA-256, status (included, linked, unavailable), verification, whether it is
+            verified against the bytes at save time, size and where it comes from, and reuse
+            terms. The zip holds the same file.
         counts:
           $ref: "#/components/schemas/DownloadCounts"
         preview:
@@ -4240,7 +4270,7 @@ components:
       description: >
         The archive's files by status in its manifest. A file listed for several models counts
         once.
-      required: [included, linked, unavailable, changed_at_source]
+      required: [included, linked, unavailable]
       properties:
         included:
           type: integer
@@ -4252,11 +4282,9 @@ components:
             1 GiB); the manifest gives their source URL and recorded SHA-256.
         unavailable:
           type: integer
-          description: Files that cannot be read in their recorded form.
-        changed_at_source:
-          type: integer
           description: >
-            Files whose source no longer serves the recorded bytes, with no copy kept here.
+            Files that cannot be read in their recorded form, including files whose original bytes
+            are gone (the source now serves other bytes and no copy was kept).
 
     DownloadPreview:
       type: object
@@ -4266,7 +4294,7 @@ components:
         several models counts once, as in counts. A file the zip includes is read back and
         checked against its recorded SHA-256 while the archive is built; one that no longer
         matches is left out then and shows in counts, not here.
-      required: [records, files, sizes, related_datasets, over_limit]
+      required: [records, files, sizes, related_datasets, reuse_terms, over_limit]
       properties:
         records:
           $ref: "#/components/schemas/DownloadPreviewRecords"
@@ -4276,6 +4304,8 @@ components:
           $ref: "#/components/schemas/DownloadPreviewSizes"
         related_datasets:
           $ref: "#/components/schemas/DownloadPreviewRelatedDatasets"
+        reuse_terms:
+          $ref: "#/components/schemas/DownloadPreviewReuseTerms"
         over_limit:
           type: boolean
           description: >
@@ -4296,11 +4326,17 @@ components:
 
     DownloadPreviewFiles:
       type: object
-      required: [total, by_type, availability, not_included, verification]
+      required: [total, by_type, availability, not_included, verification, not_verified_at_save]
       properties:
         total:
           type: integer
           description: Distinct files of the file choice.
+        not_verified_at_save:
+          type: integer
+          description: >
+            Files not verified against the bytes at save time: their SHA-256 was recorded after
+            the selection was saved, or is not recorded, so they may differ from what the
+            selection's authors used. The manifest marks each (verified_at_save no).
         by_type:
           type: array
           items:
@@ -4357,11 +4393,12 @@ components:
 
     DownloadPreviewSizes:
       type: object
-      required: [included, archive, linked]
+      description: >
+        Sizes before compression, never estimated. The zip's own size is archive_bytes, known once
+        it is built.
+      required: [included, linked]
       properties:
         included:
-          $ref: "#/components/schemas/DownloadSize"
-        archive:
           $ref: "#/components/schemas/DownloadSize"
         linked:
           $ref: "#/components/schemas/DownloadSize"
@@ -4369,8 +4406,10 @@ components:
     DownloadSize:
       type: object
       description: >
-        A size and how sure it is. exact: bytes is the size. estimate: bytes bounds it, as
-        tolerance says. unknown: no size is recorded; bytes is left out.
+        A size, never estimated. A file's size is read from its bytes, recorded when it was added,
+        or reported by its source. exact: bytes is the size of every file counted. partial: bytes
+        adds up the files whose size is known, and files_size_unknown more have none. unknown: no
+        file's size is known; bytes is left out.
       required: [kind, measures]
       properties:
         bytes:
@@ -4381,17 +4420,31 @@ components:
         measures:
           type: string
           description: What the size counts.
-        tolerance:
-          type: string
-          description: How far an estimate may be from the size, and in which direction.
         files_size_unknown:
           type: integer
-          description: Files left out of bytes because no size is recorded for them.
+          description: Files left out of bytes because no size is known for them.
 
     DownloadSizeKind:
       type: string
-      enum: [exact, estimate, unknown]
-      x-enum-varnames: [DownloadSizeKindExact, DownloadSizeKindEstimate, DownloadSizeKindUnknown]
+      enum: [exact, partial, unknown]
+      x-enum-varnames: [DownloadSizeKindExact, DownloadSizeKindPartial, DownloadSizeKindUnknown]
+
+    DownloadPreviewReuseTerms:
+      type: object
+      description: >
+        The files by the terms they may be reused under. cc0: PDB archive files and Prism's own
+        models, CC0 1.0. not_confirmed: files other people deposited, "Reuse terms not yet
+        confirmed by the depositor" until they confirm. repository: files another repository
+        holds, under its terms. We ask that you acknowledge Dynamic PDB and cite the depositors
+        of the entries you use.
+      required: [cc0, not_confirmed, repository]
+      properties:
+        cc0:
+          type: integer
+        not_confirmed:
+          type: integer
+        repository:
+          type: integer
 
     DownloadPreviewRelatedDatasets:
       type: object
@@ -4414,28 +4467,27 @@ components:
       description: >
         How the manifest lists a file. included: in the zip, checked against its recorded
         SHA-256. linked: Dynamic PDB holds no copy; the manifest gives the source URL.
-        unavailable: cannot be read in its recorded form. changed-at-source: the source serves
-        other bytes and no copy was kept.
-      enum: [included, linked, unavailable, changed-at-source]
+        unavailable: cannot be read in its recorded form, for example "original bytes
+        unavailable" (the source now serves other bytes and no copy was kept).
+      enum: [included, linked, unavailable]
       x-enum-varnames:
-        [DownloadFileAvailabilityIncluded, DownloadFileAvailabilityLinked, DownloadFileAvailabilityUnavailable,
-         DownloadFileAvailabilityChangedAtSource]
+        [DownloadFileAvailabilityIncluded, DownloadFileAvailabilityLinked, DownloadFileAvailabilityUnavailable]
 
     DownloadReasonCode:
       type: string
       description: >
         Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off,
         not_checked_yet and copied_after_planning are linked; stored_file_differs,
-        source_unreadable, copy_not_in_storage, copy_missing, copy_differs and read_failed are
-        unavailable; changed_at_source is changed-at-source. Only read_failed (Dynamic PDB's copy
-        could not be read while the archive was prepared) may be fetched by a retry.
+        original_bytes_unavailable, source_unreadable, copy_not_in_storage, copy_missing,
+        copy_differs and read_failed are unavailable. Only read_failed (Dynamic PDB's copy could
+        not be read while the archive was prepared) may be fetched by a retry.
       enum:
         [over_copy_limit, copy_failed, copy_off, not_checked_yet, copied_after_planning, stored_file_differs,
-         changed_at_source, source_unreadable, copy_not_in_storage, copy_missing, copy_differs, read_failed]
+         original_bytes_unavailable, source_unreadable, copy_not_in_storage, copy_missing, copy_differs, read_failed]
       x-enum-varnames:
         [DownloadReasonCodeOverCopyLimit, DownloadReasonCodeCopyFailed, DownloadReasonCodeCopyOff,
          DownloadReasonCodeNotCheckedYet, DownloadReasonCodeCopiedAfterPlanning, DownloadReasonCodeStoredFileDiffers,
-         DownloadReasonCodeChangedAtSource, DownloadReasonCodeSourceUnreadable, DownloadReasonCodeCopyNotInStorage,
+         DownloadReasonCodeOriginalBytesUnavailable, DownloadReasonCodeSourceUnreadable, DownloadReasonCodeCopyNotInStorage,
          DownloadReasonCodeCopyMissing, DownloadReasonCodeCopyDiffers, DownloadReasonCodeReadFailed]
 
     DownloadFailureCollectionDocument:

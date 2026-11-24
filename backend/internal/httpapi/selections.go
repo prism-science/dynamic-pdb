@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"dynamic-pdb/backend/internal/db"
+	"dynamic-pdb/backend/internal/downloadfiles"
 	domainmodels "dynamic-pdb/backend/internal/models"
 	"dynamic-pdb/backend/internal/validation"
 )
@@ -62,6 +63,11 @@ type SelectionsPolicy struct {
 	InternalRequests int
 	Window           time.Duration
 	TrustedProxies   []netip.Prefix
+	// FileStorage tells which file locations are in Dynamic PDB's storage, and CC0Depositors are
+	// Prism's accounts (downloads::cc0_depositors): with them the model list says each file's
+	// reuse terms by the archive worker's own rule (downloadfiles.ReuseTermsOf).
+	FileStorage   downloadfiles.KeyLocator
+	CC0Depositors []uuid.UUID
 }
 
 // selections is the server's selections setup; the zero value has the routes off.
@@ -73,6 +79,9 @@ type selections struct {
 	// saving holds one slot per save running on this server instance.
 	saving  chan struct{}
 	limiter *routeRateLimiter
+	// fileStorage and cc0Depositors decide each listed file's reuse terms.
+	fileStorage   downloadfiles.KeyLocator
+	cc0Depositors map[uuid.UUID]bool
 }
 
 // WithSelections configures frozen selections.
@@ -86,6 +95,8 @@ func (s *Server) WithSelections(policy SelectionsPolicy) *Server {
 		limiter: newRouteRateLimiter(policy.Requests, policy.InternalRequests, policy.Window, policy.TrustedProxies,
 			fmt.Sprintf("too many selections saved from this client: each client may save %d selections per %s. "+
 				"Wait the number of seconds in Retry-After", policy.Requests, policy.Window)),
+		fileStorage:   policy.FileStorage,
+		cc0Depositors: downloadfiles.DepositorSet(policy.CC0Depositors),
 	}
 	return s
 }
@@ -444,9 +455,14 @@ func (s *Server) ListSelectionModels(
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list the selection's models")
 		return
 	}
+	if s.selections.fileStorage == nil {
+		slog.ErrorContext(r.Context(), "list selection models: the file storage locator is not configured")
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list the selection's models")
+		return
+	}
 	data := make([]SelectionModelData, 0, len(items))
 	for _, item := range items {
-		files, err := selectionFilesResponse(item.Files)
+		files, err := selectionFilesResponse(item.Files, s.selections.fileStorage, s.selections.cc0Depositors)
 		if err != nil {
 			slog.ErrorContext(r.Context(), "build selection model files failed", "err", err,
 				"selection_id", selection.ID, "model_id", item.ModelID)
@@ -470,9 +486,23 @@ func (s *Server) ListSelectionModels(
 	writeJSON(w, http.StatusOK, SelectionModelCollectionDocument{Data: data, Links: links, Meta: meta})
 }
 
-func selectionFilesResponse(files []domainmodels.SelectionFile) ([]SelectionFile, error) {
+// selectionFilesResponse lists a selection model's files, each with the reuse terms the archive
+// worker gives it (downloadfiles.ReuseTermsOf), so a script can follow the archive's rules.
+func selectionFilesResponse(
+	files []domainmodels.SelectionFile,
+	storage downloadfiles.KeyLocator,
+	cc0Depositors map[uuid.UUID]bool,
+) ([]SelectionFile, error) {
 	response := make([]SelectionFile, 0, len(files))
 	for _, file := range files {
+		terms, err := downloadfiles.ReuseTermsOf(file, downloadfiles.SourceOf(file, storage), cc0Depositors)
+		if err != nil {
+			return nil, fmt.Errorf("file %s: %w", file.ID, err)
+		}
+		reuseTerms, err := reuseTermsResponse(terms)
+		if err != nil {
+			return nil, fmt.Errorf("file %s: %w", file.ID, err)
+		}
 		roles := make([]SelectionFileRole, 0, len(file.Roles))
 		for _, role := range file.Roles {
 			responseRole, err := selectionFileRoleResponse(role)
@@ -498,9 +528,24 @@ func selectionFilesResponse(files []domainmodels.SelectionFile) ([]SelectionFile
 			RecordedSha256Source: source,
 			RecordedAfterSave:    file.RecordedAfterSave,
 			Checksum:             artifactChecksumFromModel(file.Checksum),
+			ReuseTerms:           reuseTerms,
+			SourceSizeBytes:      file.Checksum.SourceSizeBytes,
 		})
 	}
 	return response, nil
+}
+
+func reuseTermsResponse(terms domainmodels.DownloadReuseTerms) (ReuseTerms, error) {
+	switch terms {
+	case domainmodels.DownloadReuseTermsCC0:
+		return ReuseTermsCc0, nil
+	case domainmodels.DownloadReuseTermsNotConfirmed:
+		return ReuseTermsNotConfirmed, nil
+	case domainmodels.DownloadReuseTermsRepository:
+		return ReuseTermsRepository, nil
+	default:
+		return "", fmt.Errorf("unknown reuse terms: %s", terms)
+	}
 }
 
 func selectionFileRoleResponse(role domainmodels.SelectionFileRole) (SelectionFileRole, error) {

@@ -37,6 +37,11 @@ export type TestModel = {
    * by the size limit before it is built). Not with modelFileContent.
    */
   modelFileSizeBytes?: number;
+  /**
+   * Records the structure factors without a SHA-256, so a saved selection
+   * marks them "not verified against the bytes at save time".
+   */
+  structureFactorsWithoutSha256?: true;
 };
 
 export type CreatedModel = { modelId: string; revisionId: string; modelFile: ModelFileRecord };
@@ -230,7 +235,7 @@ export class BackendClient {
             type: "structure_factors",
             format: "mtz",
             uri: `${fileBase}/data.mtz`,
-            sha256: "b".repeat(64),
+            ...(model.structureFactorsWithoutSha256 ? {} : { sha256: "b".repeat(64) }),
             size_bytes: 100,
             metadata: {},
           },

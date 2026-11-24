@@ -785,7 +785,8 @@ func Test_should_leave_downloads_off_with_their_default_limits_when_config_does_
 		MaxUnfinished:             20,
 		MaxUnfinishedPerSelection: 3,
 		RateLimit:                 config.RouteRateLimitConfig{Requests: 10, InternalRequests: 100, Window: time.Minute},
-	}, cfg.Downloads)
+		CC0Depositors:             []string{},
+	}, cfg.Downloads, "no deposited file is called CC0 unless an account is listed")
 }
 
 func Test_should_reject_config_when_downloads_are_on_and_selections_off(t *testing.T) {
@@ -821,4 +822,42 @@ func Test_should_reject_config_when_a_downloads_limit_is_not_positive(t *testing
 
 	// then
 	require.ErrorContains(t, err, "downloads.max_unfinished must be positive")
+}
+
+func Test_should_refuse_the_config_when_a_cc0_depositor_is_not_an_account_id(t *testing.T) {
+	// given
+	t.Chdir(writeConfig(t, "test", sampleYAML+"downloads:\n  cc0_depositors:\n    - prism\n"))
+
+	// when
+	_, err := config.ReadFromFile("test")
+
+	// then
+	require.ErrorContains(t, err, `cc0_depositors: "prism" is not an account ID`)
+}
+
+func Test_should_list_prisms_account_as_cc0_depositor_only_in_production_config(t *testing.T) {
+	// given
+	t.Chdir(filepath.Join("..", ".."))
+	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
+	expected := map[string][]string{
+		"local":      {},
+		"dev":        {},
+		"production": {"5b8670ac-41c9-4e1d-a436-da6daa2a8c22"},
+	}
+
+	for name, depositors := range expected {
+		// when
+		cfg, err := config.ReadFromFile(name)
+
+		// then
+		require.NoError(t, err, name)
+		ids, err := cfg.Downloads.CC0DepositorIDs()
+		require.NoError(t, err, name)
+		got := make([]string, 0, len(ids))
+		for _, id := range ids {
+			got = append(got, id.String())
+		}
+		assert.Equal(t, depositors, got, name)
+	}
 }

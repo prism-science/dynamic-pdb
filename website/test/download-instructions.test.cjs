@@ -168,7 +168,12 @@ test("should show the instructions, the limits, the CC0 text exactly and the scr
   const html = await renderPage({ on: true, query: { selection: selectionId } });
 
   assert.doesNotMatch(html, /not available yet/);
-  assert.ok(html.includes(` data-reuse-terms="">${REUSE_TERMS}</p>`), "the CC0 text, word for word");
+  assert.ok(
+    html.includes(` data-reuse-terms="">${REUSE_TERMS.replaceAll("'", "&#x27;")}</p>`),
+    "the scoped reuse terms, word for word",
+  );
+  assert.doesNotMatch(html, /These data are dedicated/, "no blanket CC0 any more");
+  assert.match(html, /Related datasets and files held by other repositories: See the repository&#x27;s terms\./);
   assert.match(html, /href="https:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0\/"/);
   assert.match(html, /<section[^>]* id="script"/);
   assert.match(html, new RegExp(`data-script-selection="${selectionId}"`));

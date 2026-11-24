@@ -191,8 +191,9 @@ function PreviewDetails({ preview }: { preview: PreviewSummary }) {
           </li>
         ))}
         <li data-preview-size="included">To download: {preview.included}</li>
-        <li data-preview-size="archive">The zip: {preview.archive}</li>
         <li data-preview-size="linked">Linked in manifest.tsv, not in the zip: {preview.linked}</li>
+        <li data-preview-terms="">Reuse terms: {preview.reuseTerms}</li>
+        {preview.notVerifiedAtSave !== null ? <li data-preview-at-save="">{preview.notVerifiedAtSave}</li> : null}
         {preview.modelsWithoutFiles > 0 ? (
           <li>
             {preview.modelsWithoutFiles.toLocaleString("en-US")} selected{" "}
@@ -271,7 +272,7 @@ function ReadyArchive({ view, archiveId }: { view: Extract<DownloadView, { kind:
   if (context === null) {
     return null;
   }
-  const failed = view.counts === null ? 0 : view.counts.unavailable + view.counts.changed_at_source;
+  const failed = view.counts === null ? 0 : view.counts.unavailable;
   return (
     <div className={styles.ready}>
       {view.retryOf !== null ? (
@@ -329,10 +330,10 @@ function ReadyArchive({ view, archiveId }: { view: Extract<DownloadView, { kind:
           </button>
         </p>
       ) : null}
-      <p className={styles.terms}>
+      <p className={styles.terms} data-reuse-terms="">
         {REUSE_TERMS}{" "}
         <a href={REUSE_LICENSE_URL} target="_blank" rel="noreferrer">
-          CC0 1.0
+          About CC0 1.0
         </a>
       </p>
     </div>

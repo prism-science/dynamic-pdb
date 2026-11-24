@@ -423,6 +423,13 @@
   font-size: 13px;
 }
 
+/* "not verified against the bytes at save time" on a file (researchers' Q10). */
+.atSaveMark {
+  color: var(--warning-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* The saved selection's ID: selectable whole, for the script's --selection. */
 .selectionId {
   font-family: var(--font-mono);

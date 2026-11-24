@@ -17,11 +17,9 @@ const (
 	// DownloadAvailabilityLinked: not in the zip; Dynamic PDB holds no copy. The manifest gives the
 	// source URL and the recorded SHA-256.
 	DownloadAvailabilityLinked DownloadAvailability = "linked"
-	// DownloadAvailabilityUnavailable: the file cannot be read in its recorded form.
+	// DownloadAvailabilityUnavailable: the file cannot be read in its recorded form, for example
+	// because its original bytes are gone (researcher item 14).
 	DownloadAvailabilityUnavailable DownloadAvailability = "unavailable"
-	// DownloadAvailabilityChangedAtSource: the source no longer serves the recorded bytes and no copy
-	// was kept.
-	DownloadAvailabilityChangedAtSource DownloadAvailability = "changed-at-source"
 )
 
 // DownloadReasonCode says why an archive does not include a selected file. Each code has one
@@ -43,8 +41,9 @@ const (
 	// DownloadReasonStoredFileDiffers: the checksum job found the file in our storage differs from
 	// its record.
 	DownloadReasonStoredFileDiffers DownloadReasonCode = "stored_file_differs"
-	// DownloadReasonChangedAtSource: the source serves other bytes and no copy was kept.
-	DownloadReasonChangedAtSource DownloadReasonCode = "changed_at_source"
+	// DownloadReasonOriginalBytesUnavailable: the source now serves other bytes and no copy was
+	// kept, so the recorded (original) bytes are gone (researcher item 14).
+	DownloadReasonOriginalBytesUnavailable DownloadReasonCode = "original_bytes_unavailable"
 	// DownloadReasonSourceUnreadable: the checksum job could not read the file at its source.
 	DownloadReasonSourceUnreadable DownloadReasonCode = "source_unreadable"
 	// DownloadReasonCopyNotInStorage: the recorded location of our copy is outside our bucket.
@@ -67,7 +66,7 @@ var DownloadReasonCodes = []DownloadReasonCode{
 	DownloadReasonNotCheckedYet,
 	DownloadReasonCopiedAfterPlanning,
 	DownloadReasonStoredFileDiffers,
-	DownloadReasonChangedAtSource,
+	DownloadReasonOriginalBytesUnavailable,
 	DownloadReasonSourceUnreadable,
 	DownloadReasonCopyNotInStorage,
 	DownloadReasonCopyMissing,
@@ -81,11 +80,9 @@ func (code DownloadReasonCode) Availability() (DownloadAvailability, error) {
 	case DownloadReasonOverCopyLimit, DownloadReasonCopyFailed, DownloadReasonCopyOff,
 		DownloadReasonNotCheckedYet, DownloadReasonCopiedAfterPlanning:
 		return DownloadAvailabilityLinked, nil
-	case DownloadReasonStoredFileDiffers, DownloadReasonSourceUnreadable, DownloadReasonCopyNotInStorage,
-		DownloadReasonCopyMissing, DownloadReasonCopyDiffers, DownloadReasonReadFailed:
+	case DownloadReasonStoredFileDiffers, DownloadReasonOriginalBytesUnavailable, DownloadReasonSourceUnreadable,
+		DownloadReasonCopyNotInStorage, DownloadReasonCopyMissing, DownloadReasonCopyDiffers, DownloadReasonReadFailed:
 		return DownloadAvailabilityUnavailable, nil
-	case DownloadReasonChangedAtSource:
-		return DownloadAvailabilityChangedAtSource, nil
 	default:
 		return "", unknownValueError("download reason code", code, DownloadReasonCodes)
 	}
@@ -106,8 +103,8 @@ func (code DownloadReasonCode) Text() (string, error) {
 		return "Dynamic PDB copied this file after the archive was planned; ask again to include it", nil
 	case DownloadReasonStoredFileDiffers:
 		return "the file in Dynamic PDB's storage differs from its record", nil
-	case DownloadReasonChangedAtSource:
-		return "the source no longer serves the recorded bytes, and no copy was kept", nil
+	case DownloadReasonOriginalBytesUnavailable:
+		return "original bytes unavailable: the source now serves other bytes, and no copy was kept", nil
 	case DownloadReasonSourceUnreadable:
 		return "the file cannot be read at its source", nil
 	case DownloadReasonCopyNotInStorage:
@@ -130,7 +127,7 @@ func (code DownloadReasonCode) Retryable() (bool, error) {
 	case DownloadReasonReadFailed:
 		return true, nil
 	case DownloadReasonOverCopyLimit, DownloadReasonCopyFailed, DownloadReasonCopyOff, DownloadReasonNotCheckedYet,
-		DownloadReasonCopiedAfterPlanning, DownloadReasonStoredFileDiffers, DownloadReasonChangedAtSource,
+		DownloadReasonCopiedAfterPlanning, DownloadReasonStoredFileDiffers, DownloadReasonOriginalBytesUnavailable,
 		DownloadReasonSourceUnreadable, DownloadReasonCopyNotInStorage, DownloadReasonCopyMissing,
 		DownloadReasonCopyDiffers:
 		return false, nil
@@ -169,16 +166,53 @@ type DownloadPreview struct {
 	NotIncluded  []DownloadPreviewReason     `json:"not_included"`
 	Verification DownloadPreviewVerification `json:"verification"`
 	// IncludedBytes is exact: the sizes the checksum job read of the files the zip will hold,
-	// before compression. The size limit applies to it.
+	// before compression. The size limit applies to it. Sizes are never estimated (researchers'
+	// Q9): the zip's own size is known once it is built.
 	IncludedBytes int64 `json:"included_bytes"`
-	// ArchiveBytesUpperBound bounds the zip's size: the included bytes, zip headers, README and
-	// manifest. Compression only makes the zip smaller.
-	ArchiveBytesUpperBound int64 `json:"archive_bytes_upper_bound"`
 	// LinkedBytesKnown adds up the linked files whose size is known; LinkedFilesSizeUnknown counts
 	// the others.
 	LinkedBytesKnown       int64                          `json:"linked_bytes_known"`
 	LinkedFilesSizeUnknown int                            `json:"linked_files_size_unknown"`
 	RelatedDatasets        DownloadPreviewRelatedDatasets `json:"related_datasets"`
+	// ReuseTerms counts the files by the terms they may be reused under (researchers' Q7).
+	ReuseTerms DownloadPreviewReuseTerms `json:"reuse_terms"`
+	// NotVerifiedAtSave counts the files whose SHA-256 was recorded after the selection was saved,
+	// or is not recorded: they are not verified against the bytes at save time (researchers' Q10).
+	NotVerifiedAtSave int `json:"not_verified_at_save"`
+}
+
+// DownloadPreviewReuseTerms counts the selected files by their reuse terms.
+type DownloadPreviewReuseTerms struct {
+	CC0          int `json:"cc0"`
+	NotConfirmed int `json:"not_confirmed"`
+	Repository   int `json:"repository"`
+}
+
+// DownloadReuseTerms is what a file may be reused under (researchers' Q7).
+type DownloadReuseTerms string
+
+const (
+	// DownloadReuseTermsCC0: PDB archive files, and files Dynamic PDB or Prism deposited.
+	DownloadReuseTermsCC0 DownloadReuseTerms = "cc0"
+	// DownloadReuseTermsNotConfirmed: files other people deposited before Dynamic PDB showed the
+	// CC0 notice; their depositors have not confirmed the terms yet.
+	DownloadReuseTermsNotConfirmed DownloadReuseTerms = "not_confirmed"
+	// DownloadReuseTermsRepository: files another repository holds, under that repository's terms.
+	DownloadReuseTermsRepository DownloadReuseTerms = "repository"
+)
+
+// DownloadReuseTermsValues lists every reuse terms value.
+var DownloadReuseTermsValues = []DownloadReuseTerms{
+	DownloadReuseTermsCC0, DownloadReuseTermsNotConfirmed, DownloadReuseTermsRepository,
+}
+
+func (terms DownloadReuseTerms) Validate() error {
+	switch terms {
+	case DownloadReuseTermsCC0, DownloadReuseTermsNotConfirmed, DownloadReuseTermsRepository:
+		return nil
+	default:
+		return unknownValueError("download reuse terms", terms, DownloadReuseTermsValues)
+	}
 }
 
 // DownloadPreviewFileType counts the selected files of one type.

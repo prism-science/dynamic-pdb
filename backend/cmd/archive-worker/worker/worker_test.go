@@ -24,6 +24,9 @@ import (
 var (
 	catalogDate = time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 	checkedAt   = time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
+	// prismAccount stands for one of Prism's accounts (downloads::cc0_depositors): the fixture's
+	// uploads come from it, so they are CC0.
+	prismAccount = uuid.MustParse("5b8670ac-0000-4000-8000-000000000001")
 )
 
 // archiveFixture is a selection of six models over two entries, one of each representation the
@@ -70,6 +73,7 @@ func (f *archiveFixture) file(key string, spec fileSpec) models.SelectionFile {
 	case "upload":
 		uploadKey := "dpdb/artifacts/" + id.String() + "/" + spec.name
 		file.URI = ptr(bucketBase + uploadKey)
+		file.UploadedBy = prismAccount
 		f.bucket.put(uploadKey, []byte(spec.content))
 		file.Checksum = models.ArtifactChecksum{
 			Status: models.ChecksumStatusVerified, SHA256: &recorded, SizeBytes: &size,
@@ -78,6 +82,7 @@ func (f *archiveFixture) file(key string, spec fileSpec) models.SelectionFile {
 	case "rcsb":
 		copyKey := "dpdb/copies/" + id.String() + "/" + spec.name
 		file.URI = ptr(spec.uri)
+		file.UploadedBy = uuid.MustParse(models.SystemUserID)
 		f.bucket.put(copyKey, []byte(spec.content))
 		file.Checksum = models.ArtifactChecksum{
 			Status: models.ChecksumStatusVerified, SHA256: &recorded, SizeBytes: &size,
@@ -191,6 +196,7 @@ func testConfig(t *testing.T) Config {
 		Lease: time.Minute, Heartbeat: 30 * time.Second, PollInterval: 10 * time.Millisecond, MaxAttempts: 3,
 		PageSize: 2, ScratchDir: t.TempDir(), ArchivePrefix: "downloads/", FileReadAttempts: 2, MaxConsecutiveReadFailures: 5,
 		FileTimeout: time.Minute, JobTimeout: time.Hour, ArchiveTTL: 7 * 24 * time.Hour,
+		CC0Depositors: []uuid.UUID{prismAccount},
 	}
 }
 
@@ -336,7 +342,7 @@ func Test_should_include_every_held_file_and_list_the_rest_when_all_files_of_fiv
 	assert.Equal(t, "2", entryRows[0]["entry_revision"])
 	assert.Equal(t, "pdb_archive", entryRows[0]["source"])
 
-	assert.Equal(t, "changed-at-source", fileRows(rows, f.files["coord2"].ID)[0]["status"])
+	assert.Equal(t, "unavailable", fileRows(rows, f.files["coord2"].ID)[0]["status"])
 	assert.Equal(t, "mismatch", fileRows(rows, f.files["coord2"].ID)[0]["verification"])
 	assert.Empty(t, fileRows(rows, f.files["coord2"].ID)[0]["path_in_archive"])
 	overLimit := fileRows(rows, f.files["sf2"].ID)[0]
@@ -348,7 +354,7 @@ func Test_should_include_every_held_file_and_list_the_rest_when_all_files_of_fiv
 	assert.Equal(t, "linked", pending["status"])
 	assert.Equal(t, "not_verified", pending["verification"])
 
-	assert.Equal(t, models.DownloadCounts{Included: 9, Linked: 2, Unavailable: 0, ChangedAtSource: 1}, f.store.result.Counts)
+	assert.Equal(t, models.DownloadCounts{Included: 9, Linked: 2, Unavailable: 1}, f.store.result.Counts)
 	var plannedBytes int64
 	for key := range included {
 		plannedBytes += int64(len(f.content[key]))
@@ -395,14 +401,14 @@ func Test_should_include_only_pdb_coordinate_files_when_original_mmcif_is_chosen
 		root + "/dpdb_e1/dpdb_e1_m_003/2def.cif",
 		root + "/manifest.tsv",
 	}, names)
-	assert.Equal(t, "changed-at-source", fileRows(rows, f.files["coord2"].ID)[0]["status"])
+	assert.Equal(t, "unavailable", fileRows(rows, f.files["coord2"].ID)[0]["status"])
 	noFile := rowsOfType(rows, "no_matching_file")
 	require.Len(t, noFile, 3)
 	assert.Equal(t, []string{"dpdb_e1_m_002", "dpdb_e2_m_002", "dpdb_e2_m_003"},
 		[]string{noFile[0]["model_id"], noFile[1]["model_id"], noFile[2]["model_id"]})
 	assert.Contains(t, noFile[0]["reason"], "select that model")
 	assert.Empty(t, fileRows(rows, f.files["sf1"].ID), "structure factors are not original mmCIF")
-	assert.Equal(t, models.DownloadCounts{Included: 2, ChangedAtSource: 1}, f.store.result.Counts)
+	assert.Equal(t, models.DownloadCounts{Included: 2, Unavailable: 1}, f.store.result.Counts)
 }
 
 func Test_should_include_only_dynamic_pdb_coordinate_files_when_modified_coordinates_are_chosen(t *testing.T) {
@@ -483,7 +489,7 @@ func Test_should_leave_the_file_out_when_our_copy_differs_from_its_record(t *tes
 	assert.Equal(t, "mismatch", row["verification"])
 	assert.Empty(t, row["path_in_archive"])
 	assert.Equal(t, 8, f.store.result.Counts.Included, "the other files are still included")
-	assert.Equal(t, 1, f.store.result.Counts.Unavailable)
+	assert.Equal(t, 2, f.store.result.Counts.Unavailable, "this copy, and the file whose original bytes are gone")
 }
 
 func Test_should_report_the_file_unavailable_when_our_copy_is_missing(t *testing.T) {

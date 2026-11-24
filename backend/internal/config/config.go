@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 
 	"dynamic-pdb/backend/internal/auth"
@@ -133,6 +134,24 @@ type DownloadsConfig struct {
 	MaxUnfinishedPerSelection int `mapstructure:"max_unfinished_per_selection"`
 	// RateLimit caps archive requests per client and server instance.
 	RateLimit RouteRateLimitConfig `mapstructure:"rate_limit"`
+	// CC0Depositors are Prism's accounts (user IDs): an archive lists the files they added as CC0
+	// 1.0, and files other accounts added as "Reuse terms not yet confirmed by the depositor"
+	// (researchers' Q7). Empty: no deposited file is called CC0. PDB archive files are CC0 either
+	// way.
+	CC0Depositors []string `mapstructure:"cc0_depositors"`
+}
+
+// CC0DepositorIDs is CC0Depositors parsed. ValidateDownloads checks they parse.
+func (downloads DownloadsConfig) CC0DepositorIDs() ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(downloads.CC0Depositors))
+	for _, value := range downloads.CC0Depositors {
+		id, err := uuid.Parse(strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("cc0_depositors: %q is not an account ID: %w", value, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 // RouteRateLimitConfig caps one route's requests per client, on top of the server's global
@@ -209,6 +228,7 @@ func SetDownloadsDefaults(v *viper.Viper) {
 	v.SetDefault("downloads::rate_limit::requests", defaultDownloadsRateLimitRequests)
 	v.SetDefault("downloads::rate_limit::internal_requests", defaultDownloadsRateLimitInternalRequests)
 	v.SetDefault("downloads::rate_limit::window", defaultDownloadsRateLimitWindow)
+	v.SetDefault("downloads::cc0_depositors", []string{})
 }
 
 func ReadFromFile(filename string) (Config, error) {
@@ -371,6 +391,9 @@ func ValidateDownloads(downloads DownloadsConfig) error {
 	}
 	if downloads.RateLimit.Window <= 0 {
 		return fmt.Errorf("rate_limit.window must be positive")
+	}
+	if _, err := downloads.CC0DepositorIDs(); err != nil {
+		return err
 	}
 	return nil
 }
