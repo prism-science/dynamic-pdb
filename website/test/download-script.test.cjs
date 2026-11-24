@@ -72,17 +72,31 @@ test("the script compiles with the standard library only", () => {
   );
 });
 
-test("the script says the CC0 text exactly as the archive and the page say it", () => {
-  const { REUSE_TERMS } = require("../src/lib/download-selection.ts");
-  const result = python("print(json.dumps(script.CC0_STATEMENT))");
-  assert.equal(result, REUSE_TERMS);
+test("the script says the reuse terms and the save-time mark word for word as the archive and the page", () => {
+  const website = require("../src/lib/download-selection.ts");
+  const script = python(`print(json.dumps({
+    "cc0": script.CC0_STATEMENT, "not_confirmed": script.NOT_CONFIRMED_TERMS, "repository": script.EXTERNAL_TERMS,
+    "acknowledgement": script.ACKNOWLEDGEMENT_REQUEST, "at_save": script.NOT_VERIFIED_AT_SAVE}))`);
   const worker = fs.readFileSync(
     path.join(__dirname, "..", "..", "backend", "cmd", "archive-worker", "worker", "manifest.go"),
     "utf8",
   );
-  const goText = /cc0Statement = "([^"]+)" \+\s*"([^"]+)"/.exec(worker);
-  assert.ok(goText, "the worker's CC0 statement");
-  assert.equal(goText[1] + goText[2], REUSE_TERMS);
+  const go = (name) => {
+    const found = new RegExp(`\\b${name} += "([^"]+)"`).exec(worker);
+    assert.ok(found, name);
+    return found[1];
+  };
+  assert.deepEqual(script, {
+    cc0: go("cc0Statement"),
+    not_confirmed: go("notConfirmedTerms"),
+    repository: go("externalTerms"),
+    acknowledgement: go("acknowledgementRequest"),
+    at_save: go("notVerifiedAtSave"),
+  });
+  assert.deepEqual(
+    [website.REUSE_CC0_STATEMENT, website.REUSE_NOT_CONFIRMED, website.REUSE_REPOSITORY, website.REUSE_ACKNOWLEDGEMENT, website.NOT_VERIFIED_AT_SAVE],
+    [script.cc0, script.not_confirmed, script.repository, script.acknowledgement, script.at_save],
+  );
 });
 
 test("the script's manifest has the archive's columns, in order", () => {
@@ -208,7 +222,7 @@ test("a file's status before reading follows the checksum job's last check, as i
     "copy failed": ["linked", "verified", at, "copy_failed", null],
     "copying off": ["linked", "verified", at, "copy_off", null],
     "our file differs": ["unavailable", "mismatch", at, "stored_file_differs", null],
-    "changed at its source": ["changed-at-source", "mismatch", at, "changed_at_source", null],
+    "changed at its source": ["unavailable", "mismatch", at, "original_bytes_unavailable", null],
     "not checked yet": ["linked", "not_verified", null, "not_checked_yet", null],
     "unreadable at its source": ["unavailable", "not_verified", at, "source_unreadable", null],
   });
@@ -429,11 +443,23 @@ function fakeServer() {
       type: options.type ?? "model",
       format: options.format ?? "mmcif",
       uri,
-      size_bytes: content.length,
+      size_bytes: options.declaredSize === undefined ? content.length : options.declaredSize,
       recorded_sha256: checksum.sha256 ?? null,
       recorded_sha256_source: checksum.sha256 ? "declared" : "not_recorded",
-      recorded_after_save: false,
+      recorded_after_save: options.recordedAfterSave ?? false,
       checksum,
+      // As the API says them: CC0 for the PDB's files, "not confirmed" for another depositor's
+      // upload unless Prism's account added it, the repository's terms for anything else.
+      reuse_terms:
+        options.reuseTerms ??
+        (ours || options.copied
+          ? options.uri?.startsWith("https://files.rcsb.org/")
+            ? "cc0"
+            : "not_confirmed"
+          : options.uri?.startsWith("https://files.rcsb.org/")
+            ? "cc0"
+            : "repository"),
+      source_size_bytes: options.sourceSize ?? null,
     };
     byID[name] = { file, content };
     return file;
@@ -449,6 +475,8 @@ function fakeServer() {
       roles: ["model"],
       type: "structure_factors",
       checksum: { status: "pending", sha256: null, size_bytes: null, stored_uri: null, copy_status: null, checked_at: null },
+      declaredSize: null,
+      sourceSize: 512,
     });
     const m2Model = selectionFile(id(4), "model.cif", {});
     const big = selectionFile(id(5), "big.tar", {
@@ -490,8 +518,14 @@ function fakeServer() {
     });
     const m3First = selectionFile(id(10), "model.cif", { content: "first ensemble file\n" });
     const m3Second = selectionFile(id(11), "model.cif", { roles: ["model"], content: "second ensemble file\n" });
-    const e2Named = selectionFile(id(12), "E2_m_003", { roles: ["entry"], type: "other", format: null, level: "L0" });
-    const rcsb2 = selectionFile(id(13), "2XYZ.cif", { ours: false, copied: true, uri: "https://files.rcsb.org/download/2XYZ.cif" });
+    // Prism's own upload: CC0.
+    const e2Named = selectionFile(id(12), "E2_m_003", { roles: ["entry"], type: "other", format: null, level: "L0", reuseTerms: "cc0" });
+    const rcsb2 = selectionFile(id(13), "2XYZ.cif", {
+      ours: false,
+      copied: true,
+      uri: "https://files.rcsb.org/download/2XYZ.cif",
+      recordedAfterSave: true,
+    });
     // A run's input named like the model's coordinates: all_files gives it the plain name,
     // modified_coordinates (which leaves it out) gives the plain name to the coordinates.
     const m5Input = selectionFile(id(14), "coords.cif", { roles: ["run_input"], type: "other", content: "input\n" });
@@ -652,7 +686,8 @@ test("the script downloads a selection file by file with the archive's statuses,
   // then the files Dynamic PDB holds are saved and checked, the rest listed with why
   assert.equal(first.status, 1, first.stderr);
   const { comments, rows } = readManifest(out);
-  assert.ok(comments.includes(`# These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.`));
+  assert.ok(comments.includes("# PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/."));
+  assert.ok(comments.includes("# We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use."));
   const summary = rows.map((row) => [row.record_type, row.model_id, row.file_name, row.status, row.reason_code, row.path_in_archive]);
   const prefix = `dynamic-pdb-${SELECTION}`;
   assert.deepEqual(summary, [
@@ -664,7 +699,7 @@ test("the script downloads a selection file by file with the archive's statuses,
     ["file", "E1_m_002", "differs.dat", "unavailable", "copy_differs", ""],
     ["file", "E1_m_002", "missing.dat", "unavailable", "copy_missing", ""],
     ["file", "E1_m_002", "flaky.dat", "unavailable", "read_failed", ""],
-    ["file", "E1_m_002", "changed.cif", "changed-at-source", "changed_at_source", ""],
+    ["file", "E1_m_002", "changed.cif", "unavailable", "original_bytes_unavailable", ""],
     ["file", "E2_m_003", "model.cif", "included", "", `${prefix}/E2/E2_m_003/model.cif`],
     ["file", "E2_m_003", "model.cif", "included", "", `${prefix}/E2/E2_m_003/00000011_model.cif`],
     ["file", "", "E2_m_003", "included", "", `${prefix}/E2/00000012_E2_m_003`],
@@ -679,6 +714,16 @@ test("the script downloads a selection file by file with the archive's statuses,
   assert.equal(byName["E1_m_001/1ABC.cif"].source, "pdb_archive");
   assert.equal(byName["E1_m_001/1ABC.cif"].license, "CC0 1.0");
   assert.equal(byName["E1_m_002/model.cif"].source, "dynamic_pdb_upload");
+  assert.equal(byName["E1_m_002/model.cif"].license, "Reuse terms not yet confirmed by the depositor");
+  assert.equal(byName["E1_m_002/model.cif"].license_url, "");
+  assert.equal(byName["/E2_m_003"].license, "CC0 1.0", "Prism's own upload");
+  assert.equal(byName["E1_m_002/model.cif"].size_source, "read");
+  assert.equal(byName["E1_m_002/big.tar"].size_source, "read");
+  assert.equal(byName["E1_m_001/1ABC-sf.cif"].size_bytes, "512", "the size its source reported");
+  assert.equal(byName["E1_m_001/1ABC-sf.cif"].size_source, "source");
+  assert.equal(byName["E1_m_002/model.cif"].verified_at_save, "yes");
+  assert.equal(byName["E1_m_001/1ABC-sf.cif"].verified_at_save, "no", "no SHA-256 recorded");
+  assert.equal(byName["E2_m_004/2XYZ.cif"].verified_at_save, "no", "recorded after the save");
   assert.equal(byName["E1_m_002/model.cif"].model_type, "Single Conformer");
   assert.equal(byName["E1_m_002/model.cif"].model_revision, "2");
   assert.equal(byName["E1_m_002/model.cif"].entry_revision, "3");
@@ -695,7 +740,9 @@ test("the script downloads a selection file by file with the archive's statuses,
     "no partial download is left behind",
   );
   assert.match(first.stderr, /3 files Dynamic PDB holds were not saved/);
-  assert.match(first.stderr, /These data are dedicated to the public domain under CC0 1\.0/);
+  assert.match(first.stderr, /PDB archive files and Prism's own models are dedicated to the public domain under CC0 1\.0\. Files deposited by others: Reuse terms not yet confirmed by the depositor\./);
+  assert.match(first.stderr, /Reuse terms: 4 files CC0 1\.0; 9 files: Reuse terms not yet confirmed by the depositor; 2 files held by other repositories/);
+  assert.match(first.stderr, /2 files not verified against the bytes at save time/);
 
   // when the flaky file can be read again and the script runs again
   server.files.get(`/bucket/${server.byID["flaky.dat"].file.id}/flaky.dat`).status = 200;

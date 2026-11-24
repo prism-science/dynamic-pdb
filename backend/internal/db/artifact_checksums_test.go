@@ -510,3 +510,51 @@ func normalizeChecksumTime(checksum models.ArtifactChecksum) models.ArtifactChec
 	}
 	return checksum
 }
+
+func Test_should_keep_the_size_a_source_reported_when_a_file_could_not_be_read(t *testing.T) {
+	// given a file the checksum job could not read yet
+	ctx := context.Background()
+	fixture := newChecksumTestDB(t)
+	artifact := fixture.createArtifact(t, "https://files.rcsb.org/download/busy.cif", nil, nil)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	retryAt := now.Add(time.Hour)
+	sourceSize := func() (*int64, *time.Time) {
+		t.Helper()
+		var row struct {
+			Size      *int64     `db:"source_size_bytes"`
+			CheckedAt *time.Time `db:"source_size_checked_at"`
+		}
+		require.NoError(t, fixture.sql.Get(&row,
+			`select source_size_bytes, source_size_checked_at from artifact_checksums where artifact_id = $1`, artifact.ID))
+		return row.Size, row.CheckedAt
+	}
+
+	// when its source reported a size on one try
+	require.NoError(t, fixture.database.ArtifactChecksums.Record(ctx, []models.ChecksumResult{{
+		ArtifactID: artifact.ID, Status: models.ChecksumStatusPending, Error: ptr("http status 503"),
+		CheckedAt: now, NextAttemptAt: &retryAt, SourceSizeBytes: ptr(int64(500)),
+	}}))
+
+	// then it is kept with the time
+	size, checkedAt := sourceSize()
+	assert.Equal(t, ptr(int64(500)), size)
+	require.NotNil(t, checkedAt)
+	assert.True(t, checkedAt.Equal(now))
+
+	// and a later try whose source said nothing keeps it
+	later := now.Add(time.Hour)
+	require.NoError(t, fixture.database.ArtifactChecksums.Record(ctx, []models.ChecksumResult{{
+		ArtifactID: artifact.ID, Status: models.ChecksumStatusFailed, Error: ptr("http status 404"), CheckedAt: later,
+	}}))
+	size, checkedAt = sourceSize()
+	assert.Equal(t, ptr(int64(500)), size)
+	assert.True(t, checkedAt.Equal(now))
+
+	// and a read result never carries a reported size
+	err := fixture.database.ArtifactChecksums.Record(ctx, []models.ChecksumResult{{
+		ArtifactID: artifact.ID, Status: models.ChecksumStatusVerified, SHA256: ptr("cc" + sha256Tail),
+		SizeBytes: ptr(int64(7)), CopyStatus: ptr(models.CopyStatusCopyOff), CheckedAt: later,
+		SourceSizeBytes: ptr(int64(7)),
+	}})
+	require.ErrorContains(t, err, "a read result has its size from the bytes")
+}

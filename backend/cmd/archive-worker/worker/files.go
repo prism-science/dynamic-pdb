@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/internal/downloadfiles"
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -16,10 +17,9 @@ import (
 type availability = models.DownloadAvailability
 
 const (
-	availabilityIncluded        = models.DownloadAvailabilityIncluded
-	availabilityLinked          = models.DownloadAvailabilityLinked
-	availabilityUnavailable     = models.DownloadAvailabilityUnavailable
-	availabilityChangedAtSource = models.DownloadAvailabilityChangedAtSource
+	availabilityIncluded    = models.DownloadAvailabilityIncluded
+	availabilityLinked      = models.DownloadAvailabilityLinked
+	availabilityUnavailable = models.DownloadAvailabilityUnavailable
 )
 
 // verification says whether bytes were checked against the recorded SHA-256, and with what result.
@@ -35,18 +35,15 @@ const (
 	verificationNotVerified verification = "not_verified"
 )
 
-// fileSource is where a file's recorded location points.
-type fileSource string
+// fileSource is where a file's recorded location points; the API's selection model list uses the
+// same rule (downloadfiles), so the two never disagree.
+type fileSource = downloadfiles.Source
 
 const (
-	sourceDynamicPDBUpload fileSource = "dynamic_pdb_upload"
-	sourcePDBArchive       fileSource = "pdb_archive"
-	sourceExternal         fileSource = "external"
+	sourceDynamicPDBUpload = downloadfiles.SourceDynamicPDBUpload
+	sourcePDBArchive       = downloadfiles.SourcePDBArchive
+	sourceExternal         = downloadfiles.SourceExternal
 )
-
-// pdbArchiveHosts serve the PDB archive's files: coordinates and structure factors from
-// files.rcsb.org, sequences from www.rcsb.org.
-var pdbArchiveHosts = map[string]bool{"files.rcsb.org": true, "www.rcsb.org": true}
 
 // fileState is what the checksum job's last check says about a pinned file: its availability
 // before staging, and where our bytes are when the archive can include it.
@@ -65,9 +62,7 @@ type fileState struct {
 }
 
 // keyLocator finds the bucket key of a URL that points into our data bucket.
-type keyLocator interface {
-	StoredKey(uri string) (string, bool)
-}
+type keyLocator = downloadfiles.KeyLocator
 
 // stateOf classifies a pinned file from its checksum result: whether Dynamic PDB holds bytes that
 // match its record (canInclude), and otherwise how the manifest lists it. An impossible
@@ -90,11 +85,13 @@ func stateOf(file models.SelectionFile, bucket keyLocator) (fileState, error) {
 				reasonCode:   models.DownloadReasonStoredFileDiffers,
 			}, nil
 		case models.CopyStatusMismatch:
+			// The source now serves other bytes and no copy was kept: the original bytes are gone,
+			// so the file is unavailable (researchers' item 14). Its record and checksum stay.
 			return fileState{
-				availability: availabilityChangedAtSource,
+				availability: availabilityUnavailable,
 				verification: verificationMismatch,
 				verifiedAt:   checksum.CheckedAt,
-				reasonCode:   models.DownloadReasonChangedAtSource,
+				reasonCode:   models.DownloadReasonOriginalBytesUnavailable,
 			}, nil
 		case models.CopyStatusCopied, models.CopyStatusOverLimit, models.CopyStatusCopyFailed, models.CopyStatusCopyOff:
 			return fileState{}, fmt.Errorf("file %s: a mismatch result with copy status %s", file.ID, *checksum.CopyStatus)
@@ -178,17 +175,7 @@ func verifiedState(file models.SelectionFile, bucket keyLocator) (fileState, err
 
 // sourceOf says where a file's recorded location points.
 func sourceOf(file models.SelectionFile, bucket keyLocator) fileSource {
-	if file.URI == nil {
-		return sourceExternal
-	}
-	if _, inBucket := bucket.StoredKey(*file.URI); inBucket {
-		return sourceDynamicPDBUpload
-	}
-	parsed, err := url.Parse(*file.URI)
-	if err == nil && pdbArchiveHosts[strings.ToLower(parsed.Host)] {
-		return sourcePDBArchive
-	}
-	return sourceExternal
+	return downloadfiles.SourceOf(file, bucket)
 }
 
 // isPDBCoordinateFile reports whether a file is the PDB's own coordinate file: a model file at
@@ -341,4 +328,61 @@ func (walk *modelWalk) firstOfEntry(model models.SelectionModel) bool {
 	}
 	walk.entries[model.EntryID] = true
 	return true
+}
+
+// sizeSource says where a file's known size comes from.
+type sizeSource string
+
+const (
+	// sizeRead: the checksum job read the file's bytes and they matched its record.
+	sizeRead sizeSource = "read"
+	// sizeDeclared: the size recorded when the file was added.
+	sizeDeclared sizeSource = "declared"
+	// sizeReportedBySource: the size the file's source reported to an HTTP HEAD request.
+	sizeReportedBySource sizeSource = "source"
+)
+
+// knownSize is a file's size when one is known, never estimated (researchers' Q9): the size the
+// checksum job read from bytes that matched the record, else the recorded size, else the size the
+// source reported. A mismatch read measured other bytes than the recorded ones, so it never
+// counts.
+func knownSize(file models.SelectionFile) (size int64, source sizeSource, known bool) {
+	switch {
+	case file.Checksum.Status == models.ChecksumStatusVerified && file.Checksum.SizeBytes != nil:
+		return *file.Checksum.SizeBytes, sizeRead, true
+	case file.SizeBytes != nil:
+		return *file.SizeBytes, sizeDeclared, true
+	case file.Checksum.SourceSizeBytes != nil:
+		return *file.Checksum.SourceSizeBytes, sizeReportedBySource, true
+	default:
+		return 0, "", false
+	}
+}
+
+// reuseTermsOf is what a file may be reused under (researchers' Q7); the API's selection model
+// list uses the same rule (downloadfiles.ReuseTermsOf).
+func reuseTermsOf(
+	file models.SelectionFile,
+	source fileSource,
+	cc0Depositors map[uuid.UUID]bool,
+) (models.DownloadReuseTerms, error) {
+	terms, err := downloadfiles.ReuseTermsOf(file, source, cc0Depositors)
+	if err != nil {
+		return "", fmt.Errorf("reuse terms: %w", err)
+	}
+	return terms, nil
+}
+
+// verifiedAtSave reports whether the archive's check can vouch for the bytes as they were when the
+// selection was saved: false when the SHA-256 was recorded only after the save, or is not recorded
+// (researchers' Q10).
+func verifiedAtSave(file models.SelectionFile) (bool, error) {
+	switch file.RecordedSHA256Source {
+	case models.SelectionSHA256SourceDeclared, models.SelectionSHA256SourceComputed:
+		return !file.RecordedAfterSave, nil
+	case models.SelectionSHA256SourceNotRecorded:
+		return false, nil
+	default:
+		return false, fmt.Errorf("file %s: unknown sha256 source: %s", file.ID, file.RecordedSHA256Source)
+	}
 }

@@ -19,12 +19,19 @@ const (
 	// cc0Name and cc0URL are the reuse terms of Dynamic PDB and PDB archive files (item 10).
 	cc0Name = "CC0 1.0"
 	cc0URL  = "https://creativecommons.org/publicdomain/zero/1.0/"
-	// cc0Statement is the researchers' text for the manifest and the download page, word for word.
-	// It asks for acknowledgement; it is not a condition of use.
-	cc0Statement = "These data are dedicated to the public domain under CC0 1.0. We ask that you " +
-		"acknowledge Dynamic PDB and cite the depositors of the entries you use."
+	// cc0Statement says which files are CC0 (researchers' Q7, 17 Nov): PDB archive files and Prism's
+	// own models, not other people's earlier deposits.
+	cc0Statement = "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0."
+	// notConfirmedTerms is the terms of a file someone else deposited before Dynamic PDB showed the
+	// CC0 notice, until its depositor confirms them (researchers' Q7), word for word.
+	notConfirmedTerms = "Reuse terms not yet confirmed by the depositor"
+	// acknowledgementRequest asks for acknowledgement; it is not a condition of use (item 10).
+	acknowledgementRequest = "We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use."
 	// externalTerms replaces CC0 for anything held by another repository.
 	externalTerms = "See the repository's terms"
+	// notVerifiedAtSave marks a file the archive cannot vouch for as it was when the selection was
+	// saved (researchers' Q10), word for word.
+	notVerifiedAtSave = "not verified against the bytes at save time"
 	// rcsbEntryPage is where the PDB shows an entry's primary citation.
 	rcsbEntryPage = "https://www.rcsb.org/structure/"
 )
@@ -41,8 +48,9 @@ const (
 // manifestColumns are manifest.tsv's columns, in order.
 var manifestColumns = []string{
 	"record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "pdb_id",
-	"file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes",
-	"recorded_sha256", "sha256_source", "recorded_after_save", "status", "reason", "reason_code", "verification",
+	"file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes", "size_source",
+	"recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status", "reason", "reason_code",
+	"verification",
 	"verified_at", "source", "source_url", "license", "license_url", "authors", "affiliation",
 	"citation_link", "dataset_id",
 }
@@ -85,9 +93,10 @@ func newManifestWriter(out io.Writer, header manifestHeader) (*manifestWriter, e
 		fmt.Sprintf("# Dynamic PDB archive manifest. Selection %s, catalog date %s, file choice %s, prepared %s.",
 			header.SelectionID, header.CatalogDate.UTC().Format(time.RFC3339), header.FileChoice,
 			header.PreparedAt.UTC().Format(time.RFC3339)),
-		"# " + cc0Statement,
-		"# License of Dynamic PDB and PDB archive files: " + cc0Name + " " + cc0URL +
-			". Related datasets and files held elsewhere: " + externalTerms + ".",
+		"# " + cc0Statement + " " + cc0Name + ": " + cc0URL + ".",
+		"# Files deposited by others: " + notConfirmedTerms + ", until they confirm. Related datasets and files " +
+			"held elsewhere: " + externalTerms + ". Each file's license column says which applies.",
+		"# " + acknowledgementRequest,
 	}
 	if retry := header.retryLine(); retry != "" {
 		lines = append(lines, "# "+retry)
@@ -143,7 +152,20 @@ func escapeManifestValue(value string) string {
 }
 
 // fileRowValues are a file row's values that do not depend on the model it is listed for.
-func fileRowValues(file models.SelectionFile, source fileSource) (manifestRow, error) {
+func fileRowValues(file models.SelectionFile, source fileSource, cc0Depositors map[uuid.UUID]bool) (manifestRow, error) {
+	size, sizeFrom, sizeKnown := knownSize(file)
+	sizeText := ""
+	if sizeKnown {
+		sizeText = strconv.FormatInt(size, 10)
+	}
+	atSave, err := verifiedAtSave(file)
+	if err != nil {
+		return nil, err
+	}
+	atSaveText := "yes"
+	if !atSave {
+		atSaveText = "no"
+	}
 	row := manifestRow{
 		"record_type":         string(recordFile),
 		"file_id":             file.ID.String(),
@@ -152,35 +174,32 @@ func fileRowValues(file models.SelectionFile, source fileSource) (manifestRow, e
 		"type":                string(file.Type),
 		"level":               string(file.Level),
 		"format":              stringValue(file.Format),
-		"size_bytes":          sizeValue(file),
+		"size_bytes":          sizeText,
+		"size_source":         string(sizeFrom),
 		"recorded_sha256":     stringValue(file.RecordedSHA256),
 		"sha256_source":       string(file.RecordedSHA256Source),
 		"recorded_after_save": strconv.FormatBool(file.RecordedAfterSave),
+		"verified_at_save":    atSaveText,
 		"source":              string(source),
 		"source_url":          stringValue(file.URI),
 	}
-	switch source {
-	case sourceDynamicPDBUpload, sourcePDBArchive:
+	terms, err := reuseTermsOf(file, source, cc0Depositors)
+	if err != nil {
+		return nil, err
+	}
+	switch terms {
+	case models.DownloadReuseTermsCC0:
 		row["license"] = cc0Name
 		row["license_url"] = cc0URL
-	case sourceExternal:
+	case models.DownloadReuseTermsNotConfirmed:
+		row["license"] = notConfirmedTerms
+	case models.DownloadReuseTermsRepository:
 		row["license"] = externalTerms
 		row["license_url"] = stringValue(file.URI)
 	default:
-		return nil, fmt.Errorf("file %s: unknown file source: %s", file.ID, source)
+		return nil, fmt.Errorf("file %s: unknown reuse terms: %s", file.ID, terms)
 	}
 	return row, nil
-}
-
-// sizeValue is the file's size as the checksum job read it, or as declared when it was not read.
-func sizeValue(file models.SelectionFile) string {
-	if file.Checksum.SizeBytes != nil {
-		return strconv.FormatInt(*file.Checksum.SizeBytes, 10)
-	}
-	if file.SizeBytes != nil {
-		return strconv.FormatInt(*file.SizeBytes, 10)
-	}
-	return ""
 }
 
 func joinRoles(roles []models.SelectionFileRole) string {
@@ -400,9 +419,12 @@ func readmeText(header manifestHeader) string {
 	}
 	return strings.Join(append(lines,
 		"",
-		cc0Statement,
-		"License of Dynamic PDB and PDB archive files: "+cc0Name+" "+cc0URL+".",
-		"Related datasets and files held elsewhere: "+externalTerms+" (the manifest links each one).",
+		"Reuse terms",
+		"  "+cc0Statement+" "+cc0Name+": "+cc0URL+".",
+		"  Files deposited by others: "+notConfirmedTerms+", until they confirm.",
+		"  Related datasets and files held elsewhere: "+externalTerms+" (the manifest links each one).",
+		"  Each file's license column in manifest.tsv says which applies.",
+		"  "+acknowledgementRequest,
 		"",
 		"Layout",
 		"  <entry id>/<file>             files of the entry (for example its sequence)",
@@ -418,21 +440,27 @@ func readmeText(header manifestHeader) string {
 		"  all_files: every file of the selected models and their entries.",
 		"",
 		"manifest.tsv",
-		"  One row per file of each selected model (status included, linked, unavailable or",
-		"  changed-at-source), per related dataset, and per model with no file of the file choice.",
+		"  One row per file of each selected model (status included, linked or unavailable), per",
+		"  related dataset, and per model with no file of the file choice.",
 		"  included: in this archive, read from Dynamic PDB's storage and checked against",
 		"    recorded_sha256 when the archive was prepared.",
 		"  linked: not in this archive; Dynamic PDB holds no copy (for example over 1 GiB). Fetch it",
 		"    from source_url and check it against recorded_sha256.",
-		"  changed-at-source: the source no longer serves the recorded bytes, and no copy was kept.",
-		"  unavailable: the file cannot be read in its recorded form.",
+		"  unavailable: the file cannot be read in its recorded form. \"original bytes unavailable\":",
+		"    the source now serves other bytes, and no copy was kept; the record and its SHA-256 stay.",
 		"  reason says why a file is not included; reason_code is the same as a code (for example",
-		"    over_copy_limit, changed_at_source, read_failed). Only read_failed files may be fetched",
-		"    by asking again: POST /v1/downloads/<archive id>/retry builds an archive of just those.",
+		"    over_copy_limit, original_bytes_unavailable, read_failed). Only read_failed files may be",
+		"    fetched by asking again: POST /v1/downloads/<archive id>/retry builds an archive of just those.",
+		"  size_bytes is never estimated. size_source says where it comes from: read (from the bytes,",
+		"    which matched the record), declared (recorded when the file was added) or source (what the",
+		"    file's source reported). Empty: the size is unknown.",
 		"  verification is kept apart from status: verified, mismatch or not_verified, with verified_at.",
-		"  sha256_source: declared (recorded when the file was added) or computed (Dynamic PDB's first",
-		"    read of a file added without one); recorded_after_save is true when that read came after",
-		"    the selection was saved.",
+		"  sha256_source: declared (recorded when the file was added), computed (Dynamic PDB's first",
+		"    read of a file added without one) or not_recorded; recorded_after_save is true when that",
+		"    read came after the selection was saved.",
+		"  verified_at_save: no for a file whose SHA-256 was recorded after the selection was saved, or",
+		"    is not recorded: "+notVerifiedAtSave+", so it may differ from what the",
+		"    selection's authors used.",
 		"",
 		"Checking the files",
 		"  sha256sum <path_in_archive> must print the row's recorded_sha256.",

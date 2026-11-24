@@ -125,7 +125,7 @@ const downloadJobColumns = `download_jobs.id, download_jobs.selection_id, downlo
 	download_jobs.archive_key, download_jobs.archive_url, download_jobs.archive_bytes,
 	download_jobs.archive_sha256, download_jobs.manifest_key, download_jobs.manifest_url,
 	download_jobs.files_included, download_jobs.files_linked, download_jobs.files_unavailable,
-	download_jobs.files_changed_at_source, download_jobs.files_retryable, download_jobs.retry_of,
+	download_jobs.files_retryable, download_jobs.retry_of,
 	download_jobs.blocked_reason, download_jobs.error`
 
 // unfinishedDownload is the SQL condition of a job the worker has not finished and that counts
@@ -135,35 +135,34 @@ const unfinishedDownload = `(download_jobs.status in ('queued', 'planning', 'pre
 	or (download_jobs.status = 'planned' and download_jobs.prepare_requested))`
 
 type downloadJobRow struct {
-	ID                   uuid.UUID      `db:"id"`
-	SelectionID          uuid.UUID      `db:"selection_id"`
-	FileChoice           string         `db:"file_choice"`
-	Status               string         `db:"status"`
-	MaxArchiveBytes      int64          `db:"max_archive_bytes"`
-	CreatedAt            time.Time      `db:"created_at"`
-	StartedAt            sql.NullTime   `db:"started_at"`
-	FinishedAt           sql.NullTime   `db:"finished_at"`
-	ExpiresAt            sql.NullTime   `db:"expires_at"`
-	LeaseUntil           sql.NullTime   `db:"lease_until"`
-	Attempts             int            `db:"attempts"`
-	FailedAttempts       int            `db:"failed_attempts"`
-	PrepareRequested     bool           `db:"prepare_requested"`
-	PlannedBytes         sql.NullInt64  `db:"planned_bytes"`
-	Preview              []byte         `db:"preview"`
-	ArchiveKey           sql.NullString `db:"archive_key"`
-	ArchiveURL           sql.NullString `db:"archive_url"`
-	ArchiveBytes         sql.NullInt64  `db:"archive_bytes"`
-	ArchiveSHA256        sql.NullString `db:"archive_sha256"`
-	ManifestKey          sql.NullString `db:"manifest_key"`
-	ManifestURL          sql.NullString `db:"manifest_url"`
-	FilesIncluded        sql.NullInt64  `db:"files_included"`
-	FilesLinked          sql.NullInt64  `db:"files_linked"`
-	FilesUnavailable     sql.NullInt64  `db:"files_unavailable"`
-	FilesChangedAtSource sql.NullInt64  `db:"files_changed_at_source"`
-	FilesRetryable       sql.NullInt64  `db:"files_retryable"`
-	RetryOf              uuid.NullUUID  `db:"retry_of"`
-	BlockedReason        sql.NullString `db:"blocked_reason"`
-	Error                sql.NullString `db:"error"`
+	ID               uuid.UUID      `db:"id"`
+	SelectionID      uuid.UUID      `db:"selection_id"`
+	FileChoice       string         `db:"file_choice"`
+	Status           string         `db:"status"`
+	MaxArchiveBytes  int64          `db:"max_archive_bytes"`
+	CreatedAt        time.Time      `db:"created_at"`
+	StartedAt        sql.NullTime   `db:"started_at"`
+	FinishedAt       sql.NullTime   `db:"finished_at"`
+	ExpiresAt        sql.NullTime   `db:"expires_at"`
+	LeaseUntil       sql.NullTime   `db:"lease_until"`
+	Attempts         int            `db:"attempts"`
+	FailedAttempts   int            `db:"failed_attempts"`
+	PrepareRequested bool           `db:"prepare_requested"`
+	PlannedBytes     sql.NullInt64  `db:"planned_bytes"`
+	Preview          []byte         `db:"preview"`
+	ArchiveKey       sql.NullString `db:"archive_key"`
+	ArchiveURL       sql.NullString `db:"archive_url"`
+	ArchiveBytes     sql.NullInt64  `db:"archive_bytes"`
+	ArchiveSHA256    sql.NullString `db:"archive_sha256"`
+	ManifestKey      sql.NullString `db:"manifest_key"`
+	ManifestURL      sql.NullString `db:"manifest_url"`
+	FilesIncluded    sql.NullInt64  `db:"files_included"`
+	FilesLinked      sql.NullInt64  `db:"files_linked"`
+	FilesUnavailable sql.NullInt64  `db:"files_unavailable"`
+	FilesRetryable   sql.NullInt64  `db:"files_retryable"`
+	RetryOf          uuid.NullUUID  `db:"retry_of"`
+	BlockedReason    sql.NullString `db:"blocked_reason"`
+	Error            sql.NullString `db:"error"`
 }
 
 func (row downloadJobRow) job() (*models.DownloadJob, error) {
@@ -223,12 +222,11 @@ func (row downloadJobRow) job() (*models.DownloadJob, error) {
 		parent := row.RetryOf.UUID
 		job.RetryOf = &parent
 	}
-	if row.FilesIncluded.Valid && row.FilesLinked.Valid && row.FilesUnavailable.Valid && row.FilesChangedAtSource.Valid {
+	if row.FilesIncluded.Valid && row.FilesLinked.Valid && row.FilesUnavailable.Valid {
 		job.Counts = &models.DownloadCounts{
-			Included:        int(row.FilesIncluded.Int64),
-			Linked:          int(row.FilesLinked.Int64),
-			Unavailable:     int(row.FilesUnavailable.Int64),
-			ChangedAtSource: int(row.FilesChangedAtSource.Int64),
+			Included:    int(row.FilesIncluded.Int64),
+			Linked:      int(row.FilesLinked.Int64),
+			Unavailable: int(row.FilesUnavailable.Int64),
 		}
 	}
 	return job, nil
@@ -624,14 +622,12 @@ func (r *DownloadsRepository) Finish(
 		 set status = 'ready', finished_at = $3, expires_at = $4, lease_until = null,
 		     archive_key = $5, archive_url = $6, archive_bytes = $7, archive_sha256 = $8,
 		     manifest_key = $9, manifest_url = $10,
-		     files_included = $11, files_linked = $12, files_unavailable = $13, files_changed_at_source = $14,
-		     files_retryable = $15
+		     files_included = $11, files_linked = $12, files_unavailable = $13, files_retryable = $14
 		 where id = $1 and attempts = $2 and status = 'preparing'`,
 		id, attempt, now, expiresAt,
 		result.ArchiveKey, result.ArchiveURL, result.ArchiveBytes, result.ArchiveSHA256,
 		result.ManifestKey, result.ManifestURL,
-		result.Counts.Included, result.Counts.Linked, result.Counts.Unavailable, result.Counts.ChangedAtSource,
-		retryable); err != nil {
+		result.Counts.Included, result.Counts.Linked, result.Counts.Unavailable, retryable); err != nil {
 		return err
 	}
 	for start := 0; start < len(result.Failures); start += failureInsertBatch {

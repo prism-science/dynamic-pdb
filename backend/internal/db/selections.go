@@ -531,13 +531,15 @@ with page as (
 )
 select links.ordinal, links.link, links.direction,
        artifacts.id, artifacts.name, artifacts.level, artifacts.type, artifacts.format, artifacts.uri,
-       artifacts.size_bytes, artifacts.sha256,
+       artifacts.size_bytes, artifacts.sha256, artifacts.created_by,
        coalesce(artifact_checksums.status, 'pending') as checksum_status,
        artifact_checksums.sha256 as checksum_sha256,
        artifact_checksums.size_bytes as checksum_size_bytes,
        artifact_checksums.stored_uri as checksum_stored_uri,
        artifact_checksums.copy_status as checksum_copy_status,
        artifact_checksums.checked_at as checksum_checked_at,
+       artifact_checksums.source_size_bytes as checksum_source_size_bytes,
+       artifact_checksums.source_size_checked_at as checksum_source_size_checked_at,
        selections.created_at as catalog_date
 from links
 join artifacts on artifacts.id = links.artifact_id
@@ -557,13 +559,17 @@ type selectionModelFileRow struct {
 	URI                sql.NullString `db:"uri"`
 	SizeBytes          sql.NullInt64  `db:"size_bytes"`
 	SHA256             sql.NullString `db:"sha256"`
+	CreatedBy          uuid.UUID      `db:"created_by"`
 	ChecksumStatus     string         `db:"checksum_status"`
 	ChecksumSHA256     sql.NullString `db:"checksum_sha256"`
 	ChecksumSizeBytes  sql.NullInt64  `db:"checksum_size_bytes"`
 	ChecksumStoredURI  sql.NullString `db:"checksum_stored_uri"`
 	ChecksumCopyStatus sql.NullString `db:"checksum_copy_status"`
 	ChecksumCheckedAt  sql.NullTime   `db:"checksum_checked_at"`
-	CatalogDate        time.Time      `db:"catalog_date"`
+	// ChecksumSourceSizeBytes is the size the file's source reported to the checksum job.
+	ChecksumSourceSizeBytes     sql.NullInt64 `db:"checksum_source_size_bytes"`
+	ChecksumSourceSizeCheckedAt sql.NullTime  `db:"checksum_source_size_checked_at"`
+	CatalogDate                 time.Time     `db:"catalog_date"`
 }
 
 // listModelFiles returns the pinned files of the selection's models from firstOrdinal to
@@ -632,6 +638,9 @@ func selectionFileFromRow(row selectionModelFileRow, role models.SelectionFileRo
 		StoredURI:  stringPtrFromSQL(row.ChecksumStoredURI),
 		CopyStatus: copyStatusFromSQL(row.ChecksumCopyStatus),
 		CheckedAt:  timePtrFromSQL(row.ChecksumCheckedAt),
+
+		SourceSizeBytes:     int64PtrFromSQL(row.ChecksumSourceSizeBytes),
+		SourceSizeCheckedAt: timePtrFromSQL(row.ChecksumSourceSizeCheckedAt),
 	}
 	recorded, source, afterSave, err := recordedSelectionSHA256(stringPtrFromSQL(row.SHA256), checksum, row.CatalogDate)
 	if err != nil {
@@ -650,6 +659,7 @@ func selectionFileFromRow(row selectionModelFileRow, role models.SelectionFileRo
 		RecordedSHA256Source: source,
 		RecordedAfterSave:    afterSave,
 		Checksum:             checksum,
+		UploadedBy:           row.CreatedBy,
 	}, nil
 }
 

@@ -430,11 +430,12 @@ func Test_should_map_every_role_and_source_when_selection_files_are_answered(t *
 	}
 
 	// when
-	response, err := selectionFilesResponse([]domainmodels.SelectionFile{file})
+	response, err := selectionFilesResponse([]domainmodels.SelectionFile{file}, noStorage{}, nil)
 
 	// then
 	require.NoError(t, err)
 	require.Len(t, response, 1)
+	assert.Equal(t, ReuseTermsRepository, response[0].ReuseTerms, "a file without a location is another repository's")
 	assert.Equal(t, []SelectionFileRole{SelectionFileRolePrimary, SelectionFileRoleModel, SelectionFileRoleRunInput,
 		SelectionFileRoleRunOutput, SelectionFileRoleEntry}, response[0].Roles)
 	assert.Equal(t, SelectionSHA256SourceComputed, response[0].RecordedSha256Source)
@@ -455,10 +456,31 @@ func Test_should_fail_when_a_selection_file_has_an_unknown_role_or_source(t *tes
 		domainmodels.SelectionFileRolePrimary}, RecordedSHA256Source: "guessed"}
 
 	// when
-	_, roleErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownRole})
-	_, sourceErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownSource})
+	_, roleErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownRole}, noStorage{}, nil)
+	_, sourceErr := selectionFilesResponse([]domainmodels.SelectionFile{unknownSource}, noStorage{}, nil)
 
 	// then
 	assert.ErrorContains(t, roleErr, "unknown selection file role: owner")
 	assert.ErrorContains(t, sourceErr, "unknown selection sha256 source: guessed")
+}
+
+// noStorage finds no file in Dynamic PDB's storage.
+type noStorage struct{}
+
+func (noStorage) StoredKey(string) (string, bool) {
+	return "", false
+}
+
+func Test_should_map_every_reuse_terms_value_and_fail_on_an_unknown_one(t *testing.T) {
+	for terms, want := range map[domainmodels.DownloadReuseTerms]ReuseTerms{
+		domainmodels.DownloadReuseTermsCC0:          ReuseTermsCc0,
+		domainmodels.DownloadReuseTermsNotConfirmed: ReuseTermsNotConfirmed,
+		domainmodels.DownloadReuseTermsRepository:   ReuseTermsRepository,
+	} {
+		got, err := reuseTermsResponse(terms)
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+	_, err := reuseTermsResponse("public")
+	assert.ErrorContains(t, err, "unknown reuse terms: public")
 }

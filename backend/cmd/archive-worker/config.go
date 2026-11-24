@@ -55,5 +55,10 @@ func readConfig(filename string) (config, error) {
 		return config{}, fmt.Errorf("archive worker config: downloads.%w", err)
 	}
 	cfg.Worker.ArchiveTTL = cfg.Downloads.ArchiveTTL
+	depositors, err := cfg.Downloads.CC0DepositorIDs()
+	if err != nil {
+		return config{}, fmt.Errorf("archive worker config: downloads.%w", err)
+	}
+	cfg.Worker.CC0Depositors = depositors
 	return cfg, nil
 }

@@ -70,6 +70,10 @@ type ArtifactChecksum struct {
 	StoredURI  *string
 	CopyStatus *CopyStatus
 	CheckedAt  *time.Time
+	// SourceSizeBytes is the size the file's source reported (an HTTP HEAD request) when the job
+	// could not read the file; SourceSizeCheckedAt is when. Never an estimate.
+	SourceSizeBytes     *int64
+	SourceSizeCheckedAt *time.Time
 }
 
 // MissingChecksumsPage is one page of artifacts, in id order, that the checksum job gave a
@@ -110,4 +114,7 @@ type ChecksumResult struct {
 	Error         *string
 	CheckedAt     time.Time
 	NextAttemptAt *time.Time
+	// SourceSizeBytes is the size the source reported for a file the job could not read; only
+	// with status pending or failed.
+	SourceSizeBytes *int64
 }

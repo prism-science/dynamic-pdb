@@ -44,15 +44,22 @@ const {
   reasonCodeText,
   artifactTypeLabel,
   availabilityText,
+  checksumText,
+  isNotVerifiedAtSave,
+  NOT_VERIFIED_AT_SAVE,
+  reuseTermsText,
+  selectionFileChecks,
 } = require("../src/lib/download-selection.ts");
 const { readModelSearch } = require("../src/lib/model-search.ts");
 const {
+  artifactChecksumStatusValues,
   artifactTypeValues,
   downloadFileAvailabilityValues,
   downloadFileChoiceValues,
   downloadReasonCodeValues,
   downloadSizeKindValues,
   downloadStatusValues,
+  reuseTermsValues,
 } = require("../src/lib/api/schema.gen.ts");
 
 function model(id, entryId = "dpdb_entry1") {
@@ -320,7 +327,7 @@ function size(kind, extra = {}) {
   return { kind, measures: "bytes", ...extra };
 }
 
-/** A preview as patch 21's worker writes it. */
+/** A preview as patch 23's worker writes it. */
 function preview(extra = {}) {
   return {
     records: { entries: 2, models: 3, models_without_matching_files: 1 },
@@ -330,19 +337,20 @@ function preview(extra = {}) {
         { type: "model", files: 3, size: size("exact", { bytes: 3_000_000 }) },
         { type: "structure_factors", files: 2, size: size("exact", { bytes: 2_000_000_000 }) },
       ],
-      availability: { included: 3, linked: 1, unavailable: 1, changed_at_source: 0 },
+      availability: { included: 3, linked: 1, unavailable: 1 },
       not_included: [
         { code: "over_copy_limit", status: "linked", reason: "over 1 GiB", files: 1 },
         { code: "copy_missing", status: "unavailable", reason: "our copy is missing", files: 1 },
       ],
       verification: { verified: 3, mismatch: 0, not_verified: 2 },
+      not_verified_at_save: 2,
     },
     sizes: {
       included: size("exact", { bytes: 1_003_000_000 }),
-      archive: size("estimate", { bytes: 1_004_000_000, tolerance: "an upper bound" }),
-      linked: size("exact", { bytes: 2_000_000_000, files_size_unknown: 1 }),
+      linked: size("partial", { bytes: 2_000_000_000, files_size_unknown: 1 }),
     },
     related_datasets: { total: 1, with_doi: 1, with_accession_only: 0, without_identifier: 0 },
+    reuse_terms: { cc0: 3, not_confirmed: 1, repository: 1 },
     over_limit: false,
     ...extra,
   };
@@ -368,7 +376,7 @@ test("should show every archive status the API sends", () => {
     archive_bytes: 1_500_000_000,
     archive_sha256: "a".repeat(64),
     expires_at: "2026-11-20T10:00:00Z",
-    counts: { included: 3, linked: 1, unavailable: 0, changed_at_source: 2 },
+    counts: { included: 3, linked: 1, unavailable: 2 },
   };
 
   // then every status of the API has a view
@@ -425,7 +433,7 @@ test("should refuse an archive status it does not know, and a ready archive with
 
 test("should list the archive's counts in the manifest's order", () => {
   // when
-  const lines = countLines({ included: 3, linked: 1, unavailable: 0, changed_at_source: 2 });
+  const lines = countLines({ included: 3, linked: 1, unavailable: 2 });
 
   // then
   assert.deepEqual(
@@ -433,10 +441,10 @@ test("should list the archive's counts in the manifest's order", () => {
     [
       ["included", 3],
       ["linked", 1],
-      ["unavailable", 0],
-      ["changed_at_source", 2],
+      ["unavailable", 2],
     ],
   );
+  assert.match(lines[2].text, /including those whose original bytes are gone/);
 });
 
 test("should write sizes in decimal units, as the 10 GB limit is", () => {
@@ -480,16 +488,17 @@ test("should explain every problem and refuse one it does not know", () => {
   assert.throws(() => problemMessage({ code: "other", detail: null, retryAfterSeconds: null }), /unknown download problem/);
 });
 
-test("should state the reuse terms exactly as the researchers worded them", () => {
+test("should state the reuse terms exactly as the researchers worded them (Q7, 17 Nov)", () => {
   // then
   assert.equal(
     REUSE_TERMS,
-    "These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.",
+    "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. Files deposited by others: Reuse terms not yet confirmed by the depositor. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.",
   );
   assert.equal(REUSE_LICENSE_URL, "https://creativecommons.org/publicdomain/zero/1.0/");
+  assert.doesNotMatch(REUSE_TERMS, /These data are dedicated/, "no blanket CC0 any more");
 });
 
-test("should put the preview in words, every size as exact, estimate or unknown", () => {
+test("should put the preview in words, every size exact, partial or unknown and never estimated", () => {
   // when
   const summary = previewSummary(preview(), 10_000_000_000);
 
@@ -504,18 +513,28 @@ test("should put the preview in words, every size as exact, estimate or unknown"
     ],
   );
   assert.equal(summary.included, "1 GB");
-  assert.equal(summary.archive, "about 1 GB (an upper bound)");
   assert.equal(summary.linked, "2 GB, plus 1 file of unknown size");
+  assert.equal(
+    summary.reuseTerms,
+    "3 files CC0 1.0 · 1 file: reuse terms not yet confirmed by the depositor · 1 file held by other repositories (see the repository's terms)",
+  );
+  assert.equal(
+    summary.notVerifiedAtSave,
+    "2 files not verified against the bytes at save time: the SHA-256 was recorded after the selection was saved, or is not recorded",
+  );
+  assert.equal(previewSummary(preview({ files: { ...preview().files, not_verified_at_save: 0 } }), 1).notVerifiedAtSave, null);
+  assert.equal("archive" in summary, false, "the zip's size is never estimated");
   assert.deepEqual(summary.leftOut.map((item) => [item.code, item.files]), [["over_copy_limit", 1], ["copy_missing", 1]]);
   assert.deepEqual(summary.verification, { verified: 3, mismatch: 0, notVerified: 2 });
   assert.match(summary.relatedDatasets, /1 related dataset/);
   assert.equal(summary.includedBytes, 1_003_000_000);
   assert.equal(summary.overLimit, false);
-  assert.equal(sizeText(size("unknown")), "unknown: no size is recorded");
+  assert.equal(sizeText(size("unknown")), "unknown: no file's size is known");
   for (const kind of downloadSizeKindValues) {
-    assert.ok(sizeText(size(kind, { bytes: 1 })).length > 0, kind);
+    assert.doesNotMatch(sizeText(size(kind, { bytes: 1, files_size_unknown: 2 })), /about|upper bound|estimate/, kind);
   }
-  assert.throws(() => sizeText(size("guess")), /unknown size kind: guess/);
+  assert.deepEqual([...downloadSizeKindValues].sort(), ["exact", "partial", "unknown"]);
+  assert.throws(() => sizeText(size("estimate")), /unknown size kind: estimate/);
 });
 
 test("should say every reason, file type and availability the API can send, and refuse others", () => {
@@ -524,6 +543,11 @@ test("should say every reason, file type and availability the API can send, and 
     assert.ok(reasonCodeText(code).length > 0, code);
   }
   assert.match(reasonCodeText("read_failed"), /a retry may fetch it/);
+  assert.equal(
+    reasonCodeText("original_bytes_unavailable"),
+    "Unavailable: original bytes unavailable: the source now serves other bytes, and no copy was kept",
+  );
+  assert.deepEqual([...downloadFileAvailabilityValues].sort(), ["included", "linked", "unavailable"]);
   for (const type of artifactTypeValues) {
     assert.ok(artifactTypeLabel(type).length > 0, type);
   }
@@ -556,4 +580,80 @@ test("should explain the new archive problems", () => {
     const message = problemMessage({ code, detail: null, retryAfterSeconds: null });
     assert.ok(message.title.length > 0 && message.body.length > 0, code);
   }
+});
+
+/** A file of GET /v1/selections/{id}/models. */
+function selectionFile(extra = {}) {
+  return {
+    id: "f1",
+    roles: ["primary"],
+    name: "model.cif",
+    level: "L2",
+    type: "model",
+    format: "mmcif",
+    uri: "https://files.example/model.cif",
+    size_bytes: 10,
+    recorded_sha256: "a".repeat(64),
+    recorded_sha256_source: "declared",
+    recorded_after_save: false,
+    checksum: { status: "verified", sha256: "a".repeat(64), size_bytes: 10, stored_uri: null, copy_status: "own_storage", checked_at: "2026-11-15T09:30:12.5Z" },
+    reuse_terms: "not_confirmed",
+    source_size_bytes: null,
+    ...extra,
+  };
+}
+
+test("should list each file of a reopened selection with its last check, terms and the save-time mark (Q10)", () => {
+  // when
+  const [model] = selectionFileChecks([
+    {
+      model_id: "m1",
+      entry_id: "e1",
+      model_revision_number: 1,
+      model_type: "Ensemble",
+      origin: null,
+      entry_revision_number: 2,
+      files: [
+        selectionFile(),
+        selectionFile({ id: "f2", recorded_after_save: true, reuse_terms: "cc0" }),
+        selectionFile({
+          id: "f3",
+          recorded_sha256: null,
+          recorded_sha256_source: "not_recorded",
+          checksum: { status: "pending", sha256: null, size_bytes: null, stored_uri: null, copy_status: null, checked_at: null },
+          reuse_terms: "repository",
+        }),
+      ],
+    },
+  ]);
+
+  // then
+  assert.equal(model.modelId, "m1");
+  assert.deepEqual(
+    model.files.map((file) => [file.fileId, file.check, file.notVerifiedAtSave, file.terms]),
+    [
+      ["f1", "Checked 2026-11-15 09:30 UTC: the bytes match the record", false, "Reuse terms not yet confirmed by the depositor"],
+      ["f2", "Checked 2026-11-15 09:30 UTC: the bytes match the record", true, "CC0 1.0"],
+      ["f3", "Not checked yet", true, "See the repository's terms"],
+    ],
+  );
+  assert.equal(NOT_VERIFIED_AT_SAVE, "not verified against the bytes at save time");
+});
+
+test("should say every checksum status, sha256 source and reuse terms value, and refuse others", () => {
+  for (const status of artifactChecksumStatusValues) {
+    assert.ok(checksumText({ status, checked_at: "2026-11-15T09:30:00Z" }).length > 0, status);
+  }
+  // A mismatch may be the size alone, or a file with no SHA-256 recorded: never claim the SHA-256 differs.
+  assert.equal(
+    checksumText({ status: "mismatch", checked_at: "2026-11-15T09:30:00Z" }),
+    "Checked 2026-11-15 09:30 UTC: the bytes differ from the record (SHA-256 or size)",
+  );
+  assert.match(checksumText({ status: "failed", checked_at: "2026-11-15T09:30:00Z" }), /could not be read/);
+  for (const terms of reuseTermsValues) {
+    assert.ok(reuseTermsText(terms).length > 0, terms);
+  }
+  assert.throws(() => checksumText({ status: "lost", checked_at: null }), /unknown checksum status: lost/);
+  assert.throws(() => reuseTermsText("public"), /unknown reuse terms: public/);
+  assert.throws(() => isNotVerifiedAtSave(selectionFile({ recorded_sha256_source: "guessed" })), /unknown sha256 source: guessed/);
 });

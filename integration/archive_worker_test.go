@@ -211,10 +211,9 @@ func runArchiveWorker(t *testing.T, root string, binaryPath string, s3URL string
 
 // downloadCounts are an archive's or a preview's files by availability.
 type downloadCounts struct {
-	Included        int `json:"included"`
-	Linked          int `json:"linked"`
-	Unavailable     int `json:"unavailable"`
-	ChangedAtSource int `json:"changed_at_source"`
+	Included    int `json:"included"`
+	Linked      int `json:"linked"`
+	Unavailable int `json:"unavailable"`
 }
 
 // downloadAttributes is what the tests read of GET /v1/downloads/{id}.
@@ -251,11 +250,12 @@ type downloadPreview struct {
 			Bytes *int64 `json:"bytes"`
 			Kind  string `json:"kind"`
 		} `json:"included"`
-		Archive struct {
-			Bytes *int64 `json:"bytes"`
-			Kind  string `json:"kind"`
-		} `json:"archive"`
 	} `json:"sizes"`
+	ReuseTerms struct {
+		CC0          int `json:"cc0"`
+		NotConfirmed int `json:"not_confirmed"`
+		Repository   int `json:"repository"`
+	} `json:"reuse_terms"`
 	OverLimit bool `json:"over_limit"`
 }
 
@@ -272,8 +272,6 @@ func checkPreviewMatchesArchive(t *testing.T, attributes downloadAttributes, row
 		}
 	}
 	assert.Len(t, files, attributes.Preview.Files.Total)
-	require.NotNil(t, attributes.Preview.Sizes.Archive.Bytes)
-	assert.LessOrEqual(t, *attributes.ArchiveBytes, *attributes.Preview.Sizes.Archive.Bytes, "the zip is within its bound")
 	assert.False(t, attributes.Preview.OverLimit)
 }
 
@@ -502,7 +500,7 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	status, _ := manifestStatus(rows, revisedCoordinates)
 	assert.Empty(t, status, "the revised file is not part of the selection")
 	status, _ = manifestStatus(rows, changed)
-	assert.Equal(t, "changed-at-source", status)
+	assert.Equal(t, "unavailable", status, "its original bytes are gone")
 	status, _ = manifestStatus(rows, overLimit)
 	assert.Equal(t, "linked", status)
 	status, _ = manifestStatus(rows, fasta2)
@@ -510,7 +508,23 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	require.NotNil(t, all.Counts)
 	assert.Equal(t, 8, all.Counts.Included)
 	assert.Equal(t, 2, all.Counts.Linked)
-	assert.Equal(t, 1, all.Counts.ChangedAtSource)
+	assert.Equal(t, 1, all.Counts.Unavailable)
+
+	// and the reuse terms: the PDB's files are CC0; the uploads of an account not listed as Prism's
+	// (no downloads::cc0_depositors locally) are not confirmed yet
+	terms := map[string]string{}
+	atSave := map[string]string{}
+	for _, row := range rows {
+		if row["record_type"] == "file" {
+			terms[row["file_id"]] = row["license"]
+			atSave[row["file_id"]] = row["verified_at_save"]
+		}
+	}
+	assert.Equal(t, "CC0 1.0", terms[coordinates.String()])
+	assert.Equal(t, "Reuse terms not yet confirmed by the depositor", terms[qfit.String()])
+	assert.Equal(t, "yes", atSave[coordinates.String()], "its SHA-256 was recorded when it was added")
+	assert.Equal(t, 4, all.Preview.ReuseTerms.NotConfirmed, "qFit, Single Conformer model and log, ensemble")
+	assert.Contains(t, entries[rootFolder+"/README.txt"], "Reuse terms not yet confirmed by the depositor")
 
 	// and original mmCIF: the PDB coordinate files the selected models' records hold
 	original := readDownload(t, backend.URL, ids["original_mmcif"])
@@ -524,7 +538,7 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 		rootFolder + "/manifest.tsv",
 	}, names)
 	status, _ = manifestStatus(rows, changed)
-	assert.Equal(t, "changed-at-source", status)
+	assert.Equal(t, "unavailable", status)
 
 	// and modified coordinates: the Dynamic PDB model files
 	modified := readDownload(t, backend.URL, ids["modified_coordinates"])
@@ -579,12 +593,12 @@ func Test_should_build_every_file_choice_when_a_saved_selection_holds_every_mode
 	assert.Equal(t, 2, planned.Preview.Records.Models)
 	assert.Equal(t, 1, planned.Preview.Records.Entries)
 	assert.Equal(t, 5, planned.Preview.Files.Total)
-	assert.Equal(t, downloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1}, planned.Preview.Files.Availability)
+	assert.Equal(t, downloadCounts{Included: 2, Linked: 2, Unavailable: 1}, planned.Preview.Files.Availability)
 	codes := map[string]int{}
 	for _, reason := range planned.Preview.Files.NotIncluded {
 		codes[reason.Code] = reason.Files
 	}
-	assert.Equal(t, map[string]int{"over_copy_limit": 1, "not_checked_yet": 1, "changed_at_source": 1}, codes)
+	assert.Equal(t, map[string]int{"over_copy_limit": 1, "not_checked_yet": 1, "original_bytes_unavailable": 1}, codes)
 	assert.Equal(t, "exact", planned.Preview.Sizes.Included.Kind)
 	require.NotNil(t, planned.Preview.Sizes.Included.Bytes)
 	assert.Equal(t, int64(len(seed.content[single])+len(seed.content[log])), *planned.Preview.Sizes.Included.Bytes)
@@ -675,7 +689,9 @@ func Test_should_name_the_unread_file_and_retry_only_it_when_a_read_from_storage
 	//nolint:bodyclose // createdID closes the response body.
 	selectionID := createdID(t, postJSON(t, backend.URL+"/v1/selections", auth.AccessToken,
 		map[string]any{"model_ids": []string{deposited.id, singleConformer.id}}), http.StatusCreated)
-	workerEnv := append([]string{"DYNAMIC_PDB_ARCHIVE_WORKER_FILE_READ_ATTEMPTS=1"}, schemaEnv...)
+	// The test account stands for one of Prism's accounts here, so its uploads are CC0.
+	workerEnv := append([]string{"DYNAMIC_PDB_ARCHIVE_WORKER_FILE_READ_ATTEMPTS=1",
+		"DYNAMIC_PDB_DOWNLOADS_CC0_DEPOSITORS=" + auth.UserID}, schemaEnv...)
 
 	// when an archive of all files is built while the log cannot be read
 	//nolint:bodyclose // createdID closes the response body.
@@ -731,6 +747,8 @@ func Test_should_name_the_unread_file_and_retry_only_it_when_a_read_from_storage
 	require.Len(t, retryRows, 1)
 	assert.Equal(t, refineLog.String(), retryRows[0]["file_id"])
 	assert.Equal(t, "included", retryRows[0]["status"])
+	assert.Equal(t, "CC0 1.0", retryRows[0]["license"], "uploaded by an account listed as Prism's")
+	assert.Equal(t, 1, retry.Preview.ReuseTerms.CC0)
 	checkPreviewMatchesArchive(t, retry, retryRows)
 	assert.Empty(t, readDownloadFailures(t, backend.URL, retryID))
 

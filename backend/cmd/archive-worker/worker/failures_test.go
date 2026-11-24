@@ -37,14 +37,14 @@ func Test_should_record_each_file_the_archive_cannot_vouch_for_with_its_reason(t
 	assert.Equal(t, models.DownloadReasonCopyDiffers, byFile[f.files["coord1"].ID].ReasonCode)
 	assert.Equal(t, models.DownloadReasonCopyMissing, byFile[f.files["ensemble"].ID].ReasonCode)
 	assert.Equal(t, models.DownloadReasonReadFailed, byFile[f.files["log"].ID].ReasonCode)
-	assert.Equal(t, models.DownloadReasonChangedAtSource, byFile[f.files["coord2"].ID].ReasonCode)
+	assert.Equal(t, models.DownloadReasonOriginalBytesUnavailable, byFile[f.files["coord2"].ID].ReasonCode)
 	assert.True(t, byFile[f.files["log"].ID].Retryable, "only a copy that could not be read is retryable")
 	assert.False(t, byFile[f.files["coord1"].ID].Retryable)
 	assert.Equal(t, models.DownloadFailure{
 		JobID: f.store.job.ID, FileID: f.files["log"].ID, Ordinal: 5, EntryID: "dpdb_e2", ModelID: "dpdb_e2_m_002",
 		FileName: "refine.log", ReasonCode: models.DownloadReasonReadFailed, Retryable: true,
 	}, byFile[f.files["log"].ID])
-	assert.Equal(t, f.store.result.Counts.Unavailable+f.store.result.Counts.ChangedAtSource, len(byFile))
+	assert.Equal(t, f.store.result.Counts.Unavailable, len(byFile))
 	for fileID, failure := range byFile {
 		assert.Equal(t, string(failure.ReasonCode), fileRows(rows, fileID)[0]["reason_code"])
 	}

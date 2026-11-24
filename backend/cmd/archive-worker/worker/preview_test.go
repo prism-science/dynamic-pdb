@@ -34,8 +34,6 @@ func Test_should_count_what_the_archive_holds_when_the_preview_of_each_file_choi
 			assert.Len(t, rowsOfType(rows, "no_matching_file"), preview.ModelsWithoutMatchingFiles)
 			assert.Len(t, rowsOfType(rows, "related_dataset"), preview.RelatedDatasets.Total)
 			assert.Equal(t, f.store.plannedBytes, preview.IncludedBytes)
-			assert.GreaterOrEqual(t, preview.ArchiveBytesUpperBound, f.store.result.ArchiveBytes,
-				"the zip is never larger than its bound")
 			notIncluded := 0
 			for _, reason := range preview.NotIncluded {
 				notIncluded += reason.Files
@@ -61,11 +59,11 @@ func Test_should_list_every_count_of_the_five_representations_when_all_files_are
 	require.NotNil(t, preview)
 	assert.Equal(t, 12, preview.Files)
 	assert.Zero(t, preview.ModelsWithoutMatchingFiles)
-	assert.Equal(t, models.DownloadCounts{Included: 9, Linked: 2, ChangedAtSource: 1}, preview.Availability)
+	assert.Equal(t, models.DownloadCounts{Included: 9, Linked: 2, Unavailable: 1}, preview.Availability)
 	assert.Equal(t, []models.DownloadPreviewReason{
 		{Code: models.DownloadReasonOverCopyLimit, Files: 1},
 		{Code: models.DownloadReasonNotCheckedYet, Files: 1},
-		{Code: models.DownloadReasonChangedAtSource, Files: 1},
+		{Code: models.DownloadReasonOriginalBytesUnavailable, Files: 1},
 	}, preview.NotIncluded)
 	assert.Equal(t, models.DownloadPreviewVerification{Verified: 10, Mismatch: 1, NotVerified: 1}, preview.Verification)
 	byType := map[models.ArtifactType]models.DownloadPreviewFileType{}
@@ -106,7 +104,7 @@ func Test_should_stop_after_planning_and_build_once_asked_when_the_archive_was_n
 	f.store.job.PrepareRequested = true
 	runOnce(t, worker)
 	_, _, _ = readArchive(t, f)
-	assert.Equal(t, models.DownloadCounts{Included: 2, ChangedAtSource: 1}, f.store.result.Counts)
+	assert.Equal(t, models.DownloadCounts{Included: 2, Unavailable: 1}, f.store.result.Counts)
 }
 
 func Test_should_record_the_new_plan_when_a_file_was_copied_after_the_preview(t *testing.T) {

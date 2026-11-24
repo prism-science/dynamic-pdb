@@ -21,8 +21,9 @@ Files go to <out>/dynamic-pdb-<selection id>/, laid out as in the archive:
   <entry id>/<file>             files of the entry (for example its sequence)
   <entry id>/<model id>/<file>  files of the model, its runs' inputs and outputs
 A file several selected models share is stored once. manifest.tsv lists every file of each
-selected model with its status (included, linked, unavailable, changed-at-source), in the
-archive manifest's columns. Two names that differ only in case or Unicode form get the archive's
+selected model with its status (included, linked or unavailable), its size and where that size
+comes from (never estimated), whether it was verified against the bytes at save time, and its
+reuse terms, in the archive manifest's columns. Two names that differ only in case or Unicode form get the archive's
 ID prefix, so no file overwrites another on a filesystem that treats them as one name.
 
 Run the script again after a break: files already saved with the right SHA-256 are kept, and
@@ -36,8 +37,9 @@ Exit status: 0 when every file Dynamic PDB holds was saved and checked; 1 when o
 read or differs from its record (it is listed in manifest.tsv, never replaced); 2 when the
 script could not run (bad arguments, unknown selection, the server could not be reached).
 
-These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge Dynamic
-PDB and cite the depositors of the entries you use.
+PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. Files
+deposited by others: Reuse terms not yet confirmed by the depositor. We ask that you acknowledge
+Dynamic PDB and cite the depositors of the entries you use. Each file's terms are in manifest.tsv.
 
 Needs Python 3.8 or newer and nothing else, on macOS or Linux. On Windows the script stops at once
 (exit status 2): run it in WSL (Windows Subsystem for Linux), or download the archive from the
@@ -86,11 +88,13 @@ USER_AGENT = "dynamic-pdb-download/" + SCRIPT_VERSION
 
 CC0_NAME = "CC0 1.0"
 CC0_URL = "https://creativecommons.org/publicdomain/zero/1.0/"
-CC0_STATEMENT = (
-    "These data are dedicated to the public domain under CC0 1.0. We ask that you "
-    "acknowledge Dynamic PDB and cite the depositors of the entries you use."
-)
+# The reuse terms, word for word as the archive's README and manifest say them (researchers' Q7).
+CC0_STATEMENT = "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0."
+NOT_CONFIRMED_TERMS = "Reuse terms not yet confirmed by the depositor"
 EXTERNAL_TERMS = "See the repository's terms"
+ACKNOWLEDGEMENT_REQUEST = "We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use."
+# A file the archive cannot vouch for as it was when the selection was saved (researchers' Q10).
+NOT_VERIFIED_AT_SAVE = "not verified against the bytes at save time"
 PDB_ARCHIVE_HOSTS = ("files.rcsb.org", "www.rcsb.org")
 COMPUTED_MODEL_TYPES = ("Single Conformer", "Multiconformer", "Ensemble")
 NOT_COMPUTED_MODEL_TYPES = ("Deposited",)
@@ -98,16 +102,15 @@ NOT_COMPUTED_MODEL_TYPES = ("Deposited",)
 MANIFEST_COLUMNS = (
     "record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "pdb_id",
     "file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes",
-    "recorded_sha256", "sha256_source", "recorded_after_save", "status", "reason", "reason_code",
-    "verification", "verified_at", "source", "source_url", "license", "license_url", "authors",
-    "affiliation", "citation_link", "dataset_id",
+    "size_source", "recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status",
+    "reason", "reason_code", "verification", "verified_at", "source", "source_url", "license", "license_url",
+    "authors", "affiliation", "citation_link", "dataset_id",
 )
 
 # Statuses and verifications, as the archive's manifest writes them.
 INCLUDED = "included"
 LINKED = "linked"
 UNAVAILABLE = "unavailable"
-CHANGED_AT_SOURCE = "changed-at-source"
 VERIFIED = "verified"
 MISMATCH = "mismatch"
 NOT_VERIFIED = "not_verified"
@@ -120,7 +123,7 @@ REASON_TEXTS = {
     "copy_off": "Dynamic PDB keeps no copy (copying was off)",
     "not_checked_yet": "not checked yet, so Dynamic PDB holds no copy yet",
     "stored_file_differs": "the file in Dynamic PDB's storage differs from its record",
-    "changed_at_source": "the source no longer serves the recorded bytes, and no copy was kept",
+    "original_bytes_unavailable": "original bytes unavailable: the source now serves other bytes, and no copy was kept",
     "source_unreadable": "the file cannot be read at its source",
     "copy_not_in_storage": "the location of Dynamic PDB's copy is not in its storage",
     "copy_missing": "Dynamic PDB's copy of the file is missing",
@@ -343,7 +346,8 @@ def state_of(file, bases):
         if copy_status == "own_storage":
             return (UNAVAILABLE, MISMATCH, checked_at, "stored_file_differs", None)
         if copy_status == "mismatch":
-            return (CHANGED_AT_SOURCE, MISMATCH, checked_at, "changed_at_source", None)
+            # The original bytes are gone: unavailable, never replaced (researchers' item 14).
+            return (UNAVAILABLE, MISMATCH, checked_at, "original_bytes_unavailable", None)
         if copy_status in ("copied", "over_limit", "copy_failed", "copy_off"):
             raise ScriptError("file {}: a mismatch result with copy status {}".format(file["id"], copy_status))
         raise unknown_value("copy status", copy_status)
@@ -502,20 +506,42 @@ class Layout:
         return candidate
 
 
-def size_value(file):
-    if file["checksum"]["size_bytes"] is not None:
-        return str(file["checksum"]["size_bytes"])
+def size_values(file):
+    """A file's size and where it comes from, never estimated (researchers' Q9), as the archive
+    says them: read from bytes that matched the record, else declared when the file was added, else
+    reported by its source; empty when none is known."""
+    checksum = file["checksum"]
+    if checksum["status"] == "verified" and checksum["size_bytes"] is not None:
+        return str(checksum["size_bytes"]), "read"
     if file["size_bytes"] is not None:
-        return str(file["size_bytes"])
-    return ""
+        return str(file["size_bytes"]), "declared"
+    if file["source_size_bytes"] is not None:
+        return str(file["source_size_bytes"]), "source"
+    return "", ""
 
 
-def license_values(source, file):
-    if source in ("dynamic_pdb_upload", "pdb_archive"):
+def verified_at_save(file):
+    """'no' when the archive cannot vouch for the bytes as they were when the selection was saved:
+    the SHA-256 was recorded after the save, or is not recorded (researchers' Q10)."""
+    source = file["recorded_sha256_source"]
+    if source in ("declared", "computed"):
+        return "no" if file["recorded_after_save"] else "yes"
+    if source == "not_recorded":
+        return "no"
+    raise unknown_value("sha256 source", source)
+
+
+def license_values(file):
+    """The file's reuse terms as the archive's manifest writes them (researchers' Q7). The API says
+    which apply, by the archive worker's own rule (who deposited the file, and where it is held)."""
+    terms = file["reuse_terms"]
+    if terms == "cc0":
         return CC0_NAME, CC0_URL
-    if source == "external":
+    if terms == "not_confirmed":
+        return NOT_CONFIRMED_TERMS, ""
+    if terms == "repository":
         return EXTERNAL_TERMS, file["uri"] or ""
-    raise unknown_value("file source", source)
+    raise unknown_value("reuse terms", terms)
 
 
 def record_values(model, with_model):
@@ -531,7 +557,8 @@ def file_row(model, file, entry_file, outcome, bases):
     """A file's manifest row for the model it is listed with."""
     status, verification, verified_at, reason_code, path = outcome
     source = source_of(file, bases)
-    license_name, license_url = license_values(source, file)
+    license_name, license_url = license_values(file)
+    size, size_source = size_values(file)
     row = record_values(model, not entry_file)
     row.update({
         "record_type": "file",
@@ -542,10 +569,12 @@ def file_row(model, file, entry_file, outcome, bases):
         "type": file["type"],
         "level": file["level"],
         "format": file["format"] or "",
-        "size_bytes": size_value(file),
+        "size_bytes": size,
+        "size_source": size_source,
         "recorded_sha256": file["recorded_sha256"] or "",
         "sha256_source": file["recorded_sha256_source"],
         "recorded_after_save": "true" if file["recorded_after_save"] else "false",
+        "verified_at_save": verified_at_save(file),
         "status": status,
         "reason": REASON_TEXTS[reason_code] if reason_code else "",
         "reason_code": reason_code,
@@ -623,9 +652,10 @@ def manifest_header(selection_id, catalog_date, choice, started_at):
     return [
         "# Dynamic PDB download manifest, written by dynamic-pdb-download.py {}. Selection {}, catalog date {}, "
         "file choice {}, started {}.".format(SCRIPT_VERSION, selection_id, catalog_date, choice, started_at),
-        "# " + CC0_STATEMENT,
-        "# License of Dynamic PDB and PDB archive files: {} {}. Files held elsewhere: {}.".format(
-            CC0_NAME, CC0_URL, EXTERNAL_TERMS),
+        "# {} {}: {}.".format(CC0_STATEMENT, CC0_NAME, CC0_URL),
+        "# Files deposited by others: {}, until they confirm. Related datasets and files held elsewhere: {}. "
+        "Each file's license column says which applies.".format(NOT_CONFIRMED_TERMS, EXTERNAL_TERMS),
+        "# " + ACKNOWLEDGEMENT_REQUEST,
         "# path_in_archive is the file's path under the output folder, as in the archive. pdb_id, authors, "
         "affiliation and citation_link are empty and related datasets are not listed: the archive's "
         "manifest and each entry's page have them.",
@@ -1022,7 +1052,10 @@ def run(arguments):
         listing.seek(0)
 
         walk = Walk(arguments.files, layout, bases, saver.read)
-        counts = {INCLUDED: 0, LINKED: 0, UNAVAILABLE: 0, CHANGED_AT_SOURCE: 0}
+        counts = {INCLUDED: 0, LINKED: 0, UNAVAILABLE: 0}
+        # Distinct files by reuse terms, and those not verified at save time, as the preview counts.
+        terms = {CC0_NAME: set(), NOT_CONFIRMED_TERMS: set(), EXTERNAL_TERMS: set()}
+        not_verified_at_save = set()
         not_saved = []
         manifest_path = os.path.join(root, "manifest.tsv")
         partial = manifest_path + ".part"
@@ -1035,6 +1068,9 @@ def run(arguments):
                     if row["record_type"] != "file":
                         continue
                     counts[row["status"]] += 1
+                    terms[row["license"]].add(row["file_id"])
+                    if row["verified_at_save"] == "no":
+                        not_verified_at_save.add(row["file_id"])
                     if row["reason_code"] in READ_REASONS:
                         not_saved.append(row)
         os.replace(partial, manifest_path)
@@ -1042,9 +1078,15 @@ def run(arguments):
 
     say("")
     say("Selection {}, file choice {}: {:,} included ({:,} downloaded, {:,} already saved), {:,} linked, "
-        "{:,} unavailable, {:,} changed at the source.".format(
+        "{:,} unavailable.".format(
             selection_id, arguments.files, counts[INCLUDED], saver.saved, saver.kept, counts[LINKED],
-            counts[UNAVAILABLE], counts[CHANGED_AT_SOURCE]))
+            counts[UNAVAILABLE]))
+    say("Reuse terms: {:,} files {}; {:,} files: {}; {:,} files held by other repositories: {}.".format(
+        len(terms[CC0_NAME]), CC0_NAME, len(terms[NOT_CONFIRMED_TERMS]), NOT_CONFIRMED_TERMS,
+        len(terms[EXTERNAL_TERMS]), EXTERNAL_TERMS))
+    if not_verified_at_save:
+        say("{:,} files {} (manifest.tsv: verified_at_save no).".format(
+            len(not_verified_at_save), NOT_VERIFIED_AT_SAVE))
     say("Files and manifest.tsv: {}".format(root))
     if displaced:
         say("Files an earlier run saved that this run does not use: {:,}, moved to {}. Delete that "
@@ -1057,14 +1099,14 @@ def run(arguments):
         if len(not_saved) > 20:
             say("  ... and {:,} more".format(len(not_saved) - 20))
     say("")
-    say(CC0_STATEMENT)
+    say("{} Files deposited by others: {}. {}".format(CC0_STATEMENT, NOT_CONFIRMED_TERMS, ACKNOWLEDGEMENT_REQUEST))
     return 1 if not_saved else 0
 
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(
         description="Download a saved Dynamic PDB selection file by file, with the archive's rules and no size limit.",
-        epilog=CC0_STATEMENT,
+        epilog="{} Files deposited by others: {}. {}".format(CC0_STATEMENT, NOT_CONFIRMED_TERMS, ACKNOWLEDGEMENT_REQUEST),
     )
     parser.add_argument("--selection", required=True, help="the selection ID the download panel shows")
     parser.add_argument("--files", required=True, choices=FILE_CHOICES, help="which files to download")

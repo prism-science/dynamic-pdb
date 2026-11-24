@@ -73,7 +73,8 @@ func testPreview() models.DownloadPreview {
 		Availability:  models.DownloadCounts{Included: 1, Linked: 1},
 		NotIncluded:   []models.DownloadPreviewReason{{Code: models.DownloadReasonOverCopyLimit, Files: 1}},
 		Verification:  models.DownloadPreviewVerification{Verified: 2},
-		IncludedBytes: 100, ArchiveBytesUpperBound: 2000, LinkedFilesSizeUnknown: 1,
+		IncludedBytes: 100, LinkedFilesSizeUnknown: 1, NotVerifiedAtSave: 1,
+		ReuseTerms:      models.DownloadPreviewReuseTerms{CC0: 1, Repository: 1},
 		RelatedDatasets: models.DownloadPreviewRelatedDatasets{Total: 1, WithDOI: 1},
 	}
 }
@@ -106,7 +107,7 @@ func archiveResult() db.DownloadResult {
 		ArchiveKey: "downloads/a/archive.zip", ArchiveURL: "https://files.example.org/downloads/a/archive.zip",
 		ArchiveBytes: 120, ArchiveSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		ManifestKey: "downloads/a/manifest.tsv", ManifestURL: "https://files.example.org/downloads/a/manifest.tsv",
-		Counts: models.DownloadCounts{Included: 3, Linked: 1, Unavailable: 0, ChangedAtSource: 2},
+		Counts: models.DownloadCounts{Included: 3, Linked: 1, Unavailable: 2},
 	}
 }
 
@@ -272,7 +273,7 @@ func Test_should_plan_then_build_the_job_when_each_lane_claims_it(t *testing.T) 
 	assert.Equal(t, int64(4097), *ready.PlannedBytes)
 	assert.Equal(t, 2, ready.Preview.Availability.Included, "the changed plan replaced the preview")
 	assert.Equal(t, "https://files.example.org/downloads/a/archive.zip", *ready.ArchiveURL)
-	assert.Equal(t, &models.DownloadCounts{Included: 3, Linked: 1, ChangedAtSource: 2}, ready.Counts)
+	assert.Equal(t, &models.DownloadCounts{Included: 3, Linked: 1, Unavailable: 2}, ready.Counts)
 	assert.True(t, ready.ExpiresAt.Equal(now.Add(7*24*time.Hour)))
 
 	// and the finished job no longer takes a heartbeat
@@ -568,7 +569,7 @@ func Test_should_list_the_failures_in_selection_order_when_an_archive_finished_w
 	job, _, err := fixture.create(t, fixture.selection(t), models.DownloadFileChoiceAllFiles, now)
 	require.NoError(t, err)
 	failures := []models.DownloadFailure{
-		failureOf(job.ID, 3, models.DownloadReasonChangedAtSource),
+		failureOf(job.ID, 3, models.DownloadReasonOriginalBytesUnavailable),
 		failureOf(job.ID, 1, models.DownloadReasonReadFailed),
 		failureOf(job.ID, 2, models.DownloadReasonCopyDiffers),
 	}

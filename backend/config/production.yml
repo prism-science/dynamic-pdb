@@ -105,3 +105,9 @@ downloads:
   # DYNAMIC_PDB_DOWNLOADS_ENABLED=false, and archiveWorker.enabled: false. Limits keep their
   # defaults (10 GB per archive, kept 7 days).
   enabled: false
+  # Prism's accounts: archives list the files they added as CC0 1.0, and files other accounts added
+  # as "Reuse terms not yet confirmed by the depositor" (researchers' Q7, 17 Nov). The account that
+  # uploaded Prism's Multiconformer and Ensemble sets (10 Nov snapshot). PDB archive files and the
+  # PDB sync's own uploads are CC0 either way.
+  cc0_depositors:
+    - 5b8670ac-41c9-4e1d-a436-da6daa2a8c22

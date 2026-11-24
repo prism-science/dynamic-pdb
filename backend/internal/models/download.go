@@ -65,10 +65,9 @@ const (
 
 // DownloadCounts are an archive's distinct files by availability.
 type DownloadCounts struct {
-	Included        int `json:"included"`
-	Linked          int `json:"linked"`
-	Unavailable     int `json:"unavailable"`
-	ChangedAtSource int `json:"changed_at_source"`
+	Included    int `json:"included"`
+	Linked      int `json:"linked"`
+	Unavailable int `json:"unavailable"`
 }
 
 // DownloadJob is one request to build a bulk-download archive of a frozen selection.

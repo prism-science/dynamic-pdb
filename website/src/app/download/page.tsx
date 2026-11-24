@@ -10,7 +10,13 @@ import {
   SCRIPT_PATH,
   selectionFromQuery,
 } from "@/lib/download-instructions";
-import { FILE_CHOICES, fileChoiceText, REUSE_LICENSE_URL, REUSE_TERMS } from "@/lib/download-selection";
+import {
+  FILE_CHOICES,
+  fileChoiceText,
+  REUSE_LICENSE_URL,
+  REUSE_REPOSITORY,
+  REUSE_TERMS,
+} from "@/lib/download-selection";
 
 import AppFooter from "../components/AppFooter";
 
@@ -129,12 +135,12 @@ export default async function Download({ searchParams }: Props) {
               {REUSE_TERMS}
             </p>
             <p className={styles.note}>
-              License of Dynamic PDB and PDB archive files:{" "}
               <a href={REUSE_LICENSE_URL} target="_blank" rel="noreferrer">
-                CC0 1.0
+                About CC0 1.0
               </a>
-              . Related datasets and files held by other repositories follow their repository&rsquo;s terms; the
-              manifest links each one.
+              . Related datasets and files held by other repositories: {REUSE_REPOSITORY}. Each file&rsquo;s terms
+              are in the manifest&rsquo;s <code className={styles.code}>license</code> column, and the archive&rsquo;s
+              preview counts the files under each.
             </p>
           </section>
 

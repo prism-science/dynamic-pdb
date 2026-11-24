@@ -4,12 +4,14 @@ import { getServerApiBaseUrl, jsonApiMediaType } from "./baseUrl";
 import { ApiRequestError, getBackendJSON, postBackendJSON } from "./entries";
 import { fetchWithTimeout } from "./timeout";
 import type { components } from "./schema.gen";
-import type {
-  CreateSelectionBody,
-  DownloadProblem,
-  DownloadSnapshot,
-  FileChoice,
-  SavedSelection,
+import {
+  selectionFileChecks,
+  type CreateSelectionBody,
+  type DownloadProblem,
+  type DownloadSnapshot,
+  type FileChoice,
+  type SavedSelection,
+  type SelectionModelFileChecks,
 } from "@/lib/download-selection";
 
 /**
@@ -95,6 +97,30 @@ export async function listFailures(
   );
   return {
     items: document.data.map((item) => item.attributes),
+    nextCursor: document.meta?.next_cursor ?? null,
+  };
+}
+
+/** Models one page of a saved selection's file checks asks for. */
+export const SELECTION_FILES_PAGE_SIZE = 10;
+
+/**
+ * One page of a saved selection's models, with each file's last check, for the
+ * drawer (researchers' Q10). Throws ApiRequestError.
+ */
+export async function listSelectionFileChecks(
+  selectionId: string,
+  cursor: string | null,
+): Promise<{ models: SelectionModelFileChecks[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: String(SELECTION_FILES_PAGE_SIZE) });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  const document = await getBackendJSON<Schemas["SelectionModelCollectionDocument"]>(
+    `/v1/selections/${encodeURIComponent(selectionId)}/models?${params.toString()}`,
+  );
+  return {
+    models: selectionFileChecks(document.data.map((item) => item.attributes)),
     nextCursor: document.meta?.next_cursor ?? null,
   };
 }

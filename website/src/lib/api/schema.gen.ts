@@ -472,7 +472,9 @@ export interface paths {
          *
          *     To see what the archive would hold first, send prepare false: the server plans it without reading any file and stops at status planned, with a preview (record and file counts by type, sizes, what is linked or unavailable and why, checksum status, related datasets). Then POST /v1/downloads/{download_id}/prepare builds it. prepare true (the default) plans and builds in one go; the preview is shown all the same once planned.
          *
-         *     The archive holds files only from Dynamic PDB's own storage, each checked against the SHA-256 recorded for it, and always the version the selection pinned, never a newer one. Files it cannot vouch for are listed in its manifest.tsv instead: linked (no copy here, for example over 1 GiB), changed-at-source (the source's file no longer matches the record and no copy was kept) or unavailable. An archive whose files add up to more than max_archive_bytes is blocked before any file is read.
+         *     The archive holds files only from Dynamic PDB's own storage, each checked against the SHA-256 recorded for it, and always the version the selection pinned, never a newer one. Files it cannot vouch for are listed in its manifest.tsv instead: linked (no copy here, for example over 1 GiB) or unavailable (for example "original bytes unavailable": the source now serves other bytes and no copy was kept). A file whose size is unknown is never in the zip, so the size limit is always checked on exact sizes. An archive whose files add up to more than max_archive_bytes is blocked before any file is read.
+         *
+         *     Reuse terms: PDB archive files and Prism's own models are CC0 1.0; files other people deposited say "Reuse terms not yet confirmed by the depositor" until they confirm; files another repository holds are under that repository's terms. The manifest's license column and preview.reuse_terms say which applies.
          *
          *     Asking again for the same selection and file choice while an archive is waiting, planned, being built or ready returns that archive (200) instead of building another; with prepare true, a planned archive that was not asked for yet is asked for. Needs no sign-in. Available only where the server enables downloads; elsewhere every downloads route answers 404 with code DOWNLOADS_OFF.
          */
@@ -532,7 +534,7 @@ export interface paths {
         };
         /**
          * List the files an archive could not vouch for
-         * @description Lists, in selection order, the selected files a ready archive lists as unavailable or changed-at-source, each with the model that first lists it, the reason and its code, and whether a retry may fetch it (retryable: only read_failed, a copy that could not be read while the archive was prepared). Linked files are not failures. An archive that is not ready yet has none. Needs no sign-in.
+         * @description Lists, in selection order, the selected files a ready archive lists as unavailable, each with the model that first lists it, the reason and its code, and whether a retry may fetch it (retryable: only read_failed, a copy that could not be read while the archive was prepared). Linked files are not failures. An archive that is not ready yet has none. Needs no sign-in.
          */
         get: operations["listDownloadFailures"];
         put?: never;
@@ -1133,7 +1135,18 @@ export interface components {
             /** @description True when recorded_sha256 was computed after the selection was saved (checksum.checked_at after catalog_date): it describes the bytes read then, not bytes known at the save. */
             recorded_after_save: boolean;
             checksum: components["schemas"]["ArtifactChecksum"];
+            reuse_terms: components["schemas"]["ReuseTerms"];
+            /**
+             * Format: int64
+             * @description The size the file's source reported when the checksum job could not read the file (an HTTP HEAD request); null when none was reported. Never an estimate. An archive uses it as the file's size only when neither a read nor a declared size exists.
+             */
+            source_size_bytes: number | null;
         };
+        /**
+         * @description What a file may be reused under, as an archive's manifest says it. cc0: PDB archive files, and files Dynamic PDB or one of Prism's accounts added, CC0 1.0. not_confirmed: files other people deposited, "Reuse terms not yet confirmed by the depositor" until they confirm. repository: files another repository holds, under that repository's terms.
+         * @enum {string}
+         */
+        ReuseTerms: "cc0" | "not_confirmed" | "repository";
         /**
          * @description primary: the model revision's primary file. model: another file of the model revision. run_input, run_output: an input or output of a run of the model revision. entry: a file of the entry revision.
          * @enum {string}
@@ -1203,7 +1216,7 @@ export interface components {
             max_archive_bytes: number;
             /**
              * Format: int64
-             * @description What the files the archive includes add up to, before compression. Files listed as linked, changed-at-source or unavailable are not counted.
+             * @description What the files the archive includes add up to, before compression. Files listed as linked or unavailable are not counted.
              */
             planned_bytes?: number;
             /**
@@ -1215,7 +1228,7 @@ export interface components {
             archive_sha256?: string;
             /** @description Where to download the zip while it is ready. Resumable: the server answers Range requests, so a transfer that breaks can go on from where it stopped, or start again, until expires_at; archive_sha256 checks the result. */
             archive_url?: string;
-            /** @description The archive's manifest.tsv on its own: one row per file with its record revisions, recorded SHA-256, status (included, linked, unavailable, changed-at-source), verification and reuse terms. The zip holds the same file. */
+            /** @description The archive's manifest.tsv on its own: one row per file with its record revisions, recorded SHA-256, status (included, linked, unavailable), verification, whether it is verified against the bytes at save time, size and where it comes from, and reuse terms. The zip holds the same file. */
             manifest_url?: string;
             counts?: components["schemas"]["DownloadCounts"];
             preview?: components["schemas"]["DownloadPreview"];
@@ -1235,10 +1248,8 @@ export interface components {
             included: number;
             /** @description Files not in the zip because Dynamic PDB holds no copy of them (for example over 1 GiB); the manifest gives their source URL and recorded SHA-256. */
             linked: number;
-            /** @description Files that cannot be read in their recorded form. */
+            /** @description Files that cannot be read in their recorded form, including files whose original bytes are gone (the source now serves other bytes and no copy was kept). */
             unavailable: number;
-            /** @description Files whose source no longer serves the recorded bytes, with no copy kept here. */
-            changed_at_source: number;
         };
         /** @description What the archive holds, as the worker planned it from the selection's pinned files before reading any of them. Set from status planned on. Files are distinct: a file listed for several models counts once, as in counts. A file the zip includes is read back and checked against its recorded SHA-256 while the archive is built; one that no longer matches is left out then and shows in counts, not here. */
         DownloadPreview: {
@@ -1246,6 +1257,7 @@ export interface components {
             files: components["schemas"]["DownloadPreviewFiles"];
             sizes: components["schemas"]["DownloadPreviewSizes"];
             related_datasets: components["schemas"]["DownloadPreviewRelatedDatasets"];
+            reuse_terms: components["schemas"]["DownloadPreviewReuseTerms"];
             /** @description Whether the files to include add up to more than max_archive_bytes; such an archive is blocked before it is built. */
             over_limit: boolean;
         };
@@ -1258,6 +1270,8 @@ export interface components {
         DownloadPreviewFiles: {
             /** @description Distinct files of the file choice. */
             total: number;
+            /** @description Files not verified against the bytes at save time: their SHA-256 was recorded after the selection was saved, or is not recorded, so they may differ from what the selection's authors used. The manifest marks each (verified_at_save no). */
+            not_verified_at_save: number;
             by_type: components["schemas"]["DownloadPreviewFileType"][];
             availability: components["schemas"]["DownloadCounts"];
             /** @description The files the zip leaves out, by reason. */
@@ -1282,25 +1296,29 @@ export interface components {
             mismatch: number;
             not_verified: number;
         };
+        /** @description Sizes before compression, never estimated. The zip's own size is archive_bytes, known once it is built. */
         DownloadPreviewSizes: {
             included: components["schemas"]["DownloadSize"];
-            archive: components["schemas"]["DownloadSize"];
             linked: components["schemas"]["DownloadSize"];
         };
-        /** @description A size and how sure it is. exact: bytes is the size. estimate: bytes bounds it, as tolerance says. unknown: no size is recorded; bytes is left out. */
+        /** @description A size, never estimated. A file's size is read from its bytes, recorded when it was added, or reported by its source. exact: bytes is the size of every file counted. partial: bytes adds up the files whose size is known, and files_size_unknown more have none. unknown: no file's size is known; bytes is left out. */
         DownloadSize: {
             /** Format: int64 */
             bytes?: number;
             kind: components["schemas"]["DownloadSizeKind"];
             /** @description What the size counts. */
             measures: string;
-            /** @description How far an estimate may be from the size, and in which direction. */
-            tolerance?: string;
-            /** @description Files left out of bytes because no size is recorded for them. */
+            /** @description Files left out of bytes because no size is known for them. */
             files_size_unknown?: number;
         };
         /** @enum {string} */
-        DownloadSizeKind: "exact" | "estimate" | "unknown";
+        DownloadSizeKind: "exact" | "partial" | "unknown";
+        /** @description The files by the terms they may be reused under. cc0: PDB archive files and Prism's own models, CC0 1.0. not_confirmed: files other people deposited, "Reuse terms not yet confirmed by the depositor" until they confirm. repository: files another repository holds, under its terms. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use. */
+        DownloadPreviewReuseTerms: {
+            cc0: number;
+            not_confirmed: number;
+            repository: number;
+        };
         /** @description The related datasets of the selected entries: links to the repositories that hold them, never files in the zip. One manifest row each. */
         DownloadPreviewRelatedDatasets: {
             total: number;
@@ -1309,15 +1327,15 @@ export interface components {
             without_identifier: number;
         };
         /**
-         * @description How the manifest lists a file. included: in the zip, checked against its recorded SHA-256. linked: Dynamic PDB holds no copy; the manifest gives the source URL. unavailable: cannot be read in its recorded form. changed-at-source: the source serves other bytes and no copy was kept.
+         * @description How the manifest lists a file. included: in the zip, checked against its recorded SHA-256. linked: Dynamic PDB holds no copy; the manifest gives the source URL. unavailable: cannot be read in its recorded form, for example "original bytes unavailable" (the source now serves other bytes and no copy was kept).
          * @enum {string}
          */
-        DownloadFileAvailability: "included" | "linked" | "unavailable" | "changed-at-source";
+        DownloadFileAvailability: "included" | "linked" | "unavailable";
         /**
-         * @description Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off, not_checked_yet and copied_after_planning are linked; stored_file_differs, source_unreadable, copy_not_in_storage, copy_missing, copy_differs and read_failed are unavailable; changed_at_source is changed-at-source. Only read_failed (Dynamic PDB's copy could not be read while the archive was prepared) may be fetched by a retry.
+         * @description Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off, not_checked_yet and copied_after_planning are linked; stored_file_differs, original_bytes_unavailable, source_unreadable, copy_not_in_storage, copy_missing, copy_differs and read_failed are unavailable. Only read_failed (Dynamic PDB's copy could not be read while the archive was prepared) may be fetched by a retry.
          * @enum {string}
          */
-        DownloadReasonCode: "over_copy_limit" | "copy_failed" | "copy_off" | "not_checked_yet" | "copied_after_planning" | "stored_file_differs" | "changed_at_source" | "source_unreadable" | "copy_not_in_storage" | "copy_missing" | "copy_differs" | "read_failed";
+        DownloadReasonCode: "over_copy_limit" | "copy_failed" | "copy_off" | "not_checked_yet" | "copied_after_planning" | "stored_file_differs" | "original_bytes_unavailable" | "source_unreadable" | "copy_not_in_storage" | "copy_missing" | "copy_differs" | "read_failed";
         DownloadFailureCollectionDocument: {
             data: components["schemas"]["DownloadFailureData"][];
             links?: components["schemas"]["CollectionLinks"];
@@ -5581,13 +5599,14 @@ type ReadonlyArray<T> = [
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const modelSearchSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModelSearchSource"]> = ["pdb_archive", "dynamic_pdb_deposit"];
 export const proteinChainModeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProteinChainMode"]> = ["at_least", "every"];
+export const reuseTermsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ReuseTerms"]> = ["cc0", "not_confirmed", "repository"];
 export const selectionFileRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionFileRole"]> = ["primary", "model", "run_input", "run_output", "entry"];
 export const selectionSHA256SourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionSHA256Source"]> = ["declared", "computed", "not_recorded"];
 export const downloadFileChoiceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileChoice"]> = ["original_mmcif", "modified_coordinates", "all_files"];
 export const downloadStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadStatus"]> = ["queued", "planning", "planned", "preparing", "ready", "blocked", "failed", "expired"];
-export const downloadSizeKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadSizeKind"]> = ["exact", "estimate", "unknown"];
-export const downloadFileAvailabilityValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileAvailability"]> = ["included", "linked", "unavailable", "changed-at-source"];
-export const downloadReasonCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadReasonCode"]> = ["over_copy_limit", "copy_failed", "copy_off", "not_checked_yet", "copied_after_planning", "stored_file_differs", "changed_at_source", "source_unreadable", "copy_not_in_storage", "copy_missing", "copy_differs", "read_failed"];
+export const downloadSizeKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadSizeKind"]> = ["exact", "partial", "unknown"];
+export const downloadFileAvailabilityValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileAvailability"]> = ["included", "linked", "unavailable"];
+export const downloadReasonCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadReasonCode"]> = ["over_copy_limit", "copy_failed", "copy_off", "not_checked_yet", "copied_after_planning", "stored_file_differs", "original_bytes_unavailable", "source_unreadable", "copy_not_in_storage", "copy_missing", "copy_differs", "read_failed"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];

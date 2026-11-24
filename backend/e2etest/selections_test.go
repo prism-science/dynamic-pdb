@@ -1,16 +1,19 @@
 package e2etest
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"dynamic-pdb/backend/internal/httpapi"
+	"dynamic-pdb/backend/internal/models"
 )
 
 // SelectionsSuite covers frozen selections on a server that has them on. The e2e database is
@@ -289,4 +292,63 @@ func (s *SelectionsSuite) Test_should_hold_the_entry_deposited_model_too_when_a_
 	plain := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{computed.ModelId}})
 	s.Equal(1, plain.Data.Attributes.ModelCount)
 	s.False(plain.Data.Attributes.Request.AddDepositedModels)
+}
+
+func (s *SelectionsSuite) Test_should_say_each_files_reuse_terms_and_source_size_when_selection_models_are_listed() {
+	// given a depositor's model with a file in our storage, the PDB's coordinate file and a file
+	// another repository holds
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "selection-terms-owner", 8914)
+	ownID, pdbID, externalID := uuid.New(), uuid.New(), uuid.New()
+	own := artifactRequest(ownID, "model.cif", "L2", "mmcif", storedFileBase+"terms/"+ownID.String()+"/model.cif", nil)
+	own["type"] = "model"
+	pdb := artifactRequest(pdbID, "1ABC.cif", "L2", "mmcif", "https://files.rcsb.org/download/1ABC.cif", nil)
+	external := artifactRequest(externalID, "data.tar", "L1", "tar", "https://zenodo.example/records/1/data.tar", nil)
+	entry := createAndActivateEntryForTest(s.T(), token, map[string]any{"entry": map[string]any{"title": "terms entry"}})
+	deposited := createAndActivateModelForTest(s.T(), token, entry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title": "terms model", "primary_artifact_id": ownID,
+			"metadata":  map[string]any{"model_type": "Deposited"},
+			"artifacts": []map[string]any{own, pdb, external},
+		},
+	})
+	// and a model Prism's account added, with a file in our storage
+	prismToken := issueEntryTokenForGitHubIDForTest(s.T(), "selection-terms-prism", testPrismGitHubID)
+	prismID := uuid.New()
+	prismFile := artifactRequest(prismID, "prism.cif", "L2", "mmcif", storedFileBase+"terms/"+prismID.String()+"/prism.cif", nil)
+	prismFile["type"] = "model"
+	prismEntry := createAndActivateEntryForTest(s.T(), prismToken, map[string]any{"entry": map[string]any{"title": "prism terms entry"}})
+	prism := createAndActivateModelForTest(s.T(), prismToken, prismEntry.EntryId, map[string]any{
+		"model": map[string]any{
+			"title": "prism terms model", "primary_artifact_id": prismID,
+			"metadata":  map[string]any{"model_type": "Deposited"},
+			"artifacts": []map[string]any{prismFile},
+		},
+	})
+	// and the external file's source reported its size to the checksum job, which could not read it
+	reportedSize, readError := int64(2048), "the source answered 403"
+	s.Require().NoError(testDatabase.ArtifactChecksums.Record(context.Background(), []models.ChecksumResult{{
+		ArtifactID: externalID, Status: models.ChecksumStatusFailed, Error: &readError,
+		CheckedAt: time.Now().UTC(), SourceSizeBytes: &reportedSize,
+	}}))
+
+	// when the selection's models are listed
+	saved := saveSelectionForTest(s.T(), map[string]any{"model_ids": []string{deposited.ModelId, prism.ModelId}})
+	frozen, _ := selectionModelsForTest(s.T(), saved.Data.Id, 100)
+
+	// then each file says its reuse terms by the archive's rule, and the source-reported size
+	terms := map[uuid.UUID]httpapi.ReuseTerms{}
+	sizes := map[uuid.UUID]*int64{}
+	for _, model := range frozen {
+		for _, file := range model.Files {
+			terms[file.Id] = file.ReuseTerms
+			sizes[file.Id] = file.SourceSizeBytes
+		}
+	}
+	s.Equal(map[uuid.UUID]httpapi.ReuseTerms{
+		ownID:      httpapi.ReuseTermsNotConfirmed,
+		pdbID:      httpapi.ReuseTermsCc0,
+		externalID: httpapi.ReuseTermsRepository,
+		prismID:    httpapi.ReuseTermsCc0,
+	}, terms)
+	s.Equal(map[uuid.UUID]*int64{ownID: nil, pdbID: nil, externalID: &reportedSize, prismID: nil}, sizes)
 }

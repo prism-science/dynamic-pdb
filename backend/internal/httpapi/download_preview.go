@@ -8,8 +8,6 @@ import (
 
 const (
 	includedSizeMeasures = "the files the zip holds, before compression; max_archive_bytes applies to this"
-	archiveSizeMeasures  = "the zip to download, with its README.txt and manifest.tsv"
-	archiveSizeTolerance = "an upper bound: compression usually makes the zip smaller, mmCIF files several times"
 	linkedSizeMeasures   = "the linked files, which the manifest points to at their source; not in the zip"
 )
 
@@ -40,8 +38,7 @@ func downloadPreviewResponse(job domainmodels.DownloadJob) (*DownloadPreview, er
 		}
 		notIncluded = append(notIncluded, listed)
 	}
-	included, archive := preview.IncludedBytes, preview.ArchiveBytesUpperBound
-	tolerance := archiveSizeTolerance
+	included := preview.IncludedBytes
 	return &DownloadPreview{
 		Records: DownloadPreviewRecords{
 			Entries:                    preview.Entries,
@@ -52,12 +49,12 @@ func downloadPreviewResponse(job domainmodels.DownloadJob) (*DownloadPreview, er
 			Total:  preview.Files,
 			ByType: byType,
 			Availability: DownloadCounts{
-				Included:        preview.Availability.Included,
-				Linked:          preview.Availability.Linked,
-				Unavailable:     preview.Availability.Unavailable,
-				ChangedAtSource: preview.Availability.ChangedAtSource,
+				Included:    preview.Availability.Included,
+				Linked:      preview.Availability.Linked,
+				Unavailable: preview.Availability.Unavailable,
 			},
-			NotIncluded: notIncluded,
+			NotVerifiedAtSave: preview.NotVerifiedAtSave,
+			NotIncluded:       notIncluded,
 			Verification: DownloadPreviewVerification{
 				Verified:    preview.Verification.Verified,
 				Mismatch:    preview.Verification.Mismatch,
@@ -66,9 +63,6 @@ func downloadPreviewResponse(job domainmodels.DownloadJob) (*DownloadPreview, er
 		},
 		Sizes: DownloadPreviewSizes{
 			Included: DownloadSize{Bytes: &included, Kind: DownloadSizeKindExact, Measures: includedSizeMeasures},
-			Archive: DownloadSize{
-				Bytes: &archive, Kind: DownloadSizeKindEstimate, Measures: archiveSizeMeasures, Tolerance: &tolerance,
-			},
 			Linked: partialSize(preview.Availability.Linked, preview.LinkedFilesSizeUnknown, preview.LinkedBytesKnown,
 				linkedSizeMeasures),
 		},
@@ -78,12 +72,18 @@ func downloadPreviewResponse(job domainmodels.DownloadJob) (*DownloadPreview, er
 			WithAccessionOnly: preview.RelatedDatasets.WithAccessionOnly,
 			WithoutIdentifier: preview.RelatedDatasets.WithoutIdentifier,
 		},
+		ReuseTerms: DownloadPreviewReuseTerms{
+			Cc0:          preview.ReuseTerms.CC0,
+			NotConfirmed: preview.ReuseTerms.NotConfirmed,
+			Repository:   preview.ReuseTerms.Repository,
+		},
 		OverLimit: preview.IncludedBytes > job.MaxArchiveBytes,
 	}, nil
 }
 
-// partialSize is the size of files some of which have no recorded size: exact when every size is
-// known, unknown when none is, and otherwise the known part as a lower bound.
+// partialSize is the size of files some of which may have no known size, never estimated
+// (researchers' Q9): exact when every size is known, unknown when none is, and otherwise partial:
+// the known sizes added up, with the number of files left out.
 func partialSize(files, sizeUnknown int, bytesKnown int64, measures string) DownloadSize {
 	switch {
 	case sizeUnknown == 0:
@@ -91,10 +91,8 @@ func partialSize(files, sizeUnknown int, bytesKnown int64, measures string) Down
 	case sizeUnknown >= files:
 		return DownloadSize{Kind: DownloadSizeKindUnknown, Measures: measures, FilesSizeUnknown: &sizeUnknown}
 	default:
-		tolerance := fmt.Sprintf("a lower bound: %d of the %d files have no recorded size", sizeUnknown, files)
 		return DownloadSize{
-			Bytes: &bytesKnown, Kind: DownloadSizeKindEstimate, Measures: measures, Tolerance: &tolerance,
-			FilesSizeUnknown: &sizeUnknown,
+			Bytes: &bytesKnown, Kind: DownloadSizeKindPartial, Measures: measures, FilesSizeUnknown: &sizeUnknown,
 		}
 	}
 }
@@ -142,8 +140,6 @@ func downloadAvailabilityResponse(availability domainmodels.DownloadAvailability
 		return DownloadFileAvailabilityLinked, nil
 	case domainmodels.DownloadAvailabilityUnavailable:
 		return DownloadFileAvailabilityUnavailable, nil
-	case domainmodels.DownloadAvailabilityChangedAtSource:
-		return DownloadFileAvailabilityChangedAtSource, nil
 	default:
 		return "", fmt.Errorf("unknown download availability: %s", availability)
 	}
@@ -163,8 +159,8 @@ func downloadReasonCodeResponse(code domainmodels.DownloadReasonCode) (DownloadR
 		return DownloadReasonCodeCopiedAfterPlanning, nil
 	case domainmodels.DownloadReasonStoredFileDiffers:
 		return DownloadReasonCodeStoredFileDiffers, nil
-	case domainmodels.DownloadReasonChangedAtSource:
-		return DownloadReasonCodeChangedAtSource, nil
+	case domainmodels.DownloadReasonOriginalBytesUnavailable:
+		return DownloadReasonCodeOriginalBytesUnavailable, nil
 	case domainmodels.DownloadReasonSourceUnreadable:
 		return DownloadReasonCodeSourceUnreadable, nil
 	case domainmodels.DownloadReasonCopyNotInStorage:

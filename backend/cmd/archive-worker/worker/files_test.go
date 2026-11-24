@@ -27,7 +27,9 @@ func checksumFile(uri string, checksum models.ArtifactChecksum) models.Selection
 		Type:           models.ArtifactTypeModel,
 		URI:            &uri,
 		RecordedSHA256: ptr(strings.Repeat("a", 64)),
-		Checksum:       checksum,
+		// RecordedSHA256Source: declared, as a file added with its SHA-256.
+		RecordedSHA256Source: models.SelectionSHA256SourceDeclared,
+		Checksum:             checksum,
 	}
 }
 
@@ -61,7 +63,7 @@ func Test_should_give_each_file_its_availability_and_verification_when_its_check
 			availabilityLinked, verificationVerified, false, ""},
 		{"changed at the source", "https://files.rcsb.org/download/1ABC.cif", models.ArtifactChecksum{Status: models.ChecksumStatusMismatch,
 			SizeBytes: &size, CopyStatus: ptr(models.CopyStatusMismatch)},
-			availabilityChangedAtSource, verificationMismatch, false, ""},
+			availabilityUnavailable, verificationMismatch, false, ""},
 		{"own upload differs from its record", bucketBase + "uploads/file.cif", models.ArtifactChecksum{Status: models.ChecksumStatusMismatch,
 			SizeBytes: &size, CopyStatus: ptr(models.CopyStatusOwnStorage)},
 			availabilityUnavailable, verificationMismatch, false, ""},
@@ -174,12 +176,13 @@ func Test_should_write_the_cc0_text_and_keep_each_value_in_its_cell_when_a_manif
 
 	// then
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
-	require.Len(t, lines, 5)
-	assert.Equal(t, "# These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge "+
-		"Dynamic PDB and cite the depositors of the entries you use.", lines[1])
-	assert.Contains(t, lines[2], "CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/")
-	assert.Equal(t, strings.Join(manifestColumns, "\t"), lines[3])
-	cells := strings.Split(lines[4], "\t")
+	require.Len(t, lines, 6)
+	assert.Equal(t, "# PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. "+
+		"CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/.", lines[1])
+	assert.Contains(t, lines[2], "Files deposited by others: Reuse terms not yet confirmed by the depositor, until they confirm.")
+	assert.Equal(t, "# We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.", lines[3])
+	assert.Equal(t, strings.Join(manifestColumns, "\t"), lines[4])
+	cells := strings.Split(lines[5], "\t")
 	require.Len(t, cells, len(manifestColumns), "an escaped tab stays inside its cell")
 	assert.Equal(t, `a\tb\nc\\d`, cells[indexOf(manifestColumns, "file_name")])
 	assert.Contains(t, readmeText(manifestHeader{SelectionID: uuid.Nil, CatalogDate: catalogDate}),
@@ -200,14 +203,14 @@ func Test_should_give_the_repositorys_terms_when_a_file_is_held_elsewhere(t *tes
 	file := checksumFile("https://zenodo.org/record/1/files/model.cif", models.ArtifactChecksum{})
 
 	// when
-	row, err := fileRowValues(file, sourceOf(file, newFakeBucket()))
+	row, err := fileRowValues(file, sourceOf(file, newFakeBucket()), nil)
 
 	// then
 	require.NoError(t, err)
 	assert.Equal(t, "external", row["source"])
 	assert.Equal(t, "See the repository's terms", row["license"])
 	assert.Equal(t, "https://zenodo.org/record/1/files/model.cif", row["license_url"])
-	_, err = fileRowValues(file, "somewhere")
+	_, err = fileRowValues(file, "somewhere", nil)
 	require.ErrorContains(t, err, "unknown file source")
 }
 

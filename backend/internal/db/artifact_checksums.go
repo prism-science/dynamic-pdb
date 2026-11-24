@@ -183,7 +183,9 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 			      copy_status = $6,
 			      last_error = $7,
 			      checked_at = $8,
-			      next_attempt_at = coalesce($9, next_attempt_at)
+			      next_attempt_at = coalesce($9, next_attempt_at),
+			      source_size_bytes = coalesce($10, source_size_bytes),
+			      source_size_checked_at = case when $10::bigint is null then source_size_checked_at else $11 end
 			  where artifact_id = $1`
 	for _, result := range results {
 		if err := validateChecksumResult(result); err != nil {
@@ -200,7 +202,7 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 		}
 		updated, err := r.queriers.Querier(ctx, r.db).ExecContext(ctx, query,
 			result.ArtifactID, string(result.Status), result.SHA256, result.SizeBytes, result.StoredURI,
-			copyStatus, result.Error, checkedAt, result.NextAttemptAt)
+			copyStatus, result.Error, checkedAt, result.NextAttemptAt, result.SourceSizeBytes, result.CheckedAt)
 		if err != nil {
 			return fmt.Errorf("record checksum of artifact %s: %w", result.ArtifactID, err)
 		}
@@ -218,6 +220,18 @@ func (r *ArtifactChecksumsRepository) Record(ctx context.Context, results []mode
 // validateChecksumResult checks a result against the table's CHECK constraints, so a wrong
 // result fails with a message that names the rule.
 func validateChecksumResult(result models.ChecksumResult) error {
+	if result.SourceSizeBytes != nil {
+		switch result.Status {
+		case models.ChecksumStatusPending, models.ChecksumStatusFailed:
+			if *result.SourceSizeBytes < 0 {
+				return errors.New("a source-reported size cannot be negative")
+			}
+		case models.ChecksumStatusVerified, models.ChecksumStatusMismatch:
+			return errors.New("a read result has its size from the bytes, not from the source")
+		default:
+			return fmt.Errorf("unknown checksum status: %q", result.Status)
+		}
+	}
 	switch result.Status {
 	case models.ChecksumStatusVerified:
 		if result.SHA256 == nil || result.SizeBytes == nil {

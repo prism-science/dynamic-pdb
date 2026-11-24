@@ -601,12 +601,23 @@ export function fileChoiceText(choice: FileChoice): { label: string; description
 }
 
 /**
- * The reuse terms, exactly as the researchers worded them (item 10). A request,
- * not a condition.
+ * The reuse terms, word for word as the archive's README and manifest say
+ * them (researchers' Q7, 17 Nov): CC0 for PDB archive files and Prism's own
+ * models only; other people's earlier deposits until they confirm; another
+ * repository's files under its terms. The acknowledgement is a request, not a
+ * condition (item 10).
  */
-export const REUSE_TERMS =
-  "These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.";
+export const REUSE_CC0_STATEMENT =
+  "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0.";
+export const REUSE_NOT_CONFIRMED = "Reuse terms not yet confirmed by the depositor";
+export const REUSE_REPOSITORY = "See the repository's terms";
+export const REUSE_ACKNOWLEDGEMENT =
+  "We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.";
+/** The terms in one paragraph, as the panel and the /download page say them. */
+export const REUSE_TERMS = `${REUSE_CC0_STATEMENT} Files deposited by others: ${REUSE_NOT_CONFIRMED}. ${REUSE_ACKNOWLEDGEMENT}`;
 export const REUSE_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/";
+/** A file the archive cannot vouch for as it was when the selection was saved (researchers' Q10). */
+export const NOT_VERIFIED_AT_SAVE = "not verified against the bytes at save time";
 
 /** Where an archive stands, as the panel shows it. */
 export type DownloadView =
@@ -713,10 +724,12 @@ export type PreviewSummary = {
   byType: { type: ArtifactType; label: string; files: number; size: string }[];
   /** What the 10 GB limit measures: the files the zip takes, before compression. */
   included: string;
-  /** What the zip will be at most. */
-  archive: string;
-  /** Files the zip lists but does not hold. */
+  /** Files the zip lists but does not hold; never estimated. */
   linked: string;
+  /** The files by the terms they may be reused under, in one line. */
+  reuseTerms: string;
+  /** Files not verified against the bytes at save time; null when there are none. */
+  notVerifiedAtSave: string | null;
   leftOut: { code: DownloadReasonCode; status: DownloadFileAvailability; files: number; text: string }[];
   verification: { verified: number; mismatch: number; notVerified: number };
   relatedDatasets: string | null;
@@ -742,8 +755,12 @@ export function previewSummary(preview: DownloadPreview, maxArchiveBytes: number
       size: sizeText(item.size),
     })),
     included: sizeText(preview.sizes.included),
-    archive: sizeText(preview.sizes.archive),
     linked: sizeText(preview.sizes.linked),
+    reuseTerms: reuseTermsLine(preview.reuse_terms),
+    notVerifiedAtSave:
+      preview.files.not_verified_at_save === 0
+        ? null
+        : `${countWords(preview.files.not_verified_at_save, "file")} ${NOT_VERIFIED_AT_SAVE}: the SHA-256 was recorded after the selection was saved, or is not recorded`,
     leftOut: preview.files.not_included.map((item) => ({
       code: item.code,
       status: item.status,
@@ -765,22 +782,30 @@ export function previewSummary(preview: DownloadPreview, maxArchiveBytes: number
   };
 }
 
-/** A size and how sure it is, in words. */
+/**
+ * A size in words, never estimated (researchers' Q9): exact, or the known part
+ * plus how many files have no known size, or unknown.
+ */
 export function sizeText(size: DownloadSize): string {
-  const unknownFiles =
-    size.files_size_unknown && size.files_size_unknown > 0
-      ? `, plus ${countWords(size.files_size_unknown, "file")} of unknown size`
-      : "";
   switch (size.kind) {
     case "exact":
-      return `${formatDecimalBytes(size.bytes ?? 0)}${unknownFiles}`;
-    case "estimate":
-      return `about ${formatDecimalBytes(size.bytes ?? 0)}${size.tolerance ? ` (${size.tolerance})` : ""}${unknownFiles}`;
+      return formatDecimalBytes(size.bytes ?? 0);
+    case "partial":
+      return `${formatDecimalBytes(size.bytes ?? 0)}, plus ${countWords(size.files_size_unknown ?? 0, "file")} of unknown size`;
     case "unknown":
-      return "unknown: no size is recorded";
+      return "unknown: no file's size is known";
     default:
       return unknownValue("size kind", size.kind);
   }
+}
+
+/** The preview's files by reuse terms, in one line. */
+export function reuseTermsLine(terms: DownloadPreview["reuse_terms"]): string {
+  return [
+    `${countWords(terms.cc0, "file")} CC0 1.0`,
+    `${countWords(terms.not_confirmed, "file")}: ${REUSE_NOT_CONFIRMED.charAt(0).toLowerCase()}${REUSE_NOT_CONFIRMED.slice(1)}`,
+    `${countWords(terms.repository, "file")} held by other repositories (${REUSE_REPOSITORY.charAt(0).toLowerCase()}${REUSE_REPOSITORY.slice(1)})`,
+  ].join(" · ");
 }
 
 export function artifactTypeLabel(type: ArtifactType): string {
@@ -813,8 +838,8 @@ export function reasonCodeText(code: DownloadReasonCode): string {
       return "Linked: copied after this archive was planned; ask again to include it";
     case "stored_file_differs":
       return "Unavailable: the stored file differs from its record";
-    case "changed_at_source":
-      return "Changed at the source: the source serves other bytes and no copy was kept";
+    case "original_bytes_unavailable":
+      return "Unavailable: original bytes unavailable: the source now serves other bytes, and no copy was kept";
     case "source_unreadable":
       return "Unavailable: the source could not be read";
     case "copy_not_in_storage":
@@ -839,11 +864,110 @@ export function availabilityText(status: DownloadFileAvailability): string {
       return "linked";
     case "unavailable":
       return "unavailable";
-    case "changed-at-source":
-      return "changed at the source";
     default:
       return unknownValue("file availability", status);
   }
+}
+
+export type SelectionModelFiles = Schemas["SelectionModelAttributes"];
+type SelectionFileRecord = Schemas["SelectionFile"];
+
+/** One file of a saved selection with its last check, as the drawer lists it (researchers' Q10). */
+export type SelectionFileCheck = {
+  fileId: string;
+  name: string;
+  /** The checksum job's last check, in words. */
+  check: string;
+  /** True when the file is not verified against the bytes at save time. */
+  notVerifiedAtSave: boolean;
+  /** Its reuse terms, in words. */
+  terms: string;
+};
+
+/** A saved selection's model with each file's last check. */
+export type SelectionModelFileChecks = {
+  modelId: string;
+  entryId: string;
+  files: SelectionFileCheck[];
+};
+
+/** The models of one page of GET /v1/selections/{id}/models, with each file's last check. */
+export function selectionFileChecks(models: SelectionModelFiles[]): SelectionModelFileChecks[] {
+  return models.map((model) => ({
+    modelId: model.model_id,
+    entryId: model.entry_id,
+    files: model.files.map((file) => ({
+      fileId: file.id,
+      name: file.name,
+      check: checksumText(file.checksum),
+      notVerifiedAtSave: isNotVerifiedAtSave(file),
+      terms: reuseTermsText(file.reuse_terms),
+    })),
+  }));
+}
+
+/**
+ * The checksum job's last check of a file, in words, with its time in UTC. A
+ * check compares the bytes with the recorded SHA-256 and size together, so a
+ * mismatch may be either.
+ */
+export function checksumText(checksum: SelectionFileRecord["checksum"]): string {
+  const when = checksum.checked_at ? `checked ${utcMinute(checksum.checked_at)}` : "checked";
+  switch (checksum.status) {
+    case "verified":
+      return `${capitalizeFirst(when)}: the bytes match the record`;
+    case "mismatch":
+      return `${capitalizeFirst(when)}: the bytes differ from the record (SHA-256 or size)`;
+    case "failed":
+      return `${capitalizeFirst(when)}: could not be read`;
+    case "pending":
+      return "Not checked yet";
+    default:
+      return unknownValue("checksum status", checksum.status);
+  }
+}
+
+/**
+ * Whether a file is not verified against the bytes at save time: its SHA-256
+ * was recorded after the selection was saved, or is not recorded (Q10).
+ */
+export function isNotVerifiedAtSave(file: SelectionFileRecord): boolean {
+  switch (file.recorded_sha256_source) {
+    case "declared":
+    case "computed":
+      return file.recorded_after_save;
+    case "not_recorded":
+      return true;
+    default:
+      return unknownValue("sha256 source", file.recorded_sha256_source);
+  }
+}
+
+/** A file's reuse terms in words, as the archive's manifest says them. */
+export function reuseTermsText(terms: SelectionFileRecord["reuse_terms"]): string {
+  switch (terms) {
+    case "cc0":
+      return "CC0 1.0";
+    case "not_confirmed":
+      return REUSE_NOT_CONFIRMED;
+    case "repository":
+      return REUSE_REPOSITORY;
+    default:
+      return unknownValue("reuse terms", terms);
+  }
+}
+
+/** "2026-11-15 09:30 UTC". */
+function utcMinute(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`unreadable time: ${value}`);
+  }
+  return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+function capitalizeFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function countWords(count: number, singular: string, plural = `${singular}s`): string {
@@ -852,7 +976,7 @@ function countWords(count: number, singular: string, plural = `${singular}s`): s
 
 /** Each manifest status in words, for the counts of a ready archive. */
 export function countLines(counts: DownloadCounts): { key: keyof DownloadCounts; count: number; text: string }[] {
-  const keys: (keyof DownloadCounts)[] = ["included", "linked", "unavailable", "changed_at_source"];
+  const keys: (keyof DownloadCounts)[] = ["included", "linked", "unavailable"];
   return keys.map((key) => ({ key, count: counts[key], text: countText(key) }));
 }
 
@@ -863,9 +987,7 @@ function countText(key: keyof DownloadCounts): string {
     case "linked":
       return "linked: no copy here (for example over 1 GiB); manifest.tsv gives the source and the recorded SHA-256";
     case "unavailable":
-      return "unavailable: cannot be read in their recorded form";
-    case "changed_at_source":
-      return "changed at the source: the source no longer serves the recorded bytes, and no copy was kept";
+      return "unavailable: cannot be read in their recorded form, including those whose original bytes are gone";
     default:
       return unknownValue("download count", key);
   }

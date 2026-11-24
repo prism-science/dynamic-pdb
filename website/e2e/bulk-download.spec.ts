@@ -95,7 +95,7 @@ function unzipFile(zipPath: string, entry: string): Buffer {
 const downloadScript = path.join(__dirname, "../public/download/dynamic-pdb-download.py");
 const SELECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const REUSE_TERMS =
-  "These data are dedicated to the public domain under CC0 1.0. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.";
+  "PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. Files deposited by others: Reuse terms not yet confirmed by the depositor. We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.";
 
 /**
  * Runs the download script (B4) on a saved selection against the test stack, as a reader would
@@ -157,9 +157,9 @@ async function readyManifest(archiveId: string): Promise<string> {
  */
 const COMPARED_COLUMNS = [
   "record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "file_id",
-  "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes", "recorded_sha256",
-  "sha256_source", "recorded_after_save", "status", "reason", "reason_code", "verification", "source",
-  "source_url", "license", "license_url",
+  "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes", "size_source",
+  "recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status", "reason", "reason_code",
+  "verification", "source", "source_url", "license", "license_url",
 ];
 
 /** The rows both list (files and models without a file of the choice), in their columns. */
@@ -228,6 +228,7 @@ test("should select models, review them and download one archive of the selectio
     modelType: "Ensemble",
     rFree: 0.18,
     pdbId: pdbB,
+    structureFactorsWithoutSha256: true,
   });
   const singleConformerB = await createActiveModel(submitterApi, reviewerApi, entryB, {
     title: `B3 single conformer B ${runTag}`,
@@ -277,13 +278,16 @@ test("should select models, review them and download one archive of the selectio
   const preview = drawer.locator("[data-preview]");
   await expect(preview).toContainText("4 models in 2 entries", { timeout: 30_000 });
   const previewFiles = Number(/· ([\d,]+) files?/.exec((await preview.textContent()) ?? "")?.[1]?.replace(/,/g, ""));
+  // with the files by reuse terms, and no estimated size (researchers' Q7, Q9)
+  await expect(preview.locator("[data-preview-terms]")).toContainText(/Reuse terms: \d+ files? CC0 1\.0 · \d+ files?: reuse terms not yet confirmed/);
+  await expect(preview).not.toContainText(/about|upper bound/);
 
   // and once the reader builds it and the worker has, the archive downloads
   await drawer.getByRole("button", { name: "Build the archive" }).click();
   await runArchiveWorker();
   const downloadLink = drawer.getByRole("link", { name: /Download zip/ });
   await expect(downloadLink).toBeVisible({ timeout: 30_000 });
-  await expect(drawer.getByText(/These data are dedicated to the public domain under CC0 1\.0\./)).toBeVisible();
+  await expect(drawer.locator("[data-reuse-terms]")).toContainText(REUSE_TERMS);
   const [download] = await Promise.all([page.waitForEvent("download"), downloadLink.click()]);
   const zipPath = testInfo.outputPath("archive.zip");
   await download.saveAs(zipPath);
@@ -305,6 +309,15 @@ test("should select models, review them and download one archive of the selectio
   expect(heldEntry, entries.join("\n")).toBeDefined();
   const bytes = unzipFile(zipPath, heldEntry as string);
   expect(createHash("sha256").update(bytes).digest("hex")).toBe(multiconformerA.modelFile.sha256);
+
+  // and the reader can see each file's last check, and which are not verified at save time (Q10)
+  await drawer.getByRole("button", { name: "Show each file’s last check" }).click();
+  const heldCheck = drawer.locator(`[data-file-check="${multiconformerA.modelFile.artifactId}"]`);
+  await expect(heldCheck).toContainText(/Checked \d{4}-\d\d-\d\d \d\d:\d\d UTC: the bytes match the record/);
+  await expect(heldCheck).toContainText("Reuse terms not yet confirmed by the depositor");
+  await expect(heldCheck.locator("[data-not-verified-at-save]")).toHaveCount(0);
+  const unrecorded = drawer.locator(`[data-file-checks-model="${ensembleB}"] [data-not-verified-at-save]`);
+  await expect(unrecorded).toHaveText(["not verified against the bytes at save time"]);
 
   // and the panel names the saved selection, for the script (B4)
   const selectionLine = drawer.locator("[data-selection-id]");

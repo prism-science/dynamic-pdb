@@ -34,6 +34,30 @@ func NewArtifactStore(bucket *s3.RemoteBucket, cfg Config) (*ArtifactStore, erro
 	return &ArtifactStore{objectURLs: urls, bucket: bucket}, nil
 }
 
+// ObjectLocator tells whether a URL points at a file in our bucket, through the public
+// (CloudFront) base or the bucket's own address, without access to the bucket.
+type ObjectLocator struct {
+	objectURLs
+}
+
+// NewObjectLocator returns the locator for cfg's bucket and public base.
+func NewObjectLocator(cfg Config) (*ObjectLocator, error) {
+	urls, err := newObjectURLs(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("cdn: object locator urls: %w", err)
+	}
+	return &ObjectLocator{objectURLs: urls}, nil
+}
+
+// StoredKey returns the bucket key of uri when uri points at a file in our bucket.
+func (l *ObjectLocator) StoredKey(uri string) (string, bool) {
+	key, err := l.keyFromObjectURL(uri)
+	if err != nil {
+		return "", false
+	}
+	return key, true
+}
+
 // StoredKey returns the bucket key of uri when uri points at a file in our bucket.
 func (s *ArtifactStore) StoredKey(uri string) (string, bool) {
 	key, err := s.keyFromObjectURL(uri)

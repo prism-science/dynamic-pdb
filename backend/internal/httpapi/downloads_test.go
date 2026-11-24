@@ -186,7 +186,7 @@ func readyDownloadJob(expiresAt time.Time) domainmodels.DownloadJob {
 		MaxArchiveBytes: 10_000_000_000, CreatedAt: finished.Add(-time.Minute), FinishedAt: &finished, ExpiresAt: &expiresAt,
 		PlannedBytes: ptr(int64(100)), ArchiveBytes: ptr(int64(80)), ArchiveSHA256: ptr(strings.Repeat("c", 64)),
 		ArchiveURL: ptr("https://files.dynamicpdb.test/downloads/a/archive.zip"), ManifestURL: ptr("https://files.dynamicpdb.test/downloads/a/manifest.tsv"),
-		Counts: &domainmodels.DownloadCounts{Included: 3, Linked: 1, ChangedAtSource: 1},
+		Counts: &domainmodels.DownloadCounts{Included: 3, Linked: 1, Unavailable: 1},
 	}
 }
 
@@ -203,7 +203,7 @@ func Test_should_offer_the_archive_until_it_expires_when_a_ready_download_is_ans
 	assert.Equal(t, "https://files.dynamicpdb.test/downloads/a/archive.zip", *ready.Data.Attributes.ArchiveUrl)
 	assert.NotNil(t, ready.Data.Attributes.ManifestUrl)
 	assert.Nil(t, ready.Data.Attributes.Message)
-	assert.Equal(t, &DownloadCounts{Included: 3, Linked: 1, ChangedAtSource: 1}, ready.Data.Attributes.Counts)
+	assert.Equal(t, &DownloadCounts{Included: 3, Linked: 1, Unavailable: 1}, ready.Data.Attributes.Counts)
 	assert.Equal(t, "https://dynamicpdb.test/api/v1/downloads/6f1c4a2e-0000-4000-8000-0000000000aa", ready.Data.Links.Self)
 	assert.Equal(t, "https://dynamicpdb.test/api/v1/selections/6f1c4a2e-0000-4000-8000-0000000000bb", ready.Data.Links.Selection)
 	assert.Equal(t, "downloads", ready.Data.Type)
@@ -284,7 +284,7 @@ func Test_should_use_the_documented_keys_when_a_download_document_is_serialized(
 	// then
 	require.NoError(t, err)
 	for _, key := range []string{`"selection_id"`, `"file_choice":"all_files"`, `"status":"ready"`, `"max_archive_bytes":10000000000`,
-		`"archive_sha256"`, `"changed_at_source":1`} {
+		`"archive_sha256"`, `"unavailable":1`} {
 		assert.Contains(t, string(data), key)
 	}
 }
@@ -299,16 +299,17 @@ func plannedDownloadJob() domainmodels.DownloadJob {
 			{Type: domainmodels.ArtifactTypeModel, Files: 3, BytesKnown: 300},
 			{Type: domainmodels.ArtifactTypeStructureFactors, Files: 2, BytesKnown: 2_000_000_000, FilesSizeUnknown: 1},
 		},
-		Availability: domainmodels.DownloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1},
+		Availability: domainmodels.DownloadCounts{Included: 2, Linked: 2, Unavailable: 1},
 		NotIncluded: []domainmodels.DownloadPreviewReason{
 			{Code: domainmodels.DownloadReasonOverCopyLimit, Files: 2},
-			{Code: domainmodels.DownloadReasonChangedAtSource, Files: 1},
+			{Code: domainmodels.DownloadReasonOriginalBytesUnavailable, Files: 1},
 		},
-		Verification:           domainmodels.DownloadPreviewVerification{Verified: 4, Mismatch: 1},
-		IncludedBytes:          200,
-		ArchiveBytesUpperBound: 4000,
-		LinkedBytesKnown:       2_000_000_000, LinkedFilesSizeUnknown: 1,
-		RelatedDatasets: domainmodels.DownloadPreviewRelatedDatasets{Total: 2, WithDOI: 1, WithAccessionOnly: 1},
+		Verification:     domainmodels.DownloadPreviewVerification{Verified: 4, Mismatch: 1},
+		IncludedBytes:    200,
+		LinkedBytesKnown: 2_000_000_000, LinkedFilesSizeUnknown: 1,
+		RelatedDatasets:   domainmodels.DownloadPreviewRelatedDatasets{Total: 2, WithDOI: 1, WithAccessionOnly: 1},
+		ReuseTerms:        domainmodels.DownloadPreviewReuseTerms{CC0: 3, NotConfirmed: 1, Repository: 1},
+		NotVerifiedAtSave: 2,
 	}
 	return job
 }
@@ -328,25 +329,25 @@ func Test_should_show_what_the_archive_holds_and_how_sure_each_size_is_when_a_pl
 	require.NotNil(t, attributes.Preview)
 	preview := attributes.Preview
 	assert.Equal(t, DownloadPreviewRecords{Entries: 2, Models: 6, ModelsWithoutMatchingFiles: 1}, preview.Records)
-	assert.Equal(t, DownloadCounts{Included: 2, Linked: 2, ChangedAtSource: 1}, preview.Files.Availability)
+	assert.Equal(t, DownloadCounts{Included: 2, Linked: 2, Unavailable: 1}, preview.Files.Availability)
+	assert.Equal(t, 2, preview.Files.NotVerifiedAtSave)
+	assert.Equal(t, DownloadPreviewReuseTerms{Cc0: 3, NotConfirmed: 1, Repository: 1}, preview.ReuseTerms)
 	assert.Equal(t, DownloadPreviewVerification{Verified: 4, Mismatch: 1}, preview.Files.Verification)
 	assert.Equal(t, []DownloadPreviewReason{
 		{Code: DownloadReasonCodeOverCopyLimit, Status: DownloadFileAvailabilityLinked, Files: 2,
 			Reason: "larger than 1 GiB, so Dynamic PDB keeps only its link"},
-		{Code: DownloadReasonCodeChangedAtSource, Status: DownloadFileAvailabilityChangedAtSource, Files: 1,
-			Reason: "the source no longer serves the recorded bytes, and no copy was kept"},
+		{Code: DownloadReasonCodeOriginalBytesUnavailable, Status: DownloadFileAvailabilityUnavailable, Files: 1,
+			Reason: "original bytes unavailable: the source now serves other bytes, and no copy was kept"},
 	}, preview.Files.NotIncluded)
 	require.Len(t, preview.Files.ByType, 2)
 	assert.Equal(t, DownloadSizeKindExact, preview.Files.ByType[0].Size.Kind)
 	assert.Equal(t, int64(300), *preview.Files.ByType[0].Size.Bytes)
-	assert.Equal(t, DownloadSizeKindEstimate, preview.Files.ByType[1].Size.Kind, "1 of 2 sizes is unknown")
-	assert.Equal(t, "a lower bound: 1 of the 2 files have no recorded size", *preview.Files.ByType[1].Size.Tolerance)
+	assert.Equal(t, DownloadSizeKindPartial, preview.Files.ByType[1].Size.Kind, "1 of 2 sizes is unknown")
+	assert.Equal(t, int64(2_000_000_000), *preview.Files.ByType[1].Size.Bytes, "the known size, not an estimate")
+	assert.Equal(t, 1, *preview.Files.ByType[1].Size.FilesSizeUnknown)
 	assert.Equal(t, DownloadSizeKindExact, preview.Sizes.Included.Kind)
 	assert.Equal(t, int64(200), *preview.Sizes.Included.Bytes)
-	assert.Equal(t, DownloadSizeKindEstimate, preview.Sizes.Archive.Kind)
-	assert.Equal(t, int64(4000), *preview.Sizes.Archive.Bytes)
-	assert.Contains(t, *preview.Sizes.Archive.Tolerance, "upper bound")
-	assert.Equal(t, DownloadSizeKindEstimate, preview.Sizes.Linked.Kind)
+	assert.Equal(t, DownloadSizeKindPartial, preview.Sizes.Linked.Kind)
 	assert.Equal(t, 1, *preview.Sizes.Linked.FilesSizeUnknown)
 	assert.Equal(t, DownloadPreviewRelatedDatasets{Total: 2, WithDoi: 1, WithAccessionOnly: 1}, preview.RelatedDatasets)
 	assert.False(t, preview.OverLimit)
@@ -356,9 +357,13 @@ func Test_should_show_what_the_archive_holds_and_how_sure_each_size_is_when_a_pl
 	data, err := json.Marshal(document)
 	require.NoError(t, err)
 	for _, key := range []string{`"status":"planned"`, `"prepare_requested":false`, `"preview":{`,
-		`"models_without_matching_files":1`, `"not_included":[`, `"code":"over_copy_limit"`, `"status":"changed-at-source"`,
-		`"kind":"estimate"`, `"with_accession_only":1`, `"over_limit":false`} {
+		`"models_without_matching_files":1`, `"not_included":[`, `"code":"over_copy_limit"`,
+		`"code":"original_bytes_unavailable"`, `"kind":"partial"`, `"with_accession_only":1`, `"over_limit":false`,
+		`"reuse_terms":{"cc0":3,"not_confirmed":1,"repository":1}`, `"not_verified_at_save":2`} {
 		assert.Contains(t, string(data), key)
+	}
+	for _, gone := range []string{"changed-at-source", "changed_at_source", "estimate", "tolerance", "upper bound"} {
+		assert.NotContains(t, string(data), gone)
 	}
 
 	// and a queued job has no preview yet
@@ -369,7 +374,7 @@ func Test_should_show_what_the_archive_holds_and_how_sure_each_size_is_when_a_pl
 	assert.Nil(t, document.Data.Attributes.Preview)
 }
 
-func Test_should_say_exact_estimate_or_unknown_when_some_sizes_are_not_recorded(t *testing.T) {
+func Test_should_say_exact_partial_or_unknown_never_an_estimate_when_some_sizes_are_not_known(t *testing.T) {
 	// given
 	cases := []struct {
 		name        string
@@ -380,7 +385,7 @@ func Test_should_say_exact_estimate_or_unknown_when_some_sizes_are_not_recorded(
 	}{
 		{"every size known", 3, 0, DownloadSizeKindExact, true},
 		{"no files", 0, 0, DownloadSizeKindExact, true},
-		{"some unknown", 3, 1, DownloadSizeKindEstimate, true},
+		{"some unknown", 3, 1, DownloadSizeKindPartial, true},
 		{"all unknown", 3, 3, DownloadSizeKindUnknown, false},
 	}
 	for _, tc := range cases {

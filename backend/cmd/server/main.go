@@ -98,6 +98,16 @@ func run() int {
 		slog.Error("file CDN init failed", "err", err)
 		return 1
 	}
+	fileStorage, err := cdn.NewObjectLocator(cfg.CDN)
+	if err != nil {
+		slog.Error("file storage locator init failed", "err", err)
+		return 1
+	}
+	cc0Depositors, err := cfg.Downloads.CC0DepositorIDs()
+	if err != nil {
+		slog.Error("downloads config invalid", "err", err)
+		return 1
+	}
 	slog.Info("schema validation configured", "mode", cfg.Validation.Mode, "request_keys", cfg.Validation.RequestKeys)
 	srv := httpapi.NewServer(
 		githubClient, fileCDN, cfg.Auth, jwt, database, analytics.New(cfg.Analytics), cfg.Server.PublicBaseURL,
@@ -139,6 +149,8 @@ func run() int {
 		InternalRequests: cfg.Selections.RateLimit.InternalRequests,
 		Window:           cfg.Selections.RateLimit.Window,
 		TrustedProxies:   trustedProxies,
+		FileStorage:      fileStorage,
+		CC0Depositors:    cc0Depositors,
 	})
 	slog.Info("selections configured", "enabled", cfg.Selections.Enabled,
 		"max_models", cfg.Selections.MaxModels, "max_stored_models", cfg.Selections.MaxStoredModels,

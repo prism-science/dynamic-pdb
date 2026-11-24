@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -67,7 +68,21 @@ var (
 	githubClient     *MockGitHubClient
 	s3Stub           *e2es3.StubServer
 	adminToken       string
+	// fileStorage finds the S3 stub's bucket in a URL; storedFileBase is the bucket's URL, ending in
+	// "/", for files the tests put in our storage.
+	fileStorage    *cdn.ObjectLocator
+	storedFileBase string
 )
+
+// testAdminID is the admin's account ID.
+var testAdminID = uuid.MustParse("8ca59596-c4b4-4f3f-94be-6dd73f76f050")
+
+// testPrismAccountID is the account the selections server lists as Prism's (cc0_depositors). It
+// is the account of GitHub user testPrismGitHubID, so a test signs in as it with
+// issueEntryTokenForGitHubIDForTest.
+var testPrismAccountID = uuid.MustParse("5b8670ac-0000-4000-8000-0000000e2e01")
+
+const testPrismGitHubID = 8916
 
 // enforceAllValidation enforces every validation rule, as dev and local configs do.
 var enforceAllValidation = validation.Config{Mode: validation.ModeEnforce, RequestKeys: validation.ModeEnforce}
@@ -135,7 +150,7 @@ func TestMain(m *testing.M) {
 
 	now := time.Now().UTC()
 	admin, err := testDatabase.Users.Create(context.Background(), models.User{
-		ID: uuid.MustParse("8ca59596-c4b4-4f3f-94be-6dd73f76f050"),
+		ID: testAdminID,
 		ExternalRef: types.ExternalRef{
 			Source: "e2etest",
 			Value:  "admin",
@@ -146,6 +161,15 @@ func TestMain(m *testing.M) {
 	})
 	if err != nil {
 		log.Fatalf("e2etest: create admin: %v", err)
+	}
+	if _, err := testDatabase.Users.Create(context.Background(), models.User{
+		ID:          testPrismAccountID,
+		ExternalRef: types.ExternalRef{Source: "github", Value: strconv.Itoa(testPrismGitHubID)},
+		DisplayName: "E2E Prism account",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		log.Fatalf("e2etest: create Prism account: %v", err)
 	}
 	adminRoles, err := testDatabase.Roles.List(context.Background(), db.RoleFilters{
 		Keys: []models.RoleKey{models.RoleKeyAdmin, models.RoleKeyReviewer},
@@ -193,6 +217,11 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2etest: create CDN service: %v", err)
 	}
+	fileStorage, err = cdn.NewObjectLocator(cdn.Config{S3: storageConfig})
+	if err != nil {
+		log.Fatalf("e2etest: create file storage locator: %v", err)
+	}
+	storedFileBase = s3Stub.URL() + "/" + storageConfig.Bucket + "/"
 	rcsbStub := httptest.NewServer(http.HandlerFunc(serveArchiveFixture))
 	archiveLookup := archive.NewLookup(
 		rcsb.NewClient(rcsb.WithBaseURLs(rcsbStub.URL, rcsbStub.URL, rcsbStub.URL, rcsbStub.URL)),
@@ -228,6 +257,8 @@ func TestMain(m *testing.M) {
 			Requests:         1000,
 			InternalRequests: 1000,
 			Window:           time.Minute,
+			FileStorage:      fileStorage,
+			CC0Depositors:    []uuid.UUID{testPrismAccountID},
 		})
 		server.WithDownloads(httpapi.DownloadsPolicy{
 			Enabled:                   options.downloads,

@@ -94,4 +94,7 @@ type SelectionFile struct {
 	// saved: it describes the bytes the checksum job read then, not bytes known at the save.
 	RecordedAfterSave bool
 	Checksum          ArtifactChecksum
+	// UploadedBy is the account that added the file (its artifact's creator); archives decide a
+	// deposited file's reuse terms by it.
+	UploadedBy uuid.UUID
 }
