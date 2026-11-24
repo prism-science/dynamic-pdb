@@ -129,18 +129,20 @@ func run() int {
 		return 1
 	}
 	srv = srv.WithModelSearch(httpapi.ModelSearchPolicy{
-		FiltersEnabled:        cfg.ModelSearch.FiltersEnabled,
-		ChainFiltersEnabled:   cfg.ModelSearch.ChainFiltersEnabled,
-		ResidueFiltersEnabled: cfg.ModelSearch.ResidueFiltersEnabled,
-		CountCap:              cfg.ModelSearch.CountCap,
-		Requests:              cfg.ModelSearch.RateLimit.Requests,
-		InternalRequests:      cfg.ModelSearch.RateLimit.InternalRequests,
-		Window:                cfg.ModelSearch.RateLimit.Window,
-		TrustedProxies:        trustedProxies,
+		FiltersEnabled:               cfg.ModelSearch.FiltersEnabled,
+		ChainFiltersEnabled:          cfg.ModelSearch.ChainFiltersEnabled,
+		ResidueFiltersEnabled:        cfg.ModelSearch.ResidueFiltersEnabled,
+		RelatedDatasetFiltersEnabled: cfg.ModelSearch.RelatedDatasetFiltersEnabled,
+		CountCap:                     cfg.ModelSearch.CountCap,
+		Requests:                     cfg.ModelSearch.RateLimit.Requests,
+		InternalRequests:             cfg.ModelSearch.RateLimit.InternalRequests,
+		Window:                       cfg.ModelSearch.RateLimit.Window,
+		TrustedProxies:               trustedProxies,
 	})
 	slog.Info("model search configured", "filters_enabled", cfg.ModelSearch.FiltersEnabled,
 		"chain_filters_enabled", cfg.ModelSearch.ChainFiltersEnabled,
-		"residue_filters_enabled", cfg.ModelSearch.ResidueFiltersEnabled, "count_cap", cfg.ModelSearch.CountCap)
+		"residue_filters_enabled", cfg.ModelSearch.ResidueFiltersEnabled,
+		"related_dataset_filters_enabled", cfg.ModelSearch.RelatedDatasetFiltersEnabled, "count_cap", cfg.ModelSearch.CountCap)
 	srv = srv.WithSelections(httpapi.SelectionsPolicy{
 		Enabled:          cfg.Selections.Enabled,
 		MaxModels:        cfg.Selections.MaxModels,

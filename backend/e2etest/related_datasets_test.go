@@ -254,7 +254,7 @@ func (s *RelatedDatasetsSuite) Test_should_store_relation_and_link_evidence_when
 	s.Equal([]httpapi.RelatedDataset{{
 		Doi: new("10.15785/SBGRID/1303"), DataType: "diffraction image data",
 		Repository: new("SBGrid Data Bank"), Details: new("Similar crystals, collected in October 2025."),
-		Relation:     new(httpapi.SimilarSample),
+		Relation:     new(httpapi.RelatedDatasetRelationSimilarSample),
 		LinkEvidence: new(httpapi.RepositoryText),
 	}}, s.relatedDatasets(entry.EntryId))
 }

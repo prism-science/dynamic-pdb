@@ -32,6 +32,13 @@ type ModelSearch struct {
 	UniProtAccessions []string
 	// LigandsOrCofactors matches a chemical component ID in the entry's Ligands or Cofactors.
 	LigandsOrCofactors []string
+	// HasRelatedDatasets true matches models whose entry lists at least one related dataset,
+	// false models whose entry lists none.
+	HasRelatedDatasets *bool
+	// RelatedDatasetRelations matches an entry listing a related dataset with one of these
+	// relations; RelatedDatasetRelationUnstated also matches one that states no relation.
+	RelatedDatasetRelations        []models.RelatedDatasetRelation
+	RelatedDatasetRelationUnstated bool
 
 	ModelTypes []models.StructureModelType
 	Purposes   []models.ModelPurpose
@@ -119,6 +126,10 @@ const (
 	// Lowercasing JSON text keeps it valid (escapes such as \n stay lower case); uppercasing would not.
 	entryLigandsExpression   = `cast(lower(cast(entry_revisions.metadata -> 'ligands' as text)) as jsonb)`
 	entryCofactorsExpression = `cast(lower(cast(entry_revisions.metadata -> 'cofactors' as text)) as jsonb)`
+	// entryRelatedDatasetsExpression is the entry's related datasets as a JSON array, empty when the
+	// entry lists none (the stored metadata leaves the key out).
+	entryRelatedDatasetsExpression = `(case when jsonb_typeof(entry_revisions.metadata -> 'related_datasets') = 'array' ` +
+		`then entry_revisions.metadata -> 'related_datasets' else cast('[]' as jsonb) end)`
 	// sourceOrganismsExpression lowercases the organism list, so a name matches ignoring case.
 	sourceOrganismsExpression = `cast(lower(cast(polymer_entities.metadata -> 'source_organisms' as text)) as jsonb)`
 	// uniProtMappingsExpression lowercases the mappings, as accessions keep the case their source gave.
@@ -131,7 +142,8 @@ var taxonomyIDPattern = regexp.MustCompile(`^[0-9]+$`)
 // and polymer entity filters. The flagged filter finds the active entry revision on its own.
 func (search ModelSearch) readsEntryRevision() bool {
 	return len(search.Methods) > 0 || search.ResolutionMin != nil || search.ResolutionMax != nil ||
-		len(search.LigandsOrCofactors) > 0 || len(search.Organisms) > 0 || len(search.UniProtAccessions) > 0
+		len(search.LigandsOrCofactors) > 0 || len(search.Organisms) > 0 || len(search.UniProtAccessions) > 0 ||
+		search.HasRelatedDatasets != nil || len(search.RelatedDatasetRelations) > 0 || search.RelatedDatasetRelationUnstated
 }
 
 // modelSearchConditions turns the search into SQL conditions on model_revisions, models and the
@@ -202,7 +214,39 @@ func entrySearchConditions(search ModelSearch, args map[string]any) ([]string, e
 		}
 		conditions = append(conditions, "("+strings.Join(alternatives, " or ")+")")
 	}
-	return conditions, nil
+	return append(conditions, relatedDatasetSearchConditions(search, args)...), nil
+}
+
+// relatedDatasetSearchConditions reads the related datasets of the model's active entry revision.
+func relatedDatasetSearchConditions(search ModelSearch, args map[string]any) []string {
+	conditions := make([]string, 0, 2)
+	if search.HasRelatedDatasets != nil {
+		operator := "="
+		if *search.HasRelatedDatasets {
+			operator = ">"
+		}
+		conditions = append(conditions,
+			fmt.Sprintf("jsonb_array_length(%s) %s 0", entryRelatedDatasetsExpression, operator))
+	}
+	if len(search.RelatedDatasetRelations) == 0 && !search.RelatedDatasetRelationUnstated {
+		return conditions
+	}
+	alternatives := make([]string, 0, 2)
+	if len(search.RelatedDatasetRelations) > 0 {
+		relations := make([]string, 0, len(search.RelatedDatasetRelations))
+		for _, relation := range search.RelatedDatasetRelations {
+			relations = append(relations, string(relation))
+		}
+		args["search_related_dataset_relations"] = pq.StringArray(relations)
+		alternatives = append(alternatives,
+			"related_dataset ->> 'relation' = any(cast(:search_related_dataset_relations as text[]))")
+	}
+	if search.RelatedDatasetRelationUnstated {
+		alternatives = append(alternatives, "related_dataset ->> 'relation' is null")
+	}
+	return append(conditions, fmt.Sprintf(
+		"exists (select 1 from jsonb_array_elements(%s) as related_dataset where %s)",
+		entryRelatedDatasetsExpression, strings.Join(alternatives, " or ")))
 }
 
 func polymerEntitySearchConditions(search ModelSearch, args map[string]any) ([]string, error) {

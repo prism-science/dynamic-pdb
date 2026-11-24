@@ -245,13 +245,14 @@ func TestMain(m *testing.M) {
 			server.WithExtractionLimits(1, 100, time.Minute).WithExtractionTimeout(options.extractionTimeout)
 		}
 		server.WithModelSearch(httpapi.ModelSearchPolicy{
-			FiltersEnabled:        options.modelSearch,
-			ChainFiltersEnabled:   options.modelSearch,
-			ResidueFiltersEnabled: options.modelSearch,
-			CountCap:              10000,
-			Requests:              1000,
-			InternalRequests:      1000,
-			Window:                time.Minute,
+			FiltersEnabled:               options.modelSearch,
+			ChainFiltersEnabled:          options.modelSearch,
+			ResidueFiltersEnabled:        options.modelSearch,
+			RelatedDatasetFiltersEnabled: options.modelSearch,
+			CountCap:                     10000,
+			Requests:                     1000,
+			InternalRequests:             1000,
+			Window:                       time.Minute,
 		})
 		server.WithSelections(httpapi.SelectionsPolicy{
 			Enabled:          options.selections,

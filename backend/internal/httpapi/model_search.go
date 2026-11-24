@@ -45,6 +45,9 @@ type ModelSearchPolicy struct {
 	// ResidueFiltersEnabled also turns on the residue filters, which read the coordinate-index job's
 	// conformer counts. Off, a residue parameter gets 400.
 	ResidueFiltersEnabled bool
+	// RelatedDatasetFiltersEnabled also turns on the related dataset filters
+	// (has_related_datasets, related_dataset_relation). Merged dark: off, either gets 400.
+	RelatedDatasetFiltersEnabled bool
 	// CountCap is where the total stops counting.
 	CountCap int
 	// Requests and InternalRequests cap counted searches per client per Window, for clients
@@ -66,23 +69,31 @@ var errChainFiltersOff = errors.New("protein chain filters are not enabled on th
 // uncounted files. GET /v1/models and saved selections both refuse such a search.
 var errResidueFiltersOff = errors.New("residue filters are not enabled on this server yet")
 
+// errRelatedDatasetFiltersOff marks a search with related dataset filters where they are off: they
+// are merged dark and switched on per environment, dev first. GET /v1/models and saved selections
+// both refuse such a search.
+var errRelatedDatasetFiltersOff = errors.New("related dataset filters are not enabled on this server yet")
+
 // modelSearch is the server's model search setup; the zero value has the filters off.
 type modelSearch struct {
 	enabled         bool
 	chainsEnabled   bool
 	residuesEnabled bool
-	countCap        int
-	limiter         *routeRateLimiter
+	// relatedDatasetsEnabled turns on has_related_datasets and related_dataset_relation.
+	relatedDatasetsEnabled bool
+	countCap               int
+	limiter                *routeRateLimiter
 }
 
 // WithModelSearch configures the search filters of GET /v1/models.
 func (s *Server) WithModelSearch(policy ModelSearchPolicy) *Server {
 	s.modelSearch = modelSearch{
-		enabled:         policy.FiltersEnabled,
-		chainsEnabled:   policy.ChainFiltersEnabled,
-		residuesEnabled: policy.ResidueFiltersEnabled,
-		countCap:        policy.CountCap,
-		limiter:         newModelSearchLimiter(policy),
+		enabled:                policy.FiltersEnabled,
+		chainsEnabled:          policy.ChainFiltersEnabled,
+		residuesEnabled:        policy.ResidueFiltersEnabled,
+		relatedDatasetsEnabled: policy.RelatedDatasetFiltersEnabled,
+		countCap:               policy.CountCap,
+		limiter:                newModelSearchLimiter(policy),
 	}
 	return s
 }
@@ -144,6 +155,11 @@ func (s *Server) ListModelsAcrossEntries(
 	if search != nil && len(search.residueParameters) > 0 && !s.modelSearch.residuesEnabled {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
 			errResidueFiltersOff.Error()+"; remove "+strings.Join(search.residueParameters, ", "))
+		return
+	}
+	if search != nil && len(search.relatedDatasetParameters) > 0 && !s.modelSearch.relatedDatasetsEnabled {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST",
+			errRelatedDatasetFiltersOff.Error()+"; remove "+strings.Join(search.relatedDatasetParameters, ", "))
 		return
 	}
 
@@ -363,6 +379,8 @@ type parsedModelSearch struct {
 	parameters        []string
 	chainParameters   []string
 	residueParameters []string
+	// relatedDatasetParameters are the related dataset filters the search uses.
+	relatedDatasetParameters []string
 }
 
 // modelSearchParamError is a search parameter the request got wrong.
@@ -450,6 +468,9 @@ func modelSearchFromParams(params ListModelsAcrossEntriesParams) (*parsedModelSe
 		return nil, err
 	}
 	if search.filters.Residues, err = search.residues(params); err != nil {
+		return nil, err
+	}
+	if err := search.relatedDatasets(params); err != nil {
 		return nil, err
 	}
 	if params.Flagged != nil {
@@ -816,4 +837,39 @@ func metricBoundParams(params ListModelsAcrossEntriesParams) []metricBoundParam 
 		{key: domainmodels.MetricKeyWilsonB, min: params.WilsonBMin, max: params.WilsonBMax},
 		{key: domainmodels.MetricKeyRMSF, min: params.RmsfMin, max: params.RmsfMax},
 	}
+}
+
+// relatedDatasetUnstated is the related_dataset_relation value for a dataset that states no relation.
+const relatedDatasetUnstated = "unstated"
+
+// relatedDatasets reads has_related_datasets and related_dataset_relation.
+func (search *parsedModelSearch) relatedDatasets(params ListModelsAcrossEntriesParams) error {
+	if params.HasRelatedDatasets != nil {
+		search.parameters = append(search.parameters, "has_related_datasets")
+		search.relatedDatasetParameters = append(search.relatedDatasetParameters, "has_related_datasets")
+		search.filters.HasRelatedDatasets = params.HasRelatedDatasets
+	}
+	if params.RelatedDatasetRelation == nil {
+		return nil
+	}
+	const parameter = "related_dataset_relation"
+	if err := checkModelSearchValueCount(parameter, len(*params.RelatedDatasetRelation)); err != nil {
+		return err
+	}
+	for _, value := range *params.RelatedDatasetRelation {
+		if string(value) == relatedDatasetUnstated {
+			search.filters.RelatedDatasetRelationUnstated = true
+			continue
+		}
+		relation := domainmodels.RelatedDatasetRelation(value)
+		if err := relation.Validate(); err != nil {
+			return &modelSearchParamError{
+				parameter: parameter, problem: err.Error() + `, or "` + relatedDatasetUnstated + `"`,
+			}
+		}
+		search.filters.RelatedDatasetRelations = append(search.filters.RelatedDatasetRelations, relation)
+	}
+	search.parameters = append(search.parameters, parameter)
+	search.relatedDatasetParameters = append(search.relatedDatasetParameters, parameter)
+	return nil
 }

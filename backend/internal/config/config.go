@@ -87,6 +87,10 @@ type ModelSearchConfig struct {
 	// the coordinate-index job stored (S3): on only once its conformer fill is done, so they never
 	// miss models whose files are not counted yet. Off, a residue parameter gets 400.
 	ResidueFiltersEnabled bool `mapstructure:"residue_filters_enabled"`
+	// RelatedDatasetFiltersEnabled also turns on has_related_datasets and related_dataset_relation.
+	// Merged dark: on locally, off on dev and production until their switch-on PRs, dev first.
+	// Off, either parameter gets 400.
+	RelatedDatasetFiltersEnabled bool `mapstructure:"related_dataset_filters_enabled"`
 	// CountCap is where the total stops counting: above it the total is "CountCap+".
 	CountCap int `mapstructure:"count_cap"`
 	// RateLimit caps searches that count their results (requests without a cursor), per client
@@ -253,6 +257,7 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("model_search::filters_enabled", false)
 	v.SetDefault("model_search::chain_filters_enabled", false)
 	v.SetDefault("model_search::residue_filters_enabled", false)
+	v.SetDefault("model_search::related_dataset_filters_enabled", false)
 	v.SetDefault("model_search::count_cap", defaultModelSearchCountCap)
 	v.SetDefault("model_search::rate_limit::requests", defaultModelSearchRateLimitRequests)
 	v.SetDefault("model_search::rate_limit::internal_requests", defaultModelSearchRateLimitInternalRequests)

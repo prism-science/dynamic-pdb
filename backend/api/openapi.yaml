@@ -1554,6 +1554,31 @@ paths:
             maxItems: 20
             items:
               $ref: "#/components/schemas/MetricKey"
+        - name: has_related_datasets
+          in: query
+          description: >
+            Entry filter. true returns models whose entry's active revision lists at least one
+            related dataset (data another repository holds, such as SBGrid); false returns models
+            whose entry lists none. Available only where the server enables the related dataset
+            filters (model_search.related_dataset_filters_enabled); elsewhere 400.
+          required: false
+          schema:
+            type: boolean
+        - name: related_dataset_relation
+          in: query
+          description: >
+            Entry filter. Models whose entry's active revision lists a related dataset with one of
+            these relations to the experiment the entry describes. unstated matches a related
+            dataset that states no relation. Several values: a dataset with any of them counts.
+            Available only where the server enables the related dataset filters; elsewhere 400.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 4
+            items:
+              $ref: "#/components/schemas/RelatedDatasetRelationFilter"
         - name: flagged
           in: query
           description: >
@@ -5206,6 +5231,12 @@ components:
         list get 422; responses may gain values. Refused with 422 until the environment turns
         related dataset relations on.
       enum: [pdb_record, repository_record, repository_text, publication, depositor_statement]
+
+    RelatedDatasetRelationFilter:
+      type: string
+      description: >
+        A RelatedDatasetRelation, or unstated for a related dataset that states no relation.
+      enum: [source_data, similar_sample, other, unstated]
 
     EntryCrystallography:
       type: object

@@ -1662,6 +1662,11 @@ export interface components {
          * @enum {string}
          */
         RelatedDatasetLinkEvidence: "pdb_record" | "repository_record" | "repository_text" | "publication" | "depositor_statement";
+        /**
+         * @description A RelatedDatasetRelation, or unstated for a related dataset that states no relation.
+         * @enum {string}
+         */
+        RelatedDatasetRelationFilter: "source_data" | "similar_sample" | "other" | "unstated";
         /** @description Crystals and diffraction datasets reported for this entry. */
         EntryCrystallography: {
             crystals?: components["schemas"]["EntryCrystal"][];
@@ -3848,6 +3853,10 @@ export interface operations {
                 rmsf_max?: number;
                 /** @description Model filter. Models that have no value for at least one of these metrics. */
                 metric_missing?: components["schemas"]["MetricKey"][];
+                /** @description Entry filter. true returns models whose entry's active revision lists at least one related dataset (data another repository holds, such as SBGrid); false returns models whose entry lists none. Available only where the server enables the related dataset filters (model_search.related_dataset_filters_enabled); elsewhere 400. */
+                has_related_datasets?: boolean;
+                /** @description Entry filter. Models whose entry's active revision lists a related dataset with one of these relations to the experiment the entry describes. unstated matches a related dataset that states no relation. Several values: a dataset with any of them counts. Available only where the server enables the related dataset filters; elsewhere 400. */
+                related_dataset_relation?: components["schemas"]["RelatedDatasetRelationFilter"][];
                 /** @description Open to every caller where the server enables model search (elsewhere every filter gets 400). true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. The flags' issues (review_flags) stay for reviewers and admins only. */
                 flagged?: boolean;
             };
@@ -5625,6 +5634,7 @@ export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequire
 export const tokenAttributesToken_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TokenAttributes"]["token_type"]> = ["Bearer"];
 export const relatedDatasetRelationValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetRelation"]> = ["source_data", "similar_sample", "other"];
 export const relatedDatasetLinkEvidenceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetLinkEvidence"]> = ["pdb_record", "repository_record", "repository_text", "publication", "depositor_statement"];
+export const relatedDatasetRelationFilterValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetRelationFilter"]> = ["source_data", "similar_sample", "other", "unstated"];
 export const archivePdbDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchivePdbData"]["type"]> = ["archive_pdb_lookups"];
 export const archiveWarningSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveWarning"]["source"]> = ["archive", "validation"];
 export const artifactExtractionDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactExtractionData"]["type"]> = ["artifact_extractions"];

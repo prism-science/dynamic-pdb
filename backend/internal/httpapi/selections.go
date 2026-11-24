@@ -177,8 +177,9 @@ var errSelectionSearchFiltersOff = errors.New("model search filters are not enab
 // selectionFreezeFromRequest turns a save request into a freeze. A request that breaks the
 // documented limits gets *validation.Error with every field error; a search with filters where
 // model search is off gets errSelectionSearchFiltersOff, one with protein chain filters where they
-// are off gets errChainFiltersOff, and one with residue filters where they are off gets
-// errResidueFiltersOff.
+// are off gets errChainFiltersOff, one with residue filters where they are off gets
+// errResidueFiltersOff, and one with related dataset filters where they are off gets
+// errRelatedDatasetFiltersOff.
 func (s *Server) selectionFreezeFromRequest(ctx context.Context, request CreateSelectionRequest) (db.SelectionFreeze, error) {
 	modelIDs, fieldErrors := selectionModelIDs(validation.Root.Field("model_ids"), request.ModelIds)
 	excluded, excludedErrors := selectionModelIDs(validation.Root.Field("exclude_model_ids"), request.ExcludeModelIds)
@@ -258,8 +259,8 @@ func selectionModelIDs(at validation.Pointer, values *[]string) ([]string, []val
 
 // selectionSearches reads the searches of a save request. It returns each search's filters, each
 // search in a fixed form (once, in the order given), and the field errors of the searches. The
-// error is errSelectionSearchFiltersOff, errChainFiltersOff, errResidueFiltersOff, or a failure to
-// read the openapi spec.
+// error is errSelectionSearchFiltersOff, errChainFiltersOff, errResidueFiltersOff,
+// errRelatedDatasetFiltersOff, or a failure to read the openapi spec.
 func (s *Server) selectionSearches(
 	ctx context.Context,
 	at validation.Pointer,
@@ -311,6 +312,10 @@ func (s *Server) selectionSearches(
 				return nil, nil, nil, fmt.Errorf("%w; remove %s from search %d",
 					errResidueFiltersOff, strings.Join(parsed.residueParameters, ", "), index)
 			}
+			if len(parsed.relatedDatasetParameters) > 0 && !s.modelSearch.relatedDatasetsEnabled {
+				return nil, nil, nil, fmt.Errorf("%w; remove %s from search %d",
+					errRelatedDatasetFiltersOff, strings.Join(parsed.relatedDatasetParameters, ", "), index)
+			}
 			search = parsed.filters
 		}
 		if !seen[text] {
@@ -328,7 +333,8 @@ func (s *Server) writeSelectionRequestError(w http.ResponseWriter, r *http.Reque
 	switch {
 	case errors.As(err, &validationError):
 		writeFieldErrors(w, validationError.Fields)
-	case errors.Is(err, errSelectionSearchFiltersOff), errors.Is(err, errChainFiltersOff), errors.Is(err, errResidueFiltersOff):
+	case errors.Is(err, errSelectionSearchFiltersOff), errors.Is(err, errChainFiltersOff), errors.Is(err, errResidueFiltersOff),
+		errors.Is(err, errRelatedDatasetFiltersOff):
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "read selection request failed", "err", err)
