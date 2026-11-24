@@ -15,6 +15,8 @@ import (
 
 const testMaxArchiveBytes = int64(10_000_000_000)
 
+var testDownloadCaps = db.DownloadCaps{MaxUnfinished: 20, MaxUnfinishedPerSelection: 3}
+
 // downloadsTestDB is a schema of its own with saved selections to ask archives of.
 type downloadsTestDB struct {
 	*modelSearchTestDB
@@ -35,6 +37,7 @@ func (f *downloadsTestDB) selection(t *testing.T) uuid.UUID {
 	return saved.ID
 }
 
+// create asks for an archive, built once planned.
 func (f *downloadsTestDB) create(
 	t *testing.T,
 	selectionID uuid.UUID,
@@ -42,21 +45,59 @@ func (f *downloadsTestDB) create(
 	now time.Time,
 ) (*models.DownloadJob, bool, error) {
 	t.Helper()
+	return f.request(t, selectionID, choice, true, now)
+}
+
+func (f *downloadsTestDB) request(
+	t *testing.T,
+	selectionID uuid.UUID,
+	choice models.DownloadFileChoice,
+	prepare bool,
+	now time.Time,
+) (*models.DownloadJob, bool, error) {
+	t.Helper()
 	return f.database.CreateDownload(context.Background(), db.DownloadCreate{
 		ID: uuid.New(), SelectionID: selectionID, FileChoice: choice, MaxArchiveBytes: testMaxArchiveBytes,
-		MaxUnfinished: 20, MaxUnfinishedPerSelection: 3, Now: now,
+		Prepare: prepare, DownloadCaps: testDownloadCaps, Now: now,
 	})
 }
 
-// finish takes the job through claim, preparing and finish, ready until expiresAt.
-func (f *downloadsTestDB) finish(t *testing.T, jobID uuid.UUID, now, expiresAt time.Time) {
+// testPreview is a small preview, as the worker records it.
+func testPreview() models.DownloadPreview {
+	return models.DownloadPreview{
+		Entries: 1, Models: 1, Files: 2,
+		FileTypes: []models.DownloadPreviewFileType{
+			{Type: models.ArtifactTypeModel, Files: 1, BytesKnown: 100},
+			{Type: models.ArtifactTypeStructureFactors, Files: 1, FilesSizeUnknown: 1},
+		},
+		Availability:  models.DownloadCounts{Included: 1, Linked: 1},
+		NotIncluded:   []models.DownloadPreviewReason{{Code: models.DownloadReasonOverCopyLimit, Files: 1}},
+		Verification:  models.DownloadPreviewVerification{Verified: 2},
+		IncludedBytes: 100, ArchiveBytesUpperBound: 2000, LinkedFilesSizeUnknown: 1,
+		RelatedDatasets: models.DownloadPreviewRelatedDatasets{Total: 1, WithDOI: 1},
+	}
+}
+
+// plan takes the job through the planning lane to planned, with testPreview.
+func (f *downloadsTestDB) plan(t *testing.T, jobID uuid.UUID, now time.Time) {
 	t.Helper()
 	ctx := context.Background()
-	claimed, err := f.database.Downloads.Claim(ctx, now, now.Add(time.Minute))
+	claimed, err := f.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
 	require.NoError(t, err)
 	require.NotNil(t, claimed)
 	require.Equal(t, jobID, claimed.ID)
-	require.NoError(t, f.database.Downloads.StartPreparing(ctx, jobID, claimed.Attempts, 100))
+	require.NoError(t, f.database.Downloads.FinishPlanning(ctx, jobID, claimed.Attempts, 100, testPreview()))
+}
+
+// finish takes an asked-for job through both lanes, ready until expiresAt.
+func (f *downloadsTestDB) finish(t *testing.T, jobID uuid.UUID, now, expiresAt time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	f.plan(t, jobID, now)
+	claimed, err := f.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	require.Equal(t, jobID, claimed.ID)
 	require.NoError(t, f.database.Downloads.Finish(ctx, jobID, claimed.Attempts, archiveResult(), now, expiresAt))
 }
 
@@ -86,6 +127,8 @@ func Test_should_return_the_same_archive_when_it_is_asked_for_again_while_unfini
 	assert.False(t, createdAgain)
 	assert.Equal(t, first.ID, again.ID)
 	assert.Equal(t, models.DownloadStatusQueued, first.Status)
+	assert.True(t, first.PrepareRequested)
+	assert.Nil(t, first.Preview)
 	assert.Equal(t, testMaxArchiveBytes, first.MaxArchiveBytes)
 	assert.Zero(t, first.Attempts)
 
@@ -128,7 +171,8 @@ func Test_should_refuse_the_archive_when_unfinished_archives_reach_a_cap(t *test
 	request := func(selection uuid.UUID, choice models.DownloadFileChoice, perSelection, total int) error {
 		_, _, err := fixture.database.CreateDownload(ctx, db.DownloadCreate{
 			ID: uuid.New(), SelectionID: selection, FileChoice: choice, MaxArchiveBytes: testMaxArchiveBytes,
-			MaxUnfinished: total, MaxUnfinishedPerSelection: perSelection, Now: time.Now(),
+			Prepare: true, DownloadCaps: db.DownloadCaps{MaxUnfinished: total, MaxUnfinishedPerSelection: perSelection},
+			Now: time.Now(),
 		})
 		return err
 	}
@@ -144,73 +188,213 @@ func Test_should_refuse_the_archive_when_unfinished_archives_reach_a_cap(t *test
 	require.NoError(t, request(otherSelectionID, models.DownloadFileChoiceAllFiles, 3, 2))
 }
 
-func Test_should_hold_the_job_until_it_is_ready_when_a_worker_claims_it(t *testing.T) {
-	// given a queued archive
+func Test_should_count_a_planned_preview_toward_the_caps_only_once_its_archive_is_asked_for(t *testing.T) {
+	// given a planned preview that was not asked for
+	fixture := newDownloadsTestDB(t)
+	ctx := context.Background()
+	selectionID := fixture.selection(t)
+	now := time.Now().UTC()
+	preview, _, err := fixture.request(t, selectionID, models.DownloadFileChoiceAllFiles, false, now)
+	require.NoError(t, err)
+	fixture.plan(t, preview.ID, now)
+	oneAtATime := db.DownloadCaps{MaxUnfinished: 20, MaxUnfinishedPerSelection: 1}
+
+	// when another archive of the selection is asked for
+	other, _, err := fixture.database.CreateDownload(ctx, db.DownloadCreate{
+		ID: uuid.New(), SelectionID: selectionID, FileChoice: models.DownloadFileChoiceOriginalMMCIF,
+		MaxArchiveBytes: testMaxArchiveBytes, Prepare: true, DownloadCaps: oneAtATime, Now: now,
+	})
+
+	// then the preview does not count
+	require.NoError(t, err)
+
+	// and asking for the preview's archive now passes the per-selection cap
+	_, _, err = fixture.database.PrepareDownload(ctx, db.DownloadPrepare{ID: preview.ID, DownloadCaps: oneAtATime, Now: now})
+	require.ErrorIs(t, err, db.ErrDownloadSelectionBusy)
+	got, err := fixture.database.Downloads.Get(ctx, preview.ID)
+	require.NoError(t, err)
+	assert.False(t, got.PrepareRequested, "a refused request changes nothing")
+	require.NotNil(t, other)
+}
+
+func Test_should_plan_then_build_the_job_when_each_lane_claims_it(t *testing.T) {
+	// given an archive that was asked for
 	fixture := newDownloadsTestDB(t)
 	ctx := context.Background()
 	job, _, err := fixture.create(t, fixture.selection(t), models.DownloadFileChoiceAllFiles, time.Now())
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	// when a worker claims it
-	claimed, err := fixture.database.Downloads.Claim(ctx, now, now.Add(10*time.Minute))
+	// when the building lane looks first, it finds nothing to build
+	nothing, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(10*time.Minute))
 	require.NoError(t, err)
+	assert.Nil(t, nothing)
 
-	// then it is planning, with a lease and one attempt, and no other claim gets it
+	// and the planning lane claims it: planning, with a lease and one attempt, and no other claim gets it
+	claimed, err := fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(10*time.Minute))
+	require.NoError(t, err)
 	require.NotNil(t, claimed)
 	assert.Equal(t, job.ID, claimed.ID)
 	assert.Equal(t, models.DownloadStatusPlanning, claimed.Status)
 	assert.Equal(t, 1, claimed.Attempts)
 	assert.True(t, claimed.LeaseUntil.Equal(now.Add(10*time.Minute)))
 	assert.True(t, claimed.StartedAt.Equal(now))
-	nothing, err := fixture.database.Downloads.Claim(ctx, now, now.Add(10*time.Minute))
-	require.NoError(t, err)
-	assert.Nil(t, nothing)
+	for _, lane := range []db.DownloadLane{db.DownloadLanePlanning, db.DownloadLaneBuilding} {
+		nothing, err = fixture.database.Downloads.Claim(ctx, lane, now, now.Add(10*time.Minute))
+		require.NoError(t, err)
+		assert.Nil(t, nothing, string(lane))
+	}
 
-	// and the worker extends its lease, prepares and finishes it
+	// and the worker extends its lease and records the preview
 	require.NoError(t, fixture.database.Downloads.Heartbeat(ctx, job.ID, 1, now.Add(20*time.Minute)))
-	require.NoError(t, fixture.database.Downloads.StartPreparing(ctx, job.ID, 1, 4096))
-	require.NoError(t, fixture.database.Downloads.Finish(ctx, job.ID, 1, archiveResult(), now, now.Add(7*24*time.Hour)))
+	require.NoError(t, fixture.database.Downloads.FinishPlanning(ctx, job.ID, 1, 4096, testPreview()))
+	planned, err := fixture.database.Downloads.Get(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.DownloadStatusPlanned, planned.Status)
+	assert.Equal(t, testPreview(), *planned.Preview, "the preview reads back as recorded")
+	assert.Nil(t, planned.LeaseUntil)
+
+	// and the building lane takes it: a second attempt
+	building, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(10*time.Minute))
+	require.NoError(t, err)
+	require.NotNil(t, building)
+	assert.Equal(t, models.DownloadStatusPreparing, building.Status)
+	assert.Equal(t, 2, building.Attempts)
+	changed := testPreview()
+	changed.Availability.Included = 2
+	require.NoError(t, fixture.database.Downloads.UpdatePlan(ctx, job.ID, 2, 4097, changed))
+	require.NoError(t, fixture.database.Downloads.Finish(ctx, job.ID, 2, archiveResult(), now, now.Add(7*24*time.Hour)))
 
 	ready, err := fixture.database.Downloads.Get(ctx, job.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.DownloadStatusReady, ready.Status)
 	assert.Nil(t, ready.LeaseUntil)
-	assert.Equal(t, int64(4096), *ready.PlannedBytes)
+	assert.Equal(t, int64(4097), *ready.PlannedBytes)
+	assert.Equal(t, 2, ready.Preview.Availability.Included, "the changed plan replaced the preview")
 	assert.Equal(t, "https://files.example.org/downloads/a/archive.zip", *ready.ArchiveURL)
 	assert.Equal(t, &models.DownloadCounts{Included: 3, Linked: 1, ChangedAtSource: 2}, ready.Counts)
 	assert.True(t, ready.ExpiresAt.Equal(now.Add(7*24*time.Hour)))
 
 	// and the finished job no longer takes a heartbeat
-	require.ErrorIs(t, fixture.database.Downloads.Heartbeat(ctx, job.ID, 1, now.Add(time.Hour)), db.ErrDownloadLeaseLost)
+	require.ErrorIs(t, fixture.database.Downloads.Heartbeat(ctx, job.ID, 2, now.Add(time.Hour)), db.ErrDownloadLeaseLost)
 }
 
-func Test_should_let_another_attempt_take_the_job_when_its_lease_ran_out(t *testing.T) {
+func Test_should_stop_at_planned_and_build_only_once_prepared_when_only_the_preview_is_asked_for(t *testing.T) {
+	// given a request for the preview only, planned
+	fixture := newDownloadsTestDB(t)
+	ctx := context.Background()
+	selectionID := fixture.selection(t)
+	now := time.Now().UTC()
+	job, created, err := fixture.request(t, selectionID, models.DownloadFileChoiceAllFiles, false, now)
+	require.NoError(t, err)
+	require.True(t, created)
+	assert.False(t, job.PrepareRequested)
+	fixture.plan(t, job.ID, now)
+
+	// then the building lane leaves it alone
+	nothing, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	assert.Nil(t, nothing)
+
+	// and asking again without prepare returns it unchanged
+	again, createdAgain, err := fixture.request(t, selectionID, models.DownloadFileChoiceAllFiles, false, now)
+	require.NoError(t, err)
+	assert.False(t, createdAgain)
+	assert.Equal(t, job.ID, again.ID)
+	assert.False(t, again.PrepareRequested)
+
+	// when it is prepared
+	prepared, changed, err := fixture.database.PrepareDownload(ctx, db.DownloadPrepare{
+		ID: job.ID, DownloadCaps: testDownloadCaps, Now: now})
+
+	// then it is asked for once, and the building lane takes it
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.True(t, prepared.PrepareRequested)
+	_, changedAgain, err := fixture.database.PrepareDownload(ctx, db.DownloadPrepare{
+		ID: job.ID, DownloadCaps: testDownloadCaps, Now: now})
+	require.NoError(t, err)
+	assert.False(t, changedAgain, "asking twice changes nothing")
+	building, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NotNil(t, building)
+	assert.Equal(t, job.ID, building.ID)
+
+	// and a POST with prepare asks for a planned preview's archive too
+	other, _, err := fixture.request(t, selectionID, models.DownloadFileChoiceOriginalMMCIF, false, now)
+	require.NoError(t, err)
+	fixture.plan(t, other.ID, now)
+	asked, createdAsked, err := fixture.create(t, selectionID, models.DownloadFileChoiceOriginalMMCIF, now)
+	require.NoError(t, err)
+	assert.False(t, createdAsked)
+	assert.Equal(t, other.ID, asked.ID)
+	assert.True(t, asked.PrepareRequested)
+}
+
+func Test_should_refuse_to_prepare_when_the_archive_is_blocked_failed_expired_or_unknown(t *testing.T) {
+	// given
+	fixture := newDownloadsTestDB(t)
+	ctx := context.Background()
+	selectionID := fixture.selection(t)
+	now := time.Now().UTC()
+	prepare := func(id uuid.UUID, at time.Time) error {
+		_, _, err := fixture.database.PrepareDownload(ctx, db.DownloadPrepare{ID: id, DownloadCaps: testDownloadCaps, Now: at})
+		return err
+	}
+	blocked, _, err := fixture.request(t, selectionID, models.DownloadFileChoiceAllFiles, false, now)
+	require.NoError(t, err)
+	claimed, err := fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, fixture.database.Downloads.Block(ctx, blocked.ID, claimed.Attempts, testMaxArchiveBytes+1,
+		testPreview(), "over", now))
+	ready, _, err := fixture.create(t, selectionID, models.DownloadFileChoiceOriginalMMCIF, now)
+	require.NoError(t, err)
+	fixture.finish(t, ready.ID, now, now.Add(time.Hour))
+
+	// then
+	require.ErrorIs(t, prepare(blocked.ID, now), db.ErrDownloadNotPreparable)
+	require.NoError(t, prepare(ready.ID, now), "a ready archive is already prepared")
+	require.ErrorIs(t, prepare(ready.ID, now.Add(2*time.Hour)), db.ErrDownloadNotPreparable, "expired")
+	require.ErrorIs(t, prepare(uuid.New(), now), db.ErrDownloadNotFound)
+}
+
+func Test_should_count_a_failed_attempt_when_its_lease_ran_out(t *testing.T) {
 	// given an archive claimed by a worker that stopped extending its lease
 	fixture := newDownloadsTestDB(t)
 	ctx := context.Background()
 	job, _, err := fixture.create(t, fixture.selection(t), models.DownloadFileChoiceAllFiles, time.Now())
 	require.NoError(t, err)
 	now := time.Now().UTC()
-	_, err = fixture.database.Downloads.Claim(ctx, now, now.Add(time.Minute))
+	_, err = fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
 	require.NoError(t, err)
-	require.NoError(t, fixture.database.Downloads.StartPreparing(ctx, job.ID, 1, 10))
 
 	// when the lease has run out
 	later := now.Add(2 * time.Minute)
-	reclaimed, err := fixture.database.Downloads.Claim(ctx, later, later.Add(time.Minute))
+	reclaimed, err := fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, later, later.Add(time.Minute))
 	require.NoError(t, err)
 
-	// then a second attempt holds it, back in planning
+	// then a second attempt holds it, and the lost one counts as failed
 	require.NotNil(t, reclaimed)
 	assert.Equal(t, job.ID, reclaimed.ID)
 	assert.Equal(t, 2, reclaimed.Attempts)
+	assert.Equal(t, 1, reclaimed.FailedAttempts)
 	assert.Equal(t, models.DownloadStatusPlanning, reclaimed.Status)
-	assert.Nil(t, reclaimed.PlannedBytes)
 
 	// and the first attempt can no longer write
 	require.ErrorIs(t, fixture.database.Downloads.Heartbeat(ctx, job.ID, 1, later), db.ErrDownloadLeaseLost)
 	require.ErrorIs(t, fixture.database.Downloads.Fail(ctx, job.ID, 1, "late", later), db.ErrDownloadLeaseLost)
+
+	// and planning starts the count again for building, where a lost lease counts too
+	require.NoError(t, fixture.database.Downloads.FinishPlanning(ctx, job.ID, 2, 100, testPreview()))
+	_, err = fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, later, later.Add(time.Minute))
+	require.NoError(t, err)
+	evenLater := later.Add(2 * time.Minute)
+	rebuilt, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, evenLater, evenLater.Add(time.Minute))
+	require.NoError(t, err)
+	require.NotNil(t, rebuilt)
+	assert.Equal(t, 4, rebuilt.Attempts)
+	assert.Equal(t, 1, rebuilt.FailedAttempts)
+	assert.Equal(t, models.DownloadStatusPreparing, rebuilt.Status)
 }
 
 func Test_should_record_each_ending_when_an_attempt_blocks_requeues_releases_or_fails(t *testing.T) {
@@ -223,7 +407,7 @@ func Test_should_record_each_ending_when_an_attempt_blocks_requeues_releases_or_
 		t.Helper()
 		job, _, err := fixture.create(t, selectionID, choice, now)
 		require.NoError(t, err)
-		claimed, err := fixture.database.Downloads.Claim(ctx, now, now.Add(time.Minute))
+		claimed, err := fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
 		require.NoError(t, err)
 		require.Equal(t, job.ID, claimed.ID)
 		return claimed
@@ -231,39 +415,55 @@ func Test_should_record_each_ending_when_an_attempt_blocks_requeues_releases_or_
 
 	// when an attempt blocks, it needs planned bytes over the limit
 	blocked := claim(models.DownloadFileChoiceAllFiles)
-	require.Error(t, fixture.database.Downloads.Block(ctx, blocked.ID, 1, testMaxArchiveBytes, "not over", now),
+	require.Error(t, fixture.database.Downloads.Block(ctx, blocked.ID, 1, testMaxArchiveBytes, testPreview(), "not over", now),
 		"a blocked archive's planned bytes are over its limit")
-	require.NoError(t, fixture.database.Downloads.Block(ctx, blocked.ID, 1, testMaxArchiveBytes+1, "over", now))
+	require.NoError(t, fixture.database.Downloads.Block(ctx, blocked.ID, 1, testMaxArchiveBytes+1, testPreview(), "over", now))
 
-	// then
+	// then it keeps its preview
 	got, err := fixture.database.Downloads.Get(ctx, blocked.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.DownloadStatusBlocked, got.Status)
 	assert.Equal(t, "over", *got.BlockedReason)
+	require.NotNil(t, got.Preview)
 
-	// and a failed attempt is requeued and still counts
+	// and a failed planning attempt is requeued and counts
 	requeued := claim(models.DownloadFileChoiceOriginalMMCIF)
 	require.NoError(t, fixture.database.Downloads.Requeue(ctx, requeued.ID, 1, "storage hiccup"))
 	got, err = fixture.database.Downloads.Get(ctx, requeued.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.DownloadStatusQueued, got.Status)
-	assert.Equal(t, 1, got.Attempts, "a failed attempt still counts")
+	assert.Equal(t, 1, got.FailedAttempts, "a failed attempt counts")
 	assert.Equal(t, "storage hiccup", *got.Error)
 
 	// and a stopped worker's attempt is released without counting
-	reclaimed, err := fixture.database.Downloads.Claim(ctx, now, now.Add(time.Minute))
+	reclaimed, err := fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
 	require.NoError(t, err)
 	require.Equal(t, requeued.ID, reclaimed.ID)
 	require.NoError(t, fixture.database.Downloads.Release(ctx, requeued.ID, 2))
 	got, err = fixture.database.Downloads.Get(ctx, requeued.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.DownloadStatusQueued, got.Status)
-	assert.Equal(t, 1, got.Attempts, "a stopped worker's attempt does not count")
+	assert.Equal(t, 1, got.FailedAttempts, "a stopped worker's attempt does not count")
+	assert.Equal(t, 2, got.Attempts, "every claim keeps its own attempt number")
+
+	// and a failed building attempt goes back to planned, keeping its plan
+	reclaimed, err = fixture.database.Downloads.Claim(ctx, db.DownloadLanePlanning, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, fixture.database.Downloads.FinishPlanning(ctx, requeued.ID, reclaimed.Attempts, 100, testPreview()))
+	building, err := fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, fixture.database.Downloads.Requeue(ctx, requeued.ID, building.Attempts, "upload failed"))
+	got, err = fixture.database.Downloads.Get(ctx, requeued.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.DownloadStatusPlanned, got.Status)
+	assert.Equal(t, 1, got.FailedAttempts, "the building phase counts from 0")
+	assert.Equal(t, int64(100), *got.PlannedBytes)
+	assert.NotNil(t, got.Preview)
 
 	// and the last attempt fails the job
-	reclaimed, err = fixture.database.Downloads.Claim(ctx, now, now.Add(time.Minute))
+	building, err = fixture.database.Downloads.Claim(ctx, db.DownloadLaneBuilding, now, now.Add(time.Minute))
 	require.NoError(t, err)
-	require.NoError(t, fixture.database.Downloads.Fail(ctx, requeued.ID, reclaimed.Attempts, "gave up", now))
+	require.NoError(t, fixture.database.Downloads.Fail(ctx, requeued.ID, building.Attempts, "gave up", now))
 	got, err = fixture.database.Downloads.Get(ctx, requeued.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.DownloadStatusFailed, got.Status)
@@ -284,10 +484,18 @@ func Test_should_refuse_the_row_when_a_ready_archive_lacks_its_files(t *testing.
 	// then
 	require.ErrorContains(t, err, "download_jobs_status_fields_check")
 
-	// and an unknown file choice is refused
+	// and a planned row needs its preview
+	_, err = fixture.sql.Exec(`insert into download_jobs (id, selection_id, file_choice, status, max_archive_bytes, started_at, planned_bytes)
+	                           values ($1, $2, 'all_files', 'planned', 10, now(), 5)`, uuid.New(), selectionID)
+	require.ErrorContains(t, err, "download_jobs_status_fields_check")
+
+	// and an unknown file choice or status is refused
 	_, err = fixture.sql.Exec(`insert into download_jobs (id, selection_id, file_choice, max_archive_bytes)
 	                           values ($1, $2, 'everything', 10)`, uuid.New(), selectionID)
 	require.ErrorContains(t, err, "download_jobs_file_choice_check")
+	_, err = fixture.sql.Exec(`insert into download_jobs (id, selection_id, file_choice, status, max_archive_bytes)
+	                           values ($1, $2, 'all_files', 'waiting', 10)`, uuid.New(), selectionID)
+	require.ErrorContains(t, err, "download_jobs_status_check")
 }
 
 func Test_should_read_the_pinned_revisions_values_when_manifest_details_are_read(t *testing.T) {

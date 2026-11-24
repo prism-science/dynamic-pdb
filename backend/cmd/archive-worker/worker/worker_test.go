@@ -151,7 +151,7 @@ func newArchiveFixture(t *testing.T, choice models.DownloadFileChoice) *archiveF
 	f.store = &fakeStore{
 		job: models.DownloadJob{
 			ID: uuid.New(), SelectionID: selectionID, FileChoice: choice,
-			Status: models.DownloadStatusQueued, MaxArchiveBytes: 10_000_000_000,
+			Status: models.DownloadStatusQueued, MaxArchiveBytes: 10_000_000_000, PrepareRequested: true,
 		},
 		selection: models.Selection{ID: selectionID, CreatedAt: catalogDate},
 		models: []models.SelectionModel{
@@ -201,7 +201,7 @@ func newTestWorker(t *testing.T, f *archiveFixture, cfg Config) *Worker {
 	return worker
 }
 
-// runOnce claims and builds the fixture's job, and requires that there was one.
+// runOnce plans and builds the fixture's job, and requires that there was one.
 func runOnce(t *testing.T, worker *Worker) {
 	t.Helper()
 	worked, err := worker.RunOnce(context.Background())
@@ -370,9 +370,10 @@ func Test_should_include_every_held_file_and_list_the_rest_when_all_files_of_fiv
 	assert.Equal(t, "2DEF", rerefinedRow["pdb_id"], "a re-refinement shows its own PDB ID")
 	assert.Equal(t, `Lab\twith a tab`, fileRows(rows, f.files["single"].ID)[0]["affiliation"])
 
-	assert.Equal(t, "downloads/"+f.store.job.ID.String()+"/1/dynamic-pdb-"+f.store.job.SelectionID.String()+"-all_files.zip",
+	// Claim 1 planned the job, claim 2 builds it.
+	assert.Equal(t, "downloads/"+f.store.job.ID.String()+"/2/dynamic-pdb-"+f.store.job.SelectionID.String()+"-all_files.zip",
 		f.store.result.ArchiveKey, "each attempt writes under a folder of its own")
-	assert.Equal(t, "downloads/"+f.store.job.ID.String()+"/1/manifest.tsv", f.store.result.ManifestKey)
+	assert.Equal(t, "downloads/"+f.store.job.ID.String()+"/2/manifest.tsv", f.store.result.ManifestKey)
 	assert.Equal(t, catalogDate.Add(0), f.store.selection.CreatedAt)
 	assert.WithinDuration(t, time.Now().Add(7*24*time.Hour), f.store.expiresAt, time.Minute)
 	assert.Empty(t, f.bucket.aborted)
@@ -512,9 +513,10 @@ func Test_should_list_the_file_as_linked_when_it_was_copied_after_planning(t *te
 	pages := 0
 	f.store.beforeList = func(_ context.Context, call int, store *fakeStore) error {
 		pages++
-		// Each walk reads 4 pages: 3 of 2 models and an empty one. The copy appears on the planning
-		// walk's last read, after it passed the file, so only the writing walk sees it.
-		if call == 4 {
+		// Each walk reads 4 pages: 3 of 2 models and an empty one. The planning lane walks once, the
+		// building lane twice (plan again, then write). The copy appears on the building lane's
+		// planning read of the last page, after it passed the file, so only the writing walk sees it.
+		if call == 8 {
 			store.setChecksum(copied.ID, models.ArtifactChecksum{
 				Status: models.ChecksumStatusVerified, SHA256: copied.RecordedSHA256, SizeBytes: &size,
 				StoredURI: ptr(bucketBase + copyKey), CopyStatus: ptr(models.CopyStatusCopied), CheckedAt: &checkedAt,
@@ -531,7 +533,8 @@ func Test_should_list_the_file_as_linked_when_it_was_copied_after_planning(t *te
 	row := fileRows(rows, copied.ID)[0]
 	assert.Equal(t, "linked", row["status"])
 	assert.Contains(t, row["reason"], "after the archive was planned")
-	assert.Equal(t, 8, pages)
+	assert.Equal(t, 12, pages)
+	assert.False(t, f.store.planUpdated, "the plan the building lane checked equals the preview")
 }
 
 func Test_should_abandon_the_job_when_another_attempt_took_its_lease(t *testing.T) {
@@ -560,7 +563,9 @@ func Test_should_put_the_job_back_in_the_queue_when_the_worker_stops(t *testing.
 	f := newArchiveFixture(t, models.DownloadFileChoiceAllFiles)
 	ctx, cancel := context.WithCancel(context.Background())
 	f.store.beforeList = func(_ context.Context, call int, _ *fakeStore) error {
-		if call == 5 {
+		// The writing walk's first read: planning (1-4) and planning again (5-8) are done, and the
+		// upload is open.
+		if call == 9 {
 			cancel()
 			return context.Canceled
 		}
@@ -575,6 +580,8 @@ func Test_should_put_the_job_back_in_the_queue_when_the_worker_stops(t *testing.
 
 	// then
 	assert.True(t, f.store.released)
+	assert.Equal(t, models.DownloadStatusPlanned, f.store.job.Status, "back in the building lane's queue")
+	assert.Zero(t, f.store.job.FailedAttempts, "a stopped worker's attempt does not count")
 	assert.Nil(t, f.store.result)
 	assert.Equal(t, []string{f.bucket.writers[0]}, f.bucket.aborted, "the archive upload is aborted")
 }
@@ -591,9 +598,12 @@ func Test_should_requeue_the_job_when_an_attempt_fails_and_fail_it_when_the_last
 	assert.Equal(t, "the archive could not be written to storage", f.store.requeued)
 	assert.Empty(t, f.store.failed)
 
+	assert.Equal(t, 1, f.store.job.FailedAttempts)
+	assert.Equal(t, models.DownloadStatusQueued, f.store.job.Status, "back in the planning lane's queue")
+
 	// and the last attempt fails the job
 	last := newArchiveFixture(t, models.DownloadFileChoiceAllFiles)
-	last.store.job.Attempts = 2
+	last.store.job.FailedAttempts = 2
 	last.store.beforeList = f.store.beforeList
 	runOnce(t, newTestWorker(t, last, testConfig(t)))
 	assert.Equal(t, "the archive could not be written to storage", last.store.failed)
@@ -603,14 +613,14 @@ func Test_should_requeue_the_job_when_an_attempt_fails_and_fail_it_when_the_last
 func Test_should_fail_the_job_without_building_it_when_it_was_claimed_too_often(t *testing.T) {
 	// given
 	f := newArchiveFixture(t, models.DownloadFileChoiceAllFiles)
-	f.store.job.Attempts = 3
+	f.store.job.FailedAttempts = 3
 	f.store.job.Error = ptr("the archive could not be written to storage")
 
 	// when
 	runOnce(t, newTestWorker(t, f, testConfig(t)))
 
 	// then
-	assert.Equal(t, "the archive could not be built in 3 attempts; the last attempt failed: "+
+	assert.Equal(t, "the archive could not be planned in 3 attempts; the last attempt failed: "+
 		"the archive could not be written to storage", f.store.failed)
 	assert.Zero(t, f.store.listCalls)
 }

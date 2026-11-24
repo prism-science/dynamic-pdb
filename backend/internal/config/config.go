@@ -125,8 +125,9 @@ type DownloadsConfig struct {
 	// ArchiveTTL is how long a ready archive is offered. The bucket's lifecycle rule deletes it a
 	// day later; the job and its selection stay.
 	ArchiveTTL time.Duration `mapstructure:"archive_ttl"`
-	// MaxUnfinished caps the queued and running archives of all selections together; above it a
-	// request answers 503.
+	// MaxUnfinished caps the queued and running archives of all selections together, counting a
+	// planned one only once it is asked for (a preview waits for a person, not the worker); above
+	// it a request answers 503.
 	MaxUnfinished int `mapstructure:"max_unfinished"`
 	// MaxUnfinishedPerSelection caps them for one selection; above it a request answers 429.
 	MaxUnfinishedPerSelection int `mapstructure:"max_unfinished_per_selection"`

@@ -470,9 +470,11 @@ export interface paths {
          * Ask for an archive of a selection's files
          * @description Asks the server to build one zip of a saved selection's files: the PDB's original mmCIF files (original_mmcif), the Dynamic PDB model files (modified_coordinates), or every file of the selected models and their entries (all_files). The archive is built in the background; poll GET /v1/downloads/{download_id} until its status is ready, blocked or failed. A ready archive is offered for 7 days; the selection is kept indefinitely, so ask again after it expires.
          *
+         *     To see what the archive would hold first, send prepare false: the server plans it without reading any file and stops at status planned, with a preview (record and file counts by type, sizes, what is linked or unavailable and why, checksum status, related datasets). Then POST /v1/downloads/{download_id}/prepare builds it. prepare true (the default) plans and builds in one go; the preview is shown all the same once planned.
+         *
          *     The archive holds files only from Dynamic PDB's own storage, each checked against the SHA-256 recorded for it, and always the version the selection pinned, never a newer one. Files it cannot vouch for are listed in its manifest.tsv instead: linked (no copy here, for example over 1 GiB), changed-at-source (the source's file no longer matches the record and no copy was kept) or unavailable. An archive whose files add up to more than max_archive_bytes is blocked before any file is read.
          *
-         *     Asking again for the same selection and file choice while an archive is waiting, being built or ready returns that archive (200) instead of building another. Needs no sign-in. Available only where the server enables downloads; elsewhere every downloads route answers 404 with code DOWNLOADS_OFF.
+         *     Asking again for the same selection and file choice while an archive is waiting, planned, being built or ready returns that archive (200) instead of building another; with prepare true, a planned archive that was not asked for yet is asked for. Needs no sign-in. Available only where the server enables downloads; elsewhere every downloads route answers 404 with code DOWNLOADS_OFF.
          */
         post: operations["createDownload"];
         delete?: never;
@@ -490,11 +492,31 @@ export interface paths {
         };
         /**
          * Get an archive request
-         * @description Returns where an archive stands. queued, planning and preparing: still being built, ask again in a few seconds. ready: archive_url and manifest_url download it until expires_at. blocked: its files add up to more than max_archive_bytes; message says by how much, and a smaller selection or the scripted download gets them. failed: message says why. expired: the 7 days are over; ask again with POST /v1/downloads.
+         * @description Returns where an archive stands. queued and planning: being planned, ask again in a few seconds. planned: preview shows what the archive holds; it is built once asked for (prepare_requested). preparing: being built. ready: archive_url and manifest_url download it until expires_at. blocked: its files add up to more than max_archive_bytes; message says by how much, and a smaller selection or the scripted download gets them. failed: message says why. expired: the 7 days are over; ask again with POST /v1/downloads.
          */
         get: operations["getDownload"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/downloads/{download_id}/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build an archive whose preview was shown
+         * @description Asks for the archive of a request made with prepare false, usually after showing its preview. The worker builds it next; poll GET /v1/downloads/{download_id} until its status is ready, blocked or failed. Asking for one that is already asked for, being built or ready changes nothing (200). A blocked, failed or expired archive cannot be built again (409): ask for a new one with POST /v1/downloads. Needs no sign-in and no body.
+         */
+        post: operations["prepareDownload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1079,6 +1101,11 @@ export interface components {
              */
             selection_id: string;
             file_choice: components["schemas"]["DownloadFileChoice"];
+            /**
+             * @description true builds the archive once it is planned. false stops at status planned with the preview; POST /v1/downloads/{download_id}/prepare builds it.
+             * @default true
+             */
+            prepare: boolean;
         };
         /**
          * @description original_mmcif: the PDB's coordinate file, byte for byte, of each selected model whose own record holds it, usually the Deposited models (a computed model does not hold it; select the entry's Deposited model too). modified_coordinates: the coordinate files of the selected Dynamic PDB models. all_files: every file of the selected models and their entries (coordinates, structure factors, logs, sequences, other).
@@ -1086,10 +1113,10 @@ export interface components {
          */
         DownloadFileChoice: "original_mmcif" | "modified_coordinates" | "all_files";
         /**
-         * @description queued: waiting to be built. planning: the selection is read and its files added up. preparing: the zip is being written. ready: download it until expires_at. blocked: the files to include add up to more than max_archive_bytes; nothing was written. failed: message says why. expired: a ready archive past expires_at; ask again.
+         * @description queued: waiting to be planned. planning: the selection is read and its files added up. planned: the preview is ready; the archive is built once asked for (prepare_requested). preparing: the zip is being written. ready: download it until expires_at. blocked: the files to include add up to more than max_archive_bytes; nothing was written. failed: message says why. expired: a ready archive past expires_at; ask again.
          * @enum {string}
          */
-        DownloadStatus: "queued" | "planning" | "preparing" | "ready" | "blocked" | "failed" | "expired";
+        DownloadStatus: "queued" | "planning" | "planned" | "preparing" | "ready" | "blocked" | "failed" | "expired";
         DownloadDocument: {
             data: components["schemas"]["DownloadData"];
         };
@@ -1104,6 +1131,8 @@ export interface components {
             selection_id: string;
             file_choice: components["schemas"]["DownloadFileChoice"];
             status: components["schemas"]["DownloadStatus"];
+            /** @description Whether the archive itself was asked for. false: the request only plans its preview; POST /v1/downloads/{download_id}/prepare asks for it. */
+            prepare_requested: boolean;
             /** Format: date-time */
             created_at: string;
             /**
@@ -1138,6 +1167,7 @@ export interface components {
             /** @description The archive's manifest.tsv on its own: one row per file with its record revisions, recorded SHA-256, status (included, linked, unavailable, changed-at-source), verification and reuse terms. The zip holds the same file. */
             manifest_url?: string;
             counts?: components["schemas"]["DownloadCounts"];
+            preview?: components["schemas"]["DownloadPreview"];
             /** @description Why the archive is blocked or failed, and what to do instead. */
             message?: string;
         };
@@ -1152,6 +1182,84 @@ export interface components {
             /** @description Files whose source no longer serves the recorded bytes, with no copy kept here. */
             changed_at_source: number;
         };
+        /** @description What the archive holds, as the worker planned it from the selection's pinned files before reading any of them. Set from status planned on. Files are distinct: a file listed for several models counts once, as in counts. A file the zip includes is read back and checked against its recorded SHA-256 while the archive is built; one that no longer matches is left out then and shows in counts, not here. */
+        DownloadPreview: {
+            records: components["schemas"]["DownloadPreviewRecords"];
+            files: components["schemas"]["DownloadPreviewFiles"];
+            sizes: components["schemas"]["DownloadPreviewSizes"];
+            related_datasets: components["schemas"]["DownloadPreviewRelatedDatasets"];
+            /** @description Whether the files to include add up to more than max_archive_bytes; such an archive is blocked before it is built. */
+            over_limit: boolean;
+        };
+        DownloadPreviewRecords: {
+            entries: number;
+            models: number;
+            /** @description Selected models with no file of the file choice; the manifest says why. */
+            models_without_matching_files: number;
+        };
+        DownloadPreviewFiles: {
+            /** @description Distinct files of the file choice. */
+            total: number;
+            by_type: components["schemas"]["DownloadPreviewFileType"][];
+            availability: components["schemas"]["DownloadCounts"];
+            /** @description The files the zip leaves out, by reason. */
+            not_included: components["schemas"]["DownloadPreviewReason"][];
+            verification: components["schemas"]["DownloadPreviewVerification"];
+        };
+        DownloadPreviewFileType: {
+            type: components["schemas"]["ArtifactType"];
+            files: number;
+            size: components["schemas"]["DownloadSize"];
+        };
+        DownloadPreviewReason: {
+            code: components["schemas"]["DownloadReasonCode"];
+            status: components["schemas"]["DownloadFileAvailability"];
+            /** @description The reason as the manifest says it. */
+            reason: string;
+            files: number;
+        };
+        /** @description The files by checksum result, kept apart from availability. verified: the bytes matched the recorded SHA-256 at the last read. mismatch: they did not. not_verified: not read yet, or not readable. */
+        DownloadPreviewVerification: {
+            verified: number;
+            mismatch: number;
+            not_verified: number;
+        };
+        DownloadPreviewSizes: {
+            included: components["schemas"]["DownloadSize"];
+            archive: components["schemas"]["DownloadSize"];
+            linked: components["schemas"]["DownloadSize"];
+        };
+        /** @description A size and how sure it is. exact: bytes is the size. estimate: bytes bounds it, as tolerance says. unknown: no size is recorded; bytes is left out. */
+        DownloadSize: {
+            /** Format: int64 */
+            bytes?: number;
+            kind: components["schemas"]["DownloadSizeKind"];
+            /** @description What the size counts. */
+            measures: string;
+            /** @description How far an estimate may be from the size, and in which direction. */
+            tolerance?: string;
+            /** @description Files left out of bytes because no size is recorded for them. */
+            files_size_unknown?: number;
+        };
+        /** @enum {string} */
+        DownloadSizeKind: "exact" | "estimate" | "unknown";
+        /** @description The related datasets of the selected entries: links to the repositories that hold them, never files in the zip. One manifest row each. */
+        DownloadPreviewRelatedDatasets: {
+            total: number;
+            with_doi: number;
+            with_accession_only: number;
+            without_identifier: number;
+        };
+        /**
+         * @description How the manifest lists a file. included: in the zip, checked against its recorded SHA-256. linked: Dynamic PDB holds no copy; the manifest gives the source URL. unavailable: cannot be read in its recorded form. changed-at-source: the source serves other bytes and no copy was kept.
+         * @enum {string}
+         */
+        DownloadFileAvailability: "included" | "linked" | "unavailable" | "changed-at-source";
+        /**
+         * @description Why the archive leaves a file out. over_copy_limit, copy_failed, copy_off, not_checked_yet and copied_after_planning are linked; stored_file_differs, source_unreadable, copy_not_in_storage, copy_missing and copy_differs are unavailable; changed_at_source is changed-at-source.
+         * @enum {string}
+         */
+        DownloadReasonCode: "over_copy_limit" | "copy_failed" | "copy_off" | "not_checked_yet" | "copied_after_planning" | "stored_file_differs" | "changed_at_source" | "source_unreadable" | "copy_not_in_storage" | "copy_missing" | "copy_differs";
         DownloadLinks: {
             /** @description Absolute URL of the archive request. */
             self: string;
@@ -3853,7 +3961,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description An archive of this selection and file choice is already waiting, being built or ready; this is it. */
+            /** @description An archive of this selection and file choice is already waiting, planned, being built or ready; this is it. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3948,6 +4056,78 @@ export interface operations {
             /** @description No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF). */
             404: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    prepareDownload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Archive request ID, as POST /v1/downloads returned it. */
+                download_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive was asked for already, is being built or is ready; this is it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["DownloadDocument"];
+                };
+            };
+            /** @description Archive asked for; poll links.self. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["DownloadDocument"];
+                };
+            };
+            /** @description No archive request has this ID, or downloads are turned off (code DOWNLOADS_OFF). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The archive is blocked, failed or expired (code DOWNLOAD_NOT_PREPARABLE); ask for a new one with POST /v1/downloads. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many archive requests from this client (code RATE_LIMITED), or the selection already has as many archives being built as one selection may have (code SELECTION_BUSY). Wait the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.api+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The server is building as many archives as it takes (code DOWNLOADS_BUSY). Try again after Retry-After seconds. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before trying again. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -5199,7 +5379,10 @@ export const proteinChainModeValues: ReadonlyArray<FlattenedDeepRequired<compone
 export const selectionFileRoleValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionFileRole"]> = ["primary", "model", "run_input", "run_output", "entry"];
 export const selectionSHA256SourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["SelectionSHA256Source"]> = ["declared", "computed", "not_recorded"];
 export const downloadFileChoiceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileChoice"]> = ["original_mmcif", "modified_coordinates", "all_files"];
-export const downloadStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadStatus"]> = ["queued", "planning", "preparing", "ready", "blocked", "failed", "expired"];
+export const downloadStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadStatus"]> = ["queued", "planning", "planned", "preparing", "ready", "blocked", "failed", "expired"];
+export const downloadSizeKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadSizeKind"]> = ["exact", "estimate", "unknown"];
+export const downloadFileAvailabilityValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadFileAvailability"]> = ["included", "linked", "unavailable", "changed-at-source"];
+export const downloadReasonCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["DownloadReasonCode"]> = ["over_copy_limit", "copy_failed", "copy_off", "not_checked_yet", "copied_after_planning", "stored_file_differs", "changed_at_source", "source_unreadable", "copy_not_in_storage", "copy_missing", "copy_differs"];
 export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MissingInfoKind"]> = ["metric_software", "run_software_version", "model_run"];
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];
