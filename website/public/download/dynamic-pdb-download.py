@@ -104,7 +104,7 @@ MANIFEST_COLUMNS = (
     "file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes",
     "size_source", "recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status",
     "reason", "reason_code", "verification", "verified_at", "source", "source_url", "license", "license_url",
-    "authors", "affiliation", "citation_link", "dataset_id",
+    "authors", "affiliation", "citation_link", "dataset_id", "relation", "link_evidence",
 )
 
 # Statuses and verifications, as the archive's manifest writes them.

@@ -45,14 +45,15 @@ const (
 	recordNoMatchingFile recordType = "no_matching_file"
 )
 
-// manifestColumns are manifest.tsv's columns, in order.
+// manifestColumns are manifest.tsv's columns, in order. New columns go at the end, so a reader
+// that goes by position keeps working; relation and link_evidence came with Schema v0.3.0.
 var manifestColumns = []string{
 	"record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "pdb_id",
 	"file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes", "size_source",
 	"recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status", "reason", "reason_code",
 	"verification",
 	"verified_at", "source", "source_url", "license", "license_url", "authors", "affiliation",
-	"citation_link", "dataset_id",
+	"citation_link", "dataset_id", "relation", "link_evidence",
 }
 
 // manifestRow is one row of manifest.tsv; empty values are written as empty cells.
@@ -248,15 +249,25 @@ func relatedDatasetRow(dataset models.RelatedDataset) manifestRow {
 		link = *dataset.LandingURL
 	}
 	return manifestRow{
-		"record_type": string(recordRelatedDataset),
-		"type":        dataset.DataType,
-		"source":      stringValue(dataset.Repository),
-		"source_url":  link,
-		"dataset_id":  id,
-		"reason":      "held by its repository, not part of this archive",
-		"license":     externalTerms,
-		"license_url": link,
+		"record_type":   string(recordRelatedDataset),
+		"type":          dataset.DataType,
+		"source":        stringValue(dataset.Repository),
+		"source_url":    link,
+		"dataset_id":    id,
+		"reason":        "held by its repository, not part of this archive",
+		"license":       externalTerms,
+		"license_url":   link,
+		"relation":      vocabularyValue(dataset.Relation),
+		"link_evidence": vocabularyValue(dataset.LinkEvidence),
 	}
+}
+
+// vocabularyValue is a stated vocabulary value, or empty when it is not stated.
+func vocabularyValue[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
 // merge adds extra's values to row and returns row.
