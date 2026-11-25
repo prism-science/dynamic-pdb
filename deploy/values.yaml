@@ -186,9 +186,11 @@ modelCompoundsJob:
 # Reads every model file in our bucket (and the checksum job's copy of each archive model file)
 # and stores its chains: author chain, entity, deposited length, modeled residues and whether it
 # is a protein (S2), one file at a time, outside the API pods. The model search's chain filters
-# read them. Merged off; its switch-on PR turns it on with the fill. See the README.
+# read them. On since its job-on PR; the fill and the conformer counts (S3) stay off until their
+# own switch-on PRs. See the README, "Coordinate index job".
 coordinateIndexJob:
-  enabled: false
+  # To stop: false here; until that deploys, suspend the CronJob (README, "Coordinate index job").
+  enabled: true
   # Every 5 minutes, as the model-compounds job.
   schedule: "*/5 * * * *"
   timeZone: Etc/UTC
@@ -200,7 +202,7 @@ coordinateIndexJob:
   # hangs after both.
   activeDeadlineSeconds: 900
   # Caps the files one run reads; 0 means no cap. 500, as the model-compounds job: the fill of
-  # about 225,000 files then takes 450 runs, 1 to 1.6 days.
+  # about 225,500 files then takes 451 runs, about 1.6 days (uncapped, about 22 hours).
   maxFilesPerRun: 500
   fileTimeout: 10m
   # Gives every model file stored before the job existed a set, as a fill row: uploads are read

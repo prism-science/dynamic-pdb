@@ -366,11 +366,11 @@ The model search's protein chain filters (`protein_chains_min`, `protein_chain_l
 `protein_chain_length_max`, `protein_chain_mode` on `GET /v1/models`) read them. It runs `/app/coordinate-index-job`
 from the backend image every 5 minutes, one file at a time, like the model compounds job.
 
-It is merged off (`coordinateIndexJob.enabled: false`). A new upload still gets a pending set
-when its artifact is created, so nothing is missed until it runs; each run also gives one to any
-model file of the last 48 hours that has none, and to archive files whose copy the checksum job
-recorded in that window, however old their artifact (`coordinate_index.archive_files` in
-`backend/config/<env>.yml`, on for dev and prod).
+It was merged off (`coordinateIndexJob.enabled: false`) and is switched on in steps (Rollout
+below). A new upload still gets a pending set when its artifact is created, so nothing is missed
+until it runs; each run also gives one to any model file of the last 48 hours that has none, and
+to archive files whose copy the checksum job recorded in that window, however old their artifact
+(`coordinate_index.archive_files` in `backend/config/<env>.yml`, on for dev and prod).
 
 A chain whose length the file does not state (`_entity_poly_seq` in archive mmCIF, `SEQRES` in
 PDB format) takes it from the entry's FASTA record that names it (`Chains A, B[auth C]`) as
@@ -384,28 +384,40 @@ another entry, a model revision that switched to the file), looking at model rev
 
 ### Rollout
 
-1. Switch-on PR: `coordinateIndexJob.enabled: true` and `coordinateIndexJob.fill: true`. The
-   first run queues every existing model file as a fill row (about 225,000 on prod, in pages of
-   2,000 artifacts, about 40 seconds). Later runs add nothing while fill rows are pending
+1. Job-on PR: `coordinateIndexJob.enabled: true`, `fill` still false. Runs read only the files
+   queued since the job's tables exist (uploads) and those of the recent window, so the job is
+   proven on prod with a small batch before the fill. Conformer counts stay off
+   (`coordinate_index.residue_counts: false`, `coordinateIndexJob.residueFill: false`; see
+   "Conformer counts"), so each read stores chains only.
+2. Fill-on PR, after at least an hour of clean runs on both environments (`failed=0`, no
+   `OOMKilled` pod, RDS EBS balances near 100%): `coordinateIndexJob.fill: true`. The first run
+   queues every existing model file as a fill row (about 225,500 on prod, in pages of 2,000
+   artifacts, about 40 seconds). Later runs add nothing while fill rows are pending
    (`fill_waiting_for_pending=true` in the `started` line). Uploads are always read before fill
-   rows. At 500 files a run the fill takes about 1 to 1.6 days.
-2. Fill-off PR: `fill: false` once a run logs `fill_sets_added=0` and no fill row is pending:
+   rows. At 500 files a run the fill takes about 1.6 days (451 runs).
+3. Fill-off PR: `fill: false` once a run logs `fill_sets_added=0` and no fill row is pending:
 
    ```sql
    select fill, status, count(*) from coordinate_index_sets group by 1, 2 order by 1, 2;
    ```
 
-3. Chain filters PR: `model_search.chain_filters_enabled: true` in `backend/config/<env>.yml`.
+4. Chain filters PR: `model_search.chain_filters_enabled: true` in `backend/config/<env>.yml`.
    Until then a chain parameter answers 400, so a search never silently misses a file that is
    not read yet.
 
-The chain table holds about 2 rows per file (about 0.42 million rows, 55 MB on prod, plus about
-25 MB of sets). Watch RDS free storage and the EBS balances as for the model compounds job; stop
-the job with `coordinateIndexJob.enabled: false`, and until that deploys:
+The chain table holds about 2 rows per file: about 409,000 rows and 81 MB with indexes on prod,
+plus 33 MB of sets, about 120 MB in all. Watch RDS free storage and the EBS balances as for the
+model compounds job, on both environments (dev's RDS is a db.t4g.micro). Stop the job when free
+storage falls below 5 GB or an EBS balance below 50%: `coordinateIndexJob.enabled: false`, and
+until that deploys:
 
 ```sh
 kubectl -n dynamicpdb patch cronjob dynamic-pdb-coordinate-index-job -p '{"spec":{"suspend":true}}'
+kubectl -n dev-dynamicpdb patch cronjob dev-dynamic-pdb-coordinate-index-job -p '{"spec":{"suspend":true}}'
 ```
+
+A few minutes later, check that `.spec.suspend` still reads `true` (ArgoCD self-heals the
+application).
 
 ### Conformer counts
 
@@ -446,7 +458,7 @@ Rollout, once the job runs (`coordinateIndexJob.enabled`) and its own fill is do
    `coordinateIndexJob.residueFill: true`. The first run sends every done set without current
    counts back to pending as a fill row (about 225,000 on prod, pages of 2,000), and reads them
    after uploads. Failed sets are left as they are. A set queued again keeps its chains, so the
-   chain filter never loses a model meanwhile. At 500 files a run this takes 1 to 1.6 days.
+   chain filter never loses a model meanwhile. At 500 files a run this takes about 1.6 days.
 2. Fill-off PR: `residueFill: false` once a run logs `residue_fill_sets_requeued=0` and none are
    pending:
 
