@@ -54,10 +54,11 @@ data_sync:
 entries:
   # Reviewers can soft-delete entries, so researchers can delete test entries and retest the forms.
   delete_enabled: true
-  # relation and link_evidence on related datasets stay off until their switch-on PR (dev first).
-  # Off, a request that sends either gets 422 at that field. Rollback after the switch-on: false
-  # here, or DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED=false.
-  related_dataset_relation_enabled: false
+  # relation and link_evidence on related datasets: on on dev first, to test writes on test
+  # entries before production. Rollback: false here, or
+  # DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED=false. Test data written while on keeps the
+  # fields.
+  related_dataset_relation_enabled: true
 artifact_extraction:
   # The deposition forms read an uploaded mmCIF through the server before saving (G5).
   uploads_enabled: true
@@ -90,10 +91,9 @@ model_search:
   # miss every model whose file is not counted yet. Their own switch-on PR turns them on, with the
   # website's residue controls. Off, a residue parameter gets 400.
   residue_filters_enabled: false
-  # has_related_datasets and related_dataset_relation stay off until their switch-on PR (dev first).
-  # Off, either parameter gets 400. Rollback after the switch-on: false here, or
-  # DYNAMIC_PDB_MODEL_SEARCH_RELATED_DATASET_FILTERS_ENABLED=false.
-  related_dataset_filters_enabled: false
+  # has_related_datasets and related_dataset_relation: on on dev first, before production.
+  # Rollback: false here, or DYNAMIC_PDB_MODEL_SEARCH_RELATED_DATASET_FILTERS_ENABLED=false.
+  related_dataset_filters_enabled: true
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR.
   enabled: false
