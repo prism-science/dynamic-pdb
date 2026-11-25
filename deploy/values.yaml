@@ -186,11 +186,13 @@ modelCompoundsJob:
 # Reads every model file in our bucket (and the checksum job's copy of each archive model file)
 # and stores its chains: author chain, entity, deposited length, modeled residues and whether it
 # is a protein (S2), one file at a time, outside the API pods. The model search's chain filters
-# read them. On since its job-on PR, the fill since its fill-on PR; the conformer counts (S3) stay
-# off until their own switch-on PR. See the README, "Coordinate index job".
+# read them. Switched on with its fill (job-on and fill-on PRs), now off again (enabled, below);
+# the conformer counts (S3) stay off until their own switch-on PR. See the README, "Coordinate
+# index job".
 coordinateIndexJob:
   # To stop: false here; until that deploys, suspend the CronJob (README, "Coordinate index job").
-  enabled: true
+  # Off since 2026-11-25: S3 denies the job GetObject on the data bucket. On once infra restores it.
+  enabled: false
   # Every 5 minutes, as the model-compounds job.
   schedule: "*/5 * * * *"
   timeZone: Etc/UTC
