@@ -60,11 +60,11 @@ data_sync:
 entries:
   # Entry deletion is for testing on dev only; production keeps every entry.
   delete_enabled: false
-  # relation and link_evidence on related datasets stay off until their switch-on PR, after dev.
-  # Off, a request that sends either gets 422 at that field. Rollback after the switch-on: false
-  # here, or DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED=false. Data saved while on keeps
-  # the fields; do not roll the code back once production records carry them.
-  related_dataset_relation_enabled: false
+  # relation and link_evidence on related datasets: on since their switch-on PR, after dev (#210).
+  # Rollback: false here, or DYNAMIC_PDB_ENTRIES_RELATED_DATASET_RELATION_ENABLED=false; a request
+  # that sends either then gets 422 at that field. Data saved while on keeps the fields; do not
+  # roll the code back once production records carry them.
+  related_dataset_relation_enabled: true
 artifact_extraction:
   # The deposition forms read an uploaded mmCIF through the server before saving (G5), as on dev,
   # where it was tried on 2026-11-05. Rollback: false here, or
@@ -100,10 +100,10 @@ model_search:
   # miss every model whose file is not counted yet. Their own switch-on PR turns them on, with the
   # website's residue controls. Off, a residue parameter gets 400.
   residue_filters_enabled: false
-  # has_related_datasets and related_dataset_relation stay off until their switch-on PR, after dev.
-  # Off, either parameter gets 400. Rollback after the switch-on: false here, or
-  # DYNAMIC_PDB_MODEL_SEARCH_RELATED_DATASET_FILTERS_ENABLED=false.
-  related_dataset_filters_enabled: false
+  # has_related_datasets and related_dataset_relation: on since their switch-on PR, after dev
+  # (#210). Rollback: false here, or DYNAMIC_PDB_MODEL_SEARCH_RELATED_DATASET_FILTERS_ENABLED=false;
+  # either parameter then gets 400.
+  related_dataset_filters_enabled: true
 selections:
   # Frozen selections (/v1/selections, B1) stay off until their own switch-on PR. Rollback after
   # that: false here, or DYNAMIC_PDB_SELECTIONS_ENABLED=false. The limits keep their defaults.
