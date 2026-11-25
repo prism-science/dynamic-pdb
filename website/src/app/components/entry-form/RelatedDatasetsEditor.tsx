@@ -8,7 +8,9 @@ import { inlineMessages, type FieldMessage } from "./messages";
 import { FIELDS, type FieldId } from "./fields";
 import {
   DATA_TYPE_SUGGESTIONS,
+  LINK_EVIDENCE_OPTIONS,
   MAX_RELATED_DATASETS,
+  RELATION_OPTIONS,
   REPOSITORY_SUGGESTIONS,
   emptyRelatedDataset,
   relatedDatasetItem,
@@ -22,6 +24,8 @@ const ROW_FIELDS: FieldId[] = [
   "relatedDataset.landingUrl",
   "relatedDataset.dataType",
   "relatedDataset.repository",
+  "relatedDataset.relation",
+  "relatedDataset.linkEvidence",
   "relatedDataset.details",
 ];
 
@@ -213,6 +217,32 @@ function RelatedDatasetCard({
           spellCheck={false}
         />
       </Field>
+      <div className={styles.fieldGrid}>
+        <Field
+          id="relatedDataset.relation"
+          htmlFor={`${fieldId}-relation`}
+          messages={inlineMessages(messages, "relatedDataset.relation", item)}
+        >
+          <ChoiceSelect
+            id={`${fieldId}-relation`}
+            value={dataset.relation}
+            options={RELATION_OPTIONS}
+            onChange={(relation) => onPatch({ relation })}
+          />
+        </Field>
+        <Field
+          id="relatedDataset.linkEvidence"
+          htmlFor={`${fieldId}-link-evidence`}
+          messages={inlineMessages(messages, "relatedDataset.linkEvidence", item)}
+        >
+          <ChoiceSelect
+            id={`${fieldId}-link-evidence`}
+            value={dataset.linkEvidence}
+            options={LINK_EVIDENCE_OPTIONS}
+            onChange={(linkEvidence) => onPatch({ linkEvidence })}
+          />
+        </Field>
+      </div>
       <Field
         id="relatedDataset.details"
         htmlFor={`${fieldId}-details`}
@@ -228,5 +258,37 @@ function RelatedDatasetCard({
         />
       </Field>
     </div>
+  );
+}
+
+/** A closed list with "Not stated" first. A stored value the list lacks, from a
+ *  newer API, stays selectable as itself so an edit does not drop it. */
+function ChoiceSelect({
+  id,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (next: string) => void;
+}) {
+  const unlisted = value !== "" && !options.some((option) => option.value === value);
+  return (
+    <select
+      id={id}
+      className={styles.select}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">Not stated</option>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+      {unlisted ? <option value={value}>{value}</option> : null}
+    </select>
   );
 }
