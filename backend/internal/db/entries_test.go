@@ -385,3 +385,30 @@ func Test_should_reject_after_with_offset_when_entries_list_called(t *testing.T)
 	// then
 	require.Error(t, err)
 }
+
+func Test_should_report_state_and_open_revision_when_entry_status_is_read(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	pending := createDBTestEntryRevision(t, "status-pending", now)
+	rejected := createDBTestEntryRevision(t, "status-rejected", now)
+	_, err := testDB.Entries.SetRevisionState(ctx, rejected.EntryID, rejected.ID,
+		[]models.RevisionState{models.RevisionStatePending}, models.RevisionStateRejected)
+	require.NoError(t, err)
+	active := createDBTestActiveEntryRevision(t, "status-active", now)
+
+	// when
+	pendingStatus, pendingErr := testDB.Entries.GetStatus(ctx, pending.EntryID)
+	rejectedStatus, rejectedErr := testDB.Entries.GetStatus(ctx, rejected.EntryID)
+	activeStatus, activeErr := testDB.Entries.GetStatus(ctx, active.EntryID)
+	_, missingErr := testDB.Entries.GetStatus(ctx, "entry-"+uuid.NewString())
+
+	// then
+	require.NoError(t, pendingErr)
+	assert.Equal(t, db.EntryStatus{State: models.EntryStateNew, HasOpenRevision: true}, pendingStatus)
+	require.NoError(t, rejectedErr)
+	assert.Equal(t, db.EntryStatus{State: models.EntryStateNew, HasOpenRevision: false}, rejectedStatus)
+	require.NoError(t, activeErr)
+	assert.Equal(t, db.EntryStatus{State: models.EntryStateActive, HasOpenRevision: false}, activeStatus)
+	require.ErrorIs(t, missingErr, db.ErrEntryRevisionNotFound)
+}

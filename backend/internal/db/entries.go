@@ -169,6 +169,41 @@ func (r *EntriesRepository) RejectOpenRevisions(ctx context.Context, entryID str
 	return rejected, nil
 }
 
+// EntryStatus is an entry's state and whether a revision of it still waits for a decision.
+type EntryStatus struct {
+	State models.EntryState
+	// HasOpenRevision reports a revision that is pending or in review.
+	HasOpenRevision bool
+}
+
+// GetStatus returns the entry's state and whether it has a pending or in-review revision. A
+// missing entry is ErrEntryRevisionNotFound, as reading its revision would be.
+func (r *EntriesRepository) GetStatus(ctx context.Context, entryID string) (EntryStatus, error) {
+	var row struct {
+		State           string `db:"state"`
+		HasOpenRevision bool   `db:"has_open_revision"`
+	}
+	err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &row,
+		`select entry.state,
+		        exists (
+		          select 1
+		          from entry_revisions revision
+		          where revision.entry_id = entry.id
+		            and revision.state in ('pending', 'in_review')
+		        ) as has_open_revision
+		 from entries entry
+		 where entry.id = $1`,
+		entryID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return EntryStatus{}, fmt.Errorf("entry %s: %w", entryID, ErrEntryRevisionNotFound)
+	}
+	if err != nil {
+		return EntryStatus{}, fmt.Errorf("get entry status: %w", err)
+	}
+	return EntryStatus{State: models.EntryState(row.State), HasOpenRevision: row.HasOpenRevision}, nil
+}
+
 var liveRevisionStates = []models.RevisionState{
 	models.RevisionStatePending,
 	models.RevisionStateInReview,

@@ -82,6 +82,9 @@ func (s *modelSyncStrategy) syncModel(
 		ModelState: new(models.ModelStateActive),
 		EntryState: new(models.EntryStateActive),
 	})
+	if errors.Is(err, db.ErrModelRevisionNotFound) {
+		return s.handleModelWithoutActiveRevision(ctx, job.EntryID, modelID, err)
+	}
 	if err != nil {
 		return dataSyncOutcome{}, fmt.Errorf("get current model revision: %w", err)
 	}
@@ -163,6 +166,42 @@ func (s *modelSyncStrategy) syncModel(
 		return outcomeOfFailedApply(err, source)
 	}
 	return dataSyncOutcome{archiveVersion: &latest}, nil
+}
+
+// handleModelWithoutActiveRevision decides what the job of a model with no active revision does.
+// The job stops for good when its entry or model was deleted. Otherwise lookupErr fails the run,
+// which is retried within the hour.
+func (s *modelSyncStrategy) handleModelWithoutActiveRevision(
+	ctx context.Context,
+	entryID string,
+	modelID string,
+	lookupErr error,
+) (dataSyncOutcome, error) {
+	entry, err := s.database.Entries.GetStatus(ctx, entryID)
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("get entry status: %w", err)
+	}
+	switch entry.State {
+	case models.EntryStateDeleted:
+		return dataSyncOutcome{stopReason: models.DataSyncStopReasonEntryDeleted}, nil
+	case models.EntryStateNew, models.EntryStateActive:
+		// The model's own state decides below.
+	default:
+		return dataSyncOutcome{}, fmt.Errorf("unknown entry state: %s", entry.State)
+	}
+
+	modelState, err := s.database.Models.GetState(ctx, modelID)
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("get model state: %w", err)
+	}
+	switch modelState {
+	case models.ModelStateDeleted:
+		return dataSyncOutcome{stopReason: models.DataSyncStopReasonModelDeleted}, nil
+	case models.ModelStateNew, models.ModelStateActive:
+		return dataSyncOutcome{}, fmt.Errorf("get current model revision: %w", lookupErr)
+	default:
+		return dataSyncOutcome{}, fmt.Errorf("unknown model state: %s", modelState)
+	}
 }
 
 // applyWithoutCoordinateChange applies a version whose coordinate change must wait: every other

@@ -63,6 +63,9 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, job models.DataSyncJo
 		State:      new(models.RevisionStateActive),
 		EntryState: new(models.EntryStateActive),
 	})
+	if errors.Is(err, db.ErrEntryRevisionNotFound) {
+		return s.handleEntryWithoutActiveRevision(ctx, job.EntryID, err)
+	}
 	if err != nil {
 		return dataSyncOutcome{}, fmt.Errorf("get current entry revision: %w", err)
 	}
@@ -98,6 +101,36 @@ func (s *entrySyncStrategy) syncEntry(ctx context.Context, job models.DataSyncJo
 		return outcomeOfFailedApply(err, source)
 	}
 	return dataSyncOutcome{archiveVersion: &latest}, nil
+}
+
+// handleEntryWithoutActiveRevision decides what the job of an entry with no active revision does.
+// An entry gets its job when it is created, before its first revision is reviewed, so the job
+// waits at the normal cadence while that review is open. It stops for good once nothing can make a
+// revision of the entry active. An active entry without an active revision is an inconsistency:
+// lookupErr fails the run, which is retried within the hour.
+func (s *entrySyncStrategy) handleEntryWithoutActiveRevision(
+	ctx context.Context,
+	entryID string,
+	lookupErr error,
+) (dataSyncOutcome, error) {
+	status, err := s.database.Entries.GetStatus(ctx, entryID)
+	if err != nil {
+		return dataSyncOutcome{}, fmt.Errorf("get entry status: %w", err)
+	}
+	switch status.State {
+	case models.EntryStateNew:
+		if !status.HasOpenRevision {
+			return dataSyncOutcome{stopReason: models.DataSyncStopReasonEntryNeverApproved}, nil
+		}
+		s.logger.InfoContext(ctx, "data sync waits for the entry's review", "entry_id", entryID)
+		return dataSyncOutcome{}, nil
+	case models.EntryStateDeleted:
+		return dataSyncOutcome{stopReason: models.DataSyncStopReasonEntryDeleted}, nil
+	case models.EntryStateActive:
+		return dataSyncOutcome{}, fmt.Errorf("get current entry revision: %w", lookupErr)
+	default:
+		return dataSyncOutcome{}, fmt.Errorf("unknown entry state: %s", status.State)
+	}
 }
 
 // applyArchiveVersion activates a sync revision with the archive's values when they differ from

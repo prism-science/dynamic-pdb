@@ -384,6 +384,20 @@ const modelRevisionReturningColumns = `model_revisions.id, mo.entry_id as entry_
 			model_revisions.thumbnail_image_url, model_revisions.metadata, model_revisions.field_sources,
 			model_revisions.idempotency_key, model_revisions.created_by, model_revisions.created_at, model_revisions.updated_at`
 
+// GetState returns the model's state. A missing model is ErrModelRevisionNotFound, as reading its
+// revision would be.
+func (r *ModelsRepository) GetState(ctx context.Context, modelID string) (models.ModelState, error) {
+	var state string
+	err := r.queriers.Querier(ctx, r.db).GetContext(ctx, &state, `select state from models where id = $1`, modelID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("model %s: %w", modelID, ErrModelRevisionNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("get model state: %w", err)
+	}
+	return models.ModelState(state), nil
+}
+
 // GetLive returns the latest non-archived revision of a model.
 func (r *ModelsRepository) GetLive(ctx context.Context, modelID string) (*models.ModelRevision, error) {
 	revisions, err := r.List(ctx, ModelRevisionFilters{

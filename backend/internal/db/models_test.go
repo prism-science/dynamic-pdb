@@ -410,3 +410,20 @@ func Test_should_reject_after_with_offset_when_models_list_called(t *testing.T) 
 	// then
 	require.Error(t, err)
 }
+
+func Test_should_return_model_state_when_model_state_is_read(t *testing.T) {
+	// given
+	ctx := context.Background()
+	now := time.Now().UTC()
+	entryRevision := createDBTestEntryRevision(t, "model-state-entry", now)
+	modelRevision := createDBTestModelRevision(t, entryRevision.EntryID, "model-state", now)
+
+	// when
+	state, err := testDB.Models.GetState(ctx, modelRevision.ModelID)
+	_, missingErr := testDB.Models.GetState(ctx, "model-"+uuid.NewString())
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, models.ModelStateNew, state)
+	require.ErrorIs(t, missingErr, db.ErrModelRevisionNotFound)
+}

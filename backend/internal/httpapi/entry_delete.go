@@ -18,9 +18,6 @@ import (
 // entryDeletedSummary is the change summary of the revision that deletes an entry.
 const entryDeletedSummary = "Entry deleted"
 
-// entryDeletedSyncStopReason is the stop reason of the data sync jobs of a deleted entry.
-const entryDeletedSyncStopReason = "entry deleted"
-
 // WithEntryDeletion turns DELETE /v1/entries/{entry_id} on or off (default off). It is on only
 // on dev, where researchers delete their test entries to retest the deposition forms.
 func (s *Server) WithEntryDeletion(enabled bool) *Server {
@@ -106,10 +103,10 @@ func (s *Server) deleteEntry(ctx context.Context, entryID string, deletedBy uuid
 		return entryDeletion{}, fmt.Errorf("reject open model revisions: %w", err)
 	}
 
-	// The sync jobs read only active entries, so a deleted entry's jobs would fail and retry
-	// every hour for good.
+	// A deleted entry has nothing left to sync. The sync would stop these jobs at their next run;
+	// stopping them here records it at once.
 	now := time.Now().UTC()
-	stoppedSyncJobs, err := s.database.DataSyncJobs.StopForEntry(ctx, entryID, entryDeletedSyncStopReason, now)
+	stoppedSyncJobs, err := s.database.DataSyncJobs.StopForEntry(ctx, entryID, domainmodels.DataSyncStopReasonEntryDeleted, now)
 	if err != nil {
 		return entryDeletion{}, fmt.Errorf("stop entry data sync jobs: %w", err)
 	}
