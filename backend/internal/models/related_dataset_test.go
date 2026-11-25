@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_should_strip_resolver_url_or_doi_prefix_when_doi_is_normalized(t *testing.T) {
@@ -90,4 +91,31 @@ func Test_should_detect_related_dataset_change_when_entry_revisions_are_compared
 
 	// then
 	assert.False(t, equal)
+}
+
+func Test_should_trim_relation_and_drop_blank_link_evidence_when_related_datasets_are_normalized(t *testing.T) {
+	// given
+	datasets := []RelatedDataset{{
+		DOI: "10.15785/SBGRID/1303", DataType: "diffraction image data",
+		Relation: new(RelatedDatasetRelation(" similar_sample ")), LinkEvidence: new(RelatedDatasetLinkEvidence("  ")),
+	}}
+
+	// when
+	normalized := NormalizeRelatedDatasets(datasets)
+
+	// then
+	assert.Equal(t, new(RelatedDatasetRelationSimilarSample), normalized[0].Relation)
+	assert.Nil(t, normalized[0].LinkEvidence)
+}
+
+func Test_should_leave_relation_out_of_the_stored_json_when_it_is_not_stated(t *testing.T) {
+	// given
+	dataset := RelatedDataset{DOI: "10.15785/SBGRID/1303", DataType: "diffraction image data"}
+
+	// when
+	data, err := json.Marshal(dataset)
+
+	// then
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"doi":"10.15785/SBGRID/1303","data_type":"diffraction image data"}`, string(data))
 }

@@ -1,5 +1,5 @@
-// Package validation checks writes against Dynamic PDB Schema v0.2.0
-// (docs/schema/dynamic-pdb-schema-v0.2.0.md). Every rule reports all of its field
+// Package validation checks writes against Dynamic PDB Schema v0.3.0
+// (docs/schema/dynamic-pdb-schema-v0.3.0.md). Every rule reports all of its field
 // errors at once, so HTTP handlers and the RCSB sync jobs share one set of rules.
 package validation
 

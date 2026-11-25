@@ -74,7 +74,7 @@ Before reusing data, check the applicable license and attribution requirements, 
 
 ## Submit data through the API
 
-Submitting needs an account with permission to submit. Every new entry, model, and revision is checked against [Dynamic PDB Schema v0.2.0](https://github.com/prism-science/dynamic-pdb/blob/main/docs/schema/dynamic-pdb-schema-v0.2.0.md) before anything is saved.
+Submitting needs an account with permission to submit. Every new entry, model, and revision is checked against [Dynamic PDB Schema v0.3.0](https://github.com/prism-science/dynamic-pdb/blob/main/docs/schema/dynamic-pdb-schema-v0.3.0.md) before anything is saved.
 
 - A request that breaks a rule gets HTTP `422`, and nothing is saved. The response lists every broken rule, each with a `source.pointer` that names the field, for example `/model/metrics/0/key`.
 - Fix every listed field and send the whole request again.

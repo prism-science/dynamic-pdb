@@ -21,7 +21,7 @@ const { entryFormMessages } = require("../src/app/components/entry-form/validati
 const { inlineMessages } = require("../src/app/components/entry-form/messages.ts");
 const drafts = require("../src/app/components/entry-form/drafts.ts");
 const { DRAFT_STORAGE_KEY } = require("../src/app/components/entry-form/types.ts");
-const { isLandingUrl } = require("../src/lib/related-datasets.ts");
+const { isLandingUrl, relatedDatasetRelationSummary } = require("../src/lib/related-datasets.ts");
 const { diffEntry } = require("../src/lib/reviewDiff.ts");
 const RelatedDatasetsEditor =
   require("../src/app/components/entry-form/RelatedDatasetsEditor.tsx").default;
@@ -36,6 +36,8 @@ function draft(overrides = {}) {
     dataType: "diffraction image data",
     repository: "SBGrid Data Bank",
     details: "",
+    relation: "",
+    linkEvidence: "",
     ...overrides,
   };
 }
@@ -413,7 +415,9 @@ test("should_restore_a_saved_dataset_from_before_accessions_with_both_new_values
     const restored = drafts.readStoredDraft();
 
     // then
-    assert.deepEqual(restored.metadata.relatedDatasets, [{ ...savedRow, accession: "", landingUrl: "" }]);
+    assert.deepEqual(restored.metadata.relatedDatasets, [
+      { ...savedRow, accession: "", landingUrl: "", relation: "", linkEvidence: "" },
+    ]);
     assert.equal(relatedDatasetsRequest(restored.metadata.relatedDatasets)[0].accession, undefined);
   } finally {
     delete globalThis.window;
@@ -488,4 +492,93 @@ test("should_show_one_review_row_per_accession_within_its_repository", () => {
       ["EMPIAR-10028", "added"],
     ],
   );
+});
+
+test("should_label_relation_and_evidence_and_show_an_unknown_value_as_text", () => {
+  // given
+  const datasets = [
+    { doi: "10.15785/SBGRID/1", data_type: "x", relation: "similar_sample", link_evidence: "repository_text" },
+    { doi: "10.15785/SBGRID/2", data_type: "x", link_evidence: "pdb_record" },
+    { doi: "10.15785/SBGRID/3", data_type: "x", relation: "sibling" },
+    { doi: "10.15785/SBGRID/4", data_type: "x" },
+  ];
+
+  // when
+  const summaries = datasets.map(relatedDatasetRelationSummary);
+
+  // then
+  assert.deepEqual(summaries, [
+    "Similar sample · named on the repository's page",
+    "cited by the PDB entry",
+    "sibling",
+    null,
+  ]);
+});
+
+test("should_keep_relation_and_evidence_when_another_dataset_of_the_entry_is_edited", () => {
+  // given: the form has no control for relation yet, so an edit must carry it through.
+  const entry = storedEntry({
+    related_datasets: [
+      {
+        doi: "10.15785/SBGRID/1303", data_type: "diffraction image data", repository: "SBGrid Data Bank",
+        relation: "similar_sample", link_evidence: "repository_text",
+      },
+      { doi: "10.5281/zenodo.1234", data_type: "EM raw micrographs" },
+    ],
+  });
+  const initial = entryDraftFromEntry(entry);
+  const edited = {
+    ...initial,
+    metadata: {
+      ...initial.metadata,
+      relatedDatasets: initial.metadata.relatedDatasets.map((row, index) =>
+        index === 1 ? { ...row, details: "Raw micrographs." } : row,
+      ),
+    },
+  };
+
+  // when
+  const change = buildEntryRevisionChange(entry, initial, edited);
+
+  // then
+  assert.equal(change.related_datasets[0].relation, "similar_sample");
+  assert.equal(change.related_datasets[0].link_evidence, "repository_text");
+  assert.equal(change.related_datasets[1].relation, undefined);
+  assert.equal(change.related_datasets[1].details, "Raw micrographs.");
+});
+
+test("should_show_a_relation_change_in_the_review_diff", () => {
+  // given
+  const active = { ...storedEntry(), protein_sequences: [], artifacts: [] };
+  const proposed = {
+    ...active,
+    related_datasets: [{
+      doi: "10.15785/SBGRID/1303", data_type: "diffraction image data", repository: "SBGrid Data Bank",
+      relation: "similar_sample", link_evidence: "repository_text",
+    }],
+  };
+
+  // when
+  const section = diffEntry(active, proposed).find((item) => item.title === "Related datasets");
+
+  // then
+  assert.equal(section.rows.length, 1);
+  assert.equal(section.rows[0].state, "changed");
+  assert.match(JSON.stringify(section.rows[0]), /Similar sample · named on the repository's page/);
+});
+
+test("should_show_the_relation_on_the_entry_page_only_when_the_dataset_states_one", () => {
+  // given
+  const datasets = [
+    { doi: "10.15785/SBGRID/1303", data_type: "diffraction image data", relation: "similar_sample",
+      link_evidence: "repository_text" },
+    { doi: "10.5281/zenodo.1234", data_type: "EM raw micrographs" },
+  ];
+
+  // when
+  const html = renderToStaticMarkup(React.createElement(RelatedDatasets, { datasets }));
+
+  // then
+  assert.equal((html.match(/Similar sample/g) ?? []).length, 1);
+  assert.match(html, /named on the repository&#x27;s page/);
 });

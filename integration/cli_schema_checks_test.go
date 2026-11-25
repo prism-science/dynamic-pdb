@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The backend in these tests enforces Schema v0.2.0 (backend/config/local.yml), as
+// The backend in these tests enforces the Dynamic PDB Schema (backend/config/local.yml), as
 // dev does now and production will.
 
 func Test_should_upload_computed_model_when_manifest_names_run_version_and_metric_software(t *testing.T) {

@@ -1649,7 +1649,24 @@ export interface components {
             repository?: string;
             /** @description mmCIF details: what the dataset contains and how it relates to this entry. */
             details?: string;
+            relation?: components["schemas"]["RelatedDatasetRelation"];
+            link_evidence?: components["schemas"]["RelatedDatasetLinkEvidence"];
         };
+        /**
+         * @description Optional. How the dataset relates to the experiment the entry describes. source_data: the deposited coordinates were refined against data reduced from this dataset. similar_sample: collected from comparable crystals or samples, not the deposited one. other: any other relationship, which details must state. Absent means not stated. A dataset the PDB entry cites (link_evidence pdb_record) is not source_data by that alone: it can be a control sample or one of several collections. A Dynamic PDB extension: mmCIF _pdbx_related_exp_data_set has no such item. Requests outside this list get 422; responses may gain values, so show an unknown value as text. Refused with 422 until the environment turns related dataset relations on (entries.related_dataset_relation_enabled).
+         * @enum {string}
+         */
+        RelatedDatasetRelation: "source_data" | "similar_sample" | "other";
+        /**
+         * @description What shows the dataset relates to the entry; required when relation is set. pdb_record: the PDB entry cites the dataset. repository_record: the repository's metadata names the PDB ID. repository_text: the repository's page text names the PDB ID. publication: a paper's data availability statement names both. depositor_statement: the depositor states it. A Dynamic PDB extension, like relation. Requests outside this list get 422; responses may gain values. Refused with 422 until the environment turns related dataset relations on.
+         * @enum {string}
+         */
+        RelatedDatasetLinkEvidence: "pdb_record" | "repository_record" | "repository_text" | "publication" | "depositor_statement";
+        /**
+         * @description A RelatedDatasetRelation, or unstated for a related dataset that states no relation.
+         * @enum {string}
+         */
+        RelatedDatasetRelationFilter: "source_data" | "similar_sample" | "other" | "unstated";
         /** @description Crystals and diffraction datasets reported for this entry. */
         EntryCrystallography: {
             crystals?: components["schemas"]["EntryCrystal"][];
@@ -2204,7 +2221,7 @@ export interface components {
             id: string;
             name: string;
             level: components["schemas"]["ArtifactLevel"];
-            /** @description Required by Dynamic PDB Schema v0.2.0. A request without it gets 422. */
+            /** @description Required since Dynamic PDB Schema v0.2.0. A request without it gets 422. */
             type?: components["schemas"]["ArtifactType"];
             uri?: string | null;
             sha256?: string | null;
@@ -3836,6 +3853,10 @@ export interface operations {
                 rmsf_max?: number;
                 /** @description Model filter. Models that have no value for at least one of these metrics. */
                 metric_missing?: components["schemas"]["MetricKey"][];
+                /** @description Entry filter. true returns models whose entry's active revision lists at least one related dataset (data another repository holds, such as SBGrid); false returns models whose entry lists none. Available only where the server enables the related dataset filters (model_search.related_dataset_filters_enabled); elsewhere 400. */
+                has_related_datasets?: boolean;
+                /** @description Entry filter. Models whose entry's active revision lists a related dataset with one of these relations to the experiment the entry describes. unstated matches a related dataset that states no relation. Several values: a dataset with any of them counts. Available only where the server enables the related dataset filters; elsewhere 400. */
+                related_dataset_relation?: components["schemas"]["RelatedDatasetRelationFilter"][];
                 /** @description Open to every caller where the server enables model search (elsewhere every filter gets 400). true returns only models with an open review flag (on the model, its current revision, its entry or the entry's polymer entities); false returns only models without one. The flags' issues (review_flags) stay for reviewers and admins only. */
                 flagged?: boolean;
             };
@@ -5611,6 +5632,9 @@ export const missingInfoKindValues: ReadonlyArray<FlattenedDeepRequired<componen
 export const modeledCompoundsStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompounds"]["status"]> = ["not_stored", "pending", "done", "failed"];
 export const modeledCompoundCopySourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ModeledCompoundCopy"]["source"]> = ["nonpoly_scheme", "branch_scheme", "atom_site", "pdb_hetatm"];
 export const tokenAttributesToken_typeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TokenAttributes"]["token_type"]> = ["Bearer"];
+export const relatedDatasetRelationValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetRelation"]> = ["source_data", "similar_sample", "other"];
+export const relatedDatasetLinkEvidenceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetLinkEvidence"]> = ["pdb_record", "repository_record", "repository_text", "publication", "depositor_statement"];
+export const relatedDatasetRelationFilterValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["RelatedDatasetRelationFilter"]> = ["source_data", "similar_sample", "other", "unstated"];
 export const archivePdbDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchivePdbData"]["type"]> = ["archive_pdb_lookups"];
 export const archiveWarningSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveWarning"]["source"]> = ["archive", "validation"];
 export const artifactExtractionDataTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArtifactExtractionData"]["type"]> = ["artifact_extractions"];

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chicors "github.com/go-chi/cors"
 
+	"dynamic-pdb/backend/api"
 	"dynamic-pdb/backend/internal/auth"
 	"dynamic-pdb/backend/internal/config"
 	"dynamic-pdb/backend/internal/db"
@@ -116,8 +117,10 @@ func run() int {
 		rcsb.NewClient(rcsb.WithCacheEntries(archiveCacheEntries), rcsb.WithCacheTTL(archiveCacheTTL)),
 		sifts.NewClient(),
 	)).WithEntryDeletion(cfg.Entries.DeleteEnabled).WithSelfApproval(cfg.Revisions.SelfApprovalEnabled).
-		WithUploadExtraction(cfg.ArtifactExtraction.UploadsEnabled)
+		WithUploadExtraction(cfg.ArtifactExtraction.UploadsEnabled).
+		WithRelatedDatasetRelation(cfg.Entries.RelatedDatasetRelationEnabled)
 	slog.Info("entry deletion configured", "enabled", cfg.Entries.DeleteEnabled)
+	slog.Info("related dataset relation configured", "enabled", cfg.Entries.RelatedDatasetRelationEnabled)
 	slog.Info("upload extraction configured", "enabled", cfg.ArtifactExtraction.UploadsEnabled)
 	slog.Info("self-approval configured", "enabled", cfg.Revisions.SelfApprovalEnabled)
 
@@ -127,18 +130,20 @@ func run() int {
 		return 1
 	}
 	srv = srv.WithModelSearch(httpapi.ModelSearchPolicy{
-		FiltersEnabled:        cfg.ModelSearch.FiltersEnabled,
-		ChainFiltersEnabled:   cfg.ModelSearch.ChainFiltersEnabled,
-		ResidueFiltersEnabled: cfg.ModelSearch.ResidueFiltersEnabled,
-		CountCap:              cfg.ModelSearch.CountCap,
-		Requests:              cfg.ModelSearch.RateLimit.Requests,
-		InternalRequests:      cfg.ModelSearch.RateLimit.InternalRequests,
-		Window:                cfg.ModelSearch.RateLimit.Window,
-		TrustedProxies:        trustedProxies,
+		FiltersEnabled:               cfg.ModelSearch.FiltersEnabled,
+		ChainFiltersEnabled:          cfg.ModelSearch.ChainFiltersEnabled,
+		ResidueFiltersEnabled:        cfg.ModelSearch.ResidueFiltersEnabled,
+		RelatedDatasetFiltersEnabled: cfg.ModelSearch.RelatedDatasetFiltersEnabled,
+		CountCap:                     cfg.ModelSearch.CountCap,
+		Requests:                     cfg.ModelSearch.RateLimit.Requests,
+		InternalRequests:             cfg.ModelSearch.RateLimit.InternalRequests,
+		Window:                       cfg.ModelSearch.RateLimit.Window,
+		TrustedProxies:               trustedProxies,
 	})
 	slog.Info("model search configured", "filters_enabled", cfg.ModelSearch.FiltersEnabled,
 		"chain_filters_enabled", cfg.ModelSearch.ChainFiltersEnabled,
-		"residue_filters_enabled", cfg.ModelSearch.ResidueFiltersEnabled, "count_cap", cfg.ModelSearch.CountCap)
+		"residue_filters_enabled", cfg.ModelSearch.ResidueFiltersEnabled,
+		"related_dataset_filters_enabled", cfg.ModelSearch.RelatedDatasetFiltersEnabled, "count_cap", cfg.ModelSearch.CountCap)
 	srv = srv.WithSelections(httpapi.SelectionsPolicy{
 		Enabled:          cfg.Selections.Enabled,
 		MaxModels:        cfg.Selections.MaxModels,
@@ -168,8 +173,15 @@ func run() int {
 	slog.Info("downloads configured", "enabled", cfg.Downloads.Enabled,
 		"max_archive_bytes", cfg.Downloads.MaxArchiveBytes, "max_unfinished", cfg.Downloads.MaxUnfinished)
 
+	apiVersion, schemaVersion, err := api.Versions()
+	if err != nil {
+		slog.Error("read versions from the embedded spec", "err", err)
+		return 1
+	}
+	slog.Info("versions", "api", apiVersion, "schema", schemaVersion)
 	router := chi.NewRouter()
 	router.Use(httpapi.RequestLifecycleMiddlewares(logger, readRequestTimeout)...)
+	router.Use(httpapi.VersionHeadersMiddleware(apiVersion, schemaVersion))
 	router.Use(corsMiddleware(env))
 	router.Use(httpapi.GlobalRateLimitMiddleware(httpapi.RateLimitPolicy{
 		Requests:         cfg.Server.RateLimit.Requests,
@@ -290,6 +302,8 @@ func corsMiddleware(env string) func(http.Handler) http.Handler {
 			"Content-Type",
 			"Accept",
 		},
-		MaxAge: 300,
+		// A page on another origin may read which API and schema versions a response follows.
+		ExposedHeaders: httpapi.VersionHeaders,
+		MaxAge:         300,
 	})
 }

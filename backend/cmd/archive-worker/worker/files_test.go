@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"dynamic-pdb/backend/api"
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -176,13 +177,16 @@ func Test_should_write_the_cc0_text_and_keep_each_value_in_its_cell_when_a_manif
 
 	// then
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
-	require.Len(t, lines, 6)
+	require.Len(t, lines, 7)
+	apiVersion, schemaVersion, err := api.Versions()
+	require.NoError(t, err)
+	assert.Equal(t, "# Dynamic PDB Schema v"+schemaVersion+"; API "+apiVersion+".", lines[1])
 	assert.Equal(t, "# PDB archive files and Prism's own models are dedicated to the public domain under CC0 1.0. "+
-		"CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/.", lines[1])
-	assert.Contains(t, lines[2], "Files deposited by others: Reuse terms not yet confirmed by the depositor, until they confirm.")
-	assert.Equal(t, "# We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.", lines[3])
-	assert.Equal(t, strings.Join(manifestColumns, "\t"), lines[4])
-	cells := strings.Split(lines[5], "\t")
+		"CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/.", lines[2])
+	assert.Contains(t, lines[3], "Files deposited by others: Reuse terms not yet confirmed by the depositor, until they confirm.")
+	assert.Equal(t, "# We ask that you acknowledge Dynamic PDB and cite the depositors of the entries you use.", lines[4])
+	assert.Equal(t, strings.Join(manifestColumns, "\t"), lines[5])
+	cells := strings.Split(lines[6], "\t")
 	require.Len(t, cells, len(manifestColumns), "an escaped tab stays inside its cell")
 	assert.Equal(t, `a\tb\nc\\d`, cells[indexOf(manifestColumns, "file_name")])
 	assert.Contains(t, readmeText(manifestHeader{SelectionID: uuid.Nil, CatalogDate: catalogDate}),

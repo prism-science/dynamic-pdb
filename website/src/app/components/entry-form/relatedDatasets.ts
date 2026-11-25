@@ -77,6 +77,8 @@ export function emptyRelatedDataset(): RelatedDatasetDraft {
     dataType: "",
     repository: "",
     details: "",
+    relation: "",
+    linkEvidence: "",
   };
 }
 
@@ -91,6 +93,8 @@ export function relatedDatasetDraftsFromStored(
     dataType: dataset.data_type,
     repository: dataset.repository ?? "",
     details: dataset.details ?? "",
+    relation: dataset.relation ?? "",
+    linkEvidence: dataset.link_evidence ?? "",
   }));
 }
 
@@ -102,14 +106,22 @@ export function relatedDatasetsRequest(
   if (drafts.length === 0) {
     return undefined;
   }
-  return drafts.map((draft) => ({
-    doi: normalizeDoi(draft.doi) || undefined,
-    accession: draft.accession.trim() || undefined,
-    landing_url: draft.landingUrl.trim() || undefined,
-    data_type: draft.dataType.trim(),
-    repository: draft.repository.trim() || undefined,
-    details: draft.details.trim() || undefined,
-  }));
+  return drafts.map((draft) => {
+    const relation = draft.relation.trim();
+    const linkEvidence = draft.linkEvidence.trim();
+    return {
+      doi: normalizeDoi(draft.doi) || undefined,
+      accession: draft.accession.trim() || undefined,
+      landing_url: draft.landingUrl.trim() || undefined,
+      data_type: draft.dataType.trim(),
+      repository: draft.repository.trim() || undefined,
+      details: draft.details.trim() || undefined,
+      // Sent back as stored, and only when stored: the values come from the API,
+      // which checks them, and a server with relations off refuses the keys.
+      ...(relation ? { relation: relation as RelatedDataset["relation"] } : {}),
+      ...(linkEvidence ? { link_evidence: linkEvidence as RelatedDataset["link_evidence"] } : {}),
+    };
+  });
 }
 
 /** The id a row's messages carry: its position, counted from 1. */

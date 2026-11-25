@@ -66,6 +66,9 @@ type Server struct {
 	selfApprovalEnabled bool
 	// uploadExtractionEnabled turns POST /v1/files/extract on; see WithUploadExtraction.
 	uploadExtractionEnabled bool
+	// relatedDatasetRelationEnabled accepts relation and link_evidence on related datasets; see
+	// WithRelatedDatasetRelation.
+	relatedDatasetRelationEnabled bool
 }
 
 func NewServer(

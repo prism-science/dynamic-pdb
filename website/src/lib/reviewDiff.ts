@@ -5,7 +5,11 @@ import type {
   ReviewEntry,
   ReviewModel,
 } from "@/lib/api/entries";
-import { relatedDatasetKey, relatedDatasetName } from "@/lib/related-datasets";
+import {
+  relatedDatasetKey,
+  relatedDatasetName,
+  relatedDatasetRelationSummary,
+} from "@/lib/related-datasets";
 
 export type DiffState = "added" | "removed" | "changed" | "same";
 
@@ -134,6 +138,7 @@ function describeRelatedDataset(dataset: RelatedDataset): string {
     dataset.repository,
     dataset.landing_url,
     dataset.details,
+    relatedDatasetRelationSummary(dataset),
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");

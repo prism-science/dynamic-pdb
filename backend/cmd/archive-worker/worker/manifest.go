@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"dynamic-pdb/backend/api"
 	"dynamic-pdb/backend/internal/models"
 )
 
@@ -45,14 +46,15 @@ const (
 	recordNoMatchingFile recordType = "no_matching_file"
 )
 
-// manifestColumns are manifest.tsv's columns, in order.
+// manifestColumns are manifest.tsv's columns, in order. New columns go at the end, so a reader
+// that goes by position keeps working; relation and link_evidence came with Schema v0.3.0.
 var manifestColumns = []string{
 	"record_type", "entry_id", "entry_revision", "model_id", "model_revision", "model_type", "pdb_id",
 	"file_id", "file_name", "path_in_archive", "roles", "type", "level", "format", "size_bytes", "size_source",
 	"recorded_sha256", "sha256_source", "recorded_after_save", "verified_at_save", "status", "reason", "reason_code",
 	"verification",
 	"verified_at", "source", "source_url", "license", "license_url", "authors", "affiliation",
-	"citation_link", "dataset_id",
+	"citation_link", "dataset_id", "relation", "link_evidence",
 }
 
 // manifestRow is one row of manifest.tsv; empty values are written as empty cells.
@@ -80,7 +82,8 @@ func (header manifestHeader) retryLine() string {
 		*header.RetryOf)
 }
 
-// manifestWriter writes manifest.tsv: three comment lines with the terms, a header row, then one
+// manifestWriter writes manifest.tsv: comment lines naming the archive, the schema and API versions
+// and the terms, a header row, then one
 // row per file, related dataset or model without a file of the choice.
 type manifestWriter struct {
 	out  *bufio.Writer
@@ -88,11 +91,16 @@ type manifestWriter struct {
 }
 
 func newManifestWriter(out io.Writer, header manifestHeader) (*manifestWriter, error) {
+	apiVersion, schemaVersion, err := api.Versions()
+	if err != nil {
+		return nil, fmt.Errorf("read versions for the manifest header: %w", err)
+	}
 	writer := &manifestWriter{out: bufio.NewWriter(out)}
 	lines := []string{
 		fmt.Sprintf("# Dynamic PDB archive manifest. Selection %s, catalog date %s, file choice %s, prepared %s.",
 			header.SelectionID, header.CatalogDate.UTC().Format(time.RFC3339), header.FileChoice,
 			header.PreparedAt.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("# Dynamic PDB Schema v%s; API %s.", schemaVersion, apiVersion),
 		"# " + cc0Statement + " " + cc0Name + ": " + cc0URL + ".",
 		"# Files deposited by others: " + notConfirmedTerms + ", until they confirm. Related datasets and files " +
 			"held elsewhere: " + externalTerms + ". Each file's license column says which applies.",
@@ -248,15 +256,25 @@ func relatedDatasetRow(dataset models.RelatedDataset) manifestRow {
 		link = *dataset.LandingURL
 	}
 	return manifestRow{
-		"record_type": string(recordRelatedDataset),
-		"type":        dataset.DataType,
-		"source":      stringValue(dataset.Repository),
-		"source_url":  link,
-		"dataset_id":  id,
-		"reason":      "held by its repository, not part of this archive",
-		"license":     externalTerms,
-		"license_url": link,
+		"record_type":   string(recordRelatedDataset),
+		"type":          dataset.DataType,
+		"source":        stringValue(dataset.Repository),
+		"source_url":    link,
+		"dataset_id":    id,
+		"reason":        "held by its repository, not part of this archive",
+		"license":       externalTerms,
+		"license_url":   link,
+		"relation":      vocabularyValue(dataset.Relation),
+		"link_evidence": vocabularyValue(dataset.LinkEvidence),
 	}
+}
+
+// vocabularyValue is a stated vocabulary value, or empty when it is not stated.
+func vocabularyValue[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
 // merge adds extra's values to row and returns row.

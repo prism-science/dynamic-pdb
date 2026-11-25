@@ -52,6 +52,10 @@ type EntriesConfig struct {
 	// DeleteEnabled lets reviewers soft-delete entries with DELETE /v1/entries/{entry_id}. It is
 	// on only on dev, so researchers can delete their test entries and retest the deposition forms.
 	DeleteEnabled bool `mapstructure:"delete_enabled"`
+	// RelatedDatasetRelationEnabled accepts relation and link_evidence on an entry's related
+	// datasets. Merged dark: on locally, off on dev and production until their switch-on PRs,
+	// dev first. Off, a request that sends either field gets 422.
+	RelatedDatasetRelationEnabled bool `mapstructure:"related_dataset_relation_enabled"`
 }
 
 // ArtifactExtractionConfig holds the switches for reading values from structure files.
@@ -83,6 +87,10 @@ type ModelSearchConfig struct {
 	// the coordinate-index job stored (S3): on only once its conformer fill is done, so they never
 	// miss models whose files are not counted yet. Off, a residue parameter gets 400.
 	ResidueFiltersEnabled bool `mapstructure:"residue_filters_enabled"`
+	// RelatedDatasetFiltersEnabled also turns on has_related_datasets and related_dataset_relation.
+	// Merged dark: on locally, off on dev and production until their switch-on PRs, dev first.
+	// Off, either parameter gets 400.
+	RelatedDatasetFiltersEnabled bool `mapstructure:"related_dataset_filters_enabled"`
 	// CountCap is where the total stops counting: above it the total is "CountCap+".
 	CountCap int `mapstructure:"count_cap"`
 	// RateLimit caps searches that count their results (requests without a cursor), per client
@@ -243,11 +251,13 @@ func ReadFromFile(filename string) (Config, error) {
 	v.SetDefault("validation::request_keys", string(validation.ModeLogOnly))
 	v.SetDefault("data_sync::coordinate_revisions", false)
 	v.SetDefault("entries::delete_enabled", false)
+	v.SetDefault("entries::related_dataset_relation_enabled", false)
 	v.SetDefault("revisions::self_approval_enabled", false)
 	v.SetDefault("artifact_extraction::uploads_enabled", false)
 	v.SetDefault("model_search::filters_enabled", false)
 	v.SetDefault("model_search::chain_filters_enabled", false)
 	v.SetDefault("model_search::residue_filters_enabled", false)
+	v.SetDefault("model_search::related_dataset_filters_enabled", false)
 	v.SetDefault("model_search::count_cap", defaultModelSearchCountCap)
 	v.SetDefault("model_search::rate_limit::requests", defaultModelSearchRateLimitRequests)
 	v.SetDefault("model_search::rate_limit::internal_requests", defaultModelSearchRateLimitInternalRequests)

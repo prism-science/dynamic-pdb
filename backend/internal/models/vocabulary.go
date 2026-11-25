@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// The lists below are the controlled vocabularies of Dynamic PDB Schema v0.2.0
-// (docs/schema/dynamic-pdb-schema-v0.2.0.md), in the schema's order. Each Validate
+// The lists below are the controlled vocabularies of Dynamic PDB Schema v0.3.0
+// (docs/schema/dynamic-pdb-schema-v0.3.0.md), in the schema's order. Each Validate
 // method accepts exactly the values in its list.
 
 // StructureMethods are the methods a depositor may give an entry. Entries the
@@ -209,6 +209,46 @@ func (source EntrySource) Validate() error {
 		return nil
 	default:
 		return unknownValueError("entry external reference", source, EntrySources)
+	}
+}
+
+// RelatedDatasetRelations are the relations a related dataset may state (Dynamic PDB
+// extension; mmCIF has no item for it).
+var RelatedDatasetRelations = []RelatedDatasetRelation{
+	RelatedDatasetRelationSourceData,
+	RelatedDatasetRelationSimilarSample,
+	RelatedDatasetRelationOther,
+}
+
+func (relation RelatedDatasetRelation) Validate() error {
+	switch relation {
+	case RelatedDatasetRelationSourceData, RelatedDatasetRelationSimilarSample, RelatedDatasetRelationOther:
+		return nil
+	default:
+		return unknownValueError("related dataset relation", relation, RelatedDatasetRelations)
+	}
+}
+
+// RelatedDatasetLinkEvidences are what may show that a related dataset relates to the entry
+// (Dynamic PDB extension; mmCIF has no item for it).
+var RelatedDatasetLinkEvidences = []RelatedDatasetLinkEvidence{
+	RelatedDatasetLinkEvidencePDBRecord,
+	RelatedDatasetLinkEvidenceRepositoryRecord,
+	RelatedDatasetLinkEvidenceRepositoryText,
+	RelatedDatasetLinkEvidencePublication,
+	RelatedDatasetLinkEvidenceDepositorStatement,
+}
+
+func (evidence RelatedDatasetLinkEvidence) Validate() error {
+	switch evidence {
+	case RelatedDatasetLinkEvidencePDBRecord,
+		RelatedDatasetLinkEvidenceRepositoryRecord,
+		RelatedDatasetLinkEvidenceRepositoryText,
+		RelatedDatasetLinkEvidencePublication,
+		RelatedDatasetLinkEvidenceDepositorStatement:
+		return nil
+	default:
+		return unknownValueError("related dataset link evidence", evidence, RelatedDatasetLinkEvidences)
 	}
 }
 

@@ -28,7 +28,7 @@ func (s *Server) CreateEntryRevision(w http.ResponseWriter, r *http.Request, ent
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user is required")
 		return
 	}
-	relatedErr := checkRelatedDatasets(
+	relatedErr := s.checkRelatedDatasets(
 		validation.Root.Field("entry").Field("related_datasets"), payload.Request.Entry.RelatedDatasets,
 	)
 	if s.writeMutationError(r.Context(), w, relatedErr, "create entry revision") {

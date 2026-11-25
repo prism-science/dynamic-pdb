@@ -258,3 +258,92 @@ func (s *ModelSearchSuite) Test_should_page_through_every_match_once_when_a_sear
 	s.Require().NotNil(pages[0].Meta.Total, "an empty cursor is the first page")
 	s.Equal(httpapi.ModelSearchTotal{Count: 3, Exact: true}, *pages[0].Meta.Total)
 }
+
+// createEntryWithRelatedDatasetsForTest creates and activates an entry through the server that
+// accepts relation and link_evidence, then adds models through testServer.
+func (s *ModelSearchSuite) createEntryWithRelatedDatasetsForTest(
+	token string, entry map[string]any, modelCount int,
+) []string {
+	s.T().Helper()
+	entry["method"] = "X-ray crystallography"
+	//nolint:bodyclose // decodeJSONResponse closes the response body.
+	response := jsonRequestToServerWithToken(
+		s.T(), relatedDatasetRelationServer.URL, http.MethodPost, "/v1/entries", map[string]any{"entry": entry}, token,
+	)
+	created := decodeJSONResponse[httpapi.CreateEntryRevisionDocument](s.T(), response, http.StatusCreated)
+	activateEntryRevisionForTest(s.T(), created.Data.Attributes)
+	modelIDs := make([]string, 0, modelCount)
+	for range modelCount {
+		model := createAndActivateModelForTest(s.T(), token, created.Data.Attributes.EntryId, map[string]any{
+			"model": map[string]any{"title": "search model", "metadata": map[string]any{"model_type": "Deposited"}},
+		})
+		modelIDs = append(modelIDs, model.ModelId)
+	}
+	return modelIDs
+}
+
+func (s *ModelSearchSuite) Test_should_find_models_by_whether_their_entry_lists_related_datasets_and_by_relation() {
+	// given: three entries sharing a ligand no other test uses
+	token := issueEntryTokenForGitHubIDForTest(s.T(), "model-search-related-owner", 8812)
+	ligand := randomCompoundIDForTest()
+	similar := s.createEntryWithRelatedDatasetsForTest(token, map[string]any{
+		"title": "similar crystals", "ligands": []string{ligand},
+		"related_datasets": []map[string]any{{
+			"doi": "10.15785/SBGRID/1301", "data_type": "diffraction image data",
+			"relation": "similar_sample", "link_evidence": "repository_text",
+		}},
+	}, 1)
+	sourceAndUnstated := s.createEntryWithRelatedDatasetsForTest(token, map[string]any{
+		"title": "source data and an unstated dataset", "ligands": []string{ligand},
+		"related_datasets": []map[string]any{
+			{
+				"doi": "10.15785/SBGRID/1302", "data_type": "diffraction image data",
+				"relation": "source_data", "link_evidence": "pdb_record",
+			},
+			{"doi": "10.15785/SBGRID/1303", "data_type": "diffraction image data"},
+		},
+	}, 1)
+	none := s.createEntryWithModelsForTest(token, map[string]any{"title": "no related data", "ligands": []string{ligand}}, 1)
+	base := "/v1/models?ligand_or_cofactor=" + ligand
+
+	// when
+	found := func(query string) map[string]httpapi.ModelSearchAttributes {
+		return modelSearchResultsByIDForTest(walkModelSearchForTest(s.T(), base+query))
+	}
+	withAny, withNone := found("&has_related_datasets=true"), found("&has_related_datasets=false")
+	similarOnly := found("&related_dataset_relation=similar_sample")
+	unstatedOnly := found("&related_dataset_relation=unstated")
+	sourceOrSimilar := found("&related_dataset_relation=source_data&related_dataset_relation=similar_sample")
+
+	// then
+	s.ElementsMatch([]string{similar[0], sourceAndUnstated[0]}, keysForTest(withAny))
+	s.ElementsMatch([]string{none[0]}, keysForTest(withNone))
+	s.ElementsMatch([]string{similar[0]}, keysForTest(similarOnly))
+	s.ElementsMatch([]string{sourceAndUnstated[0]}, keysForTest(unstatedOnly))
+	s.ElementsMatch([]string{similar[0], sourceAndUnstated[0]}, keysForTest(sourceOrSimilar))
+}
+
+func (s *ModelSearchSuite) Test_should_answer_400_naming_the_parameter_when_a_related_dataset_filter_is_wrong() {
+	for _, path := range []string{
+		"/v1/models?related_dataset_relation=sibling",
+		"/v1/models?has_related_datasets=maybe",
+	} {
+		// when
+		//nolint:bodyclose // decodeJSONResponse closes the response body.
+		response := jsonRequestToServerWithToken(s.T(), modelSearchServer.URL, http.MethodGet, path, nil, "")
+		refused := decodeJSONResponse[httpapi.Error](s.T(), response, http.StatusBadRequest)
+
+		// then
+		s.Require().NotEmpty(refused.Errors, path)
+		s.Require().NotNil(refused.Errors[0].Detail, path)
+		s.Contains(*refused.Errors[0].Detail, "related_dataset", path)
+	}
+}
+
+func keysForTest(results map[string]httpapi.ModelSearchAttributes) []string {
+	keys := make([]string, 0, len(results))
+	for key := range results {
+		keys = append(keys, key)
+	}
+	return keys
+}

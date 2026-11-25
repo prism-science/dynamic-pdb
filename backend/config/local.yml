@@ -36,7 +36,7 @@ cdn:
   cloudfront:
     base_url: ""
 validation:
-  # Reject requests that break Dynamic PDB Schema v0.2.0 (HTTP 422).
+  # Reject requests that break the Dynamic PDB Schema (HTTP 422).
   mode: enforce
   # Reject request keys the API does not define, and keys starting with "__" (HTTP 422).
   request_keys: enforce
@@ -46,6 +46,9 @@ data_sync:
 entries:
   # Reviewers can soft-delete entries, so the delete button can be tested locally.
   delete_enabled: true
+  # relation and link_evidence on related datasets: on locally, so they can be tested. Dev and
+  # production turn them on in their own switch-on PRs, dev first.
+  related_dataset_relation_enabled: true
 artifact_extraction:
   # The deposition forms read an uploaded mmCIF through the server before saving (G5).
   uploads_enabled: true
@@ -75,6 +78,9 @@ model_search:
   # The residue filters (S4) read the coordinate-index job's conformer counts (S3); locally they are
   # on, like the conformer counts themselves.
   residue_filters_enabled: true
+  # has_related_datasets and related_dataset_relation: on locally, so they can be tested. Dev and
+  # production turn them on in their own switch-on PRs, dev first.
+  related_dataset_filters_enabled: true
 selections:
   # Frozen selections (/v1/selections, B1) are on locally, so the website's download panel can be
   # built against them before dev and production switch them on.

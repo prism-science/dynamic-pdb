@@ -32,3 +32,11 @@
   color: var(--text-muted);
   font-size: 12.5px;
 }
+
+/* The stated relation and its evidence, on a line of its own so it reads as a
+   statement about the dataset rather than as part of its name. */
+.relation {
+  flex-basis: 100%;
+  color: var(--text);
+  font-size: 12.5px;
+}
