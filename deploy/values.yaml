@@ -186,8 +186,8 @@ modelCompoundsJob:
 # Reads every model file in our bucket (and the checksum job's copy of each archive model file)
 # and stores its chains: author chain, entity, deposited length, modeled residues and whether it
 # is a protein (S2), one file at a time, outside the API pods. The model search's chain filters
-# read them. On since its job-on PR; the fill and the conformer counts (S3) stay off until their
-# own switch-on PRs. See the README, "Coordinate index job".
+# read them. On since its job-on PR, the fill since its fill-on PR; the conformer counts (S3) stay
+# off until their own switch-on PR. See the README, "Coordinate index job".
 coordinateIndexJob:
   # To stop: false here; until that deploys, suspend the CronJob (README, "Coordinate index job").
   enabled: true
@@ -201,14 +201,15 @@ coordinateIndexJob:
   # The job claims files for 4 minutes and gives each at most fileTimeout; this ends a run that
   # hangs after both.
   activeDeadlineSeconds: 900
-  # Caps the files one run reads; 0 means no cap. 500, as the model-compounds job: the fill of
-  # about 225,500 files then takes 451 runs, about 1.6 days (uncapped, about 22 hours).
-  maxFilesPerRun: 500
+  # Caps the files one run reads; 0 means no cap. None for the fill: a run then reads for its 4
+  # claim minutes, about 880 files (the model-compounds job uncapped on 2026-11-03), so the fill of
+  # about 225,500 files takes about 22 hours (at 500 files a run, 451 runs, about 1.6 days).
+  maxFilesPerRun: 0
   fileTimeout: 10m
   # Gives every model file stored before the job existed a set, as a fill row: uploads are read
   # first. The first run with it queues them all; later runs add nothing while fill rows are
   # pending. Off again once a run logs fill_sets_added=0 and none are pending.
-  fill: false
+  fill: true
   # Sends every done file whose conformer counts are missing or from an older reader back to
   # pending as a fill row, so it is read again with counts (S3). Needs
   # coordinate_index.residue_counts on in backend/config/<env>.yml. Waits while fill rows are

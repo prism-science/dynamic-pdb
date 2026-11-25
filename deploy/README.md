@@ -385,16 +385,20 @@ another entry, a model revision that switched to the file), looking at model rev
 ### Rollout
 
 1. Job-on PR: `coordinateIndexJob.enabled: true`, `fill` still false. Runs read only the files
-   queued since the job's tables exist (uploads) and those of the recent window, so the job is
-   proven on prod with a small batch before the fill. Conformer counts stay off
-   (`coordinate_index.residue_counts: false`, `coordinateIndexJob.residueFill: false`; see
-   "Conformer counts"), so each read stores chains only.
+   queued since the job's tables exist (uploads) and those of the recent window. They prove the
+   CronJob on both environments before the fill (it starts, reaches the database and finishes
+   within its memory limit); on prod they read no file at first, so the fill's first runs are the
+   first reads at scale. Conformer counts stay off (`coordinate_index.residue_counts: false`,
+   `coordinateIndexJob.residueFill: false`; see "Conformer counts"), so each read stores chains
+   only.
 2. Fill-on PR, after at least an hour of clean runs on both environments (`failed=0`, no
-   `OOMKilled` pod, RDS EBS balances near 100%): `coordinateIndexJob.fill: true`. The first run
-   queues every existing model file as a fill row (about 225,500 on prod, in pages of 2,000
-   artifacts, about 40 seconds). Later runs add nothing while fill rows are pending
-   (`fill_waiting_for_pending=true` in the `started` line). Uploads are always read before fill
-   rows. At 500 files a run the fill takes about 1.6 days (451 runs).
+   `OOMKilled` pod, RDS EBS balances near 100%): `coordinateIndexJob.fill: true`, with no cap
+   (`maxFilesPerRun: 0`). The first run queues every existing model file as a fill row (about
+   225,500 on prod, in pages of 2,000 artifacts, about 40 seconds). Later runs add nothing while
+   fill rows are pending (`fill_waiting_for_pending=true` in the `started` line). Uploads are
+   always read before fill rows. A run reads for its 4 claim minutes, about 880 files (the model
+   compounds job uncapped on 2026-11-03), so the fill takes about 22 hours; at 500 files a run it
+   would take about 1.6 days (451 runs).
 3. Fill-off PR: `fill: false` once a run logs `fill_sets_added=0` and no fill row is pending:
 
    ```sql
