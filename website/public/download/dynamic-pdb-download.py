@@ -71,11 +71,11 @@ DEFAULT_API = "https://dynamicpdb.com/api"
 DEPLOYMENT_STORAGE_BASES = {
     "https://dynamicpdb.com/api": (
         "https://files.dynamicpdb.com",
-        "https://dynamic-pdb-data.s3.us-west-1.amazonaws.com",
+        "https://dynamic-pdb-n-data.s3.us-west-1.amazonaws.com",
     ),
     "https://dev.dynamicpdb.com/api": (
         "https://dev-files.dynamicpdb.com",
-        "https://dev-dynamic-pdb-data.s3.us-west-1.amazonaws.com",
+        "https://dev-dynamic-pdb-n-data.s3.us-west-1.amazonaws.com",
     ),
 }
 FILE_CHOICES = ("original_mmcif", "modified_coordinates", "all_files")
