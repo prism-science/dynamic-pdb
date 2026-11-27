@@ -34,16 +34,6 @@ spec:
                 - secretRef:
                     name: {{ include "dynamic-pdb.s3SecretName" . }}
               env:
-                - name: DYNAMIC_PDB_CDN_S3_REGION
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ include "dynamic-pdb.s3SecretName" . }}
-                      key: AWS_REGION
-                - name: DYNAMIC_PDB_CDN_S3_BUCKET
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ include "dynamic-pdb.s3SecretName" . }}
-                      key: S3_BUCKET
                 - name: DYNAMIC_PDB_ENV
                   value: {{ .Values.backend.configProfile | quote }}
                 - name: DYNAMIC_PDB_DB_HOST
