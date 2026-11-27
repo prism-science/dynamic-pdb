@@ -765,20 +765,19 @@ func Test_should_leave_selections_off_with_default_limits_when_config_does_not_s
 	}, cfg.Selections)
 }
 
-func Test_should_turn_selections_on_only_in_local_config(t *testing.T) {
+func Test_should_turn_selections_on_in_every_config(t *testing.T) {
 	// given
 	t.Chdir(filepath.Join("..", ".."))
 	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
 	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
-	expected := map[string]bool{"local": true, "dev": false, "production": false}
 
-	for name, enabled := range expected {
+	for _, name := range []string{"local", "dev", "production"} {
 		// when
 		cfg, err := config.ReadFromFile(name)
 
 		// then
 		require.NoError(t, err, name)
-		assert.Equal(t, enabled, cfg.Selections.Enabled, name)
+		assert.True(t, cfg.Selections.Enabled, name)
 	}
 }
 
