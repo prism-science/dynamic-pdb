@@ -169,6 +169,21 @@ function relatedDatasetMessages(datasets: RelatedDatasetDraft[]): FieldMessage[]
     if (!dataset.dataType.trim()) {
       messages.push(required("relatedDataset.dataType", item, itemLabel));
     }
+    // As the API: a stated relation needs its evidence, and "other" needs
+    // details saying what the relation is. Evidence alone is allowed.
+    const relation = dataset.relation.trim();
+    if (relation && !dataset.linkEvidence.trim()) {
+      messages.push({
+        ...required("relatedDataset.linkEvidence", item, itemLabel),
+        message: "say what shows the link when a relation is set",
+      });
+    }
+    if (relation === "other" && !dataset.details.trim()) {
+      messages.push({
+        ...required("relatedDataset.details", item, itemLabel),
+        message: "say what the relation is when it is other",
+      });
+    }
     const limits: [FieldId, string, number][] = [
       ["relatedDataset.dataType", dataset.dataType, MAX_RELATED_DATASET_LABEL_CHARS],
       ["relatedDataset.repository", dataset.repository, MAX_RELATED_DATASET_LABEL_CHARS],

@@ -488,7 +488,7 @@ func Test_should_read_repository_production_config_with_auth_secrets_from_env_va
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "https://dynamicpdb.com/api", cfg.Server.PublicBaseURL)
 	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
-	assert.Equal(t, "dynamic-pdb-data", cfg.CDN.S3.Bucket)
+	assert.Equal(t, "dynamic-pdb-n-data", cfg.CDN.S3.Bucket)
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
@@ -513,7 +513,7 @@ func Test_should_read_repository_dev_config_with_auth_secrets_from_env_vars(t *t
 	assert.Equal(t, "env-jwt-secret", cfg.Auth.JWT.Secret)
 	assert.Equal(t, "https://dev.dynamicpdb.com/api", cfg.Server.PublicBaseURL)
 	assert.Equal(t, "us-west-1", cfg.CDN.S3.Region)
-	assert.Equal(t, "dev-dynamic-pdb-data", cfg.CDN.S3.Bucket)
+	assert.Equal(t, "dev-dynamic-pdb-n-data", cfg.CDN.S3.Bucket)
 	assert.Equal(t, int64(1073741824), cfg.CDN.S3.UploadMaxFileSize)
 	assert.Equal(t, 15*time.Minute, cfg.CDN.S3.UploadURLTTL)
 	assert.Equal(t, "https://dev-files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
@@ -593,18 +593,18 @@ func Test_should_leave_related_dataset_relation_off_unless_config_or_env_var_set
 	assert.True(t, withEnv.Entries.RelatedDatasetRelationEnabled)
 }
 
-func Test_should_turn_related_dataset_relation_on_in_local_and_dev_configs(t *testing.T) {
+func Test_should_turn_related_dataset_relation_on_in_every_environment_config(t *testing.T) {
 	// given
 	t.Chdir(filepath.Join("..", ".."))
 	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
 	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
-	expected := map[string]bool{"local": true, "dev": true, "production": false}
+	expected := map[string]bool{"local": true, "dev": true, "production": true}
 
 	for name, enabled := range expected {
 		// when
 		cfg, err := config.ReadFromFile(name)
 
-		// then: production turns it on in its own switch-on PR, after dev.
+		// then: on everywhere since the production switch-on, after dev (#210).
 		require.NoError(t, err, name)
 		assert.Equal(t, enabled, cfg.Entries.RelatedDatasetRelationEnabled, name)
 	}
@@ -717,18 +717,18 @@ func Test_should_leave_related_dataset_filters_off_unless_config_or_env_var_sets
 	assert.True(t, withEnv.ModelSearch.RelatedDatasetFiltersEnabled)
 }
 
-func Test_should_turn_related_dataset_filters_on_in_local_and_dev_configs(t *testing.T) {
+func Test_should_turn_related_dataset_filters_on_in_every_environment_config(t *testing.T) {
 	// given
 	t.Chdir(filepath.Join("..", ".."))
 	t.Setenv("DYNAMIC_PDB_AUTH_GITHUB_CLIENT_SECRET", "test-client-secret")
 	t.Setenv("DYNAMIC_PDB_AUTH_JWT_SECRET", "test-jwt-secret")
-	expected := map[string]bool{"local": true, "dev": true, "production": false}
+	expected := map[string]bool{"local": true, "dev": true, "production": true}
 
 	for name, enabled := range expected {
 		// when
 		cfg, err := config.ReadFromFile(name)
 
-		// then: production turns it on in its own switch-on PR, after dev.
+		// then: on everywhere since the production switch-on, after dev (#210).
 		require.NoError(t, err, name)
 		assert.Equal(t, enabled, cfg.ModelSearch.RelatedDatasetFiltersEnabled, name)
 	}

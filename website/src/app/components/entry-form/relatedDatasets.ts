@@ -1,4 +1,8 @@
 import type { RelatedDataset } from "@/lib/api/entries";
+import {
+  relatedDatasetLinkEvidenceValues,
+  relatedDatasetRelationValues,
+} from "@/lib/api/schema.gen";
 
 import type { RelatedDatasetDraft } from "./types";
 
@@ -23,6 +27,34 @@ export const DATA_TYPE_SUGGESTIONS = [
   "diffraction image data",
   "NMR free induction decay data",
 ] as const;
+
+/** The relation choices, in the API's order (RelatedDatasetRelation in
+ *  backend/api/openapi.yaml). The field's help gives each definition. */
+const RELATION_OPTION_LABELS: Record<(typeof relatedDatasetRelationValues)[number], string> = {
+  source_data: "Source data",
+  similar_sample: "Similar sample",
+  other: "Other (say what in Details)",
+};
+export const RELATION_OPTIONS = relatedDatasetRelationValues.map((value) => ({
+  value,
+  label: RELATION_OPTION_LABELS[value],
+}));
+
+/** The link evidence choices (RelatedDatasetLinkEvidence). */
+const LINK_EVIDENCE_OPTION_LABELS: Record<
+  (typeof relatedDatasetLinkEvidenceValues)[number],
+  string
+> = {
+  pdb_record: "The PDB entry cites the dataset",
+  repository_record: "The repository's metadata names the PDB ID",
+  repository_text: "The repository's page text names the PDB ID",
+  publication: "A paper's data availability statement names both",
+  depositor_statement: "The depositor states it",
+};
+export const LINK_EVIDENCE_OPTIONS = relatedDatasetLinkEvidenceValues.map((value) => ({
+  value,
+  label: LINK_EVIDENCE_OPTION_LABELS[value],
+}));
 
 /** The repositories RCSB lists for _pdbx_related_exp_data_set.db_source. Any
  *  text is accepted. */
@@ -116,8 +148,8 @@ export function relatedDatasetsRequest(
       data_type: draft.dataType.trim(),
       repository: draft.repository.trim() || undefined,
       details: draft.details.trim() || undefined,
-      // Sent back as stored, and only when stored: the values come from the API,
-      // which checks them, and a server with relations off refuses the keys.
+      // Sent only when chosen, so a dataset that states no relation carries no
+      // keys. The API checks the values against its lists.
       ...(relation ? { relation: relation as RelatedDataset["relation"] } : {}),
       ...(linkEvidence ? { link_evidence: linkEvidence as RelatedDataset["link_evidence"] } : {}),
     };

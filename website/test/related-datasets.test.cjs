@@ -516,7 +516,7 @@ test("should_label_relation_and_evidence_and_show_an_unknown_value_as_text", () 
 });
 
 test("should_keep_relation_and_evidence_when_another_dataset_of_the_entry_is_edited", () => {
-  // given: the form has no control for relation yet, so an edit must carry it through.
+  // given: an edit to one dataset must carry another's relation through.
   const entry = storedEntry({
     related_datasets: [
       {
@@ -581,4 +581,83 @@ test("should_show_the_relation_on_the_entry_page_only_when_the_dataset_states_on
   // then
   assert.equal((html.match(/Similar sample/g) ?? []).length, 1);
   assert.match(html, /named on the repository&#x27;s page/);
+});
+
+// ------------------------------------------------------- relation controls --
+
+test("should_check_relation_rules_like_the_api_when_the_form_is_checked", () => {
+  // given: the rules of backend/internal/validation/related_datasets.go
+  const metadata = {
+    ...emptyEntryMetadataDraft(),
+    method: "X-ray crystallography",
+    relatedDatasets: [
+      draft({ key: "a", doi: "10.15785/SBGRID/1", relation: "source_data" }),
+      draft({ key: "b", doi: "10.15785/SBGRID/2", relation: "other", linkEvidence: "publication" }),
+      draft({ key: "c", doi: "10.15785/SBGRID/3", linkEvidence: "pdb_record" }),
+      draft({
+        key: "d", doi: "10.15785/SBGRID/4", relation: "similar_sample",
+        linkEvidence: "repository_text",
+      }),
+    ],
+  };
+
+  // when
+  const messages = entryFormMessages("Lysozyme", metadata, "").filter((message) =>
+    message.field.startsWith("relatedDataset."),
+  );
+
+  // then: evidence alone is allowed, as in the API
+  assert.deepEqual(
+    messages.map((message) => [message.field, message.item, message.message]),
+    [
+      ["relatedDataset.linkEvidence", "1", "say what shows the link when a relation is set"],
+      ["relatedDataset.details", "2", "say what the relation is when it is other"],
+    ],
+  );
+});
+
+test("should_send_the_chosen_relation_and_evidence_and_leave_not_stated_out", () => {
+  // given
+  const drafts = [
+    draft({ key: "a", relation: "similar_sample", linkEvidence: "repository_text" }),
+    draft({ key: "b", doi: "10.15785/SBGRID/1301" }),
+  ];
+
+  // when
+  const request = relatedDatasetsRequest(drafts);
+
+  // then
+  assert.equal(request[0].relation, "similar_sample");
+  assert.equal(request[0].link_evidence, "repository_text");
+  assert.equal(Object.hasOwn(request[1], "relation"), false);
+  assert.equal(Object.hasOwn(request[1], "link_evidence"), false);
+});
+
+test("should_offer_every_api_value_with_not_stated_first_and_keep_an_unknown_stored_one", () => {
+  // given: a stored value from a newer API
+  const datasets = [draft({ relation: "sibling", linkEvidence: "repository_text" })];
+
+  // when
+  const html = renderToStaticMarkup(
+    React.createElement(RelatedDatasetsEditor, { datasets, onChange: () => {}, messages: [] }),
+  );
+
+  // then
+  for (const value of ["source_data", "similar_sample", "other", "pdb_record",
+    "repository_record", "repository_text", "publication", "depositor_statement"]) {
+    assert.ok(html.includes(`value="${value}"`), value);
+  }
+  assert.ok(html.includes("Relation"));
+  assert.ok(html.includes("Link evidence"));
+  assert.equal(html.split('<option value="">Not stated</option>').length - 1, 2);
+  assert.match(html, /<option value="sibling"[^>]*>sibling<\/option>/);
+});
+
+test("should_place_api_errors_about_relation_and_evidence_on_their_fields", () => {
+  // when / then
+  assert.equal(fieldForPointer("/entry/related_datasets/0/relation"), "relatedDataset.relation");
+  assert.equal(
+    fieldForPointer("/entry/related_datasets/2/link_evidence"),
+    "relatedDataset.linkEvidence",
+  );
 });
