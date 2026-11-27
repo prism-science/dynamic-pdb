@@ -34,7 +34,7 @@ cdn:
   s3:
     endpoint: ""
     region: us-west-1
-    bucket: dev-dynamic-pdb-data
+    bucket: dev-dynamic-pdb-n-data
     access_key_id: ""
     secret_access_key: ""
     upload_max_file_size: 1073741824

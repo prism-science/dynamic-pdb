@@ -72,7 +72,7 @@ func Test_should_read_bucket_and_cloudfront_when_production_config_read(t *testi
 
 	// then
 	require.NoError(t, err)
-	assert.Equal(t, "dynamic-pdb-data", cfg.CDN.S3.Bucket)
+	assert.Equal(t, "dynamic-pdb-n-data", cfg.CDN.S3.Bucket)
 	assert.Equal(t, "https://files.dynamicpdb.com", cfg.CDN.CloudFront.BaseURL)
 }
 
